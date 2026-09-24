@@ -20,4 +20,7 @@ public:
 // host:port, e.g. 127.0.0.1:14650. Returns null, with a message on stderr, on failure.
 std::unique_ptr<Transport> open_udp(const char* host_port);
 
+// A serial device (the flight controller's USB CDC port), raw 8N1. Returns null, with a message on stderr, on failure.
+std::unique_ptr<Transport> open_serial(const char* path);
+
 }  // namespace marv::ground
