@@ -114,6 +114,11 @@ void Link::handle(const json::object& m, const Reply& reply) {
         std::uint8_t f[link::kMaxFrame];
         if (!send(f, link::encode(link::Reboot{}, f))) return error(reply, type, "link not open");
         next_probe_ = Clock::now() + 1s;
+        if (cfg_.serial) {
+            // The Pico comes back as a new tty; a read on the old one reports nothing, not a hangup. Reopen by path.
+            tx_.reset();
+            reopen_at_ = Clock::now() + kReopen;
+        }
         return set_connected(false);
     }
     if (type == "flash") return flash(reply);
