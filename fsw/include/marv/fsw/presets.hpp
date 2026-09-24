@@ -1,6 +1,6 @@
-// Module presets: a named combination of flight-software modules, chosen at runtime (the avionics toolbox lab's
-// swappable blocks). The id is what link::SetPreset carries and what Telemetry::preset reports; an unknown id runs
-// preset 0. kFactory[id] is the Setup of preset id: its estimator kind and every parameter at its default.
+// Factory setups: a named estimator choice with every parameter at its params.def default. kFactory[id] is the
+// Setup that link::LoadFactory and link::SetPreset stage (factory 0 for an unknown id); Telemetry::preset reports the
+// factory id the running Setup equals, else 0xFF.
 #pragma once
 
 #include <cstdint>
