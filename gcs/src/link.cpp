@@ -183,7 +183,7 @@ void Link::sim(bool on) {
     fail_all(on ? "link switched to the sim bridge" : "the sim ended: link back to USB");
     reopen_at_ = now;
     if (on && !open()) reopen_at_ = now + kReopen;
-    broadcast_(link_message(), false);
+    broadcast_link();
 }
 
 // ---- client requests ---------------------------------------------------------------------------------------------------
@@ -304,7 +304,7 @@ void Link::poll() {
         if (!open()) {
             reopen_at_ = now + (cfg_.mode == LinkConfig::Mode::kAuto ? kScan : kReopen);
         } else {
-            broadcast_(link_message(), false);
+            broadcast_link();
             enqueue(Kind::kSetup, "request_setup", link::SetupRequest{}, {});
         }
     }
@@ -354,13 +354,13 @@ void Link::close(const char* why) {
     tx_.reset();
     reopen_at_ = Clock::now() + kReopen;
     fail_all(why);
-    broadcast_(link_message(), false);
+    broadcast_link();
 }
 
 void Link::set_connected(bool connected) {
     if (connected == connected_) return;
     connected_ = connected;
-    broadcast_(link_message(), false);
+    broadcast_link();
 }
 
 void Link::receive(const link::Packet& p) {
@@ -392,7 +392,7 @@ void Link::on_header(const link::SetupHeader& h) {
     header_ = h;
     have_header_ = true;
     connected_ = true;
-    if (changed) broadcast_(link_message(), false);
+    if (changed) broadcast_link();
     if (!queue_.empty() && !rx_header_) {
         switch (queue_.front().kind) {
         case Kind::kSetup:
@@ -569,6 +569,11 @@ void Link::mission_request(const std::string& type, const json::object& m, const
     next_mission_ = now;  // the new frame and state go out on the next poll
 }
 
+void Link::broadcast_link() {
+    broadcast_(link_message(), false);
+    state_key_.clear();
+}
+
 std::string Link::mission_message() const { return json::serialize(mission_state(mission_.status(seconds(Clock::now())))); }
 
 // One 20 Hz period: the executor's frame, and mission_state on a change or every 500 ms while engaged.
@@ -638,7 +643,7 @@ void Link::flash(const Reply& reply) {
     }
     flash_pid_ = pid;
     flash_out_.assign(fds[0]);
-    broadcast_(link_message(), false);
+    broadcast_link();
     read_flash();
 }
 
@@ -669,7 +674,7 @@ void Link::read_flash() {
                            "); reopening " + port);
         verify_flash_ = true;
         reopen_at_ = Clock::now() + kReopen;  // the Pico re-enumerates after its reset
-        broadcast_(link_message(), false);
+        broadcast_link();
     });
 }
 

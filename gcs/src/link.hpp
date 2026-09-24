@@ -70,6 +70,13 @@ public:
     std::string mission_message() const;
 
 private:
+    // Broadcasts the link state and re-sends mission_state on the next tick: a page drops its mission state whenever
+    // the link goes down (a USB <-> sim switch), and an idle executor would otherwise never broadcast again.
+    void broadcast_link();
+
+public:
+
+private:
     using Clock = std::chrono::steady_clock;
     enum class Kind : std::uint8_t { kSetup, kSetParam, kSetKind, kSave, kReset };
     struct Request {
