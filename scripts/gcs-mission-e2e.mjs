@@ -3,10 +3,11 @@
 // --seconds 600 --log), marv_gcs on the bridge's UDP link (scripts/gcs.sh), driven over the GCS WebSocket as the web
 // Mission view drives it. Truth comes from the bridge's --log, read while it is written. Not in ctest (needs Gazebo).
 //
-//   node scripts/gcs-mission-e2e.mjs [--out DIR] [--http PORT] [--world ID] [--setup FILE]   takes /tmp/marv-rig.lock itself
+//   node scripts/gcs-mission-e2e.mjs [--out DIR] [--http PORT] [--world ID] [--setup FILE] [--speed MPS]   takes /tmp/marv-rig.lock itself
 //
 //   --world ID goes to sim.sh (default x3). --setup FILE (a marv-setup JSON, e.g. setups/x500.json) is staged by id over
-//   the WebSocket and applied (reset) before the run; without it the running setup must be factory 0.
+//   the WebSocket and applied (reset) before the run; without it the running setup must be factory 0. --speed MPS is
+//   every mission_start's speed_mps (default: none sent, the cruise speed).
 //
 //   1. arm: for 5 s telemetry.armed, every motor == spin_arm +- 1e-6, truth_d_m > -0.05 (no liftoff).
 //   2. climb 5: hold within 30 s; truth_d over 2..5 s of hold at -5 +- 0.3.
@@ -44,6 +45,8 @@ const out = resolve(opt('--out', join(root, 'build', 'e2e-mission')));
 const port = Number(opt('--http', '8779'));
 const world = opt('--world', 'x3');
 const setupFile = opt('--setup', null);
+const speed = opt('--speed', null);
+const missionStart = (waypoints) => ({ type: 'mission_start', waypoints, ...(speed === null ? {} : { speed_mps: Number(speed) }) });
 mkdirSync(out, { recursive: true });
 const logPath = join(out, 'bridge.csv');
 
@@ -318,7 +321,7 @@ async function run() {
 	const home = { n: truth.n[at(tA)], e: truth.e[at(tA)] };
 	const SQ = [[20, 0], [20, 20], [0, 20], [0, 0]].map(([n, e]) => ({ n: home.n + n, e: home.e + e, alt: 5 }));
 	k = states.length;
-	await command({ type: 'mission_start', waypoints: SQ.map(wire) });
+	await command(missionStart(SQ.map(wire)));
 	const sq0 = await nextState(k, (s) => s.state === 'mission', 2000, 'square: mission');
 	const sqAdv = [];
 	for (let w = 0; w < SQ.length; ++w)
@@ -357,7 +360,7 @@ async function run() {
 			tiltPeak = Math.max(tiltPeak, truth.tilt[j]);
 		}
 		const metrics = {
-			world, setup: setupFile ?? 'factory 0', completion_s: (t1 - t0) / 1e6, corners,
+			world, setup: setupFile ?? 'factory 0', speed_mps: speed === null ? null : Number(speed), completion_s: (t1 - t0) / 1e6, corners,
 			cross_track_rms_m: Math.sqrt(ss / r.length), tilt_peak_deg: tiltPeak,
 			overshoot_max_m: Math.max(...corners.map((c) => c.overshoot_m))
 		};
@@ -372,7 +375,7 @@ async function run() {
 	// 3. the mission, then the automatic rth to hold over home.
 	console.log(`home (truth at arm) n ${f(home.n)} e ${f(home.e)}; waypoints ${JSON.stringify(WPS.map(wire))}`);
 	k = states.length;
-	await command({ type: 'mission_start', waypoints: WPS.map(wire) });
+	await command(missionStart(WPS.map(wire)));
 	for (let w = 0; w < WPS.length; ++w) {
 		const adv = await nextState(k, (s) => (w + 1 < WPS.length ? s.state === 'mission' && s.wp_index === w + 1 : s.state === 'rth'),
 			90000, `advance past waypoint ${w}`);
@@ -392,7 +395,7 @@ async function run() {
 
 	// 4. a second mission, rth after its first waypoint.
 	k = states.length;
-	await command({ type: 'mission_start', waypoints: WPS.map(wire) });
+	await command(missionStart(WPS.map(wire)));
 	await nextState(k, (s) => s.state === 'mission' && s.wp_index === 1, 90000, 'second mission past waypoint 0');
 	await sleep(1500);
 	const altNow = -tlm.est.p_ned[2];
