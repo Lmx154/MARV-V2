@@ -5,6 +5,8 @@
 //   2. telemetry at 200 Hz from the stub reaches the client at <= 30 Hz.
 //   3. no reply: the request is sent twice, 500 ms apart, then reported as "no reply".
 //   4. a flight controller with another schema hash: edits refused before they reach the link.
+//   5. the automatic link, on fake transports: USB when a flight controller appears, closed before a sim starts and
+//      the sim's bridge instead, USB again when it ends, and a rescan after the device hangs up.
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -15,8 +17,10 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <boost/asio/connect.hpp>
@@ -190,7 +194,7 @@ private:
 struct Backend {
     explicit Backend(unsigned short fc_port)
         : server(io, "127.0.0.1", 0, "/nonexistent"),
-          link(io, gcs::LinkConfig{false, "127.0.0.1:" + std::to_string(fc_port)},
+          link(io, gcs::LinkConfig{gcs::LinkConfig::Mode::kUdp, "127.0.0.1:" + std::to_string(fc_port)},
                [this](const std::string& t, bool d) { server.broadcast(t, d); }) {
         server.set_link(&link);
         CHECK(link.start());
@@ -258,7 +262,7 @@ void test_exchange() {
     Backend be(fc.port());
     Client c(be.server.port());
     const json::object hello = c.wait("link");
-    CHECK(hello.at("mode").as_string() == "sitl-udp");
+    CHECK(hello.at("mode").as_string() == "udp");
 
     c.send({{"type", "request_setup"}});
     json::object m = c.wait("setup");
@@ -357,7 +361,9 @@ void test_exchange() {
     // HTTP.
     CHECK(http_get(be.server.port(), "/api/schema") == gcs::schema_text());
     const json::value link = json::parse(http_get(be.server.port(), "/api/link"));
-    CHECK(link.at("mode").as_string() == "sitl-udp");
+    CHECK(link.at("mode").as_string() == "udp");
+    CHECK(link.at("via").as_string() == "sim-bridge");
+    CHECK(link.at("target").as_string() == "127.0.0.1:" + std::to_string(fc.port()));
 }
 
 void test_mismatch() {
@@ -398,12 +404,114 @@ void test_mismatch() {
     CHECK(link.at("error").as_string().find("schema mismatch") != std::string::npos);
 }
 
+// A transport that logs its opening and closing, keeps what was sent, and reports a hangup on demand.
+class FakeTransport final : public ground::Transport {
+public:
+    FakeTransport(std::string name, std::vector<std::string>& log, FakeTransport*& live)
+        : name_(std::move(name)), log_(log), live_(live) {
+        log_.push_back("open " + name_);
+        live_ = this;
+    }
+    ~FakeTransport() override {
+        log_.push_back("close " + name_);
+        if (live_ == this) live_ = nullptr;
+    }
+    bool send(const std::uint8_t* p, std::size_t n) override {
+        sent.insert(sent.end(), p, p + n);
+        return true;
+    }
+    long recv(std::uint8_t*, std::size_t, int) override { return hangup ? -1 : 0; }
+    std::vector<std::uint8_t> sent;
+    bool hangup = false;
+
+private:
+    std::string name_;
+    std::vector<std::string>& log_;
+    FakeTransport*& live_;
+};
+
+bool sent_setup_request(const FakeTransport* t) {
+    if (!t) return false;
+    link::Decoder dec;
+    link::SetupRequest rq;
+    for (std::uint8_t b : t->sent)
+        if (dec.push(b) && dec.packet().as(rq)) return true;
+    return false;
+}
+
+void test_auto() {
+    std::vector<std::string> log;
+    FakeTransport* live = nullptr;
+    std::string device;  // what the scan finds
+    gcs::LinkConfig cfg;
+    CHECK(cfg.mode == gcs::LinkConfig::Mode::kAuto);  // the default
+    cfg.scan = [&device] { return device; };
+    cfg.open_serial = [&](const char* path) -> std::unique_ptr<ground::Transport> {
+        return std::make_unique<FakeTransport>(std::string("serial ") + path, log, live);
+    };
+    cfg.open_udp = [&](const char* at) -> std::unique_ptr<ground::Transport> {
+        return std::make_unique<FakeTransport>(std::string("udp ") + at, log, live);
+    };
+    asio::io_context io;
+    gcs::Link link(io, cfg, [](const std::string&, bool) {});
+    const auto run = [&io](double s) {
+        io.restart();
+        io.run_for(std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::duration<double>(s)));
+    };
+    const auto via = [&link] { return link.state().at("via"); };
+
+    // No flight controller, no sim: nothing opened, scanning.
+    CHECK(link.start());
+    run(1.2);
+    CHECK(log.empty());
+    CHECK(link.state().at("mode").as_string() == "auto");
+    CHECK(via().is_null() && link.state().at("target").is_null());
+
+    // One appears: opened within a scan period, and asked for its setup.
+    device = "/dev/fake0";
+    run(1.2);
+    CHECK((log == std::vector<std::string>{"open serial /dev/fake0"}));
+    CHECK(via() == "usb" && link.state().at("target") == "/dev/fake0");
+    CHECK(sent_setup_request(live));
+
+    // A sim starts: the serial port is closed before sim(true) returns, then the bridge's --ground is the link.
+    log.clear();
+    link.sim(true);
+    CHECK((log == std::vector<std::string>{"close serial /dev/fake0", "open udp 127.0.0.1:14650"}));
+    CHECK(via() == "sim-bridge" && link.state().at("target") == "127.0.0.1:14650");
+    run(1.5);  // the device is still there, but the bridge owns it: no scan while the sim runs
+    CHECK(log.size() == 2);
+
+    // The sim ends: back to USB.
+    log.clear();
+    link.sim(false);
+    CHECK((log == std::vector<std::string>{"close udp 127.0.0.1:14650"}));
+    run(0.1);
+    CHECK((log == std::vector<std::string>{"close udp 127.0.0.1:14650", "open serial /dev/fake0"}));
+    CHECK(via() == "usb");
+
+    // Unplugged (the device hangs up): link lost, rescanned, and the next one plugged in is opened.
+    log.clear();
+    device.clear();
+    CHECK(live != nullptr);
+    if (live) live->hangup = true;
+    run(0.1);
+    CHECK((log == std::vector<std::string>{"close serial /dev/fake0"}));
+    CHECK(via().is_null() && !link.state().at("connected").as_bool());
+    device = "/dev/fake1";
+    run(3.2);
+    CHECK((log == std::vector<std::string>{"close serial /dev/fake0", "open serial /dev/fake1"}));
+    CHECK(via() == "usb" && sent_setup_request(live));
+    for (const auto& l : log) std::printf("auto: %s\n", l.c_str());
+}
+
 }  // namespace
 
 int main() {
     ::alarm(60);  // a lost reply fails the test instead of hanging it
     test_exchange();
     test_mismatch();
+    test_auto();
     if (g_fails) std::fprintf(stderr, "test_gcs_link: %d failures\n", g_fails);
     else std::printf("test_gcs_link: OK\n");
     return g_fails ? 1 : 0;

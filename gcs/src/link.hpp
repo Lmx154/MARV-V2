@@ -33,9 +33,18 @@ using Reply = std::function<void(const std::string&)>;
 // Sends one text frame to every client. A client that is behind skips droppable frames (telemetry).
 using Broadcast = std::function<void(const std::string&, bool droppable)>;
 
+// The first /dev/serial/by-id/usb-MARV_MARV_flight_controller_* (the firmware's own USB name), empty when none.
+std::string first_fc();
+
 struct LinkConfig {
-    bool serial = false;
-    std::string target = "127.0.0.1:14650";  // HOST:PORT of the bridge's --ground, or the serial device
+    // kAuto: the flight controller on USB (scanned for every 1 s) while no sim runs, the sim's bridge while one does.
+    enum class Mode : std::uint8_t { kAuto, kUdp, kSerial };
+    using Opener = std::function<std::unique_ptr<ground::Transport>(const char*)>;
+    Mode mode = Mode::kAuto;
+    std::string target = "127.0.0.1:14650";  // HOST:PORT of the bridge's --ground (kUdp, kAuto), or the serial device
+    std::function<std::string()> scan = first_fc;  // kAuto: the device to open, empty when none
+    Opener open_serial = ground::open_serial;
+    Opener open_udp = ground::open_udp;
 };
 
 class Link {
@@ -50,7 +59,10 @@ public:
     // One client message: request_setup | set_param | set_kind | load_factory | save | reset | reboot | flash, or a
     // mission command: arm | disarm | climb | mission_start | rth | land.
     void handle(const boost::json::object& msg, const Reply& reply);
-    // GET /api/link: {mode, target, connected, schema_ok, schema_hash, header, error?, flashing}.
+    // kAuto: a sim is about to start its bridge (on: the serial port is closed before this returns and the link goes to
+    // the bridge's --ground) or has ended (off: back to scanning USB). A no-op in the fixed modes.
+    void sim(bool on);
+    // GET /api/link: {mode, via, target, connected, schema_ok, schema_hash, header, error?, flashing}.
     boost::json::object state() const;
     // state() as a {type: "link"} message.
     std::string link_message() const;
@@ -82,6 +94,7 @@ private:
     void on_header(const link::SetupHeader& h);
     void on_value(const link::ParamValue& v);
     bool send(const std::uint8_t* p, std::size_t n);
+    bool open();
     void close(const char* why);
     void set_connected(bool connected);
     std::string edit_refusal() const;
@@ -99,6 +112,9 @@ private:
     Broadcast broadcast_;
     boost::asio::steady_timer timer_;
     std::unique_ptr<ground::Transport> tx_;
+    bool serial_ = false;                 // tx_ is a serial device ...
+    std::string at_;                      // ... or HOST:PORT: the path or address it was opened on
+    bool sim_ = false;                    // kAuto: a sim's bridge holds the flight controller
     link::Decoder dec_;
 
     std::deque<Request> queue_;

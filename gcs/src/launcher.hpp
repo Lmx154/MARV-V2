@@ -6,6 +6,7 @@
 #include <sys/types.h>
 
 #include <chrono>
+#include <functional>
 #include <string>
 
 #include <boost/asio/io_context.hpp>
@@ -22,8 +23,9 @@ namespace marv::gcs {
 
 class Launcher {
 public:
-    // serial_link: marv_gcs owns the flight controller's port (--serial), so no sim may be launched.
-    Launcher(boost::asio::io_context& io, bool serial_link, Broadcast broadcast);
+    // serial_link: marv_gcs owns the flight controller's port (--serial), so no sim may be launched. on_sim(true) runs
+    // just before the sim's process starts, on_sim(false) once none of it is left (Link::sim).
+    Launcher(boost::asio::io_context& io, bool serial_link, Broadcast broadcast, std::function<void(bool)> on_sim);
     ~Launcher();  // stops a running sim: SIGTERM to its group, SIGKILL after 5 s
     Launcher(const Launcher&) = delete;
     Launcher& operator=(const Launcher&) = delete;
@@ -49,6 +51,7 @@ private:
     std::string repo_, gen_dir_;
     bool serial_;
     Broadcast broadcast_;
+    std::function<void(bool)> on_sim_;
     boost::asio::steady_timer timer_;
     boost::asio::posix::stream_descriptor out_;
     boost::asio::streambuf buf_;

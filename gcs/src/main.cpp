@@ -4,7 +4,9 @@
 //   marv_gcs [--udp HOST:PORT | --serial DEV] [--http PORT] [--web DIR]
 //   marv_gcs --dump-schema          the /api/schema JSON, tab-indented, on stdout
 //
-// Default --udp 127.0.0.1:14650 (marv_bridge --ground), --http 8765 on 127.0.0.1, --web the gcs/web build.
+// Default link: automatic, the flight controller on USB (/dev/serial/by-id/usb-MARV_MARV_flight_controller_*) while no
+// sim runs, the sim's bridge (marv_bridge --ground on 127.0.0.1:14650) while one does. --udp and --serial fix it.
+// Default --http 8765 on 127.0.0.1, --web the gcs/web build.
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -43,10 +45,10 @@ int main(int argc, char** argv) {
             std::fputs(pretty(schema()).c_str(), stdout);
             return 0;
         } else if (a == "--udp" && has_value) {
-            cfg.serial = false;
+            cfg.mode = LinkConfig::Mode::kUdp;
             cfg.target = argv[++i];
         } else if (a == "--serial" && has_value) {
-            cfg.serial = true;
+            cfg.mode = LinkConfig::Mode::kSerial;
             cfg.target = argv[++i];
         } else if (a == "--http" && has_value) {
             port = std::atoi(argv[++i]);
@@ -63,13 +65,19 @@ int main(int argc, char** argv) {
         Server server(io, "127.0.0.1", static_cast<unsigned short>(port), web);
         Link link(io, cfg, [&server](const std::string& text, bool droppable) { server.broadcast(text, droppable); });
         server.set_link(&link);
-        Launcher sim(io, cfg.serial, [&server](const std::string& text, bool droppable) { server.broadcast(text, droppable); });
+        Launcher sim(
+            io, cfg.mode == LinkConfig::Mode::kSerial,
+            [&server](const std::string& text, bool droppable) { server.broadcast(text, droppable); },
+            [&link](bool on) { link.sim(on); });
         server.set_sim(&sim);
         if (!link.start()) return 1;
         boost::asio::signal_set signals(io, SIGINT, SIGTERM);
         signals.async_wait([&io](const boost::system::error_code&, int) { io.stop(); });
-        std::printf("marv_gcs: http://127.0.0.1:%u/  link %s %s  web %s\n", static_cast<unsigned>(server.port()),
-                    cfg.serial ? "serial" : "udp", cfg.target.c_str(), web.c_str());
+        const char* mode = cfg.mode == LinkConfig::Mode::kAuto  ? "auto (USB, or the sim bridge at)"
+                           : cfg.mode == LinkConfig::Mode::kUdp ? "udp"
+                                                                : "serial";
+        std::printf("marv_gcs: http://127.0.0.1:%u/  link %s %s  web %s\n", static_cast<unsigned>(server.port()), mode,
+                    cfg.target.c_str(), web.c_str());
         std::fflush(stdout);
         io.run();
     } catch (const std::exception& e) {

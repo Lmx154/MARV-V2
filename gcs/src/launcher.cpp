@@ -47,11 +47,12 @@ std::string g17(double v) {
 
 }  // namespace
 
-Launcher::Launcher(asio::io_context& io, bool serial_link, Broadcast broadcast)
+Launcher::Launcher(asio::io_context& io, bool serial_link, Broadcast broadcast, std::function<void(bool)> on_sim)
     : repo_(MARV_GCS_REPO_DIR),
       gen_dir_(std::string(MARV_GCS_BUILD_DIR) + "/sim/generated"),
       serial_(serial_link),
       broadcast_(std::move(broadcast)),
+      on_sim_(std::move(on_sim)),
       timer_(io),
       out_(io) {}
 
@@ -127,7 +128,7 @@ void Launcher::launch(const json::object& m, const Reply& reply) {
         return refuse("a sim is already running (" + airframe_ + ", pid " + std::to_string(pid_) + "): sim_stop it first");
     if (serial_)
         return refuse("marv_gcs runs with --serial, so it owns the flight controller's port the sim's bridge needs: restart it with "
-                      "--udp 127.0.0.1:14650 (scripts/gcs.sh) to launch a sim");
+                      "no link flag (scripts/gcs.sh: it lets go of the port while a sim runs) to launch a sim");
     const json::value* id = m.if_contains("airframe");
     if (!id || !id->is_string()) return refuse("want {airframe: id, env: {...}, gui: bool, target: \"host\"|\"fc\"}");
     worldgen::Airframe a;
@@ -200,6 +201,7 @@ void Launcher::launch(const json::object& m, const Reply& reply) {
     for (auto& s : env_strings) envp.push_back(s.data());
     envp.push_back(nullptr);
 
+    on_sim_(true);  // the link lets go of the flight controller's port before the bridge wants it
     const pid_t pid = ::fork();
     if (pid == 0) {
         ::setpgid(0, 0);
@@ -219,8 +221,10 @@ void Launcher::launch(const json::object& m, const Reply& reply) {
     ::close(fds[1]);
     ::close(lock);
     if (pid < 0) {
+        const int e = errno;
         ::close(fds[0]);
-        return refuse(std::string("fork: ") + std::strerror(errno));
+        on_sim_(false);
+        return refuse(std::string("fork: ") + std::strerror(e));
     }
     ::setpgid(pid, pid);  // as the child does: a kill(-pid) before it ran must still reach the group
 
@@ -309,6 +313,7 @@ void Launcher::poll() {
         boost::system::error_code ignored;
         out_.close(ignored);
         log("sim: stopped; no process of its group is left");
+        on_sim_(false);
         changed();
         return;
     }

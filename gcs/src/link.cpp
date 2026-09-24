@@ -1,6 +1,7 @@
 #include "link.hpp"
 
 #include <fcntl.h>
+#include <glob.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -34,11 +35,13 @@ constexpr auto kReplyTimeout = 500ms;
 constexpr auto kKeepalive = 500ms;       // a lone 0x00 at least this often, so the bridge keeps sending to us
 constexpr auto kTelemetryPeriod = 34ms;  // at most 30 Hz to the clients
 constexpr auto kReopen = 2s;
+constexpr auto kScan = 1s;               // kAuto: how often to look for a flight controller on USB
 constexpr auto kMissionPeriod = 50ms;    // 20 Hz MissionCommand frames while engaged
 constexpr auto kMissionState = 500ms;    // mission_state at least this often while engaged
 constexpr std::size_t kMaxQueue = 256;
 constexpr std::size_t kMaxValues = 4096;
 constexpr const char* kRigLock = "/tmp/marv-rig.lock";
+constexpr const char* kFcGlob = "/dev/serial/by-id/usb-MARV_MARV_flight_controller_*";
 
 // The firmware build, then the SWD flash line of CLAUDE.md; run from the repository root under the rig lock.
 constexpr const char* kFlashScript =
@@ -125,6 +128,14 @@ std::string kind_name(std::uint8_t family, std::uint8_t kind) {
 
 }  // namespace
 
+std::string first_fc() {
+    std::string path;
+    glob_t g{};
+    if (::glob(kFcGlob, 0, nullptr, &g) == 0 && g.gl_pathc > 0) path = g.gl_pathv[0];
+    ::globfree(&g);
+    return path;
+}
+
 Link::Link(asio::io_context& io, LinkConfig cfg, Broadcast broadcast)
     : cfg_(std::move(cfg)), broadcast_(std::move(broadcast)), timer_(io), flash_out_(io) {}
 
@@ -137,12 +148,42 @@ Link::~Link() {
 }
 
 bool Link::start() {
-    tx_ = cfg_.serial ? ground::open_serial(cfg_.target.c_str()) : ground::open_udp(cfg_.target.c_str());
-    if (!tx_ && !cfg_.serial) return false;
-    if (!tx_) reopen_at_ = Clock::now() + kReopen;  // the device may appear later
-    else if (cfg_.serial) enqueue(Kind::kSetup, "request_setup", link::SetupRequest{}, {});
+    if (!open() && cfg_.mode == LinkConfig::Mode::kUdp) return false;
+    if (!tx_) reopen_at_ = Clock::now() + (cfg_.mode == LinkConfig::Mode::kAuto ? kScan : kReopen);  // it may appear later
+    else if (serial_) enqueue(Kind::kSetup, "request_setup", link::SetupRequest{}, {});
     tick();
     return true;
+}
+
+// Opens the transport the mode calls for now: false when there is none (kAuto: no flight controller on USB yet).
+bool Link::open() {
+    const bool automatic = cfg_.mode == LinkConfig::Mode::kAuto;
+    const bool serial = cfg_.mode == LinkConfig::Mode::kSerial || (automatic && !sim_);
+    const std::string at = automatic && serial ? cfg_.scan() : cfg_.target;
+    if (at.empty()) return false;
+    tx_ = serial ? cfg_.open_serial(at.c_str()) : cfg_.open_udp(at.c_str());
+    if (!tx_) return false;
+    serial_ = serial;
+    at_ = at;
+    dec_ = link::Decoder{};
+    if (automatic)
+        std::fprintf(stderr, "marv_gcs: link: %s %s\n", serial ? "flight controller via USB on" : "sim bridge at", at.c_str());
+    return true;
+}
+
+void Link::sim(bool on) {
+    if (cfg_.mode != LinkConfig::Mode::kAuto || on == sim_) return;
+    sim_ = on;
+    const auto now = Clock::now();
+    if (tx_) std::fprintf(stderr, "marv_gcs: link: closing %s: %s\n", at_.c_str(), on ? "a sim is starting" : "the sim ended");
+    tx_.reset();  // before the launcher starts the bridge: target fc needs this port
+    // Another vehicle from here on: forget this one's setup, and stop the executor rather than fly it on the next one.
+    have_header_ = have_armed_ = false;
+    if (mission_.engaged(seconds(now))) mission_.disarm(seconds(now));
+    fail_all(on ? "link switched to the sim bridge" : "the sim ended: link back to USB");
+    reopen_at_ = now;
+    if (on && !open()) reopen_at_ = now + kReopen;
+    broadcast_(link_message(), false);
 }
 
 // ---- client requests ---------------------------------------------------------------------------------------------------
@@ -157,7 +198,7 @@ void Link::handle(const json::object& m, const Reply& reply) {
         std::uint8_t f[link::kMaxFrame];
         if (!send(f, link::encode(link::Reboot{}, f))) return error(reply, type, "link not open");
         next_probe_ = Clock::now() + 1s;
-        if (cfg_.serial) {
+        if (serial_) {
             // The Pico comes back as a new tty; a read on the old one reports nothing, not a hangup. Reopen by path.
             tx_.reset();
             reopen_at_ = Clock::now() + kReopen;
@@ -260,11 +301,9 @@ void Link::tick() {
 void Link::poll() {
     const auto now = Clock::now();
     if (!tx_ && flash_pid_ < 0 && now >= reopen_at_) {
-        tx_ = cfg_.serial ? ground::open_serial(cfg_.target.c_str()) : ground::open_udp(cfg_.target.c_str());
-        if (!tx_) {
-            reopen_at_ = now + kReopen;
+        if (!open()) {
+            reopen_at_ = now + (cfg_.mode == LinkConfig::Mode::kAuto ? kScan : kReopen);
         } else {
-            dec_ = link::Decoder{};
             broadcast_(link_message(), false);
             enqueue(Kind::kSetup, "request_setup", link::SetupRequest{}, {});
         }
@@ -281,7 +320,7 @@ void Link::poll() {
         for (long k = 0; k < n; ++k)
             if (dec_.push(buf[k])) receive(dec_.packet());
     }
-    if (tx_ && !cfg_.serial && now - last_tx_ >= kKeepalive) {
+    if (tx_ && !serial_ && now - last_tx_ >= kKeepalive) {
         const std::uint8_t delim = 0;
         send(&delim, 1);
     }
@@ -311,7 +350,7 @@ bool Link::send(const std::uint8_t* p, std::size_t n) {
 }
 
 void Link::close(const char* why) {
-    std::fprintf(stderr, "marv_gcs: %s: %s\n", cfg_.target.c_str(), why);
+    std::fprintf(stderr, "marv_gcs: %s: %s\n", at_.c_str(), why);
     tx_.reset();
     reopen_at_ = Clock::now() + kReopen;
     fail_all(why);
@@ -416,8 +455,17 @@ void Link::on_value(const link::ParamValue& v) {
 // ---- messages to the clients -------------------------------------------------------------------------------------------
 
 json::object Link::state() const {
-    json::object o{{"mode", cfg_.serial ? "serial" : "sitl-udp"},
-                   {"target", cfg_.target},
+    const LinkConfig::Mode mode = cfg_.mode;
+    json::value via = nullptr, target = nullptr;
+    if (tx_) {
+        via = serial_ ? "usb" : "sim-bridge";
+        target = at_;
+    } else if (mode != LinkConfig::Mode::kAuto) {
+        target = cfg_.target;
+    }
+    json::object o{{"mode", mode == LinkConfig::Mode::kAuto ? "auto" : mode == LinkConfig::Mode::kUdp ? "udp" : "serial"},
+                   {"via", std::move(via)},
+                   {"target", std::move(target)},
                    {"open", tx_ != nullptr},
                    {"connected", connected_},
                    {"schema_hash", param::kSchemaHash},
@@ -561,16 +609,19 @@ void Link::flash(const Reply& reply) {
     const auto say = [&reply](const std::string& line) {
         if (reply) reply(json::serialize(json::object{{"type", "flash_log"}, {"line", line}}));
     };
-    if (!cfg_.serial)
+    if (cfg_.mode == LinkConfig::Mode::kAuto && sim_)
+        return say("flash: a sim is running and its bridge may hold the flight controller: sim_stop it first");
+    if (cfg_.mode == LinkConfig::Mode::kUdp)
         return say("flash needs marv_gcs --serial DEV: the Pico must not be in use by a bridge; stop the bridge and "
                    "restart marv_gcs with --serial");
     if (flash_pid_ > 0) return say("flash: already running");
     int fds[2];
     if (::pipe2(fds, O_CLOEXEC) != 0) return say(std::string("flash: pipe: ") + std::strerror(errno));
 
+    const std::string port = cfg_.mode == LinkConfig::Mode::kAuto ? (tx_ ? at_ : std::string("no USB port open")) : cfg_.target;
     tx_.reset();
     fail_all("flashing");
-    flash_log("flash: closed " + cfg_.target + "; flock " + kRigLock + " (cmake --build build/fw, openocd program)");
+    flash_log("flash: closed " + port + "; flock " + kRigLock + " (cmake --build build/fw, openocd program)");
     const pid_t pid = ::fork();
     if (pid == 0) {
         ::dup2(fds[1], 1);
@@ -612,9 +663,10 @@ void Link::read_flash() {
         ::waitpid(flash_pid_, &status, 0);
         flash_pid_ = -1;
         const bool ok = WIFEXITED(status) && WEXITSTATUS(status) == 0;
-        flash_log(ok ? "flash: done; reopening " + cfg_.target
+        const std::string port = cfg_.mode == LinkConfig::Mode::kAuto ? std::string("the USB link") : cfg_.target;
+        flash_log(ok ? "flash: done; reopening " + port
                      : "flash: FAILED (exit " + std::to_string(WIFEXITED(status) ? WEXITSTATUS(status) : -1) +
-                           "); reopening " + cfg_.target);
+                           "); reopening " + port);
         verify_flash_ = true;
         reopen_at_ = Clock::now() + kReopen;  // the Pico re-enumerates after its reset
         broadcast_(link_message(), false);
