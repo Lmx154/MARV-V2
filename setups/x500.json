@@ -1,6 +1,6 @@
 {
 	"format": "marv-setup",
-	"schema_hash": 3584266557,
+	"schema_hash": 1922133486,
 	"kinds": {
 		"vehicle": "uav",
 		"sensors": "suite",
@@ -85,6 +85,10 @@
 		"controller.cascaded-pid.thrust_min_g": 0.2,
 		"controller.cascaded-pid.thrust_max_frac": 0.9,
 		"controller.cascaded-pid.yaw_torque_max": 0.3656,
+		"controller.cascaded-pid.accel_max_x": 19.199,
+		"controller.cascaded-pid.accel_max_y": 19.199,
+		"controller.cascaded-pid.accel_max_z": 4.712,
+		"controller.cascaded-pid.input_tc": 0.1,
 		"controller.apogee-pid.kp": 0.05,
 		"controller.apogee-pid.ki": 0.005,
 		"controller.apogee-pid.i_limit": 20,
