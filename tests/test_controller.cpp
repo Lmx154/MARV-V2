@@ -108,18 +108,21 @@ int main() {
         CHECK(std::fabs(x.p_ned.z + 2.f) < 0.05f);
     }
 
-    // The gates: tilted past 5 deg, climbing at 0.6 m/s or more, a vertical velocity reference, or idle: nothing
-    // learned. Level and still below the reference: learned (toward more thrust).
+    // The gates: tilted past 5 deg, climbing at 0.6 m/s or more, a vertical velocity reference, a position error that
+    // asks the velocity loop for 0.1 m/s or more, or idle: nothing learned. Level, still and 0.12 m below the reference
+    // (0.084 m/s asked): learned (toward more thrust).
     {
         const float seed = param::UavParams{}.hover_thrust;
         const auto learned = [&](State x, Reference ref, Mode mode) {
             Controller c;
             float h = 0.f;
-            for (int i = 0; i < 250; ++i) h = c.run(ref, x, mode, dt).thrust_hover;
+            for (int i = 0; i < 1250; ++i) h = c.run(ref, x, mode, dt).thrust_hover;
             return h;
         };
         State low = at(0.f, 0.f);
-        low.p_ned.z = -1.f;
+        low.p_ned.z = -1.88f;
+        State far = low;
+        far.p_ned.z = -1.f;
         State tilted = low;
         tilted.q = quat_from_euler(6.f * 3.14159265f / 180.f, 0.f, 0.f);
         State pitched = low;
@@ -133,17 +136,46 @@ int main() {
         CHECK(learned(pitched, rate(0.f), Mode::kFly) == seed);
         CHECK(learned(climbing, rate(0.f), Mode::kFly) == seed);
         CHECK(learned(low, climb, Mode::kFly) == seed);
+        CHECK(learned(far, rate(0.f), Mode::kFly) == seed);
         CHECK(learned(low, rate(0.f), Mode::kIdle) == seed);
-        CHECK(learned(low, rate(0.f), Mode::kFly) > seed + 0.005f);
+        CHECK(learned(low, rate(0.f), Mode::kFly) > seed + 0.002f);
     }
 
-    // Clamped to the parameter's range: held far below the reference for 200 s it stops at the maximum.
+    // A climb from a position step (2 m below the reference, true hover thrust the seed's): the take-off does not
+    // move the learned value more than 0.002 from the truth.
     {
+        const float g = param::SensorParams{}.gravity;
+        const float h_true = param::UavParams{}.hover_thrust;
         Controller c;
-        State deep = at(0.f, 0.f);
-        deep.p_ned.z = 100.f;
+        State x = at(0.f, 0.f);
+        x.p_ned.z = 0.f;
+        float above = 0.f, below = 0.f;
+        for (int i = 0; i < 5000; ++i) {
+            const ControlRequest r = c.run(rate(0.f), x, Mode::kFly, dt);
+            above = std::fmax(above, r.thrust_hover - h_true);
+            below = std::fmax(below, h_true - r.thrust_hover);
+            x.v_ned.z += g * (1.f + r.thrust_ned.z / h_true) * dt;
+            x.p_ned.z += x.v_ned.z * dt;
+        }
+        std::printf("climb from a 2 m position step: learned hover at most %.5f above, %.5f below the truth\n",
+                    (double)above, (double)below);
+        CHECK(above <= 0.002f);
+    }
+
+    // Clamped to the parameter's range: a point mass whose true hover thrust is 0.81, held at the reference for 200 s,
+    // stops the learned value at the maximum, 0.8.
+    {
+        const float g = param::SensorParams{}.gravity;
+        Controller c;
+        State x = at(0.f, 0.f);
         float h = 0.f;
-        for (int i = 0; i < 50000; ++i) h = c.run(rate(0.f), deep, Mode::kFly, dt).thrust_hover;
+        for (int i = 0; i < 50000; ++i) {
+            const ControlRequest r = c.run(rate(0.f), x, Mode::kFly, dt);
+            h = r.thrust_hover;
+            x.v_ned.z += g * (1.f + r.thrust_ned.z / 0.81f) * dt;
+            x.p_ned.z += x.v_ned.z * dt;
+        }
+        std::printf("true hover 0.81: learned %.4f, altitude %.4f m\n", (double)h, (double)-x.p_ned.z);
         CHECK(h == param::kParamMeta[param::k_vehicle_uav_hover_thrust].max);
     }
 

@@ -38,11 +38,15 @@ namespace {
 // hover thrusts and a total of thrust_max_frac of full thrust (the rest is left for the torques).
 // Hover thrust: low-passed toward the vertical thrust asked for, time constant kHoverTc, only in level hover (no
 // vertical speed or vertical velocity reference, roll and pitch within kHoverLevel), clamped to its parameter range.
+// It also waits while the position loop's own vertical velocity setpoint is kHoverVsp or more: a position step asks
+// for a climb with no velocity reference, and this keeps take-off and commanded climbs out of the estimate, the intent
+// of ArduCopter's gate (learn only in steady hover).
 
 constexpr float kRadPerDeg = 3.14159265358979f / 180.f;
 constexpr float kHoverTc = 10.f;                     // s
 constexpr float kHoverClimb = 0.6f;                  // m/s, ArduCopter/Attitude.cpp:57
 constexpr float kHoverLevel = 5.f * kRadPerDeg;      // rad, ArduCopter/Attitude.cpp:58
+constexpr float kHoverVsp = 0.1f;                    // m/s
 
 float clampf(float v, float lo, float hi) { return std::fmin(std::fmax(v, lo), hi); }
 
@@ -124,7 +128,7 @@ ControlRequest Controller::run(const Reference& ref, const State& nav, Mode mode
     const float roll = std::atan2(2.f * (nav.q.w * nav.q.x + nav.q.y * nav.q.z), 1.f - 2.f * (nav.q.x * nav.q.x + nav.q.y * nav.q.y));
     const float pitch = std::asin(clampf(2.f * (nav.q.w * nav.q.y - nav.q.z * nav.q.x), -1.f, 1.f));
     const bool climb_ref = (ref.has & kRefVel) && ref.v_ned.z != 0.f;
-    if (!climb_ref && std::fabs(nav.v_ned.z) < kHoverClimb && std::fabs(roll) < kHoverLevel &&
+    if (!climb_ref && std::fabs(v_sp.z) < kHoverVsp && std::fabs(nav.v_ned.z) < kHoverClimb && std::fabs(roll) < kHoverLevel &&
         std::fabs(pitch) < kHoverLevel && -f.z > 0.f && dt > 0.f)
         hover_ = clampf(hover_ + (dt / (dt + kHoverTc)) * (-f.z - hover_), hover_min_, hover_max_);
 
