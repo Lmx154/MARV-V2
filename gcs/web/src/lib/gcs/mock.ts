@@ -145,7 +145,7 @@ export class MockFc {
 			schema.families
 				.find((f) => f.id === 'guidance')
 				?.kinds.find((k) => k.id === 'trajectory')
-				?.params.find((p) => p.id === 'cruise_speed')?.index ?? -1;
+				?.params.find((p) => p.id === 'cruise_speed.hold')?.index ?? -1;
 		const f0 = schema.factory[0];
 		this.staged = { kind: f0.kinds.slice(), values: f0.values.map((v) => Math.fround(v)) };
 		this.running = copy(this.staged);

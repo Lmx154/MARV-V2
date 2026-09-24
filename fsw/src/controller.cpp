@@ -96,7 +96,7 @@ void command_model(float e, float& w, float& a, float w_max, float a_max, float 
 Controller::Controller(const param::ControllerParams& c, const param::UavParams& v, const param::SensorParams& s)
     : c_(c),
       gravity_(s.gravity),
-      tan_tilt_max_(std::tan(c.tilt_max_deg * kRadPerDeg)),
+      tan_tilt_max_(std::tan(c.tilt_max_deg[param::k_profile_hold] * kRadPerDeg)),
       hover_(v.hover_thrust),
       hover_min_(param::kParamMeta[param::k_vehicle_uav_hover_thrust].min),
       hover_max_(param::kParamMeta[param::k_vehicle_uav_hover_thrust].max),
@@ -172,9 +172,9 @@ ControlRequest Controller::run(const Reference& ref, const State& nav, Mode mode
         w_t_.z = a_t_.z = 0.f;
     }
     const Vec3 et = rotvec_from_quat(conj(q_t_) * q_des);
-    command_model(et.x, w_t_.x, a_t_.x, c_.rate_max_x, c_.accel_max_x, c_.input_tc, dt);
-    command_model(et.y, w_t_.y, a_t_.y, c_.rate_max_y, c_.accel_max_y, c_.input_tc, dt);
-    command_model(et.z, w_t_.z, a_t_.z, c_.rate_max_z, c_.accel_max_z, c_.input_tc, dt);
+    command_model(et.x, w_t_.x, a_t_.x, c_.rate_max_x, c_.accel_max_x, c_.input_tc[param::k_profile_hold], dt);
+    command_model(et.y, w_t_.y, a_t_.y, c_.rate_max_y, c_.accel_max_y, c_.input_tc[param::k_profile_hold], dt);
+    command_model(et.z, w_t_.z, a_t_.z, c_.rate_max_z, c_.accel_max_z, c_.input_tc[param::k_profile_hold], dt);
 
     // Attitude P on the quaternion error to the target, in the body frame, plus the target's rate.
     const Quat q_bt = conj(nav.q) * q_t_;

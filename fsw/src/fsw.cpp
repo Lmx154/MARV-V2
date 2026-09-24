@@ -88,6 +88,7 @@ Tick Fsw::step(const SensorBus& bus) {
     out.tlm.preset = preset_;
     out.tlm.home_valid = home_.valid();
     out.tlm.home = home_.origin();
+    out.tlm.profile = param::k_profile_hold;
     return out;
 }
 

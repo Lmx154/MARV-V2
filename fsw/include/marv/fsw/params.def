@@ -2,12 +2,16 @@
 // Expanded by params.hpp (flight side: identifiers and numbers only, the string columns are dropped) and by the GCS
 // (every column). Row kinds, in file order:
 //   MARV_FAMILY(family, label)                        the seven families, in wire order (Setup::kind[] index)
+//   MARV_PROFILE(id, label)                           the four flight profiles, in wire order (MissionCommand::profile)
 //   MARV_KIND(family, kind, name, label, summary, vehicles)  a kind of the family; its index is its order within the family;
 //                                                     vehicles: the vehicle classes it serves (kClassUav, kClassRocket)
 //   MARV_PART(family, kind, id, label)                a group of the kind's parameters: every MARV_PARAM up to the next part
 //   MARV_PARAM(family, kind, id, label, unit, default, min, max, step, digits, note, source)
-// A parameter's index (Setup::values[]) is its order in the file. Renaming, adding, removing or moving a family, kind or
-// parameter changes kSchemaHash, which discards a stored setup. The comment above each parameter is the reason for its
+//   MARV_PROFILED(family, kind, id, label, unit, hold, freestyle, stabilized, agile, min, max, step, digits, note, source)
+//                                                     a parameter with a value per profile: four defaults in profile order,
+//                                                     one range; four consecutive indices, profile order
+// A parameter's index (Setup::values[]) is its order in the file, a profiled row counting four. Renaming, adding, removing
+// or moving a family, profile, kind or parameter changes kSchemaHash, which discards a stored setup. The comment above each parameter is the reason for its
 // range. Units are the flight software's (SI, rad).
 
 #ifndef MARV_FAMILY
@@ -22,6 +26,12 @@
 #ifndef MARV_PARAM
 #define MARV_PARAM(family, kind, id, label, unit, dflt, min, max, step, digits, note, source)
 #endif
+#ifndef MARV_PROFILE
+#define MARV_PROFILE(id, label)
+#endif
+#ifndef MARV_PROFILED
+#define MARV_PROFILED(family, kind, id, label, unit, hold, freestyle, stabilized, agile, min, max, step, digits, note, source)
+#endif
 
 MARV_FAMILY(vehicle, "Vehicle")
 MARV_FAMILY(sensors, "Sensors")
@@ -30,6 +40,12 @@ MARV_FAMILY(guidance, "Guidance")
 MARV_FAMILY(controller, "Controller")
 MARV_FAMILY(allocation, "Allocation")
 MARV_FAMILY(actuators, "Actuators")
+
+// ADR-0012: a profile is a column of the profiled rows (limits and shaping only); every other parameter is shared.
+MARV_PROFILE(hold, "Hold")
+MARV_PROFILE(freestyle, "Freestyle")
+MARV_PROFILE(stabilized, "Stabilized")
+MARV_PROFILE(agile, "Agile")
 
 // ---- vehicle -----------------------------------------------------------------------------------------------------------
 
@@ -139,7 +155,7 @@ MARV_PARAM(estimator, complementary, k_baro, "Barometer gain", "1/s", 1.f, 0.f, 
 MARV_KIND(guidance, trajectory, "trajectory", "Trajectory", "Jerk-limited position smoothing along the mission's waypoints (PX4 PositionSmoothing): the reference moves toward the target at the cruise speed within the velocity, acceleration and jerk limits, corners into the next waypoint inside the acceptance radius, waits while the vehicle falls behind by more than the tracking error limits, and turns the nose along the path when the mission leaves the heading free.", kClassUav)
 MARV_PART(guidance, trajectory, speed, "Speed")
 // 0.5 to 20 m/s: a walking pace to PX4's MPC_XY_CRUISE maximum.
-MARV_PARAM(guidance, trajectory, cruise_speed, "Cruise speed", "m/s", 5.f, 0.5f, 20.f, 0.1f, 1, "Horizontal speed along a mission leg when the mission names none.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:49 MPC_XY_CRUISE default 5")
+MARV_PROFILED(guidance, trajectory, cruise_speed, "Cruise speed", "m/s", 5.f, 10.f, 5.f, 5.f, 0.5f, 20.f, 0.1f, 1, "Horizontal speed along a mission leg when the mission names none.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:49 MPC_XY_CRUISE default 5; freestyle: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_mode_params.yaml:21-86 MPC_VEL_MANUAL default 10; stabilized, agile: hold's")
 // 0.5 to 20 m/s: PX4's MPC_XY_VEL_MAX maximum, floored at a walking pace.
 MARV_PARAM(guidance, trajectory, xy_vel_max, "Max horizontal speed", "m/s", 12.f, 0.5f, 20.f, 0.1f, 1, "Horizontal speed the trajectory never exceeds, whatever the mission asks.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_control_limits_params.yaml:5 MPC_XY_VEL_MAX default 12")
 // PX4's MPC_Z_V_AUTO_UP range.
@@ -148,13 +164,13 @@ MARV_PARAM(guidance, trajectory, z_vel_up, "Max climb speed", "m/s", 3.f, 0.5f, 
 MARV_PARAM(guidance, trajectory, z_vel_dn, "Max descent speed", "m/s", 1.5f, 0.5f, 4.f, 0.1f, 1, "Vertical speed down the trajectory never exceeds.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:71 MPC_Z_V_AUTO_DN default 1.5")
 MARV_PART(guidance, trajectory, dynamics, "Acceleration and jerk")
 // PX4's MPC_ACC_HOR range.
-MARV_PARAM(guidance, trajectory, acc_xy, "Max horizontal acceleration", "m/s²", 3.f, 2.f, 15.f, 0.1f, 1, "Horizontal acceleration of the trajectory.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:82 MPC_ACC_HOR default 3")
+MARV_PROFILED(guidance, trajectory, acc_xy, "Max horizontal acceleration", "m/s²", 3.f, 5.f, 2.5f, 5.6f, 2.f, 15.f, 0.1f, 1, "Horizontal acceleration of the trajectory.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:82 MPC_ACC_HOR default 3; freestyle: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_mode_params.yaml:21-86 MPC_ACC_HOR_MAX default 5; stabilized: ArduPilot@0deeede043 libraries/AC_WPNav/AC_WPNav.h:15 WPNAV_ACCEL 250 cm/s^2; agile: g tan(2/3 45 deg) = 5.66, ArduPilot@0deeede043 libraries/AC_WPNav/AC_Loiter.cpp:233-241, rounded down")
 // PX4's MPC_ACC_UP_MAX range.
-MARV_PARAM(guidance, trajectory, acc_up, "Max upward acceleration", "m/s²", 4.f, 2.f, 15.f, 0.1f, 1, "Upward acceleration of the trajectory.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:5 MPC_ACC_UP_MAX default 4")
+MARV_PROFILED(guidance, trajectory, acc_up, "Max upward acceleration", "m/s²", 4.f, 4.f, 2.f, 5.6f, 2.f, 15.f, 0.1f, 1, "Upward acceleration of the trajectory.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:5 MPC_ACC_UP_MAX default 4; freestyle: hold's; stabilized: 2, ADR-0012 table; agile: PX4 responsiveness at r = 0.329, PX4@af2e7b4311 src/modules/mc_pos_control/MulticopterPositionControl.cpp:124-151")
 // PX4's MPC_ACC_DOWN_MAX range.
-MARV_PARAM(guidance, trajectory, acc_dn, "Max downward acceleration", "m/s²", 3.f, 2.f, 15.f, 0.1f, 1, "Downward acceleration of the trajectory.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:15 MPC_ACC_DOWN_MAX default 3")
+MARV_PROFILED(guidance, trajectory, acc_dn, "Max downward acceleration", "m/s²", 3.f, 3.f, 2.f, 5.5f, 2.f, 15.f, 0.1f, 1, "Downward acceleration of the trajectory.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:15 MPC_ACC_DOWN_MAX default 3; freestyle: hold's; stabilized: 2, ADR-0012 table; agile: PX4 responsiveness at r = 0.329, PX4@af2e7b4311 src/modules/mc_pos_control/MulticopterPositionControl.cpp:124-151")
 // PX4's MPC_JERK_AUTO range.
-MARV_PARAM(guidance, trajectory, jerk, "Max jerk", "m/s³", 4.f, 1.f, 80.f, 0.5f, 1, "Rate of change of the trajectory's acceleration.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:94 MPC_JERK_AUTO default 4")
+MARV_PROFILED(guidance, trajectory, jerk, "Max jerk", "m/s³", 4.f, 8.f, 1.f, 8.9f, 1.f, 80.f, 0.5f, 1, "Rate of change of the trajectory's acceleration.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:94 MPC_JERK_AUTO default 4; freestyle: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_mode_params.yaml:21-86 MPC_JERK_MAX default 8; stabilized: ArduPilot@0deeede043 libraries/AC_WPNav/AC_WPNav.cpp:37 WPNAV_JERK default 1.0; agile: PX4 responsiveness at r = 0.329, PX4@af2e7b4311 src/modules/mc_pos_control/MulticopterPositionControl.cpp:124-151")
 MARV_PART(guidance, trajectory, tracking, "Tracking")
 // PX4's MPC_XY_ERR_MAX range; 0 never waits for the vehicle.
 MARV_PARAM(guidance, trajectory, err_xy_max, "Max horizontal lag", "m", 2.f, 0.f, 10.f, 0.1f, 1, "Horizontal distance the vehicle may fall behind the trajectory before the trajectory slows to wait for it.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:116 MPC_XY_ERR_MAX default 2")
@@ -162,7 +178,7 @@ MARV_PARAM(guidance, trajectory, err_xy_max, "Max horizontal lag", "m", 2.f, 0.f
 MARV_PARAM(guidance, trajectory, err_z_max, "Max vertical lag", "m", 1.f, 0.f, 10.f, 0.1f, 1, "Vertical distance the vehicle may fall behind the trajectory before the trajectory slows to wait for it.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:134 MPC_Z_ERR_MAX default 1")
 MARV_PART(guidance, trajectory, heading, "Heading")
 // PX4's MPC_YAWRAUTO_MAX range, 5 to 360 deg/s.
-MARV_PARAM(guidance, trajectory, yaw_rate_auto, "Max yaw rate", "rad/s", 1.047f, 0.087f, 6.283f, 0.001f, 3, "Rate the nose turns toward the path direction when the mission leaves the heading free.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:21 MPC_YAWRAUTO_MAX default 60 deg/s")
+MARV_PROFILED(guidance, trajectory, yaw_rate_auto, "Max yaw rate", "rad/s", 1.047f, 1.5f, 0.524f, 1.5f, 0.087f, 6.283f, 0.001f, 3, "Rate the nose turns toward the path direction when the mission leaves the heading free.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:21 MPC_YAWRAUTO_MAX default 60 deg/s; freestyle, agile: 1.5, the controller's rate_max_z default, ADR-0012 table; stabilized: 30 deg/s, ADR-0012 table (a design choice)")
 // Toolbox guidance.ts headingMinSpeed range.
 MARV_PARAM(guidance, trajectory, heading_min_speed, "Heading hold below", "m/s", 0.3f, 0.f, 2.f, 0.05f, 2, "Below this horizontal path speed the heading is held.", "toolbox@3b7387b src/lib/sim/lab/blocks/guidance.ts:25 headingMinSpeed")
 
@@ -227,7 +243,7 @@ MARV_PARAM(controller, cascaded_pid, rate_max_z, "Max yaw rate", "rad/s", 1.5f, 
 // Toolbox controller.ts vMax floor; up to 20 m/s, PX4's MPC_XY_VEL_MAX maximum, so the trajectory's limits fit under it.
 MARV_PARAM(controller, cascaded_pid, vel_max, "Max velocity setpoint", "m/s", 12.f, 0.5f, 20.f, 0.1f, 1, "Norm limit of the velocity setpoint.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_control_limits_params.yaml:5 MPC_XY_VEL_MAX default 12")
 // Toolbox controller.ts tiltMaxDeg range.
-MARV_PARAM(controller, cascaded_pid, tilt_max_deg, "Max tilt", "deg", 35.f, 5.f, 60.f, 1.f, 0, "The thrust vector stays within this angle of vertical.", "controller.cpp:54 kTanTiltMax = tan(35 deg)")
+MARV_PROFILED(controller, cascaded_pid, tilt_max_deg, "Max tilt", "deg", 35.f, 45.f, 35.f, 45.f, 5.f, 60.f, 1.f, 0, "The thrust vector stays within this angle of vertical.", "controller.cpp:54 kTanTiltMax = tan(35 deg); freestyle, agile: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_control_limits_params.yaml:48-55 MPC_TILTMAX_AIR default 45; stabilized: hold's")
 // Toolbox controller.ts thrustMinG range.
 MARV_PARAM(controller, cascaded_pid, thrust_min_g, "Min vertical thrust", "g", 0.2f, 0.f, 1.f, 0.05f, 2, "Floor of the vertical thrust demand, in multiples of the weight.", "controller.cpp:55 kThrustMin = 0.2 m g")
 // 30 % to all of the four rotors' full thrust; what is left is for the torques.
@@ -241,7 +257,7 @@ MARV_PARAM(controller, cascaded_pid, accel_max_y, "Max pitch acceleration", "rad
 // 0.1 to 12.6 rad/s^2 (ArduPilot's ATC_ACC_Y_MAX range, 720 deg/s^2; its 0 = off is not kept).
 MARV_PARAM(controller, cascaded_pid, accel_max_z, "Max yaw acceleration", "rad/s²", 4.712f, 0.1f, 12.6f, 0.05f, 2, "Angular acceleration of the attitude target on yaw: the target heading moves toward the reference within it and rate_max_z, and its rate is fed forward to the rate loop.", "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.h:23 AC_ATTITUDE_CONTROL_ACCEL_Y_MAX_DEFAULT_DEGSS 270 deg/s^2 (ATC_ACC_Y_MAX, AC_AttitudeControl.cpp:183) = 4.712 rad/s^2")
 // 0.01 to 1 s: ArduPilot's ATC_INPUT_TC range, 0.05 very crisp to 0.5 very soft (its 0 = 10 ticks is not kept).
-MARV_PARAM(controller, cascaded_pid, input_tc, "Input time constant", "s", 0.1f, 0.01f, 1.f, 0.01f, 2, "The target's acceleration reaches its limit in this time: the jerk is the acceleration limit over it, on every axis.", "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.cpp:16 AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT 0.10 s (ATC_INPUT_TC, Copter); jerk = accel_max / input_tc, AC_AttitudeControl.cpp:1128. ArduPilot's yaw uses PILOT_Y_RATE_TC instead (0: 10 ticks, AC_AttitudeControl.cpp:1120-1123)")
+MARV_PROFILED(controller, cascaded_pid, input_tc, "Input time constant", "s", 0.1f, 0.05f, 0.2f, 0.1f, 0.01f, 1.f, 0.01f, 2, "The target's acceleration reaches its limit in this time: the jerk is the acceleration limit over it, on every axis.", "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.cpp:16 AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT 0.10 s (ATC_INPUT_TC, Copter); jerk = accel_max / input_tc, AC_AttitudeControl.cpp:1128. ArduPilot's yaw uses PILOT_Y_RATE_TC instead (0: 10 ticks, AC_AttitudeControl.cpp:1120-1123); freestyle: 0.05 (Very Crisp), ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.cpp:132; stabilized: 0.2 (Soft), same line; agile: hold's")
 
 MARV_KIND(controller, apogee_pid, "apogee-pid", "Apogee PI (air brake)", "Brake deployment = clamp(kp e + ki int(e), 0, 1) while the mission flags the coast and the predictor's apogee is valid, e the predicted apogee with the brake closed minus the target; closed otherwise. The integral starts at zero and is limited to +-i_limit.", kClassRocket)
 MARV_PART(controller, apogee_pid, gains, "Gains")
@@ -276,3 +292,5 @@ MARV_KIND(actuators, brake_servo, "brake-servo", "Brake servo", "The brake servo
 #undef MARV_KIND
 #undef MARV_PART
 #undef MARV_PARAM
+#undef MARV_PROFILE
+#undef MARV_PROFILED

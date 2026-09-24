@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <initializer_list>
+#include <limits>
 
 #include <marv/link/protocol.hpp>
 
@@ -38,8 +39,8 @@ static bool decode_all(const std::uint8_t* p, std::size_t n, link::Decoder& d, l
     return got;
 }
 
-static_assert(link::kActuatorsBody == 29 && link::kReferenceBody == 89 && link::kMissionBody == 91 &&
-                  link::kControlRequestBody == 32 && link::kTelemetryBody == 115,
+static_assert(link::kActuatorsBody == 29 && link::kReferenceBody == 89 && link::kMissionBody == 109 &&
+                  link::kControlRequestBody == 32 && link::kTelemetryBody == 116 && link::kMaxBody == 116,
               "the bodies of the airframe-agnostic contracts");
 
 int main() {
@@ -97,7 +98,7 @@ int main() {
 
     // MissionCommand, State (truth) and Telemetry round trips: every byte of the body comes back.
     {
-        MissionCommand in{Mode::kFly, NavSource::kTruth, {kRefVel | kRefYawRate | kRefCoast | kRefApogee, {1.f, -2.f, -3.f}, {0.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, 1.5708f, -0.8f, {1.f, 0.f, 0.f, 0.f}, 284.f, 301.5f, {4.f, -5.f, -6.5f}, 7.25f, 2.f}};
+        MissionCommand in{Mode::kFly, NavSource::kTruth, {kRefVel | kRefYawRate | kRefCoast | kRefApogee, {1.f, -2.f, -3.f}, {0.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, 1.5708f, -0.8f, {1.f, 0.f, 0.f, 0.f}, 284.f, 301.5f, {4.f, -5.f, -6.5f}, 7.25f, 2.f}, 3, 1, {0.5f, -0.25f, 1.f, -1.f}};
         link::Decoder d;
         link::Packet p{};
         CHECK(decode_all(frame, link::encode(in, frame), d, p));
@@ -110,6 +111,49 @@ int main() {
         CHECK(out.ref.p_next_ned.x == 4.f && out.ref.p_next_ned.y == -5.f && out.ref.p_next_ned.z == -6.5f &&
               out.ref.speed_mps == 7.25f && out.ref.accept_m == 2.f);
         CHECK(p.len == link::kMissionBody && std::memcmp(&out.ref.p_next_ned, &in.ref.p_next_ned, sizeof(Vec3)) == 0);
+        CHECK(out.profile == 3 && out.manual == 1 && std::memcmp(&out.sticks, &in.sticks, sizeof(Sticks)) == 0);
+
+        // A sender that sets none of profile, manual and sticks sends hold, auto and centred sticks.
+        const MissionCommand silent{Mode::kFly, NavSource::kEstimate, {}};
+        CHECK(silent.profile == param::k_profile_hold && silent.manual == 0 && silent.sticks.fwd == 0.f &&
+              silent.sticks.right == 0.f && silent.sticks.up == 0.f && silent.sticks.yaw == 0.f);
+
+        // Decode rules: a profile >= kProfileCount reads as hold, a manual other than 1 as auto (0), each stick clamped
+        // to -1..1 and NaN read as 0.
+        const float nan = std::numeric_limits<float>::quiet_NaN(), inf = std::numeric_limits<float>::infinity();
+        for (std::uint8_t bad : {std::uint8_t{4}, std::uint8_t{0xFF}}) {
+            MissionCommand odd = in;
+            odd.profile = bad;
+            odd.manual = static_cast<std::uint8_t>(bad - 2);
+            odd.sticks = {1.5f, -7.f, nan, inf};
+            MissionCommand got = in;
+            CHECK(decode_all(frame, link::encode(odd, frame), d, p) && p.as(got));
+            CHECK(got.profile == param::k_profile_hold && got.manual == 0);
+            CHECK(got.sticks.fwd == 1.f && got.sticks.right == -1.f && got.sticks.up == 0.f && got.sticks.yaw == 1.f);
+            odd.sticks = {-inf, -nan, -1.f, 1.f};
+            CHECK(decode_all(frame, link::encode(odd, frame), d, p) && p.as(got));
+            CHECK(got.sticks.fwd == -1.f && got.sticks.right == 0.f && got.sticks.up == -1.f && got.sticks.yaw == 1.f);
+        }
+        for (std::uint8_t pr = 0; pr < param::kProfileCount; ++pr) {
+            MissionCommand one = in, got{};
+            one.profile = pr;
+            one.manual = 0;
+            CHECK(decode_all(frame, link::encode(one, frame), d, p) && p.as(got) && got.profile == pr && got.manual == 0);
+        }
+
+        // A 91-byte MissionCommand (before profile, manual and sticks) is rejected.
+        {
+            std::uint8_t raw91[1 + 91 + 2] = {link::kMission, static_cast<std::uint8_t>(Mode::kFly)};
+            const std::uint16_t c91 = link::crc16(raw91, 1 + 91);
+            raw91[1 + 91] = static_cast<std::uint8_t>(c91 & 0xFF);
+            raw91[1 + 91 + 1] = static_cast<std::uint8_t>(c91 >> 8);
+            std::uint8_t enc[link::kMaxFrame];
+            const std::size_t n91 = link::cobs_encode(raw91, sizeof raw91, enc);
+            enc[n91] = 0;
+            MissionCommand kept{Mode::kArmed, NavSource::kEstimate, {}};
+            CHECK(decode_all(enc, n91 + 1, d, p) && p.id == link::kMission && p.len == 91);
+            CHECK(!p.as(kept) && kept.mode == Mode::kArmed);
+        }
 
         // An older 69-byte Reference body (71-byte MissionCommand, before p_next_ned, speed_mps and accept_m) is rejected.
         std::uint8_t raw[1 + 71 + 2] = {link::kMission, static_cast<std::uint8_t>(Mode::kFly)};
@@ -129,13 +173,14 @@ int main() {
         CHECK(p.id == link::kTruth && p.as(so));
         CHECK(so.t_us == 77 && so.q.z == 0.7071f && so.w_frd.z == 0.3f && so.valid);
 
-        const Telemetry tm{78, st, {{0.f, 0.f, -0.681f}, {0.01f, -0.02f, 0.f}, 0.6811f, 0.25f}, 3, true, {473763880, 85477780, 408.5f}};
+        const Telemetry tm{78, st, {{0.f, 0.f, -0.681f}, {0.01f, -0.02f, 0.f}, 0.6811f, 0.25f}, 3, true, {473763880, 85477780, 408.5f}, 2};
         CHECK(decode_all(frame, link::encode(tm, frame), d, p));
         Telemetry to{};
         CHECK(p.as(to));
         CHECK(to.t_us == 78 && to.est.p_ned.y == 2.f && to.req.thrust_ned.z == -0.681f && to.req.torque_frd.y == -0.02f);
         CHECK(to.req.thrust_hover == 0.6811f && to.req.brake == 0.25f);
         CHECK(to.preset == 3 && to.home_valid && to.home.lat_e7 == 473763880 && to.home.alt_m == 408.5f);
+        CHECK(to.profile == 2 && p.len == link::kTelemetryBody);
 
         link::SetPreset sp{};
         CHECK(decode_all(frame, link::encode(link::SetPreset{4}, frame), d, p));

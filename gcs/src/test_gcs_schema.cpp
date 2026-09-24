@@ -1,6 +1,6 @@
-// /api/schema against params.hpp and presets.hpp: every parameter once, at its index, with the table's id, default and
-// range; the families and kinds in wire order, each kind with the vehicle kinds it serves; the factory setups value
-// for value.
+// /api/schema against params.hpp and presets.hpp: every parameter once, at its index, with the table's id (a profiled
+// one's id.profile, with its profile), default and range; the profiles in order; the families and kinds in wire order,
+// each kind with the vehicle kinds it serves; the factory setups value for value.
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -44,6 +44,12 @@ int main() {
     const json::object& s = doc.as_object();
     CHECK(s.at("schema_hash").to_number<std::uint64_t>() == kSchemaHash);
 
+    const json::array& profiles = s.at("profiles").as_array();
+    CHECK(profiles.size() == kProfileCount);
+    for (std::size_t i = 0; i < profiles.size() && i < kProfileCount; ++i)
+        CHECK(profiles[i].as_object().at("id").as_string() == kProfileId[i] &&
+              profiles[i].as_object().at("label").as_string() == kProfileLabel[i]);
+
     const json::array& families = s.at("families").as_array();
     CHECK(families.size() == kFamilyCount);
     std::vector<int> seen(kParamCount, 0);
@@ -77,7 +83,10 @@ int main() {
                 ++count;
                 ids.emplace_back(p.at("id").as_string());
                 CHECK(kParamMeta[i].family == f && kParamMeta[i].kind == k);
-                CHECK(p.at("id").as_string() == rows[i]->id);
+                const std::uint8_t pr = rows[i]->profile;
+                CHECK(p.at("id").as_string() ==
+                      (pr == kShared ? std::string(rows[i]->id) : std::string(rows[i]->id) + "." + kProfileId[pr]));
+                CHECK(pr == kShared ? !p.contains("profile") : p.at("profile").as_string() == kProfileId[pr]);
                 CHECK(f32(p.at("default")) == kParamMeta[i].dflt);
                 CHECK(f32(p.at("min")) == kParamMeta[i].min);
                 CHECK(f32(p.at("max")) == kParamMeta[i].max);

@@ -1,5 +1,23 @@
 {
-	"schema_hash": 46936394,
+	"schema_hash": 3088691637,
+	"profiles": [
+		{
+			"id": "hold",
+			"label": "Hold"
+		},
+		{
+			"id": "freestyle",
+			"label": "Freestyle"
+		},
+		{
+			"id": "stabilized",
+			"label": "Stabilized"
+		},
+		{
+			"id": "agile",
+			"label": "Agile"
+		}
+	],
 	"families": [
 		{
 			"id": "vehicle",
@@ -748,7 +766,8 @@
 					],
 					"params": [
 						{
-							"id": "cruise_speed",
+							"id": "cruise_speed.hold",
+							"profile": "hold",
 							"label": "Cruise speed",
 							"unit": "m/s",
 							"default": 5,
@@ -757,8 +776,50 @@
 							"step": 0.1,
 							"digits": 1,
 							"note": "Horizontal speed along a mission leg when the mission names none.",
-							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:49 MPC_XY_CRUISE default 5",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:49 MPC_XY_CRUISE default 5; freestyle: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_mode_params.yaml:21-86 MPC_VEL_MANUAL default 10; stabilized, agile: hold's",
 							"index": 39
+						},
+						{
+							"id": "cruise_speed.freestyle",
+							"profile": "freestyle",
+							"label": "Cruise speed",
+							"unit": "m/s",
+							"default": 1e+01,
+							"min": 0.5,
+							"max": 2e+01,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Horizontal speed along a mission leg when the mission names none.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:49 MPC_XY_CRUISE default 5; freestyle: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_mode_params.yaml:21-86 MPC_VEL_MANUAL default 10; stabilized, agile: hold's",
+							"index": 40
+						},
+						{
+							"id": "cruise_speed.stabilized",
+							"profile": "stabilized",
+							"label": "Cruise speed",
+							"unit": "m/s",
+							"default": 5,
+							"min": 0.5,
+							"max": 2e+01,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Horizontal speed along a mission leg when the mission names none.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:49 MPC_XY_CRUISE default 5; freestyle: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_mode_params.yaml:21-86 MPC_VEL_MANUAL default 10; stabilized, agile: hold's",
+							"index": 41
+						},
+						{
+							"id": "cruise_speed.agile",
+							"profile": "agile",
+							"label": "Cruise speed",
+							"unit": "m/s",
+							"default": 5,
+							"min": 0.5,
+							"max": 2e+01,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Horizontal speed along a mission leg when the mission names none.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:49 MPC_XY_CRUISE default 5; freestyle: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_mode_params.yaml:21-86 MPC_VEL_MANUAL default 10; stabilized, agile: hold's",
+							"index": 42
 						},
 						{
 							"id": "xy_vel_max",
@@ -771,7 +832,7 @@
 							"digits": 1,
 							"note": "Horizontal speed the trajectory never exceeds, whatever the mission asks.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_control_limits_params.yaml:5 MPC_XY_VEL_MAX default 12",
-							"index": 40
+							"index": 43
 						},
 						{
 							"id": "z_vel_up",
@@ -784,7 +845,7 @@
 							"digits": 1,
 							"note": "Vertical speed up the trajectory never exceeds.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:60 MPC_Z_V_AUTO_UP default 3",
-							"index": 41
+							"index": 44
 						},
 						{
 							"id": "z_vel_dn",
@@ -797,10 +858,11 @@
 							"digits": 1,
 							"note": "Vertical speed down the trajectory never exceeds.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:71 MPC_Z_V_AUTO_DN default 1.5",
-							"index": 42
+							"index": 45
 						},
 						{
-							"id": "acc_xy",
+							"id": "acc_xy.hold",
+							"profile": "hold",
 							"label": "Max horizontal acceleration",
 							"unit": "m/s²",
 							"default": 3,
@@ -809,11 +871,54 @@
 							"step": 0.1,
 							"digits": 1,
 							"note": "Horizontal acceleration of the trajectory.",
-							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:82 MPC_ACC_HOR default 3",
-							"index": 43
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:82 MPC_ACC_HOR default 3; freestyle: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_mode_params.yaml:21-86 MPC_ACC_HOR_MAX default 5; stabilized: ArduPilot@0deeede043 libraries/AC_WPNav/AC_WPNav.h:15 WPNAV_ACCEL 250 cm/s^2; agile: g tan(2/3 45 deg) = 5.66, ArduPilot@0deeede043 libraries/AC_WPNav/AC_Loiter.cpp:233-241, rounded down",
+							"index": 46
 						},
 						{
-							"id": "acc_up",
+							"id": "acc_xy.freestyle",
+							"profile": "freestyle",
+							"label": "Max horizontal acceleration",
+							"unit": "m/s²",
+							"default": 5,
+							"min": 2,
+							"max": 15,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Horizontal acceleration of the trajectory.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:82 MPC_ACC_HOR default 3; freestyle: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_mode_params.yaml:21-86 MPC_ACC_HOR_MAX default 5; stabilized: ArduPilot@0deeede043 libraries/AC_WPNav/AC_WPNav.h:15 WPNAV_ACCEL 250 cm/s^2; agile: g tan(2/3 45 deg) = 5.66, ArduPilot@0deeede043 libraries/AC_WPNav/AC_Loiter.cpp:233-241, rounded down",
+							"index": 47
+						},
+						{
+							"id": "acc_xy.stabilized",
+							"profile": "stabilized",
+							"label": "Max horizontal acceleration",
+							"unit": "m/s²",
+							"default": 2.5,
+							"min": 2,
+							"max": 15,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Horizontal acceleration of the trajectory.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:82 MPC_ACC_HOR default 3; freestyle: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_mode_params.yaml:21-86 MPC_ACC_HOR_MAX default 5; stabilized: ArduPilot@0deeede043 libraries/AC_WPNav/AC_WPNav.h:15 WPNAV_ACCEL 250 cm/s^2; agile: g tan(2/3 45 deg) = 5.66, ArduPilot@0deeede043 libraries/AC_WPNav/AC_Loiter.cpp:233-241, rounded down",
+							"index": 48
+						},
+						{
+							"id": "acc_xy.agile",
+							"profile": "agile",
+							"label": "Max horizontal acceleration",
+							"unit": "m/s²",
+							"default": 5.6,
+							"min": 2,
+							"max": 15,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Horizontal acceleration of the trajectory.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:82 MPC_ACC_HOR default 3; freestyle: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_mode_params.yaml:21-86 MPC_ACC_HOR_MAX default 5; stabilized: ArduPilot@0deeede043 libraries/AC_WPNav/AC_WPNav.h:15 WPNAV_ACCEL 250 cm/s^2; agile: g tan(2/3 45 deg) = 5.66, ArduPilot@0deeede043 libraries/AC_WPNav/AC_Loiter.cpp:233-241, rounded down",
+							"index": 49
+						},
+						{
+							"id": "acc_up.hold",
+							"profile": "hold",
 							"label": "Max upward acceleration",
 							"unit": "m/s²",
 							"default": 4,
@@ -822,11 +927,54 @@
 							"step": 0.1,
 							"digits": 1,
 							"note": "Upward acceleration of the trajectory.",
-							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:5 MPC_ACC_UP_MAX default 4",
-							"index": 44
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:5 MPC_ACC_UP_MAX default 4; freestyle: hold's; stabilized: 2, ADR-0012 table; agile: PX4 responsiveness at r = 0.329, PX4@af2e7b4311 src/modules/mc_pos_control/MulticopterPositionControl.cpp:124-151",
+							"index": 50
 						},
 						{
-							"id": "acc_dn",
+							"id": "acc_up.freestyle",
+							"profile": "freestyle",
+							"label": "Max upward acceleration",
+							"unit": "m/s²",
+							"default": 4,
+							"min": 2,
+							"max": 15,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Upward acceleration of the trajectory.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:5 MPC_ACC_UP_MAX default 4; freestyle: hold's; stabilized: 2, ADR-0012 table; agile: PX4 responsiveness at r = 0.329, PX4@af2e7b4311 src/modules/mc_pos_control/MulticopterPositionControl.cpp:124-151",
+							"index": 51
+						},
+						{
+							"id": "acc_up.stabilized",
+							"profile": "stabilized",
+							"label": "Max upward acceleration",
+							"unit": "m/s²",
+							"default": 2,
+							"min": 2,
+							"max": 15,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Upward acceleration of the trajectory.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:5 MPC_ACC_UP_MAX default 4; freestyle: hold's; stabilized: 2, ADR-0012 table; agile: PX4 responsiveness at r = 0.329, PX4@af2e7b4311 src/modules/mc_pos_control/MulticopterPositionControl.cpp:124-151",
+							"index": 52
+						},
+						{
+							"id": "acc_up.agile",
+							"profile": "agile",
+							"label": "Max upward acceleration",
+							"unit": "m/s²",
+							"default": 5.6,
+							"min": 2,
+							"max": 15,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Upward acceleration of the trajectory.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:5 MPC_ACC_UP_MAX default 4; freestyle: hold's; stabilized: 2, ADR-0012 table; agile: PX4 responsiveness at r = 0.329, PX4@af2e7b4311 src/modules/mc_pos_control/MulticopterPositionControl.cpp:124-151",
+							"index": 53
+						},
+						{
+							"id": "acc_dn.hold",
+							"profile": "hold",
 							"label": "Max downward acceleration",
 							"unit": "m/s²",
 							"default": 3,
@@ -835,11 +983,54 @@
 							"step": 0.1,
 							"digits": 1,
 							"note": "Downward acceleration of the trajectory.",
-							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:15 MPC_ACC_DOWN_MAX default 3",
-							"index": 45
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:15 MPC_ACC_DOWN_MAX default 3; freestyle: hold's; stabilized: 2, ADR-0012 table; agile: PX4 responsiveness at r = 0.329, PX4@af2e7b4311 src/modules/mc_pos_control/MulticopterPositionControl.cpp:124-151",
+							"index": 54
 						},
 						{
-							"id": "jerk",
+							"id": "acc_dn.freestyle",
+							"profile": "freestyle",
+							"label": "Max downward acceleration",
+							"unit": "m/s²",
+							"default": 3,
+							"min": 2,
+							"max": 15,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Downward acceleration of the trajectory.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:15 MPC_ACC_DOWN_MAX default 3; freestyle: hold's; stabilized: 2, ADR-0012 table; agile: PX4 responsiveness at r = 0.329, PX4@af2e7b4311 src/modules/mc_pos_control/MulticopterPositionControl.cpp:124-151",
+							"index": 55
+						},
+						{
+							"id": "acc_dn.stabilized",
+							"profile": "stabilized",
+							"label": "Max downward acceleration",
+							"unit": "m/s²",
+							"default": 2,
+							"min": 2,
+							"max": 15,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Downward acceleration of the trajectory.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:15 MPC_ACC_DOWN_MAX default 3; freestyle: hold's; stabilized: 2, ADR-0012 table; agile: PX4 responsiveness at r = 0.329, PX4@af2e7b4311 src/modules/mc_pos_control/MulticopterPositionControl.cpp:124-151",
+							"index": 56
+						},
+						{
+							"id": "acc_dn.agile",
+							"profile": "agile",
+							"label": "Max downward acceleration",
+							"unit": "m/s²",
+							"default": 5.5,
+							"min": 2,
+							"max": 15,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Downward acceleration of the trajectory.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:15 MPC_ACC_DOWN_MAX default 3; freestyle: hold's; stabilized: 2, ADR-0012 table; agile: PX4 responsiveness at r = 0.329, PX4@af2e7b4311 src/modules/mc_pos_control/MulticopterPositionControl.cpp:124-151",
+							"index": 57
+						},
+						{
+							"id": "jerk.hold",
+							"profile": "hold",
 							"label": "Max jerk",
 							"unit": "m/s³",
 							"default": 4,
@@ -848,8 +1039,50 @@
 							"step": 0.5,
 							"digits": 1,
 							"note": "Rate of change of the trajectory's acceleration.",
-							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:94 MPC_JERK_AUTO default 4",
-							"index": 46
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:94 MPC_JERK_AUTO default 4; freestyle: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_mode_params.yaml:21-86 MPC_JERK_MAX default 8; stabilized: ArduPilot@0deeede043 libraries/AC_WPNav/AC_WPNav.cpp:37 WPNAV_JERK default 1.0; agile: PX4 responsiveness at r = 0.329, PX4@af2e7b4311 src/modules/mc_pos_control/MulticopterPositionControl.cpp:124-151",
+							"index": 58
+						},
+						{
+							"id": "jerk.freestyle",
+							"profile": "freestyle",
+							"label": "Max jerk",
+							"unit": "m/s³",
+							"default": 8,
+							"min": 1,
+							"max": 8e+01,
+							"step": 0.5,
+							"digits": 1,
+							"note": "Rate of change of the trajectory's acceleration.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:94 MPC_JERK_AUTO default 4; freestyle: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_mode_params.yaml:21-86 MPC_JERK_MAX default 8; stabilized: ArduPilot@0deeede043 libraries/AC_WPNav/AC_WPNav.cpp:37 WPNAV_JERK default 1.0; agile: PX4 responsiveness at r = 0.329, PX4@af2e7b4311 src/modules/mc_pos_control/MulticopterPositionControl.cpp:124-151",
+							"index": 59
+						},
+						{
+							"id": "jerk.stabilized",
+							"profile": "stabilized",
+							"label": "Max jerk",
+							"unit": "m/s³",
+							"default": 1,
+							"min": 1,
+							"max": 8e+01,
+							"step": 0.5,
+							"digits": 1,
+							"note": "Rate of change of the trajectory's acceleration.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:94 MPC_JERK_AUTO default 4; freestyle: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_mode_params.yaml:21-86 MPC_JERK_MAX default 8; stabilized: ArduPilot@0deeede043 libraries/AC_WPNav/AC_WPNav.cpp:37 WPNAV_JERK default 1.0; agile: PX4 responsiveness at r = 0.329, PX4@af2e7b4311 src/modules/mc_pos_control/MulticopterPositionControl.cpp:124-151",
+							"index": 60
+						},
+						{
+							"id": "jerk.agile",
+							"profile": "agile",
+							"label": "Max jerk",
+							"unit": "m/s³",
+							"default": 8.9,
+							"min": 1,
+							"max": 8e+01,
+							"step": 0.5,
+							"digits": 1,
+							"note": "Rate of change of the trajectory's acceleration.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:94 MPC_JERK_AUTO default 4; freestyle: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_mode_params.yaml:21-86 MPC_JERK_MAX default 8; stabilized: ArduPilot@0deeede043 libraries/AC_WPNav/AC_WPNav.cpp:37 WPNAV_JERK default 1.0; agile: PX4 responsiveness at r = 0.329, PX4@af2e7b4311 src/modules/mc_pos_control/MulticopterPositionControl.cpp:124-151",
+							"index": 61
 						},
 						{
 							"id": "err_xy_max",
@@ -862,7 +1095,7 @@
 							"digits": 1,
 							"note": "Horizontal distance the vehicle may fall behind the trajectory before the trajectory slows to wait for it.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:116 MPC_XY_ERR_MAX default 2",
-							"index": 47
+							"index": 62
 						},
 						{
 							"id": "err_z_max",
@@ -875,10 +1108,11 @@
 							"digits": 1,
 							"note": "Vertical distance the vehicle may fall behind the trajectory before the trajectory slows to wait for it.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:134 MPC_Z_ERR_MAX default 1",
-							"index": 48
+							"index": 63
 						},
 						{
-							"id": "yaw_rate_auto",
+							"id": "yaw_rate_auto.hold",
+							"profile": "hold",
 							"label": "Max yaw rate",
 							"unit": "rad/s",
 							"default": 1.047,
@@ -887,8 +1121,50 @@
 							"step": 0.001,
 							"digits": 3,
 							"note": "Rate the nose turns toward the path direction when the mission leaves the heading free.",
-							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:21 MPC_YAWRAUTO_MAX default 60 deg/s",
-							"index": 49
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:21 MPC_YAWRAUTO_MAX default 60 deg/s; freestyle, agile: 1.5, the controller's rate_max_z default, ADR-0012 table; stabilized: 30 deg/s, ADR-0012 table (a design choice)",
+							"index": 64
+						},
+						{
+							"id": "yaw_rate_auto.freestyle",
+							"profile": "freestyle",
+							"label": "Max yaw rate",
+							"unit": "rad/s",
+							"default": 1.5,
+							"min": 0.087,
+							"max": 6.283,
+							"step": 0.001,
+							"digits": 3,
+							"note": "Rate the nose turns toward the path direction when the mission leaves the heading free.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:21 MPC_YAWRAUTO_MAX default 60 deg/s; freestyle, agile: 1.5, the controller's rate_max_z default, ADR-0012 table; stabilized: 30 deg/s, ADR-0012 table (a design choice)",
+							"index": 65
+						},
+						{
+							"id": "yaw_rate_auto.stabilized",
+							"profile": "stabilized",
+							"label": "Max yaw rate",
+							"unit": "rad/s",
+							"default": 0.524,
+							"min": 0.087,
+							"max": 6.283,
+							"step": 0.001,
+							"digits": 3,
+							"note": "Rate the nose turns toward the path direction when the mission leaves the heading free.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:21 MPC_YAWRAUTO_MAX default 60 deg/s; freestyle, agile: 1.5, the controller's rate_max_z default, ADR-0012 table; stabilized: 30 deg/s, ADR-0012 table (a design choice)",
+							"index": 66
+						},
+						{
+							"id": "yaw_rate_auto.agile",
+							"profile": "agile",
+							"label": "Max yaw rate",
+							"unit": "rad/s",
+							"default": 1.5,
+							"min": 0.087,
+							"max": 6.283,
+							"step": 0.001,
+							"digits": 3,
+							"note": "Rate the nose turns toward the path direction when the mission leaves the heading free.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:21 MPC_YAWRAUTO_MAX default 60 deg/s; freestyle, agile: 1.5, the controller's rate_max_z default, ADR-0012 table; stabilized: 30 deg/s, ADR-0012 table (a design choice)",
+							"index": 67
 						},
 						{
 							"id": "heading_min_speed",
@@ -901,7 +1177,7 @@
 							"digits": 2,
 							"note": "Below this horizontal path speed the heading is held.",
 							"source": "toolbox@3b7387b src/lib/sim/lab/blocks/guidance.ts:25 headingMinSpeed",
-							"index": 50
+							"index": 68
 						}
 					],
 					"parts": [
@@ -909,7 +1185,10 @@
 							"id": "speed",
 							"label": "Speed",
 							"params": [
-								"cruise_speed",
+								"cruise_speed.hold",
+								"cruise_speed.freestyle",
+								"cruise_speed.stabilized",
+								"cruise_speed.agile",
 								"xy_vel_max",
 								"z_vel_up",
 								"z_vel_dn"
@@ -919,10 +1198,22 @@
 							"id": "dynamics",
 							"label": "Acceleration and jerk",
 							"params": [
-								"acc_xy",
-								"acc_up",
-								"acc_dn",
-								"jerk"
+								"acc_xy.hold",
+								"acc_xy.freestyle",
+								"acc_xy.stabilized",
+								"acc_xy.agile",
+								"acc_up.hold",
+								"acc_up.freestyle",
+								"acc_up.stabilized",
+								"acc_up.agile",
+								"acc_dn.hold",
+								"acc_dn.freestyle",
+								"acc_dn.stabilized",
+								"acc_dn.agile",
+								"jerk.hold",
+								"jerk.freestyle",
+								"jerk.stabilized",
+								"jerk.agile"
 							]
 						},
 						{
@@ -937,7 +1228,10 @@
 							"id": "heading",
 							"label": "Heading",
 							"params": [
-								"yaw_rate_auto",
+								"yaw_rate_auto.hold",
+								"yaw_rate_auto.freestyle",
+								"yaw_rate_auto.stabilized",
+								"yaw_rate_auto.agile",
 								"heading_min_speed"
 							]
 						}
@@ -971,7 +1265,7 @@
 							"digits": 3,
 							"note": "Integration step of the rollout; coarser is cheaper and less accurate.",
 							"source": "toolbox guidance.ts:95 rocket1d DEFAULT_ROCKET.predictDt",
-							"index": 51
+							"index": 69
 						},
 						{
 							"id": "cd_base",
@@ -983,7 +1277,7 @@
 							"digits": 2,
 							"note": "Axial drag coefficient on the reference area, brake closed.",
 							"source": "toolbox guidance.ts:96",
-							"index": 52
+							"index": 70
 						},
 						{
 							"id": "ref_area",
@@ -996,7 +1290,7 @@
 							"digits": 5,
 							"note": "Area the drag coefficient refers to (the body cross-section).",
 							"source": "toolbox guidance.ts:97 pi (0.1 m / 2)^2",
-							"index": 53
+							"index": 71
 						},
 						{
 							"id": "brake_cd_area",
@@ -1009,7 +1303,7 @@
 							"digits": 4,
 							"note": "C_D A the brake adds at full deployment.",
 							"source": "toolbox guidance.ts:98",
-							"index": 54
+							"index": 72
 						},
 						{
 							"id": "mass",
@@ -1022,7 +1316,7 @@
 							"digits": 2,
 							"note": "Dry mass: the motor has burnt out during the coast.",
 							"source": "toolbox guidance.ts:99",
-							"index": 55
+							"index": 73
 						},
 						{
 							"id": "target_apogee_m",
@@ -1035,7 +1329,7 @@
 							"digits": 0,
 							"note": "Apogee above the launch point the brake aims for.",
 							"source": "toolbox mission.ts:340",
-							"index": 56
+							"index": 74
 						}
 					],
 					"parts": [
@@ -1084,7 +1378,7 @@
 							"digits": 2,
 							"note": "Velocity setpoint per metre of position error.",
 							"source": "controller.cpp:47 w_n = sqrt(Kv Kp) = 1.18 rad/s, about 7x below the attitude loop, zeta 0.85",
-							"index": 57
+							"index": 75
 						},
 						{
 							"id": "vel_p",
@@ -1097,7 +1391,7 @@
 							"digits": 2,
 							"note": "Acceleration per m/s of velocity error.",
 							"source": "controller.cpp:48 Kv * kVelMax = 4 m/s^2 bounds a velocity step to 22 deg of tilt",
-							"index": 58
+							"index": 76
 						},
 						{
 							"id": "vel_i",
@@ -1110,7 +1404,7 @@
 							"digits": 2,
 							"note": "Acceleration per metre of integrated velocity error.",
 							"source": "controller.cpp:49 corner Ki / Kv = 0.25 rad/s; takes up what the thrust model and the rotor drag leave",
-							"index": 59
+							"index": 77
 						},
 						{
 							"id": "vel_int_accel",
@@ -1123,7 +1417,7 @@
 							"digits": 1,
 							"note": "Most horizontal acceleration the velocity integrator may add; the vertical one may reach 1 g.",
 							"source": "controller.cpp:50; vertical: PX4@af2e7b4311 src/modules/mc_pos_control/PositionControl/PositionControl.cpp:146 constrains the vertical integral to +-CONSTANTS_ONE_G",
-							"index": 60
+							"index": 78
 						},
 						{
 							"id": "att_p_x",
@@ -1136,7 +1430,7 @@
 							"digits": 1,
 							"note": "Roll-rate setpoint per radian of attitude error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.h:15 AC_ATTITUDE_CONTROL_ANGLE_P 4.5 (ATC_ANG_RLL_P)",
-							"index": 61
+							"index": 79
 						},
 						{
 							"id": "att_p_y",
@@ -1149,7 +1443,7 @@
 							"digits": 1,
 							"note": "Pitch-rate setpoint per radian of attitude error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.h:15 AC_ATTITUDE_CONTROL_ANGLE_P 4.5 (ATC_ANG_PIT_P)",
-							"index": 62
+							"index": 80
 						},
 						{
 							"id": "att_p_z",
@@ -1162,7 +1456,7 @@
 							"digits": 1,
 							"note": "Yaw-rate setpoint per radian of heading error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.h:15 AC_ATTITUDE_CONTROL_ANGLE_P 4.5 (ATC_ANG_YAW_P)",
-							"index": 63
+							"index": 81
 						},
 						{
 							"id": "yaw_decel",
@@ -1175,7 +1469,7 @@
 							"digits": 2,
 							"note": "Caps the yaw-rate setpoint at sqrt(2 a |e|) so a heading step stops without overshoot.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.cpp:1368 the yaw attitude-error sqrt controller runs at ATC_ACCEL_Y_MAX / 2 = 135 deg/s^2 (AC_AttitudeControl.h:23) clamped to 120 deg/s^2 (AC_AttitudeControl.h:13) = 2.094 rad/s^2",
-							"index": 64
+							"index": 82
 						},
 						{
 							"id": "yaw_rate_still",
@@ -1188,7 +1482,7 @@
 							"digits": 2,
 							"note": "Below this yaw rate, with no yaw-rate reference, the heading is held.",
 							"source": "controller.cpp:41",
-							"index": 65
+							"index": 83
 						},
 						{
 							"id": "rate_p_x",
@@ -1201,7 +1495,7 @@
 							"digits": 4,
 							"note": "Roll torque (fraction of full roll authority) per rad/s of rate error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:11 AC_ATC_MULTI_RATE_RP_P 0.135 (ATC_RAT_RLL_P); same units: rate PID output = torque fraction into +-0.5 motor factors (AC_AttitudeControl_Multi.cpp:476, AP_MotorsMatrix.cpp:1353-1375)",
-							"index": 66
+							"index": 84
 						},
 						{
 							"id": "rate_p_y",
@@ -1214,7 +1508,7 @@
 							"digits": 4,
 							"note": "Pitch torque (fraction of full pitch authority) per rad/s of rate error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:11 AC_ATC_MULTI_RATE_RP_P 0.135 (ATC_RAT_PIT_P); same units: rate PID output = torque fraction into +-0.5 motor factors (AC_AttitudeControl_Multi.cpp:476, AP_MotorsMatrix.cpp:1353-1375)",
-							"index": 67
+							"index": 85
 						},
 						{
 							"id": "rate_p_z",
@@ -1227,7 +1521,7 @@
 							"digits": 3,
 							"note": "Yaw torque (fraction of full yaw authority) per rad/s of rate error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:26 AC_ATC_MULTI_RATE_YAW_P 0.180 (ATC_RAT_YAW_P); same units as roll and pitch",
-							"index": 68
+							"index": 86
 						},
 						{
 							"id": "rate_i_x",
@@ -1240,7 +1534,7 @@
 							"digits": 4,
 							"note": "Roll torque fraction per radian of integrated rate error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:14 AC_ATC_MULTI_RATE_RP_I 0.135 (ATC_RAT_RLL_I)",
-							"index": 69
+							"index": 87
 						},
 						{
 							"id": "rate_i_y",
@@ -1253,7 +1547,7 @@
 							"digits": 4,
 							"note": "Pitch torque fraction per radian of integrated rate error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:14 AC_ATC_MULTI_RATE_RP_I 0.135 (ATC_RAT_PIT_I)",
-							"index": 70
+							"index": 88
 						},
 						{
 							"id": "rate_i_z",
@@ -1266,7 +1560,7 @@
 							"digits": 3,
 							"note": "Yaw torque fraction per radian of integrated rate error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:29 AC_ATC_MULTI_RATE_YAW_I 0.018 (ATC_RAT_YAW_I)",
-							"index": 71
+							"index": 89
 						},
 						{
 							"id": "rate_d_x",
@@ -1279,7 +1573,7 @@
 							"digits": 7,
 							"note": "Roll torque fraction per rad/s² of rate change.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:17 AC_ATC_MULTI_RATE_RP_D 0.0036 (ATC_RAT_RLL_D)",
-							"index": 72
+							"index": 90
 						},
 						{
 							"id": "rate_d_y",
@@ -1292,7 +1586,7 @@
 							"digits": 7,
 							"note": "Pitch torque fraction per rad/s² of rate change.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:17 AC_ATC_MULTI_RATE_RP_D 0.0036 (ATC_RAT_PIT_D)",
-							"index": 73
+							"index": 91
 						},
 						{
 							"id": "rate_d_z",
@@ -1305,7 +1599,7 @@
 							"digits": 4,
 							"note": "Yaw torque fraction per rad/s² of rate change.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:32 AC_ATC_MULTI_RATE_YAW_D 0 (ATC_RAT_YAW_D)",
-							"index": 74
+							"index": 92
 						},
 						{
 							"id": "rate_int_max_x",
@@ -1318,7 +1612,7 @@
 							"digits": 4,
 							"note": "Most roll torque, as a fraction of full authority, the rate integrator may add.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:20 AC_ATC_MULTI_RATE_RP_IMAX 0.5 (ATC_RAT_RLL_IMAX)",
-							"index": 75
+							"index": 93
 						},
 						{
 							"id": "rate_int_max_y",
@@ -1331,7 +1625,7 @@
 							"digits": 4,
 							"note": "Most pitch torque, as a fraction of full authority, the rate integrator may add.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:20 AC_ATC_MULTI_RATE_RP_IMAX 0.5 (ATC_RAT_PIT_IMAX)",
-							"index": 76
+							"index": 94
 						},
 						{
 							"id": "rate_int_max_z",
@@ -1344,7 +1638,7 @@
 							"digits": 4,
 							"note": "Most yaw torque, as a fraction of full authority, the rate integrator may add.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:35 AC_ATC_MULTI_RATE_YAW_IMAX 0.5 (ATC_RAT_YAW_IMAX)",
-							"index": 77
+							"index": 95
 						},
 						{
 							"id": "rate_max_x",
@@ -1357,7 +1651,7 @@
 							"digits": 1,
 							"note": "Limit of the roll-rate setpoint.",
 							"source": "controller.cpp:26",
-							"index": 78
+							"index": 96
 						},
 						{
 							"id": "rate_max_y",
@@ -1370,7 +1664,7 @@
 							"digits": 1,
 							"note": "Limit of the pitch-rate setpoint.",
 							"source": "controller.cpp:26",
-							"index": 79
+							"index": 97
 						},
 						{
 							"id": "rate_max_z",
@@ -1383,7 +1677,7 @@
 							"digits": 1,
 							"note": "Limit of the yaw-rate setpoint.",
 							"source": "controller.cpp:26",
-							"index": 80
+							"index": 98
 						},
 						{
 							"id": "vel_max",
@@ -1396,10 +1690,11 @@
 							"digits": 1,
 							"note": "Norm limit of the velocity setpoint.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_control_limits_params.yaml:5 MPC_XY_VEL_MAX default 12",
-							"index": 81
+							"index": 99
 						},
 						{
-							"id": "tilt_max_deg",
+							"id": "tilt_max_deg.hold",
+							"profile": "hold",
 							"label": "Max tilt",
 							"unit": "deg",
 							"default": 35,
@@ -1408,8 +1703,50 @@
 							"step": 1,
 							"digits": 0,
 							"note": "The thrust vector stays within this angle of vertical.",
-							"source": "controller.cpp:54 kTanTiltMax = tan(35 deg)",
-							"index": 82
+							"source": "controller.cpp:54 kTanTiltMax = tan(35 deg); freestyle, agile: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_control_limits_params.yaml:48-55 MPC_TILTMAX_AIR default 45; stabilized: hold's",
+							"index": 100
+						},
+						{
+							"id": "tilt_max_deg.freestyle",
+							"profile": "freestyle",
+							"label": "Max tilt",
+							"unit": "deg",
+							"default": 45,
+							"min": 5,
+							"max": 6e+01,
+							"step": 1,
+							"digits": 0,
+							"note": "The thrust vector stays within this angle of vertical.",
+							"source": "controller.cpp:54 kTanTiltMax = tan(35 deg); freestyle, agile: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_control_limits_params.yaml:48-55 MPC_TILTMAX_AIR default 45; stabilized: hold's",
+							"index": 101
+						},
+						{
+							"id": "tilt_max_deg.stabilized",
+							"profile": "stabilized",
+							"label": "Max tilt",
+							"unit": "deg",
+							"default": 35,
+							"min": 5,
+							"max": 6e+01,
+							"step": 1,
+							"digits": 0,
+							"note": "The thrust vector stays within this angle of vertical.",
+							"source": "controller.cpp:54 kTanTiltMax = tan(35 deg); freestyle, agile: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_control_limits_params.yaml:48-55 MPC_TILTMAX_AIR default 45; stabilized: hold's",
+							"index": 102
+						},
+						{
+							"id": "tilt_max_deg.agile",
+							"profile": "agile",
+							"label": "Max tilt",
+							"unit": "deg",
+							"default": 45,
+							"min": 5,
+							"max": 6e+01,
+							"step": 1,
+							"digits": 0,
+							"note": "The thrust vector stays within this angle of vertical.",
+							"source": "controller.cpp:54 kTanTiltMax = tan(35 deg); freestyle, agile: PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_control_limits_params.yaml:48-55 MPC_TILTMAX_AIR default 45; stabilized: hold's",
+							"index": 103
 						},
 						{
 							"id": "thrust_min_g",
@@ -1422,7 +1759,7 @@
 							"digits": 2,
 							"note": "Floor of the vertical thrust demand, in multiples of the weight.",
 							"source": "controller.cpp:55 kThrustMin = 0.2 m g",
-							"index": 83
+							"index": 104
 						},
 						{
 							"id": "thrust_max_frac",
@@ -1435,7 +1772,7 @@
 							"digits": 2,
 							"note": "Ceiling of the total thrust, as a fraction of the four rotors' maximum.",
 							"source": "controller.cpp:56 kThrustMax = 0.9 * 4 * kMaxRotorThrust; the rest is left for the torques",
-							"index": 84
+							"index": 105
 						},
 						{
 							"id": "yaw_torque_max",
@@ -1448,7 +1785,7 @@
 							"digits": 4,
 							"note": "Yaw torque limit, as a fraction of full yaw authority; a yaw demand the rotors cannot carry is cut, never paid for with thrust.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.cpp:476 the yaw rate PID output is not capped; the mixer cuts yaw to what fits (AP_MotorsMatrix.cpp:276-329), as the allocation does",
-							"index": 85
+							"index": 106
 						},
 						{
 							"id": "accel_max_x",
@@ -1461,7 +1798,7 @@
 							"digits": 2,
 							"note": "Angular acceleration of the attitude target on roll: the target moves toward the desired attitude within it and rate_max_x, and its rate is fed forward to the rate loop.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.h:22 AC_ATTITUDE_CONTROL_ACCEL_RP_MAX_DEFAULT_DEGSS 1100 deg/s^2 (ATC_ACC_R_MAX, AC_AttitudeControl.cpp:193) = 19.199 rad/s^2",
-							"index": 86
+							"index": 107
 						},
 						{
 							"id": "accel_max_y",
@@ -1474,7 +1811,7 @@
 							"digits": 2,
 							"note": "Angular acceleration of the attitude target on pitch: the target moves toward the desired attitude within it and rate_max_y, and its rate is fed forward to the rate loop.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.h:22 AC_ATTITUDE_CONTROL_ACCEL_RP_MAX_DEFAULT_DEGSS 1100 deg/s^2 (ATC_ACC_P_MAX, AC_AttitudeControl.cpp:203) = 19.199 rad/s^2",
-							"index": 87
+							"index": 108
 						},
 						{
 							"id": "accel_max_z",
@@ -1487,10 +1824,11 @@
 							"digits": 2,
 							"note": "Angular acceleration of the attitude target on yaw: the target heading moves toward the reference within it and rate_max_z, and its rate is fed forward to the rate loop.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.h:23 AC_ATTITUDE_CONTROL_ACCEL_Y_MAX_DEFAULT_DEGSS 270 deg/s^2 (ATC_ACC_Y_MAX, AC_AttitudeControl.cpp:183) = 4.712 rad/s^2",
-							"index": 88
+							"index": 109
 						},
 						{
-							"id": "input_tc",
+							"id": "input_tc.hold",
+							"profile": "hold",
 							"label": "Input time constant",
 							"unit": "s",
 							"default": 0.1,
@@ -1499,8 +1837,50 @@
 							"step": 0.01,
 							"digits": 2,
 							"note": "The target's acceleration reaches its limit in this time: the jerk is the acceleration limit over it, on every axis.",
-							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.cpp:16 AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT 0.10 s (ATC_INPUT_TC, Copter); jerk = accel_max / input_tc, AC_AttitudeControl.cpp:1128. ArduPilot's yaw uses PILOT_Y_RATE_TC instead (0: 10 ticks, AC_AttitudeControl.cpp:1120-1123)",
-							"index": 89
+							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.cpp:16 AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT 0.10 s (ATC_INPUT_TC, Copter); jerk = accel_max / input_tc, AC_AttitudeControl.cpp:1128. ArduPilot's yaw uses PILOT_Y_RATE_TC instead (0: 10 ticks, AC_AttitudeControl.cpp:1120-1123); freestyle: 0.05 (Very Crisp), ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.cpp:132; stabilized: 0.2 (Soft), same line; agile: hold's",
+							"index": 110
+						},
+						{
+							"id": "input_tc.freestyle",
+							"profile": "freestyle",
+							"label": "Input time constant",
+							"unit": "s",
+							"default": 0.05,
+							"min": 0.01,
+							"max": 1,
+							"step": 0.01,
+							"digits": 2,
+							"note": "The target's acceleration reaches its limit in this time: the jerk is the acceleration limit over it, on every axis.",
+							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.cpp:16 AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT 0.10 s (ATC_INPUT_TC, Copter); jerk = accel_max / input_tc, AC_AttitudeControl.cpp:1128. ArduPilot's yaw uses PILOT_Y_RATE_TC instead (0: 10 ticks, AC_AttitudeControl.cpp:1120-1123); freestyle: 0.05 (Very Crisp), ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.cpp:132; stabilized: 0.2 (Soft), same line; agile: hold's",
+							"index": 111
+						},
+						{
+							"id": "input_tc.stabilized",
+							"profile": "stabilized",
+							"label": "Input time constant",
+							"unit": "s",
+							"default": 0.2,
+							"min": 0.01,
+							"max": 1,
+							"step": 0.01,
+							"digits": 2,
+							"note": "The target's acceleration reaches its limit in this time: the jerk is the acceleration limit over it, on every axis.",
+							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.cpp:16 AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT 0.10 s (ATC_INPUT_TC, Copter); jerk = accel_max / input_tc, AC_AttitudeControl.cpp:1128. ArduPilot's yaw uses PILOT_Y_RATE_TC instead (0: 10 ticks, AC_AttitudeControl.cpp:1120-1123); freestyle: 0.05 (Very Crisp), ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.cpp:132; stabilized: 0.2 (Soft), same line; agile: hold's",
+							"index": 112
+						},
+						{
+							"id": "input_tc.agile",
+							"profile": "agile",
+							"label": "Input time constant",
+							"unit": "s",
+							"default": 0.1,
+							"min": 0.01,
+							"max": 1,
+							"step": 0.01,
+							"digits": 2,
+							"note": "The target's acceleration reaches its limit in this time: the jerk is the acceleration limit over it, on every axis.",
+							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.cpp:16 AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT 0.10 s (ATC_INPUT_TC, Copter); jerk = accel_max / input_tc, AC_AttitudeControl.cpp:1128. ArduPilot's yaw uses PILOT_Y_RATE_TC instead (0: 10 ticks, AC_AttitudeControl.cpp:1120-1123); freestyle: 0.05 (Very Crisp), ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.cpp:132; stabilized: 0.2 (Soft), same line; agile: hold's",
+							"index": 113
 						}
 					],
 					"parts": [
@@ -1557,7 +1937,10 @@
 								"rate_max_y",
 								"rate_max_z",
 								"vel_max",
-								"tilt_max_deg",
+								"tilt_max_deg.hold",
+								"tilt_max_deg.freestyle",
+								"tilt_max_deg.stabilized",
+								"tilt_max_deg.agile",
 								"thrust_min_g",
 								"thrust_max_frac",
 								"yaw_torque_max"
@@ -1570,7 +1953,10 @@
 								"accel_max_x",
 								"accel_max_y",
 								"accel_max_z",
-								"input_tc"
+								"input_tc.hold",
+								"input_tc.freestyle",
+								"input_tc.stabilized",
+								"input_tc.agile"
 							]
 						}
 					]
@@ -1594,7 +1980,7 @@
 							"digits": 3,
 							"note": "Deployment per metre of predicted overshoot.",
 							"source": "toolbox controller.ts:146 (PI tuned in the lab)",
-							"index": 90
+							"index": 114
 						},
 						{
 							"id": "ki",
@@ -1607,7 +1993,7 @@
 							"digits": 3,
 							"note": "Deployment per metre-second of accumulated overshoot.",
 							"source": "toolbox controller.ts:147 (PI tuned in the lab)",
-							"index": 91
+							"index": 115
 						},
 						{
 							"id": "i_limit",
@@ -1620,7 +2006,7 @@
 							"digits": 0,
 							"note": "Bound on the accumulated overshoot.",
 							"source": "toolbox controller.ts:148 (PI tuned in the lab)",
-							"index": 92
+							"index": 116
 						}
 					],
 					"parts": [
@@ -1684,7 +2070,7 @@
 							"digits": 2,
 							"note": "e of thrust = (1 - e) x + e x^2: 1 for a rotor-speed command (thrust = k w^2).",
 							"source": "AP_Motors_Thrust_Linearization.cpp:104-107; 1 = sqrt: the sim ESC is linear from command to rad/s for every airframe (bridge/src/gz_world.cpp:215) and the motor model's thrust is k w^2. ArduPilot's real-ESC 0.65 (AP_MotorsMulticopter.h:9, with SPIN_MIN/MAX 0.15/0.95) raises the x500's hover to 0.66 of the command range and left it 0.8 m low in hover",
-							"index": 93
+							"index": 117
 						},
 						{
 							"id": "spin_min",
@@ -1697,7 +2083,7 @@
 							"digits": 2,
 							"note": "Command at zero thrust while armed.",
 							"source": "AP_Motors_Thrust_Linearization.cpp:104-107; 0: the sim ESC's zero rotor speed is zero thrust (bridge/src/gz_world.cpp:215); ArduPilot's real-ESC 0.15 is AP_MotorsMulticopter.h:14",
-							"index": 94
+							"index": 118
 						},
 						{
 							"id": "spin_max",
@@ -1710,7 +2096,7 @@
 							"digits": 2,
 							"note": "Command at full thrust.",
 							"source": "AP_Motors_Thrust_Linearization.cpp:104-107; 1: the sim ESC reaches the motor model's full speed at a command of 1 (bridge/src/gz_world.cpp:215); ArduPilot's real-ESC 0.95 is AP_MotorsMulticopter.h:15",
-							"index": 95
+							"index": 119
 						},
 						{
 							"id": "spin_arm",
@@ -1723,7 +2109,7 @@
 							"digits": 2,
 							"note": "Every motor command while armed on the ground (kArmed).",
 							"source": "MOT_SPIN_ARM, AP_MotorsMulticopter.h:16 default 0.10",
-							"index": 96
+							"index": 120
 						}
 					],
 					"parts": [
@@ -1811,16 +2197,34 @@
 				3,
 				1,
 				5,
+				1e+01,
+				5,
+				5,
 				12,
 				3,
 				1.5,
 				3,
+				5,
+				2.5,
+				5.6,
 				4,
+				4,
+				2,
+				5.6,
 				3,
+				3,
+				2,
+				5.5,
 				4,
+				8,
+				1,
+				8.9,
 				2,
 				1,
 				1.047,
+				1.5,
+				0.524,
+				1.5,
 				0.3,
 				0.05,
 				0.45,
@@ -1854,12 +2258,18 @@
 				1.5,
 				12,
 				35,
+				45,
+				35,
+				45,
 				0.2,
 				0.9,
 				1,
 				19.199,
 				19.199,
 				4.712,
+				0.1,
+				0.05,
+				0.2,
 				0.1,
 				0.05,
 				0.005,
@@ -1923,16 +2333,34 @@
 				3,
 				1,
 				5,
+				1e+01,
+				5,
+				5,
 				12,
 				3,
 				1.5,
 				3,
+				5,
+				2.5,
+				5.6,
 				4,
+				4,
+				2,
+				5.6,
 				3,
+				3,
+				2,
+				5.5,
 				4,
+				8,
+				1,
+				8.9,
 				2,
 				1,
 				1.047,
+				1.5,
+				0.524,
+				1.5,
 				0.3,
 				0.05,
 				0.45,
@@ -1966,12 +2394,18 @@
 				1.5,
 				12,
 				35,
+				45,
+				35,
+				45,
 				0.2,
 				0.9,
 				1,
 				19.199,
 				19.199,
 				4.712,
+				0.1,
+				0.05,
+				0.2,
 				0.1,
 				0.05,
 				0.005,
@@ -2035,16 +2469,34 @@
 				3,
 				1,
 				5,
+				1e+01,
+				5,
+				5,
 				12,
 				3,
 				1.5,
 				3,
+				5,
+				2.5,
+				5.6,
 				4,
+				4,
+				2,
+				5.6,
 				3,
+				3,
+				2,
+				5.5,
 				4,
+				8,
+				1,
+				8.9,
 				2,
 				1,
 				1.047,
+				1.5,
+				0.524,
+				1.5,
 				0.3,
 				0.05,
 				0.45,
@@ -2078,12 +2530,18 @@
 				1.5,
 				12,
 				35,
+				45,
+				35,
+				45,
 				0.2,
 				0.9,
 				1,
 				19.199,
 				19.199,
 				4.712,
+				0.1,
+				0.05,
+				0.2,
 				0.1,
 				0.05,
 				0.005,
@@ -2147,16 +2605,34 @@
 				3,
 				1,
 				5,
+				1e+01,
+				5,
+				5,
 				12,
 				3,
 				1.5,
 				3,
+				5,
+				2.5,
+				5.6,
 				4,
+				4,
+				2,
+				5.6,
 				3,
+				3,
+				2,
+				5.5,
 				4,
+				8,
+				1,
+				8.9,
 				2,
 				1,
 				1.047,
+				1.5,
+				0.524,
+				1.5,
 				0.3,
 				0.05,
 				0.45,
@@ -2190,12 +2666,18 @@
 				1.5,
 				12,
 				35,
+				45,
+				35,
+				45,
 				0.2,
 				0.9,
 				1,
 				19.199,
 				19.199,
 				4.712,
+				0.1,
+				0.05,
+				0.2,
 				0.1,
 				0.05,
 				0.005,
@@ -2259,16 +2741,34 @@
 				3,
 				1,
 				5,
+				1e+01,
+				5,
+				5,
 				12,
 				3,
 				1.5,
 				3,
+				5,
+				2.5,
+				5.6,
 				4,
+				4,
+				2,
+				5.6,
 				3,
+				3,
+				2,
+				5.5,
 				4,
+				8,
+				1,
+				8.9,
 				2,
 				1,
 				1.047,
+				1.5,
+				0.524,
+				1.5,
 				0.3,
 				0.05,
 				0.45,
@@ -2302,12 +2802,18 @@
 				1.5,
 				12,
 				35,
+				45,
+				35,
+				45,
 				0.2,
 				0.9,
 				1,
 				19.199,
 				19.199,
 				4.712,
+				0.1,
+				0.05,
+				0.2,
 				0.1,
 				0.05,
 				0.005,

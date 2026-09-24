@@ -124,11 +124,23 @@ enum class NavSource : std::uint8_t {
     kTruth,
 };
 
-// What the mission software sends: arm state, navigation source and the current reference.
+// The pilot's sticks, each normalized to -1..1 (0 centred); the flight software scales them by the active profile.
+struct Sticks {
+    float fwd;    // + forward
+    float right;  // + right
+    float up;     // + up
+    float yaw;    // + clockwise seen from above
+};
+
+// What the mission software sends: arm state, navigation source, the current reference, the flight profile and the
+// pilot's sticks. A sender that sets none of the last three sends hold, auto and centred sticks.
 struct MissionCommand {
     Mode mode;
     NavSource nav;
     Reference ref;
+    std::uint8_t profile = 0;  // param::Profile, 0 hold; an unknown one reads as hold
+    std::uint8_t manual = 0;   // 1: the sticks fly; 0 (and any unknown value): auto, the reference flies
+    Sticks sticks{};           // with manual == 1
 };
 
 // ---- controller output ---------------------------------------------------------------------------
@@ -162,6 +174,7 @@ struct Telemetry {
     std::uint8_t preset; // the module preset running (see presets.hpp)
     bool home_valid;     // home = the first GNSS fix, the origin of every p_ned
     GeoPoint home;
+    std::uint8_t profile;  // the flight profile applied (param::Profile)
 };
 
 }  // namespace marv

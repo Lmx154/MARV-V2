@@ -243,7 +243,7 @@ const param::TrajectoryParams kP{};
 struct Limits {
     float v_xy, v_up, v_dn, a_xy, a_z, jerk;
 };
-const Limits kLimits{kP.xy_vel_max, kP.z_vel_up, kP.z_vel_dn, kP.acc_xy, std::fmax(kP.acc_up, kP.acc_dn), kP.jerk};
+const Limits kLimits{kP.xy_vel_max, kP.z_vel_up, kP.z_vel_dn, kP.acc_xy[param::k_profile_hold], std::fmax(kP.acc_up[param::k_profile_hold], kP.acc_dn[param::k_profile_hold]), kP.jerk[param::k_profile_hold]};
 
 struct Peaks {
     int violations = 0;
@@ -322,7 +322,7 @@ void single_waypoint() {
                 static_cast<double>(pk.jerk), pk.violations, static_cast<double>(drift));
     CHECK(pk.violations == 0 && arrive > 0.f);
     CHECK(norm(out.p_ned - p) < kRest && norm(out.v_ned) < kRest && norm(out.a_ned) < 1e-4f && drift < 1e-6f);
-    CHECK(pk.v_xy <= 1.01f * kP.cruise_speed && pk.v_xy > 0.9f * kP.cruise_speed);
+    CHECK(pk.v_xy <= 1.01f * kP.cruise_speed[param::k_profile_hold] && pk.v_xy > 0.9f * kP.cruise_speed[param::k_profile_hold]);
     // Negative control: the same trajectory checked against half the jerk limit is caught.
     std::printf("negative control, jerk limit halved to %.1f m/s^3: %d ticks over the limits\n",
                 static_cast<double>(half.jerk), strict.violations);
@@ -378,7 +378,7 @@ SquareRun square(bool triplets, float accept_m) {
 
 void corners() {
     const float accept = 2.f;  // ADR-0011 kArriveWp, ArduPilot AC_WPNav.cpp:10 WP_RADIUS_M_DEFAULT
-    const float expect = traj::max_speed_in_waypoint(3.14159265f / 2.f, 0.5f * kP.acc_xy, accept);
+    const float expect = traj::max_speed_in_waypoint(3.14159265f / 2.f, 0.5f * kP.acc_xy[param::k_profile_hold], accept);
     const SquareRun t = square(true, accept), s = square(false, accept);
     std::printf("20 m square, accept_m %.1f: TrajMath corner speed sqrt(a d tan(45 deg)) = %.3f m/s\n",
                 static_cast<double>(accept), static_cast<double>(expect));
@@ -494,9 +494,9 @@ void heading() {
     }
     std::printf("free heading: held at 0.5 rad for %.3f s, turned at most %.3f rad/s (limit %.3f), heading after 6 s "
                 "%.4f rad\n",
-                static_cast<double>(held_until), static_cast<double>(rate), static_cast<double>(kP.yaw_rate_auto),
+                static_cast<double>(held_until), static_cast<double>(rate), static_cast<double>(kP.yaw_rate_auto[param::k_profile_hold]),
                 static_cast<double>(last));
-    CHECK(bits && held_until > 0.f && rate <= kP.yaw_rate_auto * 1.001f && std::fabs(last - 1.5707963f) < 1e-3f);
+    CHECK(bits && held_until > 0.f && rate <= kP.yaw_rate_auto[param::k_profile_hold] * 1.001f && std::fabs(last - 1.5707963f) < 1e-3f);
 }
 
 }  // namespace

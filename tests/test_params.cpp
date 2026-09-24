@@ -1,5 +1,6 @@
 // The parameter table: unique ids, defaults within their ranges, every (family, kind) of the GCS and airframe decisions
-// in its place with the vehicle classes it serves, and a schema hash that is stable and follows the ids.
+// in its place with the vehicle classes it serves, the four profiles and ADR-0012's profiled rows, and a schema hash that
+// is stable and follows the ids.
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -23,12 +24,15 @@ constexpr bool same(const char* a, const char* b) {
     return *a == *b;
 }
 
-// The hash of params.def recomputed here, with one parameter id optionally renamed.
+// The hash of params.def recomputed here, with one profile or parameter id optionally renamed.
 constexpr std::uint32_t hash_with(const char* from, const char* to) {
     std::uint32_t h = kFnvBasis;
+#define MARV_PROFILE(id, label) h = fnv1a(fnv1a(h, "profile"), same(#id, from) ? to : #id);
 #define MARV_KIND(f, k, name, label, summary, vehicles) h = hash_kind(h, #f, #k, name);
 #define MARV_PARAM(f, k, id, label, unit, dflt, min, max, step, digits, note, source) \
     h = hash_param(h, #f, #k, same(#id, from) ? to : #id);
+#define MARV_PROFILED(f, k, id, label, unit, d0, d1, d2, d3, min, max, step, digits, note, source) \
+    h = fnv1a(hash_param(h, #f, #k, same(#id, from) ? to : #id), "profiled");
 #include <marv/fsw/params.def>
     return h;
 }
@@ -37,24 +41,82 @@ static_assert(schema_hash() == kSchemaHash, "stable");
 static_assert(hash_with("", "") == kSchemaHash, "the same algorithm over the same table");
 static_assert(hash_with("mass", "mass_kg") != kSchemaHash, "a renamed id changes the hash");
 static_assert(hash_with("k_vel", "k_vel") == kSchemaHash, "renamed to itself: unchanged");
+static_assert(hash_with("jerk", "jerk_max") != kSchemaHash, "a renamed profiled id changes the hash");
+static_assert(hash_with("agile", "sport") != kSchemaHash, "a renamed profile changes the hash");
 
 int main() {
     constexpr std::size_t kRows = sizeof(kSchema) / sizeof(kSchema[0]);
 
-    // Every parameter row, in order, is the index its enum names, and no (family, kind, id) repeats.
+    // Every parameter row, in order, is the index its enum names, and no (family, kind, id, profile) repeats; a profiled
+    // parameter is kProfileCount consecutive rows, one per profile in profile order.
     {
         std::uint16_t index = 0;
         for (std::size_t r = 0; r < kRows; ++r) {
             if (kSchema[r].type != RowType::kParam) continue;
             CHECK(kParamMeta[index].id == index);
             CHECK(kParamMeta[index].family == kSchema[r].family && kParamMeta[index].kind == kSchema[r].kind);
+            const std::uint8_t pr = kSchema[r].profile;
+            CHECK(pr == kShared || pr < kProfileCount);
+            if (pr != kShared && pr > 0)
+                CHECK(kSchema[r - 1].profile == pr - 1 && std::strcmp(kSchema[r - 1].id, kSchema[r].id) == 0);
+            if (pr != kShared && pr + 1 < kProfileCount)
+                CHECK(r + 1 < kRows && kSchema[r + 1].profile == pr + 1);
             for (std::size_t q = r + 1; q < kRows; ++q)
                 if (kSchema[q].type == RowType::kParam && kSchema[q].family == kSchema[r].family &&
                     kSchema[q].kind == kSchema[r].kind)
-                    CHECK(std::strcmp(kSchema[q].id, kSchema[r].id) != 0);
+                    CHECK(std::strcmp(kSchema[q].id, kSchema[r].id) != 0 || (pr != kShared && kSchema[q].profile != pr));
             ++index;
         }
         CHECK(index == kParamCount);
+    }
+
+    // The four profiles of ADR-0012, and its eight profiled rows: hold's default is the shared default they replace, each
+    // profile's default at index + profile within the one range, and each profile's typed field filled from its own index.
+    {
+        const char* const ids[] = {"hold", "freestyle", "stabilized", "agile"};
+        const char* const labels[] = {"Hold", "Freestyle", "Stabilized", "Agile"};
+        CHECK(kProfileCount == 4 && k_profile_hold == 0 && k_profile_freestyle == 1 && k_profile_stabilized == 2 &&
+              k_profile_agile == 3);
+        for (std::uint8_t p = 0; p < kProfileCount; ++p)
+            CHECK(std::strcmp(kProfileId[p], ids[p]) == 0 && std::strcmp(kProfileLabel[p], labels[p]) == 0);
+        struct Row {
+            std::uint16_t index;
+            float dflt[4];
+            float min, max;
+        };
+        const Row rows[] = {
+            {k_guidance_trajectory_cruise_speed, {5.f, 10.f, 5.f, 5.f}, 0.5f, 20.f},
+            {k_guidance_trajectory_acc_xy, {3.f, 5.f, 2.5f, 5.6f}, 2.f, 15.f},
+            {k_guidance_trajectory_acc_up, {4.f, 4.f, 2.f, 5.6f}, 2.f, 15.f},
+            {k_guidance_trajectory_acc_dn, {3.f, 3.f, 2.f, 5.5f}, 2.f, 15.f},
+            {k_guidance_trajectory_jerk, {4.f, 8.f, 1.f, 8.9f}, 1.f, 80.f},
+            {k_guidance_trajectory_yaw_rate_auto, {1.047f, 1.5f, 0.524f, 1.5f}, 0.087f, 6.283f},
+            {k_controller_cascaded_pid_tilt_max_deg, {35.f, 45.f, 35.f, 45.f}, 5.f, 60.f},
+            {k_controller_cascaded_pid_input_tc, {0.1f, 0.05f, 0.2f, 0.1f}, 0.01f, 1.f},
+        };
+        std::size_t profiled = 0;
+        for (std::size_t r = 0; r < kRows; ++r) profiled += kSchema[r].type == RowType::kParam && kSchema[r].profile == 0;
+        CHECK(profiled == sizeof rows / sizeof rows[0]);
+        Setup s{};
+        for (std::uint16_t i = 0; i < kParamCount; ++i) s.values[i] = static_cast<float>(i);
+        const TrajectoryParams t = guidance_trajectory(s);
+        const ControllerParams c = controller_cascaded_pid(s);
+        const float* const fields[] = {t.cruise_speed, t.acc_xy, t.acc_up, t.acc_dn, t.jerk, t.yaw_rate_auto, c.tilt_max_deg,
+                                       c.input_tc};
+        const TrajectoryParams td{};
+        const ControllerParams cd{};
+        const float* const defaults[] = {td.cruise_speed, td.acc_xy, td.acc_up, td.acc_dn, td.jerk, td.yaw_rate_auto,
+                                         cd.tilt_max_deg, cd.input_tc};
+        for (std::size_t r = 0; r < sizeof rows / sizeof rows[0]; ++r)
+            for (std::uint8_t p = 0; p < kProfileCount; ++p) {
+                const std::uint16_t i = static_cast<std::uint16_t>(rows[r].index + p);
+                const ParamMeta& m = kParamMeta[i];
+                CHECK(m.dflt == rows[r].dflt[p] && m.min == rows[r].min && m.max == rows[r].max);
+                CHECK(defaults[r][p] == rows[r].dflt[p]);
+                if (fields[r] != t.acc_xy) CHECK(fields[r][p] == static_cast<float>(i));
+            }
+        CHECK(k_guidance_trajectory_cruise_speed_last == k_guidance_trajectory_cruise_speed + 3 &&
+              k_guidance_trajectory_xy_vel_max == k_guidance_trajectory_cruise_speed_last + 1);
     }
 
     // spin_arm: appended after spin_max in the rotor-speed-fraction actuators' spin part, MOT_SPIN_ARM's default.
@@ -73,8 +135,9 @@ int main() {
         CHECK(found);
     }
 
-    // The trajectory guidance, the first guidance kind: its twelve rows follow the estimators', in order, with ADR-0011's
-    // defaults and ranges; the controller's velocity limit reaches 20 m/s, its default PX4's MPC_XY_VEL_MAX 12 m/s.
+    // The trajectory guidance, the first guidance kind: its twelve rows follow the estimators', in order (a profiled row
+    // taking four indices), with ADR-0011's defaults (a profiled row's hold) and ranges; the controller's velocity limit
+    // reaches 20 m/s, its default PX4's MPC_XY_VEL_MAX 12 m/s.
     {
         struct Row {
             std::uint16_t index;
@@ -94,9 +157,11 @@ int main() {
             {k_guidance_trajectory_yaw_rate_auto, 1.047f, 0.087f, 6.283f},
             {k_guidance_trajectory_heading_min_speed, 0.3f, 0.f, 2.f},
         };
+        std::uint16_t next = k_estimator_complementary_k_baro + 1;
         for (std::size_t r = 0; r < sizeof rows / sizeof rows[0]; ++r) {
             const ParamMeta& m = kParamMeta[rows[r].index];
-            CHECK(rows[r].index == k_estimator_complementary_k_baro + 1 + r);
+            CHECK(rows[r].index == next);
+            next = static_cast<std::uint16_t>(next + (r == 0 || (r >= 4 && r <= 7) || r == 10 ? kProfileCount : 1));
             CHECK(m.family == k_guidance && m.kind == k_guidance_trajectory);
             CHECK(m.dflt == rows[r].dflt && m.min == rows[r].min && m.max == rows[r].max);
         }
@@ -140,10 +205,10 @@ int main() {
             {k_estimator, k_estimator_ekf, "ekf", 4, kBoth},
             {k_estimator, k_estimator_mahony, "mahony", 6, kBoth},
             {k_estimator, k_estimator_complementary, "complementary", 6, kBoth},
-            {k_guidance, k_guidance_trajectory, "trajectory", 12, kClassUav},
+            {k_guidance, k_guidance_trajectory, "trajectory", 12 + 6 * 3, kClassUav},
             {k_guidance, k_guidance_passthrough, "passthrough", 0, kClassUav},
             {k_guidance, k_guidance_apogee_predictor, "apogee-predictor", 6, kClassRocket},
-            {k_controller, k_controller_cascaded_pid, "cascaded-pid", 33, kClassUav},
+            {k_controller, k_controller_cascaded_pid, "cascaded-pid", 33 + 2 * 3, kClassUav},
             {k_controller, k_controller_apogee_pid, "apogee-pid", 3, kClassRocket},
             {k_allocation, k_allocation_quad_x, "quad-x", 0, kClassUav},
             {k_allocation, k_allocation_rocket_brake, "rocket-brake", 0, kClassRocket},

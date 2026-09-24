@@ -6,10 +6,14 @@
 // class-consistent: kSetKind of the vehicle re-stages the families whose kind does not serve it, a kind that does not
 // serve the staged vehicle is refused, an inconsistent record reads as factory 0, and a rocket setup never drives a motor.
 // The guidance kind is dispatched: the trajectory kind flies a far position reference from the vehicle, at rest.
+// Profiles (ADR-0012 phase A): each profile's acc_xy is clamped to g tan(2/3 tilt_max) when the typed parameters are built;
+// the flight software flies the hold profile whatever profile, manual flag and sticks the mission sends, reads no other
+// profile's values, and reports profile 0.
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 #include <vector>
 
 #include <marv/fsw/fsw.hpp>
@@ -531,6 +535,74 @@ int main() {
                     static_cast<double>(t1.x), static_cast<double>(t1000.x), static_cast<double>(p1.x));
         CHECK(t1.x == 0.f && t1.y == 0.f && p1.x > 0.1f);
         CHECK(t1000.x > 0.05f && std::fabs(t1000.y) < 1e-6f);
+    }
+
+    // Profiles. acc_xy is clamped per profile to g tan(2/3 tilt_max) of the same profile (g the setup's gravity); a value
+    // within it is kept bit for bit; factory 0's defaults are all within it.
+    {
+        constexpr std::uint16_t kAcc = param::k_guidance_trajectory_acc_xy, kTilt = param::k_controller_cascaded_pid_tilt_max_deg;
+        const param::TrajectoryParams f = param::guidance_trajectory(kFactory[0]);
+        for (std::uint8_t p = 0; p < param::kProfileCount; ++p) {
+            CHECK(f.acc_xy[p] == kFactory[0].values[kAcc + p]);
+            CHECK(kFactory[0].values[kAcc + p] <= param::acc_xy_limit(kFactory[0], p));
+        }
+        param::Setup s = kFactory[0];
+        s.values[kAcc + param::k_profile_agile] = 15.f;  // tilt 45 deg: limit g tan(30 deg)
+        s.values[kTilt + param::k_profile_stabilized] = 10.f;  // acc_xy 2.5 over the limit g tan(6.67 deg)
+        s.values[kAcc + param::k_profile_freestyle] = 5.5f;  // tilt 45 deg: within
+        CHECK(fw::in_range(s));
+        const param::TrajectoryParams c = param::guidance_trajectory(s);
+        const double g = 9.80665, deg = 3.14159265358979 / 180.0;
+        std::printf("acc_xy clamp: agile 15 -> %.5f (g tan 30 deg %.5f), stabilized 2.5 at 10 deg -> %.5f (%.5f)\n",
+                    static_cast<double>(c.acc_xy[param::k_profile_agile]), g * std::tan(30.0 * deg),
+                    static_cast<double>(c.acc_xy[param::k_profile_stabilized]), g * std::tan(20.0 / 3.0 * deg));
+        CHECK(std::fabs(c.acc_xy[param::k_profile_agile] - g * std::tan(30.0 * deg)) < 1e-5);
+        CHECK(std::fabs(c.acc_xy[param::k_profile_stabilized] - g * std::tan(20.0 / 3.0 * deg)) < 1e-5);
+        CHECK(c.acc_xy[param::k_profile_hold] == 3.f && c.acc_xy[param::k_profile_freestyle] == 5.5f);
+        s.values[param::k_sensors_suite_gravity] = 1.62f;  // the Moon: the agile limit follows g
+        CHECK(std::fabs(param::guidance_trajectory(s).acc_xy[param::k_profile_agile] - 1.62 * std::tan(30.0 * deg)) < 1e-5);
+    }
+
+    // Profile 0 only: over 2 s of kFlyNorth on the trajectory kind, a mission with profile agile, manual 1 and full
+    // sticks, and a setup with every non-hold profile value changed, fly bit for bit what hold, auto and centred sticks
+    // fly on factory 0; telemetry reports profile 0 on every tick. The control: hold's own jerk changed changes the flight.
+    {
+        const auto fly = [](const param::Setup& s, const MissionCommand& m, bool& profile0) {
+            Fsw fsw{s};
+            fsw.on_mission(m);
+            std::vector<float> out;
+            profile0 = true;
+            for (int k = 1; k <= 2000; ++k) {
+                const std::uint64_t t = 1000u * static_cast<std::uint64_t>(k);
+                fsw.on_truth(truth_at(t));
+                const Tick tk = fsw.step(bus_at(t));
+                profile0 = profile0 && tk.tlm.profile == param::k_profile_hold;
+                const float* v = &tk.tlm.req.thrust_ned.x;
+                out.insert(out.end(), v, v + 3);
+                out.insert(out.end(), tk.act.motor, tk.act.motor + kMotorCount);
+            }
+            return out;
+        };
+        MissionCommand agile = kFlyNorth;
+        agile.profile = param::k_profile_agile;
+        agile.manual = 1;
+        agile.sticks = {1.f, -1.f, 1.f, 1.f};
+        param::Setup others = kFactory[0];
+        for (std::uint16_t base : {param::k_guidance_trajectory_cruise_speed, param::k_guidance_trajectory_acc_xy,
+                                   param::k_guidance_trajectory_acc_up, param::k_guidance_trajectory_acc_dn,
+                                   param::k_guidance_trajectory_jerk, param::k_guidance_trajectory_yaw_rate_auto,
+                                   param::k_controller_cascaded_pid_tilt_max_deg, param::k_controller_cascaded_pid_input_tc})
+            for (std::uint8_t pr = 1; pr < param::kProfileCount; ++pr) others.values[base + pr] = param::kParamMeta[base + pr].min;
+        CHECK(fw::in_range(others) && param::setup_crc(others) != param::setup_crc(kFactory[0]));
+        param::Setup hold_jerk = kFactory[0];
+        hold_jerk.values[param::k_guidance_trajectory_jerk] = 8.f;
+        bool p0 = false, p1 = false, p2 = false, p3 = false;
+        const std::vector<float> ref = fly(kFactory[0], kFlyNorth, p0), a = fly(kFactory[0], agile, p1),
+                                 b = fly(others, agile, p2), ctl = fly(hold_jerk, kFlyNorth, p3);
+        CHECK(p0 && p1 && p2 && p3);
+        CHECK(a.size() == ref.size() && std::memcmp(a.data(), ref.data(), ref.size() * sizeof(float)) == 0);
+        CHECK(b.size() == ref.size() && std::memcmp(b.data(), ref.data(), ref.size() * sizeof(float)) == 0);
+        CHECK(ctl.size() == ref.size() && std::memcmp(ctl.data(), ref.data(), ref.size() * sizeof(float)) != 0);
     }
 
     std::printf(failures ? "FAIL (%d)\n" : "PASS\n", failures);

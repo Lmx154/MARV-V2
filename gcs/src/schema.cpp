@@ -23,9 +23,15 @@ using param::kSchema;
 
 constexpr std::size_t kRows = sizeof(kSchema) / sizeof(kSchema[0]);
 
+// A shared parameter's id is the table's; a profiled one's is id.profile, so its key is family.kind.id.profile.
+std::string param_id(const SchemaRow& r) {
+    return r.profile == param::kShared ? std::string(r.id) : std::string(r.id) + "." + param::kProfileId[r.profile];
+}
+
 json::object param_spec(const SchemaRow& r, std::uint16_t index) {
     json::object p;
-    p["id"] = r.id;
+    p["id"] = param_id(r);
+    if (r.profile != param::kShared) p["profile"] = param::kProfileId[r.profile];
     p["label"] = r.label;
     if (r.unit[0] != '\0') p["unit"] = r.unit;
     p["default"] = fnum(r.dflt);
@@ -114,7 +120,7 @@ json::value schema() {
                     continue;
                 }
                 params.push_back(param_spec(r, index[i]));
-                if (!parts.empty()) parts.back().as_object()["params"].as_array().push_back(json::string(r.id));
+                if (!parts.empty()) parts.back().as_object()["params"].as_array().push_back(json::string(param_id(r)));
             }
             // The vehicle kinds this kind serves, by wire name.
             json::array vehicles;
@@ -139,8 +145,11 @@ json::value schema() {
         factory.push_back(json::object{{"id", kPresets[i].id}, {"label", kPresets[i].name}, {"kinds", std::move(kinds)},
                                        {"values", std::move(values)}});
     }
-    return json::object{{"schema_hash", param::kSchemaHash}, {"families", std::move(families)},
-                        {"factory", std::move(factory)}};
+    json::array profiles;
+    for (std::uint8_t i = 0; i < param::kProfileCount; ++i)
+        profiles.push_back(json::object{{"id", param::kProfileId[i]}, {"label", param::kProfileLabel[i]}});
+    return json::object{{"schema_hash", param::kSchemaHash}, {"profiles", std::move(profiles)},
+                        {"families", std::move(families)}, {"factory", std::move(factory)}};
 }
 
 const std::string& schema_text() {

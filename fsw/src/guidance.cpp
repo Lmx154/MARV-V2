@@ -33,7 +33,7 @@ TrajectoryGuidance::TrajectoryGuidance(const param::TrajectoryParams& p) : p_(p)
     smoothing_.set_max_allowed_vertical_error(p.err_z_max);
     smoothing_.set_vertical_acceptance_radius(kAltAcceptRad);
     smoothing_.set_horizontal_trajectory_gain(kXyTrajP);
-    smoothing_.set_max_jerk(p.jerk);
+    smoothing_.set_max_jerk(p.jerk[param::k_profile_hold]);
 }
 
 Reference TrajectoryGuidance::run(const Reference& ref, const State& nav, Mode mode, float dt) {
@@ -57,10 +57,12 @@ Reference TrajectoryGuidance::run(const Reference& ref, const State& nav, Mode m
 
     // FlightTaskAuto.cpp:406-420 and 770-808: the cruise speed, and the vertical limits of the direction the last
     // unsmoothed velocity setpoint pointed.
-    smoothing_.set_cruise_speed(std::fmin(ref.speed_mps > 0.f ? ref.speed_mps : p_.cruise_speed, p_.xy_vel_max));
+    smoothing_.set_cruise_speed(
+        std::fmin(ref.speed_mps > 0.f ? ref.speed_mps : p_.cruise_speed[param::k_profile_hold], p_.xy_vel_max));
     smoothing_.set_target_acceptance_radius(ref.accept_m);
     const bool up = unsmoothed_z_ < 0.f;
-    smoothing_.set_max_acceleration({p_.acc_xy, p_.acc_xy, up ? p_.acc_up : p_.acc_dn});
+    const std::uint8_t h = param::k_profile_hold;
+    smoothing_.set_max_acceleration({p_.acc_xy[h], p_.acc_xy[h], up ? p_.acc_up[h] : p_.acc_dn[h]});
     smoothing_.set_max_velocity({p_.xy_vel_max, p_.xy_vel_max, up ? p_.z_vel_up : p_.z_vel_dn});
 
     const Vec3 ff = (ref.has & kRefVel) ? ref.v_ned : Vec3{0.f, 0.f, 0.f};
@@ -82,7 +84,7 @@ Reference TrajectoryGuidance::run(const Reference& ref, const State& nav, Mode m
     if (ref.has & kRefYaw) {
         yaw_ = ref.yaw;
     } else if (std::sqrt(sp.velocity.x * sp.velocity.x + sp.velocity.y * sp.velocity.y) > p_.heading_min_speed) {
-        const float step = p_.yaw_rate_auto * dt;
+        const float step = p_.yaw_rate_auto[param::k_profile_hold] * dt;
         const float e = wrap_pi(std::atan2(sp.velocity.y, sp.velocity.x) - yaw_);
         yaw_ = wrap_pi(yaw_ + std::fmin(std::fmax(e, -step), step));
     }

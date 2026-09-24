@@ -47,17 +47,19 @@ inline constexpr std::size_t kSensorsBody = 8 + 1 + 24 + 8 + 12 + (4 + 4 + 4 + 1
 inline constexpr std::size_t kActuatorsBody = 8 + 4 * kMotorCount + 4 + 1;             // 29
 inline constexpr std::size_t kStateBody = 8 + 12 + 12 + 16 + 12 + 1;                   // 61
 inline constexpr std::size_t kReferenceBody = 1 + 12 + 12 + 12 + 4 + 4 + 16 + 4 + 4 + 12 + 4 + 4;  // 89
-inline constexpr std::size_t kMissionBody = 1 + 1 + kReferenceBody;                                // 91
+inline constexpr std::size_t kSticksBody = 4 + 4 + 4 + 4;                                         // 16
+inline constexpr std::size_t kMissionBody = 1 + 1 + kReferenceBody + 1 + 1 + kSticksBody;          // 109
 inline constexpr std::size_t kControlRequestBody = 12 + 12 + 4 + 4;                    // 32
-inline constexpr std::size_t kTelemetryBody = 8 + kStateBody + kControlRequestBody + 1 + 1 + 12;  // 115
+inline constexpr std::size_t kTelemetryBody = 8 + kStateBody + kControlRequestBody + 1 + 1 + 12 + 1;  // 116
 inline constexpr std::size_t kSetParamBody = 2 + 4;                                     // 6
 inline constexpr std::size_t kSetKindBody = 1 + 1;                                      // 2
 inline constexpr std::size_t kLoadFactoryBody = 1;
 inline constexpr std::size_t kSetupHeaderBody = 4 + 2 + param::kFamilyCount + 4 + 4 + 4 + 1 + 1;  // 27
 inline constexpr std::size_t kParamValueBody = 2 + 4;                                   // 6
 inline constexpr std::size_t kMaxBody = kTelemetryBody > kSensorsBody ? kTelemetryBody : kSensorsBody;
-static_assert(kSetupHeaderBody <= kMaxBody && kSetParamBody <= kMaxBody && kParamValueBody <= kMaxBody,
-              "the setup messages fit the largest body");
+static_assert(kSetupHeaderBody <= kMaxBody && kSetParamBody <= kMaxBody && kParamValueBody <= kMaxBody &&
+                  kMissionBody <= kMaxBody,
+              "the setup and mission messages fit the largest body");
 inline constexpr std::size_t kMaxPayload = 1 + kMaxBody + 2;
 // COBS adds one byte per 254 plus one; then the delimiter.
 inline constexpr std::size_t kMaxFrame = kMaxPayload + kMaxPayload / 254 + 2;
@@ -308,12 +310,26 @@ inline void get(Reader& r, Reference& f) {
     f.accept_m = r.f32();
 }
 
+// A stick within -1..1: beyond it clamped, NaN 0.
+inline float clamp_stick(float v) {
+    if (v > 1.f) return 1.f;
+    if (v < -1.f) return -1.f;
+    return v >= -1.f ? v : 0.f;
+}
+
 inline void put(Writer& w, const MissionCommand& m) {
     w.u8(static_cast<std::uint8_t>(m.mode));
     w.u8(static_cast<std::uint8_t>(m.nav));
     put(w, m.ref);
+    w.u8(m.profile);
+    w.u8(m.manual);
+    w.f32(m.sticks.fwd);
+    w.f32(m.sticks.right);
+    w.f32(m.sticks.up);
+    w.f32(m.sticks.yaw);
 }
 
+// An unknown mode reads as kIdle, an unknown profile as hold, an unknown manual as auto; sticks go through clamp_stick().
 inline void get(Reader& r, MissionCommand& m) {
     const std::uint8_t mode = r.u8();
     m.mode = mode == static_cast<std::uint8_t>(Mode::kFly)     ? Mode::kFly
@@ -321,6 +337,13 @@ inline void get(Reader& r, MissionCommand& m) {
                                                                : Mode::kIdle;
     m.nav = r.u8() == static_cast<std::uint8_t>(NavSource::kTruth) ? NavSource::kTruth : NavSource::kEstimate;
     get(r, m.ref);
+    const std::uint8_t profile = r.u8();
+    m.profile = profile < param::kProfileCount ? profile : static_cast<std::uint8_t>(param::k_profile_hold);
+    m.manual = r.u8() == 1 ? 1 : 0;
+    m.sticks.fwd = clamp_stick(r.f32());
+    m.sticks.right = clamp_stick(r.f32());
+    m.sticks.up = clamp_stick(r.f32());
+    m.sticks.yaw = clamp_stick(r.f32());
 }
 
 inline void put(Writer& w, const Telemetry& t) {
@@ -335,6 +358,7 @@ inline void put(Writer& w, const Telemetry& t) {
     w.i32(t.home.lat_e7);
     w.i32(t.home.lon_e7);
     w.f32(t.home.alt_m);
+    w.u8(t.profile);
 }
 
 inline void get(Reader& r, Telemetry& t) {
@@ -349,6 +373,7 @@ inline void get(Reader& r, Telemetry& t) {
     t.home.lat_e7 = r.i32();
     t.home.lon_e7 = r.i32();
     t.home.alt_m = r.f32();
+    t.profile = r.u8();
 }
 
 inline void put(Writer&, const Reset&) {}

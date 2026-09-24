@@ -4,6 +4,7 @@
 // first include to also get kSchema, every row with every column. float only, no heap.
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 
@@ -24,6 +25,14 @@ enum Family : std::uint8_t {
     kFamilyCount
 };
 static_assert(kFamilyCount == 7, "seven families");
+
+// k_profile_<id>: a flight profile, the column of every profiled parameter (MissionCommand::profile).
+enum Profile : std::uint8_t {
+#define MARV_PROFILE(id, label) k_profile_##id,
+#include <marv/fsw/params.def>
+    kProfileCount
+};
+static_assert(kProfileCount == 4 && k_profile_hold == 0, "four profiles, hold first");
 
 namespace detail {
 enum KindRow : std::uint8_t {
@@ -93,9 +102,12 @@ static_assert(every_class_served(), "every family has at least one kind per vehi
 
 // ---- parameters --------------------------------------------------------------------------------------------------------
 
-// k_<family>_<kind>_<id>: the parameter's index into Setup::values.
+// k_<family>_<kind>_<id>: the parameter's index into Setup::values; a profiled parameter's value for profile p is at
+// k_<family>_<kind>_<id> + p, up to k_<family>_<kind>_<id>_last.
 enum ParamIndex : std::uint16_t {
 #define MARV_PARAM(f, k, id, label, unit, dflt, min, max, step, digits, note, source) k_##f##_##k##_##id,
+#define MARV_PROFILED(f, k, id, label, unit, d0, d1, d2, d3, min, max, step, digits, note, source) \
+    k_##f##_##k##_##id, k_##f##_##k##_##id##_last = k_##f##_##k##_##id + kProfileCount - 1,
 #include <marv/fsw/params.def>
     kParamCount
 };
@@ -112,6 +124,11 @@ struct ParamMeta {
 inline constexpr ParamMeta kParamMeta[kParamCount] = {
 #define MARV_PARAM(f, k, id, label, unit, dflt, min, max, step, digits, note, source) \
     {k_##f##_##k##_##id, k_##f, k_##f##_##k, dflt, min, max},
+#define MARV_PROFILED(f, k, id, label, unit, d0, d1, d2, d3, min, max, step, digits, note, source) \
+    {k_##f##_##k##_##id, k_##f, k_##f##_##k, d0, min, max},                                   \
+    {k_##f##_##k##_##id + 1, k_##f, k_##f##_##k, d1, min, max},                               \
+    {k_##f##_##k##_##id + 2, k_##f, k_##f##_##k, d2, min, max},                               \
+    {k_##f##_##k##_##id + 3, k_##f, k_##f##_##k, d3, min, max},
 #include <marv/fsw/params.def>
 };
 
@@ -173,11 +190,14 @@ constexpr std::uint32_t hash_param(std::uint32_t h, const char* family, const ch
     return fnv1a(fnv1a(fnv1a(h, family), kind), id);
 }
 
-// Every kind (family, kind, wire name) and every parameter (family, kind, id), in table order.
+// Every profile (id), kind (family, kind, wire name) and parameter (family, kind, id; a profiled one marked), in table order.
 constexpr std::uint32_t schema_hash() {
     std::uint32_t h = kFnvBasis;
+#define MARV_PROFILE(id, label) h = fnv1a(fnv1a(h, "profile"), #id);
 #define MARV_KIND(f, k, name, label, summary, vehicles) h = hash_kind(h, #f, #k, name);
 #define MARV_PARAM(f, k, id, label, unit, dflt, min, max, step, digits, note, source) h = hash_param(h, #f, #k, #id);
+#define MARV_PROFILED(f, k, id, label, unit, d0, d1, d2, d3, min, max, step, digits, note, source) \
+    h = fnv1a(hash_param(h, #f, #k, #id), "profiled");
 #include <marv/fsw/params.def>
     return h;
 }
@@ -185,8 +205,9 @@ inline constexpr std::uint32_t kSchemaHash = schema_hash();
 
 // ---- typed parameters --------------------------------------------------------------------------------------------------
 
-// One struct per (family, kind), a float per parameter initialised to its default, and <family>_<kind>(setup), which
-// fills it from a Setup. A pass selects its rows by defining MARV_PARAMS_SEL_<family>_<kind> as "~, 1".
+// One struct per (family, kind), a float per parameter initialised to its default (a profiled one: float id[kProfileCount],
+// by profile), and <family>_<kind>(setup), which fills it from a Setup. A pass selects its rows by defining
+// MARV_PARAMS_SEL_<family>_<kind> as "~, 1".
 #define MARV_PARAMS_CAT_(a, b) a##b
 #define MARV_PARAMS_CAT(a, b) MARV_PARAMS_CAT_(a, b)
 #define MARV_PARAMS_SECOND_(a, b, ...) b
@@ -196,15 +217,21 @@ inline constexpr std::uint32_t kSchemaHash = schema_hash();
 #define MARV_PARAMS_WHEN(f, k) MARV_PARAMS_CAT(MARV_PARAMS_IF_, MARV_PARAMS_SECOND(MARV_PARAMS_SEL_##f##_##k))
 #define MARV_PARAMS_FIELD(f, k, id, label, unit, dflt, ...) MARV_PARAMS_WHEN(f, k)(float id = dflt;)
 #define MARV_PARAMS_FILL(f, k, id, ...) MARV_PARAMS_WHEN(f, k)(p.id = s.values[k_##f##_##k##_##id];)
+#define MARV_PARAMS_FIELD_PROFILED(f, k, id, label, unit, d0, d1, d2, d3, ...) \
+    MARV_PARAMS_WHEN(f, k)(float id[kProfileCount] = {d0, d1, d2, d3};)
+#define MARV_PARAMS_FILL_PROFILED(f, k, id, ...) \
+    MARV_PARAMS_WHEN(f, k)(for (std::uint8_t i = 0; i < kProfileCount; ++i) p.id[i] = s.values[k_##f##_##k##_##id + i];)
 
 #define MARV_PARAMS_SEL_vehicle_uav ~, 1
 struct UavParams {
 #define MARV_PARAM MARV_PARAMS_FIELD
+#define MARV_PROFILED MARV_PARAMS_FIELD_PROFILED
 #include <marv/fsw/params.def>
 };
 inline UavParams vehicle_uav(const Setup& s) {
     UavParams p;
 #define MARV_PARAM MARV_PARAMS_FILL
+#define MARV_PROFILED MARV_PARAMS_FILL_PROFILED
 #include <marv/fsw/params.def>
     return p;
 }
@@ -213,11 +240,13 @@ inline UavParams vehicle_uav(const Setup& s) {
 #define MARV_PARAMS_SEL_sensors_suite ~, 1
 struct SensorParams {
 #define MARV_PARAM MARV_PARAMS_FIELD
+#define MARV_PROFILED MARV_PARAMS_FIELD_PROFILED
 #include <marv/fsw/params.def>
 };
 inline SensorParams sensors_suite(const Setup& s) {
     SensorParams p;
 #define MARV_PARAM MARV_PARAMS_FILL
+#define MARV_PROFILED MARV_PARAMS_FILL_PROFILED
 #include <marv/fsw/params.def>
     return p;
 }
@@ -227,11 +256,13 @@ inline SensorParams sensors_suite(const Setup& s) {
 #define MARV_PARAMS_SEL_estimator_eskf ~, 1
 struct EskfPriors {
 #define MARV_PARAM MARV_PARAMS_FIELD
+#define MARV_PROFILED MARV_PARAMS_FIELD_PROFILED
 #include <marv/fsw/params.def>
 };
 inline EskfPriors estimator_eskf(const Setup& s) {
     EskfPriors p;
 #define MARV_PARAM MARV_PARAMS_FILL
+#define MARV_PROFILED MARV_PARAMS_FILL_PROFILED
 #include <marv/fsw/params.def>
     return p;
 }
@@ -240,6 +271,7 @@ inline EskfPriors estimator_eskf(const Setup& s) {
 inline EskfPriors estimator_ekf(const Setup& s) {
     EskfPriors p;
 #define MARV_PARAM MARV_PARAMS_FILL
+#define MARV_PROFILED MARV_PARAMS_FILL_PROFILED
 #include <marv/fsw/params.def>
     return p;
 }
@@ -250,11 +282,13 @@ static_assert(param_count(k_estimator, k_estimator_ekf) == param_count(k_estimat
 #define MARV_PARAMS_SEL_estimator_mahony ~, 1
 struct MahonyParams {
 #define MARV_PARAM MARV_PARAMS_FIELD
+#define MARV_PROFILED MARV_PARAMS_FIELD_PROFILED
 #include <marv/fsw/params.def>
 };
 inline MahonyParams estimator_mahony(const Setup& s) {
     MahonyParams p;
 #define MARV_PARAM MARV_PARAMS_FILL
+#define MARV_PROFILED MARV_PARAMS_FILL_PROFILED
 #include <marv/fsw/params.def>
     return p;
 }
@@ -263,11 +297,13 @@ inline MahonyParams estimator_mahony(const Setup& s) {
 #define MARV_PARAMS_SEL_estimator_complementary ~, 1
 struct ComplementaryParams {
 #define MARV_PARAM MARV_PARAMS_FIELD
+#define MARV_PROFILED MARV_PARAMS_FIELD_PROFILED
 #include <marv/fsw/params.def>
 };
 inline ComplementaryParams estimator_complementary(const Setup& s) {
     ComplementaryParams p;
 #define MARV_PARAM MARV_PARAMS_FILL
+#define MARV_PROFILED MARV_PARAMS_FILL_PROFILED
 #include <marv/fsw/params.def>
     return p;
 }
@@ -276,11 +312,13 @@ inline ComplementaryParams estimator_complementary(const Setup& s) {
 #define MARV_PARAMS_SEL_guidance_apogee_predictor ~, 1
 struct ApogeePredictorParams {
 #define MARV_PARAM MARV_PARAMS_FIELD
+#define MARV_PROFILED MARV_PARAMS_FIELD_PROFILED
 #include <marv/fsw/params.def>
 };
 inline ApogeePredictorParams guidance_apogee_predictor(const Setup& s) {
     ApogeePredictorParams p;
 #define MARV_PARAM MARV_PARAMS_FILL
+#define MARV_PROFILED MARV_PARAMS_FILL_PROFILED
 #include <marv/fsw/params.def>
     return p;
 }
@@ -289,12 +327,22 @@ inline ApogeePredictorParams guidance_apogee_predictor(const Setup& s) {
 #define MARV_PARAMS_SEL_guidance_trajectory ~, 1
 struct TrajectoryParams {
 #define MARV_PARAM MARV_PARAMS_FIELD
+#define MARV_PROFILED MARV_PARAMS_FIELD_PROFILED
 #include <marv/fsw/params.def>
 };
+// Each profile's acc_xy within what its tilt limit holds with a third of the tilt to spare for correction:
+// g tan(2/3 tilt_max) (ADR-0012; ArduPilot@0deeede043 libraries/AC_WPNav/AC_Loiter.cpp:237), g the sensors' gravity.
+inline float acc_xy_limit(const Setup& s, std::uint8_t profile) {
+    constexpr float kTwoThirdsRadPerDeg = 2.f / 3.f * 3.14159265358979f / 180.f;
+    return s.values[k_sensors_suite_gravity] *
+           std::tan(s.values[k_controller_cascaded_pid_tilt_max_deg + profile] * kTwoThirdsRadPerDeg);
+}
 inline TrajectoryParams guidance_trajectory(const Setup& s) {
     TrajectoryParams p;
 #define MARV_PARAM MARV_PARAMS_FILL
+#define MARV_PROFILED MARV_PARAMS_FILL_PROFILED
 #include <marv/fsw/params.def>
+    for (std::uint8_t i = 0; i < kProfileCount; ++i) p.acc_xy[i] = std::fmin(p.acc_xy[i], acc_xy_limit(s, i));
     return p;
 }
 #undef MARV_PARAMS_SEL_guidance_trajectory
@@ -302,11 +350,13 @@ inline TrajectoryParams guidance_trajectory(const Setup& s) {
 #define MARV_PARAMS_SEL_controller_cascaded_pid ~, 1
 struct ControllerParams {
 #define MARV_PARAM MARV_PARAMS_FIELD
+#define MARV_PROFILED MARV_PARAMS_FIELD_PROFILED
 #include <marv/fsw/params.def>
 };
 inline ControllerParams controller_cascaded_pid(const Setup& s) {
     ControllerParams p;
 #define MARV_PARAM MARV_PARAMS_FILL
+#define MARV_PROFILED MARV_PARAMS_FILL_PROFILED
 #include <marv/fsw/params.def>
     return p;
 }
@@ -315,11 +365,13 @@ inline ControllerParams controller_cascaded_pid(const Setup& s) {
 #define MARV_PARAMS_SEL_controller_apogee_pid ~, 1
 struct ApogeePidParams {
 #define MARV_PARAM MARV_PARAMS_FIELD
+#define MARV_PROFILED MARV_PARAMS_FIELD_PROFILED
 #include <marv/fsw/params.def>
 };
 inline ApogeePidParams controller_apogee_pid(const Setup& s) {
     ApogeePidParams p;
 #define MARV_PARAM MARV_PARAMS_FILL
+#define MARV_PROFILED MARV_PARAMS_FILL_PROFILED
 #include <marv/fsw/params.def>
     return p;
 }
@@ -328,16 +380,20 @@ inline ApogeePidParams controller_apogee_pid(const Setup& s) {
 #define MARV_PARAMS_SEL_actuators_rotor_speed_fraction ~, 1
 struct ActuatorParams {
 #define MARV_PARAM MARV_PARAMS_FIELD
+#define MARV_PROFILED MARV_PARAMS_FIELD_PROFILED
 #include <marv/fsw/params.def>
 };
 inline ActuatorParams actuators_rotor_speed_fraction(const Setup& s) {
     ActuatorParams p;
 #define MARV_PARAM MARV_PARAMS_FILL
+#define MARV_PROFILED MARV_PARAMS_FILL_PROFILED
 #include <marv/fsw/params.def>
     return p;
 }
 #undef MARV_PARAMS_SEL_actuators_rotor_speed_fraction
 
+#undef MARV_PARAMS_FILL_PROFILED
+#undef MARV_PARAMS_FIELD_PROFILED
 #undef MARV_PARAMS_FILL
 #undef MARV_PARAMS_FIELD
 #undef MARV_PARAMS_WHEN
@@ -354,11 +410,13 @@ inline ActuatorParams actuators_rotor_speed_fraction(const Setup& s) {
 enum class RowType : std::uint8_t { kFamily, kKind, kPart, kParam };
 
 // params.def as data, in file order. A kind row's id is its wire name and its note the summary; a part covers the
-// parameter rows up to the next part or kind.
+// parameter rows up to the next part or kind. A profiled parameter is four rows, one per profile, profile order.
+inline constexpr std::uint8_t kShared = 0xFF;  // SchemaRow::profile of a parameter every profile shares
 struct SchemaRow {
     RowType type;
     std::uint8_t family;
     std::uint8_t kind;
+    std::uint8_t profile;  // Profile, or kShared
     const char* id;
     const char* label;
     const char* unit;
@@ -372,11 +430,26 @@ struct SchemaRow {
 };
 
 inline constexpr SchemaRow kSchema[] = {
-#define MARV_FAMILY(f, label) {RowType::kFamily, k_##f, 0, #f, label, "", 0.f, 0.f, 0.f, 0.f, 0, "", ""},
-#define MARV_KIND(f, k, name, label, summary, vehicles) {RowType::kKind, k_##f, k_##f##_##k, name, label, "", 0.f, 0.f, 0.f, 0.f, 0, summary, ""},
-#define MARV_PART(f, k, id, label) {RowType::kPart, k_##f, k_##f##_##k, #id, label, "", 0.f, 0.f, 0.f, 0.f, 0, "", ""},
+#define MARV_FAMILY(f, label) {RowType::kFamily, k_##f, 0, kShared, #f, label, "", 0.f, 0.f, 0.f, 0.f, 0, "", ""},
+#define MARV_KIND(f, k, name, label, summary, vehicles) {RowType::kKind, k_##f, k_##f##_##k, kShared, name, label, "", 0.f, 0.f, 0.f, 0.f, 0, summary, ""},
+#define MARV_PART(f, k, id, label) {RowType::kPart, k_##f, k_##f##_##k, kShared, #id, label, "", 0.f, 0.f, 0.f, 0.f, 0, "", ""},
 #define MARV_PARAM(f, k, id, label, unit, dflt, min, max, step, digits, note, source) \
-    {RowType::kParam, k_##f, k_##f##_##k, #id, label, unit, dflt, min, max, step, digits, note, source},
+    {RowType::kParam, k_##f, k_##f##_##k, kShared, #id, label, unit, dflt, min, max, step, digits, note, source},
+#define MARV_PROFILED(f, k, id, label, unit, d0, d1, d2, d3, min, max, step, digits, note, source)      \
+    {RowType::kParam, k_##f, k_##f##_##k, 0, #id, label, unit, d0, min, max, step, digits, note, source}, \
+    {RowType::kParam, k_##f, k_##f##_##k, 1, #id, label, unit, d1, min, max, step, digits, note, source}, \
+    {RowType::kParam, k_##f, k_##f##_##k, 2, #id, label, unit, d2, min, max, step, digits, note, source}, \
+    {RowType::kParam, k_##f, k_##f##_##k, 3, #id, label, unit, d3, min, max, step, digits, note, source},
+#include <marv/fsw/params.def>
+};
+
+// The profiles' ids (the last part of a profiled parameter's key) and labels, in profile order.
+inline constexpr const char* kProfileId[kProfileCount] = {
+#define MARV_PROFILE(id, label) #id,
+#include <marv/fsw/params.def>
+};
+inline constexpr const char* kProfileLabel[kProfileCount] = {
+#define MARV_PROFILE(id, label) label,
 #include <marv/fsw/params.def>
 };
 
