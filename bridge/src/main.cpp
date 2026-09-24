@@ -13,7 +13,8 @@
 //
 // --ground: the mission comes from marv_ground instead, over UDP 127.0.0.1:14650. Each datagram from the
 // ground is complete link frames, forwarded unchanged between the truth and the SensorBus of the next
-// step; every frame the flight controller sends back goes unchanged to the last ground address seen.
+// step; every frame the flight controller sends back goes unchanged to every ground address heard in the
+// last 2 s, so a ground station and marv_ground can share the link.
 // The world is paced to wall-clock time so a pilot flies it in real time.
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -91,11 +92,14 @@ bool load_mission(const char* path, std::vector<MissionLine>& out) {
     return ok;
 }
 
-// The ground link of --ground: a UDP socket on 127.0.0.1:14650 and the last address heard from.
+// The ground link of --ground: a UDP socket on 127.0.0.1:14650 and every address heard in the last 2 s.
 struct GroundLink {
+    struct Peer {
+        sockaddr_in addr;
+        std::chrono::steady_clock::time_point heard;
+    };
     int fd = -1;
-    sockaddr_in peer{};
-    bool has_peer = false;
+    std::vector<Peer> peers;
 
     bool open(std::string& err) {
         sockaddr_in a{};
@@ -112,24 +116,33 @@ struct GroundLink {
 
     // Appends every datagram waiting that ends a frame; a datagram cut mid-frame would corrupt the next.
     void drain(std::vector<std::uint8_t>& out) {
+        const auto now = std::chrono::steady_clock::now();
         for (;;) {
             std::uint8_t buf[2048];
             sockaddr_in from{};
             socklen_t len = sizeof(from);
             const ssize_t n = ::recvfrom(fd, buf, sizeof(buf), MSG_DONTWAIT, reinterpret_cast<sockaddr*>(&from), &len);
-            if (n < 0) return;
-            peer = from;
-            has_peer = true;
+            if (n < 0) break;
+            const auto same = [&](const Peer& p) {
+                return p.addr.sin_addr.s_addr == from.sin_addr.s_addr && p.addr.sin_port == from.sin_port;
+            };
+            const auto it = std::find_if(peers.begin(), peers.end(), same);
+            if (it != peers.end()) it->heard = now;
+            else peers.push_back({from, now});
             if (n > 0 && buf[n - 1] == 0) out.insert(out.end(), buf, buf + n);
         }
+        peers.erase(std::remove_if(peers.begin(), peers.end(),
+                                   [&](const Peer& p) { return now - p.heard > std::chrono::seconds(2); }),
+                    peers.end());
     }
 
-    // Sends the complete frames in fc (up to its last delimiter) and keeps the rest for next time.
+    // Sends the complete frames in fc (up to its last delimiter) to every peer and keeps the rest for next time.
     void forward(std::vector<std::uint8_t>& fc) {
         const auto end = std::find(fc.rbegin(), fc.rend(), std::uint8_t{0}).base();
-        if (has_peer && end != fc.begin())
-            ::sendto(fd, fc.data(), static_cast<std::size_t>(end - fc.begin()), 0, reinterpret_cast<const sockaddr*>(&peer),
-                     sizeof(peer));
+        if (end != fc.begin())
+            for (const Peer& p : peers)
+                ::sendto(fd, fc.data(), static_cast<std::size_t>(end - fc.begin()), 0,
+                         reinterpret_cast<const sockaddr*>(&p.addr), sizeof(p.addr));
         fc.erase(fc.begin(), end);
     }
 };
