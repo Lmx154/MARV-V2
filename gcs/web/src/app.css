@@ -1,0 +1,193 @@
+:root {
+	color-scheme: light dark;
+
+	--sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+	--mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+	/* light (default) */
+	--bg: #f3f3f0;
+	--surface: #ffffff;
+	--surface-2: #e9e9e5;
+	--text: #17191c;
+	--muted: #5b626b;
+	--border: #d3d5d8;
+	--border-strong: #b8bcc1;
+	--accent: #a86200;
+	--accent-bg: rgba(168, 98, 0, 0.1);
+	--ok: #1f7a3f;
+	--warn: #9a6a00;
+	--bad: #b4232c;
+
+	--l-mission: #7340c9;
+	--l-design: #0b7285;
+	--l-validation: #1f7a3f;
+	--l-software: #1d4fd0;
+	--l-firmware: #cc4e00;
+	--l-hardware: #96543a;
+	/* Variable colour roles (equations, value boxes, legends) */
+	--v-state: #1d4fd0;
+	--v-cov: #7340c9;
+	--v-model: #cc4e00;
+	--v-noise: #a86200;
+	--v-meas: #1f7a3f;
+	--v-gain: #b4232c;
+	--v-error: #0b7285;
+	--v-truth: #17191c;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--bg: #0d0f11;
+		--surface: #15181b;
+		--surface-2: #1c2024;
+		--text: #e7e9eb;
+		--muted: #96a0aa;
+		--border: #2a2f35;
+		--border-strong: #3b424a;
+		--accent: #f0b23a;
+		--accent-bg: rgba(240, 178, 58, 0.12);
+		--ok: #4fce7a;
+		--warn: #f0b23a;
+		--bad: #ff6b6b;
+
+		--l-mission: #b594f5;
+		--l-design: #4cc9dc;
+		--l-validation: #58cf7e;
+		--l-software: #72a0f7;
+		--l-firmware: #ff8840;
+		--l-hardware: #d9947a;
+		--v-state: #7aa2ff;
+		--v-cov: #b794f6;
+		--v-model: #ff9d5c;
+		--v-noise: #f0b23a;
+		--v-meas: #4fce7a;
+		--v-error: #5ad1e6;
+		--v-gain: #ff6b6b;
+		--v-truth: #e7e9eb;
+	}
+}
+
+:root[data-theme='dark'] {
+	--bg: #0d0f11;
+	--surface: #15181b;
+	--surface-2: #1c2024;
+	--text: #e7e9eb;
+	--muted: #96a0aa;
+	--border: #2a2f35;
+	--border-strong: #3b424a;
+	--accent: #f0b23a;
+	--accent-bg: rgba(240, 178, 58, 0.12);
+	--ok: #4fce7a;
+	--warn: #f0b23a;
+	--bad: #ff6b6b;
+
+	--l-mission: #b594f5;
+	--l-design: #4cc9dc;
+	--l-validation: #58cf7e;
+	--l-software: #72a0f7;
+	--l-firmware: #ff8840;
+	--l-hardware: #d9947a;
+		--v-state: #7aa2ff;
+		--v-cov: #b794f6;
+		--v-model: #ff9d5c;
+		--v-noise: #f0b23a;
+		--v-meas: #4fce7a;
+		--v-error: #5ad1e6;
+		--v-gain: #ff6b6b;
+		--v-truth: #e7e9eb;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--sans);
+	font-size: 15px;
+	line-height: 1.55;
+	-webkit-font-smoothing: antialiased;
+}
+
+body {
+	transition:
+		background-color 120ms ease,
+		color 120ms ease;
+}
+
+h1,
+h2,
+h3,
+h4 {
+	font-weight: 650;
+	letter-spacing: -0.01em;
+	line-height: 1.2;
+}
+
+h1 {
+	font-size: clamp(1.6rem, 3vw, 2rem);
+}
+
+h2 {
+	font-size: 1.15rem;
+	font-weight: 600;
+	letter-spacing: normal;
+}
+
+h3 {
+	font-size: 1rem;
+	font-weight: 600;
+	letter-spacing: normal;
+}
+
+p {
+	max-width: 48rem;
+}
+
+a {
+	color: var(--accent);
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+code,
+.mono {
+	font-family: var(--mono);
+}
+
+.mono,
+input,
+.readout-value {
+	font-variant-numeric: tabular-nums;
+}
+
+hr {
+	border: none;
+	border-top: 1px solid var(--border);
+}
+
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.content {
+	max-width: 48rem;
+}
+
+/* Colour roles for variables in equations (KaTeX \htmlClass), value boxes and legends. */
+.v-state { --v-color: var(--v-state); color: var(--v-state); }
+.v-cov { --v-color: var(--v-cov); color: var(--v-cov); }
+.v-model { --v-color: var(--v-model); color: var(--v-model); }
+.v-noise { --v-color: var(--v-noise); color: var(--v-noise); }
+.v-meas { --v-color: var(--v-meas); color: var(--v-meas); }
+.v-gain { --v-color: var(--v-gain); color: var(--v-gain); }
+.v-error { --v-color: var(--v-error); color: var(--v-error); }
+.v-truth { --v-color: var(--v-truth); color: var(--v-truth); }
+.v-plain { --v-color: var(--muted); }
