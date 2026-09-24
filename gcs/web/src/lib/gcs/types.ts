@@ -15,6 +15,14 @@ export interface ParamSpec {
 	source?: string;
 	/** Absolute index into Setup::values[]. */
 	index: number;
+	/** A profiled param's profile id (its id is base.profile); absent when shared. */
+	profile?: string;
+}
+
+/** A flight profile, in the schema's (and the wire's index) order. */
+export interface ProfileDef {
+	id: string;
+	label: string;
 }
 
 /** A named group of a block's parameters: an expanded block is a list of parts. */
@@ -51,6 +59,7 @@ export interface FactorySetup {
 /** GET /api/schema. */
 export interface Schema {
 	schema_hash: number;
+	profiles: ProfileDef[];
 	families: FamilyDef[];
 	factory: FactorySetup[];
 }
@@ -127,6 +136,8 @@ export interface MissionStatus {
 	home: { lat: number; lon: number } | null;
 	/** Why the state is what it is, e.g. "landed", "telemetry stale"; empty when none. */
 	reason: string;
+	/** The profile the executor runs (index into Schema.profiles), when reported. */
+	profile?: number;
 }
 
 export interface Telemetry {
@@ -144,6 +155,8 @@ export interface Telemetry {
 	geo: LatLonAlt | null;
 	/** The last actuator command, one value per motor; null when not reported. */
 	motor: [number, number, number, number] | null;
+	/** The profile the FC applies (index into Schema.profiles), when reported. */
+	profile?: number;
 }
 
 /** An airframe's physical specs as the sim reports them (GET /api/sim/airframes). */
@@ -219,7 +232,8 @@ export type ClientMsg =
 	| { type: 'arm' }
 	| { type: 'disarm' }
 	| { type: 'climb'; alt_m: number }
-	| { type: 'mission_start'; waypoints: LatLonAlt[]; speed_mps?: number }
+	| { type: 'mission_start'; waypoints: LatLonAlt[]; speed_mps?: number; profile?: number }
+	| { type: 'profile'; profile: number }
 	| { type: 'rth' }
 	| { type: 'land' }
 	| { type: 'sim_launch'; airframe: string; env: SimEnv; gui: boolean; target: SimTarget }

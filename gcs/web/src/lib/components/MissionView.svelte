@@ -30,19 +30,22 @@
 		type MissionPreset,
 		type MissionRequest
 	} from '$lib/gcs/mission';
+	import { profileMsg, profileStatus, reportedProfile } from '$lib/gcs/profiles';
 	import { euler } from '$lib/gcs/protocol';
-	import type { LatLonAlt, MissionStatus, Telemetry } from '$lib/gcs/types';
+	import type { ClientMsg, LatLonAlt, MissionStatus, ProfileDef, Telemetry } from '$lib/gcs/types';
 
 	interface Props {
 		telem: Telemetry | null;
 		mission: MissionStatus | null;
+		/** The schema's flight profiles, in wire-index order. */
+		profiles: ProfileDef[];
 		/** Backend open and FC connected. */
 		connected: boolean;
-		errors: Partial<Record<MissionRequest, string>>;
+		errors: Partial<Record<MissionRequest | 'profile', string>>;
 		visible: boolean;
-		onsend: (m: MissionMsg) => void;
+		onsend: (m: MissionMsg | Extract<ClientMsg, { type: 'profile' }>) => void;
 	}
-	let { telem, mission, connected, errors, visible, onsend }: Props = $props();
+	let { telem, mission, profiles, connected, errors, visible, onsend }: Props = $props();
 
 	const DEG = 180 / Math.PI;
 
@@ -56,6 +59,8 @@
 	let speedText = $state('');
 	/** The speed the last START asked for (null: cruise). */
 	let startedSpeed = $state<number | null>(null);
+	/** The profile last selected here (null: none yet); START sends it too. */
+	let requestedProfile = $state<number | null>(null);
 	let presets = $state<MissionPreset[]>([]);
 	let presetName = $state('');
 	let note = $state<string | null>(null);
@@ -89,6 +94,7 @@
 	const reason = $derived(reasonText(mission));
 	const spinning = $derived(propsSpinning(telem));
 	const full = $derived(waypoints.length >= MAX_WAYPOINTS);
+	const profileNow = $derived(profileStatus(profiles, requestedProfile, reportedProfile(telem, mission)));
 
 	const fmt = (v: number | null | undefined, d = 1): string => (v !== null && v !== undefined && Number.isFinite(v) ? v.toFixed(d) : '—');
 
@@ -123,7 +129,12 @@
 	function start(): void {
 		if (typeof speed === 'string') return;
 		startedSpeed = speed;
-		onsend(missionStart(waypoints, speed));
+		onsend(missionStart(waypoints, speed, requestedProfile));
+	}
+
+	function selectProfile(i: number): void {
+		requestedProfile = i;
+		onsend(profileMsg(i));
 	}
 
 	function disarm(): void {
@@ -201,6 +212,23 @@
 		{#if mission?.climb_alt_m != null}<span><span class="k">safe alt</span> {fmt(mission.climb_alt_m)} m</span>{/if}
 		{#if !home}<span class="warn">no home from the FC</span>{/if}
 	</div>
+
+	{#if profiles.length}
+		<div class="controls mono" aria-label="Flight profile">
+			<div class="ctl">
+				<span class="k">profile</span>
+				{#each profiles as p, i (p.id)}
+					<button type="button" class="btn" class:selected={requestedProfile === i} aria-pressed={requestedProfile === i} disabled={!connected} onclick={() => selectProfile(i)}>{p.label}</button>
+				{/each}
+			</div>
+			<div class="ctl" role="status">
+				<span><span class="k">requested</span> {profileNow.requested}</span>
+				<span class:warn={profileNow.mismatch}><span class="k">FC applies</span> {profileNow.reported}</span>
+				{#if profileNow.mismatch}<span class="warn">differs from the requested profile</span>{/if}
+			</div>
+			{#if errors.profile}<span class="err" role="alert">{errors.profile}</span>{/if}
+		</div>
+	{/if}
 
 	<div class="controls mono" aria-label="Mission controls">
 		<div class="ctl">
@@ -424,6 +452,10 @@
 	}
 	.btn.sm {
 		padding: 0.15rem 0.45rem;
+	}
+	.btn.selected {
+		border-color: var(--accent);
+		color: var(--accent);
 	}
 	.btn.go:not(:disabled) {
 		border-color: var(--ok);
