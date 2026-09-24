@@ -120,11 +120,13 @@ constexpr std::size_t value_at(std::uint16_t index) { return fw::kRecordHeaderBy
 
 constexpr std::uint16_t kVelMax = param::k_controller_cascaded_pid_vel_max;
 
-// A mission flown on truth: hold 2 m up, 10 m north of the vehicle at rest (level, at the origin, 2 m up).
+// A mission flown on truth: hold 2 m up, 10 m north of the vehicle at rest (level, at the origin, 2 m up); a single
+// target, p_next = p.
 const MissionCommand kFlyNorth = [] {
     MissionCommand m{Mode::kFly, NavSource::kTruth, {}};
     m.ref.has = kRefPos;
     m.ref.p_ned = {10.f, 0.f, -2.f};
+    m.ref.p_next_ned = m.ref.p_ned;
     m.ref.q = kQuatIdentity;
     return m;
 }();
@@ -192,7 +194,7 @@ int main() {
         CHECK(node.fsw().preset() == 0xFF);
         CHECK(tick(node, pf, 1000).tlm.preset == 0xFF);
 
-        ask(node, pf, link::SetParam{kVelMax, 2.f});
+        ask(node, pf, link::SetParam{kVelMax, kFactory[2].values[kVelMax]});
         ask(node, pf, link::Reset{});
         CHECK(node.fsw().preset() == 2 && tick(node, pf, 1000).tlm.preset == 2);
         CHECK(pf.writes == 0);
@@ -380,7 +382,8 @@ int main() {
     }
 
     // 8. A changed gain changes the flight software's command: vel_max halved halves the horizontal thrust a far
-    // position reference asks for; the same setup (the control) commands the same thrust, bit for bit.
+    // position reference asks for; the same setup (the control) commands the same thrust, bit for bit. Passthrough
+    // guidance, so the reference reaches the controller on the first tick, and vel_max 2 m/s, below pos_p * 10 m.
     {
         const auto thrust = [](const param::Setup& s) {
             Fsw fsw{s};
@@ -388,9 +391,12 @@ int main() {
             fsw.on_truth(truth_at(1000));
             return fsw.step(bus_at(1000)).tlm.req.thrust_ned;
         };
-        param::Setup slow = kFactory[0];
+        param::Setup base = kFactory[0];
+        base.kind[param::k_guidance] = param::k_guidance_passthrough;
+        base.values[kVelMax] = 2.f;
+        param::Setup slow = base;
         slow.values[kVelMax] = 1.f;
-        const Vec3 f0 = thrust(kFactory[0]), f1 = thrust(slow), f0b = thrust(kFactory[0]);
+        const Vec3 f0 = thrust(base), f1 = thrust(slow), f0b = thrust(base);
         std::printf("thrust north: vel_max 2 -> %.4f, vel_max 1 -> %.4f of full\n", static_cast<double>(f0.x),
                     static_cast<double>(f1.x));
         CHECK(f0.x > 0.1f && std::fabs(f1.x - 0.5f * f0.x) < 1e-5f);
@@ -479,15 +485,16 @@ int main() {
         CHECK(s.headers.size() == 1 && s.headers[0].armed == 1 && s.headers[0].stored_valid == 0 && pf.writes == 0);
     }
 
-    // The trajectory kind through Fsw: factory 0 with guidance trajectory starts the reference 10 m north at the vehicle,
-    // at rest, so its first tick asks for no horizontal thrust where passthrough (factory 0, the control) asks for vel_max
-    // toward it; a second on (the truth held still) it pulls north.
+    // The trajectory kind through Fsw: factory 0 (guidance trajectory) starts the reference 10 m north at the vehicle,
+    // at rest, so its first tick asks for no horizontal thrust where passthrough (factory 0 with guidance passthrough,
+    // the control) asks for vel_max toward it; a second on (the truth held still) it pulls north.
     {
-        param::Setup traj = kFactory[0];
-        traj.kind[param::k_guidance] = param::k_guidance_trajectory;
-        CHECK(fw::in_range(traj) && param::consistent(traj));
+        const param::Setup& traj = kFactory[0];
+        CHECK(traj.kind[param::k_guidance] == param::k_guidance_trajectory);
+        param::Setup pass = kFactory[0];
+        pass.kind[param::k_guidance] = param::k_guidance_passthrough;
+        CHECK(fw::in_range(pass) && param::consistent(pass));
         MissionCommand m = kFlyNorth;
-        m.ref.p_next_ned = m.ref.p_ned;
         m.ref.accept_m = 0.5f;
         const auto thrust_after = [&m](const param::Setup& s, int ticks) {
             Fsw fsw{s};
@@ -500,7 +507,7 @@ int main() {
             }
             return f;
         };
-        const Vec3 t1 = thrust_after(traj, 1), p1 = thrust_after(kFactory[0], 1), t1000 = thrust_after(traj, 1000);
+        const Vec3 t1 = thrust_after(traj, 1), p1 = thrust_after(pass, 1), t1000 = thrust_after(traj, 1000);
         std::printf("thrust north, guidance trajectory: %.4f on the first tick, %.4f after 1 s; passthrough %.4f\n",
                     static_cast<double>(t1.x), static_cast<double>(t1000.x), static_cast<double>(p1.x));
         CHECK(t1.x == 0.f && t1.y == 0.f && p1.x > 0.1f);

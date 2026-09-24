@@ -136,21 +136,7 @@ MARV_PARAM(estimator, complementary, k_baro, "Barometer gain", "1/s", 1.f, 0.f, 
 
 // ---- guidance ----------------------------------------------------------------------------------------------------------
 
-MARV_KIND(guidance, passthrough, "passthrough", "Passthrough", "The mission reference reaches the controller unchanged.", kClassUav)
-
-MARV_KIND(guidance, apogee_predictor, "apogee-predictor", "Apogee predictor", "While the mission flags the coast it rolls a point-mass model of the rocket from the estimated altitude and vertical speed to apogee with the brake closed, every 20 ms, and passes the prediction and the target apogee to the controller.", kClassRocket)
-MARV_PART(guidance, apogee_predictor, model, "Model")
-// Toolbox guidance.ts predictDt range, floored at the 20 ms prediction cadence.
-MARV_PARAM(guidance, apogee_predictor, predict_dt, "Prediction step", "s", 0.05f, 0.02f, 0.5f, 0.005f, 3, "Integration step of the rollout; coarser is cheaper and less accurate.", "toolbox guidance.ts:95 rocket1d DEFAULT_ROCKET.predictDt")
-MARV_PARAM(guidance, apogee_predictor, cd_base, "Drag coefficient (model)", "", 0.45f, 0.1f, 1.5f, 0.01f, 2, "Axial drag coefficient on the reference area, brake closed.", "toolbox guidance.ts:96")
-MARV_PARAM(guidance, apogee_predictor, ref_area, "Reference area (model)", "m²", 0.007854f, 0.001f, 0.1f, 0.0001f, 5, "Area the drag coefficient refers to (the body cross-section).", "toolbox guidance.ts:97 pi (0.1 m / 2)^2")
-MARV_PARAM(guidance, apogee_predictor, brake_cd_area, "Brake drag area (model)", "m²", 0.012f, 0.f, 0.05f, 0.0005f, 4, "C_D A the brake adds at full deployment.", "toolbox guidance.ts:98")
-MARV_PARAM(guidance, apogee_predictor, mass, "Coast mass (model)", "kg", 3.1f, 0.5f, 20.f, 0.05f, 2, "Dry mass: the motor has burnt out during the coast.", "toolbox guidance.ts:99")
-MARV_PART(guidance, apogee_predictor, target, "Target")
-// 20 m to 2 km of apogee.
-MARV_PARAM(guidance, apogee_predictor, target_apogee_m, "Target apogee", "m", 284.f, 20.f, 2000.f, 1.f, 0, "Apogee above the launch point the brake aims for.", "toolbox mission.ts:340")
-
-MARV_KIND(guidance, trajectory, "trajectory", "Trajectory", "Jerk-limited position smoothing along the mission's waypoints (PX4 PositionSmoothing): the reference moves toward the target at the cruise speed within the velocity, acceleration and jerk limits, corners into the next waypoint inside the acceptance radius, waits while the vehicle falls behind by more than the tracking error limits, and turns the nose along the path when the mission leaves the heading free. Not implemented yet: selected, it flies as passthrough.", kClassUav)
+MARV_KIND(guidance, trajectory, "trajectory", "Trajectory", "Jerk-limited position smoothing along the mission's waypoints (PX4 PositionSmoothing): the reference moves toward the target at the cruise speed within the velocity, acceleration and jerk limits, corners into the next waypoint inside the acceptance radius, waits while the vehicle falls behind by more than the tracking error limits, and turns the nose along the path when the mission leaves the heading free.", kClassUav)
 MARV_PART(guidance, trajectory, speed, "Speed")
 // 0.5 to 20 m/s: a walking pace to PX4's MPC_XY_CRUISE maximum.
 MARV_PARAM(guidance, trajectory, cruise_speed, "Cruise speed", "m/s", 5.f, 0.5f, 20.f, 0.1f, 1, "Horizontal speed along a mission leg when the mission names none.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:49 MPC_XY_CRUISE default 5")
@@ -179,6 +165,20 @@ MARV_PART(guidance, trajectory, heading, "Heading")
 MARV_PARAM(guidance, trajectory, yaw_rate_auto, "Max yaw rate", "rad/s", 1.047f, 0.087f, 6.283f, 0.001f, 3, "Rate the nose turns toward the path direction when the mission leaves the heading free.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:21 MPC_YAWRAUTO_MAX default 60 deg/s")
 // Toolbox guidance.ts headingMinSpeed range.
 MARV_PARAM(guidance, trajectory, heading_min_speed, "Heading hold below", "m/s", 0.3f, 0.f, 2.f, 0.05f, 2, "Below this horizontal path speed the heading is held.", "toolbox@3b7387b src/lib/sim/lab/blocks/guidance.ts:25 headingMinSpeed")
+
+MARV_KIND(guidance, passthrough, "passthrough", "Passthrough", "The mission reference reaches the controller unchanged.", kClassUav)
+
+MARV_KIND(guidance, apogee_predictor, "apogee-predictor", "Apogee predictor", "While the mission flags the coast it rolls a point-mass model of the rocket from the estimated altitude and vertical speed to apogee with the brake closed, every 20 ms, and passes the prediction and the target apogee to the controller.", kClassRocket)
+MARV_PART(guidance, apogee_predictor, model, "Model")
+// Toolbox guidance.ts predictDt range, floored at the 20 ms prediction cadence.
+MARV_PARAM(guidance, apogee_predictor, predict_dt, "Prediction step", "s", 0.05f, 0.02f, 0.5f, 0.005f, 3, "Integration step of the rollout; coarser is cheaper and less accurate.", "toolbox guidance.ts:95 rocket1d DEFAULT_ROCKET.predictDt")
+MARV_PARAM(guidance, apogee_predictor, cd_base, "Drag coefficient (model)", "", 0.45f, 0.1f, 1.5f, 0.01f, 2, "Axial drag coefficient on the reference area, brake closed.", "toolbox guidance.ts:96")
+MARV_PARAM(guidance, apogee_predictor, ref_area, "Reference area (model)", "m²", 0.007854f, 0.001f, 0.1f, 0.0001f, 5, "Area the drag coefficient refers to (the body cross-section).", "toolbox guidance.ts:97 pi (0.1 m / 2)^2")
+MARV_PARAM(guidance, apogee_predictor, brake_cd_area, "Brake drag area (model)", "m²", 0.012f, 0.f, 0.05f, 0.0005f, 4, "C_D A the brake adds at full deployment.", "toolbox guidance.ts:98")
+MARV_PARAM(guidance, apogee_predictor, mass, "Coast mass (model)", "kg", 3.1f, 0.5f, 20.f, 0.05f, 2, "Dry mass: the motor has burnt out during the coast.", "toolbox guidance.ts:99")
+MARV_PART(guidance, apogee_predictor, target, "Target")
+// 20 m to 2 km of apogee.
+MARV_PARAM(guidance, apogee_predictor, target_apogee_m, "Target apogee", "m", 284.f, 20.f, 2000.f, 1.f, 0, "Apogee above the launch point the brake aims for.", "toolbox mission.ts:340")
 
 // ---- controller --------------------------------------------------------------------------------------------------------
 
@@ -225,7 +225,7 @@ MARV_PARAM(controller, cascaded_pid, rate_max_x, "Max roll rate", "rad/s", 3.f, 
 MARV_PARAM(controller, cascaded_pid, rate_max_y, "Max pitch rate", "rad/s", 3.f, 0.5f, 10.f, 0.1f, 1, "Limit of the pitch-rate setpoint.", "controller.cpp:26")
 MARV_PARAM(controller, cascaded_pid, rate_max_z, "Max yaw rate", "rad/s", 1.5f, 0.5f, 10.f, 0.1f, 1, "Limit of the yaw-rate setpoint.", "controller.cpp:26")
 // Toolbox controller.ts vMax floor; up to 20 m/s, PX4's MPC_XY_VEL_MAX maximum, so the trajectory's limits fit under it.
-MARV_PARAM(controller, cascaded_pid, vel_max, "Max velocity setpoint", "m/s", 2.f, 0.5f, 20.f, 0.1f, 1, "Norm limit of the velocity setpoint.", "controller.cpp:51")
+MARV_PARAM(controller, cascaded_pid, vel_max, "Max velocity setpoint", "m/s", 12.f, 0.5f, 20.f, 0.1f, 1, "Norm limit of the velocity setpoint.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_control_limits_params.yaml:5 MPC_XY_VEL_MAX default 12")
 // Toolbox controller.ts tiltMaxDeg range.
 MARV_PARAM(controller, cascaded_pid, tilt_max_deg, "Max tilt", "deg", 35.f, 5.f, 60.f, 1.f, 0, "The thrust vector stays within this angle of vertical.", "controller.cpp:54 kTanTiltMax = tan(35 deg)")
 // Toolbox controller.ts thrustMinG range.

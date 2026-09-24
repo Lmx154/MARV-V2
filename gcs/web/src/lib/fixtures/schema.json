@@ -1,5 +1,5 @@
 {
-	"schema_hash": 1825767454,
+	"schema_hash": 46936394,
 	"families": [
 		{
 			"id": "vehicle",
@@ -182,52 +182,52 @@
 							"id": "mag_ref_ned_ut_x",
 							"label": "Earth field north",
 							"unit": "µT",
-							"default": 21.62762,
+							"default": 0,
 							"min": -7e+01,
 							"max": 7e+01,
 							"step": 0.01,
 							"digits": 5,
-							"note": "North component of the Earth field at the origin; sets the declination.",
-							"source": "eskf.hpp:50 the Earth field (NED, microtesla) at the world origin",
+							"note": "North component of the Earth field; sets the declination. All three 0: the WMM field at the first GNSS fix; any non-zero: this field instead.",
+							"source": "geo_mag.cpp PX4 WMM lookup; manual override as PX4 EKF2_DECL_TYPE bit 0 clear / EKF2_MAG_DECL (src/modules/ekf2/params_magnetometer.yaml:73-85 @ af2e7b43)",
 							"index": 10
 						},
 						{
 							"id": "mag_ref_ned_ut_y",
 							"label": "Earth field east",
 							"unit": "µT",
-							"default": 0.96861,
+							"default": 0,
 							"min": -7e+01,
 							"max": 7e+01,
 							"step": 0.01,
 							"digits": 5,
-							"note": "East component of the Earth field at the origin; sets the declination.",
-							"source": "eskf.hpp:50 the Earth field (NED, microtesla) at the world origin",
+							"note": "East component of the Earth field; sets the declination. All three 0: the WMM field at the first GNSS fix; any non-zero: this field instead.",
+							"source": "geo_mag.cpp PX4 WMM lookup; manual override as PX4 EKF2_DECL_TYPE bit 0 clear / EKF2_MAG_DECL (src/modules/ekf2/params_magnetometer.yaml:73-85 @ af2e7b43)",
 							"index": 11
 						},
 						{
 							"id": "mag_ref_ned_ut_z",
 							"label": "Earth field down",
 							"unit": "µT",
-							"default": 42.91632,
+							"default": 0,
 							"min": -7e+01,
 							"max": 7e+01,
 							"step": 0.01,
 							"digits": 5,
-							"note": "Down component of the Earth field at the origin; sets the inclination.",
-							"source": "eskf.hpp:50 the Earth field (NED, microtesla) at the world origin",
+							"note": "Down component of the Earth field; sets the inclination. All three 0: the WMM field at the first GNSS fix; any non-zero: this field instead.",
+							"source": "geo_mag.cpp PX4 WMM lookup; manual override as PX4 EKF2_DECL_TYPE bit 0 clear / EKF2_MAG_DECL (src/modules/ekf2/params_magnetometer.yaml:73-85 @ af2e7b43)",
 							"index": 12
 						},
 						{
 							"id": "gravity",
 							"label": "Gravity",
 							"unit": "m/s²",
-							"default": 9.8066,
+							"default": 9.80665,
 							"min": 1.6,
 							"max": 25,
-							"step": 0.0001,
-							"digits": 4,
+							"step": 1e-05,
+							"digits": 5,
 							"note": "Gravity the controller and estimators assume; a mismatch with the world reads as an acceleration.",
-							"source": "SDF:71 <gravity>0 0 -9.8066</gravity>",
+							"source": "standard gravity: PX4 src/lib/geo/geo.h:54 CONSTANTS_ONE_G @ af2e7b43 (the Gazebo world keeps SDF:51 9.8066)",
 							"index": 13
 						},
 						{
@@ -740,125 +740,9 @@
 			"label": "Guidance",
 			"kinds": [
 				{
-					"id": "passthrough",
-					"label": "Passthrough",
-					"summary": "The mission reference reaches the controller unchanged.",
-					"vehicles": [
-						"uav"
-					],
-					"params": []
-				},
-				{
-					"id": "apogee-predictor",
-					"label": "Apogee predictor",
-					"summary": "While the mission flags the coast it rolls a point-mass model of the rocket from the estimated altitude and vertical speed to apogee with the brake closed, every 20 ms, and passes the prediction and the target apogee to the controller.",
-					"vehicles": [
-						"rocket"
-					],
-					"params": [
-						{
-							"id": "predict_dt",
-							"label": "Prediction step",
-							"unit": "s",
-							"default": 0.05,
-							"min": 0.02,
-							"max": 0.5,
-							"step": 0.005,
-							"digits": 3,
-							"note": "Integration step of the rollout; coarser is cheaper and less accurate.",
-							"source": "toolbox guidance.ts:95 rocket1d DEFAULT_ROCKET.predictDt",
-							"index": 39
-						},
-						{
-							"id": "cd_base",
-							"label": "Drag coefficient (model)",
-							"default": 0.45,
-							"min": 0.1,
-							"max": 1.5,
-							"step": 0.01,
-							"digits": 2,
-							"note": "Axial drag coefficient on the reference area, brake closed.",
-							"source": "toolbox guidance.ts:96",
-							"index": 40
-						},
-						{
-							"id": "ref_area",
-							"label": "Reference area (model)",
-							"unit": "m²",
-							"default": 0.007854,
-							"min": 0.001,
-							"max": 0.1,
-							"step": 0.0001,
-							"digits": 5,
-							"note": "Area the drag coefficient refers to (the body cross-section).",
-							"source": "toolbox guidance.ts:97 pi (0.1 m / 2)^2",
-							"index": 41
-						},
-						{
-							"id": "brake_cd_area",
-							"label": "Brake drag area (model)",
-							"unit": "m²",
-							"default": 0.012,
-							"min": 0,
-							"max": 0.05,
-							"step": 0.0005,
-							"digits": 4,
-							"note": "C_D A the brake adds at full deployment.",
-							"source": "toolbox guidance.ts:98",
-							"index": 42
-						},
-						{
-							"id": "mass",
-							"label": "Coast mass (model)",
-							"unit": "kg",
-							"default": 3.1,
-							"min": 0.5,
-							"max": 2e+01,
-							"step": 0.05,
-							"digits": 2,
-							"note": "Dry mass: the motor has burnt out during the coast.",
-							"source": "toolbox guidance.ts:99",
-							"index": 43
-						},
-						{
-							"id": "target_apogee_m",
-							"label": "Target apogee",
-							"unit": "m",
-							"default": 284,
-							"min": 2e+01,
-							"max": 2e+03,
-							"step": 1,
-							"digits": 0,
-							"note": "Apogee above the launch point the brake aims for.",
-							"source": "toolbox mission.ts:340",
-							"index": 44
-						}
-					],
-					"parts": [
-						{
-							"id": "model",
-							"label": "Model",
-							"params": [
-								"predict_dt",
-								"cd_base",
-								"ref_area",
-								"brake_cd_area",
-								"mass"
-							]
-						},
-						{
-							"id": "target",
-							"label": "Target",
-							"params": [
-								"target_apogee_m"
-							]
-						}
-					]
-				},
-				{
 					"id": "trajectory",
 					"label": "Trajectory",
-					"summary": "Jerk-limited position smoothing along the mission's waypoints (PX4 PositionSmoothing): the reference moves toward the target at the cruise speed within the velocity, acceleration and jerk limits, corners into the next waypoint inside the acceptance radius, waits while the vehicle falls behind by more than the tracking error limits, and turns the nose along the path when the mission leaves the heading free. Not implemented yet: selected, it flies as passthrough.",
+					"summary": "Jerk-limited position smoothing along the mission's waypoints (PX4 PositionSmoothing): the reference moves toward the target at the cruise speed within the velocity, acceleration and jerk limits, corners into the next waypoint inside the acceptance radius, waits while the vehicle falls behind by more than the tracking error limits, and turns the nose along the path when the mission leaves the heading free.",
 					"vehicles": [
 						"uav"
 					],
@@ -874,7 +758,7 @@
 							"digits": 1,
 							"note": "Horizontal speed along a mission leg when the mission names none.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:49 MPC_XY_CRUISE default 5",
-							"index": 45
+							"index": 39
 						},
 						{
 							"id": "xy_vel_max",
@@ -887,7 +771,7 @@
 							"digits": 1,
 							"note": "Horizontal speed the trajectory never exceeds, whatever the mission asks.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_control_limits_params.yaml:5 MPC_XY_VEL_MAX default 12",
-							"index": 46
+							"index": 40
 						},
 						{
 							"id": "z_vel_up",
@@ -900,7 +784,7 @@
 							"digits": 1,
 							"note": "Vertical speed up the trajectory never exceeds.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:60 MPC_Z_V_AUTO_UP default 3",
-							"index": 47
+							"index": 41
 						},
 						{
 							"id": "z_vel_dn",
@@ -913,7 +797,7 @@
 							"digits": 1,
 							"note": "Vertical speed down the trajectory never exceeds.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:71 MPC_Z_V_AUTO_DN default 1.5",
-							"index": 48
+							"index": 42
 						},
 						{
 							"id": "acc_xy",
@@ -926,7 +810,7 @@
 							"digits": 1,
 							"note": "Horizontal acceleration of the trajectory.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:82 MPC_ACC_HOR default 3",
-							"index": 49
+							"index": 43
 						},
 						{
 							"id": "acc_up",
@@ -939,7 +823,7 @@
 							"digits": 1,
 							"note": "Upward acceleration of the trajectory.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:5 MPC_ACC_UP_MAX default 4",
-							"index": 50
+							"index": 44
 						},
 						{
 							"id": "acc_dn",
@@ -952,7 +836,7 @@
 							"digits": 1,
 							"note": "Downward acceleration of the trajectory.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:15 MPC_ACC_DOWN_MAX default 3",
-							"index": 51
+							"index": 45
 						},
 						{
 							"id": "jerk",
@@ -965,7 +849,7 @@
 							"digits": 1,
 							"note": "Rate of change of the trajectory's acceleration.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:94 MPC_JERK_AUTO default 4",
-							"index": 52
+							"index": 46
 						},
 						{
 							"id": "err_xy_max",
@@ -978,7 +862,7 @@
 							"digits": 1,
 							"note": "Horizontal distance the vehicle may fall behind the trajectory before the trajectory slows to wait for it.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:116 MPC_XY_ERR_MAX default 2",
-							"index": 53
+							"index": 47
 						},
 						{
 							"id": "err_z_max",
@@ -991,7 +875,7 @@
 							"digits": 1,
 							"note": "Vertical distance the vehicle may fall behind the trajectory before the trajectory slows to wait for it.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:134 MPC_Z_ERR_MAX default 1",
-							"index": 54
+							"index": 48
 						},
 						{
 							"id": "yaw_rate_auto",
@@ -1004,7 +888,7 @@
 							"digits": 3,
 							"note": "Rate the nose turns toward the path direction when the mission leaves the heading free.",
 							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:21 MPC_YAWRAUTO_MAX default 60 deg/s",
-							"index": 55
+							"index": 49
 						},
 						{
 							"id": "heading_min_speed",
@@ -1017,7 +901,7 @@
 							"digits": 2,
 							"note": "Below this horizontal path speed the heading is held.",
 							"source": "toolbox@3b7387b src/lib/sim/lab/blocks/guidance.ts:25 headingMinSpeed",
-							"index": 56
+							"index": 50
 						}
 					],
 					"parts": [
@@ -1055,6 +939,122 @@
 							"params": [
 								"yaw_rate_auto",
 								"heading_min_speed"
+							]
+						}
+					]
+				},
+				{
+					"id": "passthrough",
+					"label": "Passthrough",
+					"summary": "The mission reference reaches the controller unchanged.",
+					"vehicles": [
+						"uav"
+					],
+					"params": []
+				},
+				{
+					"id": "apogee-predictor",
+					"label": "Apogee predictor",
+					"summary": "While the mission flags the coast it rolls a point-mass model of the rocket from the estimated altitude and vertical speed to apogee with the brake closed, every 20 ms, and passes the prediction and the target apogee to the controller.",
+					"vehicles": [
+						"rocket"
+					],
+					"params": [
+						{
+							"id": "predict_dt",
+							"label": "Prediction step",
+							"unit": "s",
+							"default": 0.05,
+							"min": 0.02,
+							"max": 0.5,
+							"step": 0.005,
+							"digits": 3,
+							"note": "Integration step of the rollout; coarser is cheaper and less accurate.",
+							"source": "toolbox guidance.ts:95 rocket1d DEFAULT_ROCKET.predictDt",
+							"index": 51
+						},
+						{
+							"id": "cd_base",
+							"label": "Drag coefficient (model)",
+							"default": 0.45,
+							"min": 0.1,
+							"max": 1.5,
+							"step": 0.01,
+							"digits": 2,
+							"note": "Axial drag coefficient on the reference area, brake closed.",
+							"source": "toolbox guidance.ts:96",
+							"index": 52
+						},
+						{
+							"id": "ref_area",
+							"label": "Reference area (model)",
+							"unit": "m²",
+							"default": 0.007854,
+							"min": 0.001,
+							"max": 0.1,
+							"step": 0.0001,
+							"digits": 5,
+							"note": "Area the drag coefficient refers to (the body cross-section).",
+							"source": "toolbox guidance.ts:97 pi (0.1 m / 2)^2",
+							"index": 53
+						},
+						{
+							"id": "brake_cd_area",
+							"label": "Brake drag area (model)",
+							"unit": "m²",
+							"default": 0.012,
+							"min": 0,
+							"max": 0.05,
+							"step": 0.0005,
+							"digits": 4,
+							"note": "C_D A the brake adds at full deployment.",
+							"source": "toolbox guidance.ts:98",
+							"index": 54
+						},
+						{
+							"id": "mass",
+							"label": "Coast mass (model)",
+							"unit": "kg",
+							"default": 3.1,
+							"min": 0.5,
+							"max": 2e+01,
+							"step": 0.05,
+							"digits": 2,
+							"note": "Dry mass: the motor has burnt out during the coast.",
+							"source": "toolbox guidance.ts:99",
+							"index": 55
+						},
+						{
+							"id": "target_apogee_m",
+							"label": "Target apogee",
+							"unit": "m",
+							"default": 284,
+							"min": 2e+01,
+							"max": 2e+03,
+							"step": 1,
+							"digits": 0,
+							"note": "Apogee above the launch point the brake aims for.",
+							"source": "toolbox mission.ts:340",
+							"index": 56
+						}
+					],
+					"parts": [
+						{
+							"id": "model",
+							"label": "Model",
+							"params": [
+								"predict_dt",
+								"cd_base",
+								"ref_area",
+								"brake_cd_area",
+								"mass"
+							]
+						},
+						{
+							"id": "target",
+							"label": "Target",
+							"params": [
+								"target_apogee_m"
 							]
 						}
 					]
@@ -1389,13 +1389,13 @@
 							"id": "vel_max",
 							"label": "Max velocity setpoint",
 							"unit": "m/s",
-							"default": 2,
+							"default": 12,
 							"min": 0.5,
 							"max": 2e+01,
 							"step": 0.1,
 							"digits": 1,
 							"note": "Norm limit of the velocity setpoint.",
-							"source": "controller.cpp:51",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_control_limits_params.yaml:5 MPC_XY_VEL_MAX default 12",
 							"index": 81
 						},
 						{
@@ -1781,10 +1781,10 @@
 				0.05,
 				0.0208,
 				0.0092,
-				21.62762,
-				0.96861,
-				42.91632,
-				9.8066,
+				0,
+				0,
+				0,
+				9.80665,
 				1,
 				0.4,
 				0.1,
@@ -1810,12 +1810,6 @@
 				1,
 				3,
 				1,
-				0.05,
-				0.45,
-				0.007854,
-				0.012,
-				3.1,
-				284,
 				5,
 				12,
 				3,
@@ -1828,6 +1822,12 @@
 				1,
 				1.047,
 				0.3,
+				0.05,
+				0.45,
+				0.007854,
+				0.012,
+				3.1,
+				284,
 				0.7,
 				2,
 				0.5,
@@ -1852,7 +1852,7 @@
 				3,
 				3,
 				1.5,
-				2,
+				12,
 				35,
 				0.2,
 				0.9,
@@ -1893,10 +1893,10 @@
 				0.05,
 				0.0208,
 				0.0092,
-				21.62762,
-				0.96861,
-				42.91632,
-				9.8066,
+				0,
+				0,
+				0,
+				9.80665,
 				1,
 				0.4,
 				0.1,
@@ -1922,12 +1922,6 @@
 				1,
 				3,
 				1,
-				0.05,
-				0.45,
-				0.007854,
-				0.012,
-				3.1,
-				284,
 				5,
 				12,
 				3,
@@ -1940,6 +1934,12 @@
 				1,
 				1.047,
 				0.3,
+				0.05,
+				0.45,
+				0.007854,
+				0.012,
+				3.1,
+				284,
 				0.7,
 				2,
 				0.5,
@@ -1964,7 +1964,7 @@
 				3,
 				3,
 				1.5,
-				2,
+				12,
 				35,
 				0.2,
 				0.9,
@@ -2005,10 +2005,10 @@
 				0.05,
 				0.0208,
 				0.0092,
-				21.62762,
-				0.96861,
-				42.91632,
-				9.8066,
+				0,
+				0,
+				0,
+				9.80665,
 				1,
 				0.4,
 				0.1,
@@ -2034,12 +2034,6 @@
 				1,
 				3,
 				1,
-				0.05,
-				0.45,
-				0.007854,
-				0.012,
-				3.1,
-				284,
 				5,
 				12,
 				3,
@@ -2052,6 +2046,12 @@
 				1,
 				1.047,
 				0.3,
+				0.05,
+				0.45,
+				0.007854,
+				0.012,
+				3.1,
+				284,
 				0.7,
 				2,
 				0.5,
@@ -2076,7 +2076,7 @@
 				3,
 				3,
 				1.5,
-				2,
+				12,
 				35,
 				0.2,
 				0.9,
@@ -2117,10 +2117,10 @@
 				0.05,
 				0.0208,
 				0.0092,
-				21.62762,
-				0.96861,
-				42.91632,
-				9.8066,
+				0,
+				0,
+				0,
+				9.80665,
 				1,
 				0.4,
 				0.1,
@@ -2146,12 +2146,6 @@
 				1,
 				3,
 				1,
-				0.05,
-				0.45,
-				0.007854,
-				0.012,
-				3.1,
-				284,
 				5,
 				12,
 				3,
@@ -2164,6 +2158,12 @@
 				1,
 				1.047,
 				0.3,
+				0.05,
+				0.45,
+				0.007854,
+				0.012,
+				3.1,
+				284,
 				0.7,
 				2,
 				0.5,
@@ -2188,7 +2188,7 @@
 				3,
 				3,
 				1.5,
-				2,
+				12,
 				35,
 				0.2,
 				0.9,
@@ -2213,7 +2213,7 @@
 				1,
 				0,
 				0,
-				1,
+				2,
 				1,
 				1,
 				1
@@ -2229,10 +2229,10 @@
 				0.05,
 				0.0208,
 				0.0092,
-				21.62762,
-				0.96861,
-				42.91632,
-				9.8066,
+				0,
+				0,
+				0,
+				9.80665,
 				1,
 				0.4,
 				0.1,
@@ -2258,12 +2258,6 @@
 				1,
 				3,
 				1,
-				0.05,
-				0.45,
-				0.007854,
-				0.012,
-				3.1,
-				284,
 				5,
 				12,
 				3,
@@ -2276,6 +2270,12 @@
 				1,
 				1.047,
 				0.3,
+				0.05,
+				0.45,
+				0.007854,
+				0.012,
+				3.1,
+				284,
 				0.7,
 				2,
 				0.5,
@@ -2300,7 +2300,7 @@
 				3,
 				3,
 				1.5,
-				2,
+				12,
 				35,
 				0.2,
 				0.9,
