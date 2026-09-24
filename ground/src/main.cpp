@@ -9,6 +9,7 @@
 // Latitude and longitude in degrees, altitude in m above the WGS84 ellipsoid, all converted to NED about
 // the home the flight controller reports. Commands go out at 50 Hz; fly is sent only once the estimate
 // is valid. A status line prints every 0.5 s. Default --udp 127.0.0.1:14650 (marv_bridge --ground).
+#define MARV_PARAMS_TEXT  // the profiles' ids for the status line
 #include <fcntl.h>
 #include <linux/joystick.h>
 #include <sys/ioctl.h>
@@ -27,6 +28,7 @@
 #include <marv/fsw/geo.hpp>
 #include <marv/link/protocol.hpp>
 
+#include "pilot.hpp"
 #include "setpoint.hpp"
 #include "transport.hpp"
 
@@ -235,15 +237,6 @@ int run_waypoints(Ground& g, int argc, char** argv) {
     return 0;
 }
 
-// Stick axis to -1..1 with a 10% deadband, rescaled so the output starts at 0 at the band's edge.
-float stick(std::int16_t raw) {
-    constexpr float kBand = 0.1f;
-    const float v = static_cast<float>(raw) / 32767.f;
-    const float a = std::fabs(v);
-    if (a <= kBand) return 0.f;
-    return std::copysign(std::fmin((a - kBand) / (1.f - kBand), 1.f), v);
-}
-
 bool is_radio(const char* name) { return strcasestr(name, "edgetx") || strcasestr(name, "radiomaster"); }
 
 // Opens the pilot's device: --js PATH, else the RadioMaster if one is plugged in, else the first joystick.
@@ -279,14 +272,8 @@ int open_pilot(const char* path, char* name, std::size_t cap) {
     return fd;
 }
 
-// Two mappings, picked by the device name. Each gives climb, yaw, forward, right in -1..1 (positive =
-// up, clockwise, forward, right) and the arm switch.
-//   RadioMaster (EdgeTX USB joystick, AETR): a0 aileron = right, a1 elevator = forward, a2 throttle (bottom
-//     = -32767, read off the user's radio) = climb rate with the stick centre = hold height, a3 rudder = yaw,
-//     a4 (CH5) > 0 = arm. As on any quad, arming needs the throttle at the bottom when CH5 turns on; otherwise
-//     it is refused until CH5 goes off again. From the bottom the props idle; above centre it climbs.
-//   Xbox (xpad): a0 left X = yaw, a1 left Y = climb, a3/a4 right X/Y = right/forward (up is negative),
-//     button A = arm, B = disarm.
+// The mapping is ground::Pilot (pilot.hpp). The sticks go out normalized with the selected profile; the flight
+// controller scales them by the profile and turns them with its heading, so forward is where the nose points.
 int run_manual(Ground& g, int argc, char** argv) {
     const char* path = nullptr;
     if (argc == 2 && std::strcmp(argv[0], "--js") == 0) path = argv[1];
@@ -296,17 +283,10 @@ int run_manual(Ground& g, int argc, char** argv) {
     if (fd < 0) return 1;
     const bool radio = is_radio(name);
     std::printf("pilot: %s, %s mapping\n", name, radio ? "RadioMaster" : "Xbox");
-    // Full rudder asks for a yaw rate the airframe can follow both ways: its yaw torque tops out at 0.1 N m
-    // (fsw/src/controller.cpp kYawTorqueMax), 1.02 rad/s^2 on Izz = 0.0977 kg m^2 (0.93 measured in the sim),
-    // so 1 rad/s is reached, and after release stopped, in about 1.1 s.
-    constexpr float kClimbMax = 1.5f, kYawRateMax = 1.f, kSpeedMax = 3.f;
-    std::int16_t axis[8] = {};
-    bool seen[8] = {};
-    bool fly = false, refused = false;
+    ground::Pilot pilot(radio);
     // Nothing is sent until the pilot arms: starting manual against a vehicle that is already flying must
     // not disarm it. From the first arm on, the pilot owns the vehicle and disarm sends idle.
     bool engaged = false;
-    int prev_switch = -1;  // CH5 at the last period; -1 until the device reported it
     std::uint8_t ev_buf[sizeof(js_event)];
     std::size_t ev_n = 0;
     int rc = 0;
@@ -324,37 +304,21 @@ int run_manual(Ground& g, int argc, char** argv) {
             ev_n = 0;
             js_event e;
             std::memcpy(&e, ev_buf, sizeof(e));
-            const std::uint8_t type = e.type & static_cast<std::uint8_t>(~JS_EVENT_INIT);
-            if (type == JS_EVENT_AXIS && e.number < 8) {
-                axis[e.number] = e.value;
-                seen[e.number] = true;
-            } else if (!radio && type == JS_EVENT_BUTTON && e.value && e.number == 0) {
-                fly = true;
-            } else if (!radio && type == JS_EVENT_BUTTON && e.value && e.number == 1) {
-                fly = false;
-            }
+            pilot.event(e.type & static_cast<std::uint8_t>(~JS_EVENT_INIT), e.number, e.value);
         }
         if (lost) {
             std::fprintf(stderr, "marv_ground: joystick %s lost, holding\n", name);
-            if (engaged) g.send(command(fly ? Mode::kFly : Mode::kIdle, kRefVel | kRefYawRate, {}, {0.f, 0.f, 0.f}, 0.f));
+            if (engaged) g.send(pilot.centred());
             rc = 1;
             break;
         }
-        const float climb = radio ? stick(axis[2]) : 0.f - stick(axis[1]);
-        const float yaw_in = radio ? stick(axis[3]) : stick(axis[0]);
-        const float fwd = radio ? stick(axis[1]) : 0.f - stick(axis[4]);
-        const float right = radio ? stick(axis[0]) : stick(axis[3]);
-        if (radio && seen[4]) {
-            const int sw = axis[4] > 0 ? 1 : 0;
-            if (!sw) fly = refused = false;
-            else if (prev_switch == 0 && climb <= -0.95f) fly = true;  // throttle at the bottom
-            else if (prev_switch == 0) refused = true;
-            prev_switch = sw;
-        }
+        pilot.update();
+        const Sticks& s = pilot.sticks();
         char note[160];
-        std::snprintf(note, sizeof(note), " | climb=%+.2f yaw=%+.2f fwd=%+.2f right=%+.2f arm=%s", static_cast<double>(climb),
-                      static_cast<double>(yaw_in), static_cast<double>(fwd), static_cast<double>(right),
-                      fly ? "on" : refused ? "REFUSED(throttle to bottom, cycle CH5)" : "off");
+        std::snprintf(note, sizeof(note), " | profile=%s up=%+.2f yaw=%+.2f fwd=%+.2f right=%+.2f arm=%s",
+                      param::kProfileId[pilot.profile()], static_cast<double>(s.up), static_cast<double>(s.yaw),
+                      static_cast<double>(s.fwd), static_cast<double>(s.right),
+                      pilot.fly() ? "on" : pilot.refused() ? "REFUSED(throttle to bottom, cycle CH5)" : "off");
         g.note(note);
         if (!g.ready()) {
             if (!g.period(nullptr)) {
@@ -363,14 +327,8 @@ int run_manual(Ground& g, int argc, char** argv) {
             }
             continue;
         }
-        // Rudder is a yaw rate; the flight controller holds the heading once the pilot and the body are still.
-        // The right stick moves along the vehicle's estimated heading, so forward is where the nose points.
-        const float yaw = yaw_of(g.tlm().est.q);
-        const float c = std::cos(yaw), s = std::sin(yaw);
-        const Vec3 v{(c * fwd - s * right) * kSpeedMax, (s * fwd + c * right) * kSpeedMax, -climb * kClimbMax};
-        MissionCommand cmd = command(fly ? Mode::kFly : Mode::kIdle, kRefVel | kRefYawRate, {}, v, 0.f);
-        cmd.ref.yaw_rate = yaw_in * kYawRateMax;
-        engaged = engaged || fly;
+        const MissionCommand cmd = pilot.command();
+        engaged = engaged || pilot.fly();
         if (!g.period(engaged ? &cmd : nullptr)) {
             rc = 1;
             break;
