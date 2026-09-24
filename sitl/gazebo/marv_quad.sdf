@@ -148,23 +148,12 @@
 
     <model name="marv_quad">
     <!-- On the ground, at rest, which is where an aircraft powers up.
-         0.053302 is the published X3's own resting height -- the model
-         declares it a few lines below -- and it puts the base_link collision
-         box's underside on the plane.
+         0.055 m is half the base_link collision box height (0.11 m), so the
+         box's underside sits exactly on the plane. The published X3 value,
+         0.053302, started it 1.7 mm inside the ground. -->
+    <pose>0 0 0.055 0 0 0</pose>
 
-         It used to spawn at 8 m, and that was a FREE FALL, not a hover. An
-         accelerometer in free fall measures no specific force and genuinely
-         cannot say which way is down, so the estimator could not prime; what
-         it primed from instead was the 1.8e-15 m/s^2 of numerical noise left
-         over, whose sign put the aircraft 180 degrees inverted. Rate mode
-         never noticed, because it never asks which way is up. See the
-         priming note in core/include/marv/core/attitude.hpp.
-
-         The cost is a takeoff, and gz_fly now flies one. That is the honest
-         order of events anyway: prime at 1 g on the ground, then leave it. -->
-    <pose>0 0 0.053302 0 0 0</pose>
-
-            <pose>0 0 0.053302 0 0 0</pose>
+            <pose>0 0 0.055 0 0 0</pose>
             <link name="X3/base_link">
                 <pose frame="">0 0 0 0 -0 0</pose>
                 <inertial>
