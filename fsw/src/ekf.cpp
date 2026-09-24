@@ -115,14 +115,14 @@ float heading_innovation(Quat q, Vec3 m_frd, float declination) {
     return wrap(declination - std::atan2(mw.y, mw.x));
 }
 
-StationaryAlignment::StationaryAlignment(const EskfParams& p)
-    : p_(p), declination_(std::atan2(p.mag_ref_ned_ut.y, p.mag_ref_ned_ut.x)) {}
+StationaryAlignment::StationaryAlignment(const param::SensorParams& s, float gravity)
+    : p_(s), gravity_(gravity), declination_(std::atan2(s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_x)) {}
 
 bool StationaryAlignment::feed(const SensorBus& bus, Alignment& out) {
     if (bus.fresh & kImu) {
         const Vec3 f = bus.imu.accel_frd;
         const Vec3 w = bus.imu.gyro_frd;
-        bool still = std::fabs(norm(f) - p_.gravity) < p_.still_g_err && norm(w) < p_.still_rate;
+        bool still = std::fabs(norm(f) - gravity_) < p_.still_g_err && norm(w) < p_.still_rate;
         if (still && n_imu_ > 0) {
             const float inv = 1.f / static_cast<float>(n_imu_);
             still = norm(f - inv * sum_f_) < p_.still_accel_dev && norm(w - inv * sum_w_) < p_.still_gyro_dev;
@@ -163,7 +163,13 @@ bool StationaryAlignment::feed(const SensorBus& bus, Alignment& out) {
     return true;
 }
 
-Ekf::Ekf(const EskfParams& p) : prm_(p), mag_decl_(std::atan2(p.mag_ref_ned_ut.y, p.mag_ref_ned_ut.x)), alignment_(p) {
+Ekf::Ekf(const param::EskfPriors& p, const param::SensorParams& s, const param::VehicleParams& v)
+    : pri_(p),
+      sns_(s),
+      gravity_(v.gravity),
+      mag_ref_{s.mag_ref_ned_ut_x, s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_z},
+      mag_decl_(std::atan2(s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_x)),
+      alignment_(s, v.gravity) {
     for (int i = 0; i < N; ++i) {
         x_[i] = 0.f;
         for (int j = 0; j < N; ++j) {
@@ -184,7 +190,7 @@ void Ekf::update(const SensorBus& bus) {
             for (int i = IP; i < IP + 2; ++i) {
                 x_[i] = 0.f;
                 for (int j = 0; j < N; ++j) P_[i][j] = P_[j][i] = 0.f;
-                P_[i][i] = prm_.sigma_gnss_pos * prm_.sigma_gnss_pos;
+                P_[i][i] = sns_.sigma_gnss_pos * sns_.sigma_gnss_pos;
             }
         }
     }
@@ -211,7 +217,7 @@ void Ekf::update(const SensorBus& bus) {
     if ((bus.fresh & kGnss) && bus.gnss.fix && frame_.valid()) {
         const Vec3 z = frame_.to_ned({bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m});
         const float zp[3] = {z.x, z.y, z.z};
-        const float rp = prm_.sigma_gnss_pos * prm_.sigma_gnss_pos;
+        const float rp = sns_.sigma_gnss_pos * sns_.sigma_gnss_pos;
         for (int i = 0; i < 3; ++i) {
             float h[N] = {};
             h[IP + i] = 1.f;
@@ -219,7 +225,7 @@ void Ekf::update(const SensorBus& bus) {
         }
         normalise_q();
         const float zv[3] = {bus.gnss.vel_ned.x, bus.gnss.vel_ned.y, bus.gnss.vel_ned.z};
-        const float rv = prm_.sigma_gnss_vel * prm_.sigma_gnss_vel;
+        const float rv = sns_.sigma_gnss_vel * sns_.sigma_gnss_vel;
         for (int i = 0; i < 3; ++i) {
             float h[N] = {};
             h[IV + i] = 1.f;
@@ -230,7 +236,7 @@ void Ekf::update(const SensorBus& bus) {
     if (bus.fresh & kBaro) {
         float h[N] = {};
         h[IP + 2] = -1.f;
-        scalar_update(h, (isa_height(bus.baro.pressure_pa) - baro_h0_) - (-x_[IP + 2]), prm_.sigma_baro * prm_.sigma_baro);
+        scalar_update(h, (isa_height(bus.baro.pressure_pa) - baro_h0_) - (-x_[IP + 2]), sns_.sigma_baro * sns_.sigma_baro);
         normalise_q();
     }
     if (bus.fresh & kMag) {
@@ -239,13 +245,13 @@ void Ekf::update(const SensorBus& bus) {
         const Quat q{x_[IQ], x_[IQ + 1], x_[IQ + 2], x_[IQ + 3]};
         const Vec3 mw = rotate(q, bus.mag.field_frd_ut);
         if (mw.x * mw.x + mw.y * mw.y > 1e-6f) {
-            const Vec3 m0 = prm_.mag_ref_ned_ut;
+            const Vec3 m0 = mag_ref_;
             const float r = m0.x * m0.x + m0.y * m0.y;
             float J[3][4];
             drot_dq(q, rotate_inv(q, m0), J);
             float h[N] = {};
             for (int i = 0; i < 4; ++i) h[IQ + i] = (m0.x * J[1][i] - m0.y * J[0][i]) / r;
-            scalar_update(h, heading_innovation(q, bus.mag.field_frd_ut, mag_decl_), prm_.sigma_heading * prm_.sigma_heading);
+            scalar_update(h, heading_innovation(q, bus.mag.field_frd_ut, mag_decl_), sns_.sigma_heading * sns_.sigma_heading);
             normalise_q();
         }
     }
@@ -266,17 +272,17 @@ void Ekf::align(const Alignment& a) {
     x_[IWB + 2] = a.gyro_mean.z;
     baro_h0_ = a.baro_h0;
 
-    float sigma_wb = prm_.sigma_gyro / std::sqrt(static_cast<float>(a.n_imu));
+    float sigma_wb = sns_.sigma_gyro / std::sqrt(static_cast<float>(a.n_imu));
     if (sigma_wb < 1e-4f) sigma_wb = 1e-4f;
     for (int i = 0; i < 3; ++i) {
-        P_[IP + i][IP + i] = prm_.sigma_p0 * prm_.sigma_p0;
-        P_[IV + i][IV + i] = prm_.sigma_v0 * prm_.sigma_v0;
-        P_[IAB + i][IAB + i] = prm_.sigma_ab0 * prm_.sigma_ab0;
+        P_[IP + i][IP + i] = pri_.sigma_p0 * pri_.sigma_p0;
+        P_[IV + i][IV + i] = pri_.sigma_v0 * pri_.sigma_v0;
+        P_[IAB + i][IAB + i] = pri_.sigma_ab0 * pri_.sigma_ab0;
         P_[IWB + i][IWB + i] = sigma_wb * sigma_wb;
     }
     float X[4][3];
     xi(a.q, X);
-    const float s = 0.25f * prm_.sigma_theta0 * prm_.sigma_theta0;
+    const float s = 0.25f * pri_.sigma_theta0 * pri_.sigma_theta0;
     for (int i = 0; i < 4; ++i)
         for (int j = 0; j < 4; ++j) P_[IQ + i][IQ + j] = s * (X[i][0] * X[j][0] + X[i][1] * X[j][1] + X[i][2] * X[j][2]);
     aligned_ = true;
@@ -289,7 +295,7 @@ void Ekf::predict(Vec3 am, Vec3 wm, float dt) {
     const Vec3 wb{x_[IWB], x_[IWB + 1], x_[IWB + 2]};
     const M3 R = rotmat(q);
     const Vec3 a_body = am - ab;
-    const Vec3 a_world = rotate(q, a_body) + Vec3{0.f, 0.f, prm_.gravity};
+    const Vec3 a_world = rotate(q, a_body) + Vec3{0.f, 0.f, gravity_};
     const Quat dq = quat_from_rotvec(dt * (wm - wb));
 
     float Ja[3][4], Qr[4][4], X[4][3];
@@ -319,10 +325,10 @@ void Ekf::predict(Vec3 am, Vec3 wm, float dt) {
         }
     apply_f(M_, P_, Ja, R, Qr, X, dt);
 
-    const float qv = prm_.sigma_accel * prm_.sigma_accel * dt * dt;
-    const float qq = (0.5f * prm_.sigma_gyro * dt) * (0.5f * prm_.sigma_gyro * dt);
-    const float qa = prm_.sigma_accel_walk * prm_.sigma_accel_walk * dt;
-    const float qw = prm_.sigma_gyro_walk * prm_.sigma_gyro_walk * dt;
+    const float qv = sns_.sigma_accel * sns_.sigma_accel * dt * dt;
+    const float qq = (0.5f * sns_.sigma_gyro * dt) * (0.5f * sns_.sigma_gyro * dt);
+    const float qa = sns_.sigma_accel_walk * sns_.sigma_accel_walk * dt;
+    const float qw = sns_.sigma_gyro_walk * sns_.sigma_gyro_walk * dt;
     for (int i = 0; i < 3; ++i) {
         P_[IV + i][IV + i] += qv;
         P_[IAB + i][IAB + i] += qa;

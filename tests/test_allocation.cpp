@@ -6,10 +6,10 @@
 
 #include <marv/fsw/allocation.hpp>
 #include <marv/fsw/math.hpp>
+#include <marv/fsw/params.hpp>
 #include <marv/fsw/vehicle.hpp>
 
 using namespace marv;
-using namespace marv::vehicle;
 
 static int failures = 0;
 #define CHECK(c)                                                         \
@@ -27,18 +27,22 @@ static int failures = 0;
         }                                                                                                     \
     } while (0)
 
-// The mixer: motor fractions -> rotor thrusts -> (collective, torque about FRD).
+// The mixer of the factory vehicle and actuators: motor fractions -> rotor thrusts -> (collective, torque about FRD).
 struct Wrench {
     float t;
     Vec3 tau;
 };
 static Wrench mix(const ActuatorCommand& c) {
+    const param::VehicleParams v{};
+    const param::ActuatorParams a{};
+    const float x[kMotorCount] = {v.rotor_x_0, v.rotor_x_1, v.rotor_x_2, v.rotor_x_3};
+    const float y[kMotorCount] = {v.rotor_y_0, v.rotor_y_1, v.rotor_y_2, v.rotor_y_3};
     Wrench w{0.f, {0.f, 0.f, 0.f}};
     for (int i = 0; i < kMotorCount; ++i) {
-        const float omega = c.motor[i] * kMaxRotVelocity;
-        const float t = kMotorConstant * omega * omega;
+        const float omega = c.motor[i] * a.max_rot_velocity;
+        const float t = a.motor_constant * omega * omega;
         w.t += t;
-        w.tau += Vec3{-kRotorY[i] * t, kRotorX[i] * t, kMomentConstant * kRotorYaw[i] * t};
+        w.tau += Vec3{-y[i] * t, x[i] * t, v.moment_constant * vehicle::kRotorYaw[i] * t};
     }
     return w;
 }
