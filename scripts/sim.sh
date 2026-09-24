@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Start the marv world paused, run marv_bridge against it, stop the world. Arguments go to the bridge:
 #
-#   scripts/sim.sh --sitl --seconds S [--mission FILE] [--log out.csv]
-#   scripts/sim.sh --port /dev/ttyACM0 --seconds S [--mission FILE] [--log out.csv]
+#   scripts/sim.sh --sitl --seconds S [--mission FILE | --ground] [--log out.csv]
+#   scripts/sim.sh --port /dev/ttyACM0 --seconds S [--mission FILE | --ground] [--log out.csv]
 #
 # Exit code is the bridge's (2 if a gz server was already running, 1 if the world never came up).
 set -uo pipefail
