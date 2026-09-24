@@ -1,4 +1,4 @@
-import type { LinkInfo, Schema, ServerMsg, SetupHeader, Telemetry } from './types';
+import type { GeoPoint, LatLonAlt, LinkInfo, MissionMode, Schema, ServerMsg, SetupHeader, Telemetry } from './types';
 
 type Obj = Record<string, unknown>;
 
@@ -17,6 +17,23 @@ function quat(v: unknown): [number, number, number, number] {
 	if (Array.isArray(v)) return [num(v[0]), num(v[1]), num(v[2]), num(v[3])];
 	if (isObj(v)) return [num(v.w), num(v.x), num(v.y), num(v.z)];
 	return [NaN, NaN, NaN, NaN];
+}
+
+const MODES: readonly MissionMode[] = ['disarmed', 'armed', 'climb', 'hold', 'mission', 'rth', 'land'];
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const numOrNull = (v: unknown): number | null => (finite(v) ? v : null);
+
+/** {lat, lon, alt_m} in degrees and metres above home, or null without a finite lat and lon. */
+function latLonAlt(v: unknown): LatLonAlt | null {
+	if (!isObj(v) || !finite(v.lat) || !finite(v.lon)) return null;
+	return { lat: v.lat, lon: v.lon, alt_m: num(v.alt_m, NaN) };
+}
+
+/** The FC's home, or null while it reports none (home_valid false, or absent with a zero point). */
+function home(valid: unknown, h: unknown): GeoPoint | null {
+	if (valid === false || !isObj(h) || !finite(h.lat_e7) || !finite(h.lon_e7)) return null;
+	if (valid !== true && h.lat_e7 === 0 && h.lon_e7 === 0) return null;
+	return { lat_e7: h.lat_e7, lon_e7: h.lon_e7, alt_m: num(h.alt_m, 0) };
 }
 
 export function parseHeader(h: unknown): SetupHeader | null {
@@ -64,9 +81,26 @@ export function parseServer(text: string): ServerMsg | null {
 				preset: num(m.preset, 0xff),
 				armed: Boolean(m.armed),
 				thrust_hover: num(m.thrust_hover, NaN),
-				brake: num(m.brake, NaN)
+				brake: num(m.brake, NaN),
+				home: home(m.home_valid, m.home),
+				geo: latLonAlt(m.geo ?? est.geo)
 			};
 			return { type: 'telemetry', telemetry };
+		}
+		case 'mission_state': {
+			const state = MODES.find((x) => x === m.state);
+			if (!state) return null;
+			return {
+				type: 'mission_state',
+				mission: {
+					state,
+					wp_index: num(m.wp_index, 0),
+					wp_count: num(m.wp_count, 0),
+					target: latLonAlt(m.target),
+					dist_m: numOrNull(m.dist_m),
+					climb_alt_m: numOrNull(m.climb_alt_m)
+				}
+			};
 		}
 		case 'flash_log':
 			return { type: 'flash_log', line: String(m.line ?? '') };

@@ -1,8 +1,18 @@
 /**
  * Dev-only stand-in for the backend + FC (?mock): answers the client messages with the setup semantics of gcs decision
- * (b), (c). ?mock=armed starts armed (save refused); ?mock=mismatch reports another schema hash.
+ * (b), (c). ?mock=armed starts armed (save refused); ?mock=mismatch reports another schema hash. A point-mass vehicle
+ * flies the mission API about a fixed home: arm, climb, hold, mission, return to home, land.
  */
-import type { ClientMsg, Schema, SetupHeader } from './types';
+import { LocalFrame, type Ned } from './geo';
+import { missionError, type MissionMsg } from './mission';
+import type { ClientMsg, GeoPoint, LatLonAlt, MissionMode, Schema, SetupHeader } from './types';
+
+/** The Gazebo world's origin, as in tests/test_geo.cpp. */
+const HOME: GeoPoint = { lat_e7: 473763880, lon_e7: 85477780, alt_m: 408 };
+const SPEED_H = 6;
+const SPEED_V = 2.5;
+const SPEED_LAND = 1;
+const ARRIVED_M = 0.3;
 
 interface Setup {
 	kind: number[];
@@ -38,6 +48,15 @@ export class MockFc {
 	private readonly hash: number;
 	private readonly timer: ReturnType<typeof setInterval>;
 	private t = 0;
+	private readonly frame = new LocalFrame(HOME);
+	private p: Ned = [0, 0, 0];
+	private yaw = 0;
+	private mode: MissionMode;
+	private climbAlt: number | null = null;
+	/** Where climb, hold and land hold the horizontal position (and climb/hold the altitude). */
+	private hold: Ned = [0, 0, 0];
+	private wps: LatLonAlt[] = [];
+	private wpIndex = 0;
 
 	constructor(
 		private readonly schema: Schema,
@@ -49,10 +68,12 @@ export class MockFc {
 		this.running = copy(this.staged);
 		this.stored = copy(this.staged);
 		this.armed = flag === 'armed';
+		this.mode = this.armed ? 'armed' : 'disarmed';
 		this.hash = flag === 'mismatch' ? (schema.schema_hash ^ 0x5a5a5a5a) >>> 0 : schema.schema_hash;
 		setTimeout(() => {
 			this.onopen?.();
 			this.emit({ type: 'link', mode: 'mock', connected: true, header: this.header() });
+			this.missionState();
 		}, 50);
 		this.timer = setInterval(() => this.telemetry(), 50);
 	}
@@ -92,16 +113,116 @@ export class MockFc {
 				return this.setup(false);
 			case 'reset':
 				this.running = copy(this.staged);
-				this.armed = false;
+				this.disarm();
 				return this.setup(false);
 			case 'reboot':
 				this.running = copy(this.stored);
 				this.staged = copy(this.stored);
-				this.armed = false;
+				this.disarm();
 				return this.setup(true);
 			case 'flash':
 				return this.flash();
+			default:
+				return this.mission(m);
 		}
+	}
+
+	private disarm(): void {
+		this.armed = false;
+		this.mode = 'disarmed';
+		this.p[2] = 0;
+		this.missionState();
+	}
+
+	private enter(mode: MissionMode, hold: Ned = this.hold): void {
+		this.mode = mode;
+		this.hold = hold;
+		this.missionState();
+	}
+
+	/** The mission requests, refused (as the backend would report it) outside the states that allow them. */
+	private mission(m: MissionMsg): void {
+		const s = this.mode;
+		const refuse = (why: string): void => this.emit({ type: 'error', request: m.type, error: `refused in ${s}: ${why}` });
+		const [n, e] = this.p;
+		switch (m.type) {
+			case 'arm':
+				if (s !== 'disarmed') return refuse('already armed');
+				this.armed = true;
+				return this.enter('armed');
+			case 'disarm':
+				return this.disarm();
+			case 'climb':
+				if (s !== 'armed' && s !== 'hold') return refuse('climb needs armed or hold');
+				if (!(m.alt_m > 0)) return refuse('altitude must be above 0 m');
+				this.climbAlt = m.alt_m;
+				return this.enter('climb', [n, e, -m.alt_m]);
+			case 'mission_start': {
+				if (s !== 'hold') return refuse('climb to the safe altitude first');
+				const why = missionError(Array.isArray(m.waypoints) ? m.waypoints : []);
+				if (why) return refuse(why);
+				this.wps = m.waypoints.map((w) => ({ ...w }));
+				this.wpIndex = 0;
+				return this.enter('mission');
+			}
+			case 'rth':
+				if (s !== 'climb' && s !== 'hold' && s !== 'mission') return refuse('not flying');
+				return this.enter('rth');
+			case 'land':
+				if (s !== 'climb' && s !== 'hold' && s !== 'mission' && s !== 'rth') return refuse('not flying');
+				return this.enter('land', [n, e, 0]);
+		}
+	}
+
+	private target(): Ned | null {
+		switch (this.mode) {
+			case 'climb':
+			case 'hold':
+			case 'land':
+				return this.hold;
+			case 'mission':
+				return this.frame.nedOf(this.wps[this.wpIndex]);
+			case 'rth':
+				return [0, 0, -(this.climbAlt ?? -this.p[2])];
+			default:
+				return null;
+		}
+	}
+
+	/** One tick of the point mass toward the target; arriving advances the state. */
+	private fly(dt: number): void {
+		const t = this.target();
+		if (!t) return;
+		const [dn, de, dd] = [t[0] - this.p[0], t[1] - this.p[1], t[2] - this.p[2]];
+		const h = Math.hypot(dn, de);
+		const step = Math.min(h, SPEED_H * dt);
+		if (h > 1e-6) {
+			this.p[0] += (dn / h) * step;
+			this.p[1] += (de / h) * step;
+		}
+		if (h > 1) this.yaw = Math.atan2(de, dn);
+		const v = (this.mode === 'land' ? SPEED_LAND : SPEED_V) * dt;
+		this.p[2] += Math.max(-v, Math.min(v, dd));
+		if (this.mode === 'hold' || Math.hypot(h, dd) > ARRIVED_M) return;
+		if (this.mode === 'climb') this.enter('hold', t);
+		else if (this.mode === 'mission') {
+			if (++this.wpIndex < this.wps.length) this.missionState();
+			else this.enter('rth');
+		} else if (this.mode === 'rth') this.enter('land', [0, 0, 0]);
+		else if (this.mode === 'land') this.disarm();
+	}
+
+	private missionState(): void {
+		const t = this.target();
+		this.emit({
+			type: 'mission_state',
+			state: this.mode,
+			wp_index: this.wpIndex,
+			wp_count: this.wps.length,
+			target: t ? this.frame.latLonOf(t) : null,
+			dist_m: t ? Math.hypot(t[0] - this.p[0], t[1] - this.p[1], t[2] - this.p[2]) : null,
+			climb_alt_m: this.climbAlt
+		});
 	}
 
 	/**
@@ -158,18 +279,23 @@ export class MockFc {
 
 	private telemetry(): void {
 		this.t += 0.05;
+		this.fly(0.05);
+		if (Math.round(this.t / 0.05) % 4 === 0) this.missionState();
 		const r = crc(this.running);
 		const preset = this.schema.factory.find((f) => crc({ kind: f.kinds, values: f.values }) === r)?.id ?? 0xff;
-		const yaw = 0.3 * this.t;
-		const roll = 0.05 * Math.sin(this.t);
+		const yaw = this.yaw;
+		const roll = this.armed ? 0.02 * Math.sin(3 * this.t) : 0;
 		const q = [Math.cos(yaw / 2) * Math.cos(roll / 2), Math.cos(yaw / 2) * Math.sin(roll / 2), -Math.sin(yaw / 2) * Math.sin(roll / 2), Math.sin(yaw / 2) * Math.cos(roll / 2)];
 		this.emit({
 			type: 'telemetry',
-			est: { p_ned: [2 * Math.cos(0.3 * this.t), 2 * Math.sin(0.3 * this.t), -1.5], q },
+			est: { p_ned: this.p.slice(), q },
 			preset,
 			armed: this.armed,
 			thrust_hover: 0.6811,
-			brake: 0
+			brake: 0,
+			home_valid: true,
+			home: HOME,
+			geo: this.frame.latLonOf(this.p)
 		});
 	}
 

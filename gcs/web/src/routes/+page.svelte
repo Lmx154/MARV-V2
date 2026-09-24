@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import BlockChain from '$lib/components/BlockChain.svelte';
+	import MissionView from '$lib/components/MissionView.svelte';
 	import { connect, loadLink, loadSchema, mockFlag, type Connection } from '$lib/gcs/link';
+	import { isMissionRequest, type MissionMsg, type MissionRequest } from '$lib/gcs/mission';
 	import { euler } from '$lib/gcs/protocol';
 	import {
 		applyHeader,
@@ -24,7 +26,7 @@
 		type ErrorSlot,
 		type SetupState
 	} from '$lib/gcs/setup';
-	import type { ClientMsg, LinkInfo, Schema, ServerMsg, Telemetry } from '$lib/gcs/types';
+	import type { ClientMsg, LinkInfo, MissionStatus, Schema, ServerMsg, Telemetry } from '$lib/gcs/types';
 
 	/** An edit with no echo after this is dropped (the backend retries every 500 ms). */
 	const ECHO_TIMEOUT_MS = 1500;
@@ -43,6 +45,11 @@
 	let errors = $state<Partial<Record<ErrorSlot, string>>>({});
 	/** Family -> the FC's refusal of the kind last asked for, shown on that family's card. */
 	let kindErrors = $state<Record<number, string>>({});
+	let mission = $state.raw<MissionStatus | null>(null);
+	/** The backend's last refusal per mission control, shown beside it. */
+	let missionErrors = $state<Partial<Record<MissionRequest, string>>>({});
+	/** The tab chosen; until then Mission while the FC is connected. */
+	let tab = $state<'mission' | 'setup' | null>(null);
 	let conn: Connection | null = null;
 	const sentAt = new Map<number, number>();
 
@@ -55,6 +62,7 @@
 	const armed = $derived(header?.armed ?? telem?.armed ?? false);
 	const factoryNow = $derived(schema && loaded ? matchingFactory(schema, kinds, st.values) : null);
 	const words = $derived(header ? statusWords(header) : []);
+	const view = $derived(tab ?? (header ? 'mission' : 'setup'));
 	const att = $derived(telem ? euler(telem.q) : null);
 	const presetLabel = $derived.by(() => {
 		if (!telem || !schema) return '—';
@@ -70,6 +78,11 @@
 		conn?.send(m);
 	}
 
+	function sendMission(m: MissionMsg): void {
+		delete missionErrors[m.type];
+		send(m);
+	}
+
 	function sendParam(index: number, v: number): void {
 		sentAt.set(index, performance.now());
 		send({ type: 'set_param', index, value: v });
@@ -80,7 +93,10 @@
 			case 'link': {
 				const was = link?.connected ?? false;
 				link = m.link;
-				if (!m.link.connected) st.header = null;
+				if (!m.link.connected) {
+					st.header = null;
+					mission = null;
+				}
 				else if (m.header) applyHeader(st, m.header, null);
 				if (m.link.connected && !was) send({ type: 'request_setup' });
 				flashing = false;
@@ -103,12 +119,16 @@
 			case 'telemetry':
 				telem = m.telemetry;
 				break;
+			case 'mission_state':
+				mission = m.mission;
+				break;
 			case 'flash_log':
 				flashLog = [...flashLog.slice(-499), m.line];
 				break;
 			case 'error': {
 				const family = refusedFamily(m);
-				if (family !== null) kindErrors[family] = m.error;
+				if (isMissionRequest(m.request)) missionErrors[m.request] = m.error;
+				else if (family !== null) kindErrors[family] = m.error;
 				else errors[requestError(st, m.request)] = `${m.request}: ${m.error}`;
 				if (m.request === 'flash') flashing = false;
 				break;
@@ -134,7 +154,11 @@
 				schema = s;
 				link = await loadLink(mock);
 				if (stopped) return;
-				conn = connect(mock, s, { message: onMessage, open: (o) => (wsOpen = o) });
+				conn = connect(mock, s, { message: onMessage, open: (o) => {
+						wsOpen = o;
+						if (!o) mission = null;
+					}
+				});
 			} catch (e) {
 				loadError = e instanceof Error ? e.message : String(e);
 			}
@@ -282,8 +306,17 @@
 		<span><span class="k">armed</span> {telem ? (telem.armed ? 'yes' : 'no') : '—'}</span>
 	</section>
 
+	<div class="tabs mono" role="tablist">
+		<button type="button" role="tab" aria-selected={view === 'mission'} class:on={view === 'mission'} onclick={() => (tab = 'mission')}>Mission</button>
+		<button type="button" role="tab" aria-selected={view === 'setup'} class:on={view === 'setup'} onclick={() => (tab = 'setup')}>Setup</button>
+	</div>
+
+	<div hidden={view !== 'mission'}>
+		<MissionView {telem} {mission} connected={wsOpen && header !== null} errors={missionErrors} visible={view === 'mission'} onsend={sendMission} />
+	</div>
+
 	{#if schema}
-		<section class="config" aria-label="Setup">
+		<section class="config" aria-label="Setup" hidden={view !== 'setup'}>
 			<div class="row">
 				<label class="mono preset">
 					Factory setup
@@ -420,6 +453,30 @@
 		padding: 0.2rem 0.4rem;
 		font: inherit;
 		margin-left: 0.4rem;
+	}
+	.tabs {
+		display: flex;
+		gap: 0.25rem;
+		border-bottom: 1px solid var(--border);
+	}
+	.tabs button {
+		background: none;
+		color: var(--muted);
+		border: 1px solid transparent;
+		border-bottom: none;
+		border-radius: 6px 6px 0 0;
+		padding: 0.35rem 0.9rem;
+		font: inherit;
+		font-size: 0.85rem;
+		cursor: pointer;
+	}
+	.tabs button.on {
+		color: var(--text);
+		border-color: var(--border);
+		background: var(--surface);
+	}
+	.config[hidden] {
+		display: none;
 	}
 	.config {
 		display: flex;

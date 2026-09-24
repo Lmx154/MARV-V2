@@ -72,6 +72,32 @@ export interface LinkInfo {
 	connected: boolean;
 }
 
+/** A geodetic point as the FC reports it (home): 1e-7 deg, altitude above mean sea level. */
+export interface GeoPoint {
+	lat_e7: number;
+	lon_e7: number;
+	alt_m: number;
+}
+
+/** Decimal degrees and metres above home: the vehicle's position, a waypoint, a mission target. */
+export interface LatLonAlt {
+	lat: number;
+	lon: number;
+	alt_m: number;
+}
+
+export type MissionMode = 'disarmed' | 'armed' | 'climb' | 'hold' | 'mission' | 'rth' | 'land';
+
+/** The backend's mission executor (server message mission_state). */
+export interface MissionStatus {
+	state: MissionMode;
+	wp_index: number;
+	wp_count: number;
+	target: LatLonAlt | null;
+	dist_m: number | null;
+	climb_alt_m: number | null;
+}
+
 export interface Telemetry {
 	p_ned: [number, number, number];
 	q: [number, number, number, number];
@@ -81,6 +107,10 @@ export interface Telemetry {
 	thrust_hover: number;
 	/** Air brake deployment 0..1 (rocket). */
 	brake: number;
+	/** Null until the FC reports a valid home. */
+	home: GeoPoint | null;
+	/** The vehicle's position, when the backend reports it. */
+	geo: LatLonAlt | null;
 }
 
 export type ClientMsg =
@@ -91,7 +121,13 @@ export type ClientMsg =
 	| { type: 'save' }
 	| { type: 'reset' }
 	| { type: 'reboot' }
-	| { type: 'flash' };
+	| { type: 'flash' }
+	| { type: 'arm' }
+	| { type: 'disarm' }
+	| { type: 'climb'; alt_m: number }
+	| { type: 'mission_start'; waypoints: LatLonAlt[] }
+	| { type: 'rth' }
+	| { type: 'land' };
 
 /** Server messages are parsed loosely (see link.ts); this is what the page acts on. */
 export type ServerMsg =
@@ -99,5 +135,6 @@ export type ServerMsg =
 	| { type: 'setup'; header: SetupHeader; values: number[] | null }
 	| { type: 'param'; index: number; value: number }
 	| { type: 'telemetry'; telemetry: Telemetry }
+	| { type: 'mission_state'; mission: MissionStatus }
 	| { type: 'flash_log'; line: string }
 	| { type: 'error'; request: string; error: string; family?: number };

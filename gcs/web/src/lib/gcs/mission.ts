@@ -1,0 +1,150 @@
+/** Mission control: waypoint validation, the controls each mission state allows, and presets kept in the browser. */
+import type { ClientMsg, LatLonAlt, MissionMode } from './types';
+
+export type MissionRequest = 'arm' | 'disarm' | 'climb' | 'mission_start' | 'rth' | 'land';
+const REQUESTS: readonly MissionRequest[] = ['arm', 'disarm', 'climb', 'mission_start', 'rth', 'land'];
+export type MissionMsg = Extract<ClientMsg, { type: MissionRequest }>;
+export const isMissionRequest = (r: string): r is MissionRequest => (REQUESTS as readonly string[]).includes(r);
+
+/** Above this (m above home) a disarm asks first. */
+export const DISARM_CONFIRM_ALT_M = 0.5;
+
+/** Why a waypoint cannot be flown, or null. */
+export function waypointError(w: LatLonAlt): string | null {
+	if (!Number.isFinite(w.lat) || w.lat < -90 || w.lat > 90) return 'latitude must be within -90..90 deg';
+	if (!Number.isFinite(w.lon) || w.lon < -180 || w.lon > 180) return 'longitude must be within -180..180 deg';
+	if (!Number.isFinite(w.alt_m) || w.alt_m <= 0) return 'altitude must be above 0 m (above home)';
+	return null;
+}
+
+const decimal = (s: string): number => (/^\s*[-+]?(\d+\.?\d*|\.\d+)\s*$/.test(s) ? Number(s) : NaN);
+
+/** A waypoint typed as decimal degrees and metres above home, or why it is not one. */
+export function parseWaypoint(lat: string, lon: string, alt: string): LatLonAlt | string {
+	const w = { lat: decimal(lat), lon: decimal(lon), alt_m: decimal(alt) };
+	return waypointError(w) ?? w;
+}
+
+/** Why the list cannot be started as a mission, or null. */
+export function missionError(wps: readonly LatLonAlt[]): string | null {
+	if (wps.length === 0) return 'no waypoints';
+	for (let i = 0; i < wps.length; i++) {
+		const e = waypointError(wps[i]);
+		if (e) return `waypoint ${i + 1}: ${e}`;
+	}
+	return null;
+}
+
+export function climbError(alt_m: number): string | null {
+	return Number.isFinite(alt_m) && alt_m > 0 ? null : 'safe altitude must be above 0 m';
+}
+
+/** The list with row i moved by delta (clamped), as a new array. */
+export function moveWaypoint(wps: readonly LatLonAlt[], i: number, delta: number): LatLonAlt[] {
+	const out = wps.slice();
+	const j = Math.max(0, Math.min(out.length - 1, i + delta));
+	const [w] = out.splice(i, 1);
+	out.splice(j, 0, w);
+	return out;
+}
+
+export interface ControlContext {
+	/** The last mission_state, or null before the backend reported one. */
+	state: MissionMode | null;
+	/** Backend open and FC connected. */
+	connected: boolean;
+	climbAlt: number;
+	waypoints: readonly LatLonAlt[];
+}
+
+/** Which mission controls may be pressed. */
+export function enabledControls(c: ControlContext): Record<MissionRequest, boolean> {
+	const s = c.connected ? c.state : null;
+	const airborne = s === 'climb' || s === 'hold' || s === 'mission' || s === 'rth';
+	return {
+		arm: s === 'disarmed',
+		disarm: s !== null && s !== 'disarmed',
+		climb: (s === 'armed' || s === 'hold') && climbError(c.climbAlt) === null,
+		mission_start: s === 'hold' && missionError(c.waypoints) === null,
+		rth: s === 'climb' || s === 'hold' || s === 'mission',
+		land: airborne
+	};
+}
+
+/** A disarm asks first when the vehicle may be flying. */
+export function disarmNeedsConfirm(state: MissionMode | null, alt_m: number): boolean {
+	return !(state === 'disarmed' || state === 'armed') || !(alt_m <= DISARM_CONFIRM_ALT_M);
+}
+
+export interface MissionPreset {
+	name: string;
+	waypoints: LatLonAlt[];
+}
+
+export const PRESET_KEY = 'marv-gcs.mission-presets';
+const FORMAT = 'marv-mission-presets';
+
+interface KeyValue {
+	getItem(key: string): string | null;
+	setItem(key: string, value: string): void;
+}
+
+function parsePreset(v: unknown): MissionPreset | null {
+	if (typeof v !== 'object' || v === null) return null;
+	const o = v as Record<string, unknown>;
+	if (typeof o.name !== 'string' || !o.name.trim() || !Array.isArray(o.waypoints)) return null;
+	const waypoints: LatLonAlt[] = [];
+	for (const w of o.waypoints) {
+		if (typeof w !== 'object' || w === null) return null;
+		const r = w as Record<string, unknown>;
+		const p = { lat: Number(r.lat), lon: Number(r.lon), alt_m: Number(r.alt_m) };
+		if (typeof r.lat !== 'number' || typeof r.lon !== 'number' || typeof r.alt_m !== 'number' || waypointError(p)) return null;
+		waypoints.push(p);
+	}
+	return { name: o.name.trim(), waypoints };
+}
+
+/** Presets from an export file, a bare list, or one preset; invalid entries are named in rejected. */
+export function importPresets(parsed: unknown): { presets: MissionPreset[]; rejected: string[] } {
+	const o = parsed as Record<string, unknown> | null;
+	const list: unknown[] = Array.isArray(parsed) ? parsed : o && Array.isArray(o.presets) ? o.presets : o && typeof o === 'object' ? [o] : [];
+	const presets: MissionPreset[] = [];
+	const rejected: string[] = [];
+	list.forEach((v, i) => {
+		const p = parsePreset(v);
+		if (p) presets.push(p);
+		else rejected.push(typeof (v as { name?: unknown })?.name === 'string' ? String((v as { name: string }).name) : `#${i + 1}`);
+	});
+	return { presets, rejected };
+}
+
+export function exportPresets(presets: readonly MissionPreset[]): { format: string; version: number; presets: MissionPreset[] } {
+	return { format: FORMAT, version: 1, presets: presets.map((p) => ({ name: p.name, waypoints: p.waypoints.map((w) => ({ ...w })) })) };
+}
+
+/** The list with p added, replacing a preset of the same name. */
+export function upsertPreset(presets: readonly MissionPreset[], p: MissionPreset): MissionPreset[] {
+	const i = presets.findIndex((x) => x.name === p.name);
+	return i < 0 ? [...presets, p] : presets.map((x, j) => (j === i ? p : x));
+}
+
+/** The stored presets; none when storage is unavailable or holds something else. */
+export function readPresets(store: KeyValue | null): MissionPreset[] {
+	try {
+		const text = store?.getItem(PRESET_KEY);
+		return text ? importPresets(JSON.parse(text)).presets : [];
+	} catch {
+		return [];
+	}
+}
+
+/** Stores the presets; returns why it could not, or null. */
+export function writePresets(store: KeyValue | null, presets: readonly MissionPreset[]): string | null {
+	try {
+		if (!store) return 'browser storage unavailable';
+		store.setItem(PRESET_KEY, JSON.stringify(exportPresets(presets)));
+		return null;
+	} catch (e) {
+		return e instanceof Error ? e.message : String(e);
+	}
+}
