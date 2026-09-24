@@ -12,8 +12,9 @@ class Actuators {
 public:
     explicit Actuators(const param::ActuatorParams& a = {});
 
-    // Disarmed: unchanged (every motor zero). The brake is not touched.
-    void run(ActuatorCommand& cmd) const;
+    // kIdle or disarmed: unchanged (every motor zero). kArmed: every motor spin_arm. kFly: the curve. The brake is not
+    // touched.
+    void run(ActuatorCommand& cmd, Mode mode) const;
 
 private:
     param::ActuatorParams a_;

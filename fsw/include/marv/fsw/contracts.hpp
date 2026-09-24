@@ -87,6 +87,7 @@ struct State {
 enum class Mode : std::uint8_t {
     kIdle,  // disarmed: every motor command is zero
     kFly,
+    kArmed,  // armed on the ground: no control, every motor at the actuators' spin_arm (a rocket: armed, brake closed)
 };
 
 // What the mission wants at an instant. A cleared bit means the field is not specified.

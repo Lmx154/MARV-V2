@@ -230,6 +230,8 @@ MARV_PART(actuators, rotor_speed_fraction, spin, "Spin range")
 MARV_PARAM(actuators, rotor_speed_fraction, spin_min, "Spin minimum", "0–1", 0.f, 0.f, 0.3f, 0.01f, 2, "Command at zero thrust while armed.", "AP_Motors_Thrust_Linearization.cpp:104-107; 0 = today's behaviour")
 // Down to 0.7: less wastes the rotor.
 MARV_PARAM(actuators, rotor_speed_fraction, spin_max, "Spin maximum", "0–1", 1.f, 0.7f, 1.f, 0.01f, 2, "Command at full thrust.", "AP_Motors_Thrust_Linearization.cpp:104-107; 1 = today's behaviour")
+// Up to 0.3, as spin_min: a visible idle spin, not lift.
+MARV_PARAM(actuators, rotor_speed_fraction, spin_arm, "Spin when armed", "0–1", 0.10f, 0.f, 0.3f, 0.01f, 2, "Every motor command while armed on the ground (kArmed).", "MOT_SPIN_ARM, AP_MotorsMulticopter.h:16 default 0.10")
 MARV_KIND(actuators, brake_servo, "brake-servo", "Brake servo", "The brake servo command is the deployment, unchanged.", kClassRocket)
 
 #undef MARV_FAMILY

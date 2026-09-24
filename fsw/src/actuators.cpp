@@ -6,8 +6,12 @@ namespace marv {
 
 Actuators::Actuators(const param::ActuatorParams& a) : a_(a) {}
 
-void Actuators::run(ActuatorCommand& cmd) const {
-    if (!cmd.armed) return;
+void Actuators::run(ActuatorCommand& cmd, Mode mode) const {
+    if (mode == Mode::kIdle || !cmd.armed) return;
+    if (mode == Mode::kArmed) {
+        for (float& m : cmd.motor) m = a_.spin_arm;
+        return;
+    }
     const float e = a_.thrust_expo;
     for (float& m : cmd.motor) {
         const float u = std::fmin(std::fmax(m, 0.f), 1.f);

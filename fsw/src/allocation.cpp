@@ -25,6 +25,7 @@ constexpr float kYaw[kMotorCount] = {0.5f, 0.5f, -0.5f, -0.5f};
 ActuatorCommand Allocation::run(const ControlRequest& req, const State& nav, Mode mode) {
     ActuatorCommand cmd{};
     cmd.t_us = nav.t_us;
+    if (mode == Mode::kArmed) cmd.armed = true;
     if (mode != Mode::kFly) return cmd;
 
     // Collective: the requested thrust along the thrust axis (-z body) the vehicle has now.

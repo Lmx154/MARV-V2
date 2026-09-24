@@ -236,27 +236,35 @@ int main() {
         for (float m : c.motor) CHECK(m == 0.f);
     }
 
+    // Armed: armed, every motor zero (the actuators spin them), the brake zero.
+    {
+        Allocation a;
+        const ActuatorCommand c = a.run({{0.f, 0.f, -kHover}, {0.1f, 0.f, 0.f}, kHover, 0.5f}, level(), Mode::kArmed);
+        CHECK(c.armed && c.brake == 0.f);
+        for (float m : c.motor) CHECK(m == 0.f);
+    }
+
     // Actuators: the inverse of thrust = (1 - e) x + e x^2 mapped into [spin_min, spin_max]; disarmed untouched.
     {
         const float thrust[kMotorCount] = {0.f, 0.25f, 0.6811f, 1.f};
         ActuatorCommand c{};
         c.armed = true;
         for (int i = 0; i < kMotorCount; ++i) c.motor[i] = thrust[i];
-        Actuators{}.run(c);  // factory: e = 1, spin 0..1: the rotor-speed fraction sqrt(thrust)
+        Actuators{}.run(c, Mode::kFly);  // factory: e = 1, spin 0..1: the rotor-speed fraction sqrt(thrust)
         for (int i = 0; i < kMotorCount; ++i) NEAR(c.motor[i], std::sqrt(thrust[i]), 1e-6f);
 
         param::ActuatorParams p{};
         p.thrust_expo = 0.f;
         c.armed = true;
         for (int i = 0; i < kMotorCount; ++i) c.motor[i] = thrust[i];
-        Actuators{p}.run(c);  // linear
+        Actuators{p}.run(c, Mode::kFly);  // linear
         for (int i = 0; i < kMotorCount; ++i) NEAR(c.motor[i], thrust[i], 1e-6f);
 
         p.thrust_expo = 0.65f;
         p.spin_min = 0.15f;
         p.spin_max = 0.95f;
         for (int i = 0; i < kMotorCount; ++i) c.motor[i] = thrust[i];
-        Actuators{p}.run(c);
+        Actuators{p}.run(c, Mode::kFly);
         NEAR(c.motor[0], 0.15f, 1e-6f);
         NEAR(c.motor[3], 0.95f, 1e-6f);
         for (int i = 0; i < kMotorCount; ++i) {
@@ -265,8 +273,22 @@ int main() {
         }
 
         ActuatorCommand idle{};
-        Actuators{p}.run(idle);
+        Actuators{p}.run(idle, Mode::kIdle);
         for (float m : idle.motor) CHECK(m == 0.f);
+
+        // Per mode, on what the allocation hands over: kIdle leaves every motor zero, kArmed sets every motor to
+        // spin_arm, kFly at zero thrust gives spin_min.
+        p.spin_arm = 0.12f;
+        const ControlRequest none{{0.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, kHover, 0.f};
+        for (Mode mode : {Mode::kIdle, Mode::kArmed, Mode::kFly}) {
+            Allocation a;
+            ActuatorCommand m = a.run(none, level(), mode);
+            Actuators{p}.run(m, mode);
+            const float want = mode == Mode::kIdle ? 0.f : mode == Mode::kArmed ? p.spin_arm : p.spin_min;
+            CHECK(m.armed == (mode != Mode::kIdle) && m.brake == 0.f);
+            for (float v : m.motor) CHECK(v == want);
+        }
+        CHECK(param::ActuatorParams{}.spin_arm == 0.10f);
     }
 
     if (failures) std::printf("%d failure(s)\n", failures);

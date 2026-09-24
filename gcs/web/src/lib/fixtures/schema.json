@@ -1,5 +1,5 @@
 {
-	"schema_hash": 3555855537,
+	"schema_hash": 3584266557,
 	"families": [
 		{
 			"id": "vehicle",
@@ -1445,6 +1445,19 @@
 							"note": "Command at full thrust.",
 							"source": "AP_Motors_Thrust_Linearization.cpp:104-107; 1 = today's behaviour",
 							"index": 79
+						},
+						{
+							"id": "spin_arm",
+							"label": "Spin when armed",
+							"unit": "0–1",
+							"default": 0.1,
+							"min": 0,
+							"max": 0.3,
+							"step": 0.01,
+							"digits": 2,
+							"note": "Every motor command while armed on the ground (kArmed).",
+							"source": "MOT_SPIN_ARM, AP_MotorsMulticopter.h:16 default 0.10",
+							"index": 80
 						}
 					],
 					"parts": [
@@ -1460,7 +1473,8 @@
 							"label": "Spin range",
 							"params": [
 								"spin_min",
-								"spin_max"
+								"spin_max",
+								"spin_arm"
 							]
 						}
 					]
@@ -1570,7 +1584,8 @@
 				2e+01,
 				1,
 				0,
-				1
+				1,
+				0.1
 			]
 		},
 		{
@@ -1665,7 +1680,8 @@
 				2e+01,
 				1,
 				0,
-				1
+				1,
+				0.1
 			]
 		},
 		{
@@ -1760,7 +1776,8 @@
 				2e+01,
 				1,
 				0,
-				1
+				1,
+				0.1
 			]
 		},
 		{
@@ -1855,7 +1872,8 @@
 				2e+01,
 				1,
 				0,
-				1
+				1,
+				0.1
 			]
 		},
 		{
@@ -1950,7 +1968,8 @@
 				2e+01,
 				1,
 				0,
-				1
+				1,
+				0.1
 			]
 		}
 	]

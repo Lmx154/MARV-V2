@@ -57,6 +57,22 @@ int main() {
         CHECK(index == kParamCount);
     }
 
+    // spin_arm: appended after spin_max in the rotor-speed-fraction actuators' spin part, MOT_SPIN_ARM's default.
+    {
+        constexpr std::uint16_t i = k_actuators_rotor_speed_fraction_spin_arm;
+        CHECK(i == k_actuators_rotor_speed_fraction_spin_max + 1);
+        CHECK(kParamMeta[i].family == k_actuators && kParamMeta[i].kind == k_actuators_rotor_speed_fraction);
+        CHECK(kParamMeta[i].dflt == 0.10f && kParamMeta[i].min == 0.f && kParamMeta[i].max == 0.3f);
+        bool found = false;
+        for (std::size_t r = 0; r < kRows; ++r) {
+            if (kSchema[r].type != RowType::kParam || std::strcmp(kSchema[r].id, "spin_arm") != 0) continue;
+            found = true;
+            CHECK(std::strcmp(kSchema[r].label, "Spin when armed") == 0 && kSchema[r].step == 0.01f &&
+                  kSchema[r].digits == 2 && kSchema[r].dflt == 0.10f);
+        }
+        CHECK(found);
+    }
+
     // Defaults lie within [min, max]; the range is not empty; the table's default is the flight-side one.
     {
         std::uint16_t index = 0;
@@ -96,7 +112,7 @@ int main() {
             {k_controller, k_controller_apogee_pid, "apogee-pid", 3, kClassRocket},
             {k_allocation, k_allocation_quad_x, "quad-x", 0, kClassUav},
             {k_allocation, k_allocation_rocket_brake, "rocket-brake", 0, kClassRocket},
-            {k_actuators, k_actuators_rotor_speed_fraction, "rotor-speed-fraction", 3, kClassUav},
+            {k_actuators, k_actuators_rotor_speed_fraction, "rotor-speed-fraction", 4, kClassUav},
             {k_actuators, k_actuators_brake_servo, "brake-servo", 0, kClassRocket},
         };
         std::size_t nf = 0, nk = 0;

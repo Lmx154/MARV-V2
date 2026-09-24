@@ -138,7 +138,24 @@ int main() {
         CHECK(learned(low, climb, Mode::kFly) == seed);
         CHECK(learned(far, rate(0.f), Mode::kFly) == seed);
         CHECK(learned(low, rate(0.f), Mode::kIdle) == seed);
+        CHECK(learned(low, rate(0.f), Mode::kArmed) == seed);
         CHECK(learned(low, rate(0.f), Mode::kFly) > seed + 0.002f);
+
+        // kArmed behaves as kIdle: a zero wrench at the hover thrust, and the integrators reset, so the first kFly tick
+        // after it matches a fresh controller's (the flight before it at 1 m error learns nothing but winds them).
+        Controller wound;
+        for (int i = 0; i < 1250; ++i) wound.run(rate(0.f), far, Mode::kFly, dt);
+        const ControlRequest z = wound.run(rate(0.f), far, Mode::kArmed, dt);
+        CHECK(z.thrust_ned.x == 0.f && z.thrust_ned.y == 0.f && z.thrust_ned.z == 0.f);
+        CHECK(z.torque_frd.x == 0.f && z.torque_frd.y == 0.f && z.torque_frd.z == 0.f);
+        CHECK(z.thrust_hover == seed && z.brake == 0.f);
+        const ControlRequest after = wound.run(rate(0.f), far, Mode::kFly, dt);
+        Controller fresh;
+        const ControlRequest first = fresh.run(rate(0.f), far, Mode::kFly, dt);
+        CHECK(after.thrust_ned.x == first.thrust_ned.x && after.thrust_ned.y == first.thrust_ned.y &&
+              after.thrust_ned.z == first.thrust_ned.z);
+        CHECK(after.torque_frd.x == first.torque_frd.x && after.torque_frd.y == first.torque_frd.y &&
+              after.torque_frd.z == first.torque_frd.z);
     }
 
     // A climb from a position step (2 m below the reference, true hover thrust the seed's): the take-off does not

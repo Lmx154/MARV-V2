@@ -304,6 +304,16 @@ int main() {
         }
         CHECK(armed && brake_zero);
 
+        // kArmed: armed (the save lockout holds), the brake closed and every motor zero, even with a demand.
+        {
+            ControlRequest req{};
+            req.brake = 0.8f;
+            const ActuatorCommand c = RocketBrake{}.run(req, Mode::kArmed);
+            CHECK(c.armed && c.brake == 0.f);
+            for (float m : c.motor) CHECK(m == 0.f);
+            CHECK(RocketBrake{}.run(req, Mode::kFly).brake == 0.8f && !RocketBrake{}.run(req, Mode::kIdle).armed);
+        }
+
         // The rollout bound: the finest step from the ground at 1 km/s stops at 400 steps.
         param::Setup fine = setup;
         fine.values[param::k_guidance_apogee_predictor_predict_dt] = 0.02f;

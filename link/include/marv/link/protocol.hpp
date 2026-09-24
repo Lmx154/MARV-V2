@@ -309,7 +309,10 @@ inline void put(Writer& w, const MissionCommand& m) {
 }
 
 inline void get(Reader& r, MissionCommand& m) {
-    m.mode = r.u8() == static_cast<std::uint8_t>(Mode::kFly) ? Mode::kFly : Mode::kIdle;
+    const std::uint8_t mode = r.u8();
+    m.mode = mode == static_cast<std::uint8_t>(Mode::kFly)     ? Mode::kFly
+             : mode == static_cast<std::uint8_t>(Mode::kArmed) ? Mode::kArmed
+                                                               : Mode::kIdle;
     m.nav = r.u8() == static_cast<std::uint8_t>(NavSource::kTruth) ? NavSource::kTruth : NavSource::kEstimate;
     get(r, m.ref);
 }

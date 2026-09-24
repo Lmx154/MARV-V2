@@ -72,7 +72,7 @@ Tick Fsw::step(const SensorBus& bus) {
         // Guidance: the mission's reference, passed through.
         req = controller_.run(mission_.ref, nav, mode, dt);
         out.act = allocation_.run(req, nav, mode);
-        actuators_.run(out.act);
+        actuators_.run(out.act, mode);
     } else {
         req = apogee_pid_.run(apogee_predictor_.run(mission_.ref, nav, mode, bus.t_us), mode, dt);
         out.act = rocket_brake_.run(req, mode);

@@ -456,6 +456,28 @@ int main() {
         CHECK(au.armed && au.brake == 0.f && au.motor[0] > 0.5f);
     }
 
+    // kArmed: on an invalid estimate the gate keeps it idle (not armed, motors zero); on a valid navigation source
+    // every motor is spin_arm and the command is armed, so a flash save is refused.
+    {
+        MissionCommand armed_est{Mode::kArmed, NavSource::kEstimate, {}};
+        Fsw fsw{kFactory[0]};
+        fsw.on_mission(armed_est);
+        const ActuatorCommand a = fsw.step(bus_at(1000)).act;
+        CHECK(!a.armed);
+        for (float m : a.motor) CHECK(m == 0.f);
+
+        FakePlatform pf;
+        Node node{pf};
+        ask(node, pf, MissionCommand{Mode::kArmed, NavSource::kTruth, {}});
+        const Replies r = tick(node, pf, 1000);
+        const float spin_arm = kFactory[0].values[param::k_actuators_rotor_speed_fraction_spin_arm];
+        CHECK(spin_arm == 0.10f);
+        CHECK(r.act.armed && r.act.brake == 0.f);
+        for (float m : r.act.motor) CHECK(m == spin_arm);
+        const Replies s = ask(node, pf, link::SaveSetup{});
+        CHECK(s.headers.size() == 1 && s.headers[0].armed == 1 && s.headers[0].stored_valid == 0 && pf.writes == 0);
+    }
+
     std::printf(failures ? "FAIL (%d)\n" : "PASS\n", failures);
     return failures ? EXIT_FAILURE : EXIT_SUCCESS;
 }

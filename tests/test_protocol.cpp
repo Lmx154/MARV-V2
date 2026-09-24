@@ -2,6 +2,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <initializer_list>
 
 #include <marv/link/protocol.hpp>
 
@@ -75,6 +76,23 @@ int main() {
         ActuatorCommand out{};
         CHECK(p.as(out));
         CHECK(out.t_us == 42 && out.armed && out.motor[2] == 0.82f && out.motor[0] == 0.f && out.brake == 0.37f);
+    }
+
+    // Every mode round-trips; an unknown wire value reads as kIdle.
+    {
+        link::Decoder d;
+        link::Packet p{};
+        for (Mode m : {Mode::kIdle, Mode::kFly, Mode::kArmed}) {
+            MissionCommand out{Mode::kFly, NavSource::kEstimate, {}};
+            if (m == Mode::kFly) out.mode = Mode::kIdle;
+            CHECK(decode_all(frame, link::encode(MissionCommand{m, NavSource::kEstimate, {}}, frame), d, p));
+            CHECK(p.as(out) && out.mode == m);
+        }
+        CHECK(static_cast<std::uint8_t>(Mode::kArmed) == 2);
+        std::uint8_t unknown = 3;
+        const std::size_t n = link::encode(MissionCommand{static_cast<Mode>(unknown), NavSource::kEstimate, {}}, frame);
+        MissionCommand out{Mode::kArmed, NavSource::kEstimate, {}};
+        CHECK(decode_all(frame, n, d, p) && p.as(out) && out.mode == Mode::kIdle);
     }
 
     // MissionCommand, State (truth) and Telemetry round trips: every byte of the body comes back.
