@@ -3,8 +3,11 @@
 // --seconds 600 --log), marv_gcs on the bridge's UDP link (scripts/gcs.sh), driven over the GCS WebSocket as the web
 // Mission view drives it. Truth comes from the bridge's --log, read while it is written. Not in ctest (needs Gazebo).
 //
-//   node scripts/gcs-mission-e2e.mjs [--out DIR] [--http PORT] [--world ID] [--setup FILE] [--speed MPS]   takes /tmp/marv-rig.lock itself
+//   node scripts/gcs-mission-e2e.mjs [--out DIR] [--http PORT] [--world ID] [--setup FILE] [--speed MPS] [--port DEV | --fc]
+//   takes /tmp/marv-rig.lock itself
 //
+//   --port DEV runs the flight controller on DEV in the loop (sim.sh --port DEV) instead of the firmware on this computer
+//   (--sitl); --fc is --port with the one /dev/serial/by-id/usb-MARV_MARV_flight_controller_* plugged in.
 //   --world ID goes to sim.sh (default x3). --setup FILE (a marv-setup JSON, e.g. setups/x500.json) is staged by id over
 //   the WebSocket and applied (reset) before the run; without it the running setup must be factory 0. --speed MPS is
 //   every mission_start's speed_mps (default: none sent, the cruise speed).
@@ -22,7 +25,7 @@
 // Waypoints are placed in the truth frame (NED about the vehicle's spawn point, the world origin of
 // sitl/gazebo/world.sdf.in) and sent as lat/lon about that origin. Exit 0 when every check passes.
 import { spawn, spawnSync } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -46,6 +49,13 @@ const port = Number(opt('--http', '8779'));
 const world = opt('--world', 'x3');
 const setupFile = opt('--setup', null);
 const speed = opt('--speed', null);
+const BY_ID = '/dev/serial/by-id';
+const fcs = () => (existsSync(BY_ID) ? readdirSync(BY_ID).filter((n) => n.startsWith('usb-MARV_MARV_flight_controller_')) : []);
+const fcPort = args.includes('--fc') ? (fcs().length === 1 ? join(BY_ID, fcs()[0]) : null) : opt('--port', null);
+if (args.includes('--fc') && !fcPort) {
+	console.error(`--fc: want exactly one ${BY_ID}/usb-MARV_MARV_flight_controller_*, found ${fcs().length}`);
+	process.exit(2);
+}
 const missionStart = (waypoints) => ({ type: 'mission_start', waypoints, ...(speed === null ? {} : { speed_mps: Number(speed) }) });
 mkdirSync(out, { recursive: true });
 const logPath = join(out, 'bridge.csv');
@@ -229,7 +239,7 @@ async function run() {
 		MARV_GCS_LOCK: join(out, 'marv-gcs.lock')
 	});
 	await connect();
-	start(join(root, 'scripts/sim.sh'), ['--world', world, '--sitl', '--ground', '--seconds', '600', '--log', logPath], 'sim');
+	start(join(root, 'scripts/sim.sh'), ['--world', world, ...(fcPort ? ['--port', fcPort] : ['--sitl']), '--ground', '--seconds', '600', '--log', logPath], 'sim');
 
 	// The setup: factory 0 (or --setup FILE, staged and applied) running, and spin_arm of the running actuators kind.
 	const schema = await (await fetch(`http://127.0.0.1:${port}/api/schema`)).json();
