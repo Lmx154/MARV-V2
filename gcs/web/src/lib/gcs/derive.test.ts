@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { render } from 'svelte/server';
 import fixture from '$lib/fixtures/schema.json';
+import x3 from '../../../../../setups/x3.json';
 import x500 from '../../../../../setups/x500.json';
 import DerivePanel from '$lib/components/DerivePanel.svelte';
 import { X3_LOOP_GAINS, blankInputs, derive, inputsError, prefillInputs, squareX, stagePlan, type DeriveInputs } from './derive';
@@ -48,13 +49,16 @@ describe('derive', () => {
 		);
 	});
 
-	it('reproduces factory 0 from the X3 (ADR-0009 Q5)', () => {
+	it('reproduces setups/x3.json from the X3 (ADR-0009 Q5), each value capped at its parameter maximum', () => {
 		const d = derive(prefillInputs(x3Frame), X3_LOOP_GAINS);
-		close(d.values['controller.cascaded-pid.rate_p_x'], 0.3781);
-		close(d.values['controller.cascaded-pid.rate_p_y'], 1.2302);
-		close(d.values['controller.cascaded-pid.rate_p_z'], 5.58);
-		close(d.values['controller.cascaded-pid.yaw_torque_max'], 0.5712);
-		close(d.values['vehicle.uav.hover_thrust'], 0.6811);
+		const keys = paramKeys(schema);
+		const file = x3.values as Record<string, number>;
+		for (const [key, v] of Object.entries(d.values)) close(Math.min(v, keys.get(key)?.spec.max ?? NaN), file[key]);
+		close(file['controller.cascaded-pid.rate_p_x'], 0.3781);
+		close(file['controller.cascaded-pid.rate_p_y'], 1.2302);
+		close(file['controller.cascaded-pid.rate_p_z'], 5.58);
+		close(file['controller.cascaded-pid.yaw_torque_max'], 0.5712);
+		close(file['vehicle.uav.hover_thrust'], 0.6811);
 	});
 
 	it('prefills from an airframe: its rotors, else a square X of its arm', () => {
