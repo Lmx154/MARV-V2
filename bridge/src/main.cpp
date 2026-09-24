@@ -2,9 +2,10 @@
 //
 //   marv_bridge (--sitl | --port /dev/ttyACMx) --seconds S [--mission FILE | --ground] [--log out.csv]
 //
-// Per physics step: step the world, send the truth State it produced (when valid), the mission command
-// (when the active mission line changed, and once at the start), then the SensorBus; collect the
-// Telemetry and wait for the ActuatorCommand that echoes its t_us, hand that to the motor models, repeat.
+// Per block of bridge::kStepsPerBlock physics steps: step the world, then for each step in order send the
+// truth State it produced (when valid), the mission command (when the active mission line changed, and
+// once at the start), then the SensorBus; collect the Telemetry and wait for the ActuatorCommand that
+// echoes its t_us. The block's last command goes to the motor models before the next block; repeat.
 //
 // Mission file: one line per command, `t_s mode nav n e d yaw_deg`, mode fly|idle, nav truth|estimate,
 // position NED in m relative to the start, yaw in degrees; '#' starts a comment. The line with the
@@ -282,37 +283,43 @@ int main(int argc, char** argv) {
     std::uint64_t steps = 0;
     const auto wall0 = std::chrono::steady_clock::now();
     int rc = 0;
-    while (bus.t_us < end_us) {
-        if (!world.step(bus, truth, err)) {
+    bridge::GzWorld::Step block[bridge::kStepsPerBlock];
+    while (rc == 0 && bus.t_us < end_us) {
+        if (!world.step(block, err)) {
             std::fprintf(stderr, "marv_bridge: %s\n", err.c_str());
             rc = 1;
             break;
         }
-        long now = -1;
-        while (now + 1 < static_cast<long>(mission.size()) && mission[static_cast<std::size_t>(now + 1)].t_us <= bus.t_us) ++now;
-        const MissionCommand* send = nullptr;
-        if (now != active) {
-            send = now < 0 ? &idle : &mission[static_cast<std::size_t>(now)].cmd;
-            active = now;
+        for (int k = 0; k < bridge::kStepsPerBlock && bus.t_us < end_us; ++k) {
+            bus = block[k].bus;
+            truth = block[k].truth;
+            long now = -1;
+            while (now + 1 < static_cast<long>(mission.size()) && mission[static_cast<std::size_t>(now + 1)].t_us <= bus.t_us) ++now;
+            const MissionCommand* send = nullptr;
+            if (now != active) {
+                send = now < 0 ? &idle : &mission[static_cast<std::size_t>(now)].cmd;
+                active = now;
+            }
+            Telemetry tlm{};
+            const float nan = std::nanf("");
+            tlm.est = {0, {nan, nan, nan}, {nan, nan, nan}, {nan, nan, nan, nan}, {nan, nan, nan}, false};
+            tlm.req = {{nan, nan, nan}, {nan, nan, nan}};
+            ground_in.clear();
+            if (ground_mode) ground.drain(ground_in);
+            if (!exchange(*ep, dec, truth, send, ground_in, bus, tlm, cmd, ground_mode ? &fc_out : nullptr, err)) {
+                std::fprintf(stderr, "marv_bridge: %s\n", err.c_str());
+                rc = 1;
+                break;
+            }
+            if (ground_mode) {
+                ground.forward(fc_out);
+                std::this_thread::sleep_until(wall0 + std::chrono::microseconds(bus.t_us));
+            }
+            if (log) log_row(log, truth, bus, cmd, tlm);
+            ++steps;
         }
-        Telemetry tlm{};
-        const float nan = std::nanf("");
-        tlm.est = {0, {nan, nan, nan}, {nan, nan, nan}, {nan, nan, nan, nan}, {nan, nan, nan}, false};
-        tlm.req = {{nan, nan, nan}, {nan, nan, nan}};
-        ground_in.clear();
-        if (ground_mode) ground.drain(ground_in);
-        if (!exchange(*ep, dec, truth, send, ground_in, bus, tlm, cmd, ground_mode ? &fc_out : nullptr, err)) {
-            std::fprintf(stderr, "marv_bridge: %s\n", err.c_str());
-            rc = 1;
-            break;
-        }
-        world.command(cmd);
-        if (ground_mode) {
-            ground.forward(fc_out);
-            std::this_thread::sleep_until(wall0 + std::chrono::microseconds(bus.t_us));
-        }
-        if (log) log_row(log, truth, bus, cmd, tlm);
-        ++steps;
+        // Zero-order hold: the motor models apply the block's last command through the next block.
+        if (rc == 0) world.command(cmd);
     }
     const double wall = std::chrono::duration<double>(std::chrono::steady_clock::now() - wall0).count();
     std::fprintf(stderr, "marv_bridge: %llu steps, sim %.3f s, wall %.3f s, %.3f sim-s per wall-s, %u bad frames\n",
