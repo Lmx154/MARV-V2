@@ -29,7 +29,7 @@ using namespace std::chrono_literals;
 namespace {
 
 constexpr const char* kRigLock = "/tmp/marv-rig.lock";
-constexpr const char* kPicoGlob = "/dev/serial/by-id/usb-MARV_MARV_flight_controller_*";
+constexpr const char* kFcGlob = "/dev/serial/by-id/usb-MARV_MARV_flight_controller_*";
 constexpr const char* kSeconds = "86400";  // a day: the sim runs until sim_stop
 constexpr auto kPoll = 100ms;
 constexpr auto kKillAfter = 5s;             // SIGTERM, then SIGKILL
@@ -126,10 +126,10 @@ void Launcher::launch(const json::object& m, const Reply& reply) {
     if (pid_ > 0)
         return refuse("a sim is already running (" + airframe_ + ", pid " + std::to_string(pid_) + "): sim_stop it first");
     if (serial_)
-        return refuse("marv_gcs runs with --serial, so it owns the Pico's port the sim's bridge needs: restart it with "
+        return refuse("marv_gcs runs with --serial, so it owns the flight controller's port the sim's bridge needs: restart it with "
                       "--udp 127.0.0.1:14650 (scripts/gcs.sh) to launch a sim");
     const json::value* id = m.if_contains("airframe");
-    if (!id || !id->is_string()) return refuse("want {airframe: id, env: {...}, gui: bool, target: \"sitl\"|\"pico\"}");
+    if (!id || !id->is_string()) return refuse("want {airframe: id, env: {...}, gui: bool, target: \"host\"|\"fc\"}");
     worldgen::Airframe a;
     std::string err;
     if (!worldgen::load_airframe(repo_, std::string(id->get_string()), a, err)) return refuse(err);
@@ -143,17 +143,17 @@ void Launcher::launch(const json::object& m, const Reply& reply) {
         if (!g->is_bool()) return refuse("gui: want true or false");
         gui = g->get_bool();
     }
-    std::string target = "sitl", port;
+    std::string target = "host", port;
     if (const json::value* t = m.if_contains("target")) {
-        if (!t->is_string() || (t->get_string() != "sitl" && t->get_string() != "pico"))
-            return refuse("target: want \"sitl\" or \"pico\"");
+        if (!t->is_string() || (t->get_string() != "host" && t->get_string() != "fc"))
+            return refuse("target: want \"host\" (firmware compiled for this computer) or \"fc\" (the connected flight controller)");
         target = std::string(t->get_string());
     }
-    if (target == "pico") {
+    if (target == "fc") {
         glob_t g{};
-        if (::glob(kPicoGlob, 0, nullptr, &g) == 0 && g.gl_pathc > 0) port = g.gl_pathv[0];
+        if (::glob(kFcGlob, 0, nullptr, &g) == 0 && g.gl_pathc > 0) port = g.gl_pathv[0];
         ::globfree(&g);
-        if (port.empty()) return refuse(std::string("target pico: no ") + kPicoGlob + " (is the Pico plugged in?)");
+        if (port.empty()) return refuse(std::string("target fc: no ") + kFcGlob + " (is a flight controller running MARV firmware plugged in?)");
     }
 
     const std::string world = gen_dir_ + "/gcs-" + a.id + ".sdf", log = gen_dir_ + "/gcs-" + a.id + ".csv";
@@ -168,7 +168,7 @@ void Launcher::launch(const json::object& m, const Reply& reply) {
         ::close(lock);
         return refuse(e == EWOULDBLOCK ? std::string("the rig lock ") + kRigLock +
                                              " is held (another sim, a flash or a test run is using Gazebo or the "
-                                             "Pico): wait for it to finish or stop it"
+                                             "flight controller): wait for it to finish or stop it"
                                        : std::string("flock ") + kRigLock + ": " + std::strerror(e));
     }
     int fds[2];
@@ -181,7 +181,7 @@ void Launcher::launch(const json::object& m, const Reply& reply) {
     // Everything the child needs, prepared before the fork.
     std::vector<std::string> args = {repo_ + "/scripts/sim.sh", "--world-file", world, "--max-rot-velocity",
                                      g17(a.specs.max_rot_velocity), "--ground"};
-    if (target == "pico") args.insert(args.end(), {"--port", port});
+    if (target == "fc") args.insert(args.end(), {"--port", port});
     else args.push_back("--sitl");
     args.insert(args.end(), {"--seconds", kSeconds, "--log", log});
     if (gui) args.push_back("--gui");

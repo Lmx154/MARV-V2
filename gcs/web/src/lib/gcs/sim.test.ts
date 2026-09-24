@@ -5,17 +5,17 @@ import { normalizeSchema, parseServer } from './protocol';
 import { DEFAULT_ENV, envError, launchMsg, launcherControls, parseAirframes, type LauncherContext } from './sim';
 import type { Schema, ServerMsg, SimStatus } from './types';
 
-const running: SimStatus = { running: true, airframe: 'x500', env: {}, target: 'sitl', gui: true, started_at: 1, pid: 7 };
+const running: SimStatus = { running: true, airframe: 'x500', env: {}, target: 'host', gui: true, started_at: 1, pid: 7 };
 const stopped: SimStatus = { ...running, running: false, pid: null };
 
 describe('sim messages', () => {
 	it('parses sim_status and sim_log, tolerating extra and missing fields', () => {
 		const m = parseServer(
-			JSON.stringify({ type: 'sim_status', running: true, airframe: 'x500', env: { wind_speed_ms: 3, temperature_c: null }, target: 'pico', gui: false, started_at: 1790000000.5, pid: 4242, ignored: ['temperature_c'] })
+			JSON.stringify({ type: 'sim_status', running: true, airframe: 'x500', env: { wind_speed_ms: 3, temperature_c: null }, target: 'fc', gui: false, started_at: 1790000000.5, pid: 4242, ignored: ['temperature_c'] })
 		);
 		expect(m).toEqual({
 			type: 'sim_status',
-			sim: { running: true, airframe: 'x500', env: { wind_speed_ms: 3, temperature_c: null }, target: 'pico', gui: false, started_at: 1790000000.5, pid: 4242 }
+			sim: { running: true, airframe: 'x500', env: { wind_speed_ms: 3, temperature_c: null }, target: 'fc', gui: false, started_at: 1790000000.5, pid: 4242 }
 		});
 		expect(parseServer('{"type":"sim_status"}')).toEqual({
 			type: 'sim_status',
@@ -36,12 +36,12 @@ describe('sim messages', () => {
 
 	it('sends the launch request with the direction in [0, 360) and blank optionals as null', () => {
 		const env = { ...DEFAULT_ENV, wind_dir_deg: 360, temperature_c: null as unknown as number, pressure_pa: NaN };
-		expect(launchMsg('x3', env, false, 'pico')).toEqual({
+		expect(launchMsg('x3', env, false, 'fc')).toEqual({
 			type: 'sim_launch',
 			airframe: 'x3',
 			env: { ...DEFAULT_ENV, wind_dir_deg: 0, temperature_c: null, pressure_pa: null },
 			gui: false,
-			target: 'pico'
+			target: 'fc'
 		});
 	});
 
@@ -90,11 +90,11 @@ describe('mock launcher', () => {
 	it('launches, refuses a second launch, and stops', () => {
 		vi.advanceTimersByTime(100);
 		expect(status()?.running).toBe(false);
-		fc.send(JSON.stringify(launchMsg('x500', { ...DEFAULT_ENV, wind_speed_ms: 3, temperature_c: 20 }, true, 'sitl')));
+		fc.send(JSON.stringify(launchMsg('x500', { ...DEFAULT_ENV, wind_speed_ms: 3, temperature_c: 20 }, true, 'host')));
 		vi.advanceTimersByTime(2000);
-		expect(status()).toMatchObject({ running: true, airframe: 'x500', target: 'sitl', gui: true, pid: 4242 });
+		expect(status()).toMatchObject({ running: true, airframe: 'x500', target: 'host', gui: true, pid: 4242 });
 		expect(got.filter((m) => m.type === 'sim_log').length).toBeGreaterThan(2);
-		fc.send(JSON.stringify(launchMsg('x500', DEFAULT_ENV, true, 'sitl')));
+		fc.send(JSON.stringify(launchMsg('x500', DEFAULT_ENV, true, 'host')));
 		vi.advanceTimersByTime(100);
 		expect(got.at(-1)).toEqual({ type: 'error', request: 'sim_launch', error: 'a sim is already running' });
 		fc.send(JSON.stringify({ type: 'sim_stop' }));
@@ -103,7 +103,7 @@ describe('mock launcher', () => {
 	});
 
 	it('refuses an unknown airframe and a stop with nothing running', () => {
-		fc.send(JSON.stringify(launchMsg('nope', DEFAULT_ENV, false, 'sitl')));
+		fc.send(JSON.stringify(launchMsg('nope', DEFAULT_ENV, false, 'host')));
 		fc.send(JSON.stringify({ type: 'sim_stop' }));
 		vi.advanceTimersByTime(100);
 		expect(got.filter((m) => m.type === 'error')).toEqual([

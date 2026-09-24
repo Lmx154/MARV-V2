@@ -362,7 +362,7 @@ export class MockFc {
 				e.temperature_c !== null || e.pressure_pa !== null ? '[mock] temperature and pressure: not used by Gazebo, ignored' : '[mock] temperature and pressure: not given',
 				`[mock] gz sim ${m.gui ? '' : '-s '}-r ${m.airframe}.sdf`,
 				'[mock] gz: world loaded',
-				m.target === 'pico' ? '[mock] bridge --pico /dev/ttyACM0: link up' : '[mock] bridge: sitl fsw up, link up'
+				m.target === 'fc' ? '[mock] bridge --port /dev/ttyACM0: flight controller link up' : '[mock] bridge: host firmware up, link up'
 			],
 			() => {
 				this.sim = { running: true, airframe: m.airframe, env: { ...e, temperature_c: null, pressure_pa: null }, target: m.target, gui: m.gui, started_at: Date.now() / 1000, pid: 4242 };

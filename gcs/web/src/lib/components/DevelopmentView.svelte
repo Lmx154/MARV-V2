@@ -23,7 +23,7 @@
 	let env = $state<SimEnv>({ ...DEFAULT_ENV });
 	/** Where the environment came from, until a field is edited by hand. */
 	let provenance = $state<string | null>(null);
-	let target = $state<SimTarget>('sitl');
+	let target = $state<SimTarget>('host');
 	let gui = $state(true);
 	let logEl = $state<HTMLPreElement | null>(null);
 
@@ -135,8 +135,9 @@
 	<section class="panel" aria-label="Launcher">
 		<h2>Launch</h2>
 		<div class="controls">
-			<label><input type="radio" name="sim-target" value="sitl" bind:group={target} /> SITL (flight software on this PC)</label>
-			<label><input type="radio" name="sim-target" value="pico" bind:group={target} /> Pico-in-the-loop</label>
+			<span class="k">firmware runs on</span>
+			<label title="The firmware compiled for this computer, stepped by the simulation"><input type="radio" name="sim-target" value="host" bind:group={target} /> This computer (host SITL)</label>
+			<label title="The firmware on the connected flight controller, fed the simulated sensor data over USB"><input type="radio" name="sim-target" value="fc" bind:group={target} /> Connected flight controller (FC in the loop)</label>
 			<label><input type="checkbox" bind:checked={gui} /> open Gazebo window</label>
 		</div>
 		<div class="controls">
@@ -147,7 +148,7 @@
 		<div class="status" aria-label="Sim status">
 			<span><span class="k">sim</span> <b class:ok={status?.running}>{status ? (status.running ? 'running' : 'stopped') : '—'}</b></span>
 			<span><span class="k">airframe</span> {status?.airframe ?? '—'}</span>
-			<span><span class="k">target</span> {status?.target ?? '—'}</span>
+			<span><span class="k">firmware on</span> {status?.target === 'fc' ? 'flight controller' : status?.target === 'host' ? 'this computer' : '—'}</span>
 			<span><span class="k">window</span> {status ? (status.gui ? 'yes' : 'no') : '—'}</span>
 			<span><span class="k">pid</span> {status?.pid ?? '—'}</span>
 			<span><span class="k">started</span> {started}</span>

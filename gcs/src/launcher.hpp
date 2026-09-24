@@ -1,5 +1,5 @@
 // The SITL launcher of the web Development tab, on the io_context thread: generates a world (worldgen.hpp) and runs
-// scripts/sim.sh --world-file on it (Gazebo + marv_bridge --ground, in-process flight software or the Pico) as one child
+// scripts/sim.sh --world-file on it (Gazebo + marv_bridge --ground; the firmware runs either compiled into the bridge on this computer, or on the connected flight controller fed over USB) as one child
 // process group holding /tmp/marv-rig.lock, one sim at a time. Its output lines go to the WebSocket clients as sim_log.
 #pragma once
 
@@ -22,7 +22,7 @@ namespace marv::gcs {
 
 class Launcher {
 public:
-    // serial_link: marv_gcs owns the Pico's port (--serial), so no sim may be launched.
+    // serial_link: marv_gcs owns the flight controller's port (--serial), so no sim may be launched.
     Launcher(boost::asio::io_context& io, bool serial_link, Broadcast broadcast);
     ~Launcher();  // stops a running sim: SIGTERM to its group, SIGKILL after 5 s
     Launcher(const Launcher&) = delete;

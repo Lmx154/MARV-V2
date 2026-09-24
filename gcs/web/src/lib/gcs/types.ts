@@ -153,7 +153,9 @@ export interface Airframe {
 	specs: AirframeSpecs;
 }
 
-export type SimTarget = 'sitl' | 'pico';
+/** Where the firmware runs: compiled for this computer (host SITL), or on the connected flight controller fed simulated
+ * sensor data over USB (FC in the loop). */
+export type SimTarget = 'host' | 'fc';
 
 /** The world the sim is launched into. Wind direction is where it blows FROM, degrees clockwise from north. */
 export interface SimEnv {
