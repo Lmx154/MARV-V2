@@ -28,7 +28,7 @@ namespace {
 
 constexpr auto kPoll = 2ms;
 constexpr auto kReplyTimeout = 500ms;
-constexpr auto kKeepalive = 500ms;       // a lone 0x00 while nothing arrives, so the bridge learns where to send
+constexpr auto kKeepalive = 500ms;       // a lone 0x00 at least this often, so the bridge keeps sending to us
 constexpr auto kTelemetryPeriod = 34ms;  // at most 30 Hz to the clients
 constexpr auto kReopen = 2s;
 constexpr std::size_t kMaxQueue = 256;
@@ -230,7 +230,7 @@ void Link::poll() {
         for (long k = 0; k < n; ++k)
             if (dec_.push(buf[k])) receive(dec_.packet());
     }
-    if (tx_ && !cfg_.serial && now - last_rx_ > 2 * kKeepalive && now - last_tx_ >= kKeepalive) {
+    if (tx_ && !cfg_.serial && now - last_tx_ >= kKeepalive) {
         const std::uint8_t delim = 0;
         send(&delim, 1);
     }
