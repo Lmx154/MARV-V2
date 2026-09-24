@@ -176,7 +176,18 @@ Ekf::Ekf(const EskfParams& p) : prm_(p), mag_decl_(std::atan2(p.mag_ref_ned_ut.y
 
 void Ekf::update(const SensorBus& bus) {
     t_us_ = bus.t_us;
-    if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid()) frame_.set({bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m});
+    // First fix after alignment: horizontal position restarts there with the GNSS prior, the origin's altitude is the
+    // alignment height (as Eskf::update).
+    if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid()) {
+        frame_.set({bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m + (aligned_ ? x_[IP + 2] : 0.f)});
+        if (aligned_) {
+            for (int i = IP; i < IP + 2; ++i) {
+                x_[i] = 0.f;
+                for (int j = 0; j < N; ++j) P_[i][j] = P_[j][i] = 0.f;
+                P_[i][i] = prm_.sigma_gnss_pos * prm_.sigma_gnss_pos;
+            }
+        }
+    }
 
     if (!aligned_) {
         Alignment a;
@@ -223,17 +234,17 @@ void Ekf::update(const SensorBus& bus) {
         normalise_q();
     }
     if (bus.fresh & kMag) {
-        // dYawDq of yaw = atan2(2 (w z + x y), w^2 + x^2 - y^2 - z^2).
-        const float w = x_[IQ], x = x_[IQ + 1], y = x_[IQ + 2], z = x_[IQ + 3];
-        const float num = 2.f * (w * z + x * y);
-        const float den = w * w + x * x - y * y - z * z;
-        const float r = num * num + den * den;
-        if (r > 1e-12f) {
-            const float dn[4] = {2.f * z, 2.f * y, 2.f * x, 2.f * w};
-            const float dd[4] = {2.f * w, 2.f * x, -2.f * y, -2.f * z};
+        // d heading / dq of the tilt-compensated field, heading = atan2(mw_y, mw_x) with mw = R(q) m: yaw and tilt,
+        // taken at the predicted field (the reference), as Eskf::fuse_mag.
+        const Quat q{x_[IQ], x_[IQ + 1], x_[IQ + 2], x_[IQ + 3]};
+        const Vec3 mw = rotate(q, bus.mag.field_frd_ut);
+        if (mw.x * mw.x + mw.y * mw.y > 1e-6f) {
+            const Vec3 m0 = prm_.mag_ref_ned_ut;
+            const float r = m0.x * m0.x + m0.y * m0.y;
+            float J[3][4];
+            drot_dq(q, rotate_inv(q, m0), J);
             float h[N] = {};
-            for (int i = 0; i < 4; ++i) h[IQ + i] = (den * dn[i] - num * dd[i]) / r;
-            const Quat q{w, x, y, z};
+            for (int i = 0; i < 4; ++i) h[IQ + i] = (m0.x * J[1][i] - m0.y * J[0][i]) / r;
             scalar_update(h, heading_innovation(q, bus.mag.field_frd_ut, mag_decl_), prm_.sigma_heading * prm_.sigma_heading);
             normalise_q();
         }

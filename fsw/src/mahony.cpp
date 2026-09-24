@@ -25,7 +25,10 @@ Mahony::Mahony(const MahonyParams& p, const EskfParams& env)
 
 void Mahony::update(const SensorBus& bus) {
     t_us_ = bus.t_us;
-    if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid()) frame_.set({bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m});
+    if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid()) {
+        frame_.set({bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m});
+        tr_.reset_horizontal();  // first fix after alignment: horizontal position restarts there
+    }
 
     if (!aligned_) {
         Alignment a;

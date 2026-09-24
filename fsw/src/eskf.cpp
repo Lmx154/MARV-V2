@@ -4,8 +4,8 @@
 //  - F_x P F_x^T is applied block-sparse (only the non-identity blocks of F_x) instead of dense 15x15 products.
 //  - Vector measurements (GNSS position, velocity) are fused as sequential scalar updates with diagonal R, which is
 //    exactly the vector update (no 3x3 inverse); each scalar uses the Joseph form, as kfUpdate does.
-//  - The heading Jacobian is analytic (d yaw / d dtheta for ZYX Euler) instead of central differences at eps 1e-6,
-//    which float cannot resolve.
+//  - The heading Jacobian is analytic (d heading / d dtheta of the tilt-compensated field) instead of central
+//    differences at eps 1e-6, which float cannot resolve.
 //  - The toolbox's sensor bus hands the filter a heading; here the magnetometer vector is tilt-compensated with the
 //    estimated attitude and compared with the declination of the reference field.
 //  - Initialisation is stationary alignment (accel tilt, mag heading, gyro average as the pad calibration of
@@ -94,9 +94,19 @@ Eskf::Eskf(const EskfParams& p) : prm_(p), mag_decl_(std::atan2(p.mag_ref_ned_ut
 void Eskf::update(const SensorBus& bus) {
     t_us_ = bus.t_us;
 
-    // The GNSS origin is the first fix, taken whenever it arrives (at start the vehicle is at rest there).
-    if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid())
-        frame_.set(GeoPoint{bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m});
+    // The GNSS origin is the first fix, taken whenever it arrives. If the vehicle has moved since alignment, horizontal
+    // position restarts there (0, 0) with the GNSS prior; height stays the barometer's, so the origin's altitude is
+    // the alignment height (the fix's less the height climbed since).
+    if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid()) {
+        frame_.set(GeoPoint{bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m + (aligned_ ? p_.z : 0.f)});
+        if (aligned_) {
+            p_.x = p_.y = 0.f;
+            for (int i = IP; i < IP + 2; ++i) {
+                for (int j = 0; j < N; ++j) P_[i][j] = P_[j][i] = 0.f;
+                P_[i][i] = prm_.sigma_gnss_pos * prm_.sigma_gnss_pos;
+            }
+        }
+    }
 
     if (!aligned_) {
         accumulate_alignment(bus);
@@ -331,17 +341,21 @@ void Eskf::fuse_baro(float pressure_pa) {
 }
 
 // 'heading': the field rotated to NED with the estimate lies at (declination + yaw_est - yaw_mag), so the
-// innovation yaw_mag - yaw_est is declination - its angle. d yaw / d dtheta = (0, sin(roll), cos(roll)) / cos(pitch)
-// = (0, R32, R33) / (R32^2 + R33^2).
+// innovation yaw_mag - yaw_est is declination - its angle. With mw = R m, d mw / d dtheta = -[mw]x R, so
+// d atan2(mw_y, mw_x) / d dtheta = (-mw_x mw_z / |mw_h|^2, -mw_y mw_z / |mw_h|^2, 1) R: yaw plus the tilt coupling,
+// taken at the predicted field (the reference): at the measured one the Jacobian carries the sample's noise, which
+// correlates with the innovation's and biases every update (in SITL it walked the east tilt and a_b y 5 sigma off).
 void Eskf::fuse_mag(Vec3 m_frd) {
     const Vec3 mw = rotate(q_, m_frd);
+    const float mh2 = mw.x * mw.x + mw.y * mw.y;
+    if (mh2 < 1e-6f) return;  // no horizontal field: heading undefined
     const float y = wrap(mag_decl_ - std::atan2(mw.y, mw.x));
     const M3 R = rotmat(q_);
-    const float c2 = R.m[2][1] * R.m[2][1] + R.m[2][2] * R.m[2][2];
-    if (c2 < 1e-6f) return;  // pitch at +-90 deg: heading undefined
+    const Vec3 m0 = prm_.mag_ref_ned_ut;
+    const float m0h2 = m0.x * m0.x + m0.y * m0.y;
+    const float e[3] = {-m0.x * m0.z / m0h2, -m0.y * m0.z / m0h2, 1.f};
     float h[N] = {};
-    h[ITH + 1] = R.m[2][1] / c2;
-    h[ITH + 2] = R.m[2][2] / c2;
+    for (int j = 0; j < 3; ++j) h[ITH + j] = e[0] * R.m[0][j] + e[1] * R.m[1][j] + e[2] * R.m[2][j];
     scalar_update(h, y, prm_.sigma_heading * prm_.sigma_heading);
     inject_and_reset();
 }

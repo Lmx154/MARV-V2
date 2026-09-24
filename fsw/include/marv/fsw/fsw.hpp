@@ -24,7 +24,6 @@
 #include <marv/fsw/geo.hpp>
 #include <marv/fsw/mahony.hpp>
 #include <marv/fsw/presets.hpp>
-#include <marv/fsw/ukf.hpp>
 
 namespace marv {
 
@@ -48,7 +47,7 @@ public:
 private:
     MissionCommand mission_{Mode::kIdle, NavSource::kEstimate, {}};
     State truth_{};
-    using Estimators = std::variant<Eskf, Ekf, Ukf, Mahony, Complementary>;
+    using Estimators = std::variant<Eskf, Ekf, Mahony, Complementary>;
     // Builds the alternative in place (variant::emplace would stage a whole variant on the stack).
     static Estimators make_estimator(EstimatorKind k);
 
