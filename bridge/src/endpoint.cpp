@@ -8,10 +8,13 @@
 #include <cerrno>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include <marv/fsw/fsw.hpp>
 #include <marv/link/protocol.hpp>
+
+#include "../../firmware/src/dispatch.hpp"
 
 namespace marv::bridge {
 namespace {
@@ -45,29 +48,63 @@ private:
     int fd_;
 };
 
+// The SITL platform of fw::dispatch. Its flash is a file beside the bridge binary holding the preset record of
+// firmware/src/main.cpp (magic, id, ~id; little-endian u32s); kReboot cannot restart the process, so it returns and
+// dispatch restarts the flight software as on kReset.
+class SitlPlatform {
+public:
+    explicit SitlPlatform(std::vector<std::uint8_t>& out) : out_(out) {}
+
+    void send(const std::uint8_t* p, std::size_t n) { out_.insert(out_.end(), p, p + n); }
+
+    std::uint8_t load_preset() {
+        std::uint8_t b[12];
+        std::FILE* f = std::fopen(path().c_str(), "rb");
+        if (!f) return 0;
+        const std::size_t n = std::fread(b, 1, sizeof(b), f);
+        std::fclose(f);
+        link::Reader r{b};
+        const std::uint32_t magic = r.u32(), id = r.u32(), check = r.u32();
+        if (n != sizeof(b) || magic != kMagic || check != ~id || id > 0xFFu) return 0;
+        return static_cast<std::uint8_t>(id);
+    }
+
+    void store_preset(std::uint8_t id) {
+        std::uint8_t b[12];
+        link::Writer w{b};
+        w.u32(kMagic);
+        w.u32(id);
+        w.u32(~static_cast<std::uint32_t>(id));
+        std::FILE* f = std::fopen(path().c_str(), "wb");
+        if (!f || std::fwrite(b, 1, sizeof(b), f) != sizeof(b))
+            std::fprintf(stderr, "marv_bridge: cannot store the preset in %s\n", path().c_str());
+        if (f) std::fclose(f);
+    }
+
+    void reboot() {}
+
+private:
+    static constexpr std::uint32_t kMagic = 0x5056524Du;  // "MRVP"
+
+    static std::string path() {
+        char exe[4096];
+        const ssize_t n = ::readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+        std::string dir = n > 0 ? std::string(exe, static_cast<std::size_t>(n)) : std::string(".");
+        const std::size_t slash = dir.rfind('/');
+        dir = slash == std::string::npos ? std::string(".") : dir.substr(0, slash);
+        return dir + "/marv_preset.bin";
+    }
+
+    std::vector<std::uint8_t>& out_;
+};
+
 class Sitl final : public Endpoint {
 public:
-    // The same dispatch as firmware/src/main.cpp.
+    Sitl() : platform_(out_), fsw_(platform_.load_preset()) {}
+
     bool write(const std::uint8_t* p, std::size_t n) override {
-        for (std::size_t i = 0; i < n; ++i) {
-            if (!decoder_.push(p[i])) continue;
-            const link::Packet& pkt = decoder_.packet();
-            MissionCommand mission;
-            State truth;
-            SensorBus bus;
-            link::Reset reset;
-            if (pkt.as(reset)) {
-                fsw_ = Fsw{};
-            } else if (pkt.as(mission)) {
-                fsw_.on_mission(mission);
-            } else if (pkt.as(truth)) {
-                fsw_.on_truth(truth);
-            } else if (pkt.as(bus)) {
-                const Tick tick = fsw_.step(bus);
-                emit(tick.tlm);
-                emit(tick.act);
-            }
-        }
+        for (std::size_t i = 0; i < n; ++i)
+            if (decoder_.push(p[i])) fw::dispatch(decoder_.packet(), fsw_, platform_);
         return true;
     }
 
@@ -79,15 +116,10 @@ public:
     }
 
 private:
-    template <class T> void emit(const T& msg) {
-        std::uint8_t frame[link::kMaxFrame];
-        const std::size_t len = link::encode(msg, frame);
-        out_.insert(out_.end(), frame, frame + len);
-    }
-
+    std::vector<std::uint8_t> out_;
+    SitlPlatform platform_;
     Fsw fsw_;
     link::Decoder decoder_;
-    std::vector<std::uint8_t> out_;
 };
 
 }  // namespace

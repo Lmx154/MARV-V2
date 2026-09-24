@@ -31,7 +31,7 @@ target_include_directories(marv_fw PRIVATE
     ${MARV_ROOT}/link/include
 )
 
-target_link_libraries(marv_fw PRIVATE pico_stdlib pico_unique_id tinyusb_device)
+target_link_libraries(marv_fw PRIVATE pico_stdlib pico_unique_id tinyusb_device hardware_flash hardware_watchdog pico_flash)
 
 # The USB port carries protocol bytes only: no stdio on it, and none on the UART either.
 pico_enable_stdio_usb(marv_fw 0)
