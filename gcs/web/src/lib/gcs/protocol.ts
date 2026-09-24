@@ -63,6 +63,8 @@ export function parseServer(text: string): ServerMsg | null {
 		}
 		case 'flash_log':
 			return { type: 'flash_log', line: String(m.line ?? '') };
+		case 'error':
+			return { type: 'error', request: String(m.request ?? ''), error: String(m.error ?? '') };
 		default:
 			return null;
 	}

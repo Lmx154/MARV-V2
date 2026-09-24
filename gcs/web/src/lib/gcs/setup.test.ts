@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import fixture from '$lib/fixtures/schema.json';
 import { normalizeSchema, parseServer } from './protocol';
-import { applyHeader, editParam, emptySetup, exportSetup, paramCount, paramEcho, paramKeys, planImport, saveLanded, schemaMatches, shown, type SetupState } from './setup';
+import { applyHeader, editParam, emptySetup, exportSetup, paramCount, paramEcho, paramKeys, planImport, requestError, saveLanded, schemaMatches, shown, type SetupState } from './setup';
 import type { Schema, SetupHeader } from './types';
 
 const schema = normalizeSchema(fixture as Schema);
@@ -117,5 +117,17 @@ describe('protocol', () => {
 		expect(withValues).toMatchObject({ type: 'setup', values: [1, 2] });
 		const flat = parseServer(JSON.stringify({ type: 'setup', ...header() }));
 		expect(flat).toMatchObject({ type: 'setup', values: null, header: { param_count: n } });
+	});
+
+	it('parses a backend error and places it next to the action that caused it', () => {
+		const m = parseServer(JSON.stringify({ type: 'error', request: 'save', error: 'no reply' }));
+		expect(m).toEqual({ type: 'error', request: 'save', error: 'no reply' });
+		const st = loaded();
+		st.save = 'pending';
+		expect(requestError(st, 'save')).toBe('actions');
+		expect(st.save).toBe('idle');
+		expect(requestError(st, 'load_factory')).toBe('factory');
+		expect(requestError(st, 'set_param')).toBe('params');
+		expect(requestError(st, 'request_setup')).toBe('link');
 	});
 });

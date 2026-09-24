@@ -112,6 +112,22 @@ export function applyHeader(st: SetupState, header: SetupHeader, values: number[
 	if (st.save === 'pending') st.save = saveLanded(header) ? 'landed' : 'refused';
 }
 
+/** Where the page shows a backend error: next to the control whose request it answers. */
+export type ErrorSlot = 'factory' | 'actions' | 'params' | 'link';
+
+export function errorSlot(request: string): ErrorSlot {
+	if (request === 'load_factory') return 'factory';
+	if (request === 'save' || request === 'reset' || request === 'reboot' || request === 'flash') return 'actions';
+	if (request === 'set_param' || request === 'set_kind') return 'params';
+	return 'link';
+}
+
+/** A backend error for a request: the save it answers is no longer pending. Returns the slot to show it in. */
+export function requestError(st: SetupState, request: string): ErrorSlot {
+	if (request === 'save' && st.save === 'pending') st.save = 'idle';
+	return errorSlot(request);
+}
+
 /** Plain-word state of running / staged / stored. */
 export function statusWords(h: SetupHeader): { text: string; tone: 'ok' | 'warn' | 'bad' }[] {
 	const out: { text: string; tone: 'ok' | 'warn' | 'bad' }[] = [];

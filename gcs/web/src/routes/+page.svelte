@@ -14,10 +14,12 @@
 		paramEcho,
 		planImport,
 		referenceValues,
+		requestError,
 		sameF32,
 		schemaMatches,
 		shown,
 		statusWords,
+		type ErrorSlot,
 		type SetupState
 	} from '$lib/gcs/setup';
 	import type { ClientMsg, LinkInfo, Schema, ServerMsg, Telemetry } from '$lib/gcs/types';
@@ -35,6 +37,8 @@
 	let flashLog = $state<string[]>([]);
 	let flashing = $state(false);
 	let note = $state<string | null>(null);
+	/** The backend's last error per slot, shown next to the control that caused it. */
+	let errors = $state<Partial<Record<ErrorSlot, string>>>({});
 	let conn: Connection | null = null;
 	const sentAt = new Map<number, number>();
 
@@ -97,6 +101,10 @@
 			case 'flash_log':
 				flashLog = [...flashLog.slice(-499), m.line];
 				break;
+			case 'error':
+				errors[requestError(st, m.request)] = `${m.request}: ${m.error}`;
+				if (m.request === 'flash') flashing = false;
+				break;
 		}
 	}
 
@@ -131,10 +139,12 @@
 	});
 
 	function setKind(family: number, kind: number): void {
+		delete errors.params;
 		send({ type: 'set_kind', family, kind });
 	}
 
 	function setParam(index: number, v: number): void {
+		delete errors.params;
 		const now = editParam(st, index, v);
 		if (now !== null) sendParam(index, now);
 	}
@@ -148,17 +158,20 @@
 
 	function loadFactory(id: number): void {
 		note = null;
+		delete errors.factory;
 		send({ type: 'load_factory', id });
 	}
 
 	function apply(): void {
 		if (!confirm('Apply rebuilds the flight software from the staged setup. It STOPS THE MOTORS. Continue?')) return;
 		note = null;
+		delete errors.actions;
 		send({ type: 'reset' });
 	}
 
 	function save(): void {
 		note = null;
+		delete errors.actions;
 		st.save = 'pending';
 		send({ type: 'save' });
 	}
@@ -166,12 +179,14 @@
 	function reboot(): void {
 		if (!confirm('Reboot runs the setup stored in flash and discards staged changes. It STOPS THE MOTORS. Continue?')) return;
 		note = null;
+		delete errors.actions;
 		send({ type: 'reboot' });
 	}
 
 	function flash(): void {
 		if (!confirm('Build and flash the firmware over SWD? The link closes while it runs and the motors stop.')) return;
 		flashLog = [];
+		delete errors.actions;
 		flashing = true;
 		send({ type: 'flash' });
 	}
@@ -232,6 +247,7 @@
 			{/if}
 			{#if header}<span class="pill" class:bad={armed} class:ok={!armed}>{armed ? 'ARMED' : 'disarmed'}</span>{/if}
 		</div>
+		{#if errors.link}<p class="err mono" role="alert">{errors.link}</p>{/if}
 	</header>
 
 	{#if loadError}<p class="banner bad mono" role="alert">Cannot load the parameter schema: {loadError}</p>{/if}
@@ -267,6 +283,7 @@
 				</label>
 				<span class="config-label mono" class:custom={!factoryNow}>{factoryNow ? `staged = factory ${factoryNow.label}` : 'staged: custom'}</span>
 				{#each words as w (w.text)}<span class="word mono {w.tone}">{w.text}</span>{/each}
+				{#if errors.factory}<span class="err mono" role="alert">{errors.factory}</span>{/if}
 			</div>
 
 			<div class="row actions">
@@ -280,7 +297,9 @@
 					<input type="file" accept="application/json,.json" hidden disabled={!editable} onchange={importJson} />
 				</label>
 			</div>
+			{#if errors.actions}<p class="err mono" role="alert">{errors.actions}</p>{/if}
 			{#if note}<p class="note mono" role="status">{note}</p>{/if}
+			{#if errors.params}<p class="err mono" role="alert">{errors.params}</p>{/if}
 
 			<BlockChain
 				{schema}
@@ -432,6 +451,12 @@
 		margin: 0;
 		font-size: 0.8rem;
 		color: var(--muted);
+		max-width: none;
+	}
+	.err {
+		margin: 0;
+		font-size: 0.8rem;
+		color: var(--bad);
 		max-width: none;
 	}
 	.section h2 {

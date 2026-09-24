@@ -93,4 +93,5 @@ export type ServerMsg =
 	| { type: 'setup'; header: SetupHeader; values: number[] | null }
 	| { type: 'param'; index: number; value: number }
 	| { type: 'telemetry'; telemetry: Telemetry }
-	| { type: 'flash_log'; line: string };
+	| { type: 'flash_log'; line: string }
+	| { type: 'error'; request: string; error: string };
