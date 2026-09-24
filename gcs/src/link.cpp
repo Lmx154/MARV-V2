@@ -18,6 +18,8 @@
 #include <boost/asio/read_until.hpp>
 #include <boost/json.hpp>
 
+#include <marv/fsw/geo.hpp>
+
 #include "schema.hpp"
 
 namespace marv::gcs {
@@ -32,6 +34,8 @@ constexpr auto kReplyTimeout = 500ms;
 constexpr auto kKeepalive = 500ms;       // a lone 0x00 at least this often, so the bridge keeps sending to us
 constexpr auto kTelemetryPeriod = 34ms;  // at most 30 Hz to the clients
 constexpr auto kReopen = 2s;
+constexpr auto kMissionPeriod = 50ms;    // 20 Hz MissionCommand frames while engaged
+constexpr auto kMissionState = 500ms;    // mission_state at least this often while engaged
 constexpr std::size_t kMaxQueue = 256;
 constexpr std::size_t kMaxValues = 4096;
 constexpr const char* kRigLock = "/tmp/marv-rig.lock";
@@ -80,6 +84,36 @@ bool integer(const json::object& m, const char* key, long lo, long hi, long& out
 }
 
 std::uint8_t u8(long v) { return static_cast<std::uint8_t>(v); }
+
+double seconds(std::chrono::steady_clock::time_point t) { return std::chrono::duration<double>(t.time_since_epoch()).count(); }
+
+// {waypoints: [{lat, lon, alt_m}]}: false when it is not that shape.
+bool waypoints(const json::object& m, std::vector<Waypoint>& out) {
+    const json::value* v = m.if_contains("waypoints");
+    if (!v || !v->is_array()) return false;
+    for (const json::value& w : v->get_array()) {
+        Waypoint p{};
+        if (!w.is_object() || !number(w.get_object(), "lat", p.lat) || !number(w.get_object(), "lon", p.lon) ||
+            !number(w.get_object(), "alt_m", p.alt_m))
+            return false;
+        out.push_back(p);
+    }
+    return true;
+}
+
+json::object mission_state(const Mission::Status& s) {
+    json::object o{{"type", "mission_state"}, {"state", Mission::name(s.state)}, {"wp_index", s.wp_index},
+                   {"wp_count", s.wp_count},  {"target", nullptr},                 {"dist_m", nullptr},
+                   {"climb_alt_m", nullptr},  {"home", nullptr},                   {"reason", s.reason}};
+    if (s.has_target) {
+        o["target"] = json::object{
+            {"lat", s.target.lat}, {"lon", s.target.lon}, {"alt_m", fnum(static_cast<float>(s.target.alt_m))}};
+        o["dist_m"] = fnum(s.dist_m);
+    }
+    if (s.has_climb_alt) o["climb_alt_m"] = fnum(s.climb_alt_m);
+    if (s.has_home) o["home"] = json::object{{"lat", s.home_lat}, {"lon", s.home_lon}};
+    return o;
+}
 
 // The wire name of a kind of a family ("#k" when out of range).
 std::string kind_name(std::uint8_t family, std::uint8_t kind) {
@@ -131,6 +165,8 @@ void Link::handle(const json::object& m, const Reply& reply) {
         return set_connected(false);
     }
     if (type == "flash") return flash(reply);
+    if (type == "arm" || type == "disarm" || type == "climb" || type == "mission_start" || type == "rth" || type == "land")
+        return mission_request(type, m, reply);
     if (type != "set_param" && type != "set_kind" && type != "load_factory" && type != "save")
         return error(reply, type, "unknown request");
 
@@ -257,6 +293,10 @@ void Link::poll() {
             fail("no reply");
         }
     }
+    if (now >= next_mission_) {
+        next_mission_ = now + kMissionPeriod;
+        mission_tick(now);
+    }
     if (tlm_pending_ && now - last_tlm_ >= kTelemetryPeriod) {
         last_tlm_ = now;
         tlm_pending_ = false;
@@ -291,15 +331,17 @@ void Link::receive(const link::Packet& p) {
     ActuatorCommand a;
     if (p.as(h)) return on_header(h);
     if (p.as(v)) return on_value(v);
+    const auto now = Clock::now();
     if (p.as(t)) {
         tlm_ = t;
         tlm_pending_ = true;
+        mission_.telemetry(t, have_armed_ ? armed_ : have_header_ && header_.armed != 0, seconds(now));
     } else if (p.as(a)) {
         armed_ = a.armed;
         have_armed_ = true;
+        std::copy(a.motor, a.motor + kMotorCount, motor_);
     }
     // Heard, but not connected: ask for the setup (after a reboot, or a bridge started after us).
-    const auto now = Clock::now();
     if (!connected_ && queue_.empty() && now >= next_probe_) {
         next_probe_ = now + 2s;
         enqueue(Kind::kSetup, "request_setup", link::SetupRequest{}, {});
@@ -415,6 +457,17 @@ std::string Link::setup_message(bool with_values) const {
 std::string Link::telemetry_message() const {
     const State& e = tlm_.est;
     const bool armed = have_armed_ ? armed_ : have_header_ && header_.armed != 0;
+    json::value geo = nullptr;
+    if (tlm_.home_valid && e.valid) {
+        LocalFrame f;
+        f.set(tlm_.home);
+        const GeoPoint g = f.to_geo(e.p_ned);
+        geo = json::object{{"lat", static_cast<double>(g.lat_e7) * 1e-7},
+                           {"lon", static_cast<double>(g.lon_e7) * 1e-7},
+                           {"alt_m", fnum(-e.p_ned.z)}};
+    }
+    json::array motor;
+    for (float m : motor_) motor.push_back(fnum(m));
     return json::serialize(json::object{
         {"type", "telemetry"},
         {"t_us", tlm_.t_us},
@@ -427,7 +480,9 @@ std::string Link::telemetry_message() const {
         {"thrust_hover", fnum(tlm_.req.thrust_hover)},
         {"brake", fnum(tlm_.req.brake)},
         {"home_valid", tlm_.home_valid},
-        {"home", json::object{{"lat_e7", tlm_.home.lat_e7}, {"lon_e7", tlm_.home.lon_e7}, {"alt_m", fnum(tlm_.home.alt_m)}}}});
+        {"home", json::object{{"lat_e7", tlm_.home.lat_e7}, {"lon_e7", tlm_.home.lon_e7}, {"alt_m", fnum(tlm_.home.alt_m)}}},
+        {"geo", std::move(geo)},
+        {"motor", std::move(motor)}});
 }
 
 // Empty when the header holds the requested kind; else why the flight controller kept the one it holds.
@@ -440,6 +495,48 @@ std::string Link::kind_refusal(const link::SetKind& k, const link::SetupHeader& 
         return why + kind_name(k.family, k.kind) + " does not serve the " +
                kind_name(param::k_vehicle, h.kind[param::k_vehicle]) + " vehicle";
     return why + "the flight controller kept it";
+}
+
+// ---- mission ------------------------------------------------------------------------------------------------------------
+
+void Link::mission_request(const std::string& type, const json::object& m, const Reply& reply) {
+    const auto now = Clock::now();
+    std::string refusal;
+    if (type == "arm") {
+        refusal = mission_.arm(tx_ != nullptr, seconds(now));
+    } else if (type == "disarm") {
+        refusal = mission_.disarm(seconds(now));
+    } else if (type == "climb") {
+        double alt;
+        refusal = number(m, "alt_m", alt) ? mission_.climb(alt) : "want {alt_m: number}";
+    } else if (type == "mission_start") {
+        std::vector<Waypoint> wps;
+        refusal = waypoints(m, wps) ? mission_.start(wps) : "want {waypoints: [{lat, lon, alt_m}]}";
+    } else if (type == "rth") {
+        refusal = mission_.rth();
+    } else {
+        refusal = mission_.land();
+    }
+    if (!refusal.empty()) return error(reply, type, refusal);
+    next_mission_ = now;  // the new frame and state go out on the next poll
+}
+
+// One 20 Hz period: the executor's frame, and mission_state on a change or every 500 ms while engaged.
+void Link::mission_tick(Clock::time_point now) {
+    const double t = seconds(now);
+    MissionCommand c;
+    if (mission_.tick(t, c)) {
+        std::uint8_t f[link::kMaxFrame];
+        send(f, link::encode(c, f));
+    }
+    const json::object o = mission_state(mission_.status(t));
+    json::object key = o;
+    key.erase("dist_m");
+    std::string k = json::serialize(key);
+    if (k == state_key_ && !(mission_.engaged(t) && now - last_state_ >= kMissionState)) return;
+    state_key_ = std::move(k);
+    last_state_ = now;
+    broadcast_(json::serialize(o), false);
 }
 
 void Link::error(const Reply& reply, const std::string& request, const std::string& what) const {

@@ -27,12 +27,14 @@
 #include <marv/fsw/geo.hpp>
 #include <marv/link/protocol.hpp>
 
+#include "setpoint.hpp"
 #include "transport.hpp"
 
 namespace {
 
 using namespace marv;
 using Clock = std::chrono::steady_clock;
+using ground::setpoint;
 
 constexpr float kPi = 3.14159265358979f;
 constexpr auto kPeriod = std::chrono::milliseconds(20);  // 50 Hz
@@ -58,11 +60,6 @@ float yaw_of(const Quat& q) {
 float dist(const Vec3& a, const Vec3& b) {
     const float x = a.x - b.x, y = a.y - b.y, z = a.z - b.z;
     return std::sqrt(x * x + y * y + z * z);
-}
-
-GeoPoint geo(double lat_deg, double lon_deg, double alt_m) {
-    return {static_cast<std::int32_t>(std::lround(lat_deg * 1e7)), static_cast<std::int32_t>(std::lround(lon_deg * 1e7)),
-            static_cast<float>(alt_m)};
 }
 
 // The link session: latest telemetry in, frames out, one 50 Hz period at a time.
@@ -185,15 +182,6 @@ int fly_to(Ground& g, const Vec3& target, float yaw, float hold_s) {
         if (!g.period(&cmd)) return 1;
     }
     return 0;
-}
-
-// A GPS setpoint: horizontal from lat/lon about home, height as metres above home. Height is not taken from the
-// geodetic altitude: every estimator measures height from the barometer at the start point, while home's altitude is
-// one GNSS fix (metres of noise), so an absolute altitude would land off by that fix's error.
-Vec3 setpoint(const LocalFrame& frame, double lat_deg, double lon_deg, double alt_above_home_m) {
-    Vec3 p = frame.to_ned(geo(lat_deg, lon_deg, frame.origin().alt_m));
-    p.z = -static_cast<float>(alt_above_home_m);
-    return p;
 }
 
 int run_goto(Ground& g, int argc, char** argv) {

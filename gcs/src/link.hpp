@@ -1,6 +1,7 @@
 // The GCS's link to the flight controller, run on the io_context thread: link frames (protocol.hpp) over
 // ground::Transport, one request in flight at a time. A request's one reply is its acknowledgement; none within
 // 500 ms sends it once more, none again reports "no reply". Replies and telemetry go to the WebSocket clients as JSON.
+// Mission commands go to the executor (mission.hpp); its MissionCommand frames go out at 20 Hz beside the request queue.
 #pragma once
 
 #include <sys/types.h>
@@ -22,6 +23,7 @@
 
 #include <marv/link/protocol.hpp>
 
+#include "mission.hpp"
 #include "transport.hpp"
 
 namespace marv::gcs {
@@ -45,7 +47,8 @@ public:
 
     // Opens the link and starts polling it. False when a UDP address is unusable.
     bool start();
-    // One client message: request_setup | set_param | set_kind | load_factory | save | reset | reboot | flash.
+    // One client message: request_setup | set_param | set_kind | load_factory | save | reset | reboot | flash, or a
+    // mission command: arm | disarm | climb | mission_start | rth | land.
     void handle(const boost::json::object& msg, const Reply& reply);
     // GET /api/link: {mode, target, connected, schema_ok, schema_hash, header, error?, flashing}.
     boost::json::object state() const;
@@ -84,6 +87,8 @@ private:
     std::string telemetry_message() const;
     void error(const Reply& reply, const std::string& request, const std::string& what) const;
     std::string kind_refusal(const link::SetKind& k, const link::SetupHeader& h) const;
+    void mission_request(const std::string& type, const boost::json::object& m, const Reply& reply);
+    void mission_tick(Clock::time_point now);
     void flash(const Reply& reply);
     void read_flash();
     void flash_log(const std::string& line) const;
@@ -109,6 +114,12 @@ private:
     bool tlm_pending_ = false;
     bool armed_ = false;
     bool have_armed_ = false;
+    float motor_[kMotorCount] = {};       // the last ActuatorCommand
+
+    Mission mission_;
+    Clock::time_point next_mission_{};    // the next 20 Hz period
+    Clock::time_point last_state_{};      // the last mission_state broadcast
+    std::string state_key_;               // ... and its content without dist_m
 
     Clock::time_point last_rx_{};
     Clock::time_point last_tx_{};
