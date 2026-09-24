@@ -13,10 +13,11 @@ pico_sdk_init()
 
 set(MARV_ROOT ${CMAKE_CURRENT_LIST_DIR}/..)
 
+file(GLOB MARV_FSW_SOURCES CONFIGURE_DEPENDS ${MARV_ROOT}/fsw/src/*.cpp)
 set(MARV_FW_SOURCES
     ${CMAKE_CURRENT_LIST_DIR}/src/main.cpp
     ${CMAKE_CURRENT_LIST_DIR}/src/usb_descriptors.c
-    ${MARV_ROOT}/fsw/src/fsw.cpp
+    ${MARV_FSW_SOURCES}
 )
 
 add_executable(marv_fw ${MARV_FW_SOURCES})

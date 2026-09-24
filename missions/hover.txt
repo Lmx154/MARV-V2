@@ -1,0 +1,4 @@
+# Hover: idle on the ground for 2 s, then climb to 2 m and hold, nose east (the spawn heading).
+# t_s  mode  nav    n  e  d   yaw_deg
+0 idle estimate 0 0 0 90
+2 fly estimate 0 0 -2 90

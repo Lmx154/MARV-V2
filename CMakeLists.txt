@@ -11,13 +11,19 @@ add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 add_library(marv_link INTERFACE)
 target_include_directories(marv_link INTERFACE link/include fsw/include)
 
-add_library(marv_fsw STATIC fsw/src/fsw.cpp)
+file(GLOB MARV_FSW_SOURCES CONFIGURE_DEPENDS fsw/src/*.cpp)
+add_library(marv_fsw STATIC ${MARV_FSW_SOURCES})
 target_include_directories(marv_fsw PUBLIC fsw/include)
 
 enable_testing()
-add_executable(test_protocol tests/test_protocol.cpp)
-target_link_libraries(test_protocol PRIVATE marv_link)
-add_test(NAME protocol COMMAND test_protocol)
+# Every tests/test_<name>.cpp is one test, linked against the protocol and the flight software.
+file(GLOB MARV_TESTS CONFIGURE_DEPENDS tests/test_*.cpp)
+foreach(src ${MARV_TESTS})
+    get_filename_component(name ${src} NAME_WE)
+    add_executable(${name} ${src})
+    target_link_libraries(${name} PRIVATE marv_link marv_fsw)
+    add_test(NAME ${name} COMMAND ${name})
+endforeach()
 
 find_package(gz-transport13 QUIET)
 if(gz-transport13_FOUND)

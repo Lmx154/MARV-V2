@@ -47,15 +47,26 @@ private:
 
 class Sitl final : public Endpoint {
 public:
-    explicit Sitl(float motor_cmd) : fsw_(motor_cmd) {}
-
+    // The same dispatch as firmware/src/main.cpp.
     bool write(const std::uint8_t* p, std::size_t n) override {
         for (std::size_t i = 0; i < n; ++i) {
+            if (!decoder_.push(p[i])) continue;
+            const link::Packet& pkt = decoder_.packet();
+            MissionCommand mission;
+            State truth;
             SensorBus bus;
-            if (!decoder_.push(p[i]) || !decoder_.packet().as(bus)) continue;
-            std::uint8_t frame[link::kMaxFrame];
-            const std::size_t len = link::encode(fsw_.step(bus), frame);
-            out_.insert(out_.end(), frame, frame + len);
+            link::Reset reset;
+            if (pkt.as(reset)) {
+                fsw_ = Fsw{};
+            } else if (pkt.as(mission)) {
+                fsw_.on_mission(mission);
+            } else if (pkt.as(truth)) {
+                fsw_.on_truth(truth);
+            } else if (pkt.as(bus)) {
+                const Tick tick = fsw_.step(bus);
+                emit(tick.tlm);
+                emit(tick.act);
+            }
         }
         return true;
     }
@@ -68,6 +79,12 @@ public:
     }
 
 private:
+    template <class T> void emit(const T& msg) {
+        std::uint8_t frame[link::kMaxFrame];
+        const std::size_t len = link::encode(msg, frame);
+        out_.insert(out_.end(), frame, frame + len);
+    }
+
     Fsw fsw_;
     link::Decoder decoder_;
     std::vector<std::uint8_t> out_;
@@ -102,6 +119,6 @@ std::unique_ptr<Endpoint> open_serial(const char* path) {
     return std::make_unique<Serial>(fd);
 }
 
-std::unique_ptr<Endpoint> make_sitl(float motor_cmd) { return std::make_unique<Sitl>(motor_cmd); }
+std::unique_ptr<Endpoint> make_sitl() { return std::make_unique<Sitl>(); }
 
 }  // namespace marv::bridge

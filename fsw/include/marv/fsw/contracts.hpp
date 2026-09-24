@@ -99,6 +99,20 @@ struct Reference {
     Quat q;
 };
 
+// Where the controller takes its state from. kTruth is the lab's A/B switch (the toolbox's
+// fswSource: 'truth'): the simulator's true state flies the vehicle while the estimator runs in shadow.
+enum class NavSource : std::uint8_t {
+    kEstimate,
+    kTruth,
+};
+
+// What the mission software sends: arm state, navigation source and the current reference.
+struct MissionCommand {
+    Mode mode;
+    NavSource nav;
+    Reference ref;
+};
+
 // ---- controller output ---------------------------------------------------------------------------
 
 struct ControlRequest {
@@ -115,6 +129,14 @@ struct ActuatorCommand {
     std::uint64_t t_us;  // the SensorBus tick this answers
     float motor[kMotorCount];
     bool armed;
+};
+
+// ---- telemetry: what the flight software reports each tick ------------------------------------
+
+struct Telemetry {
+    std::uint64_t t_us;
+    State est;           // the estimator's output, whichever source is flying
+    ControlRequest req;  // what the controller asked for
 };
 
 }  // namespace marv

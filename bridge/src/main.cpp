@@ -1,15 +1,23 @@
 // marv_bridge: runs the Gazebo world and the flight software in lockstep over the wire protocol.
 //
-//   marv_bridge (--sitl [--cmd F] | --port /dev/ttyACMx) --seconds S [--log out.csv]
+//   marv_bridge (--sitl | --port /dev/ttyACMx) --seconds S [--mission FILE] [--log out.csv]
 //
-// Per physics step: step the world, send the SensorBus it produced, wait for the ActuatorCommand that
-// echoes its t_us, hand that to the motor models, repeat.
+// Per physics step: step the world, send the truth State it produced (when valid), the mission command
+// (when the active mission line changed, and once at the start), then the SensorBus; collect the
+// Telemetry and wait for the ActuatorCommand that echoes its t_us, hand that to the motor models, repeat.
+//
+// Mission file: one line per command, `t_s mode nav n e d yaw_deg`, mode fly|idle, nav truth|estimate,
+// position NED in m relative to the start, yaw in degrees; '#' starts a comment. The line with the
+// largest t_s <= the step's time is active; before the first line the vehicle is idle.
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <marv/link/protocol.hpp>
 
@@ -21,15 +29,66 @@ namespace {
 using namespace marv;
 
 int usage() {
-    std::fprintf(stderr, "usage: marv_bridge (--sitl [--cmd F] | --port /dev/ttyACMx) --seconds S [--log out.csv]\n");
+    std::fprintf(stderr,
+                 "usage: marv_bridge (--sitl | --port /dev/ttyACMx) --seconds S [--mission FILE] [--log out.csv]\n");
     return 2;
 }
 
-// Sends bus, then waits up to 1 s for the ActuatorCommand answering it. Other packets are dropped.
-bool exchange(bridge::Endpoint& ep, link::Decoder& dec, const SensorBus& bus, ActuatorCommand& cmd,
-              std::string& err) {
-    std::uint8_t frame[link::kMaxFrame];
-    if (!ep.write(frame, link::encode(bus, frame))) {
+struct MissionLine {
+    std::uint64_t t_us;
+    MissionCommand cmd;
+};
+
+// Reads a mission file into lines sorted by time. Returns false, with a message on stderr, on an error.
+bool load_mission(const char* path, std::vector<MissionLine>& out) {
+    std::FILE* f = std::fopen(path, "r");
+    if (!f) {
+        std::fprintf(stderr, "marv_bridge: cannot read %s\n", path);
+        return false;
+    }
+    char line[256];
+    int no = 0;
+    bool ok = true;
+    while (ok && std::fgets(line, sizeof(line), f)) {
+        ++no;
+        if (char* c = std::strchr(line, '#')) *c = '\0';
+        double t = 0.0;
+        char mode[16], nav[16];
+        float n = 0.f, e = 0.f, d = 0.f, yaw_deg = 0.f;
+        char extra[2];
+        const int k = std::sscanf(line, "%lf %15s %15s %f %f %f %f %1s", &t, mode, nav, &n, &e, &d, &yaw_deg, extra);
+        if (k <= 0) continue;  // blank or comment
+        MissionLine m{};
+        ok = k == 7 && t >= 0.0 && (!std::strcmp(mode, "fly") || !std::strcmp(mode, "idle")) &&
+             (!std::strcmp(nav, "truth") || !std::strcmp(nav, "estimate"));
+        if (!ok) {
+            std::fprintf(stderr, "marv_bridge: %s:%d: want `t_s fly|idle truth|estimate n e d yaw_deg`\n", path, no);
+            break;
+        }
+        m.t_us = static_cast<std::uint64_t>(t * 1e6 + 0.5);
+        m.cmd.mode = std::strcmp(mode, "fly") == 0 ? Mode::kFly : Mode::kIdle;
+        m.cmd.nav = std::strcmp(nav, "truth") == 0 ? NavSource::kTruth : NavSource::kEstimate;
+        m.cmd.ref.has = kRefPos | kRefYaw;
+        m.cmd.ref.p_ned = {n, e, d};
+        m.cmd.ref.yaw = yaw_deg * 3.14159265f / 180.f;
+        m.cmd.ref.q = {1.f, 0.f, 0.f, 0.f};
+        out.push_back(m);
+    }
+    std::fclose(f);
+    std::stable_sort(out.begin(), out.end(), [](const MissionLine& a, const MissionLine& b) { return a.t_us < b.t_us; });
+    return ok;
+}
+
+// Sends truth (if valid), mission (if given) and bus, then waits up to 1 s for the ActuatorCommand
+// answering bus. The Telemetry of the same tick is kept in tlm; other packets are dropped.
+bool exchange(bridge::Endpoint& ep, link::Decoder& dec, const State& truth, const MissionCommand* mission,
+              const SensorBus& bus, Telemetry& tlm, ActuatorCommand& cmd, std::string& err) {
+    std::uint8_t out[3 * link::kMaxFrame];
+    std::size_t n_out = 0;
+    if (truth.valid) n_out += link::encode(truth, out + n_out);
+    if (mission) n_out += link::encode(*mission, out + n_out);
+    n_out += link::encode(bus, out + n_out);
+    if (!ep.write(out, n_out)) {
         err = "write to the flight controller failed";
         return false;
     }
@@ -45,8 +104,11 @@ bool exchange(bridge::Endpoint& ep, link::Decoder& dec, const SensorBus& bus, Ac
         }
         bool found = false;
         for (long i = 0; i < n; ++i) {
+            if (!dec.push(buf[i])) continue;
             ActuatorCommand c;
-            if (dec.push(buf[i]) && dec.packet().as(c) && c.t_us == bus.t_us) {
+            Telemetry t;
+            if (dec.packet().as(t) && t.t_us == bus.t_us) tlm = t;
+            else if (dec.packet().as(c) && c.t_us == bus.t_us) {
                 cmd = c;
                 found = true;
             }
@@ -65,14 +127,16 @@ void log_header(std::FILE* f) {
                  "fresh,accel_frd_x,accel_frd_y,accel_frd_z,gyro_frd_x,gyro_frd_y,gyro_frd_z,"
                  "baro_pa,baro_c,mag_frd_x_ut,mag_frd_y_ut,mag_frd_z_ut,"
                  "gnss_lat_e7,gnss_lon_e7,gnss_alt_m,gnss_vn_mps,gnss_ve_mps,gnss_vd_mps,gnss_fix,"
-                 "motor0,motor1,motor2,motor3\n");
+                 "motor0,motor1,motor2,motor3,"
+                 "est_valid,est_n_m,est_e_m,est_d_m,est_vn_mps,est_ve_mps,est_vd_mps,est_qw,est_qx,est_qy,est_qz,"
+                 "req_fn_n,req_fe_n,req_fd_n,req_tx_nm,req_ty_nm,req_tz_nm\n");
 }
 
-void log_row(std::FILE* f, const State& x, const SensorBus& s, const ActuatorCommand& c) {
+void log_row(std::FILE* f, const State& x, const SensorBus& s, const ActuatorCommand& c, const Telemetry& t) {
     std::fprintf(f,
                  "%llu,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,"
                  "%u,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,"
-                 "%ld,%ld,%.9g,%.9g,%.9g,%.9g,%d,%.9g,%.9g,%.9g,%.9g\n",
+                 "%ld,%ld,%.9g,%.9g,%.9g,%.9g,%d,%.9g,%.9g,%.9g,%.9g,",
                  static_cast<unsigned long long>(s.t_us), x.p_ned.x, x.p_ned.y, x.p_ned.z, x.v_ned.x, x.v_ned.y,
                  x.v_ned.z, x.q.w, x.q.x, x.q.y, x.q.z, static_cast<unsigned>(s.fresh), s.imu.accel_frd.x,
                  s.imu.accel_frd.y, s.imu.accel_frd.z, s.imu.gyro_frd.x, s.imu.gyro_frd.y, s.imu.gyro_frd.z,
@@ -80,29 +144,37 @@ void log_row(std::FILE* f, const State& x, const SensorBus& s, const ActuatorCom
                  s.mag.field_frd_ut.z, static_cast<long>(s.gnss.lat_e7), static_cast<long>(s.gnss.lon_e7),
                  s.gnss.alt_m, s.gnss.vel_ned.x, s.gnss.vel_ned.y, s.gnss.vel_ned.z, s.gnss.fix ? 1 : 0,
                  c.motor[0], c.motor[1], c.motor[2], c.motor[3]);
+    const State& e = t.est;
+    std::fprintf(f, "%d,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g\n",
+                 e.valid ? 1 : 0, e.p_ned.x, e.p_ned.y, e.p_ned.z, e.v_ned.x, e.v_ned.y, e.v_ned.z, e.q.w, e.q.x,
+                 e.q.y, e.q.z, t.req.force_ned.x, t.req.force_ned.y, t.req.force_ned.z, t.req.torque_frd.x,
+                 t.req.torque_frd.y, t.req.torque_frd.z);
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
     bool sitl = false;
-    float cmd_f = 0.85f;
     const char* port = nullptr;
     const char* log_path = nullptr;
+    const char* mission_path = nullptr;
     double seconds = -1.0;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         const bool has_value = i + 1 < argc;
         if (a == "--sitl") sitl = true;
-        else if (a == "--cmd" && has_value) cmd_f = std::strtof(argv[++i], nullptr);
         else if (a == "--port" && has_value) port = argv[++i];
         else if (a == "--seconds" && has_value) seconds = std::strtod(argv[++i], nullptr);
         else if (a == "--log" && has_value) log_path = argv[++i];
+        else if (a == "--mission" && has_value) mission_path = argv[++i];
         else return usage();
     }
     if (sitl == (port != nullptr) || !(seconds > 0.0)) return usage();
 
-    std::unique_ptr<bridge::Endpoint> ep = sitl ? bridge::make_sitl(cmd_f) : bridge::open_serial(port);
+    std::vector<MissionLine> mission;
+    if (mission_path && !load_mission(mission_path, mission)) return 2;
+
+    std::unique_ptr<bridge::Endpoint> ep = sitl ? bridge::make_sitl() : bridge::open_serial(port);
     if (!ep) return 1;
 
     std::FILE* log = nullptr;
@@ -113,6 +185,15 @@ int main(int argc, char** argv) {
             return 1;
         }
         log_header(log);
+    }
+
+    // A new run: the flight controller may still hold the state of the previous one.
+    {
+        std::uint8_t frame[link::kMaxFrame];
+        if (!ep->write(frame, link::encode(link::Reset{}, frame))) {
+            std::fprintf(stderr, "marv_bridge: write to the flight controller failed\n");
+            return 1;
+        }
     }
 
     bridge::GzWorld world;
@@ -127,17 +208,35 @@ int main(int argc, char** argv) {
     SensorBus bus{};
     State truth{};
     ActuatorCommand cmd{};
+    const MissionCommand idle{Mode::kIdle, NavSource::kEstimate, {}};
+    long active = -2;  // index of the mission line sent last; -1 is the idle before the first line
     std::uint64_t steps = 0;
     const auto wall0 = std::chrono::steady_clock::now();
     int rc = 0;
     while (bus.t_us < end_us) {
-        if (!world.step(bus, truth, err) || !exchange(*ep, dec, bus, cmd, err)) {
+        if (!world.step(bus, truth, err)) {
+            std::fprintf(stderr, "marv_bridge: %s\n", err.c_str());
+            rc = 1;
+            break;
+        }
+        long now = -1;
+        while (now + 1 < static_cast<long>(mission.size()) && mission[static_cast<std::size_t>(now + 1)].t_us <= bus.t_us) ++now;
+        const MissionCommand* send = nullptr;
+        if (now != active) {
+            send = now < 0 ? &idle : &mission[static_cast<std::size_t>(now)].cmd;
+            active = now;
+        }
+        Telemetry tlm{};
+        const float nan = std::nanf("");
+        tlm.est = {0, {nan, nan, nan}, {nan, nan, nan}, {nan, nan, nan, nan}, {nan, nan, nan}, false};
+        tlm.req = {{nan, nan, nan}, {nan, nan, nan}};
+        if (!exchange(*ep, dec, truth, send, bus, tlm, cmd, err)) {
             std::fprintf(stderr, "marv_bridge: %s\n", err.c_str());
             rc = 1;
             break;
         }
         world.command(cmd);
-        if (log) log_row(log, truth, bus, cmd);
+        if (log) log_row(log, truth, bus, cmd, tlm);
         ++steps;
     }
     const double wall = std::chrono::duration<double>(std::chrono::steady_clock::now() - wall0).count();

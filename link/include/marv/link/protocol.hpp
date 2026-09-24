@@ -6,8 +6,9 @@
 //   - crc16 is CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF) over id and body.
 //   - Every field is little-endian and written one by one, so no struct layout reaches the wire.
 //
-// Lockstep: the bridge sends one kSensors per simulation step and waits for the kActuators whose t_us
-// echoes it before stepping the world again.
+// A run starts with kReset. Lockstep: per simulation step the bridge sends kTruth (and kMission when it changes), then kSensors,
+// and waits for the kActuators whose t_us echoes it before stepping the world again. kTelemetry for
+// that tick arrives before it.
 #pragma once
 
 #include <cstddef>
@@ -19,16 +20,28 @@
 namespace marv::link {
 
 enum MsgId : std::uint8_t {
-    kSensors = 0x01,    // PC -> FC: marv::SensorBus
-    kActuators = 0x81,  // FC -> PC: marv::ActuatorCommand
+    kSensors = 0x01,    // PC -> FC: marv::SensorBus; runs one tick
+    kMission = 0x02,    // PC -> FC: marv::MissionCommand; held until the next one
+    kTruth = 0x03,      // PC -> FC: marv::State from the simulator; sent before kSensors, lab use only
+    kReset = 0x04,      // PC -> FC: link::Reset; starts a new run from power-on state (sent first by the bridge)
+    kActuators = 0x81,  // FC -> PC: marv::ActuatorCommand; always the last reply of a tick
+    kTelemetry = 0x82,  // FC -> PC: marv::Telemetry; sent before kActuators
 };
 
 // Body sizes, fixed per message.
 inline constexpr std::size_t kSensorsBody = 8 + 1 + 24 + 8 + 12 + (4 + 4 + 4 + 12 + 1);  // 78
 inline constexpr std::size_t kActuatorsBody = 8 + 4 * kMotorCount + 1;                 // 25
-inline constexpr std::size_t kMaxPayload = 1 + kSensorsBody + 2;
+inline constexpr std::size_t kStateBody = 8 + 12 + 12 + 16 + 12 + 1;                   // 61
+inline constexpr std::size_t kReferenceBody = 1 + 12 + 12 + 12 + 4 + 16;               // 57
+inline constexpr std::size_t kMissionBody = 1 + 1 + kReferenceBody;                    // 59
+inline constexpr std::size_t kTelemetryBody = 8 + kStateBody + 24;                     // 93
+inline constexpr std::size_t kMaxBody = kTelemetryBody > kSensorsBody ? kTelemetryBody : kSensorsBody;
+inline constexpr std::size_t kMaxPayload = 1 + kMaxBody + 2;
 // COBS adds one byte per 254 plus one; then the delimiter.
 inline constexpr std::size_t kMaxFrame = kMaxPayload + kMaxPayload / 254 + 2;
+
+// A new run: the flight software returns to its power-on state. No body.
+struct Reset {};
 
 // ---- CRC -----------------------------------------------------------------------------------------
 
@@ -100,6 +113,7 @@ struct Writer {
         u32(b);
     }
     void vec3(const Vec3& v) { f32(v.x); f32(v.y); f32(v.z); }
+    void quat(const Quat& q) { f32(q.w); f32(q.x); f32(q.y); f32(q.z); }
 };
 
 struct Reader {
@@ -126,6 +140,10 @@ struct Reader {
     Vec3 vec3() {
         const float x = f32(), y = f32(), z = f32();
         return {x, y, z};
+    }
+    Quat quat() {
+        const float w = f32(), x = f32(), y = f32(), z = f32();
+        return {w, x, y, z};
     }
 };
 
@@ -173,6 +191,71 @@ inline void get(Reader& r, ActuatorCommand& a) {
     a.armed = r.u8() != 0;
 }
 
+inline void put(Writer& w, const State& s) {
+    w.u64(s.t_us);
+    w.vec3(s.p_ned);
+    w.vec3(s.v_ned);
+    w.quat(s.q);
+    w.vec3(s.w_frd);
+    w.u8(s.valid ? 1 : 0);
+}
+
+inline void get(Reader& r, State& s) {
+    s.t_us = r.u64();
+    s.p_ned = r.vec3();
+    s.v_ned = r.vec3();
+    s.q = r.quat();
+    s.w_frd = r.vec3();
+    s.valid = r.u8() != 0;
+}
+
+inline void put(Writer& w, const Reference& f) {
+    w.u8(f.has);
+    w.vec3(f.p_ned);
+    w.vec3(f.v_ned);
+    w.vec3(f.a_ned);
+    w.f32(f.yaw);
+    w.quat(f.q);
+}
+
+inline void get(Reader& r, Reference& f) {
+    f.has = r.u8();
+    f.p_ned = r.vec3();
+    f.v_ned = r.vec3();
+    f.a_ned = r.vec3();
+    f.yaw = r.f32();
+    f.q = r.quat();
+}
+
+inline void put(Writer& w, const MissionCommand& m) {
+    w.u8(static_cast<std::uint8_t>(m.mode));
+    w.u8(static_cast<std::uint8_t>(m.nav));
+    put(w, m.ref);
+}
+
+inline void get(Reader& r, MissionCommand& m) {
+    m.mode = r.u8() == static_cast<std::uint8_t>(Mode::kFly) ? Mode::kFly : Mode::kIdle;
+    m.nav = r.u8() == static_cast<std::uint8_t>(NavSource::kTruth) ? NavSource::kTruth : NavSource::kEstimate;
+    get(r, m.ref);
+}
+
+inline void put(Writer& w, const Telemetry& t) {
+    w.u64(t.t_us);
+    put(w, t.est);
+    w.vec3(t.req.force_ned);
+    w.vec3(t.req.torque_frd);
+}
+
+inline void get(Reader& r, Telemetry& t) {
+    t.t_us = r.u64();
+    get(r, t.est);
+    t.req.force_ned = r.vec3();
+    t.req.torque_frd = r.vec3();
+}
+
+inline void put(Writer&, const Reset&) {}
+inline void get(Reader&, Reset&) {}
+
 template <class T> struct Traits;
 template <> struct Traits<SensorBus> {
     static constexpr MsgId id = kSensors;
@@ -181,6 +264,22 @@ template <> struct Traits<SensorBus> {
 template <> struct Traits<ActuatorCommand> {
     static constexpr MsgId id = kActuators;
     static constexpr std::size_t body = kActuatorsBody;
+};
+template <> struct Traits<Reset> {
+    static constexpr MsgId id = kReset;
+    static constexpr std::size_t body = 0;
+};
+template <> struct Traits<MissionCommand> {
+    static constexpr MsgId id = kMission;
+    static constexpr std::size_t body = kMissionBody;
+};
+template <> struct Traits<State> {
+    static constexpr MsgId id = kTruth;
+    static constexpr std::size_t body = kStateBody;
+};
+template <> struct Traits<Telemetry> {
+    static constexpr MsgId id = kTelemetry;
+    static constexpr std::size_t body = kTelemetryBody;
 };
 
 // Encodes msg into a complete frame, delimiter included. out needs kMaxFrame bytes. Returns its length.

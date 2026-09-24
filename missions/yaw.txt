@@ -1,0 +1,5 @@
+# Yaw step: hover at 2 m nose east, then a +90 deg yaw step to nose south.
+# t_s  mode  nav    n  e  d   yaw_deg
+0 idle estimate 0 0 0 90
+2 fly estimate 0 0 -2 90
+9 fly estimate 0 0 -2 180

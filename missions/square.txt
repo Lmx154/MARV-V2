@@ -1,0 +1,8 @@
+# Square: take off to 2 m, then a 4 m square at that height, 6 s per leg, nose held east.
+# t_s  mode  nav    n  e  d   yaw_deg
+0 idle estimate 0 0 0 90
+2 fly estimate 0 0 -2 90
+9 fly estimate 4 0 -2 90
+15 fly estimate 4 4 -2 90
+21 fly estimate 0 4 -2 90
+27 fly estimate 0 0 -2 90

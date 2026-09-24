@@ -21,7 +21,7 @@ public:
 // Opens a serial device raw (8N1, no flow control). Returns null, with a message on stderr, on failure.
 std::unique_ptr<Endpoint> open_serial(const char* path);
 
-// Runs marv::Fsw(motor_cmd) in this process behind the same encode / Decoder byte path as the Pico.
-std::unique_ptr<Endpoint> make_sitl(float motor_cmd);
+// Runs marv::Fsw in this process behind the same encode / Decoder byte path as the Pico.
+std::unique_ptr<Endpoint> make_sitl();
 
 }  // namespace marv::bridge

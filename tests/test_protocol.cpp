@@ -73,6 +73,40 @@ int main() {
         CHECK(out.t_us == 42 && out.armed && out.motor[2] == 0.82f && out.motor[0] == 0.f);
     }
 
+    // MissionCommand, State (truth) and Telemetry round trips: every byte of the body comes back.
+    {
+        MissionCommand in{Mode::kFly, NavSource::kTruth, {kRefPos | kRefYaw, {1.f, -2.f, -3.f}, {0.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, 1.5708f, {1.f, 0.f, 0.f, 0.f}}};
+        link::Decoder d;
+        link::Packet p{};
+        CHECK(decode_all(frame, link::encode(in, frame), d, p));
+        MissionCommand out{};
+        CHECK(p.as(out));
+        CHECK(out.mode == Mode::kFly && out.nav == NavSource::kTruth && out.ref.has == in.ref.has);
+        CHECK(out.ref.p_ned.z == -3.f && out.ref.yaw == 1.5708f && out.ref.q.w == 1.f);
+
+        const State st{77, {1.f, 2.f, 3.f}, {-1.f, 0.f, 0.5f}, {0.7071f, 0.f, 0.f, 0.7071f}, {0.1f, 0.2f, 0.3f}, true};
+        CHECK(decode_all(frame, link::encode(st, frame), d, p));
+        State so{};
+        CHECK(p.id == link::kTruth && p.as(so));
+        CHECK(so.t_us == 77 && so.q.z == 0.7071f && so.w_frd.z == 0.3f && so.valid);
+
+        const Telemetry tm{78, st, {{0.f, 0.f, -14.9f}, {0.01f, -0.02f, 0.f}}};
+        CHECK(decode_all(frame, link::encode(tm, frame), d, p));
+        Telemetry to{};
+        CHECK(p.as(to));
+        CHECK(to.t_us == 78 && to.est.p_ned.y == 2.f && to.req.force_ned.z == -14.9f && to.req.torque_frd.y == -0.02f);
+    }
+
+    // Reset has an empty body and is told apart from every other message by its id.
+    {
+        link::Decoder d;
+        link::Packet p{};
+        CHECK(decode_all(frame, link::encode(link::Reset{}, frame), d, p));
+        link::Reset r;
+        SensorBus s{};
+        CHECK(p.id == link::kReset && p.len == 0 && p.as(r) && !p.as(s));
+    }
+
     // A flipped byte is dropped and counted; the next frame still decodes (resync on 0x00).
     {
         const std::size_t n = link::encode(sample_bus(), frame);
