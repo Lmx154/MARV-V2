@@ -50,17 +50,17 @@
 
     <gravity>0 0 -9.8066</gravity>
     <!-- @WIND@ -->
-    <!-- No <magnetic_field> element, and that is deliberate (phase 5 unit
-         5a.0, 2026-09-04): gz-sim 8's Magnetometer system recomputes the
-         world field on every update from its own 10-degree tables at the
-         <spherical_coordinates> below and overwrites whatever this element
-         says (Magnetometer.cc:440-506, gz-sim8 branch) -- unit 5a.0 set it to
-         WMM-2025 and read a different field off the topic. The field the
-         sensor publishes is that table value, reproduced and probe-verified:
-         NED (0.2162762, 0.0096861, 0.4291632) gauss, declination 2.5643 deg
-         (docs/datasheets/wmm-zurich.md, second section; constants.hpp
-         kGzMagFieldNedGauss). An element here would be a comment that lies;
-         the harness's mag-vs-truth pin is what holds the value. -->
+    <!-- No <magnetic_field> element, deliberately: gz-sim 8's Magnetometer system recomputes the world field on
+         every update from its own 10-degree tables at the <spherical_coordinates> below and overwrites whatever
+         this element says (Magnetometer.cc:440-506, gz-sim8 branch). At the default origin (Zurich) it publishes
+         NED (21.63, 0.97, 42.92) uT, declination 2.564 deg.
+         The flight software looks the field up in PX4's WMM tables at the first GNSS fix (fsw/src/geo_mag.cpp):
+         declination 3.405 deg here, so in SITL the heading datum sits a constant +0.84 deg off truth. That offset
+         is the simulator's older tables, not a flight-software error; on real hardware the WMM value is the right
+         one. To remove it in a sim test, set the setup's mag_ref_ned_ut_* to the gz field above (an override).
+         The run-to-run scatter of the heading at alignment (about 1.4 deg sigma here) is separate: the
+         accelerometer's turn-on bias tilts the estimate and tan(inclination) ~ 2 carries it into heading until the
+         bias is learned in flight. -->
 
     <!-- WHERE THIS WORLD IS, and why it is not the equator.
          Phase 5 unit 2a (ADR-0007 S2): the navsat sensor reports latitude,
