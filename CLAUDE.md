@@ -32,6 +32,7 @@ cmake -S . -B build/native -G Ninja -DCMAKE_BUILD_TYPE=Debug && cmake --build bu
 ctest --test-dir build/native --output-on-failure
 PICO_SDK_PATH=$HOME/pico/pico-sdk cmake -S firmware -B build/fw -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build/fw
 scripts/sim.sh --sitl --mission missions/square.txt --seconds 33 --log out.csv               # SITL
+scripts/sim.sh --world x500 --sitl --mission ...   # PX4's x500 (sitl/gazebo/x500.sdf); its setup: setups/x500.json
 scripts/sim.sh --port /dev/serial/by-id/usb-MARV_MARV_flight_controller_* --mission ...      # on the Pico
 ```
 Fly by hand or by GPS point (a second terminal, while `scripts/sim.sh --sitl --ground --seconds 600` runs):
