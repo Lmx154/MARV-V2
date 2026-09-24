@@ -74,6 +74,28 @@ export interface LinkInfo {
 	via: string | null;
 	/** The device path or UDP address it is open on. */
 	target: string | null;
+	/** via 'busy': the process holding the FC's USB port (pid 0: unknown). */
+	holder?: { name: string; pid: number } | null;
+}
+
+/** One process holding a rig resource (GET /api/resources, the resources message). */
+export interface ResourceHolder {
+	pid: number;
+	name: string;
+	cmdline: string;
+	/** Start time, unix seconds. */
+	started: number | null;
+	/** The backend itself: never terminated. */
+	self: boolean;
+	/** A process of the sim the Development tab launched: terminating it stops that sim. */
+	child_of_launcher: boolean;
+}
+
+export interface RigResource {
+	id: string;
+	label: string;
+	path: string | null;
+	holders: ResourceHolder[];
 }
 
 /** A geodetic point as the FC reports it (home): 1e-7 deg, altitude above mean sea level. */
@@ -201,7 +223,10 @@ export type ClientMsg =
 	| { type: 'rth' }
 	| { type: 'land' }
 	| { type: 'sim_launch'; airframe: string; env: SimEnv; gui: boolean; target: SimTarget }
-	| { type: 'sim_stop' };
+	| { type: 'sim_stop' }
+	| { type: 'resources_request' }
+	| { type: 'resources_subscribe'; on: boolean }
+	| { type: 'terminate'; pid: number };
 
 /** Server messages are parsed loosely (see link.ts); this is what the page acts on. */
 export type ServerMsg =
@@ -213,4 +238,5 @@ export type ServerMsg =
 	| { type: 'flash_log'; line: string }
 	| { type: 'sim_status'; sim: SimStatus }
 	| { type: 'sim_log'; line: string }
+	| { type: 'resources'; resources: RigResource[] }
 	| { type: 'error'; request: string; error: string; family?: number };

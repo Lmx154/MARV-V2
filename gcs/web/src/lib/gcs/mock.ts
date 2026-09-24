@@ -3,10 +3,11 @@
  * (b), (c). ?mock=armed starts armed (save refused); ?mock=mismatch reports another schema hash. A point-mass vehicle
  * flies the mission API about a fixed home with the executor's rules (ADR-0010 (b), (d)): arm, climb, hold, mission, return
  * to home and hold over it (no automatic landing), land and disarm. A fake sim launcher answers sim_launch and sim_stop.
+ * A fake resource scan answers resources_request / resources_subscribe and terminate (itself refused, others removed).
  */
 import { LocalFrame, type Ned } from './geo';
 import { climbError, missionError, type MissionMsg } from './mission';
-import type { ClientMsg, GeoPoint, LatLonAlt, MissionMode, Schema, SetupHeader, SimStatus } from './types';
+import type { ClientMsg, GeoPoint, LatLonAlt, MissionMode, RigResource, Schema, SetupHeader, SimStatus } from './types';
 
 /** The Gazebo world's origin, as in tests/test_geo.cpp. */
 const HOME: GeoPoint = { lat_e7: 473763880, lon_e7: 85477780, alt_m: 408 };
@@ -103,6 +104,26 @@ export class MockFc {
 	private legs: Ned[] = [];
 	private reason = '';
 	private ticks = 0;
+	private resources: RigResource[] = [
+		{
+			id: 'fc_usb',
+			label: 'Flight controller USB (usb-MARV_MARV_flight_controller_MOCK-if00)',
+			path: '/dev/ttyACM1',
+			holders: [{ pid: 4321, name: 'marv_bridge', cmdline: 'build/native/bridge/marv_bridge --port /dev/ttyACM1 --ground', started: Date.now() / 1000 - 600, self: false, child_of_launcher: false }]
+		},
+		{ id: 'rig_lock', label: 'Rig lock', path: '/tmp/marv-rig.lock', holders: [{ pid: 4300, name: 'flock', cmdline: 'flock /tmp/marv-rig.lock scripts/sim.sh', started: Date.now() / 1000 - 610, self: false, child_of_launcher: false }] },
+		{ id: 'sim', label: 'Gazebo sim server', path: 'gz sim', holders: [] },
+		{ id: 'ground_udp', label: 'Sim bridge ground port', path: 'udp/14650', holders: [] },
+		{
+			id: 'gcs',
+			label: 'Ground control (marv_gcs, HTTP port)',
+			path: 'tcp/8765',
+			holders: [
+				{ pid: 1000, name: 'marv_gcs', cmdline: 'build/native/gcs/marv_gcs --web gcs/web/build', started: Date.now() / 1000 - 3600, self: true, child_of_launcher: false },
+				{ pid: 1777, name: 'marv_gcs', cmdline: 'build/native/gcs/marv_gcs --http 8780', started: Date.now() / 1000 - 7200, self: false, child_of_launcher: false }
+			]
+		}
+	];
 	private sim: SimStatus = { running: false, airframe: null, env: null, target: null, gui: false, started_at: null, pid: null };
 
 	constructor(
@@ -173,6 +194,11 @@ export class MockFc {
 			case 'sim_launch':
 			case 'sim_stop':
 				return this.simulate(m);
+			case 'resources_request':
+			case 'resources_subscribe':
+				return this.emit({ type: 'resources', resources: this.resources });
+			case 'terminate':
+				return this.terminate(m.pid);
 			default:
 				return this.mission(m);
 		}
@@ -409,6 +435,16 @@ export class MockFc {
 			geo: this.frame.latLonOf(this.p),
 			motor: [0, 1, 2, 3].map((i) => (!this.armed ? 0 : this.mode === 'armed' ? SPIN_ARM : HOVER + 0.01 * Math.sin(3 * this.t + i)))
 		});
+	}
+
+	private terminate(pid: number): void {
+		const h = this.resources.flatMap((r) => r.holders).find((x) => x.pid === pid);
+		if (!h) return this.emit({ type: 'error', request: 'terminate', error: `pid ${pid} holds none of the rig's resources: not terminated` });
+		if (h.self) return this.emit({ type: 'error', request: 'terminate', error: `pid ${pid} is this marv_gcs: stop it from its terminal (Ctrl-C)` });
+		setTimeout(() => {
+			this.resources = this.resources.map((r) => ({ ...r, holders: r.holders.filter((x) => x.pid !== pid) }));
+			this.emit({ type: 'resources', resources: this.resources });
+		}, 400);
 	}
 
 	private emit(m: unknown): void {

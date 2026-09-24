@@ -1,3 +1,4 @@
+import { linkHolder, parseResources } from './resources';
 import type { GeoPoint, LatLonAlt, LinkInfo, MissionMode, Schema, ServerMsg, SetupHeader, Telemetry } from './types';
 
 type Obj = Record<string, unknown>;
@@ -66,7 +67,8 @@ export function parseServer(text: string): ServerMsg | null {
 				mode: String(m.mode ?? ''),
 				connected: Boolean(m.connected),
 				via: typeof m.via === 'string' ? m.via : null,
-				target: typeof m.target === 'string' ? m.target : null
+				target: typeof m.target === 'string' ? m.target : null,
+				holder: linkHolder(m.holder)
 			};
 			return { type: 'link', link, header: parseHeader(m.header) };
 		}
@@ -127,6 +129,8 @@ export function parseServer(text: string): ServerMsg | null {
 			};
 		case 'sim_log':
 			return { type: 'sim_log', line: String(m.line ?? '') };
+		case 'resources':
+			return { type: 'resources', resources: parseResources(m.resources) };
 		case 'error': {
 			const e: Extract<ServerMsg, { type: 'error' }> = { type: 'error', request: String(m.request ?? ''), error: String(m.error ?? '') };
 			if (typeof m.family === 'number') e.family = m.family;

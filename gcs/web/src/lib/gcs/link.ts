@@ -1,5 +1,6 @@
 /** The page's connection to the GCS backend: /api/schema, /api/link and /ws, or the dev-only mock (?mock). */
 import { normalizeSchema, parseServer } from './protocol';
+import { linkHolder } from './resources';
 import { parseAirframes } from './sim';
 import type { Airframe, ClientMsg, LinkInfo, Schema, ServerMsg } from './types';
 
@@ -33,7 +34,8 @@ export async function loadLink(mock: string | null): Promise<LinkInfo | null> {
 			mode: String(j.mode ?? ''),
 			connected: Boolean(j.connected),
 			via: typeof j.via === 'string' ? j.via : null,
-			target: typeof j.target === 'string' ? j.target : null
+			target: typeof j.target === 'string' ? j.target : null,
+			holder: linkHolder(j.holder)
 		};
 	} catch {
 		return null;

@@ -4,9 +4,11 @@
 	import DerivePanel from '$lib/components/DerivePanel.svelte';
 	import DevelopmentView from '$lib/components/DevelopmentView.svelte';
 	import MissionView from '$lib/components/MissionView.svelte';
+	import ResourcesPanel from '$lib/components/ResourcesPanel.svelte';
 	import { connect, loadAirframes, loadLink, loadSchema, mockFlag, type Connection } from '$lib/gcs/link';
 	import { isMissionRequest, type MissionMsg, type MissionRequest } from '$lib/gcs/mission';
 	import { euler } from '$lib/gcs/protocol';
+	import { busyBadge } from '$lib/gcs/resources';
 	import {
 		applyHeader,
 		editParam,
@@ -28,7 +30,7 @@
 		type ErrorSlot,
 		type SetupState
 	} from '$lib/gcs/setup';
-	import type { Airframe, ClientMsg, LinkInfo, MissionStatus, Schema, ServerMsg, SimStatus, Telemetry } from '$lib/gcs/types';
+	import type { Airframe, ClientMsg, LinkInfo, MissionStatus, RigResource, Schema, ServerMsg, SimStatus, Telemetry } from '$lib/gcs/types';
 
 	/** An edit with no echo after this is dropped (the backend retries every 500 ms). */
 	const ECHO_TIMEOUT_MS = 1500;
@@ -63,6 +65,11 @@
 	let simError = $state<string | null>(null);
 	let simPending = $state(false);
 	let simTimer: ReturnType<typeof setTimeout> | undefined;
+	/** The Development tab's Resources panel: the last scan, the refusal of the last terminate, the pid being terminated. */
+	let resources = $state.raw<RigResource[] | null>(null);
+	let resourcesError = $state<string | null>(null);
+	let terminating = $state<number | null>(null);
+	let terminateTimer: ReturnType<typeof setTimeout> | undefined;
 	let mockMode: string | null = null;
 	let conn: Connection | null = null;
 	const sentAt = new Map<number, number>();
@@ -78,6 +85,7 @@
 	const words = $derived(header ? statusWords(header) : []);
 	const view = $derived(tab ?? (header ? 'mission' : 'setup'));
 	const att = $derived(telem ? euler(telem.q) : null);
+	const busy = $derived(busyBadge(link));
 	const selectedAirframe = $derived(airframes?.find((a) => a.id === simAirframe) ?? null);
 	const presetLabel = $derived.by(() => {
 		if (!telem || !schema) return '—';
@@ -113,6 +121,21 @@
 		}, SIM_TIMEOUT_MS);
 		send(m);
 	}
+
+	function terminate(pid: number): void {
+		resourcesError = null;
+		terminating = pid;
+		clearTimeout(terminateTimer);
+		terminateTimer = setTimeout(() => (terminating = null), 10000);
+		send({ type: 'terminate', pid });
+	}
+
+	// A resource scan every 2 s while the Development tab is shown (the backend sends them to subscribed pages only).
+	$effect(() => {
+		if (!wsOpen || view !== 'development') return;
+		send({ type: 'resources_subscribe', on: true });
+		return () => send({ type: 'resources_subscribe', on: false });
+	});
 
 	async function reloadAirframes(): Promise<void> {
 		airframesError = null;
@@ -173,7 +196,20 @@
 			case 'sim_log':
 				simLog = [...simLog.slice(-999), m.line];
 				break;
+			case 'resources':
+				resources = m.resources;
+				if (terminating !== null && !m.resources.some((r) => r.holders.some((h) => h.pid === terminating))) {
+					terminating = null;
+					clearTimeout(terminateTimer);
+				}
+				break;
 			case 'error': {
+				if (m.request === 'terminate' || m.request === 'resources_request' || m.request === 'resources_subscribe') {
+					resourcesError = `${m.request}: ${m.error}`;
+					terminating = null;
+					clearTimeout(terminateTimer);
+					break;
+				}
 				if (m.request === 'sim_launch' || m.request === 'sim_stop') {
 					simError = `${m.request}: ${m.error}`;
 					simDone();
@@ -215,6 +251,7 @@
 							mission = null;
 							simStatus = null;
 							simDone();
+							terminating = null;
 						}
 					}
 				});
@@ -226,6 +263,7 @@
 			stopped = true;
 			clearInterval(expire);
 			clearTimeout(simTimer);
+			clearTimeout(terminateTimer);
 			conn?.close();
 		};
 	});
@@ -334,7 +372,11 @@
 		<div class="conn mono">
 			<span class="pill" class:ok={wsOpen} class:bad={!wsOpen}>backend {wsOpen ? 'open' : 'closed'}</span>
 			<span class="pill">link {link?.mode || '—'}</span>
-			{#if link?.via}
+			{#if busy}
+				<button type="button" class="pill bad busy" onclick={() => (tab = 'development')} title="Another process has the flight controller's USB port open, so this GCS does not open it. Development tab, Resources: see it and terminate it.">
+					{busy} — see Development › Resources
+				</button>
+			{:else if link?.via}
 				<span class="pill" class:ok={header} class:bad={!header}>
 					FC via {link.via === 'usb' ? `USB (${link.target})` : link.via === 'sim-bridge' ? 'sim bridge' : link.via}{header ? '' : link.connected ? ' (waiting for setup)' : ' (not answering)'}
 				</span>
@@ -448,6 +490,7 @@
 			onreload={reloadAirframes}
 			onsend={sendSim}
 		/>
+		<ResourcesPanel {resources} error={resourcesError} pending={terminating} {wsOpen} onrefresh={() => send({ type: 'resources_request' })} onterminate={terminate} />
 	</div>
 
 	{#if flashing || flashLog.length}
@@ -496,6 +539,11 @@
 	.pill.bad {
 		color: var(--bad);
 		border-color: var(--bad);
+	}
+	.pill.busy {
+		background: none;
+		font: inherit;
+		cursor: pointer;
 	}
 	.banner {
 		margin: 0;
