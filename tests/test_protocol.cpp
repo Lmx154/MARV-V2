@@ -105,6 +105,44 @@ int main() {
         CHECK(p.as(rb) && !p.as(sp));
     }
 
+    // The setup messages: each round-trips with its id and its fixed body length.
+    {
+        link::Decoder d;
+        link::Packet p{};
+        link::SetupRequest rq;
+        CHECK(decode_all(frame, link::encode(link::SetupRequest{}, frame), d, p));
+        CHECK(p.id == link::kSetupRequest && p.len == 0 && p.as(rq));
+
+        link::SetParam sp{};
+        CHECK(decode_all(frame, link::encode(link::SetParam{0x0102, -0.0347563f}, frame), d, p));
+        CHECK(p.id == link::kSetParam && p.len == 6 && p.as(sp) && sp.index == 0x0102 && sp.value == -0.0347563f);
+
+        link::SetKind sk{};
+        CHECK(decode_all(frame, link::encode(link::SetKind{2, 3}, frame), d, p));
+        CHECK(p.id == link::kSetKind && p.len == 2 && p.as(sk) && sk.family == 2 && sk.kind == 3);
+
+        link::SaveSetup sv;
+        CHECK(decode_all(frame, link::encode(link::SaveSetup{}, frame), d, p));
+        CHECK(p.id == link::kSaveSetup && p.len == 0 && p.as(sv) && !p.as(rq));
+
+        link::LoadFactory lf{};
+        CHECK(decode_all(frame, link::encode(link::LoadFactory{3}, frame), d, p));
+        CHECK(p.id == link::kLoadFactory && p.len == 1 && p.as(lf) && lf.id == 3);
+
+        const link::SetupHeader hi{0xA1B2C3D4u, 80, {0, 0, 2, 0, 0, 0, 0}, 0x01020304u, 0xFFFFFFFFu, 0u, 1, 0};
+        link::SetupHeader ho{};
+        CHECK(decode_all(frame, link::encode(hi, frame), d, p));
+        CHECK(p.id == link::kSetupHeader && p.len == 27 && p.as(ho));
+        CHECK(ho.schema_hash == hi.schema_hash && ho.param_count == 80 && std::memcmp(ho.kind, hi.kind, sizeof hi.kind) == 0);
+        CHECK(ho.running_crc == hi.running_crc && ho.staged_crc == hi.staged_crc && ho.stored_crc == 0u);
+        CHECK(ho.stored_valid == 1 && ho.armed == 0);
+
+        link::ParamValue pv{};
+        CHECK(decode_all(frame, link::encode(link::ParamValue{79, 8.54858e-06f}, frame), d, p));
+        CHECK(p.id == link::kParamValue && p.len == 6 && p.as(pv) && pv.index == 79 && pv.value == 8.54858e-06f);
+        CHECK(!p.as(sp));  // same layout as SetParam, told apart by its id
+    }
+
     // Reset has an empty body and is told apart from every other message by its id.
     {
         link::Decoder d;

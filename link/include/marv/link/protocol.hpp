@@ -9,6 +9,10 @@
 // A run starts with kReset. Lockstep: per simulation step the bridge sends kTruth (and kMission when it changes), then kSensors,
 // and waits for the kActuators whose t_us echoes it before stepping the world again. kTelemetry for
 // that tick arrives before it.
+//
+// Setup exchange (params.hpp): one reply per request is its acknowledgement. kSetupRequest and kLoadFactory -> kSetupHeader
+// then kParamValue for every index (the staged setup); kSetParam -> kParamValue echoing the value held; kSetKind and
+// kSaveSetup -> kSetupHeader.
 #pragma once
 
 #include <cstddef>
@@ -16,6 +20,7 @@
 #include <cstring>
 
 #include <marv/fsw/contracts.hpp>
+#include <marv/fsw/params.hpp>
 
 namespace marv::link {
 
@@ -26,8 +31,15 @@ enum MsgId : std::uint8_t {
     kReset = 0x04,      // PC -> FC: link::Reset; starts a new run from power-on state (sent first by the bridge)
     kSetPreset = 0x05,  // PC -> FC: link::SetPreset; stored (flash on the Pico), used from the next boot or kReset
     kReboot = 0x06,     // PC -> FC: link::Reboot; restarts the controller (a Pico drops off USB and re-enumerates)
+    kSetupRequest = 0x07,  // PC -> FC: link::SetupRequest; answered by kSetupHeader and kParamValue per index (staged)
+    kSetParam = 0x08,      // PC -> FC: link::SetParam; one staged value, answered by kParamValue
+    kSetKind = 0x09,       // PC -> FC: link::SetKind; one staged family kind, answered by kSetupHeader
+    kSaveSetup = 0x0A,     // PC -> FC: link::SaveSetup; stored := staged, answered by kSetupHeader
+    kLoadFactory = 0x0B,   // PC -> FC: link::LoadFactory; staged := a factory setup, answered like kSetupRequest
     kActuators = 0x81,  // FC -> PC: marv::ActuatorCommand; always the last reply of a tick
     kTelemetry = 0x82,  // FC -> PC: marv::Telemetry; sent before kActuators
+    kSetupHeader = 0x83,  // FC -> PC: link::SetupHeader
+    kParamValue = 0x84,   // FC -> PC: link::ParamValue
 };
 
 // Body sizes, fixed per message.
@@ -37,7 +49,14 @@ inline constexpr std::size_t kStateBody = 8 + 12 + 12 + 16 + 12 + 1;            
 inline constexpr std::size_t kReferenceBody = 1 + 12 + 12 + 12 + 4 + 4 + 16;           // 61
 inline constexpr std::size_t kMissionBody = 1 + 1 + kReferenceBody;                    // 63
 inline constexpr std::size_t kTelemetryBody = 8 + kStateBody + 24 + 1 + 1 + 12;         // 107
+inline constexpr std::size_t kSetParamBody = 2 + 4;                                     // 6
+inline constexpr std::size_t kSetKindBody = 1 + 1;                                      // 2
+inline constexpr std::size_t kLoadFactoryBody = 1;
+inline constexpr std::size_t kSetupHeaderBody = 4 + 2 + param::kFamilyCount + 4 + 4 + 4 + 1 + 1;  // 27
+inline constexpr std::size_t kParamValueBody = 2 + 4;                                   // 6
 inline constexpr std::size_t kMaxBody = kTelemetryBody > kSensorsBody ? kTelemetryBody : kSensorsBody;
+static_assert(kSetupHeaderBody <= kMaxBody && kSetParamBody <= kMaxBody && kParamValueBody <= kMaxBody,
+              "the setup messages fit the largest body");
 inline constexpr std::size_t kMaxPayload = 1 + kMaxBody + 2;
 // COBS adds one byte per 254 plus one; then the delimiter.
 inline constexpr std::size_t kMaxFrame = kMaxPayload + kMaxPayload / 254 + 2;
@@ -50,6 +69,41 @@ struct SetPreset {
 };
 // Restart the flight controller. No body.
 struct Reboot {};
+
+// Asks for the staged setup. No body.
+struct SetupRequest {};
+// Stages one parameter value (index into param::Setup::values).
+struct SetParam {
+    std::uint16_t index;
+    float value;
+};
+// Stages the kind of one family.
+struct SetKind {
+    std::uint8_t family;
+    std::uint8_t kind;
+};
+// Stores the staged setup (refused while armed). No body.
+struct SaveSetup {};
+// Stages the factory setup id (presets.hpp kFactory).
+struct LoadFactory {
+    std::uint8_t id;
+};
+// The setup state: schema, staged kinds, and the CRC (param::setup_crc) of the running, staged and stored setups.
+struct SetupHeader {
+    std::uint32_t schema_hash;
+    std::uint16_t param_count;
+    std::uint8_t kind[param::kFamilyCount];
+    std::uint32_t running_crc;
+    std::uint32_t staged_crc;
+    std::uint32_t stored_crc;
+    std::uint8_t stored_valid;
+    std::uint8_t armed;
+};
+// One staged parameter value.
+struct ParamValue {
+    std::uint16_t index;
+    float value;
+};
 
 // ---- CRC -----------------------------------------------------------------------------------------
 
@@ -128,6 +182,10 @@ struct Reader {
     const std::uint8_t* p;
     std::size_t n = 0;
     std::uint8_t u8() { return p[n++]; }
+    std::uint16_t u16() {
+        const std::uint16_t lo = u8();
+        return static_cast<std::uint16_t>(lo | (u8() << 8));
+    }
     std::uint32_t u32() {
         std::uint32_t v = 0;
         for (int i = 0; i < 4; ++i) v |= static_cast<std::uint32_t>(u8()) << (8 * i);
@@ -279,6 +337,41 @@ inline void put(Writer& w, const SetPreset& s) { w.u8(s.id); }
 inline void get(Reader& r, SetPreset& s) { s.id = r.u8(); }
 inline void put(Writer&, const Reboot&) {}
 inline void get(Reader&, Reboot&) {}
+inline void put(Writer&, const SetupRequest&) {}
+inline void get(Reader&, SetupRequest&) {}
+inline void put(Writer& w, const SetParam& s) { w.u16(s.index); w.f32(s.value); }
+inline void get(Reader& r, SetParam& s) { s.index = r.u16(); s.value = r.f32(); }
+inline void put(Writer& w, const SetKind& s) { w.u8(s.family); w.u8(s.kind); }
+inline void get(Reader& r, SetKind& s) { s.family = r.u8(); s.kind = r.u8(); }
+inline void put(Writer&, const SaveSetup&) {}
+inline void get(Reader&, SaveSetup&) {}
+inline void put(Writer& w, const LoadFactory& l) { w.u8(l.id); }
+inline void get(Reader& r, LoadFactory& l) { l.id = r.u8(); }
+
+inline void put(Writer& w, const SetupHeader& h) {
+    w.u32(h.schema_hash);
+    w.u16(h.param_count);
+    for (std::uint8_t k : h.kind) w.u8(k);
+    w.u32(h.running_crc);
+    w.u32(h.staged_crc);
+    w.u32(h.stored_crc);
+    w.u8(h.stored_valid);
+    w.u8(h.armed);
+}
+
+inline void get(Reader& r, SetupHeader& h) {
+    h.schema_hash = r.u32();
+    h.param_count = r.u16();
+    for (std::uint8_t& k : h.kind) k = r.u8();
+    h.running_crc = r.u32();
+    h.staged_crc = r.u32();
+    h.stored_crc = r.u32();
+    h.stored_valid = r.u8();
+    h.armed = r.u8();
+}
+
+inline void put(Writer& w, const ParamValue& v) { w.u16(v.index); w.f32(v.value); }
+inline void get(Reader& r, ParamValue& v) { v.index = r.u16(); v.value = r.f32(); }
 
 template <class T> struct Traits;
 template <> struct Traits<SensorBus> {
@@ -300,6 +393,34 @@ template <> struct Traits<SetPreset> {
 template <> struct Traits<Reboot> {
     static constexpr MsgId id = kReboot;
     static constexpr std::size_t body = 0;
+};
+template <> struct Traits<SetupRequest> {
+    static constexpr MsgId id = kSetupRequest;
+    static constexpr std::size_t body = 0;
+};
+template <> struct Traits<SetParam> {
+    static constexpr MsgId id = kSetParam;
+    static constexpr std::size_t body = kSetParamBody;
+};
+template <> struct Traits<SetKind> {
+    static constexpr MsgId id = kSetKind;
+    static constexpr std::size_t body = kSetKindBody;
+};
+template <> struct Traits<SaveSetup> {
+    static constexpr MsgId id = kSaveSetup;
+    static constexpr std::size_t body = 0;
+};
+template <> struct Traits<LoadFactory> {
+    static constexpr MsgId id = kLoadFactory;
+    static constexpr std::size_t body = kLoadFactoryBody;
+};
+template <> struct Traits<SetupHeader> {
+    static constexpr MsgId id = kSetupHeader;
+    static constexpr std::size_t body = kSetupHeaderBody;
+};
+template <> struct Traits<ParamValue> {
+    static constexpr MsgId id = kParamValue;
+    static constexpr std::size_t body = kParamValueBody;
 };
 template <> struct Traits<MissionCommand> {
     static constexpr MsgId id = kMission;

@@ -1,0 +1,225 @@
+// The parameter table: the one source of truth for every tunable of the flight software, its range and its origin.
+// Expanded by params.hpp (flight side: identifiers and numbers only, the string columns are dropped) and by the GCS
+// (every column). Row kinds, in file order:
+//   MARV_FAMILY(family, label)                        the seven families, in wire order (Setup::kind[] index)
+//   MARV_KIND(family, kind, name, label, summary)     a kind of the family; its index is its order within the family
+//   MARV_PART(family, kind, id, label)                a group of the kind's parameters: every MARV_PARAM up to the next part
+//   MARV_PARAM(family, kind, id, label, unit, default, min, max, step, digits, note, source)
+// A parameter's index (Setup::values[]) is its order in the file. Renaming, adding, removing or moving a family, kind or
+// parameter changes kSchemaHash, which discards a stored setup. The comment above each parameter is the reason for its
+// range. Units are the flight software's (SI, rad).
+
+#ifndef MARV_FAMILY
+#define MARV_FAMILY(family, label)
+#endif
+#ifndef MARV_KIND
+#define MARV_KIND(family, kind, name, label, summary)
+#endif
+#ifndef MARV_PART
+#define MARV_PART(family, kind, id, label)
+#endif
+#ifndef MARV_PARAM
+#define MARV_PARAM(family, kind, id, label, unit, dflt, min, max, step, digits, note, source)
+#endif
+
+MARV_FAMILY(vehicle, "Vehicle")
+MARV_FAMILY(sensors, "Sensors")
+MARV_FAMILY(estimator, "Estimator")
+MARV_FAMILY(guidance, "Guidance")
+MARV_FAMILY(controller, "Controller")
+MARV_FAMILY(allocation, "Allocation")
+MARV_FAMILY(actuators, "Actuators")
+
+// ---- vehicle -----------------------------------------------------------------------------------------------------------
+
+MARV_KIND(vehicle, quad_x3, "quad-x3", "Quadrotor X3", "The Gazebo X3 of sitl/gazebo/marv_quad.sdf: mass, inertia, rotor positions (FRD) and yaw torque per thrust, as the controller, allocation and estimators assume them.")
+MARV_PART(vehicle, quad_x3, airframe, "Airframe")
+// Toolbox vehicle.ts mass range: a 0.3 kg micro to a 5 kg heavy-lift quad.
+MARV_PARAM(vehicle, quad_x3, mass, "Mass", "kg", 1.5f + 4.f * 0.005f, 0.3f, 5.f, 0.01f, 2, "Take-off mass; hover thrust and every force command scale with it.", "vehicle.hpp:12 base_link 1.5 kg (SDF:161) + four rotors of 0.005 kg (SDF:259, 324, 389, 454)")
+// Toolbox vehicle.ts Ixx/Iyy range.
+MARV_PARAM(vehicle, quad_x3, Ixx, "Inertia Ixx (roll)", "kg·m²", 0.0347563f, 0.002f, 0.1f, 0.0001f, 4, "Principal moment about body x.", "vehicle.hpp:16 base_link principal inertia (SDF:163)")
+MARV_PARAM(vehicle, quad_x3, Iyy, "Inertia Iyy (pitch)", "kg·m²", 0.07f, 0.002f, 0.1f, 0.0001f, 4, "Principal moment about body y.", "vehicle.hpp:17 base_link principal inertia (SDF:166)")
+// Toolbox vehicle.ts Izz range.
+MARV_PARAM(vehicle, quad_x3, Izz, "Inertia Izz (yaw)", "kg·m²", 0.0977f, 0.002f, 0.2f, 0.0001f, 4, "Principal moment about body z.", "vehicle.hpp:18 base_link principal inertia (SDF:168)")
+MARV_PART(vehicle, quad_x3, geometry, "Rotor positions")
+// Rotor axes within 0.5 m of the centre of gravity: frames up to 1 m across.
+MARV_PARAM(vehicle, quad_x3, rotor_x_0, "Rotor 0 x (front)", "m", 0.13f, -0.5f, 0.5f, 0.005f, 3, "Body x of rotor 0 (ccw) from the centre of gravity.", "vehicle.hpp:23 SDF:256 rotor_0 (0.13, -0.22) FLU")
+MARV_PARAM(vehicle, quad_x3, rotor_x_1, "Rotor 1 x (front)", "m", -0.13f, -0.5f, 0.5f, 0.005f, 3, "Body x of rotor 1 (ccw) from the centre of gravity.", "vehicle.hpp:23 SDF:321 rotor_1 (-0.13, 0.2) FLU")
+MARV_PARAM(vehicle, quad_x3, rotor_x_2, "Rotor 2 x (front)", "m", 0.13f, -0.5f, 0.5f, 0.005f, 3, "Body x of rotor 2 (cw) from the centre of gravity.", "vehicle.hpp:23 SDF:386 rotor_2 (0.13, 0.22) FLU")
+MARV_PARAM(vehicle, quad_x3, rotor_x_3, "Rotor 3 x (front)", "m", -0.13f, -0.5f, 0.5f, 0.005f, 3, "Body x of rotor 3 (cw) from the centre of gravity.", "vehicle.hpp:23 SDF:451 rotor_3 (-0.13, -0.2) FLU")
+MARV_PARAM(vehicle, quad_x3, rotor_y_0, "Rotor 0 y (right)", "m", 0.22f, -0.5f, 0.5f, 0.005f, 3, "Body y of rotor 0 (ccw) from the centre of gravity.", "vehicle.hpp:24 SDF:256, FLU y negated")
+MARV_PARAM(vehicle, quad_x3, rotor_y_1, "Rotor 1 y (right)", "m", -0.2f, -0.5f, 0.5f, 0.005f, 3, "Body y of rotor 1 (ccw) from the centre of gravity.", "vehicle.hpp:24 SDF:321, FLU y negated")
+MARV_PARAM(vehicle, quad_x3, rotor_y_2, "Rotor 2 y (right)", "m", -0.22f, -0.5f, 0.5f, 0.005f, 3, "Body y of rotor 2 (cw) from the centre of gravity.", "vehicle.hpp:24 SDF:386, FLU y negated")
+MARV_PARAM(vehicle, quad_x3, rotor_y_3, "Rotor 3 y (right)", "m", 0.2f, -0.5f, 0.5f, 0.005f, 3, "Body y of rotor 3 (cw) from the centre of gravity.", "vehicle.hpp:24 SDF:451, FLU y negated")
+MARV_PART(vehicle, quad_x3, rotors, "Rotor torque")
+// Toolbox vehicle.ts kM range.
+MARV_PARAM(vehicle, quad_x3, moment_constant, "Yaw torque per thrust", "m", 0.016f, 0.005f, 0.06f, 0.001f, 3, "Rotor drag torque per newton of thrust (N·m/N): the only yaw authority.", "vehicle.hpp:36 yaw torque = km * thrust, SDF:524")
+MARV_PART(vehicle, quad_x3, model, "Gravity model")
+// Toolbox estimator.ts gravity range: the Moon (1.6) to above Jupiter's surface gravity.
+MARV_PARAM(vehicle, quad_x3, gravity, "Gravity", "m/s²", 9.8066f, 1.6f, 25.f, 0.0001f, 4, "Gravity the controller, allocation and estimators assume; a mismatch with the world reads as an acceleration.", "vehicle.hpp:9 SDF:71 <gravity>0 0 -9.8066</gravity>")
+
+// ---- sensors -----------------------------------------------------------------------------------------------------------
+
+MARV_KIND(sensors, suite, "suite", "madflight FC3", "Noise the filters assume for the FC3's LSM6DSV IMU, BMP580 barometer, MMC5603NJ magnetometer and an M10-class GNSS, the Earth field at the origin, and the stillness test of the alignment.")
+MARV_PART(sensors, suite, accelerometer, "Accelerometer")
+// Toolbox estimator.ts sigmaAccel range; zero process noise would freeze the filter.
+MARV_PARAM(sensors, suite, sigma_accel, "Accel noise", "m/s²", 0.01316f, 0.001f, 1.f, 0.0001f, 5, "White noise per IMU sample (1σ) the filters assume.", "eskf.hpp:22 An 60 ug/sqrt(Hz) (high-performance) * sqrt(500 Hz) = 1.342 mg (LSM6DSV DS13476 p.10 Table 2)")
+// Toolbox estimator.ts sigmaAccelWalk range; 0 holds the bias estimate fixed.
+MARV_PARAM(sensors, suite, sigma_accel_walk, "Accel bias walk", "m/s²/√s", 0.002f, 0.f, 0.05f, 0.0005f, 4, "Random walk of the accelerometer bias.", "eskf.hpp:24 the datasheet gives no bias instability; the fsw.ts preset")
+MARV_PART(sensors, suite, gyroscope, "Gyroscope")
+// Toolbox estimator.ts sigmaGyro range; zero process noise would freeze the filter.
+MARV_PARAM(sensors, suite, sigma_gyro, "Gyro noise", "rad/s", 1.093e-3f, 0.0001f, 0.05f, 0.00001f, 6, "White noise per IMU sample (1σ) the filters assume.", "eskf.hpp:23 Rn 2.8 mdps/sqrt(Hz) * sqrt(500 Hz) = 0.0626 dps (LSM6DSV DS13476 p.10 Table 2)")
+// Toolbox estimator.ts sigmaGyroWalk range; 0 holds the bias estimate fixed.
+MARV_PARAM(sensors, suite, sigma_gyro_walk, "Gyro bias walk", "rad/s/√s", 0.0002f, 0.f, 0.005f, 0.00005f, 5, "Random walk of the gyro bias.", "eskf.hpp:25 the datasheet gives no bias instability; the fsw.ts preset")
+MARV_PART(sensors, suite, gnss, "GNSS")
+// Toolbox sensors.ts gnssPosSigma range: RTK centimetres to a poor single-frequency fix.
+MARV_PARAM(sensors, suite, sigma_gnss_pos, "GNSS position noise", "m", 1.0f, 0.05f, 10.f, 0.05f, 2, "Horizontal, per axis, per fix (1σ).", "eskf.hpp:32 ASSUMED u-blox M10 class (the FC3's receiver is an unspecified external module)")
+// Same range as the horizontal position noise.
+MARV_PARAM(sensors, suite, sigma_gnss_alt, "GNSS altitude noise", "m", 1.5f, 0.05f, 10.f, 0.05f, 2, "Vertical, per fix (1σ).", "eskf.hpp:33 ASSUMED u-blox M10 class")
+// Toolbox sensors.ts gnssVelSigma range.
+MARV_PARAM(sensors, suite, sigma_gnss_vel, "GNSS velocity noise", "m/s", 0.05f, 0.01f, 2.f, 0.01f, 2, "Per axis, per fix (1σ).", "eskf.hpp:34 ASSUMED u-blox M10 class")
+MARV_PART(sensors, suite, barometer, "Barometer")
+// Toolbox sensors.ts baroSigma maximum; the floor keeps R positive (a zero R lets one sample collapse the covariance).
+MARV_PARAM(sensors, suite, sigma_baro, "Baro noise", "m", 0.0208f, 0.001f, 3.f, 0.0001f, 4, "Height noise per sample (1σ).", "eskf.hpp:35 BMP580 (p.9 Table 1) 0.25 Pa RMS * dh/dP = 1 / (1.225 kg/m^3 * g)")
+MARV_PART(sensors, suite, magnetometer, "Magnetometer")
+// Toolbox sensors.ts magSigma range.
+MARV_PARAM(sensors, suite, sigma_heading, "Heading noise", "rad", 0.0092f, 0.005f, 0.5f, 0.0001f, 4, "Magnetometer heading noise per sample (1σ).", "eskf.hpp:36 MMC5603NJ (p.2) 2.0 mG RMS across the 0.2165 G horizontal field")
+// The Earth's field is 25 to 65 µT in total, so no component exceeds 70 µT.
+MARV_PARAM(sensors, suite, mag_ref_ned_ut_x, "Earth field north", "µT", 21.62762f, -70.f, 70.f, 0.01f, 5, "North component of the Earth field at the origin; sets the declination.", "eskf.hpp:50 the Earth field (NED, microtesla) at the world origin")
+MARV_PARAM(sensors, suite, mag_ref_ned_ut_y, "Earth field east", "µT", 0.96861f, -70.f, 70.f, 0.01f, 5, "East component of the Earth field at the origin; sets the declination.", "eskf.hpp:50 the Earth field (NED, microtesla) at the world origin")
+MARV_PARAM(sensors, suite, mag_ref_ned_ut_z, "Earth field down", "µT", 42.91632f, -70.f, 70.f, 0.01f, 5, "Down component of the Earth field at the origin; sets the inclination.", "eskf.hpp:50 the Earth field (NED, microtesla) at the world origin")
+MARV_PART(sensors, suite, alignment, "Alignment")
+// A tenth of a second holds too few samples to average; ten seconds of stillness is a long wait on the pad.
+MARV_PARAM(sensors, suite, align_window_s, "Alignment window", "s", 1.0f, 0.1f, 10.f, 0.1f, 1, "Unbroken stillness averaged before the filter starts.", "eskf.hpp:56 IMU, magnetometer and barometer samples are averaged over align_window_s of unbroken stillness")
+// Up to 0.2 g of |norm(f) - g| still counts as at rest.
+MARV_PARAM(sensors, suite, still_g_err, "Still: gravity error", "m/s²", 0.4f, 0.01f, 2.f, 0.01f, 2, "Largest | |f| - g | of a still sample.", "eskf.hpp:57 3 sigma per axis of the 12 mg turn-on bias, plus noise")
+// Up to 1 rad/s (57 dps) of rotation still counts as at rest.
+MARV_PARAM(sensors, suite, still_rate, "Still: rotation rate", "rad/s", 0.1f, 0.001f, 1.f, 0.001f, 3, "Largest |w| of a still sample.", "eskf.hpp:58 3 sigma per axis of the 1 dps turn-on bias, plus noise")
+// Within a few per-sample accelerometer sigmas up to 0.1 g.
+MARV_PARAM(sensors, suite, still_accel_dev, "Still: accel spread", "m/s²", 0.08f, 0.001f, 1.f, 0.001f, 3, "Largest distance of f from the window's mean.", "eskf.hpp:59 6 per-sample sigmas (norm of three axes)")
+// Within a few per-sample gyro sigmas up to 0.1 rad/s.
+MARV_PARAM(sensors, suite, still_gyro_dev, "Still: gyro spread", "rad/s", 0.0066f, 0.0001f, 0.1f, 0.0001f, 4, "Largest distance of w from the window's mean.", "eskf.hpp:60 6 per-sample sigmas (norm of three axes)")
+
+// ---- estimator ---------------------------------------------------------------------------------------------------------
+
+MARV_KIND(estimator, eskf, "eskf", "ESKF", "15-state error-state Kalman filter (Solà 2017): position, velocity, attitude, accelerometer and gyro biases.")
+MARV_PART(estimator, eskf, init, "Initialisation")
+// 1 cm to 50 m: from a surveyed pad to no position knowledge beyond the first fix.
+MARV_PARAM(estimator, eskf, sigma_p0, "Position prior", "m", 1.f, 0.01f, 50.f, 0.01f, 2, "Position 1σ at alignment, per axis.", "eskf.hpp:43 fsw.ts createEstimator (sigmaP 1)")
+// 1 cm/s to 20 m/s: the vehicle is at rest when it aligns.
+MARV_PARAM(estimator, eskf, sigma_v0, "Velocity prior", "m/s", 1.f, 0.01f, 20.f, 0.01f, 2, "Velocity 1σ at alignment, per axis.", "eskf.hpp:44 fsw.ts createEstimator (sigmaV 1)")
+// 0.06 deg to 57 deg: the levelled tilt is good to the accelerometer bias over g.
+MARV_PARAM(estimator, eskf, sigma_theta0, "Attitude prior", "rad", 0.025f, 0.001f, 1.f, 0.001f, 3, "Attitude 1σ at alignment, per axis.", "eskf.hpp:45 12 mg / g = 0.012 rad of tilt, 1.98 times that on the tilt-compensated heading")
+// 0.1 mg to 0.2 g: past the worst MEMS turn-on bias.
+MARV_PARAM(estimator, eskf, sigma_ab0, "Accel bias prior", "m/s²", 0.1177f, 0.001f, 2.f, 0.0001f, 4, "Accelerometer bias 1σ at alignment, per axis.", "eskf.hpp:46 LSM6DSV typical zero-g level, 12 mg (p.10 Table 2)")
+
+MARV_KIND(estimator, ekf, "ekf", "EKF", "15-state extended Kalman filter on the full state; the same process noise, priors and measurements as the ESKF.")
+MARV_PART(estimator, ekf, init, "Initialisation")
+// As the ESKF's.
+MARV_PARAM(estimator, ekf, sigma_p0, "Position prior", "m", 1.f, 0.01f, 50.f, 0.01f, 2, "Position 1σ at alignment, per axis.", "eskf.hpp:43 fsw.ts createEstimator (sigmaP 1)")
+MARV_PARAM(estimator, ekf, sigma_v0, "Velocity prior", "m/s", 1.f, 0.01f, 20.f, 0.01f, 2, "Velocity 1σ at alignment, per axis.", "eskf.hpp:44 fsw.ts createEstimator (sigmaV 1)")
+MARV_PARAM(estimator, ekf, sigma_theta0, "Attitude prior", "rad", 0.025f, 0.001f, 1.f, 0.001f, 3, "Attitude 1σ at alignment, per axis.", "eskf.hpp:45 12 mg / g = 0.012 rad of tilt, 1.98 times that on the tilt-compensated heading")
+MARV_PARAM(estimator, ekf, sigma_ab0, "Accel bias prior", "m/s²", 0.1177f, 0.001f, 2.f, 0.0001f, 4, "Accelerometer bias 1σ at alignment, per axis.", "eskf.hpp:46 LSM6DSV typical zero-g level, 12 mg (p.10 Table 2)")
+
+MARV_KIND(estimator, mahony, "mahony", "Mahony", "Nonlinear complementary filter on SO(3) (Mahony, Hamel & Pflimlin 2008) with a PI gyro-bias term; position and velocity from the translation blend.")
+MARV_PART(estimator, mahony, attitude, "Attitude and gyro bias")
+// Toolbox estimator.ts kP range.
+MARV_PARAM(estimator, mahony, k_p, "Proportional gain kP", "1/s", 0.5f, 0.f, 10.f, 0.05f, 2, "Rate at which the attitude is pulled toward the gravity direction and the magnetometer heading.", "mahony.hpp:20 mahony block default (tuned in the lab on quad-square)")
+// Toolbox estimator.ts kI range; 0 turns the bias estimate off.
+MARV_PARAM(estimator, mahony, k_i, "Integral gain kI (gyro bias)", "1/s²", 0.1f, 0.f, 2.f, 0.005f, 3, "Integrates the correction into the gyro-bias estimate.", "mahony.hpp:21 mahony block default (tuned in the lab on quad-square)")
+// Toolbox estimator.ts accelGate range.
+MARV_PARAM(estimator, mahony, accel_gate, "Accelerometer gate", "m/s²", 0.25f, 0.f, 5.f, 0.05f, 2, "Tilt correction only while | |a_m| - g | is below this.", "mahony.hpp:22 mahony block default")
+MARV_PART(estimator, mahony, translation, "Position and velocity")
+// Toolbox estimator.ts kPos, kVel, kBaro ranges.
+MARV_PARAM(estimator, mahony, k_pos, "GNSS position gain", "1/s", 1.f, 0.f, 10.f, 0.05f, 2, "Crossover of the position blend toward the GNSS fix.", "complementary.hpp:19 translationBlend (complementary block default, tuned in the lab on quad-square)")
+MARV_PARAM(estimator, mahony, k_vel, "GNSS velocity gain", "1/s", 3.f, 0.f, 10.f, 0.05f, 2, "Crossover of the velocity blend toward the GNSS velocity.", "complementary.hpp:20 translationBlend (complementary block default, tuned in the lab on quad-square)")
+MARV_PARAM(estimator, mahony, k_baro, "Barometer gain", "1/s", 1.f, 0.f, 10.f, 0.05f, 2, "Crossover of the height blend toward the barometer.", "complementary.hpp:21 translationBlend (complementary block default, tuned in the lab on quad-square)")
+
+MARV_KIND(estimator, complementary, "complementary", "Complementary", "Integrated gyro pulled toward the accelerometer's gravity direction and the magnetometer heading; position and velocity from the translation blend. No gyro-bias estimate.")
+MARV_PART(estimator, complementary, attitude, "Attitude")
+// Toolbox estimator.ts kAcc range.
+MARV_PARAM(estimator, complementary, k_acc, "Tilt correction gain", "1/s", 0.75f, 0.f, 10.f, 0.05f, 2, "Rate at which the attitude is pulled toward the gravity direction.", "complementary.hpp:49 tilt correction")
+// Toolbox estimator.ts accelGate range.
+MARV_PARAM(estimator, complementary, accel_gate, "Accelerometer gate", "m/s²", 0.25f, 0.f, 5.f, 0.05f, 2, "Tilt correction only while | |a_m| - g | is below this.", "complementary.hpp:50 complementary block default")
+// Toolbox estimator.ts kMag range.
+MARV_PARAM(estimator, complementary, k_mag, "Heading correction gain", "1/s", 1.f, 0.f, 10.f, 0.05f, 2, "Rate at which the heading is pulled toward the magnetometer.", "complementary.hpp:51 heading correction")
+MARV_PART(estimator, complementary, translation, "Position and velocity")
+// Toolbox estimator.ts kPos, kVel, kBaro ranges.
+MARV_PARAM(estimator, complementary, k_pos, "GNSS position gain", "1/s", 1.f, 0.f, 10.f, 0.05f, 2, "Crossover of the position blend toward the GNSS fix.", "complementary.hpp:19 translationBlend (complementary block default, tuned in the lab on quad-square)")
+MARV_PARAM(estimator, complementary, k_vel, "GNSS velocity gain", "1/s", 3.f, 0.f, 10.f, 0.05f, 2, "Crossover of the velocity blend toward the GNSS velocity.", "complementary.hpp:20 translationBlend (complementary block default, tuned in the lab on quad-square)")
+MARV_PARAM(estimator, complementary, k_baro, "Barometer gain", "1/s", 1.f, 0.f, 10.f, 0.05f, 2, "Crossover of the height blend toward the barometer.", "complementary.hpp:21 translationBlend (complementary block default, tuned in the lab on quad-square)")
+
+// ---- guidance ----------------------------------------------------------------------------------------------------------
+
+MARV_KIND(guidance, passthrough, "passthrough", "Passthrough", "The mission reference reaches the controller unchanged.")
+
+// ---- controller --------------------------------------------------------------------------------------------------------
+
+MARV_KIND(controller, cascaded_pid, "cascaded-pid", "Cascaded PID", "Position, velocity, attitude and rate loops, each written as an acceleration command: the airframe enters only through F = m a and tau = I alpha.")
+MARV_PART(controller, cascaded_pid, position, "Position loop")
+// Toolbox controller.ts kpPos range.
+MARV_PARAM(controller, cascaded_pid, pos_p, "Position gain", "1/s", 0.7f, 0.f, 5.f, 0.05f, 2, "Velocity setpoint per metre of position error.", "controller.cpp:47 w_n = sqrt(Kv Kp) = 1.18 rad/s, about 7x below the attitude loop, zeta 0.85")
+MARV_PART(controller, cascaded_pid, velocity, "Velocity loop")
+// Toolbox controller.ts kpVel range.
+MARV_PARAM(controller, cascaded_pid, vel_p, "Velocity P gain", "1/s", 2.0f, 0.f, 6.f, 0.05f, 2, "Acceleration per m/s of velocity error.", "controller.cpp:48 Kv * kVelMax = 4 m/s^2 bounds a velocity step to 22 deg of tilt")
+// Toolbox controller.ts kiVel range.
+MARV_PARAM(controller, cascaded_pid, vel_i, "Velocity I gain", "1/s²", 0.5f, 0.f, 3.f, 0.05f, 2, "Acceleration per metre of integrated velocity error.", "controller.cpp:49 corner Ki / Kv = 0.25 rad/s; takes up what the thrust model and the rotor drag leave")
+// Up to about 1 g of acceleration from the integrator.
+MARV_PARAM(controller, cascaded_pid, vel_int_accel, "Velocity integrator limit", "m/s²", 2.f, 0.f, 10.f, 0.1f, 1, "Most acceleration the velocity integrator may add.", "controller.cpp:50")
+MARV_PART(controller, cascaded_pid, attitude, "Attitude loop")
+// Up to 30 1/s: the attitude loop must stay well below the rate loop's bandwidth.
+MARV_PARAM(controller, cascaded_pid, att_p_x, "Attitude gain roll", "1/s", 8.f, 0.f, 30.f, 0.1f, 1, "Roll-rate setpoint per radian of attitude error.", "controller.cpp:32 a third of the rate bandwidth on roll and pitch")
+MARV_PARAM(controller, cascaded_pid, att_p_y, "Attitude gain pitch", "1/s", 8.f, 0.f, 30.f, 0.1f, 1, "Pitch-rate setpoint per radian of attitude error.", "controller.cpp:32 a third of the rate bandwidth on roll and pitch")
+MARV_PARAM(controller, cascaded_pid, att_p_z, "Attitude gain yaw", "1/s", 4.f, 0.f, 30.f, 0.1f, 1, "Yaw-rate setpoint per radian of heading error.", "controller.cpp:32")
+// Up to 5 rad/s^2, past the 1.02 rad/s^2 the yaw torque limit gives this airframe.
+MARV_PARAM(controller, cascaded_pid, yaw_decel, "Yaw deceleration", "rad/s²", 0.7f, 0.05f, 5.f, 0.05f, 2, "Caps the yaw-rate setpoint at sqrt(2 a |e|) so a heading step stops without overshoot.", "controller.cpp:33 70 % of the torque-limited 1.02 rad/s^2 (0.93 rad/s^2 measured in the sim)")
+// Up to 1 rad/s (57 dps).
+MARV_PARAM(controller, cascaded_pid, yaw_rate_still, "Heading hold below", "rad/s", 0.1f, 0.f, 1.f, 0.01f, 2, "Below this yaw rate, with no yaw-rate reference, the heading is held.", "controller.cpp:41")
+MARV_PART(controller, cascaded_pid, rate, "Rate loop")
+// Up to 100 1/s, past the 40 to 80 rad/s motor poles that bound the loop.
+MARV_PARAM(controller, cascaded_pid, rate_p_x, "Rate P roll", "1/s", 25.f, 0.f, 100.f, 0.5f, 1, "Roll acceleration per rad/s of rate error.", "controller.cpp:22 about 45 deg of phase margin against the 40..80 rad/s motor poles")
+MARV_PARAM(controller, cascaded_pid, rate_p_y, "Rate P pitch", "1/s", 25.f, 0.f, 100.f, 0.5f, 1, "Pitch acceleration per rad/s of rate error.", "controller.cpp:22 about 45 deg of phase margin against the 40..80 rad/s motor poles")
+MARV_PARAM(controller, cascaded_pid, rate_p_z, "Rate P yaw", "1/s", 10.f, 0.f, 100.f, 0.5f, 1, "Yaw acceleration per rad/s of rate error.", "controller.cpp:22 yaw authority is small; more bandwidth only saturates")
+// Up to 500 1/s^2: the corner Ki / Kp stays below the rate bandwidth.
+MARV_PARAM(controller, cascaded_pid, rate_i_x, "Rate I roll", "1/s²", 62.5f, 0.f, 500.f, 0.5f, 1, "Roll acceleration per radian of integrated rate error.", "controller.cpp:23 Ki = Kp * Kp / 10: the integrator corner a decade lower")
+MARV_PARAM(controller, cascaded_pid, rate_i_y, "Rate I pitch", "1/s²", 62.5f, 0.f, 500.f, 0.5f, 1, "Pitch acceleration per radian of integrated rate error.", "controller.cpp:23 Ki = Kp * Kp / 10: the integrator corner a decade lower")
+MARV_PARAM(controller, cascaded_pid, rate_i_z, "Rate I yaw", "1/s²", 10.f, 0.f, 500.f, 0.5f, 1, "Yaw acceleration per radian of integrated rate error.", "controller.cpp:23")
+// Up to 0.5: the loop bandwidth is Kp / (1 + Kd), so more derivative mainly slows it.
+MARV_PARAM(controller, cascaded_pid, rate_d_x, "Rate D roll", "", 0.05f, 0.f, 0.5f, 0.005f, 3, "Roll acceleration per rad/s² of rate change.", "controller.cpp:24")
+MARV_PARAM(controller, cascaded_pid, rate_d_y, "Rate D pitch", "", 0.05f, 0.f, 0.5f, 0.005f, 3, "Pitch acceleration per rad/s² of rate change.", "controller.cpp:24")
+MARV_PARAM(controller, cascaded_pid, rate_d_z, "Rate D yaw", "", 0.f, 0.f, 0.5f, 0.005f, 3, "Yaw acceleration per rad/s² of rate change.", "controller.cpp:24")
+// Up to 50 rad/s^2, about the most roll acceleration this airframe can make.
+MARV_PARAM(controller, cascaded_pid, rate_int_accel, "Rate integrator limit", "rad/s²", 5.f, 0.f, 50.f, 0.5f, 1, "Most angular acceleration the rate integrator may add.", "controller.cpp:25")
+MARV_PART(controller, cascaded_pid, limits, "Limits")
+// Toolbox controller.ts rateMax range.
+MARV_PARAM(controller, cascaded_pid, rate_max_x, "Max roll rate", "rad/s", 3.f, 0.5f, 10.f, 0.1f, 1, "Limit of the roll-rate setpoint.", "controller.cpp:26")
+MARV_PARAM(controller, cascaded_pid, rate_max_y, "Max pitch rate", "rad/s", 3.f, 0.5f, 10.f, 0.1f, 1, "Limit of the pitch-rate setpoint.", "controller.cpp:26")
+MARV_PARAM(controller, cascaded_pid, rate_max_z, "Max yaw rate", "rad/s", 1.5f, 0.5f, 10.f, 0.1f, 1, "Limit of the yaw-rate setpoint.", "controller.cpp:26")
+// Toolbox controller.ts vMax range.
+MARV_PARAM(controller, cascaded_pid, vel_max, "Max velocity setpoint", "m/s", 2.f, 0.5f, 10.f, 0.1f, 1, "Norm limit of the velocity setpoint.", "controller.cpp:51")
+// Toolbox controller.ts tiltMaxDeg range.
+MARV_PARAM(controller, cascaded_pid, tilt_max_deg, "Max tilt", "deg", 35.f, 5.f, 60.f, 1.f, 0, "The thrust vector stays within this angle of vertical.", "controller.cpp:54 kTanTiltMax = tan(35 deg)")
+// Toolbox controller.ts thrustMinG range.
+MARV_PARAM(controller, cascaded_pid, thrust_min_g, "Min vertical thrust", "g", 0.2f, 0.f, 1.f, 0.05f, 2, "Floor of the vertical thrust demand, in multiples of the weight.", "controller.cpp:55 kThrustMin = 0.2 m g")
+// 30 % to all of the four rotors' full thrust; what is left is for the torques.
+MARV_PARAM(controller, cascaded_pid, thrust_max_frac, "Max total thrust", "0–1", 0.9f, 0.3f, 1.f, 0.01f, 2, "Ceiling of the total thrust, as a fraction of the four rotors' maximum.", "controller.cpp:56 kThrustMax = 0.9 * 4 * kMaxRotorThrust; the rest is left for the torques")
+// Up to 1 N m, well past what the rotor headroom of this airframe can carry.
+MARV_PARAM(controller, cascaded_pid, yaw_torque_max, "Max yaw torque", "N·m", 0.1f, 0.f, 1.f, 0.005f, 3, "Yaw torque limit; a yaw demand the rotors cannot carry is cut, never paid for with thrust.", "controller.cpp:38 4 km 1.74 N of hover headroom = 0.111 N m; 0.1 keeps 10 % for roll and pitch")
+
+// ---- allocation --------------------------------------------------------------------------------------------------------
+
+MARV_KIND(allocation, quad_x, "quad-x", "Quad X", "Force and torque to four rotor thrusts from the vehicle geometry: collective up to m g, then roll and pitch, then the rest of the collective, then yaw.")
+
+// ---- actuators ---------------------------------------------------------------------------------------------------------
+
+MARV_KIND(actuators, rotor_speed_fraction, "rotor-speed-fraction", "Rotor speed fraction", "Each motor command is the rotor speed as a fraction of its maximum, from thrust = k w².")
+MARV_PART(actuators, rotor_speed_fraction, motors, "Motors")
+// 1e-7 to 1e-4 N/(rad/s)^2: from micro props to 15-inch props.
+MARV_PARAM(actuators, rotor_speed_fraction, motor_constant, "Thrust constant", "N/(rad/s)²", 8.54858e-06f, 1e-7f, 1e-4f, 1e-7f, 9, "Rotor thrust per squared rad/s.", "vehicle.hpp:35 thrust = k w^2, SDF:523")
+// 100 to 5000 rad/s: about 1,000 to 48,000 rpm.
+MARV_PARAM(actuators, rotor_speed_fraction, max_rot_velocity, "Max rotor speed", "rad/s", 800.f, 100.f, 5000.f, 10.f, 0, "Rotor speed at full command; with the thrust constant it sets the most thrust per rotor.", "vehicle.hpp:37 SDF:522")
+
+#undef MARV_FAMILY
+#undef MARV_KIND
+#undef MARV_PART
+#undef MARV_PARAM
