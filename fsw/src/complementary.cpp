@@ -56,12 +56,12 @@ void TranslationBlend::correct(const SensorBus& bus, const LocalFrame& frame, fl
     }
 }
 
-Complementary::Complementary(const ComplementaryParams& p, const EskfParams& env)
+Complementary::Complementary(const param::ComplementaryParams& p, const param::SensorParams& s, const param::VehicleParams& v)
     : prm_(p),
-      gravity_(env.gravity),
-      mag_decl_(std::atan2(env.mag_ref_ned_ut.y, env.mag_ref_ned_ut.x)),
-      alignment_(env),
-      tr_(p.blend, env.gravity) {}
+      gravity_(v.gravity),
+      mag_decl_(std::atan2(s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_x)),
+      alignment_(s, v.gravity),
+      tr_({p.k_pos, p.k_vel, p.k_baro}, v.gravity) {}
 
 void Complementary::update(const SensorBus& bus) {
     t_us_ = bus.t_us;

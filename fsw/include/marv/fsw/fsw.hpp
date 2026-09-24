@@ -9,7 +9,8 @@
 // Until it has aligned and taken its GNSS origin (the first fix) its state is invalid, and a mission on it keeps
 // the motors at zero; once valid it stays valid for the run.
 //
-// The estimator is the preset's (presets.hpp), chosen at construction: an unknown id runs preset 0.
+// Every module is built once from the Setup given at construction (params.hpp): the estimator is its estimator
+// kind, and each module copies its constants from the setup's typed parameters. Nothing reads the Setup afterwards.
 #pragma once
 
 #include <cstdint>
@@ -38,8 +39,11 @@ struct Tick {
 
 class Fsw {
 public:
-    explicit Fsw(std::uint8_t preset = 0);
+    explicit Fsw(const param::Setup& setup);
+    // The factory setup (presets.hpp kFactory) this one equals, else 0xFF: Telemetry::preset.
     std::uint8_t preset() const { return preset_; }
+    // param::setup_crc of the setup it runs.
+    std::uint32_t setup_crc() const { return crc_; }
     void on_mission(const MissionCommand& m) { mission_ = m; }
     void on_truth(const State& s) { truth_ = s; }
     Tick step(const SensorBus& bus);
@@ -49,9 +53,10 @@ private:
     State truth_{};
     using Estimators = std::variant<Eskf, Ekf, Mahony, Complementary>;
     // Builds the alternative in place (variant::emplace would stage a whole variant on the stack).
-    static Estimators make_estimator(EstimatorKind k);
+    static Estimators make_estimator(const param::Setup& s);
 
     std::uint8_t preset_;
+    std::uint32_t crc_;
     Estimators estimator_;
     LocalFrame home_;  // the first GNSS fix
     ActiveController controller_;

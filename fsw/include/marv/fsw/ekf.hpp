@@ -2,7 +2,7 @@
 //   filter        src/lib/calc/ekf-full.ts            (ekfInit, ekfPredict, ekfCorrect)
 //   bus wiring    src/lib/sim/lab/blocks/estimator.ts (kalmanEstimator: fsw.ts's createEstimator for another core)
 // 16 states x = [p, v, q (4), a_b, w_b], the quaternion corrected additively and re-normalised, the covariance left
-// as it is. Same process noise, priors and measurements as Eskf (EskfParams). float only, fixed storage, no heap.
+// as it is. Same process noise, priors and measurements as Eskf. float only, fixed storage, no heap.
 //
 // This header also holds the stationary alignment and the magnetometer-heading and barometer front end that the
 // EKF, Mahony and complementary estimators share: the toolbox initialises its estimators from truth, so they all
@@ -14,6 +14,7 @@
 #include <marv/fsw/contracts.hpp>
 #include <marv/fsw/eskf.hpp>
 #include <marv/fsw/geo.hpp>
+#include <marv/fsw/params.hpp>
 
 namespace marv {
 
@@ -34,16 +35,17 @@ struct Alignment {
 };
 
 // The same rule as Eskf::accumulate_alignment and Eskf::align: IMU, magnetometer and barometer samples are
-// averaged over align_window_s of unbroken stillness (the EskfParams still_* thresholds); any moving IMU
+// averaged over align_window_s of unbroken stillness (the SensorParams still_* thresholds); any moving IMU
 // sample restarts the window.
 class StationaryAlignment {
 public:
-    explicit StationaryAlignment(const EskfParams& p);
+    StationaryAlignment(const param::SensorParams& s, float gravity);
     // Once per tick until it returns true: then out holds the alignment.
     bool feed(const SensorBus& bus, Alignment& out);
 
 private:
-    EskfParams p_;
+    param::SensorParams p_;
+    float gravity_;
     float declination_;
     std::uint64_t t_win_us_ = 0;  // first IMU sample of the still window
     Vec3 sum_f_{0.f, 0.f, 0.f};
@@ -57,7 +59,7 @@ class Ekf {
 public:
     static constexpr int kN = 16;
 
-    explicit Ekf(const EskfParams& p = {});
+    explicit Ekf(const param::EskfPriors& p = {}, const param::SensorParams& s = {}, const param::VehicleParams& v = {});
 
     // Once per tick. Predicts on a fresh IMU sample, then fuses GNSS position and velocity, baro and mag as fresh.
     void update(const SensorBus& bus);
@@ -75,7 +77,10 @@ private:
     void scalar_update(const float* h, float y, float r);
     void normalise_q();
 
-    EskfParams prm_;
+    param::EskfPriors pri_;
+    param::SensorParams sns_;
+    float gravity_;   // m/s^2
+    Vec3 mag_ref_;    // Earth field at the origin, NED, microtesla
     float mag_decl_;
     StationaryAlignment alignment_;
     LocalFrame frame_;  // GNSS origin: the first fix

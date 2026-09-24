@@ -3,57 +3,38 @@
 #include <cmath>
 
 #include <marv/fsw/math.hpp>
-#include <marv/fsw/vehicle.hpp>
 
 namespace marv {
 namespace {
 
-using namespace vehicle;
-
-// Gains. Every loop is written as an acceleration command, so the airframe enters only through
-// F = m a and tau = I alpha, and each gain is a bandwidth (1/s) or a bandwidth squared.
+// The loops, with the factory gains of params.def. Every loop is written as an acceleration command, so the airframe
+// enters only through F = m a and tau = I alpha, and each gain is a bandwidth (1/s) or a bandwidth squared.
 //
-// Rate loop, alpha = Kp e + Ki int(e) - Kd dw/dt. With w' = alpha the closed loop is first order at
-// Kp / (1 + Kd) rad/s. What limits it is the motor lag, 12.5 ms up / 25 ms down (SDF timeConstantUp /
-// Down), i.e. poles at 40..80 rad/s, plus about 5 ms of the odometry's 10-sample rolling mean. Roll and
-// pitch at 25 rad/s keep about 45 deg of phase margin against those; the integrator corner sits a
-// decade lower (Ki = Kp * Kp / 10). Yaw at 10 rad/s: its authority is small (see kYawTorqueMax), so
-// more bandwidth only saturates.
-constexpr Vec3 kRateP{25.f, 25.f, 10.f};                  // 1/s
-constexpr Vec3 kRateI{62.5f, 62.5f, 10.f};                // 1/s^2
-constexpr Vec3 kRateD{0.05f, 0.05f, 0.f};                 // dimensionless
-constexpr float kRateIntAccel = 5.f;                      // rad/s^2, most the rate integrator may add
-constexpr Vec3 kRateMax{3.f, 3.f, 1.5f};                  // rad/s, rate setpoint limit
-// Attitude loop, rate_sp = K e (e the rotation vector to the desired attitude): a third of the rate
-// bandwidth on roll and pitch. On yaw the rate setpoint is also capped at sqrt(2 a |e|), the speed from
-// which a deceleration of a stops exactly at the target, so a large yaw step comes in without the
-// overshoot a saturated linear loop would give; a is 70 % of the torque-limited 1.02 rad/s^2 (0.93
-// rad/s^2 measured in the sim at that torque).
-constexpr Vec3 kAttP{8.f, 8.f, 4.f};                      // 1/s
-constexpr float kYawDecel = 0.7f;                         // rad/s^2
-// Yaw torque limit. At hover each rotor carries m g / 4 = 3.73 N and has 1.74 N left to kMaxRotorThrust;
-// the most yaw torque that fits in that headroom is 4 km 1.74 = 0.111 N m, and 0.1 N m keeps 10 % of it
-// for roll and pitch. The allocation's priority is collective up to m g, then roll/pitch, then the rest
-// of the collective, then yaw: a yaw demand the rotors cannot carry is cut, never paid for with thrust.
-constexpr float kYawTorqueMax = 0.1f;                     // N m
-// Yaw rate reference (kRefYawRate): while it is non-zero, or the body still turns faster than this, the
+// Rate loop, alpha = Kp e + Ki int(e) - Kd dw/dt (rate_p, rate_i, rate_d). With w' = alpha the closed loop is first
+// order at Kp / (1 + Kd) rad/s. What limits it is the motor lag, 12.5 ms up / 25 ms down (SDF timeConstantUp / Down),
+// i.e. poles at 40..80 rad/s, plus about 5 ms of the odometry's 10-sample rolling mean. Roll and pitch at 25 rad/s keep
+// about 45 deg of phase margin against those; the integrator corner sits a decade lower (Ki = Kp * Kp / 10). Yaw at
+// 10 rad/s: its authority is small (see yaw_torque_max), so more bandwidth only saturates. rate_int_accel is the most
+// the rate integrator may add; rate_max limits the rate setpoint.
+// Attitude loop, rate_sp = K e (att_p, e the rotation vector to the desired attitude): a third of the rate bandwidth on
+// roll and pitch. On yaw the rate setpoint is also capped at sqrt(2 a |e|) (a = yaw_decel), the speed from which a
+// deceleration of a stops exactly at the target, so a large yaw step comes in without the overshoot a saturated linear
+// loop would give; a is 70 % of the torque-limited 1.02 rad/s^2 (0.93 rad/s^2 measured in the sim at that torque).
+// Yaw torque limit (yaw_torque_max). At hover each rotor carries m g / 4 = 3.73 N and has 1.74 N left to its full
+// thrust; the most yaw torque that fits in that headroom is 4 km 1.74 = 0.111 N m, and 0.1 N m keeps 10 % of it for
+// roll and pitch. The allocation's priority is collective up to m g, then roll/pitch, then the rest of the collective,
+// then yaw: a yaw demand the rotors cannot carry is cut, never paid for with thrust.
+// Yaw rate reference (kRefYawRate): while it is non-zero, or the body still turns faster than yaw_rate_still, the
 // heading hold follows the vehicle and the rate loop tracks the reference; below it the heading is held.
-constexpr float kYawRateStill = 0.1f;                     // rad/s
-// Translation, v_sp = Kp e_p, a = Kv (v_sp - v) + Ki int(v_sp - v). With the inner loops ideal the
-// position error obeys e'' + Kv e' + Kv Kp e = 0: w_n = sqrt(Kv Kp) = 1.18 rad/s, about 7x below the
-// attitude loop, and zeta = sqrt(Kv / Kp) / 2 = 0.85. Kv * kVelMax = 4 m/s^2 bounds the acceleration a
-// velocity step asks for to atan(4 / g) = 22 deg of tilt. The integrator (corner Ki / Kv = 0.25 rad/s)
-// takes up what the thrust model and the rotor drag leave.
-constexpr float kPosP = 0.7f;                             // 1/s
-constexpr float kVelP = 2.0f;                             // 1/s
-constexpr float kVelI = 0.5f;                             // 1/s^2
-constexpr float kVelIntAccel = 2.f;                       // m/s^2, most the velocity integrator may add
-constexpr float kVelMax = 2.f;                            // m/s, norm of the velocity setpoint
-// Force limits: tilt of the thrust vector within 35 deg of vertical, vertical force between 0.2 g and a
-// total of 90 % of the four rotors' full thrust (the rest is left for the torques).
-constexpr float kTanTiltMax = 0.70020754f;                // tan(35 deg)
-constexpr float kThrustMin = 0.2f * kMass * kGravity;     // N
-constexpr float kThrustMax = 0.9f * kMotorCount * kMaxRotorThrust;  // N
+// Translation, v_sp = Kp e_p, a = Kv (v_sp - v) + Ki int(v_sp - v) (pos_p, vel_p, vel_i). With the inner loops ideal
+// the position error obeys e'' + Kv e' + Kv Kp e = 0: w_n = sqrt(Kv Kp) = 1.18 rad/s, about 7x below the attitude
+// loop, and zeta = sqrt(Kv / Kp) / 2 = 0.85. Kv * vel_max = 4 m/s^2 bounds the acceleration a velocity step asks for
+// to atan(4 / g) = 22 deg of tilt. The integrator (corner Ki / Kv = 0.25 rad/s, at most vel_int_accel) takes up what
+// the thrust model and the rotor drag leave.
+// Force limits: tilt of the thrust vector within tilt_max_deg of vertical, vertical force between thrust_min_g and a
+// total of thrust_max_frac of the four rotors' full thrust (the rest is left for the torques).
+
+constexpr float kRadPerDeg = 3.14159265358979f / 180.f;
 
 float clampf(float v, float lo, float hi) { return std::fmin(std::fmax(v, lo), hi); }
 
@@ -63,6 +44,17 @@ Vec3 clamp_norm(Vec3 v, float max) {
 }
 
 }  // namespace
+
+Controller::Controller(const param::ControllerParams& c, const param::VehicleParams& v, const param::ActuatorParams& a)
+    : c_(c),
+      mass_(v.mass),
+      gravity_(v.gravity),
+      inertia_{v.Ixx, v.Iyy, v.Izz},
+      tan_tilt_max_(std::tan(c.tilt_max_deg * kRadPerDeg)),
+      thrust_min_(c.thrust_min_g * v.mass * v.gravity),
+      thrust_max_(c.thrust_max_frac * kMotorCount * (a.motor_constant * a.max_rot_velocity * a.max_rot_velocity)),
+      iv_max_(c.vel_int_accel / c.vel_i),
+      iw_max_{c.rate_int_accel / c.rate_i_x, c.rate_int_accel / c.rate_i_y, c.rate_int_accel / c.rate_i_z} {}
 
 ControlRequest Controller::run(const Reference& ref, const State& nav, Mode mode, float dt) {
     if (mode != Mode::kFly) {
@@ -83,7 +75,7 @@ ControlRequest Controller::run(const Reference& ref, const State& nav, Mode mode
     float yaw = yaw_of(nav.q);
     bool yaw_rate_ref = false;
     if (ref.has & kRefYawRate) {
-        yaw_rate_ref = std::fabs(ref.yaw_rate) > 0.f || std::fabs(nav.w_frd.z) > kYawRateStill;
+        yaw_rate_ref = std::fabs(ref.yaw_rate) > 0.f || std::fabs(nav.w_frd.z) > c_.yaw_rate_still;
         if (yaw_rate_ref || !have_hold_) yaw_hold_ = yaw;
         have_hold_ = !yaw_rate_ref;
         yaw = yaw_hold_;
@@ -91,16 +83,16 @@ ControlRequest Controller::run(const Reference& ref, const State& nav, Mode mode
         have_hold_ = false;
         if (ref.has & kRefYaw) yaw = ref.yaw;
     }
-    const Vec3 v_sp = clamp_norm(v_ref + kPosP * (p_ref - nav.p_ned), kVelMax);
+    const Vec3 v_sp = clamp_norm(v_ref + c_.pos_p * (p_ref - nav.p_ned), c_.vel_max);
     const Vec3 ev = v_sp - nav.v_ned;
-    iv_ = clamp_norm(iv_ + dt * ev, kVelIntAccel / kVelI);
-    const Vec3 a_cmd = kVelP * ev + kVelI * iv_ + a_ref;
+    iv_ = clamp_norm(iv_ + dt * ev, iv_max_);
+    const Vec3 a_cmd = c_.vel_p * ev + c_.vel_i * iv_ + a_ref;
 
     // Force, vertical first: the horizontal part is cut to the tilt limit and to what the total leaves.
-    Vec3 f = kMass * (a_cmd - Vec3{0.f, 0.f, kGravity});
-    f.z = clampf(f.z, -kThrustMax, -kThrustMin);
+    Vec3 f = mass_ * (a_cmd - Vec3{0.f, 0.f, gravity_});
+    f.z = clampf(f.z, -thrust_max_, -thrust_min_);
     const float fh = std::sqrt(f.x * f.x + f.y * f.y);
-    const float fh_max = std::fmin(-f.z * kTanTiltMax, std::sqrt(kThrustMax * kThrustMax - f.z * f.z));
+    const float fh_max = std::fmin(-f.z * tan_tilt_max_, std::sqrt(thrust_max_ * thrust_max_ - f.z * f.z));
     if (fh > fh_max) {
         f.x *= fh_max / fh;
         f.y *= fh_max / fh;
@@ -115,32 +107,30 @@ ControlRequest Controller::run(const Reference& ref, const State& nav, Mode mode
 
     // Attitude P on the quaternion error, in the body frame.
     const Vec3 e = rotvec_from_quat(conj(nav.q) * q_des);
-    Vec3 w_sp{kAttP.x * e.x, kAttP.y * e.y, kAttP.z * e.z};
-    const float yaw_rate_max = std::fmin(kRateMax.z, std::sqrt(2.f * kYawDecel * std::fabs(e.z)));
-    w_sp = {clampf(w_sp.x, -kRateMax.x, kRateMax.x), clampf(w_sp.y, -kRateMax.y, kRateMax.y),
+    Vec3 w_sp{c_.att_p_x * e.x, c_.att_p_y * e.y, c_.att_p_z * e.z};
+    const float yaw_rate_max = std::fmin(c_.rate_max_z, std::sqrt(2.f * c_.yaw_decel * std::fabs(e.z)));
+    w_sp = {clampf(w_sp.x, -c_.rate_max_x, c_.rate_max_x), clampf(w_sp.y, -c_.rate_max_y, c_.rate_max_y),
             clampf(w_sp.z, -yaw_rate_max, yaw_rate_max)};
-    if (yaw_rate_ref) w_sp.z = clampf(ref.yaw_rate, -kRateMax.z, kRateMax.z);
+    if (yaw_rate_ref) w_sp.z = clampf(ref.yaw_rate, -c_.rate_max_z, c_.rate_max_z);
 
     // Body-rate PID -> angular acceleration -> torque.
     const Vec3 ew = w_sp - nav.w_frd;
     const float iw_z_prev = iw_.z;
     iw_ += dt * ew;
-    iw_ = {clampf(iw_.x, -kRateIntAccel / kRateI.x, kRateIntAccel / kRateI.x),
-           clampf(iw_.y, -kRateIntAccel / kRateI.y, kRateIntAccel / kRateI.y),
-           clampf(iw_.z, -kRateIntAccel / kRateI.z, kRateIntAccel / kRateI.z)};
+    iw_ = {clampf(iw_.x, -iw_max_.x, iw_max_.x), clampf(iw_.y, -iw_max_.y, iw_max_.y), clampf(iw_.z, -iw_max_.z, iw_max_.z)};
     const Vec3 dw = (have_prev_ && dt > 0.f) ? (1.f / dt) * (nav.w_frd - w_prev_) : Vec3{0.f, 0.f, 0.f};
     w_prev_ = nav.w_frd;
     have_prev_ = true;
-    const Vec3 alpha{kRateP.x * ew.x + kRateI.x * iw_.x - kRateD.x * dw.x,
-                     kRateP.y * ew.y + kRateI.y * iw_.y - kRateD.y * dw.y,
-                     kRateP.z * ew.z + kRateI.z * iw_.z - kRateD.z * dw.z};
+    const Vec3 alpha{c_.rate_p_x * ew.x + c_.rate_i_x * iw_.x - c_.rate_d_x * dw.x,
+                     c_.rate_p_y * ew.y + c_.rate_i_y * iw_.y - c_.rate_d_y * dw.y,
+                     c_.rate_p_z * ew.z + c_.rate_i_z * iw_.z - c_.rate_d_z * dw.z};
     const Vec3 w = nav.w_frd;
-    const Vec3 iw{kIxx * w.x, kIyy * w.y, kIzz * w.z};
-    Vec3 tau = Vec3{kIxx * alpha.x, kIyy * alpha.y, kIzz * alpha.z} + cross(w, iw);
+    const Vec3 iw{inertia_.x * w.x, inertia_.y * w.y, inertia_.z * w.z};
+    Vec3 tau = Vec3{inertia_.x * alpha.x, inertia_.y * alpha.y, inertia_.z * alpha.z} + cross(w, iw);
     // Yaw anti-windup: while the yaw torque is at its limit the yaw integrator holds.
-    if (std::fabs(tau.z) > kYawTorqueMax) {
+    if (std::fabs(tau.z) > c_.yaw_torque_max) {
         iw_.z = iw_z_prev;
-        tau.z = clampf(tau.z, -kYawTorqueMax, kYawTorqueMax);
+        tau.z = clampf(tau.z, -c_.yaw_torque_max, c_.yaw_torque_max);
     }
     return {f, tau};
 }

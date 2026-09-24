@@ -48,51 +48,40 @@ private:
     int fd_;
 };
 
-// The SITL platform of fw::dispatch. Its flash is a file beside the bridge binary holding the preset record of
-// firmware/src/main.cpp (magic, id, ~id; little-endian u32s); kReboot cannot restart the process, so it returns and
-// dispatch restarts the flight software as on kReset.
+// The SITL platform of fw::Node. Its flash is a file beside the bridge binary, marv_setup.bin, holding the same record
+// bytes as the Pico's flash sector (dispatch.hpp); kReboot cannot restart the process, so it returns and the node
+// powers on in place.
 class SitlPlatform {
 public:
     explicit SitlPlatform(std::vector<std::uint8_t>& out) : out_(out) {}
 
     void send(const std::uint8_t* p, std::size_t n) { out_.insert(out_.end(), p, p + n); }
 
-    std::uint8_t load_preset() {
-        std::uint8_t b[12];
+    std::size_t read_record(std::uint8_t* p, std::size_t cap) {
         std::FILE* f = std::fopen(path().c_str(), "rb");
         if (!f) return 0;
-        const std::size_t n = std::fread(b, 1, sizeof(b), f);
+        const std::size_t n = std::fread(p, 1, cap, f);
         std::fclose(f);
-        link::Reader r{b};
-        const std::uint32_t magic = r.u32(), id = r.u32(), check = r.u32();
-        if (n != sizeof(b) || magic != kMagic || check != ~id || id > 0xFFu) return 0;
-        return static_cast<std::uint8_t>(id);
+        return n;
     }
 
-    void store_preset(std::uint8_t id) {
-        std::uint8_t b[12];
-        link::Writer w{b};
-        w.u32(kMagic);
-        w.u32(id);
-        w.u32(~static_cast<std::uint32_t>(id));
+    void write_record(const std::uint8_t* p, std::size_t n) {
         std::FILE* f = std::fopen(path().c_str(), "wb");
-        if (!f || std::fwrite(b, 1, sizeof(b), f) != sizeof(b))
-            std::fprintf(stderr, "marv_bridge: cannot store the preset in %s\n", path().c_str());
+        if (!f || std::fwrite(p, 1, n, f) != n)
+            std::fprintf(stderr, "marv_bridge: cannot store the setup in %s\n", path().c_str());
         if (f) std::fclose(f);
     }
 
     void reboot() {}
 
 private:
-    static constexpr std::uint32_t kMagic = 0x5056524Du;  // "MRVP"
-
     static std::string path() {
         char exe[4096];
         const ssize_t n = ::readlink("/proc/self/exe", exe, sizeof(exe) - 1);
         std::string dir = n > 0 ? std::string(exe, static_cast<std::size_t>(n)) : std::string(".");
         const std::size_t slash = dir.rfind('/');
         dir = slash == std::string::npos ? std::string(".") : dir.substr(0, slash);
-        return dir + "/marv_preset.bin";
+        return dir + "/marv_setup.bin";
     }
 
     std::vector<std::uint8_t>& out_;
@@ -100,11 +89,11 @@ private:
 
 class Sitl final : public Endpoint {
 public:
-    Sitl() : platform_(out_), fsw_(platform_.load_preset()) {}
+    Sitl() : platform_(out_), node_(platform_) {}
 
     bool write(const std::uint8_t* p, std::size_t n) override {
         for (std::size_t i = 0; i < n; ++i)
-            if (decoder_.push(p[i])) fw::dispatch(decoder_.packet(), fsw_, platform_);
+            if (decoder_.push(p[i])) node_.dispatch(decoder_.packet());
         return true;
     }
 
@@ -118,7 +107,7 @@ public:
 private:
     std::vector<std::uint8_t> out_;
     SitlPlatform platform_;
-    Fsw fsw_;
+    fw::Node<SitlPlatform> node_;
     link::Decoder decoder_;
 };
 

@@ -12,21 +12,15 @@
 #include <marv/fsw/ekf.hpp>
 #include <marv/fsw/eskf.hpp>
 #include <marv/fsw/geo.hpp>
+#include <marv/fsw/params.hpp>
 
 namespace marv {
 
-// mahony block defaults (tuned in the lab on quad-square).
-struct MahonyParams {
-    float k_p = 0.5f;          // 1/s
-    float k_i = 0.1f;          // 1/s^2
-    float accel_gate = 0.25f;  // m/s^2
-    BlendGains blend{};
-};
-
 class Mahony {
 public:
-    // env: gravity, the reference field and the alignment window (Eskf's).
-    explicit Mahony(const MahonyParams& p = {}, const EskfParams& env = {});
+    // s: the reference field and the alignment window (Eskf's); v: gravity.
+    explicit Mahony(const param::MahonyParams& p = {}, const param::SensorParams& s = {},
+                    const param::VehicleParams& v = {});
 
     void update(const SensorBus& bus);
     State state() const;
@@ -34,7 +28,7 @@ public:
     Vec3 gyro_bias() const { return bias_; }
 
 private:
-    MahonyParams prm_;
+    param::MahonyParams prm_;
     float gravity_;
     float mag_decl_;
     StationaryAlignment alignment_;

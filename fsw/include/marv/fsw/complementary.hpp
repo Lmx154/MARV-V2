@@ -11,14 +11,15 @@
 #include <marv/fsw/ekf.hpp>
 #include <marv/fsw/eskf.hpp>
 #include <marv/fsw/geo.hpp>
+#include <marv/fsw/params.hpp>
 
 namespace marv {
 
-// Gains of translationBlend (complementary block defaults, tuned in the lab on quad-square), 1/s.
+// Gains of translationBlend, 1/s: the estimator's k_pos, k_vel, k_baro.
 struct BlendGains {
-    float k_pos = 1.f;
-    float k_vel = 3.f;
-    float k_baro = 1.f;
+    float k_pos;
+    float k_vel;
+    float k_baro;
 };
 
 // translationBlend: position and velocity of both complementary filters.
@@ -45,24 +46,18 @@ private:
     std::uint64_t last_baro_us_ = 0;
 };
 
-struct ComplementaryParams {
-    float k_acc = 0.75f;       // 1/s, tilt correction
-    float accel_gate = 0.25f;  // m/s^2
-    float k_mag = 1.f;         // 1/s, heading correction
-    BlendGains blend{};
-};
-
 class Complementary {
 public:
-    // env: gravity, the reference field and the alignment window (Eskf's).
-    explicit Complementary(const ComplementaryParams& p = {}, const EskfParams& env = {});
+    // s: the reference field and the alignment window (Eskf's); v: gravity.
+    explicit Complementary(const param::ComplementaryParams& p = {}, const param::SensorParams& s = {},
+                           const param::VehicleParams& v = {});
 
     void update(const SensorBus& bus);
     State state() const;
     bool aligned() const { return aligned_; }
 
 private:
-    ComplementaryParams prm_;
+    param::ComplementaryParams prm_;
     float gravity_;
     float mag_decl_;
     StationaryAlignment alignment_;

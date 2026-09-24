@@ -116,26 +116,37 @@ void check(const Result& r, const Limits& l) {
 
 struct TestPlatform {
     std::vector<std::uint8_t> out;
-    std::uint8_t stored = 0;
+    std::vector<std::uint8_t> record;
     int reboots = 0;
     void send(const std::uint8_t* p, std::size_t n) { out.insert(out.end(), p, p + n); }
-    std::uint8_t load_preset() { return stored; }
-    void store_preset(std::uint8_t id) { stored = id; }
+    std::size_t read_record(std::uint8_t* p, std::size_t cap) {
+        const std::size_t n = record.size() < cap ? record.size() : cap;
+        std::memcpy(p, record.data(), n);
+        return n;
+    }
+    void write_record(const std::uint8_t* p, std::size_t n) { record.assign(p, p + n); }
     void reboot() { ++reboots; }
 };
+using Node = fw::Node<TestPlatform>;
 
-template <class T> void deliver(const T& msg, Fsw& fsw, TestPlatform& pf) {
+template <class T> void deliver(const T& msg, Node& node) {
     std::uint8_t frame[link::kMaxFrame];
     const std::size_t n = link::encode(msg, frame);
     link::Decoder dec;
     for (std::size_t i = 0; i < n; ++i)
-        if (dec.push(frame[i])) fw::dispatch(dec.packet(), fsw, pf);
+        if (dec.push(frame[i])) node.dispatch(dec.packet());
+}
+
+// The estimator kind of the stored record, 0xFF when it is not valid.
+std::uint8_t stored_estimator(const TestPlatform& pf) {
+    param::Setup s;
+    return fw::decode_record(pf.record.data(), pf.record.size(), s) ? s.kind[param::k_estimator] : 0xFF;
 }
 
 // Runs 2.5 s of the synthetic flight (0.5 s of it moving: at rest, estimators can agree to the bit) through dispatch
 // and a reference estimator side by side. Returns true when every Telemetry carried `preset` and an estimate
 // bit-identical to the reference's.
-template <class E> bool flies(Fsw& fsw, TestPlatform& pf, std::uint8_t preset) {
+template <class E> bool flies(Node& node, TestPlatform& pf, std::uint8_t preset) {
     E ref;
     synth::Options o;
     o.seconds = 2.5;
@@ -146,7 +157,7 @@ template <class E> bool flies(Fsw& fsw, TestPlatform& pf, std::uint8_t preset) {
     bool ok = true, valid = false;
     while (flight.next(bus, s)) {
         pf.out.clear();
-        deliver(bus, fsw, pf);
+        deliver(bus, node);
         ref.update(bus);
         const State e = ref.state();
         Telemetry t{};
@@ -223,48 +234,49 @@ int main() {
         print("ekf negative control", r);
         CHECK(r.att_max_deg >= 0.5);
     }
-    // 4. Preset selection: SetPreset stores, Reset applies, an unknown id runs preset 0, Reboot restarts.
+    // 4. Preset selection: SetPreset stages and stores the factory setup, Reset applies it, an unknown id runs factory 0,
+    // Reboot restarts.
     {
         TestPlatform pf;
-        Fsw fsw{pf.load_preset()};
-        CHECK(fsw.preset() == 0);
-        deliver(link::SetPreset{2}, fsw, pf);
-        CHECK(pf.stored == 2);
-        CHECK(fsw.preset() == 0);  // stored, not yet applied
-        deliver(link::Reset{}, fsw, pf);
-        CHECK(fsw.preset() == 2);
-        CHECK(flies<Mahony>(fsw, pf, 2));
-        deliver(link::Reset{}, fsw, pf);
-        CHECK(!flies<Eskf>(fsw, pf, 2));  // the check can fail: the same flight on another estimator differs
+        Node node{pf};
+        CHECK(node.fsw().preset() == 0);
+        deliver(link::SetPreset{2}, node);
+        CHECK(stored_estimator(pf) == 2);
+        CHECK(node.fsw().preset() == 0);  // stored, not yet applied
+        deliver(link::Reset{}, node);
+        CHECK(node.fsw().preset() == 2);
+        CHECK(flies<Mahony>(node, pf, 2));
+        deliver(link::Reset{}, node);
+        CHECK(!flies<Eskf>(node, pf, 2));  // the check can fail: the same flight on another estimator differs
 
         const std::uint8_t ids[] = {0, 1, 3};
         for (std::uint8_t id : ids) {
-            deliver(link::SetPreset{id}, fsw, pf);
-            deliver(link::Reset{}, fsw, pf);
-            CHECK(fsw.preset() == id);
+            deliver(link::SetPreset{id}, node);
+            deliver(link::Reset{}, node);
+            CHECK(node.fsw().preset() == id);
         }
-        deliver(link::SetPreset{0}, fsw, pf);
-        deliver(link::Reset{}, fsw, pf);
-        CHECK(flies<Eskf>(fsw, pf, 0));
-        deliver(link::SetPreset{1}, fsw, pf);
-        deliver(link::Reset{}, fsw, pf);
-        CHECK(flies<Ekf>(fsw, pf, 1));
-        deliver(link::SetPreset{2}, fsw, pf);
-        deliver(link::Reset{}, fsw, pf);
-        CHECK(flies<Mahony>(fsw, pf, 2));
-        deliver(link::SetPreset{3}, fsw, pf);
-        deliver(link::Reset{}, fsw, pf);
-        CHECK(flies<Complementary>(fsw, pf, 3));
+        deliver(link::SetPreset{0}, node);
+        deliver(link::Reset{}, node);
+        CHECK(flies<Eskf>(node, pf, 0));
+        deliver(link::SetPreset{1}, node);
+        deliver(link::Reset{}, node);
+        CHECK(flies<Ekf>(node, pf, 1));
+        deliver(link::SetPreset{2}, node);
+        deliver(link::Reset{}, node);
+        CHECK(flies<Mahony>(node, pf, 2));
+        deliver(link::SetPreset{3}, node);
+        deliver(link::Reset{}, node);
+        CHECK(flies<Complementary>(node, pf, 3));
 
-        deliver(link::SetPreset{200}, fsw, pf);
-        deliver(link::Reset{}, fsw, pf);
-        CHECK(fsw.preset() == 0);
-        CHECK(flies<Eskf>(fsw, pf, 0));
+        deliver(link::SetPreset{200}, node);
+        deliver(link::Reset{}, node);
+        CHECK(node.fsw().preset() == 0);
+        CHECK(flies<Eskf>(node, pf, 0));
 
-        deliver(link::SetPreset{1}, fsw, pf);
-        deliver(link::Reboot{}, fsw, pf);
+        deliver(link::SetPreset{1}, node);
+        deliver(link::Reboot{}, node);
         CHECK(pf.reboots == 1);
-        CHECK(fsw.preset() == 1);
+        CHECK(node.fsw().preset() == 1);
         std::printf("test4 preset selection: done\n");
     }
     // 5. GNSS withheld for the whole run: no estimator is ever valid, however well it aligned.
@@ -306,7 +318,7 @@ int main() {
     // 7. Fsw on the estimate: with GNSS withheld the mission to fly never arms a motor; with GNSS it arms once the
     // estimator is valid.
     for (int gnss = 0; gnss <= 1; ++gnss) {
-        Fsw fsw{0};
+        Fsw fsw{kFactory[0]};
         fsw.on_mission({Mode::kFly, NavSource::kEstimate, {}});
         synth::Options o;
         o.seconds = 3.0;

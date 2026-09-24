@@ -7,17 +7,21 @@
 
 namespace marv {
 
-using namespace vehicle;
-
-Allocation::Allocation() {
+Allocation::Allocation(const param::VehicleParams& v, const param::ActuatorParams& act)
+    : hover_thrust_(v.mass * v.gravity / static_cast<float>(kMotorCount)),
+      max_thrust_(act.motor_constant * act.max_rot_velocity * act.max_rot_velocity),
+      motor_constant_(act.motor_constant),
+      max_rot_velocity_(act.max_rot_velocity) {
+    const float rotor_x[kMotorCount] = {v.rotor_x_0, v.rotor_x_1, v.rotor_x_2, v.rotor_x_3};
+    const float rotor_y[kMotorCount] = {v.rotor_y_0, v.rotor_y_1, v.rotor_y_2, v.rotor_y_3};
     // Mixer: rotor thrusts -> (collective, torque). A rotor at (x, y) thrusting T along -z makes the
     // moment (x, y, 0) x (0, 0, -T) = (-y T, x T, 0), and the yaw reaction km s T.
     float a[4][2 * kMotorCount];
     for (int i = 0; i < kMotorCount; ++i) {
         a[0][i] = 1.f;
-        a[1][i] = -kRotorY[i];
-        a[2][i] = kRotorX[i];
-        a[3][i] = kMomentConstant * kRotorYaw[i];
+        a[1][i] = -rotor_y[i];
+        a[2][i] = rotor_x[i];
+        a[3][i] = v.moment_constant * vehicle::kRotorYaw[i];
         for (int j = 0; j < 4; ++j) a[j][kMotorCount + i] = j == i ? 1.f : 0.f;
     }
     // Gauss-Jordan with partial pivoting on [mixer | identity]; the right half becomes the inverse.
@@ -68,34 +72,34 @@ ActuatorCommand Allocation::run(const ControlRequest& req, const State& nav, Mod
     //  4. Yaw: scaled by the largest s in [0, 1] that keeps every rotor in [0, Tmax]; it never moves
     //     the collective.
     const float request = inv_[0][0] * collective;
-    const float c_min = std::fmin(request, kMass * kGravity / static_cast<float>(kMotorCount));
+    const float c_min = std::fmin(request, hover_thrust_);
     float lo = rp[0], hi = rp[0];
     for (float v : rp) {
         lo = std::fmin(lo, v);
         hi = std::fmax(hi, v);
     }
-    const float hi_max = std::fmin(0.5f * kMaxRotorThrust, kMaxRotorThrust - c_min);
+    const float hi_max = std::fmin(0.5f * max_thrust_, max_thrust_ - c_min);
     float k = 1.f;
     if (hi > hi_max) k = hi_max / hi;
-    if (k * (hi - lo) > kMaxRotorThrust) k = kMaxRotorThrust / (hi - lo);
+    if (k * (hi - lo) > max_thrust_) k = max_thrust_ / (hi - lo);
     if (k < 1.f) {
         for (float& v : rp) v *= k;
         lo *= k;
         hi *= k;
     }
-    const float c = std::fmin(std::fmax(request, -lo), kMaxRotorThrust - hi);
+    const float c = std::fmin(std::fmax(request, -lo), max_thrust_ - hi);
     float s = 1.f;
     for (int i = 0; i < kMotorCount; ++i) {
         const float base = c + rp[i];
-        if (yaw[i] > 0.f) s = std::fmin(s, (kMaxRotorThrust - base) / yaw[i]);
+        if (yaw[i] > 0.f) s = std::fmin(s, (max_thrust_ - base) / yaw[i]);
         else if (yaw[i] < 0.f) s = std::fmin(s, -base / yaw[i]);
     }
     s = std::fmax(s, 0.f);
 
     // Thrust -> rotor speed -> fraction of full speed.
     for (int i = 0; i < kMotorCount; ++i) {
-        const float t = std::fmin(std::fmax(c + rp[i] + s * yaw[i], 0.f), kMaxRotorThrust);
-        cmd.motor[i] = std::sqrt(t / kMotorConstant) / kMaxRotVelocity;
+        const float t = std::fmin(std::fmax(c + rp[i] + s * yaw[i], 0.f), max_thrust_);
+        cmd.motor[i] = std::sqrt(t / motor_constant_) / max_rot_velocity_;
     }
     cmd.armed = true;
     return cmd;

@@ -81,7 +81,12 @@ void apply_fx(const float (&in)[N][N], float (&out)[N][N], const M3& A, const M3
 
 }  // namespace
 
-Eskf::Eskf(const EskfParams& p) : prm_(p), mag_decl_(std::atan2(p.mag_ref_ned_ut.y, p.mag_ref_ned_ut.x)) {
+Eskf::Eskf(const param::EskfPriors& p, const param::SensorParams& s, const param::VehicleParams& v)
+    : pri_(p),
+      sns_(s),
+      gravity_(v.gravity),
+      mag_ref_{s.mag_ref_ned_ut_x, s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_z},
+      mag_decl_(std::atan2(s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_x)) {
     for (int i = 0; i < N; ++i) {
         dx_[i] = 0.f;
         for (int j = 0; j < N; ++j) {
@@ -103,7 +108,7 @@ void Eskf::update(const SensorBus& bus) {
             p_.x = p_.y = 0.f;
             for (int i = IP; i < IP + 2; ++i) {
                 for (int j = 0; j < N; ++j) P_[i][j] = P_[j][i] = 0.f;
-                P_[i][i] = prm_.sigma_gnss_pos * prm_.sigma_gnss_pos;
+                P_[i][i] = sns_.sigma_gnss_pos * sns_.sigma_gnss_pos;
             }
         }
     }
@@ -140,10 +145,10 @@ void Eskf::accumulate_alignment(const SensorBus& bus) {
     if (bus.fresh & kImu) {
         const Vec3 f = bus.imu.accel_frd;
         const Vec3 w = bus.imu.gyro_frd;
-        bool still = std::fabs(norm(f) - prm_.gravity) < prm_.still_g_err && norm(w) < prm_.still_rate;
+        bool still = std::fabs(norm(f) - gravity_) < sns_.still_g_err && norm(w) < sns_.still_rate;
         if (still && n_imu_ > 0) {
             const float inv = 1.f / static_cast<float>(n_imu_);
-            still = norm(f - inv * sum_f_) < prm_.still_accel_dev && norm(w - inv * sum_w_) < prm_.still_gyro_dev;
+            still = norm(f - inv * sum_f_) < sns_.still_accel_dev && norm(w - inv * sum_w_) < sns_.still_gyro_dev;
         }
         if (!still) {
             sum_f_ = sum_w_ = sum_m_ = Vec3{0.f, 0.f, 0.f};
@@ -166,7 +171,7 @@ void Eskf::accumulate_alignment(const SensorBus& bus) {
         ++n_baro_;
     }
     const float t = static_cast<float>(bus.t_us - t_win_us_) * 1e-6f;
-    if (t >= prm_.align_window_s && n_mag_ > 0 && n_baro_ > 0) {
+    if (t >= sns_.align_window_s && n_mag_ > 0 && n_baro_ > 0) {
         align();
         if (bus.fresh & kImu) {
             last_imu_us_ = bus.t_us;
@@ -192,9 +197,9 @@ void Eskf::align() {
     wb_ = (1.f / static_cast<float>(n_imu_)) * sum_w_;  // fsw.ts pad calibration
     baro_h0_ = sum_h_ / static_cast<float>(n_baro_);
 
-    float sigma_wb = prm_.sigma_gyro / std::sqrt(static_cast<float>(n_imu_));
+    float sigma_wb = sns_.sigma_gyro / std::sqrt(static_cast<float>(n_imu_));
     if (sigma_wb < 1e-4f) sigma_wb = 1e-4f;
-    const float d[5] = {prm_.sigma_p0, prm_.sigma_v0, prm_.sigma_theta0, prm_.sigma_ab0, sigma_wb};
+    const float d[5] = {pri_.sigma_p0, pri_.sigma_v0, pri_.sigma_theta0, pri_.sigma_ab0, sigma_wb};
     for (int i = 0; i < N; ++i) {
         dx_[i] = 0.f;
         for (int j = 0; j < N; ++j) P_[i][j] = 0.f;
@@ -208,7 +213,7 @@ void Eskf::predict(Vec3 am, Vec3 wm, float dt) {
     const M3 R = rotmat(q_);
     const Vec3 a_body = am - ab_;
     const Vec3 w_body = wm - wb_;
-    const Vec3 a_world = rotate(q_, a_body) + Vec3{0.f, 0.f, prm_.gravity};
+    const Vec3 a_world = rotate(q_, a_body) + Vec3{0.f, 0.f, gravity_};
     const Quat dq = quat_from_rotvec(dt * w_body);
 
     p_ = p_ + dt * v_ + (0.5f * dt * dt) * a_world;
@@ -238,10 +243,10 @@ void Eskf::predict(Vec3 am, Vec3 wm, float dt) {
         }
     apply_fx(M_, P_, A, B, C, dt);
 
-    const float qv = prm_.sigma_accel * prm_.sigma_accel * dt * dt;
-    const float qt = prm_.sigma_gyro * prm_.sigma_gyro * dt * dt;
-    const float qa = prm_.sigma_accel_walk * prm_.sigma_accel_walk * dt;
-    const float qw = prm_.sigma_gyro_walk * prm_.sigma_gyro_walk * dt;
+    const float qv = sns_.sigma_accel * sns_.sigma_accel * dt * dt;
+    const float qt = sns_.sigma_gyro * sns_.sigma_gyro * dt * dt;
+    const float qa = sns_.sigma_accel_walk * sns_.sigma_accel_walk * dt;
+    const float qw = sns_.sigma_gyro_walk * sns_.sigma_gyro_walk * dt;
     for (int i = 0; i < 3; ++i) {
         P_[IV + i][IV + i] += qv;
         P_[ITH + i][ITH + i] += qt;
@@ -310,8 +315,8 @@ void Eskf::fuse_gnss_pos(const GnssSample& g) {
     const Vec3 z = frame_.to_ned(GeoPoint{g.lat_e7, g.lon_e7, g.alt_m});
     const float zp[3] = {z.x, z.y, z.z};
     const float pp[3] = {p_.x, p_.y, p_.z};
-    const float rh = prm_.sigma_gnss_pos * prm_.sigma_gnss_pos;
-    const float rp[3] = {rh, rh, prm_.sigma_gnss_alt * prm_.sigma_gnss_alt};
+    const float rh = sns_.sigma_gnss_pos * sns_.sigma_gnss_pos;
+    const float rp[3] = {rh, rh, sns_.sigma_gnss_alt * sns_.sigma_gnss_alt};
     for (int i = 0; i < 3; ++i) {
         float h[N] = {};
         h[IP + i] = 1.f;
@@ -323,7 +328,7 @@ void Eskf::fuse_gnss_pos(const GnssSample& g) {
 void Eskf::fuse_gnss_vel() {
     const float zv[3] = {vel_meas_.x, vel_meas_.y, vel_meas_.z};
     const float vv[3] = {v_.x, v_.y, v_.z};
-    const float rv = prm_.sigma_gnss_vel * prm_.sigma_gnss_vel;
+    const float rv = sns_.sigma_gnss_vel * sns_.sigma_gnss_vel;
     for (int i = 0; i < 3; ++i) {
         float h[N] = {};
         h[IV + i] = 1.f;
@@ -336,7 +341,7 @@ void Eskf::fuse_gnss_vel() {
 void Eskf::fuse_baro(float pressure_pa) {
     float h[N] = {};
     h[IP + 2] = -1.f;
-    scalar_update(h, (baro_height(pressure_pa) - baro_h0_) - (-p_.z), prm_.sigma_baro * prm_.sigma_baro);
+    scalar_update(h, (baro_height(pressure_pa) - baro_h0_) - (-p_.z), sns_.sigma_baro * sns_.sigma_baro);
     inject_and_reset();
 }
 
@@ -351,12 +356,12 @@ void Eskf::fuse_mag(Vec3 m_frd) {
     if (mh2 < 1e-6f) return;  // no horizontal field: heading undefined
     const float y = wrap(mag_decl_ - std::atan2(mw.y, mw.x));
     const M3 R = rotmat(q_);
-    const Vec3 m0 = prm_.mag_ref_ned_ut;
+    const Vec3 m0 = mag_ref_;
     const float m0h2 = m0.x * m0.x + m0.y * m0.y;
     const float e[3] = {-m0.x * m0.z / m0h2, -m0.y * m0.z / m0h2, 1.f};
     float h[N] = {};
     for (int j = 0; j < 3; ++j) h[ITH + j] = e[0] * R.m[0][j] + e[1] * R.m[1][j] + e[2] * R.m[2][j];
-    scalar_update(h, y, prm_.sigma_heading * prm_.sigma_heading);
+    scalar_update(h, y, sns_.sigma_heading * sns_.sigma_heading);
     inject_and_reset();
 }
 
