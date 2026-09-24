@@ -62,9 +62,9 @@ class Abort extends Error {}
 
 // ---- processes ---------------------------------------------------------------------------------------------------------
 const procs = [];
-function start(cmd, argv, name) {
+function start(cmd, argv, name, env = process.env) {
 	const fd = openSync(join(out, `${name}.out`), 'w');
-	const p = spawn(cmd, argv, { cwd: root, detached: true, stdio: ['ignore', fd, fd] });
+	const p = spawn(cmd, argv, { cwd: root, detached: true, stdio: ['ignore', fd, fd], env });
 	closeSync(fd);
 	p.exited = new Promise((r) => p.on('exit', (code, sig) => r({ code, sig })));
 	p.name = name;
@@ -207,7 +207,11 @@ const wire = (w) => ({ ...toGeo(w.n, w.e), alt_m: w.alt });
 
 async function run() {
 	// The GCS first: gcs.sh may build the web before it serves, and the simulated seconds run in wall time.
-	start(join(root, 'scripts/gcs.sh'), ['--udp', '127.0.0.1:14650', '--http', String(port)], 'gcs');
+	// Its own single-instance lock (MARV_GCS_LOCK, for tests), so it runs beside the user's marv_gcs.
+	start(join(root, 'scripts/gcs.sh'), ['--udp', '127.0.0.1:14650', '--http', String(port)], 'gcs', {
+		...process.env,
+		MARV_GCS_LOCK: join(out, 'marv-gcs.lock')
+	});
 	await connect();
 	start(join(root, 'scripts/sim.sh'), ['--sitl', '--ground', '--seconds', '400', '--log', logPath], 'sim');
 

@@ -4,7 +4,7 @@
 find_package(Threads REQUIRED)
 
 add_library(marv_gcs_core STATIC src/json.cpp src/schema.cpp src/mission.cpp src/link.cpp src/server.cpp
-            src/worldgen.cpp src/launcher.cpp ${PROJECT_SOURCE_DIR}/ground/src/transport.cpp)
+            src/worldgen.cpp src/launcher.cpp src/resources.cpp ${PROJECT_SOURCE_DIR}/ground/src/transport.cpp)
 target_include_directories(marv_gcs_core PUBLIC src ${PROJECT_SOURCE_DIR}/ground/src)
 target_compile_definitions(marv_gcs_core PUBLIC MARV_PARAMS_TEXT
                            MARV_GCS_WEB_DIR="${PROJECT_SOURCE_DIR}/gcs/web/build"
@@ -16,7 +16,7 @@ target_link_libraries(marv_gcs PRIVATE marv_gcs_core)
 add_executable(marv_worldgen src/worldgen_main.cpp)
 target_link_libraries(marv_worldgen PRIVATE marv_gcs_core)
 
-foreach(name test_gcs_schema test_gcs_link test_gcs_mission test_gcs_worldgen)
+foreach(name test_gcs_schema test_gcs_link test_gcs_mission test_gcs_worldgen test_gcs_resources)
     add_executable(${name} src/${name}.cpp)
     target_link_libraries(${name} PRIVATE marv_gcs_core)
     add_test(NAME ${name} COMMAND ${name})

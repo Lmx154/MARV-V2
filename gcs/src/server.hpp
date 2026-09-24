@@ -1,4 +1,5 @@
-// HTTP and WebSocket on one port: GET /api/schema, GET /api/link, GET /api/sim/airframes, GET /api/sim/status, WS /ws,
+// HTTP and WebSocket on one port: GET /api/schema, GET /api/link, GET /api/sim/airframes, GET /api/sim/status,
+// GET /api/resources (resources.hpp: who holds the rig's resources), WS /ws,
 // and the files of the web build (index.html for any other path, so the single-page app routes). Runs on the io_context
 // thread with the link.
 #pragma once
@@ -9,6 +10,11 @@
 
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/steady_timer.hpp>
+#include <boost/json/array.hpp>
+
+#include "link.hpp"
+#include "resources.hpp"
 
 namespace marv::gcs {
 
@@ -22,6 +28,8 @@ public:
     Server(boost::asio::io_context& io, const std::string& address, unsigned short port, std::string web_root);
     void set_link(Link* link) { link_ = link; }
     void set_sim(Launcher* sim) { sim_ = sim; }
+    // What the resource scan looks for; fc_by_id, fc_tty and launcher_group are filled in on every scan.
+    void set_resources(const ResourceTargets& t) { targets_ = t; }
     unsigned short port() const;
 
     // Sends text to every WebSocket client.
@@ -33,15 +41,24 @@ public:
     const std::string& web_root() const { return web_root_; }
     void add(const std::shared_ptr<WsSession>& s);
     void message(const std::string& text, const std::weak_ptr<WsSession>& from);
+    // A fresh scan, as JSON; {type: "resources", resources: [...]}.
+    boost::json::array resources();
+    std::string resources_message();
 
 private:
     void accept();
+    // {type: "terminate", pid}: SIGTERM to a holder of a fresh scan (not marv_gcs itself), SIGKILL 5 s later if it is
+    // still alive; the launcher's own sim group is stopped as sim_stop does.
+    void terminate(const boost::json::object& m, const Reply& reply);
+    void resources_tick();
 
     boost::asio::ip::tcp::acceptor acceptor_;
     std::string web_root_;
     Link* link_ = nullptr;
     Launcher* sim_ = nullptr;
     std::vector<std::weak_ptr<WsSession>> clients_;
+    ResourceTargets targets_;
+    boost::asio::steady_timer resources_timer_;  // every 2 s: a scan to the clients with resources_subscribe on
 };
 
 }  // namespace marv::gcs

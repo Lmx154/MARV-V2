@@ -7,6 +7,10 @@
 // Default link: automatic, the flight controller on USB (/dev/serial/by-id/usb-MARV_MARV_flight_controller_*) while no
 // sim runs, the sim's bridge (marv_bridge --ground on 127.0.0.1:14650) while one does. --udp and --serial fix it.
 // Default --http 8765 on 127.0.0.1, --web the gcs/web build.
+//
+// One marv_gcs per user: it holds an flock on $XDG_RUNTIME_DIR/marv-gcs.lock (else /tmp/marv-gcs-UID.lock) holding its
+// pid and URL, and a second one exits with status 1 naming the first. MARV_GCS_LOCK=PATH replaces the lock file: for
+// tests only, so a test instance runs beside the user's.
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -17,8 +21,11 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/signal_set.hpp>
 
+#include <unistd.h>
+
 #include "launcher.hpp"
 #include "link.hpp"
+#include "resources.hpp"
 #include "schema.hpp"
 #include "server.hpp"
 
@@ -60,9 +67,36 @@ int main(int argc, char** argv) {
         }
     }
 
+    const std::string lock_path = instance_lock_path();
+    std::string held, lock_error;
+    const int lock = lock_instance(lock_path, held, lock_error);
+    if (lock < 0) {
+        if (!lock_error.empty()) {
+            std::fprintf(stderr, "marv_gcs: %s\n", lock_error.c_str());
+            return 1;
+        }
+        const std::size_t space = held.find(' ');
+        const std::string pid = held.empty() ? "?" : held.substr(0, space);
+        const std::string url = space == std::string::npos ? "its printed URL" : held.substr(space + 1);
+        std::fprintf(stderr, "marv_gcs is already running (pid %s) at %s: open it, or stop it first (lock %s)\n",
+                     pid.c_str(), url.c_str(), lock_path.c_str());
+        return 1;
+    }
+
     boost::asio::io_context io;
     try {
         Server server(io, "127.0.0.1", static_cast<unsigned short>(port), web);
+        ResourceTargets targets;
+        targets.self = ::getpid();
+        targets.uid = ::getuid();
+        targets.http = server.port();
+        if (cfg.mode != LinkConfig::Mode::kSerial) {
+            const int ground = std::atoi(cfg.target.substr(cfg.target.rfind(':') + 1).c_str());
+            if (ground > 0 && ground <= 65535) targets.ground_udp = static_cast<unsigned>(ground);
+        }
+        server.set_resources(targets);
+        const std::string url = "http://127.0.0.1:" + std::to_string(server.port()) + "/";
+        write_instance(lock, std::to_string(::getpid()) + " " + url);
         Link link(io, cfg, [&server](const std::string& text, bool droppable) { server.broadcast(text, droppable); });
         server.set_link(&link);
         Launcher sim(

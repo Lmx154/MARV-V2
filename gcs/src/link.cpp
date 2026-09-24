@@ -136,6 +136,8 @@ std::string first_fc() {
     return path;
 }
 
+Holder fc_holder(const std::string& device) { return device_holder("/proc", device, ::getpid(), ::getuid()); }
+
 Link::Link(asio::io_context& io, LinkConfig cfg, Broadcast broadcast)
     : cfg_(std::move(cfg)), broadcast_(std::move(broadcast)), timer_(io), flash_out_(io) {}
 
@@ -160,8 +162,25 @@ bool Link::open() {
     const bool automatic = cfg_.mode == LinkConfig::Mode::kAuto;
     const bool serial = cfg_.mode == LinkConfig::Mode::kSerial || (automatic && !sim_);
     const std::string at = automatic && serial ? cfg_.scan() : cfg_.target;
-    if (at.empty()) return false;
-    tx_ = serial ? cfg_.open_serial(at.c_str()) : cfg_.open_udp(at.c_str());
+    // kAuto: a flight controller another process has open is not opened (its bytes would be split between the two).
+    Holder held;
+    bool busy = false;
+    if (!at.empty() && automatic && serial && cfg_.holder) {
+        held = cfg_.holder(at);
+        busy = held.pid > 0;
+    }
+    if (!at.empty() && !busy) {
+        errno = 0;
+        tx_ = serial ? cfg_.open_serial(at.c_str()) : cfg_.open_udp(at.c_str());
+        busy = !tx_ && automatic && serial && errno == EBUSY;
+        if (busy) held.name = "another process";
+    }
+    if ((busy ? at : std::string()) != busy_at_ || held.pid != busy_.pid) {
+        busy_at_ = busy ? at : std::string();
+        busy_ = busy ? held : Holder{};
+        if (busy) std::fprintf(stderr, "marv_gcs: link: %s is held by %s (pid %ld): not opened\n", at.c_str(), held.name.c_str(), held.pid);
+        if (!tx_) broadcast_link();
+    }
     if (!tx_) return false;
     serial_ = serial;
     at_ = at;
@@ -460,6 +479,9 @@ json::object Link::state() const {
     if (tx_) {
         via = serial_ ? "usb" : "sim-bridge";
         target = at_;
+    } else if (!busy_at_.empty()) {
+        via = "busy";
+        target = busy_at_;
     } else if (mode != LinkConfig::Mode::kAuto) {
         target = cfg_.target;
     }
@@ -470,6 +492,7 @@ json::object Link::state() const {
                    {"connected", connected_},
                    {"schema_hash", param::kSchemaHash},
                    {"flashing", flash_pid_ > 0}};
+    if (!tx_ && !busy_at_.empty()) o["holder"] = json::object{{"name", busy_.name}, {"pid", busy_.pid}};
     if (have_header_) {
         o["schema_ok"] = header_.schema_hash == param::kSchemaHash;
         o["header"] = header_json(header_);

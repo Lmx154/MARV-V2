@@ -24,6 +24,7 @@
 #include <marv/link/protocol.hpp>
 
 #include "mission.hpp"
+#include "resources.hpp"
 #include "transport.hpp"
 
 namespace marv::gcs {
@@ -35,6 +36,8 @@ using Broadcast = std::function<void(const std::string&, bool droppable)>;
 
 // The first /dev/serial/by-id/usb-MARV_MARV_flight_controller_* (the firmware's own USB name), empty when none.
 std::string first_fc();
+// The process of this user other than marv_gcs itself that has the device open; pid 0 when none.
+Holder fc_holder(const std::string& device);
 
 struct LinkConfig {
     // kAuto: the flight controller on USB (scanned for every 1 s) while no sim runs, the sim's bridge while one does.
@@ -43,6 +46,7 @@ struct LinkConfig {
     Mode mode = Mode::kAuto;
     std::string target = "127.0.0.1:14650";  // HOST:PORT of the bridge's --ground (kUdp, kAuto), or the serial device
     std::function<std::string()> scan = first_fc;  // kAuto: the device to open, empty when none
+    std::function<Holder(const std::string&)> holder = fc_holder;  // kAuto: who else has it open (not opened then)
     Opener open_serial = ground::open_serial;
     Opener open_udp = ground::open_udp;
 };
@@ -62,7 +66,8 @@ public:
     // kAuto: a sim is about to start its bridge (on: the serial port is closed before this returns and the link goes to
     // the bridge's --ground) or has ended (off: back to scanning USB). A no-op in the fixed modes.
     void sim(bool on);
-    // GET /api/link: {mode, via, target, connected, schema_ok, schema_hash, header, error?, flashing}.
+    // GET /api/link: {mode, via, target, connected, schema_ok, schema_hash, header, error?, flashing, holder?}. via
+    // "busy": kAuto found the flight controller but another process holds it (holder {name, pid}; pid 0: unknown).
     boost::json::object state() const;
     // state() as a {type: "link"} message.
     std::string link_message() const;
@@ -122,6 +127,8 @@ private:
     bool serial_ = false;                 // tx_ is a serial device ...
     std::string at_;                      // ... or HOST:PORT: the path or address it was opened on
     bool sim_ = false;                    // kAuto: a sim's bridge holds the flight controller
+    std::string busy_at_;                 // kAuto: the flight controller found held by busy_ ("" when not)
+    Holder busy_;
     link::Decoder dec_;
 
     std::deque<Request> queue_;
