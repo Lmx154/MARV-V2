@@ -128,6 +128,14 @@ bool GzWorld::step(SensorBus& bus, State& truth, std::string& err) {
         bus.gnss.fix = true;
     }
     baro_new_ = mag_new_ = gnss_new_ = false;
+    // A sensor stream that never starts is a lost subscription, not a sensor fault: fly nothing on it. Every
+    // stream publishes by t = 1 ms and the slowest (GNSS, 10 Hz) again by 101 ms; 250 ms leaves margin.
+    seen_ |= bus.fresh;
+    if (t >= 250000 && seen_ != (kImu | kBaro | kMag | kGnss)) {
+        err = std::string("no message from") + (seen_ & kBaro ? "" : " baro") + (seen_ & kMag ? "" : " mag") +
+              (seen_ & kGnss ? "" : " gnss") + " in the first 250 ms: the subscription failed, rerun";
+        return false;
+    }
 
     truth.t_us = t;
     truth.valid = odom_us_ == t;

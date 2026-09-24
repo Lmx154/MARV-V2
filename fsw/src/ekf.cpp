@@ -116,30 +116,39 @@ float heading_innovation(Quat q, Vec3 m_frd, float declination) {
 }
 
 StationaryAlignment::StationaryAlignment(const EskfParams& p)
-    : skip_s_(p.align_skip_s), window_s_(p.align_window_s), declination_(std::atan2(p.mag_ref_ned_ut.y, p.mag_ref_ned_ut.x)) {}
+    : p_(p), declination_(std::atan2(p.mag_ref_ned_ut.y, p.mag_ref_ned_ut.x)) {}
 
 bool StationaryAlignment::feed(const SensorBus& bus, Alignment& out) {
-    if (!started_) {
-        started_ = true;
-        t_first_us_ = bus.t_us;
+    if (bus.fresh & kImu) {
+        const Vec3 f = bus.imu.accel_frd;
+        const Vec3 w = bus.imu.gyro_frd;
+        bool still = std::fabs(norm(f) - p_.gravity) < p_.still_g_err && norm(w) < p_.still_rate;
+        if (still && n_imu_ > 0) {
+            const float inv = 1.f / static_cast<float>(n_imu_);
+            still = norm(f - inv * sum_f_) < p_.still_accel_dev && norm(w - inv * sum_w_) < p_.still_gyro_dev;
+        }
+        if (!still) {
+            sum_f_ = sum_w_ = sum_m_ = Vec3{0.f, 0.f, 0.f};
+            sum_h_ = 0.f;
+            n_imu_ = n_mag_ = n_baro_ = 0;
+            return false;
+        }
+        if (n_imu_ == 0) t_win_us_ = bus.t_us;
+        sum_f_ += f;
+        sum_w_ += w;
+        ++n_imu_;
     }
-    const float t = static_cast<float>(bus.t_us - t_first_us_) * 1e-6f;
-    if (t >= skip_s_ && t < skip_s_ + window_s_) {
-        if (bus.fresh & kImu) {
-            sum_f_ += bus.imu.accel_frd;
-            sum_w_ += bus.imu.gyro_frd;
-            ++n_imu_;
-        }
-        if (bus.fresh & kMag) {
-            sum_m_ += bus.mag.field_frd_ut;
-            ++n_mag_;
-        }
-        if (bus.fresh & kBaro) {
-            sum_h_ += isa_height(bus.baro.pressure_pa);
-            ++n_baro_;
-        }
+    if (n_imu_ == 0) return false;
+    if (bus.fresh & kMag) {
+        sum_m_ += bus.mag.field_frd_ut;
+        ++n_mag_;
     }
-    if (!(t >= skip_s_ + window_s_ && n_imu_ > 0 && n_mag_ > 0 && n_baro_ > 0)) return false;
+    if (bus.fresh & kBaro) {
+        sum_h_ += isa_height(bus.baro.pressure_pa);
+        ++n_baro_;
+    }
+    const float t = static_cast<float>(bus.t_us - t_win_us_) * 1e-6f;
+    if (!(t >= p_.align_window_s && n_mag_ > 0 && n_baro_ > 0)) return false;
     const Vec3 f = (1.f / static_cast<float>(n_imu_)) * sum_f_;
     const Vec3 m = (1.f / static_cast<float>(n_mag_)) * sum_m_;
     const float roll = std::atan2(-f.y, -f.z);

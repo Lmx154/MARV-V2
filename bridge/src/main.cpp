@@ -188,7 +188,7 @@ void log_header(std::FILE* f) {
                  "gnss_lat_e7,gnss_lon_e7,gnss_alt_m,gnss_vn_mps,gnss_ve_mps,gnss_vd_mps,gnss_fix,"
                  "motor0,motor1,motor2,motor3,"
                  "est_valid,est_n_m,est_e_m,est_d_m,est_vn_mps,est_ve_mps,est_vd_mps,est_qw,est_qx,est_qy,est_qz,"
-                 "req_fn_n,req_fe_n,req_fd_n,req_tx_nm,req_ty_nm,req_tz_nm\n");
+                 "req_fn_n,req_fe_n,req_fd_n,req_tx_nm,req_ty_nm,req_tz_nm,preset,home_valid,home_lat_e7,home_lon_e7,home_alt_m\n");
 }
 
 void log_row(std::FILE* f, const State& x, const SensorBus& s, const ActuatorCommand& c, const Telemetry& t) {
@@ -204,10 +204,11 @@ void log_row(std::FILE* f, const State& x, const SensorBus& s, const ActuatorCom
                  s.gnss.alt_m, s.gnss.vel_ned.x, s.gnss.vel_ned.y, s.gnss.vel_ned.z, s.gnss.fix ? 1 : 0,
                  c.motor[0], c.motor[1], c.motor[2], c.motor[3]);
     const State& e = t.est;
-    std::fprintf(f, "%d,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g\n",
+    std::fprintf(f, "%d,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%.9g,%u,%d,%ld,%ld,%.9g\n",
                  e.valid ? 1 : 0, e.p_ned.x, e.p_ned.y, e.p_ned.z, e.v_ned.x, e.v_ned.y, e.v_ned.z, e.q.w, e.q.x,
                  e.q.y, e.q.z, t.req.force_ned.x, t.req.force_ned.y, t.req.force_ned.z, t.req.torque_frd.x,
-                 t.req.torque_frd.y, t.req.torque_frd.z);
+                 t.req.torque_frd.y, t.req.torque_frd.z, static_cast<unsigned>(t.preset), t.home_valid ? 1 : 0,
+                 static_cast<long>(t.home.lat_e7), static_cast<long>(t.home.lon_e7), t.home.alt_m);
 }
 
 }  // namespace

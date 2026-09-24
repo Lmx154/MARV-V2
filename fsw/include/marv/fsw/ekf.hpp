@@ -33,8 +33,9 @@ struct Alignment {
     std::uint64_t t_us;  // the tick it completed on
 };
 
-// Eskf::accumulate_alignment and Eskf::align: IMU, magnetometer and barometer samples with
-// align_skip_s <= t - t_first < align_skip_s + align_window_s are averaged.
+// The same rule as Eskf::accumulate_alignment and Eskf::align: IMU, magnetometer and barometer samples are
+// averaged over align_window_s of unbroken stillness (the EskfParams still_* thresholds); any moving IMU
+// sample restarts the window.
 class StationaryAlignment {
 public:
     explicit StationaryAlignment(const EskfParams& p);
@@ -42,9 +43,9 @@ public:
     bool feed(const SensorBus& bus, Alignment& out);
 
 private:
-    float skip_s_, window_s_, declination_;
-    bool started_ = false;
-    std::uint64_t t_first_us_ = 0;
+    EskfParams p_;
+    float declination_;
+    std::uint64_t t_win_us_ = 0;  // first IMU sample of the still window
     Vec3 sum_f_{0.f, 0.f, 0.f};
     Vec3 sum_w_{0.f, 0.f, 0.f};
     Vec3 sum_m_{0.f, 0.f, 0.f};

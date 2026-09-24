@@ -62,6 +62,7 @@ private:
     gz::msgs::Magnetometer mag_;
     gz::msgs::NavSat gnss_;
     bool baro_new_ = false, mag_new_ = false, gnss_new_ = false;
+    std::uint8_t seen_ = 0;  // SensorBit mask of the streams heard from since connect
 
     std::uint64_t t_us_ = 0;  // sim time of the last step taken
     bool have_origin_ = false;
