@@ -3,7 +3,8 @@
 #
 #   scripts/gcs.sh [--udp HOST:PORT | --serial DEV] [--http PORT]
 #
-# Default link: UDP to marv_bridge --ground on 127.0.0.1:14650. Open the printed URL in a browser.
+# Default link: automatic, the flight controller on USB while no sim runs, the sim's bridge (127.0.0.1:14650) while
+# one does. --udp or --serial fixes it. Open the printed URL in a browser.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 web="$root/gcs/web"
