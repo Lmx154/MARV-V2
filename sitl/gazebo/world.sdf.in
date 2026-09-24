@@ -1,0 +1,163 @@
+<?xml version="1.0" ?>
+<!--
+  MARV SITL world template. The world generator (gcs/src/worldgen.cpp; scripts/sim.sh --world ID and the GCS
+  Development tab's launcher) writes build/native/sim/generated/<name>.sdf from this file:
+    - the airframe's model (sitl/airframes/<id>/model.sdf, links/joints/motor plugins) at the MODEL mark, its pose
+      z the airframe's spawn_z, and sitl/gazebo/fc3_sensors.sdf.in inside its base_link;
+    - the environment: latitude_deg, longitude_deg and elevation below replaced; at the WIND mark, when the air is
+      not calm, <wind> and the WindEffects system. Calm air at the values below (ETH Zurich) is exactly this world.
+
+  Physics at 1 kHz, real_time_factor 0: the harness steps this world
+  (ADR-0002, lockstep) rather than watching it.
+-->
+<sdf version="1.9">
+  <world name="marv">
+    <physics name="1ms" type="dart">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system"
+            name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-imu-system"
+            name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-air-pressure-system"
+            name="gz::sim::systems::AirPressure"/>
+    <!-- Phase 5 unit 2a. The navsat system is what turns the <sensor
+         type="navsat"> on the base link below into gz.msgs.NavSat traffic;
+         without it the sensor element loads and publishes nothing, which
+         looks exactly like a topic-name mistake. -->
+    <plugin filename="gz-sim-navsat-system"
+            name="gz::sim::systems::NavSat"/>
+    <!-- Magnetometer system, phase 5 unit 5a (ADR-0007 D35). Both params are
+         set EXPLICITLY; at -v 4 the plugin prints what it used
+         ("Magnetometer: using param [use_units_gauss: 0]", "[use_earth_frame_ned:
+         0]"). false/false means: the message's field_tesla is in Tesla, and
+         the world field the system computes from its tables (see the comment
+         at <gravity> above -- it does NOT read a <magnetic_field> element) is
+         expressed in ENU before the sensor rotates it into the body. The
+         bridge's mag-vs-truth pin (unit 5a.1), not this comment, proves the
+         frame and the unit. -->
+    <plugin filename="gz-sim-magnetometer-system"
+            name="gz::sim::systems::Magnetometer">
+      <use_units_gauss>false</use_units_gauss>
+      <use_earth_frame_ned>false</use_earth_frame_ned>
+    </plugin>
+
+    <gravity>0 0 -9.8066</gravity>
+    <!-- @WIND@ -->
+    <!-- No <magnetic_field> element, and that is deliberate (phase 5 unit
+         5a.0, 2026-09-04): gz-sim 8's Magnetometer system recomputes the
+         world field on every update from its own 10-degree tables at the
+         <spherical_coordinates> below and overwrites whatever this element
+         says (Magnetometer.cc:440-506, gz-sim8 branch) -- unit 5a.0 set it to
+         WMM-2025 and read a different field off the topic. The field the
+         sensor publishes is that table value, reproduced and probe-verified:
+         NED (0.2162762, 0.0096861, 0.4291632) gauss, declination 2.5643 deg
+         (docs/datasheets/wmm-zurich.md, second section; constants.hpp
+         kGzMagFieldNedGauss). An element here would be a comment that lies;
+         the harness's mag-vs-truth pin is what holds the value. -->
+
+    <!-- WHERE THIS WORLD IS, and why it is not the equator.
+         Phase 5 unit 2a (ADR-0007 S2): the navsat sensor reports latitude,
+         longitude and altitude, and it can only do that against a stated
+         origin. gz-sim's SphericalCoordinates turns the model's ENU world
+         position into degrees about this datum, and sitl/src/gazebo_ports.cpp
+         projects them back to NED metres -- so these five numbers and the
+         GazeboConfig::gps_datum_* fields that mirror them are ONE fact
+         written in two places, exactly as <update_rate>50</update_rate> on
+         baro_sensor and GazeboConfig::baro_period_us already are.
+
+         The place is ETH Zurich's Zentrum campus, 47.376388 N 8.547778 E,
+         408 m -- the lab the X3 in this file was measured in (RotorS, Furrer
+         et al., the provenance this file's own header records). A location
+         has to be somewhere, and this aircraft's own is a better answer than
+         a default.
+
+         THE LATITUDE IS THE PART THAT MATTERS. The flat-earth projection
+         scales east by cos(lat0) and north by the meridian radius; at
+         latitude 0 the cosine is 1, the two radii are at their closest, and
+         a projection that dropped the cosine, or crossed north with east,
+         would read correct anyway. At 47.376388 deg cos(lat0) = 0.6773, so
+         an east metre and a north metre differ by a third and neither
+         mistake can hide. A datum on the equator would be a test that
+         cannot fail.
+
+         heading_deg 0, so the world frame is plain ENU (+X east, +Y north,
+         +Z up) -- which is what the bridge's ENU->NED mapping assumes and
+         what gz-sim documents its world frame to be. A nonzero heading
+         would rotate the world's X/Y away from east/north and silently
+         invalidate that mapping.
+
+         The elevation only enters as a DIFFERENCE (down = -(alt - alt0)) and
+         through the WGS-84 radii, where 408 m against 6.37e6 m is 6e-5 --
+         it is stated rather than defaulted so the SDF's number and the
+         bridge's can be compared by eye. -->
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>47.376388</latitude_deg>
+      <longitude_deg>8.547778</longitude_deg>
+      <elevation>408</elevation>
+      <heading_deg>0</heading_deg>
+    </spherical_coordinates>
+
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>200 200</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>200 200</size></plane></geometry>
+          <material><ambient>0.3 0.32 0.3 1</ambient><diffuse>0.45 0.5 0.45 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="marv_quad">
+      <!-- On the ground, at rest, which is where an aircraft powers up: airframe.json's spawn_z. -->
+      <pose>0 0 @SPAWN_Z@ 0 0 0</pose>
+      <!-- @MODEL@ -->
+      <!-- Ground truth pose/twist for phase 4 unit U1
+           (sitl/include/marv/sitl/gazebo_truth.hpp). 3D, because the
+           plugin's OWN default is planar (dimensions=2, verified against
+           the installed gz-sim8 8.15.0 OdometryPublisher.cc:132,198) and
+           a 2D odometry message carries no z velocity or roll/pitch rate
+           at all. odom_publish_frequency matches the physics rate
+           exactly -- 1000 Hz, this world's own <max_step_size> above --
+           so a sample is due on EVERY control frame, PROVEN each run by
+           GazeboSource::prime() (gazebo_ports.cpp) rather than assumed
+           from this number. odom_topic is explicit and chosen, not the
+           plugin's own "/model/<model>/odometry" default
+           (OdometryPublisher.cc:225-226) -- it must read identically in
+           gazebo_ports.cpp's odom_topic(). odom_frame/robot_base_frame
+           are header labels only (OdometryPublisher.cc:475-480); they do
+           not affect the pose/twist math and are set to this airframe's
+           own names rather than left at the plugin's generic
+           "<model>/odom" / "<model>/base_footprint" defaults
+           (OdometryPublisher.cc:157,186-187), since this model has no
+           base_footprint link. -->
+      <plugin filename="gz-sim-odometry-publisher-system"
+              name="gz::sim::systems::OdometryPublisher">
+        <dimensions>3</dimensions>
+        <odom_publish_frequency>1000</odom_publish_frequency>
+        <odom_topic>/world/marv/model/marv_quad/odometry</odom_topic>
+        <odom_frame>marv_quad/odom</odom_frame>
+        <robot_base_frame>base_link</robot_base_frame>
+      </plugin>
+    </model>
+  </world>
+</sdf>

@@ -12,7 +12,7 @@
 //   4. a second mission, rth after its first waypoint: hold within 2.0 m of home.
 //   5. land: disarmed ("landed") within 60 s, truth_d_m > -0.1, every motor 0.
 // Waypoints are placed in the truth frame (NED about the vehicle's spawn point, the world origin of
-// sitl/gazebo/marv_quad.sdf) and sent as lat/lon about that origin. Exit 0 when every check passes.
+// sitl/gazebo/world.sdf.in) and sent as lat/lon about that origin. Exit 0 when every check passes.
 import { spawn, spawnSync } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -39,7 +39,7 @@ mkdirSync(out, { recursive: true });
 const logPath = join(out, 'bridge.csv');
 
 // ---- the world origin and a flat earth about it (fsw/include/marv/fsw/geo.hpp, in double) -----------------------------
-const sdf = readFileSync(join(root, 'sitl/gazebo/marv_quad.sdf'), 'utf8');
+const sdf = readFileSync(join(root, 'sitl/gazebo/world.sdf.in'), 'utf8');
 const tag = (t) => Number(new RegExp(`<${t}>([^<]+)</${t}>`).exec(sdf)[1]);
 const LAT0 = tag('latitude_deg'), LON0 = tag('longitude_deg'), ALT0 = tag('elevation');
 const toGeo = (() => {

@@ -1,5 +1,5 @@
 // marv_gcs: the ground-control backend. Serves the web GCS (gcs/web/build) with its schema, and relays its setup
-// requests to the flight controller and the replies and telemetry back.
+// requests to the flight controller and the replies and telemetry back, and launches SITL worlds (launcher.hpp).
 //
 //   marv_gcs [--udp HOST:PORT | --serial DEV] [--http PORT] [--web DIR]
 //   marv_gcs --dump-schema          the /api/schema JSON, tab-indented, on stdout
@@ -15,6 +15,7 @@
 #include <boost/asio/io_context.hpp>
 #include <boost/asio/signal_set.hpp>
 
+#include "launcher.hpp"
 #include "link.hpp"
 #include "schema.hpp"
 #include "server.hpp"
@@ -62,6 +63,8 @@ int main(int argc, char** argv) {
         Server server(io, "127.0.0.1", static_cast<unsigned short>(port), web);
         Link link(io, cfg, [&server](const std::string& text, bool droppable) { server.broadcast(text, droppable); });
         server.set_link(&link);
+        Launcher sim(io, cfg.serial, [&server](const std::string& text, bool droppable) { server.broadcast(text, droppable); });
+        server.set_sim(&sim);
         if (!link.start()) return 1;
         boost::asio::signal_set signals(io, SIGINT, SIGTERM);
         signals.async_wait([&io](const boost::system::error_code&, int) { io.stop(); });

@@ -1,0 +1,9 @@
+{
+	"id": "x500",
+	"label": "Holybro X500 V2 (PX4 gz_x500)",
+	"frame": "quad-x",
+	"source": "PX4-gazebo-models x500 @155f58e",
+	"spawn_z": 0.227,
+	"spawn_z_why": "the landing-gear bars (base_link_collision_3/4, bottom at -0.2195 - 0.0075 m) rest on the ground; PX4's 0.24 drops them onto it",
+	"mesh_path": "~/sim/PX4-gazebo-models/models"
+}
