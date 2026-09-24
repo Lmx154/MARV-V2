@@ -4,6 +4,13 @@
 //
 //   disarmed -arm-> armed -climb-> climb -reached-> hold -mission_start-> mission -last wp-> rth -over home-> hold
 //   rth: climb/hold/mission/land; land: climb/hold/mission/rth; landed -> disarmed; disarm: any state.
+//
+// Frames (ADR-0011): climb, hold and land hold a heading (kRefYaw), re-captured from telemetry on entering each; mission
+// and rth legs send kRefPos without kRefYaw (the guidance points the nose along the path). A mission leg's p_next is the
+// following waypoint; the last waypoint's p_next is itself (the vehicle stops there: the rth that follows starts with a
+// climb over the point it stopped at). Every other frame's p_next is its p. accept_m is the radius the executor
+// advances at, one function for both: 2.0 m on mission legs and the rth return over home, 0.5 m for climb, the rth
+// climb and hold. speed_mps is mission_start's on mission legs, 0 (the cruise parameter) elsewhere.
 #pragma once
 
 #include <cstdint>
@@ -45,7 +52,8 @@ public:
     std::string arm(bool link_open, double now);
     std::string disarm(double now);
     std::string climb(double alt_m);
-    std::string start(const std::vector<Waypoint>& wps);
+    // speed_mps: 0 (the guidance's cruise parameter) or 0.5..20 m/s.
+    std::string start(const std::vector<Waypoint>& wps, double speed_mps = 0.0);
     std::string rth();
     std::string land();
 
@@ -62,6 +70,8 @@ private:
     bool stale(double now) const;
     void advance(double now);
     void start_rth();
+    void hold_heading();
+    float accept() const;
     MissionCommand frame(Mode mode, std::uint8_t has, const Vec3& p, const Vec3& v) const;
 
     State state_ = State::kDisarmed;
@@ -72,12 +82,13 @@ private:
 
     LocalFrame frame_;     // about telemetry.home at arm
     Vec3 home_ned_{};      // the estimate's xy at arm
-    float yaw_ = 0.f;      // the heading at arm, flown on every leg
+    float yaw_ = 0.f;      // the heading at arm or on entering climb, hold or land: flown there
     bool has_climb_ = false;
     float climb_alt_ = 0.f;
     Vec3 target_{};        // climb, hold, the mission's waypoint, the rth leg
     std::vector<Vec3> wps_;
     int wp_ = -1;
+    float speed_ = 0.f;    // mission_start's speed_mps
     int rth_leg_ = 0;      // 0: up to rth_alt over the start point, 1: over home
     Vec3 land_{};          // land: xy at the command
     bool still_ = false;                // land: the landed conditions hold since landed_since_ (telemetry t_us)

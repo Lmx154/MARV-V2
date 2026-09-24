@@ -6,6 +6,9 @@
 //   4. landed after 1.0 s of the landed conditions, not at 0.9 s; a gap in telemetry restarts that second.
 //   5. airborne disarm: kIdle at 20 Hz for 1 s, then silence; disarm when disarmed is accepted.
 //   6. stale telemetry: state and frame kept, reason "telemetry stale", no automatic transition.
+//   7. ADR-0011: p_next chained through the mission (the last waypoint's is itself); the executor advances at exactly
+//      the accept_m it sends, in every state that advances; speed_mps bounds and where it is sent; the heading
+//      re-captured on entering climb, hold and land, and held there.
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -47,6 +50,7 @@ struct Rig {
     std::int64_t ms = 100000;
     Vec3 p{0.2f, -0.1f, 0.f};
     Vec3 v{0.f, 0.f, 0.f};
+    Quat q = kQ;
     bool valid = true, home = true, fc_armed = false;
     MissionCommand cmd{};
     bool sent = false;
@@ -57,7 +61,7 @@ struct Rig {
         tl.t_us = static_cast<std::uint64_t>(ms) * 1000u;
         tl.est.p_ned = p;
         tl.est.v_ned = v;
-        tl.est.q = kQ;
+        tl.est.q = q;
         tl.est.valid = valid;
         tl.home_valid = home;
         tl.home = home ? kHome : GeoPoint{};
@@ -95,6 +99,11 @@ struct Rig {
 bool is_fly(const MissionCommand& c, const Vec3& p, float tol = 1e-4f) {
     return c.mode == Mode::kFly && c.nav == NavSource::kEstimate && c.ref.has == (kRefPos | kRefYaw) &&
            near(c.ref.p_ned, p, tol) && c.ref.yaw == yaw_of(kQ);
+}
+
+// A mission or rth leg: position only, the nose along the path.
+bool is_leg(const MissionCommand& c, const Vec3& p, float tol = 1e-4f) {
+    return c.mode == Mode::kFly && c.nav == NavSource::kEstimate && c.ref.has == kRefPos && near(c.ref.p_ned, p, tol);
 }
 
 // Degrees of a point NED about kHome.
@@ -140,30 +149,30 @@ void test_sequence() {
     s = r.m.status(r.t());
     CHECK(s.has_climb_alt && s.climb_alt_m == 5.f && s.has_target && s.target.alt_m == 5.0);
 
-    // A mission: three waypoints in order, at the heading of arm; each advances at 0.5 m 3-D.
+    // A mission: three waypoints in order, the nose along the path; each advances at 2.0 m 3-D.
     const std::vector<Waypoint> wps{wp(12.f, 0.f, 6.0), wp(12.f, 12.f, 8.0), wp(0.f, 12.f, 7.0)};
     CHECK(r.m.start(wps).empty());
     r.step();
     s = r.m.status(r.t());
     CHECK(s.state == S::kMission && s.reason.empty() && s.wp_index == 0 && s.wp_count == 3);
     CHECK(std::fabs(s.target.lat - wps[0].lat) < 1e-9 && std::fabs(s.target.lon - wps[0].lon) < 1e-9);
-    CHECK(is_fly(r.cmd, {12.f, 0.f, -6.f}, 0.02f) && r.cmd.ref.p_ned.z == -6.f);
-    r.reach(0.52f);  // outside the radius
+    CHECK(is_leg(r.cmd, {12.f, 0.f, -6.f}, 0.02f) && r.cmd.ref.p_ned.z == -6.f);
+    r.reach(2.02f);  // outside the radius
     CHECK(r.m.status(r.t()).wp_index == 0);
-    r.p.x -= 0.1f;  // 0.42 m: inside
+    r.p.x -= 0.1f;  // 1.92 m: inside
     r.step();
-    CHECK(r.m.status(r.t()).wp_index == 1 && is_fly(r.cmd, {12.f, 12.f, -8.f}, 0.02f));
+    CHECK(r.m.status(r.t()).wp_index == 1 && is_leg(r.cmd, {12.f, 12.f, -8.f}, 0.02f));
     r.reach();
-    CHECK(r.m.status(r.t()).wp_index == 2 && is_fly(r.cmd, {0.f, 12.f, -7.f}, 0.02f));
+    CHECK(r.m.status(r.t()).wp_index == 2 && is_leg(r.cmd, {0.f, 12.f, -7.f}, 0.02f));
     const Vec3 last = r.cmd.ref.p_ned;
 
     // The last waypoint: rth at max(alt_now = 7, climb_alt = 5), up over the last waypoint, then over home, then hold.
     r.reach();
     s = r.m.status(r.t());
     CHECK(s.state == S::kRth && s.reason == "mission complete" && s.wp_index == -1 && s.wp_count == 0);
-    CHECK(is_fly(r.cmd, {last.x, last.y, -7.f}));
+    CHECK(is_leg(r.cmd, {last.x, last.y, -7.f}));
     r.reach();
-    CHECK(r.state() == S::kRth && is_fly(r.cmd, {0.2f, -0.1f, -7.f}));
+    CHECK(r.state() == S::kRth && is_leg(r.cmd, {0.2f, -0.1f, -7.f}));
     r.reach();
     CHECK(r.state() == S::kHold && r.reason() == "home reached" && is_fly(r.cmd, {0.2f, -0.1f, -7.f}));
 
@@ -195,7 +204,7 @@ void test_rth_alt() {
     r.at({8.f, 0.f, -3.f});
     CHECK(r.m.rth().empty());
     r.step();
-    CHECK(r.state() == S::kRth && r.reason().empty() && is_fly(r.cmd, {8.f, 0.f, -10.f}));
+    CHECK(r.state() == S::kRth && r.reason().empty() && is_leg(r.cmd, {8.f, 0.f, -10.f}));
     CHECK(r.m.status(r.t()).wp_index == -1);
     std::printf("rth_alt: at 3 m with climb 10: %.2f m\n", static_cast<double>(-r.cmd.ref.p_ned.z));
     // Above it: rth keeps the altitude it has. Already over home: both legs at once, then hold.
@@ -204,7 +213,7 @@ void test_rth_alt() {
     q.at({0.2f, -0.1f, -9.f});
     CHECK(q.m.rth().empty());
     q.step();
-    CHECK(q.state() == S::kRth && is_fly(q.cmd, {0.2f, -0.1f, -9.f}));
+    CHECK(q.state() == S::kRth && is_leg(q.cmd, {0.2f, -0.1f, -9.f}));
     std::printf("rth_alt: at 9 m with climb 5: %.2f m\n", static_cast<double>(-q.cmd.ref.p_ned.z));
     q.step();
     CHECK(q.state() == S::kHold && q.reason() == "home reached");
@@ -391,6 +400,121 @@ void test_stale() {
     CHECK(l.tick() && l.cmd.ref.p_ned.z == -4.f && l.reason() == "telemetry stale" && l.state() == S::kLand);
 }
 
+// The executor advances at exactly the accept_m it sends: 1 cm outside that radius of the frame's p it stays, 1 cm
+// inside it moves on (another state, waypoint or target).
+bool advances_at_accept(Rig& r) {
+    const Vec3 p = r.cmd.ref.p_ned;
+    const float a = r.cmd.ref.accept_m;
+    const Mission::Status s0 = r.m.status(r.t());
+    const auto moved = [&] {
+        const Mission::Status s = r.m.status(r.t());
+        return s.state != s0.state || s.wp_index != s0.wp_index || !near(r.cmd.ref.p_ned, p, 0.f);
+    };
+    r.at({p.x + a + 0.01f, p.y, p.z});
+    r.tick();
+    if (moved()) return false;
+    r.at({p.x + a - 0.01f, p.y, p.z});
+    r.tick();
+    return moved();
+}
+
+void test_chaining() {
+    Rig r;
+    r.feed();
+    CHECK(r.m.arm(true, r.t()).empty());
+    CHECK(r.m.climb(5.0).empty());
+    r.step();
+    CHECK(r.cmd.ref.accept_m == 0.5f && near(r.cmd.ref.p_next_ned, r.cmd.ref.p_ned, 0.f) && r.cmd.ref.speed_mps == 0.f);
+    CHECK(advances_at_accept(r) && r.state() == S::kHold);
+    CHECK(r.cmd.ref.accept_m == 0.5f && near(r.cmd.ref.p_next_ned, r.cmd.ref.p_ned, 0.f) && r.cmd.ref.speed_mps == 0.f);
+
+    // Each leg's p_next is the following waypoint, the last one's itself; 2.0 m, speed_mps on every leg.
+    const Vec3 ned[] = {{20.f, 0.f, -5.f}, {20.f, 20.f, -6.f}, {0.f, 20.f, -5.f}};
+    CHECK(r.m.start({wp(20.f, 0.f, 5.0), wp(20.f, 20.f, 6.0), wp(0.f, 20.f, 5.0)}, 3.0).empty());
+    r.step();
+    for (int w = 0; w < 3; ++w) {
+        const Vec3& next = ned[w < 2 ? w + 1 : 2];
+        CHECK(r.m.status(r.t()).wp_index == w && is_leg(r.cmd, ned[w], 0.02f));
+        CHECK(near(r.cmd.ref.p_next_ned, next, 0.02f) && r.cmd.ref.accept_m == 2.f && r.cmd.ref.speed_mps == 3.f);
+        std::printf("chaining: leg %d p (%.2f, %.2f, %.2f) p_next (%.2f, %.2f, %.2f) accept %.1f m speed %.1f m/s\n", w,
+                    static_cast<double>(r.cmd.ref.p_ned.x), static_cast<double>(r.cmd.ref.p_ned.y),
+                    static_cast<double>(r.cmd.ref.p_ned.z), static_cast<double>(r.cmd.ref.p_next_ned.x),
+                    static_cast<double>(r.cmd.ref.p_next_ned.y), static_cast<double>(r.cmd.ref.p_next_ned.z),
+                    static_cast<double>(r.cmd.ref.accept_m), static_cast<double>(r.cmd.ref.speed_mps));
+        CHECK(advances_at_accept(r));
+    }
+    CHECK(near(r.cmd.ref.p_next_ned, r.cmd.ref.p_ned, 0.f));
+
+    // rth: the climb over the stopping point at 0.5 m, the return over home at 2.0 m, then hold; single, cruise speed.
+    CHECK(r.state() == S::kRth && r.cmd.ref.has == kRefPos && r.cmd.ref.accept_m == 0.5f && r.cmd.ref.speed_mps == 0.f);
+    CHECK(near(r.cmd.ref.p_next_ned, r.cmd.ref.p_ned, 0.f) && advances_at_accept(r));
+    CHECK(is_leg(r.cmd, {0.2f, -0.1f, -5.f}) && r.cmd.ref.accept_m == 2.f && r.cmd.ref.speed_mps == 0.f);
+    CHECK(near(r.cmd.ref.p_next_ned, r.cmd.ref.p_ned, 0.f) && advances_at_accept(r));
+    CHECK(r.state() == S::kHold && r.reason() == "home reached" && r.cmd.ref.accept_m == 0.5f);
+
+    // land: single, 0.5 m, cruise speed.
+    CHECK(r.m.land().empty());
+    r.step();
+    CHECK(near(r.cmd.ref.p_next_ned, r.cmd.ref.p_ned, 0.f) && r.cmd.ref.accept_m == 0.5f && r.cmd.ref.speed_mps == 0.f);
+}
+
+void test_speed() {
+    Rig r;
+    to_hold(r, 5.0);
+    const std::vector<Waypoint> w{wp(10.f, 0.f, 5.0)};
+    for (double bad : {0.49, 20.01, -1.0, -0.0001, std::nan(""), HUGE_VAL, 1e300})
+        CHECK(r.m.start(w, bad).find("speed_mps") != std::string::npos && r.state() == S::kHold);
+    for (double ok : {0.0, 0.5, 20.0}) {
+        CHECK(r.m.start(w, ok).empty());
+        r.step();
+        CHECK(r.state() == S::kMission && r.cmd.ref.speed_mps == static_cast<float>(ok));
+        CHECK(r.m.rth().empty());
+        r.step();
+        CHECK(r.cmd.ref.speed_mps == 0.f);
+        r.reach();
+        r.reach();
+        CHECK(r.state() == S::kHold);
+    }
+    CHECK(r.m.start(w).empty());  // absent: 0, the cruise speed
+    r.step();
+    CHECK(r.cmd.ref.speed_mps == 0.f);
+}
+
+void test_yaw() {
+    const auto yawed = [](float y) { return quat_from_euler(0.f, 0.f, y); };
+    Rig r;
+    r.feed();
+    CHECK(r.m.arm(true, r.t()).empty());
+    r.q = yawed(0.9f);
+    r.feed();
+    CHECK(r.m.climb(5.0).empty());  // entering climb: 0.9
+    r.step();
+    CHECK(r.cmd.ref.has == (kRefPos | kRefYaw) && r.cmd.ref.yaw == yaw_of(yawed(0.9f)));
+    r.q = yawed(1.1f);
+    r.step();
+    CHECK(r.cmd.ref.yaw == yaw_of(yawed(0.9f)));  // held
+    r.reach();  // entering hold: 1.1
+    CHECK(r.state() == S::kHold && r.cmd.ref.has == (kRefPos | kRefYaw) && r.cmd.ref.yaw == yaw_of(yawed(1.1f)));
+    r.q = yawed(1.3f);
+    r.step();
+    CHECK(r.cmd.ref.yaw == yaw_of(yawed(1.1f)));  // held
+    CHECK(r.m.start({wp(10.f, 0.f, 5.0)}).empty());
+    r.step();
+    CHECK(r.cmd.ref.has == kRefPos);
+    r.q = yawed(-0.5f);  // the nose along the path
+    r.reach();
+    CHECK(r.state() == S::kRth && r.cmd.ref.has == kRefPos);
+    r.reach();
+    r.reach();  // entering hold over home: -0.5
+    CHECK(r.state() == S::kHold && r.reason() == "home reached" && r.cmd.ref.yaw == yaw_of(yawed(-0.5f)));
+    r.q = yawed(2.f);
+    r.feed();
+    CHECK(r.m.land().empty());  // entering land: 2.0
+    r.step();
+    CHECK(r.cmd.ref.has == (kRefPos | kRefVel | kRefYaw) && r.cmd.ref.yaw == yaw_of(yawed(2.f)));
+    std::printf("yaw: climb %.2f, hold %.2f, hold after rth %.2f, land %.2f rad\n", 0.9, 1.1, -0.5, 2.0);
+}
+
 }  // namespace
 
 int main() {
@@ -400,6 +524,9 @@ int main() {
     test_landed();
     test_disarm();
     test_stale();
+    test_chaining();
+    test_speed();
+    test_yaw();
     if (g_fails) std::fprintf(stderr, "test_gcs_mission: %d failures\n", g_fails);
     else std::printf("test_gcs_mission: OK\n");
     return g_fails ? 1 : 0;
