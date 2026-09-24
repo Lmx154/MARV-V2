@@ -10,7 +10,7 @@ behind fixed contracts.
   guidance, controller, allocation, actuator commands. It *knows of* the vehicle and environment
   (`vehicle.hpp`, filter constants) but never simulates them.
 - **Mission software** (`ground/`): what to do — manual sticks, GPS setpoints, presets.
-- **Bridge** (`bridge/`): steps Gazebo one 1 ms tick at a time and moves frames between it, the
+- **Bridge** (`bridge/`): steps Gazebo 4 ms at a time, runs the flight software on every 1 ms step, and moves frames between it, the
   flight controller (`--sitl` in-process, or `--port` to the Pico) and the ground software.
 
 ## Contracts
