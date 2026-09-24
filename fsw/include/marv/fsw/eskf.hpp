@@ -23,7 +23,8 @@ namespace marv {
 //  - Stationary alignment: IMU, magnetometer and barometer samples are averaged over align_window_s of unbroken
 //    stillness. An IMU sample is still when |norm(f) - g| < still_g_err and norm(w) < still_rate, and f and w lie within
 //    still_accel_dev and still_gyro_dev of the window's mean so far. Any other sample discards the window (the start-up
-//    contact transient too).
+//    contact transient too). It completes only once the Earth field is known: the setup's mag_ref_ned_ut when any
+//    component is non-zero, else the WMM at the first fix (earth_field_ned_ut).
 class Eskf {
 public:
     static constexpr int kN = 15;
@@ -57,6 +58,7 @@ private:
     float gravity_;   // m/s^2
     Vec3 mag_ref_;    // Earth field at the origin, NED, microtesla
     float mag_decl_;  // declination of the reference field, rad
+    bool mag_known_;  // the setup overrides the field, or the first fix has looked it up
 
     bool aligned_ = false;
     std::uint64_t t_win_us_ = 0;  // first IMU sample of the still window

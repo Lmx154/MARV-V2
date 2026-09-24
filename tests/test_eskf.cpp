@@ -1,7 +1,8 @@
 // The ESKF against an analytic truth: sensors synthesised from a known p(t), q(t) at the Gazebo rates
 // (IMU 1 kHz, mag 100 Hz, baro 50 Hz, GNSS 10 Hz from t = 1 ms), with the ground-contact transient at start,
-// ideal or with the noise model of sitl/gazebo/marv_quad.sdf (seeded). The truth and the synthesis are double; the
-// filter sees the float SensorBus only.
+// ideal or with the noise model of sitl/gazebo/marv_quad.sdf (seeded). The Earth field is the WMM's at the origin, as
+// the filter looks it up at the first fix. The truth and the synthesis are double; the filter sees the float
+// SensorBus only.
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -9,6 +10,7 @@
 #include <random>
 
 #include <marv/fsw/eskf.hpp>
+#include <marv/fsw/geo_mag.hpp>
 #include <marv/fsw/math.hpp>
 
 using namespace marv;
@@ -27,9 +29,9 @@ namespace {
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kDeg = kPi / 180.0;
 constexpr double kG = 9.8066;
-constexpr double kMagNed[3] = {21.62762, 0.96861, 42.91632};
 constexpr double kRest = 2.0;  // s at rest before the motion
 constexpr double kLat0 = 47.3977419 * kDeg, kLon0 = 8.5455938 * kDeg, kAlt0 = 488.0;
+constexpr std::int32_t kLat0E7 = 473977419, kLon0E7 = 85455938;
 
 struct D3 {
     double x, y, z;
@@ -156,6 +158,8 @@ Result run(const Options& o) {
                           o.accel_bias.z + nz(kSdAccelBias)};
     const double wb[3] = {o.gyro_bias.x + nz(kSdGyroBias), o.gyro_bias.y + nz(kSdGyroBias),
                           o.gyro_bias.z + nz(kSdGyroBias)};
+    const Vec3 mf = earth_field_ned_ut(kLat0E7, kLon0E7);
+    const double mag_ned[3] = {mf.x, mf.y, mf.z};
     bool have_origin = false;
     D3 origin_err{0, 0, 0};  // z unused: see Result
     double sum_att = 0, sum_vel = 0, sum_h = 0, sum_v = 0;
@@ -178,7 +182,7 @@ Result run(const Options& o) {
                             static_cast<float>(s.w.z + wb[2] + nz(kSdGyro))};
         if (k % 10 == 0) {
             bus.fresh |= kMag;
-            const Vec3 m = body_of(R, kMagNed, !o.flip_mag);
+            const Vec3 m = body_of(R, mag_ned, !o.flip_mag);
             bus.mag.field_frd_ut = {m.x + static_cast<float>(nz(kSdMagUt)), m.y + static_cast<float>(nz(kSdMagUt)),
                                     m.z + static_cast<float>(nz(kSdMagUt))};
         }

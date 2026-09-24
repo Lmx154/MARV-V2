@@ -40,6 +40,7 @@ struct Result {
     double us_per_update = 0;
     double d_max = 0;      // vertical position error
     double fix_t = -1;     // the first GNSS fix delivered
+    double core_align_t = -1;  // the estimator's own alignment (aligned()), which valid may follow
     bool dropped = false;  // valid went true -> false
 };
 
@@ -73,6 +74,7 @@ Result run(E& f, const synth::Options& o, double gnss_from = 0.0, double grade_a
         f.update(bus);
         spent += std::chrono::steady_clock::now() - t0;
         ++n;
+        if (f.aligned() && r.core_align_t < 0) r.core_align_t = s.t;
         const State e = f.state();
         if (was_valid && !e.valid) r.dropped = true;
         was_valid = e.valid;
@@ -292,28 +294,56 @@ int main() {
         std::printf("test5 no GNSS: valid ever eskf %d ekf %d mahony %d complementary %d\n", r[0].aligned, r[1].aligned,
                     r[2].aligned, r[3].aligned);
     }
-    // 6. GNSS withheld until 5 s (3 s into the motion): invalid until the first fix, valid first on it, and test 1's
-    // bounds from 1 s after it (the estimators re-reference horizontal position to that fix).
+    // 6. GNSS withheld until 5 s: invalid until the first fix, valid first on it.
+    // (a) At rest until 6 s, the field from the WMM lookup (the default): the still window is done long before, but
+    // the field is unknown until the fix, so every estimator aligns on the fix tick; test 1's bounds from there.
+    // (b) The setup's field overrides the lookup (non-zero mag_ref_ned_ut, and the synthesis the same field: -21.8 deg
+    // of declination against the WMM's 3.4 at the origin): aligned within the first rest second, valid first on the
+    // fix 3 s into the motion, test 1's bounds from 1 s after it (horizontal position re-referenced to that fix).
+    // (c) Negative control: that field synthesised, the estimator left on the lookup, must fail test 1's EKF bound.
     {
-        const auto late = [&](auto& f, const char* name, const Limits& l) {
-            const Result r = run(f, ideal, 5.0, 1.0);
+        const auto late = [&](auto& f, const char* name, const synth::Options& o, double grade_after_fix, bool on_fix,
+                              const Limits& l) {
+            const Result r = run(f, o, 5.0, grade_after_fix);
             print(name, r);
             CHECK(r.aligned);
             CHECK(r.fix_t >= 5.0 && r.align_t == r.fix_t);
+            CHECK(on_fix ? r.core_align_t == r.fix_t : r.core_align_t < 1.2);
             CHECK(r.att_max_deg < l.att_deg);
             CHECK(r.vel_max < l.vel);
             CHECK(r.pos_max < l.pos);
         };
         const Limits kf{0.5, 0.05, 0.15}, mahony{12.0, 0.5, 0.4}, comp{5.5, 0.25, 0.2};
-        std::printf("gnss from 5.0 s\n");
+        synth::Options still = ideal;
+        still.rest = 6.0;
+        std::printf("gnss from 5.0 s, at rest until 6 s, WMM lookup\n");
         Eskf a;
-        late(a, "eskf", kf);
+        late(a, "eskf", still, 0.0, true, kf);
         Ekf b;
-        late(b, "ekf", kf);
+        late(b, "ekf", still, 0.0, true, kf);
         Mahony d;
-        late(d, "mahony", mahony);
+        late(d, "mahony", still, 0.0, true, mahony);
         Complementary e;
-        late(e, "complementary", comp);
+        late(e, "complementary", still, 0.0, true, comp);
+
+        synth::Options over = ideal;
+        over.mag_ned[0] = 20.0, over.mag_ned[1] = -8.0, over.mag_ned[2] = 43.0;
+        param::SensorParams sp;
+        sp.mag_ref_ned_ut_x = 20.f, sp.mag_ref_ned_ut_y = -8.f, sp.mag_ref_ned_ut_z = 43.f;
+        std::printf("gnss from 5.0 s, moving from 2 s, field override\n");
+        Eskf a2{{}, sp};
+        late(a2, "eskf", over, 1.0, false, kf);
+        Ekf b2{{}, sp};
+        late(b2, "ekf", over, 1.0, false, kf);
+        Mahony d2{{}, sp};
+        late(d2, "mahony", over, 1.0, false, mahony);
+        Complementary e2{{}, sp};
+        late(e2, "complementary", over, 1.0, false, comp);
+
+        Ekf neg;
+        const Result rn = run(neg, over);
+        print("ekf override negative", rn);
+        CHECK(rn.att_max_deg >= 0.5);
     }
     // 7. Fsw on the estimate: with GNSS withheld the mission to fly never arms a motor; with GNSS it arms once the
     // estimator is valid.

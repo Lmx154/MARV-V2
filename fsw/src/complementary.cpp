@@ -59,7 +59,6 @@ void TranslationBlend::correct(const SensorBus& bus, const LocalFrame& frame, fl
 Complementary::Complementary(const param::ComplementaryParams& p, const param::SensorParams& s)
     : prm_(p),
       gravity_(s.gravity),
-      mag_decl_(std::atan2(s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_x)),
       alignment_(s, s.gravity),
       tr_({p.k_pos, p.k_vel, p.k_baro}, s.gravity) {}
 
@@ -67,6 +66,7 @@ void Complementary::update(const SensorBus& bus) {
     t_us_ = bus.t_us;
     if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid()) {
         frame_.set({bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m});
+        alignment_.locate(bus.gnss.lat_e7, bus.gnss.lon_e7);
         tr_.reset_horizontal();  // first fix after alignment: horizontal position restarts there
     }
 
@@ -103,7 +103,7 @@ void Complementary::update(const SensorBus& bus) {
     if (bus.fresh & kMag) {
         const float dt = static_cast<float>(bus.t_us - last_mag_us_) * 1e-6f;
         last_mag_us_ = bus.t_us;
-        const float e = heading_innovation(q_, bus.mag.field_frd_ut, mag_decl_);
+        const float e = heading_innovation(q_, bus.mag.field_frd_ut, alignment_.declination());
         q_ = normalized(quat_from_rotvec(Vec3{0.f, 0.f, blend(prm_.k_mag, dt) * e}) * q_);
     }
     const float baro_h = (bus.fresh & kBaro) ? isa_height(bus.baro.pressure_pa) - baro_h0_ : 0.f;

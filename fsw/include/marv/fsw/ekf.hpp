@@ -36,17 +36,24 @@ struct Alignment {
 
 // The same rule as Eskf::accumulate_alignment and Eskf::align: IMU, magnetometer and barometer samples are
 // averaged over align_window_s of unbroken stillness (the SensorParams still_* thresholds); any moving IMU
-// sample restarts the window.
+// sample restarts the window. It completes only once the Earth field is known: the setup's mag_ref_ned_ut when any
+// component is non-zero, else the WMM at the first fix (locate).
 class StationaryAlignment {
 public:
     StationaryAlignment(const param::SensorParams& s, float gravity);
+    // On the first GNSS fix: the field there, unless the setup overrides it.
+    void locate(std::int32_t lat_e7, std::int32_t lon_e7);
     // Once per tick until it returns true: then out holds the alignment.
     bool feed(const SensorBus& bus, Alignment& out);
+    Vec3 field() const { return field_; }  // NED, microtesla
+    float declination() const { return declination_; }
 
 private:
     param::SensorParams p_;
     float gravity_;
+    Vec3 field_;
     float declination_;
+    bool field_known_;
     std::uint64_t t_win_us_ = 0;  // first IMU sample of the still window
     Vec3 sum_f_{0.f, 0.f, 0.f};
     Vec3 sum_w_{0.f, 0.f, 0.f};
@@ -80,9 +87,7 @@ private:
     param::EskfPriors pri_;
     param::SensorParams sns_;
     float gravity_;   // m/s^2
-    Vec3 mag_ref_;    // Earth field at the origin, NED, microtesla
-    float mag_decl_;
-    StationaryAlignment alignment_;
+    StationaryAlignment alignment_;  // also the Earth field reference and its declination
     LocalFrame frame_;  // GNSS origin: the first fix
     bool aligned_ = false;
     std::uint64_t t_us_ = 0;
