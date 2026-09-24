@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fixture from '$lib/fixtures/schema.json';
 import {
+	ACCEPT_WP_M,
 	MAX_WAYPOINTS,
 	PRESET_KEY,
 	climbError,
@@ -10,17 +11,21 @@ import {
 	importPresets,
 	isMissionRequest,
 	missionError,
+	missionStart,
 	moveWaypoint,
+	parseSpeed,
 	parseWaypoint,
 	propsSpinning,
 	rangeFromHome,
 	readPresets,
 	reasonText,
+	speedError,
 	upsertPreset,
 	waypointError,
 	writePresets,
 	type MissionPreset
 } from './mission';
+import { LocalFrame } from './geo';
 import { MockFc } from './mock';
 import { normalizeSchema, parseServer } from './protocol';
 import type { LatLonAlt, MissionMode, MissionStatus, Schema, ServerMsg, Telemetry } from './types';
@@ -118,11 +123,57 @@ describe('presets', () => {
 		expect(r.presets).toEqual([presets[0]]);
 		expect(r.rejected).toEqual(['bad', '#3', '#4']);
 	});
+	it('a preset speed round trips through storage and export/import', () => {
+		const withSpeed: MissionPreset[] = [...presets, { name: 'fast', waypoints: route, speed_mps: 8.5 }];
+		const s = memory();
+		expect(writePresets(s, withSpeed)).toBeNull();
+		expect(readPresets(s)).toEqual(withSpeed);
+		expect(importPresets(JSON.parse(JSON.stringify(exportPresets(withSpeed))))).toEqual({ presets: withSpeed, rejected: [] });
+	});
+	it('a preset speed must be within 0.5..20 m/s; absent or null is cruise', () => {
+		const r = importPresets([
+			{ name: 'slow', waypoints: route, speed_mps: 0.4 },
+			{ name: 'text', waypoints: route, speed_mps: '5' },
+			{ name: 'max', waypoints: route, speed_mps: 20 },
+			{ name: 'null', waypoints: route, speed_mps: null }
+		]);
+		expect(r.rejected).toEqual(['slow', 'text']);
+		expect(r.presets).toEqual([
+			{ name: 'max', waypoints: route, speed_mps: 20 },
+			{ name: 'null', waypoints: route }
+		]);
+		expect(exportPresets([{ name: 'c', waypoints: route }]).presets[0]).not.toHaveProperty('speed_mps');
+	});
 	it('saving under an existing name replaces it', () => {
 		const next = upsertPreset(presets, { name: 'one', waypoints: route });
 		expect(next.map((p) => p.name)).toEqual(['square', 'one']);
 		expect(next[1].waypoints).toEqual(route);
 		expect(upsertPreset(presets, { name: 'new', waypoints: route })).toHaveLength(3);
+	});
+});
+
+describe('mission speed', () => {
+	it('bounds 0.5..20 m/s; null is the setup cruise speed', () => {
+		expect(speedError(null)).toBeNull();
+		for (const v of [0.5, 5, 20]) expect(speedError(v)).toBeNull();
+		for (const v of [0.49, 20.01, 0, -5, NaN, Infinity]) expect(speedError(v)).toMatch(/0\.5\.\.20 m\/s/);
+	});
+	it('parses a typed speed: empty is cruise, else a decimal in bounds', () => {
+		expect(parseSpeed('')).toBeNull();
+		expect(parseSpeed('  ')).toBeNull();
+		expect(parseSpeed(' 7.5 ')).toBe(7.5);
+		expect(parseSpeed('20')).toBe(20);
+		for (const t of ['0.4', '21', 'fast', '1e1', '5 m/s']) expect(typeof parseSpeed(t)).toBe('string');
+	});
+	it('mission_start carries speed_mps only when given', () => {
+		const cruise = missionStart(route, null);
+		expect(cruise).toEqual({ type: 'mission_start', waypoints: route });
+		expect(JSON.stringify(cruise)).not.toContain('speed_mps');
+		expect(cruise.waypoints[0]).not.toBe(route[0]);
+		expect(JSON.parse(JSON.stringify(missionStart(route, 7.5)))).toEqual({ type: 'mission_start', waypoints: route, speed_mps: 7.5 });
+	});
+	it('the acceptance radius for mission legs is 2 m', () => {
+		expect(ACCEPT_WP_M).toBe(2);
 	});
 });
 
@@ -152,6 +203,10 @@ describe('control enable rules', () => {
 		expect(on('armed', { climbAlt: 250 })).toEqual(['disarm']);
 		expect(on('hold', { home: { lat: 47.3765, lon: 8.65 } })).not.toContain('mission_start');
 		expect(on('hold', { home: { lat: 47.3765, lon: 8.5478 } })).toContain('mission_start');
+		expect(on('hold', { speed: null })).toContain('mission_start');
+		expect(on('hold', { speed: 12 })).toContain('mission_start');
+		expect(on('hold', { speed: 25 })).not.toContain('mission_start');
+		expect(on('hold', { speed: NaN })).not.toContain('mission_start');
 	});
 	it('disarm asks first when above 0.5 m or flying', () => {
 		expect(disarmNeedsConfirm('armed', 0.2)).toBe(false);
@@ -281,6 +336,41 @@ describe('mock mission', () => {
 		expect(all.length).toBe(m); // disarmed: only on change
 		fc.close();
 		expect(errors).toHaveLength(1);
+	});
+
+	it('flies a mission at speed_mps, or the setup cruise speed, and rounds corners within 2 m', () => {
+		const fly = (speed: number | null) => {
+			const { fc, errors, all, send } = start();
+			const ps: [number, number][] = [];
+			fc.onmessage = ((prev) => (ev: { data: string }) => {
+				prev?.(ev);
+				const m = parseServer(ev.data);
+				if (m?.type === 'telemetry' && all.at(-1)?.state === 'mission') ps.push([m.telemetry.p_ned[0], m.telemetry.p_ned[1]]);
+			})(fc.onmessage);
+			send({ type: 'arm' }, 1000);
+			send({ type: 'climb', alt_m: 5 }, 5000);
+			// A 30 m right-angle dogleg: north, then east.
+			const g = [wp(47.37666, 8.547778, 5), wp(47.37666, 8.54818, 5)];
+			send({ type: 'mission_start', waypoints: g, speed_mps: 25 });
+			send(missionStart(g, speed), 60_000);
+			fc.close();
+			const v = ps.slice(1).map((p, i) => Math.hypot(p[0] - ps[i][0], p[1] - ps[i][1]) / 0.05);
+			return { errors, v, ps, g };
+		};
+		const slow = fly(2);
+		const cruise = fly(null);
+		expect(slow.errors.map((e) => e.request)).toEqual(['mission_start']); // 25 m/s refused
+		expect(slow.errors[0].error).toMatch(/0\.5\.\.20 m\/s/);
+		expect(Math.max(...slow.v)).toBeLessThanOrEqual(2 + 1e-6);
+		expect(Math.max(...slow.v)).toBeGreaterThan(1.9);
+		expect(Math.max(...cruise.v)).toBeLessThanOrEqual(5 + 1e-6); // fixture cruise_speed default
+		expect(Math.max(...cruise.v)).toBeGreaterThan(4.5);
+		// Rounded: it passes within 2 m of the corner and, within 3 m of it, never slows below 2 m/s.
+		const [cn, ce] = new LocalFrame({ lat_e7: 473763880, lon_e7: 85477780, alt_m: 408 }).nedOf(cruise.g[0]);
+		const d = cruise.ps.map((p) => Math.hypot(p[0] - cn, p[1] - ce));
+		const near = cruise.v.filter((_, i) => d[i] < 3);
+		expect(Math.min(...d)).toBeLessThanOrEqual(ACCEPT_WP_M);
+		expect(Math.min(...near)).toBeGreaterThan(2);
 	});
 
 	it('refuses what the state does not allow, as errors', () => {

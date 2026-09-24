@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import L from 'leaflet';
 	import 'leaflet/dist/leaflet.css';
+	import { ACCEPT_WP_M } from '$lib/gcs/mission';
 	import type { LatLonAlt } from '$lib/gcs/types';
 
 	interface Props {
@@ -84,6 +85,7 @@
 		waypoints.forEach((w, i) => {
 			if (!Number.isFinite(w.lat) || !Number.isFinite(w.lon)) return;
 			const cls = i === active ? 'mm-wp mm-active' : 'mm-wp';
+			L.circle([w.lat, w.lon], { radius: ACCEPT_WP_M, className: 'mm-accept', weight: 1, interactive: false }).addTo(wpLayer!);
 			L.marker([w.lat, w.lon], { icon: icon(cls, String(i + 1), 22), title: `${i + 1}: ${w.alt_m} m`, keyboard: false }).addTo(wpLayer!);
 		});
 		const pts = waypoints.filter((w) => Number.isFinite(w.lat) && Number.isFinite(w.lon)).map((w) => L.latLng(w.lat, w.lon));
@@ -151,6 +153,11 @@
 	:global(.mm-trail) {
 		stroke: var(--bad);
 		stroke-opacity: 0.6;
+	}
+	:global(.mm-accept) {
+		stroke: var(--l-software);
+		fill: var(--l-software);
+		fill-opacity: 0.1;
 	}
 	:global(.mm-target) {
 		stroke: var(--accent);

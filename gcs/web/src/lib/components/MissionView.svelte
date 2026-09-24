@@ -3,17 +3,22 @@
 	import MissionMap from './MissionMap.svelte';
 	import { LocalFrame, fromE7 } from '$lib/gcs/geo';
 	import {
+		ACCEPT_WP_M,
 		ALT_MAX_M,
 		ALT_MIN_M,
 		MAX_RANGE_M,
 		MAX_WAYPOINTS,
+		SPEED_MAX_MPS,
+		SPEED_MIN_MPS,
 		climbError,
 		disarmNeedsConfirm,
 		enabledControls,
 		exportPresets,
 		importPresets,
 		missionError,
+		missionStart,
 		moveWaypoint,
+		parseSpeed,
 		parseWaypoint,
 		propsSpinning,
 		readPresets,
@@ -47,6 +52,10 @@
 	let newAlt = $state('20');
 	let addError = $state<string | null>(null);
 	let climbAlt = $state(10);
+	/** The mission speed as typed; empty flies the setup's cruise speed. */
+	let speedText = $state('');
+	/** The speed the last START asked for (null: cruise). */
+	let startedSpeed = $state<number | null>(null);
 	let presets = $state<MissionPreset[]>([]);
 	let presetName = $state('');
 	let note = $state<string | null>(null);
@@ -73,8 +82,10 @@
 	const altitude = $derived(position && Number.isFinite(position.alt_m) ? position.alt_m : telem ? -telem.p_ned[2] : NaN);
 	const vehicle = $derived(position ? { lat: position.lat, lon: position.lon, yaw_deg: telem ? euler(telem.q).yaw * DEG : 0 } : null);
 	const mode = $derived(mission?.state ?? null);
-	const on = $derived(enabledControls({ state: mode, connected, climbAlt, waypoints, home: homeLL }));
-	const startWhy = $derived(mode !== 'hold' ? 'enabled in hold, after the climb' : missionError(waypoints, homeLL));
+	const speed = $derived(parseSpeed(speedText));
+	const speedWhy = $derived(typeof speed === 'string' ? speed : null);
+	const on = $derived(enabledControls({ state: mode, connected, climbAlt, waypoints, home: homeLL, speed: typeof speed === 'string' ? NaN : speed }));
+	const startWhy = $derived(mode !== 'hold' ? 'enabled in hold, after the climb' : (missionError(waypoints, homeLL) ?? speedWhy));
 	const reason = $derived(reasonText(mission));
 	const spinning = $derived(propsSpinning(telem));
 	const full = $derived(waypoints.length >= MAX_WAYPOINTS);
@@ -109,6 +120,12 @@
 		waypoints[i][key] = v.trim() === '' ? NaN : Number(v);
 	}
 
+	function start(): void {
+		if (typeof speed === 'string') return;
+		startedSpeed = speed;
+		onsend(missionStart(waypoints, speed));
+	}
+
 	function disarm(): void {
 		if (disarmNeedsConfirm(mode, altitude) && !confirm(`Disarm now? The vehicle is ${mode ?? 'in an unknown state'} at ${fmt(altitude)} m: the motors stop and it falls.`)) return;
 		onsend({ type: 'disarm' });
@@ -119,7 +136,9 @@
 		if (!name) return void (note = 'Preset: give it a name.');
 		const why = missionError(waypoints);
 		if (why) return void (note = `Preset not saved: ${why}.`);
-		presets = upsertPreset(presets, { name, waypoints: waypoints.map((w) => ({ ...w })) });
+		if (speedWhy) return void (note = `Preset not saved: ${speedWhy}.`);
+		const w = waypoints.map((x) => ({ ...x }));
+		presets = upsertPreset(presets, typeof speed === 'number' ? { name, waypoints: w, speed_mps: speed } : { name, waypoints: w });
 		const err = writePresets(storage(), presets);
 		note = err ? `Preset ${name} kept for this session only: ${err}.` : `Preset ${name} saved in this browser.`;
 	}
@@ -128,8 +147,9 @@
 		const p = presets.find((x) => x.name === name);
 		if (!p) return;
 		waypoints = p.waypoints.map((w) => ({ ...w }));
+		speedText = p.speed_mps === undefined ? '' : String(p.speed_mps);
 		presetName = p.name;
-		note = `Preset ${p.name} loaded: ${p.waypoints.length} waypoints.`;
+		note = `Preset ${p.name} loaded: ${p.waypoints.length} waypoints, ${p.speed_mps === undefined ? 'cruise speed' : `${p.speed_mps} m/s`}.`;
 	}
 
 	function deletePreset(): void {
@@ -173,6 +193,7 @@
 		<span><span class="k">state</span> <b>{mode ?? '—'}</b></span>
 		{#if reason}<span><span class="k">reason</span> {reason}</span>{/if}
 		<span><span class="k">waypoint</span> {mission && mission.wp_count ? `${mission.wp_index >= 0 ? mission.wp_index + 1 : '—'}/${mission.wp_count}` : '—'}</span>
+		{#if mode === 'mission'}<span><span class="k">speed</span> {startedSpeed === null ? 'cruise (setup)' : `${fmt(startedSpeed)} m/s`}</span>{/if}
 		<span><span class="k">to target</span> {fmt(mission?.dist_m)} m</span>
 		<span><span class="k">altitude</span> {fmt(altitude)} m</span>
 		<span><span class="k">armed</span> {telem ? (telem.armed ? 'yes' : 'no') : '—'}</span>
@@ -197,7 +218,9 @@
 			{#if errors.climb}<span class="err" role="alert">{errors.climb}</span>{/if}
 		</div>
 		<div class="ctl">
-			<button type="button" class="btn" disabled={!on.mission_start} onclick={() => onsend({ type: 'mission_start', waypoints: waypoints.map((w) => ({ ...w })) })} title={startWhy ?? 'Fly the waypoints, then return and hold over home'}>START MISSION</button>
+			<button type="button" class="btn" disabled={!on.mission_start} onclick={start} title={startWhy ?? 'Fly the waypoints, then return and hold over home'}>START MISSION</button>
+			<label>at <input placeholder="cruise" bind:value={speedText} class:bad={speedWhy !== null} aria-label="Mission speed (m/s); empty flies the setup's cruise speed" title="{SPEED_MIN_MPS}..{SPEED_MAX_MPS} m/s; empty flies the cruise speed from the setup (guidance)" /> m/s</label>
+			{#if speedWhy}<span class="err">{speedWhy}</span>{/if}
 			{#if errors.mission_start}<span class="err" role="alert">{errors.mission_start}</span>{/if}
 		</div>
 		<div class="ctl">
@@ -225,7 +248,7 @@
 			<h2>Waypoints</h2>
 			<p class="hint">
 				Click the map, or type decimal degrees. Altitude is {ALT_MIN_M}..{ALT_MAX_M} m above home; up to {MAX_WAYPOINTS} waypoints, each within {MAX_RANGE_M / 1000} km of home. The route starts at home and
-				ends holding over it.
+				ends holding over it. The vehicle turns for the next waypoint once within {ACCEPT_WP_M} m of one, so corners are rounded.
 			</p>
 			<div class="add">
 				<input placeholder="lat" bind:value={newLat} aria-label="New waypoint latitude" />

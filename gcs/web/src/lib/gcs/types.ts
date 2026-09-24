@@ -219,7 +219,7 @@ export type ClientMsg =
 	| { type: 'arm' }
 	| { type: 'disarm' }
 	| { type: 'climb'; alt_m: number }
-	| { type: 'mission_start'; waypoints: LatLonAlt[] }
+	| { type: 'mission_start'; waypoints: LatLonAlt[]; speed_mps?: number }
 	| { type: 'rth' }
 	| { type: 'land' }
 	| { type: 'sim_launch'; airframe: string; env: SimEnv; gui: boolean; target: SimTarget }

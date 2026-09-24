@@ -170,6 +170,14 @@ describe('vehicle classes', () => {
 			});
 	});
 
+	it('the guidance trajectory kind: 12 params, each in exactly one part', () => {
+		const traj = kindOptions(schema, fam('guidance'), uav).find((o) => o.def.id === 'trajectory')!.def;
+		expect(traj.params).toHaveLength(12);
+		expect(traj.parts?.map((p) => p.id)).toEqual(['speed', 'dynamics', 'tracking', 'heading']);
+		expect(traj.parts!.flatMap((p) => p.params)).toEqual(traj.params.map((p) => p.id));
+		expect(traj.params.find((p) => p.id === 'cruise_speed')).toMatchObject({ unit: 'm/s', default: 5, min: 0.5, max: 20 });
+	});
+
 	describe('with the mock FC', () => {
 		beforeEach(() => vi.useFakeTimers());
 		afterEach(() => vi.useRealTimers());

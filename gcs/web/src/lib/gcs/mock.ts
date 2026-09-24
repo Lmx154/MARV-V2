@@ -2,11 +2,12 @@
  * Dev-only stand-in for the backend + FC (?mock): answers the client messages with the setup semantics of gcs decision
  * (b), (c). ?mock=armed starts armed (save refused); ?mock=mismatch reports another schema hash. A point-mass vehicle
  * flies the mission API about a fixed home with the executor's rules (ADR-0010 (b), (d)): arm, climb, hold, mission, return
- * to home and hold over it (no automatic landing), land and disarm. A fake sim launcher answers sim_launch and sim_stop.
+ * to home and hold over it (no automatic landing), land and disarm. Mission legs fly at the mission's speed_mps, else the
+ * running setup's guidance cruise_speed, acceleration-limited, advancing within ACCEPT_WP_M so corners round (ADR-0011). A fake sim launcher answers sim_launch and sim_stop.
  * A fake resource scan answers resources_request / resources_subscribe and terminate (itself refused, others removed).
  */
 import { LocalFrame, type Ned } from './geo';
-import { climbError, missionError, type MissionMsg } from './mission';
+import { ACCEPT_WP_M, climbError, missionError, speedError, type MissionMsg } from './mission';
 import type { ClientMsg, GeoPoint, LatLonAlt, MissionMode, RigResource, Schema, SetupHeader, SimStatus } from './types';
 
 /** The Gazebo world's origin, as in tests/test_geo.cpp. */
@@ -15,6 +16,9 @@ const SPEED_H = 6;
 const SPEED_V = 2.5;
 const SPEED_LAND = 1;
 const ARRIVED_M = 0.3;
+/** Horizontal acceleration limit (guidance trajectory acc_xy default), and the least speed kept through a mission corner. */
+const ACC_H = 3;
+const CORNER_MPS = 1.5;
 /** MOT_SPIN_ARM, and the mock's hover command. */
 const SPIN_ARM = 0.1;
 const HOVER = 0.68;
@@ -92,6 +96,12 @@ export class MockFc {
 	private readonly frame = new LocalFrame(HOME);
 	private p: Ned = [0, 0, 0];
 	private yaw = 0;
+	/** Horizontal velocity (m/s, north, east). */
+	private v: [number, number] = [0, 0];
+	/** The mission's speed; null flies cruise. */
+	private speed: number | null = null;
+	/** Absolute index of guidance/trajectory cruise_speed, or -1. */
+	private readonly cruiseIndex: number;
 	private mode: MissionMode;
 	private climbAlt: number | null = null;
 	/** Where climb, hold and land hold the horizontal position (and climb/hold the altitude). */
@@ -131,6 +141,11 @@ export class MockFc {
 		flag: string
 	) {
 		for (const f of schema.families) for (const k of f.kinds) for (const p of k.params) this.specs[p.index] = { min: p.min, max: p.max };
+		this.cruiseIndex =
+			schema.families
+				.find((f) => f.id === 'guidance')
+				?.kinds.find((k) => k.id === 'trajectory')
+				?.params.find((p) => p.id === 'cruise_speed')?.index ?? -1;
 		const f0 = schema.factory[0];
 		this.staged = { kind: f0.kinds.slice(), values: f0.values.map((v) => Math.fround(v)) };
 		this.running = copy(this.staged);
@@ -207,6 +222,7 @@ export class MockFc {
 	private disarm(reason = ''): void {
 		this.armed = false;
 		this.p[2] = 0;
+		this.v = [0, 0];
 		this.enter('disarmed', reason);
 	}
 
@@ -255,6 +271,10 @@ export class MockFc {
 				if (s !== 'hold') return refuse('climb to the safe altitude first');
 				const why = missionError(Array.isArray(m.waypoints) ? m.waypoints : [], this.homeLatLon());
 				if (why) return refuse(why);
+				const speed = m.speed_mps ?? null;
+				const slow = speedError(speed);
+				if (slow) return refuse(slow);
+				this.speed = speed;
 				this.wps = m.waypoints.map((w) => ({ ...w }));
 				this.wpIndex = 0;
 				return this.enter('mission', '');
@@ -289,21 +309,35 @@ export class MockFc {
 		}
 	}
 
+	/** The running setup's cruise speed, else SPEED_H. */
+	private cruise(): number {
+		const c = this.cruiseIndex >= 0 ? this.running.values[this.cruiseIndex] : NaN;
+		return Number.isFinite(c) && c > 0 ? c : SPEED_H;
+	}
+
 	/** One tick of the point mass toward the target; arriving advances the state. */
 	private fly(dt: number): void {
 		const t = this.target();
 		if (!t) return;
 		const [dn, de, dd] = [t[0] - this.p[0], t[1] - this.p[1], t[2] - this.p[2]];
 		const h = Math.hypot(dn, de);
-		const step = Math.min(h, SPEED_H * dt);
-		if (h > 1e-6) {
-			this.p[0] += (dn / h) * step;
-			this.p[1] += (de / h) * step;
-		}
-		if (h > 1) this.yaw = Math.atan2(de, dn);
+		// Mission legs keep CORNER_MPS through the waypoint; every other target is braked to a stop at it.
+		const through = this.mode === 'mission';
+		const limit = this.mode === 'mission' ? (this.speed ?? this.cruise()) : this.mode === 'rth' ? this.cruise() : SPEED_H;
+		const want = h > 1e-6 ? Math.min(limit, Math.sqrt(2 * ACC_H * h) + (through ? CORNER_MPS : 0), h / dt) : 0;
+		const dvn = (h > 1e-6 ? (want * dn) / h : 0) - this.v[0];
+		const dve = (h > 1e-6 ? (want * de) / h : 0) - this.v[1];
+		const dv = Math.hypot(dvn, dve);
+		const k = dv > ACC_H * dt ? (ACC_H * dt) / dv : 1;
+		this.v[0] += dvn * k;
+		this.v[1] += dve * k;
+		this.p[0] += this.v[0] * dt;
+		this.p[1] += this.v[1] * dt;
+		if (Math.hypot(this.v[0], this.v[1]) > 0.3) this.yaw = Math.atan2(this.v[1], this.v[0]);
 		const v = (this.mode === 'land' ? SPEED_LAND : SPEED_V) * dt;
 		this.p[2] += Math.max(-v, Math.min(v, dd));
-		if (this.mode === 'hold' || Math.hypot(h, dd) > ARRIVED_M) return;
+		const accept = this.mode === 'mission' || (this.mode === 'rth' && this.legs.length === 1) ? ACCEPT_WP_M : ARRIVED_M;
+		if (this.mode === 'hold' || Math.hypot(h, dd) > accept) return;
 		if (this.mode === 'climb') this.enter('hold', 'altitude reached', t);
 		else if (this.mode === 'mission') {
 			if (++this.wpIndex < this.wps.length) this.missionState();

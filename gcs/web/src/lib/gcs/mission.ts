@@ -15,6 +15,11 @@ export const MAX_WAYPOINTS = 64;
 export const ALT_MIN_M = 0.5;
 export const ALT_MAX_M = 200;
 export const MAX_RANGE_M = 5000;
+/** A mission's speed (ADR-0011 Q3); none flies the setup's guidance cruise speed. */
+export const SPEED_MIN_MPS = 0.5;
+export const SPEED_MAX_MPS = 20;
+/** The executor advances to the next waypoint within this distance of one (ADR-0011 Q3 kArriveWp). */
+export const ACCEPT_WP_M = 2;
 
 /** A horizontal point in decimal degrees: the executor's home. */
 export type LatLon = { lat: number; lon: number };
@@ -58,6 +63,25 @@ export function missionError(wps: readonly LatLonAlt[], home: LatLon | null = nu
 	return null;
 }
 
+/** Why the mission speed cannot be flown, or null; null means the setup's cruise speed. */
+export function speedError(speed_mps: number | null): string | null {
+	if (speed_mps === null) return null;
+	return Number.isFinite(speed_mps) && speed_mps >= SPEED_MIN_MPS && speed_mps <= SPEED_MAX_MPS ? null : `speed must be within ${SPEED_MIN_MPS}..${SPEED_MAX_MPS} m/s, or empty for cruise`;
+}
+
+/** A typed mission speed: null when empty (cruise), the speed, or why it is not one. */
+export function parseSpeed(s: string): number | null | string {
+	if (s.trim() === '') return null;
+	const v = decimal(s);
+	return speedError(v) ?? v;
+}
+
+/** The mission_start message; speed_mps only when a speed is given. */
+export function missionStart(wps: readonly LatLonAlt[], speed_mps: number | null): Extract<ClientMsg, { type: 'mission_start' }> {
+	const waypoints = wps.map((w) => ({ ...w }));
+	return speed_mps === null ? { type: 'mission_start', waypoints } : { type: 'mission_start', waypoints, speed_mps };
+}
+
 export function climbError(alt_m: number): string | null {
 	return altOk(alt_m) ? null : `safe altitude must be within ${ALT_MIN_M}..${ALT_MAX_M} m`;
 }
@@ -80,6 +104,8 @@ export interface ControlContext {
 	waypoints: readonly LatLonAlt[];
 	/** For the range check; null skips it. */
 	home: LatLon | null;
+	/** The mission speed; null or absent flies cruise. */
+	speed?: number | null;
 }
 
 /** Which mission controls may be pressed. */
@@ -89,7 +115,7 @@ export function enabledControls(c: ControlContext): Record<MissionRequest, boole
 		arm: s === 'disarmed',
 		disarm: s !== null && s !== 'disarmed',
 		climb: (s === 'armed' || s === 'hold') && climbError(c.climbAlt) === null,
-		mission_start: s === 'hold' && missionError(c.waypoints, c.home) === null,
+		mission_start: s === 'hold' && missionError(c.waypoints, c.home) === null && speedError(c.speed ?? null) === null,
 		rth: s === 'climb' || s === 'hold' || s === 'mission' || s === 'land',
 		land: s === 'climb' || s === 'hold' || s === 'mission' || s === 'rth'
 	};
@@ -113,6 +139,8 @@ export function propsSpinning(t: Telemetry | null): boolean {
 export interface MissionPreset {
 	name: string;
 	waypoints: LatLonAlt[];
+	/** Absent: the setup's cruise speed. */
+	speed_mps?: number;
 }
 
 export const PRESET_KEY = 'marv-gcs.mission-presets';
@@ -135,7 +163,9 @@ function parsePreset(v: unknown): MissionPreset | null {
 		if (typeof r.lat !== 'number' || typeof r.lon !== 'number' || typeof r.alt_m !== 'number' || waypointError(p)) return null;
 		waypoints.push(p);
 	}
-	return { name: o.name.trim(), waypoints };
+	if (o.speed_mps === undefined || o.speed_mps === null) return { name: o.name.trim(), waypoints };
+	if (typeof o.speed_mps !== 'number' || speedError(o.speed_mps)) return null;
+	return { name: o.name.trim(), waypoints, speed_mps: o.speed_mps };
 }
 
 /** Presets from an export file, a bare list, or one preset; invalid entries are named in rejected. */
@@ -153,7 +183,7 @@ export function importPresets(parsed: unknown): { presets: MissionPreset[]; reje
 }
 
 export function exportPresets(presets: readonly MissionPreset[]): { format: string; version: number; presets: MissionPreset[] } {
-	return { format: FORMAT, version: 1, presets: presets.map((p) => ({ name: p.name, waypoints: p.waypoints.map((w) => ({ ...w })) })) };
+	return { format: FORMAT, version: 1, presets: presets.map((p) => ({ name: p.name, waypoints: p.waypoints.map((w) => ({ ...w })), ...(p.speed_mps === undefined ? {} : { speed_mps: p.speed_mps }) })) };
 }
 
 /** The list with p added, replacing a preset of the same name. */
