@@ -10,7 +10,7 @@
 // Setups (params.hpp). The running setup is the one the flight software was built from, fixed for the run. The staged
 // setup is what kSetParam, kSetKind and kLoadFactory edit, each value and kind checked against its range. The stored
 // setup is the record's: power-on and kReboot run it and stage it; kReset runs the staged setup (a new run); kSaveSetup
-// stores the staged setup, refused while the last ActuatorCommand sent was armed. A record is valid iff its magic,
+// stores the staged setup, refused while the last ActuatorCommand sent was armed (kReset and kReboot clear that: the motors are then at zero). A record is valid iff its magic,
 // schema hash, length and CRC match and every kind and value is within range; otherwise the stored setup is factory 0
 // and stored_valid is 0 (an old "MRVP" preset record among them).
 //
@@ -128,6 +128,8 @@ public:
             save();
             send_header();
         } else if (pkt.as(reset)) {
+            // A rebuilt Fsw starts idle with the motors at zero, so nothing is armed any more.
+            armed_ = false;
             restart();
             send_header();
         } else if (pkt.as(reboot)) {

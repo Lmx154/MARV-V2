@@ -208,6 +208,18 @@ int main() {
         CHECK(!r.headers.empty() && r.headers[0].armed == 1 && r.headers[0].stored_valid == 0 &&
               r.headers[0].stored_crc == crc0 && r.headers[0].staged_crc == crc(kFactory[3]));
         CHECK(pf.writes == 0 && pf.record.empty());
+        {
+            // A run cut off mid-flight: kReset rebuilds an idle Fsw with the motors at zero, so a save is allowed.
+            FakePlatform pf2;
+            Node cut{pf2};
+            ask(cut, pf2, link::LoadFactory{3});
+            ask(cut, pf2, kFlyNorth);
+            CHECK(tick(cut, pf2, 1000).act.armed);
+            Replies rr = ask(cut, pf2, link::Reset{});
+            CHECK(!rr.headers.empty() && rr.headers[0].armed == 0);
+            rr = ask(cut, pf2, link::SaveSetup{});
+            CHECK(!rr.headers.empty() && rr.headers[0].stored_valid == 1 && pf2.writes == 1);
+        }
         r = ask(node, pf, link::SetPreset{1});  // stage + save: refused too
         CHECK(r.headers.size() == 1 && r.frames() == 1 && pf.writes == 0);
         ask(node, pf, link::LoadFactory{3});
