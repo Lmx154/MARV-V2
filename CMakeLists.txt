@@ -25,6 +25,8 @@ foreach(src ${MARV_TESTS})
     add_test(NAME ${name} COMMAND ${name})
 endforeach()
 
+add_subdirectory(ground)
+
 find_package(gz-transport13 QUIET)
 if(gz-transport13_FOUND)
     add_subdirectory(bridge)

@@ -1,6 +1,6 @@
 // marv_bridge: runs the Gazebo world and the flight software in lockstep over the wire protocol.
 //
-//   marv_bridge (--sitl | --port /dev/ttyACMx) --seconds S [--mission FILE] [--log out.csv]
+//   marv_bridge (--sitl | --port /dev/ttyACMx) --seconds S [--mission FILE | --ground] [--log out.csv]
 //
 // Per physics step: step the world, send the truth State it produced (when valid), the mission command
 // (when the active mission line changed, and once at the start), then the SensorBus; collect the
@@ -9,6 +9,16 @@
 // Mission file: one line per command, `t_s mode nav n e d yaw_deg`, mode fly|idle, nav truth|estimate,
 // position NED in m relative to the start, yaw in degrees; '#' starts a comment. The line with the
 // largest t_s <= the step's time is active; before the first line the vehicle is idle.
+//
+// --ground: the mission comes from marv_ground instead, over UDP 127.0.0.1:14650. Each datagram from the
+// ground is complete link frames, forwarded unchanged between the truth and the SensorBus of the next
+// step; every frame the flight controller sends back goes unchanged to the last ground address seen.
+// The world is paced to wall-clock time so a pilot flies it in real time.
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -17,6 +27,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <marv/link/protocol.hpp>
@@ -30,7 +41,7 @@ using namespace marv;
 
 int usage() {
     std::fprintf(stderr,
-                 "usage: marv_bridge (--sitl | --port /dev/ttyACMx) --seconds S [--mission FILE] [--log out.csv]\n");
+                 "usage: marv_bridge (--sitl | --port /dev/ttyACMx) --seconds S [--mission FILE | --ground] [--log out.csv]\n");
     return 2;
 }
 
@@ -79,16 +90,63 @@ bool load_mission(const char* path, std::vector<MissionLine>& out) {
     return ok;
 }
 
-// Sends truth (if valid), mission (if given) and bus, then waits up to 1 s for the ActuatorCommand
-// answering bus. The Telemetry of the same tick is kept in tlm; other packets are dropped.
+// The ground link of --ground: a UDP socket on 127.0.0.1:14650 and the last address heard from.
+struct GroundLink {
+    int fd = -1;
+    sockaddr_in peer{};
+    bool has_peer = false;
+
+    bool open(std::string& err) {
+        sockaddr_in a{};
+        a.sin_family = AF_INET;
+        a.sin_port = htons(14650);
+        a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+        if (fd < 0 || ::bind(fd, reinterpret_cast<const sockaddr*>(&a), sizeof(a)) != 0) {
+            err = std::string("ground socket 127.0.0.1:14650: ") + std::strerror(errno);
+            return false;
+        }
+        return true;
+    }
+
+    // Appends every datagram waiting that ends a frame; a datagram cut mid-frame would corrupt the next.
+    void drain(std::vector<std::uint8_t>& out) {
+        for (;;) {
+            std::uint8_t buf[2048];
+            sockaddr_in from{};
+            socklen_t len = sizeof(from);
+            const ssize_t n = ::recvfrom(fd, buf, sizeof(buf), MSG_DONTWAIT, reinterpret_cast<sockaddr*>(&from), &len);
+            if (n < 0) return;
+            peer = from;
+            has_peer = true;
+            if (n > 0 && buf[n - 1] == 0) out.insert(out.end(), buf, buf + n);
+        }
+    }
+
+    // Sends the complete frames in fc (up to its last delimiter) and keeps the rest for next time.
+    void forward(std::vector<std::uint8_t>& fc) {
+        const auto end = std::find(fc.rbegin(), fc.rend(), std::uint8_t{0}).base();
+        if (has_peer && end != fc.begin())
+            ::sendto(fd, fc.data(), static_cast<std::size_t>(end - fc.begin()), 0, reinterpret_cast<const sockaddr*>(&peer),
+                     sizeof(peer));
+        fc.erase(fc.begin(), end);
+    }
+};
+
+// Sends truth (if valid), mission (if given), the ground's frames and bus, then waits up to 1 s for the
+// ActuatorCommand answering bus. The Telemetry of the same tick is kept in tlm; other packets are
+// dropped. Every byte read is appended to fc_bytes when given.
 bool exchange(bridge::Endpoint& ep, link::Decoder& dec, const State& truth, const MissionCommand* mission,
-              const SensorBus& bus, Telemetry& tlm, ActuatorCommand& cmd, std::string& err) {
-    std::uint8_t out[3 * link::kMaxFrame];
+              const std::vector<std::uint8_t>& ground, const SensorBus& bus, Telemetry& tlm, ActuatorCommand& cmd,
+              std::vector<std::uint8_t>* fc_bytes, std::string& err) {
+    std::vector<std::uint8_t> out(3 * link::kMaxFrame + ground.size());
     std::size_t n_out = 0;
-    if (truth.valid) n_out += link::encode(truth, out + n_out);
-    if (mission) n_out += link::encode(*mission, out + n_out);
-    n_out += link::encode(bus, out + n_out);
-    if (!ep.write(out, n_out)) {
+    if (truth.valid) n_out += link::encode(truth, out.data() + n_out);
+    if (mission) n_out += link::encode(*mission, out.data() + n_out);
+    std::copy(ground.begin(), ground.end(), out.begin() + static_cast<long>(n_out));
+    n_out += ground.size();
+    n_out += link::encode(bus, out.data() + n_out);
+    if (!ep.write(out.data(), n_out)) {
         err = "write to the flight controller failed";
         return false;
     }
@@ -102,6 +160,7 @@ bool exchange(bridge::Endpoint& ep, link::Decoder& dec, const State& truth, cons
             err = "read from the flight controller failed";
             return false;
         }
+        if (fc_bytes) fc_bytes->insert(fc_bytes->end(), buf, buf + n);
         bool found = false;
         for (long i = 0; i < n; ++i) {
             if (!dec.push(buf[i])) continue;
@@ -158,6 +217,7 @@ int main(int argc, char** argv) {
     const char* port = nullptr;
     const char* log_path = nullptr;
     const char* mission_path = nullptr;
+    bool ground_mode = false;
     double seconds = -1.0;
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -167,9 +227,10 @@ int main(int argc, char** argv) {
         else if (a == "--seconds" && has_value) seconds = std::strtod(argv[++i], nullptr);
         else if (a == "--log" && has_value) log_path = argv[++i];
         else if (a == "--mission" && has_value) mission_path = argv[++i];
+        else if (a == "--ground") ground_mode = true;
         else return usage();
     }
-    if (sitl == (port != nullptr) || !(seconds > 0.0)) return usage();
+    if (sitl == (port != nullptr) || !(seconds > 0.0) || (ground_mode && mission_path)) return usage();
 
     std::vector<MissionLine> mission;
     if (mission_path && !load_mission(mission_path, mission)) return 2;
@@ -196,8 +257,15 @@ int main(int argc, char** argv) {
         }
     }
 
-    bridge::GzWorld world;
+    GroundLink ground;
     std::string err;
+    if (ground_mode && !ground.open(err)) {
+        std::fprintf(stderr, "marv_bridge: %s\n", err.c_str());
+        return 1;
+    }
+    std::vector<std::uint8_t> ground_in, fc_out;
+
+    bridge::GzWorld world;
     if (!world.connect(err)) {
         std::fprintf(stderr, "marv_bridge: %s\n", err.c_str());
         return 1;
@@ -230,12 +298,18 @@ int main(int argc, char** argv) {
         const float nan = std::nanf("");
         tlm.est = {0, {nan, nan, nan}, {nan, nan, nan}, {nan, nan, nan, nan}, {nan, nan, nan}, false};
         tlm.req = {{nan, nan, nan}, {nan, nan, nan}};
-        if (!exchange(*ep, dec, truth, send, bus, tlm, cmd, err)) {
+        ground_in.clear();
+        if (ground_mode) ground.drain(ground_in);
+        if (!exchange(*ep, dec, truth, send, ground_in, bus, tlm, cmd, ground_mode ? &fc_out : nullptr, err)) {
             std::fprintf(stderr, "marv_bridge: %s\n", err.c_str());
             rc = 1;
             break;
         }
         world.command(cmd);
+        if (ground_mode) {
+            ground.forward(fc_out);
+            std::this_thread::sleep_until(wall0 + std::chrono::microseconds(bus.t_us));
+        }
         if (log) log_row(log, truth, bus, cmd, tlm);
         ++steps;
     }
@@ -244,5 +318,6 @@ int main(int argc, char** argv) {
                  static_cast<unsigned long long>(steps), static_cast<double>(bus.t_us) * 1e-6, wall,
                  static_cast<double>(bus.t_us) * 1e-6 / wall, dec.errors());
     if (log) std::fclose(log);
+    if (ground.fd >= 0) ::close(ground.fd);
     return rc;
 }
