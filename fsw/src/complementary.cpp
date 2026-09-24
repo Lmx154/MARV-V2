@@ -29,6 +29,8 @@ void TranslationBlend::reset(std::uint64_t t_us) {
     last_baro_us_ = t_us;
 }
 
+void TranslationBlend::reset_horizontal() { pos_.x = pos_.y = 0.f; }
+
 void TranslationBlend::predict(Quat q, Vec3 am, float dt) {
     const Vec3 a = rotate(q, am) + Vec3{0.f, 0.f, gravity_};
     pos_ = pos_ + dt * vel_ + (0.5f * dt * dt) * a;
@@ -40,7 +42,11 @@ void TranslationBlend::correct(const SensorBus& bus, const LocalFrame& frame, fl
         const float dt = static_cast<float>(bus.t_us - last_gnss_us_) * 1e-6f;
         last_gnss_us_ = bus.t_us;
         const Vec3 z = frame.to_ned({bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m});
-        pos_ += blend(g_.k_pos, dt) * (z - pos_);
+        // Horizontal only: height is the barometer's, referenced at alignment (GNSS altitude is referenced to the
+        // first fix and carries its error).
+        const float k = blend(g_.k_pos, dt);
+        pos_.x += k * (z.x - pos_.x);
+        pos_.y += k * (z.y - pos_.y);
         vel_ += blend(g_.k_vel, dt) * (bus.gnss.vel_ned - vel_);
     }
     if (bus.fresh & kBaro) {
@@ -59,7 +65,10 @@ Complementary::Complementary(const ComplementaryParams& p, const EskfParams& env
 
 void Complementary::update(const SensorBus& bus) {
     t_us_ = bus.t_us;
-    if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid()) frame_.set({bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m});
+    if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid()) {
+        frame_.set({bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m});
+        tr_.reset_horizontal();  // first fix after alignment: horizontal position restarts there
+    }
 
     if (!aligned_) {
         Alignment a;

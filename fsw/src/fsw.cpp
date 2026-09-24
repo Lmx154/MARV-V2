@@ -14,7 +14,6 @@ template <class E> State run(E& e, const SensorBus& bus) {
 Fsw::Estimators Fsw::make_estimator(EstimatorKind k) {
     switch (k) {
         case EstimatorKind::kEkf: return Estimators(std::in_place_type<Ekf>);
-        case EstimatorKind::kUkf: return Estimators(std::in_place_type<Ukf>);
         case EstimatorKind::kMahony: return Estimators(std::in_place_type<Mahony>);
         case EstimatorKind::kComplementary: return Estimators(std::in_place_type<Complementary>);
         case EstimatorKind::kEskf: break;
@@ -36,7 +35,6 @@ Tick Fsw::step(const SensorBus& bus) {
     State est{};
     if (auto* e = std::get_if<Eskf>(&estimator_)) est = run(*e, bus);
     else if (auto* e = std::get_if<Ekf>(&estimator_)) est = run(*e, bus);
-    else if (auto* e = std::get_if<Ukf>(&estimator_)) est = run(*e, bus);
     else if (auto* e = std::get_if<Mahony>(&estimator_)) est = run(*e, bus);
     else if (auto* e = std::get_if<Complementary>(&estimator_)) est = run(*e, bus);
 

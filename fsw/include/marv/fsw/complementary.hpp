@@ -1,8 +1,8 @@
 // Complementary filter, ported from the avionics toolbox src/lib/sim/lab/blocks/estimator.ts (complementary block and
 // translationBlend). Attitude: the integrated gyro, pulled toward the accelerometer's gravity direction while
 // | |a_m| - g | is within the gate and toward the magnetometer heading. Position and velocity: dead-reckoned rotated
-// specific force plus gravity, blended toward GNSS and the barometer with first-order gains. The gyro bias is taken
-// as zero, not estimated. float only, no heap.
+// specific force plus gravity, blended toward GNSS (horizontal position, velocity) and the barometer (height) with
+// first-order gains. The gyro bias is taken as zero, not estimated. float only, no heap.
 #pragma once
 
 #include <cstdint>
@@ -26,9 +26,12 @@ class TranslationBlend {
 public:
     explicit TranslationBlend(const BlendGains& g, float gravity) : g_(g), gravity_(gravity) {}
     void reset(std::uint64_t t_us);
+    // Horizontal position to the GNSS origin (0, 0).
+    void reset_horizontal();
     // Dead-reckons one IMU sample of length dt at attitude q.
     void predict(Quat q, Vec3 am, float dt);
-    // Blends toward the fresh GNSS fix (NED about the origin) and velocity, and the fresh barometric height (up).
+    // Blends horizontal position toward the fresh GNSS fix (NED about the origin), velocity toward its velocity, and
+    // height toward the fresh barometric height (up).
     void correct(const SensorBus& bus, const LocalFrame& frame, float baro_h);
     Vec3 pos() const { return pos_; }
     Vec3 vel() const { return vel_; }

@@ -5,7 +5,7 @@
 // as it is. Same process noise, priors and measurements as Eskf (EskfParams). float only, fixed storage, no heap.
 //
 // This header also holds the stationary alignment and the magnetometer-heading and barometer front end that the
-// EKF, UKF, Mahony and complementary estimators share: the toolbox initialises its estimators from truth, so they all
+// EKF, Mahony and complementary estimators share: the toolbox initialises its estimators from truth, so they all
 // take Eskf's alignment (eskf.cpp, Eskf::align) instead.
 #pragma once
 
