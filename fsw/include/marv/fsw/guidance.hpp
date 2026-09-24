@@ -10,8 +10,38 @@
 
 #include <marv/fsw/contracts.hpp>
 #include <marv/fsw/params.hpp>
+#include <marv/fsw/smoothing.hpp>
 
 namespace marv {
+
+// Guidance, trajectory (ADR-0011): the mission's position reference becomes a jerk-limited trajectory (PositionSmoothing,
+// smoothing.hpp) on the navigation state the controller flies, as PX4's FlightTaskAuto drives it
+// (src/modules/flight_mode_manager/tasks/Auto/FlightTaskAuto.cpp:183-226, 406-420, 764-809):
+//   kRefPos, p_next == p   to p, ending at rest there; a kRefVel is added as a feed-forward velocity (the land leg)
+//   kRefPos, p_next != p   along the triplet (previous, p, p_next), cornering inside accept_m; the previous waypoint is
+//                          remembered here: the target the last change of p replaced (at the take-over, the vehicle)
+//   no kRefPos, or mode != kFly   the reference unchanged, and the trajectory restarts from nav (position and velocity,
+//                          acceleration zero) on the next kRefPos tick in kFly
+// Horizontal speed: speed_mps, or cruise_speed when it is 0, at most xy_vel_max; vertical limits those of the direction
+// the last unsmoothed velocity setpoint pointed. The integration slows while nav lags the trajectory by up to err_xy_max /
+// err_z_max. Out: kRefPos, kRefVel and kRefAcc set to the trajectory. Heading: a kRefYaw passes through; with none the
+// nose turns toward the horizontal trajectory velocity at up to yaw_rate_auto while it is faster than heading_min_speed,
+// and holds otherwise (toolbox@3b7387b src/lib/sim/lab/blocks/guidance.ts:33), from the vehicle's heading at the take-over.
+class TrajectoryGuidance {
+public:
+    explicit TrajectoryGuidance(const param::TrajectoryParams& p = {});
+
+    Reference run(const Reference& ref, const State& nav, Mode mode, float dt);
+
+private:
+    param::TrajectoryParams p_;
+    PositionSmoothing smoothing_;
+    bool active_ = false;          // the trajectory runs (kFly with kRefPos since its last start)
+    Vec3 prev_{0.f, 0.f, 0.f};     // the previous waypoint
+    Vec3 target_{0.f, 0.f, 0.f};   // the last p
+    float unsmoothed_z_ = 0.f;     // m/s, the last unsmoothed vertical velocity setpoint (down)
+    float yaw_ = 0.f;              // rad, the heading reference
+};
 
 class ApogeePredictor {
 public:

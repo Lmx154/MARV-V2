@@ -5,6 +5,7 @@
 // request gets exactly one reply. And a changed gain changes what the flight software commands. Setups stay
 // class-consistent: kSetKind of the vehicle re-stages the families whose kind does not serve it, a kind that does not
 // serve the staged vehicle is refused, an inconsistent record reads as factory 0, and a rocket setup never drives a motor.
+// The guidance kind is dispatched: the trajectory kind flies a far position reference from the vehicle, at rest.
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -476,6 +477,34 @@ int main() {
         for (float m : r.act.motor) CHECK(m == spin_arm);
         const Replies s = ask(node, pf, link::SaveSetup{});
         CHECK(s.headers.size() == 1 && s.headers[0].armed == 1 && s.headers[0].stored_valid == 0 && pf.writes == 0);
+    }
+
+    // The trajectory kind through Fsw: factory 0 with guidance trajectory starts the reference 10 m north at the vehicle,
+    // at rest, so its first tick asks for no horizontal thrust where passthrough (factory 0, the control) asks for vel_max
+    // toward it; a second on (the truth held still) it pulls north.
+    {
+        param::Setup traj = kFactory[0];
+        traj.kind[param::k_guidance] = param::k_guidance_trajectory;
+        CHECK(fw::in_range(traj) && param::consistent(traj));
+        MissionCommand m = kFlyNorth;
+        m.ref.p_next_ned = m.ref.p_ned;
+        m.ref.accept_m = 0.5f;
+        const auto thrust_after = [&m](const param::Setup& s, int ticks) {
+            Fsw fsw{s};
+            fsw.on_mission(m);
+            Vec3 f{};
+            for (int k = 1; k <= ticks; ++k) {
+                const std::uint64_t t = 1000u * static_cast<std::uint64_t>(k);
+                fsw.on_truth(truth_at(t));
+                f = fsw.step(bus_at(t)).tlm.req.thrust_ned;
+            }
+            return f;
+        };
+        const Vec3 t1 = thrust_after(traj, 1), p1 = thrust_after(kFactory[0], 1), t1000 = thrust_after(traj, 1000);
+        std::printf("thrust north, guidance trajectory: %.4f on the first tick, %.4f after 1 s; passthrough %.4f\n",
+                    static_cast<double>(t1.x), static_cast<double>(t1000.x), static_cast<double>(p1.x));
+        CHECK(t1.x == 0.f && t1.y == 0.f && p1.x > 0.1f);
+        CHECK(t1000.x > 0.05f && std::fabs(t1000.y) < 1e-6f);
     }
 
     std::printf(failures ? "FAIL (%d)\n" : "PASS\n", failures);

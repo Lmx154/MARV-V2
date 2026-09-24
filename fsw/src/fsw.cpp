@@ -40,9 +40,11 @@ Fsw::Fsw(const param::Setup& setup)
     : preset_(factory_id(setup)),
       crc_(param::setup_crc(setup)),
       uav_(setup.kind[param::k_vehicle] == param::k_vehicle_uav),
+      guidance_(setup.kind[param::k_guidance]),
       estimator_(make_estimator(setup)),
       controller_(param::controller_cascaded_pid(setup), param::vehicle_uav(setup), param::sensors_suite(setup)),
       actuators_(param::actuators_rotor_speed_fraction(setup)),
+      trajectory_(param::guidance_trajectory(setup)),
       apogee_predictor_(param::guidance_apogee_predictor(setup), param::sensors_suite(setup)),
       apogee_pid_(param::controller_apogee_pid(setup)) {}
 
@@ -69,9 +71,10 @@ Tick Fsw::step(const SensorBus& bus) {
     Tick out{};
     ControlRequest req;
     if (uav_) {
-        // Guidance: the mission's reference, passed through. The trajectory kind (params.def) is not implemented yet and
-        // flies as passthrough; phase B of ADR-0011 dispatches it here.
-        req = controller_.run(mission_.ref, nav, mode, dt);
+        // Guidance by kind: the trajectory shapes the mission's reference, passthrough hands it on unchanged.
+        const Reference ref =
+            guidance_ == param::k_guidance_trajectory ? trajectory_.run(mission_.ref, nav, mode, dt) : mission_.ref;
+        req = controller_.run(ref, nav, mode, dt);
         out.act = allocation_.run(req, nav, mode);
         actuators_.run(out.act, mode);
     } else {

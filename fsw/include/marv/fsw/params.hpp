@@ -286,6 +286,19 @@ inline ApogeePredictorParams guidance_apogee_predictor(const Setup& s) {
 }
 #undef MARV_PARAMS_SEL_guidance_apogee_predictor
 
+#define MARV_PARAMS_SEL_guidance_trajectory ~, 1
+struct TrajectoryParams {
+#define MARV_PARAM MARV_PARAMS_FIELD
+#include <marv/fsw/params.def>
+};
+inline TrajectoryParams guidance_trajectory(const Setup& s) {
+    TrajectoryParams p;
+#define MARV_PARAM MARV_PARAMS_FILL
+#include <marv/fsw/params.def>
+    return p;
+}
+#undef MARV_PARAMS_SEL_guidance_trajectory
+
 #define MARV_PARAMS_SEL_controller_cascaded_pid ~, 1
 struct ControllerParams {
 #define MARV_PARAM MARV_PARAMS_FIELD

@@ -12,7 +12,8 @@
 // Every module is built once from the Setup given at construction (params.hpp): the estimator is its estimator
 // kind, and each module copies its constants from the setup's typed parameters. Nothing reads the Setup afterwards.
 // The vehicle kind picks the chain after the estimator:
-//   uav     passthrough guidance -> cascaded PID -> quad-x allocation -> rotor-speed-fraction actuators; brake zero
+//   uav     passthrough or trajectory guidance (the setup's guidance kind) -> cascaded PID -> quad-x allocation ->
+//           rotor-speed-fraction actuators; brake zero
 //   rocket  apogee-predictor guidance -> apogee PID -> rocket-brake allocation -> brake-servo actuators (the
 //           deployment, unchanged); every motor zero, always
 #pragma once
@@ -67,11 +68,13 @@ private:
     std::uint8_t preset_;
     std::uint32_t crc_;
     bool uav_;  // the setup's vehicle kind is the uav, else the rocket
+    std::uint8_t guidance_;  // the setup's guidance kind
     Estimators estimator_;
     LocalFrame home_;  // the first GNSS fix
     ActiveController controller_;
     ActiveAllocation allocation_;
     ActiveActuators actuators_;
+    TrajectoryGuidance trajectory_;
     ApogeePredictor apogee_predictor_;
     ApogeePid apogee_pid_;
     RocketBrake rocket_brake_;
