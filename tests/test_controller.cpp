@@ -38,9 +38,8 @@ static Reference rate(float r) {
 
 int main() {
     constexpr float dt = 0.004f;
-    constexpr float kYawMax = 0.17508f;       // N m, full yaw authority of the X3 (params.def)
-    constexpr float kSmall = 0.01f / kYawMax;  // 0.01 N m; the torque limit is 0.1 N m
-    constexpr float kClear = 0.05f / kYawMax;  // 0.05 N m
+    const float kSmall = param::ControllerParams{}.rate_p_z * 0.01f;  // the yaw torque of 0.01 rad/s of rate error
+    const float kClear = param::ControllerParams{}.rate_p_z * 0.1f;   // the yaw torque of 0.1 rad/s of rate error
 
     {
         Controller c;
@@ -90,8 +89,8 @@ int main() {
     }
 
     // Truth: a level vertical point mass, thrust T (fraction) giving a_down = g (1 - T / h_true), held at 2 m for 60 s.
-    // The learned hover thrust converges to h_true from the seed 0.6811, and the altitude holds.
-    for (float h_true : {0.62f, 0.74f}) {
+    // The learned hover thrust converges to h_true, 0.06 either side of the seed, and the altitude holds.
+    for (float h_true : {param::UavParams{}.hover_thrust - 0.06f, param::UavParams{}.hover_thrust + 0.06f}) {
         const float g = param::SensorParams{}.gravity;
         Controller c;
         State x = at(0.f, 0.f);
@@ -179,11 +178,13 @@ int main() {
         CHECK(above <= 0.002f);
     }
 
-    // Clamped to the parameter's range: a point mass whose true hover thrust is 0.81, held at the reference for 200 s,
-    // stops the learned value at the maximum, 0.8.
+    // Clamped to the parameter's range: a point mass whose true hover thrust is 0.81, held at the reference for 200 s
+    // from a setup seeded at 0.6811, stops the learned value at the maximum, 0.8.
     {
         const float g = param::SensorParams{}.gravity;
-        Controller c;
+        param::UavParams seeded{};
+        seeded.hover_thrust = 0.6811f;
+        Controller c({}, seeded);
         State x = at(0.f, 0.f);
         float h = 0.f;
         for (int i = 0; i < 50000; ++i) {
