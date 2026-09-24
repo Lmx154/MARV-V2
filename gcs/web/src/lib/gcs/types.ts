@@ -91,11 +91,16 @@ export type MissionMode = 'disarmed' | 'armed' | 'climb' | 'hold' | 'mission' | 
 /** The backend's mission executor (server message mission_state). */
 export interface MissionStatus {
 	state: MissionMode;
+	/** 0-based; -1 when no waypoint is being flown. */
 	wp_index: number;
 	wp_count: number;
 	target: LatLonAlt | null;
 	dist_m: number | null;
 	climb_alt_m: number | null;
+	/** Where the executor returns to (set at arm), or null. */
+	home: { lat: number; lon: number } | null;
+	/** Why the state is what it is, e.g. "landed", "telemetry stale"; empty when none. */
+	reason: string;
 }
 
 export interface Telemetry {
@@ -111,6 +116,8 @@ export interface Telemetry {
 	home: GeoPoint | null;
 	/** The vehicle's position, when the backend reports it. */
 	geo: LatLonAlt | null;
+	/** The last actuator command, one value per motor; null when not reported. */
+	motor: [number, number, number, number] | null;
 }
 
 export type ClientMsg =

@@ -83,7 +83,8 @@ export function parseServer(text: string): ServerMsg | null {
 				thrust_hover: num(m.thrust_hover, NaN),
 				brake: num(m.brake, NaN),
 				home: home(m.home_valid, m.home),
-				geo: latLonAlt(m.geo ?? est.geo)
+				geo: latLonAlt(m.geo ?? est.geo),
+				motor: Array.isArray(m.motor) && m.motor.length === 4 ? [num(m.motor[0], NaN), num(m.motor[1], NaN), num(m.motor[2], NaN), num(m.motor[3], NaN)] : null
 			};
 			return { type: 'telemetry', telemetry };
 		}
@@ -94,11 +95,13 @@ export function parseServer(text: string): ServerMsg | null {
 				type: 'mission_state',
 				mission: {
 					state,
-					wp_index: num(m.wp_index, 0),
+					wp_index: num(m.wp_index, -1),
 					wp_count: num(m.wp_count, 0),
 					target: latLonAlt(m.target),
 					dist_m: numOrNull(m.dist_m),
-					climb_alt_m: numOrNull(m.climb_alt_m)
+					climb_alt_m: numOrNull(m.climb_alt_m),
+					home: isObj(m.home) && finite(m.home.lat) && finite(m.home.lon) ? { lat: m.home.lat, lon: m.home.lon } : null,
+					reason: typeof m.reason === 'string' ? m.reason : ''
 				}
 			};
 		}

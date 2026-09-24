@@ -1,5 +1,6 @@
 /** Mission control: waypoint validation, the controls each mission state allows, and presets kept in the browser. */
-import type { ClientMsg, LatLonAlt, MissionMode } from './types';
+import { LocalFrame, toE7 } from './geo';
+import type { ClientMsg, LatLonAlt, MissionMode, MissionStatus, Telemetry } from './types';
 
 export type MissionRequest = 'arm' | 'disarm' | 'climb' | 'mission_start' | 'rth' | 'land';
 const REQUESTS: readonly MissionRequest[] = ['arm', 'disarm', 'climb', 'mission_start', 'rth', 'land'];
@@ -9,34 +10,56 @@ export const isMissionRequest = (r: string): r is MissionRequest => (REQUESTS as
 /** Above this (m above home) a disarm asks first. */
 export const DISARM_CONFIRM_ALT_M = 0.5;
 
-/** Why a waypoint cannot be flown, or null. */
-export function waypointError(w: LatLonAlt): string | null {
+/** The executor's bounds (ADR-0010 (b)). */
+export const MAX_WAYPOINTS = 64;
+export const ALT_MIN_M = 0.5;
+export const ALT_MAX_M = 200;
+export const MAX_RANGE_M = 5000;
+
+/** A horizontal point in decimal degrees: the executor's home. */
+export type LatLon = { lat: number; lon: number };
+
+const altOk = (alt_m: number): boolean => Number.isFinite(alt_m) && alt_m >= ALT_MIN_M && alt_m <= ALT_MAX_M;
+
+/** Horizontal distance (m) of p from home, in the FC's flat-earth frame about home. */
+export function rangeFromHome(p: LatLon, home: LatLon): number {
+	const [n, e] = new LocalFrame({ lat_e7: toE7(home.lat), lon_e7: toE7(home.lon), alt_m: 0 }).nedOf({ lat: p.lat, lon: p.lon, alt_m: 0 });
+	return Math.hypot(n, e);
+}
+
+/** Why a waypoint cannot be flown, or null; the range from home is checked once home is known. */
+export function waypointError(w: LatLonAlt, home: LatLon | null = null): string | null {
 	if (!Number.isFinite(w.lat) || w.lat < -90 || w.lat > 90) return 'latitude must be within -90..90 deg';
 	if (!Number.isFinite(w.lon) || w.lon < -180 || w.lon > 180) return 'longitude must be within -180..180 deg';
-	if (!Number.isFinite(w.alt_m) || w.alt_m <= 0) return 'altitude must be above 0 m (above home)';
+	if (!altOk(w.alt_m)) return `altitude must be within ${ALT_MIN_M}..${ALT_MAX_M} m above home`;
+	if (home) {
+		const d = rangeFromHome(w, home);
+		if (!(d <= MAX_RANGE_M)) return `${(d / 1000).toFixed(2)} km from home; at most ${MAX_RANGE_M / 1000} km`;
+	}
 	return null;
 }
 
 const decimal = (s: string): number => (/^\s*[-+]?(\d+\.?\d*|\.\d+)\s*$/.test(s) ? Number(s) : NaN);
 
 /** A waypoint typed as decimal degrees and metres above home, or why it is not one. */
-export function parseWaypoint(lat: string, lon: string, alt: string): LatLonAlt | string {
+export function parseWaypoint(lat: string, lon: string, alt: string, home: LatLon | null = null): LatLonAlt | string {
 	const w = { lat: decimal(lat), lon: decimal(lon), alt_m: decimal(alt) };
-	return waypointError(w) ?? w;
+	return waypointError(w, home) ?? w;
 }
 
 /** Why the list cannot be started as a mission, or null. */
-export function missionError(wps: readonly LatLonAlt[]): string | null {
+export function missionError(wps: readonly LatLonAlt[], home: LatLon | null = null): string | null {
 	if (wps.length === 0) return 'no waypoints';
+	if (wps.length > MAX_WAYPOINTS) return `${wps.length} waypoints; at most ${MAX_WAYPOINTS}`;
 	for (let i = 0; i < wps.length; i++) {
-		const e = waypointError(wps[i]);
+		const e = waypointError(wps[i], home);
 		if (e) return `waypoint ${i + 1}: ${e}`;
 	}
 	return null;
 }
 
 export function climbError(alt_m: number): string | null {
-	return Number.isFinite(alt_m) && alt_m > 0 ? null : 'safe altitude must be above 0 m';
+	return altOk(alt_m) ? null : `safe altitude must be within ${ALT_MIN_M}..${ALT_MAX_M} m`;
 }
 
 /** The list with row i moved by delta (clamped), as a new array. */
@@ -55,25 +78,36 @@ export interface ControlContext {
 	connected: boolean;
 	climbAlt: number;
 	waypoints: readonly LatLonAlt[];
+	/** For the range check; null skips it. */
+	home: LatLon | null;
 }
 
 /** Which mission controls may be pressed. */
 export function enabledControls(c: ControlContext): Record<MissionRequest, boolean> {
 	const s = c.connected ? c.state : null;
-	const airborne = s === 'climb' || s === 'hold' || s === 'mission' || s === 'rth';
 	return {
 		arm: s === 'disarmed',
 		disarm: s !== null && s !== 'disarmed',
 		climb: (s === 'armed' || s === 'hold') && climbError(c.climbAlt) === null,
-		mission_start: s === 'hold' && missionError(c.waypoints) === null,
-		rth: s === 'climb' || s === 'hold' || s === 'mission',
-		land: airborne
+		mission_start: s === 'hold' && missionError(c.waypoints, c.home) === null,
+		rth: s === 'climb' || s === 'hold' || s === 'mission' || s === 'land',
+		land: s === 'climb' || s === 'hold' || s === 'mission' || s === 'rth'
 	};
 }
 
 /** A disarm asks first when the vehicle may be flying. */
 export function disarmNeedsConfirm(state: MissionMode | null, alt_m: number): boolean {
 	return !(state === 'disarmed' || state === 'armed') || !(alt_m <= DISARM_CONFIRM_ALT_M);
+}
+
+/** The executor's reason for display, or null when it gave none. */
+export function reasonText(m: MissionStatus | null): string | null {
+	return m?.reason.trim() || null;
+}
+
+/** Armed and any motor commanded above zero. */
+export function propsSpinning(t: Telemetry | null): boolean {
+	return t !== null && t.armed && t.motor !== null && t.motor.some((v) => v > 0);
 }
 
 export interface MissionPreset {

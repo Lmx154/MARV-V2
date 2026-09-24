@@ -3,6 +3,10 @@
 	import MissionMap from './MissionMap.svelte';
 	import { LocalFrame, fromE7 } from '$lib/gcs/geo';
 	import {
+		ALT_MAX_M,
+		ALT_MIN_M,
+		MAX_RANGE_M,
+		MAX_WAYPOINTS,
 		climbError,
 		disarmNeedsConfirm,
 		enabledControls,
@@ -11,7 +15,9 @@
 		missionError,
 		moveWaypoint,
 		parseWaypoint,
+		propsSpinning,
 		readPresets,
+		reasonText,
 		upsertPreset,
 		waypointError,
 		writePresets,
@@ -55,7 +61,8 @@
 	onMount(() => (presets = readPresets(storage())));
 
 	const home = $derived(telem?.home ?? null);
-	const homeLL = $derived(home ? { lat: fromE7(home.lat_e7), lon: fromE7(home.lon_e7), alt_m: 0 } : null);
+	/** The executor's home once armed, else the FC's. */
+	const homeLL = $derived(mission?.home ? { ...mission.home, alt_m: 0 } : home ? { lat: fromE7(home.lat_e7), lon: fromE7(home.lon_e7), alt_m: 0 } : null);
 	/** The backend's geo, else the estimate's NED about home through the FC's frame. */
 	const position = $derived.by((): LatLonAlt | null => {
 		if (!telem) return null;
@@ -66,13 +73,17 @@
 	const altitude = $derived(position && Number.isFinite(position.alt_m) ? position.alt_m : telem ? -telem.p_ned[2] : NaN);
 	const vehicle = $derived(position ? { lat: position.lat, lon: position.lon, yaw_deg: telem ? euler(telem.q).yaw * DEG : 0 } : null);
 	const mode = $derived(mission?.state ?? null);
-	const on = $derived(enabledControls({ state: mode, connected, climbAlt, waypoints }));
-	const startWhy = $derived(mode !== 'hold' ? 'enabled in hold, after the climb' : missionError(waypoints));
+	const on = $derived(enabledControls({ state: mode, connected, climbAlt, waypoints, home: homeLL }));
+	const startWhy = $derived(mode !== 'hold' ? 'enabled in hold, after the climb' : missionError(waypoints, homeLL));
+	const reason = $derived(reasonText(mission));
+	const spinning = $derived(propsSpinning(telem));
+	const full = $derived(waypoints.length >= MAX_WAYPOINTS);
 
 	const fmt = (v: number | null | undefined, d = 1): string => (v !== null && v !== undefined && Number.isFinite(v) ? v.toFixed(d) : '—');
 
 	function addTyped(): void {
-		const w = parseWaypoint(newLat, newLon, newAlt);
+		if (full) return void (addError = `at most ${MAX_WAYPOINTS} waypoints`);
+		const w = parseWaypoint(newLat, newLon, newAlt, homeLL);
 		if (typeof w === 'string') {
 			addError = w;
 			return;
@@ -84,7 +95,8 @@
 	}
 
 	function addPicked(lat: number, lon: number): void {
-		const w = parseWaypoint(lat.toFixed(7), lon.toFixed(7), newAlt);
+		if (full) return void (addError = `at most ${MAX_WAYPOINTS} waypoints`);
+		const w = parseWaypoint(lat.toFixed(7), lon.toFixed(7), newAlt, homeLL);
 		if (typeof w === 'string') {
 			addError = w;
 			return;
@@ -159,10 +171,12 @@
 <section class="mission" aria-label="Mission">
 	<div class="status mono" aria-label="Mission status">
 		<span><span class="k">state</span> <b>{mode ?? '—'}</b></span>
-		<span><span class="k">waypoint</span> {mission && mission.wp_count ? `${Math.min(mission.wp_index + 1, mission.wp_count)}/${mission.wp_count}` : '—'}</span>
+		{#if reason}<span><span class="k">reason</span> {reason}</span>{/if}
+		<span><span class="k">waypoint</span> {mission && mission.wp_count ? `${mission.wp_index >= 0 ? mission.wp_index + 1 : '—'}/${mission.wp_count}` : '—'}</span>
 		<span><span class="k">to target</span> {fmt(mission?.dist_m)} m</span>
 		<span><span class="k">altitude</span> {fmt(altitude)} m</span>
 		<span><span class="k">armed</span> {telem ? (telem.armed ? 'yes' : 'no') : '—'}</span>
+		{#if spinning && telem?.motor}<span class="warn" role="status">props spinning <span class="k">motor</span> {telem.motor.map((v) => fmt(v, 2)).join(' ')}</span>{/if}
 		{#if mission?.climb_alt_m != null}<span><span class="k">safe alt</span> {fmt(mission.climb_alt_m)} m</span>{/if}
 		{#if !home}<span class="warn">no home from the FC</span>{/if}
 	</div>
@@ -178,11 +192,12 @@
 		</div>
 		<div class="ctl">
 			<button type="button" class="btn" disabled={!on.climb} onclick={() => onsend({ type: 'climb', alt_m: climbAlt })} title="Take off and climb to the safe altitude, then hold">CLIMB</button>
-			<label>to <input type="number" min="0" step="any" bind:value={climbAlt} class:bad={climbError(climbAlt) !== null} aria-label="Safe altitude (m above home)" /> m</label>
+			<label>to <input type="number" min={ALT_MIN_M} max={ALT_MAX_M} step="any" bind:value={climbAlt} class:bad={climbError(climbAlt) !== null} aria-label="Safe altitude (m above home)" /> m</label>
+			{#if climbError(climbAlt)}<span class="err">{climbError(climbAlt)}</span>{/if}
 			{#if errors.climb}<span class="err" role="alert">{errors.climb}</span>{/if}
 		</div>
 		<div class="ctl">
-			<button type="button" class="btn" disabled={!on.mission_start} onclick={() => onsend({ type: 'mission_start', waypoints: waypoints.map((w) => ({ ...w })) })} title={startWhy ?? 'Fly the waypoints, then return home'}>START MISSION</button>
+			<button type="button" class="btn" disabled={!on.mission_start} onclick={() => onsend({ type: 'mission_start', waypoints: waypoints.map((w) => ({ ...w })) })} title={startWhy ?? 'Fly the waypoints, then return and hold over home'}>START MISSION</button>
 			{#if errors.mission_start}<span class="err" role="alert">{errors.mission_start}</span>{/if}
 		</div>
 		<div class="ctl">
@@ -208,18 +223,21 @@
 
 		<div class="editor mono">
 			<h2>Waypoints</h2>
-			<p class="hint">Click the map, or type decimal degrees. Altitude is metres above home. The route starts and ends at home.</p>
+			<p class="hint">
+				Click the map, or type decimal degrees. Altitude is {ALT_MIN_M}..{ALT_MAX_M} m above home; up to {MAX_WAYPOINTS} waypoints, each within {MAX_RANGE_M / 1000} km of home. The route starts at home and
+				ends holding over it.
+			</p>
 			<div class="add">
 				<input placeholder="lat" bind:value={newLat} aria-label="New waypoint latitude" />
 				<input placeholder="lon" bind:value={newLon} aria-label="New waypoint longitude" />
 				<input placeholder="alt" bind:value={newAlt} aria-label="New waypoint altitude (m above home)" class="alt" />
-				<button type="button" class="btn" onclick={addTyped}>Add</button>
+				<button type="button" class="btn" disabled={full} onclick={addTyped}>Add</button>
 			</div>
 			{#if addError}<p class="err" role="alert">{addError}</p>{/if}
 
 			<ol class="rows">
 				{#each waypoints as w, i (i)}
-					{@const why = waypointError(w)}
+					{@const why = waypointError(w, homeLL)}
 					<li class:active={mode === 'mission' && mission?.wp_index === i}>
 						<span class="n">{i + 1}</span>
 						<input type="number" step="any" value={w.lat} onchange={(e) => edit(i, 'lat', e.currentTarget.value)} aria-label="Latitude {i + 1}" />
