@@ -20,8 +20,6 @@ const std::string kGnssTopic = kSensor + "gps_sensor/navsat";
 const std::string kOdomTopic = "/world/marv/model/marv_quad/odometry";
 const std::string kMotor = "/marv_quad/command/motor_speed";
 
-constexpr double kMaxRotVelocity = 800.0;  // rad/s, maxRotVelocity in sitl/gazebo/marv_quad.sdf
-
 std::uint64_t to_us(const gz::msgs::Time& t) {
     return static_cast<std::uint64_t>(t.sec()) * 1000000u + static_cast<std::uint64_t>(t.nsec()) / 1000u;
 }
@@ -51,7 +49,8 @@ void rotate(const Qd& q, const double v[3], double out[3]) {
 
 }  // namespace
 
-GzWorld::GzWorld() : motor_pub_(node_.Advertise<gz::msgs::Actuators>(kMotor)) {}
+GzWorld::GzWorld(double max_rot_velocity)
+    : max_rot_velocity_(max_rot_velocity), motor_pub_(node_.Advertise<gz::msgs::Actuators>(kMotor)) {}
 
 bool GzWorld::connect(std::string& err) {
     if (!motor_pub_ || !node_.Subscribe(kImuTopic, &GzWorld::on_imu, this) ||
@@ -213,7 +212,7 @@ void GzWorld::command(const ActuatorCommand& cmd) {
     gz::msgs::Actuators m;
     for (float u : cmd.motor) {
         const float c = !(u > 0.0f) ? 0.0f : (u > 1.0f ? 1.0f : u);  // NaN -> 0
-        m.add_velocity(cmd.armed ? c * kMaxRotVelocity : 0.0);
+        m.add_velocity(cmd.armed ? c * max_rot_velocity_ : 0.0);
     }
     motor_pub_.Publish(m);
 }

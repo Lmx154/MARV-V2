@@ -43,7 +43,8 @@ public:
         State truth;
     };
 
-    GzWorld();
+    // max_rot_velocity: the rotor speed, rad/s, of a motor command of 1 -- the world's maxRotVelocity.
+    explicit GzWorld(double max_rot_velocity);
 
     // Waits until the world's clock is arriving and the motor models subscribe to the command topic.
     bool connect(std::string& err);
@@ -64,6 +65,7 @@ private:
     void on_mag(const gz::msgs::Magnetometer& m);
     void on_gnss(const gz::msgs::NavSat& m);
 
+    const double max_rot_velocity_;
     gz::transport::Node node_;
     gz::transport::Node::Publisher motor_pub_;
 
