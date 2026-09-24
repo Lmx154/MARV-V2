@@ -275,11 +275,37 @@ int main(int argc, char** argv) {
         log_header(log);
     }
 
-    // A new run: the flight controller may still hold the state of the previous one.
+    // A new run: the flight controller may still hold the state of the previous one, armed if it was cut off in
+    // flight. kIdle disarms it, then kReset (refused while armed) rebuilds it; its header must say disarmed.
     {
-        std::uint8_t frame[link::kMaxFrame];
-        if (!ep->write(frame, link::encode(link::Reset{}, frame))) {
+        std::uint8_t frame[2 * link::kMaxFrame];
+        std::size_t n = link::encode(MissionCommand{Mode::kIdle, NavSource::kEstimate, {}}, frame);
+        n += link::encode(link::Reset{}, frame + n);
+        if (!ep->write(frame, n)) {
             std::fprintf(stderr, "marv_bridge: write to the flight controller failed\n");
+            return 1;
+        }
+        link::Decoder hdec;
+        link::SetupHeader h{};
+        bool heard = false;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while (!heard) {
+            const auto left =
+                std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+            if (left.count() < 0) break;
+            std::uint8_t buf[256];
+            const long got = ep->read(buf, sizeof(buf), static_cast<int>(left.count()));
+            if (got < 0) break;
+            for (long i = 0; i < got && !heard; ++i)
+                if (hdec.push(buf[i]) && hdec.packet().as(h)) heard = true;
+        }
+        if (!heard) {
+            std::fprintf(stderr, "marv_bridge: no setup header from the flight controller after kReset within 2 s\n");
+            return 1;
+        }
+        if (h.armed != 0) {
+            std::fprintf(stderr, "marv_bridge: the flight controller is still armed after kIdle: kReset refused; "
+                                 "reboot it\n");
             return 1;
         }
     }

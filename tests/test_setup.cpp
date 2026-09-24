@@ -1,5 +1,5 @@
 // Setups through the shared packet dispatch (firmware/src/dispatch.hpp) on a fake platform: power-on and kReboot run
-// the stored setup and stage it, kReset runs the staged one, kSaveSetup stores the staged one unless the last
+// the stored setup and stage it, kReset runs the staged one and kSaveSetup stores it, both unless the last
 // ActuatorCommand was armed; a record that is corrupt, of another schema, out of range, short or the old preset record
 // reads as factory 0 with stored_valid 0; kSetParam holds only values within range and echoes what it holds; each
 // request gets exactly one reply. And a changed gain changes what the flight software commands. Setups stay
@@ -214,16 +214,35 @@ int main() {
               r.headers[0].stored_crc == crc0 && r.headers[0].staged_crc == crc(kFactory[3]));
         CHECK(pf.writes == 0 && pf.record.empty());
         {
-            // A run cut off mid-flight: kReset rebuilds an idle Fsw with the motors at zero, so a save is allowed.
+            // kReset while armed is refused: the header comes back unchanged (armed, running != staged) and the run
+            // keeps flying. A run cut off mid-flight is ended by a kIdle MissionCommand (the bridge sends one before
+            // its kReset): kIdle clears armed, so the kReset runs the staged setup and a save is allowed.
             FakePlatform pf2;
             Node cut{pf2};
             ask(cut, pf2, link::LoadFactory{3});
             ask(cut, pf2, kFlyNorth);
             CHECK(tick(cut, pf2, 1000).act.armed);
             Replies rr = ask(cut, pf2, link::Reset{});
-            CHECK(!rr.headers.empty() && rr.headers[0].armed == 0);
+            CHECK(rr.headers.size() == 1 && rr.frames() == 1);
+            CHECK(!rr.headers.empty() && rr.headers[0].armed == 1 && rr.headers[0].running_crc == crc0 &&
+                  rr.headers[0].staged_crc == crc(kFactory[3]));
+            CHECK(cut.fsw().preset() == 0 && cut.fsw().setup_crc() == crc0);
+            rr = tick(cut, pf2, 2000);
+            CHECK(rr.act.armed && rr.act.motor[0] > 0.f);
+            rr = ask(cut, pf2, MissionCommand{Mode::kIdle, NavSource::kEstimate, {}});
+            CHECK(rr.frames() == 0);
+            rr = ask(cut, pf2, link::Reset{});
+            CHECK(rr.headers.size() == 1 && rr.frames() == 1);
+            CHECK(!rr.headers.empty() && rr.headers[0].armed == 0 && rr.headers[0].running_crc == crc(kFactory[3]));
+            CHECK(cut.fsw().preset() == 3);
             rr = ask(cut, pf2, link::SaveSetup{});
             CHECK(!rr.headers.empty() && rr.headers[0].stored_valid == 1 && pf2.writes == 1);
+            // A non-idle mission does not clear armed.
+            ask(cut, pf2, kFlyNorth);
+            CHECK(tick(cut, pf2, 1000).act.armed);
+            ask(cut, pf2, MissionCommand{Mode::kArmed, NavSource::kTruth, {}});
+            rr = ask(cut, pf2, link::Reset{});
+            CHECK(!rr.headers.empty() && rr.headers[0].armed == 1);
         }
         r = ask(node, pf, link::SetPreset{1});  // stage + save: refused too
         CHECK(r.headers.size() == 1 && r.frames() == 1 && pf.writes == 0);

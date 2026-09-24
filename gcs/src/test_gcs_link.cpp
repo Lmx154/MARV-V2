@@ -1,7 +1,8 @@
 // The backend end to end: a scripted flight-controller stub speaking protocol.hpp over UDP loopback, marv_gcs's Link and
 // Server on the same io_context thread, and a Beast WebSocket client checking the JSON replies.
 //   1. request_setup / set_param (held value echoed, out of range refused) / save / load_factory / set_kind; a vehicle
-//      change forwards the re-staged kinds, a kind that does not serve the vehicle is reported refused.
+//      change forwards the re-staged kinds, a kind that does not serve the vehicle is reported refused; a reset while
+//      armed is reported refused.
 //   2. telemetry at 200 Hz from the stub reaches the client at <= 30 Hz.
 //   3. no reply: the request is sent twice, 500 ms apart, then reported as "no reply".
 //   4. a flight controller with another schema hash: edits refused before they reach the link.
@@ -84,6 +85,7 @@ public:
 
     std::atomic<bool> silent{false};
     std::atomic<bool> telemetry{false};
+    std::atomic<bool> armed{false};
 
 private:
     template <class T> void put(std::vector<std::uint8_t>& out, const T& msg) {
@@ -100,7 +102,7 @@ private:
         h.staged_crc = param::setup_crc(staged_);
         h.stored_crc = param::setup_crc(stored_);
         h.stored_valid = 1;
-        h.armed = 0;
+        h.armed = armed ? 1 : 0;
         put(out, h);
     }
     void values(std::vector<std::uint8_t>& out) {
@@ -143,7 +145,7 @@ private:
             header(out);
             values(out);
         } else if (p.as(rs)) {
-            running_ = staged_;
+            if (!armed) running_ = staged_;  // dispatch.hpp: refused while armed, the header unchanged
             header(out);
         }
     }
@@ -319,6 +321,24 @@ void test_exchange() {
     c.send({{"type", "load_factory"}, {"id", 0}});
     m = c.wait("setup");
     CHECK(u64(m.at("header").at("kind").at(param::k_vehicle)) == param::k_vehicle_uav);
+
+    // A reset while armed: the flight controller refuses it, the header says armed with running != staged, and the
+    // requester gets the refusal. Disarmed, it is accepted with no error (the next error is the bad index below).
+    c.send({{"type", "load_factory"}, {"id", 1}});
+    c.wait("setup");
+    fc.armed = true;
+    c.send({{"type", "reset"}});
+    m = c.wait("setup");
+    CHECK(m.at("header").at("armed").as_bool());
+    CHECK(u64(m.at("header").at("running_crc")) != u64(m.at("header").at("staged_crc")));
+    m = c.wait("error");
+    CHECK(m.at("request").as_string() == "reset");
+    CHECK(m.at("error").as_string().find("refused while armed") != std::string::npos);
+    fc.armed = false;
+    c.send({{"type", "reset"}});
+    m = c.wait("setup");
+    CHECK(!m.at("header").at("armed").as_bool());
+    CHECK(u64(m.at("header").at("running_crc")) == u64(m.at("header").at("staged_crc")));
 
     c.send({{"type", "set_param"}, {"index", param::kParamCount}, {"value", 1.0}});  // bad index: refused here
     m = c.wait("error");

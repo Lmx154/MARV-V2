@@ -12,7 +12,8 @@
 // class-consistent (param::consistent): kSetKind of the vehicle re-stages every family whose kind does not serve the new
 // vehicle to its first kind that does; kSetKind of a kind that does not serve the staged vehicle is refused. The stored
 // setup is the record's: power-on and kReboot run it and stage it; kReset runs the staged setup (a new run); kSaveSetup
-// stores the staged setup, refused while the last ActuatorCommand sent was armed (kReset and kReboot clear that: the motors are then at zero). A record is valid iff its magic,
+// stores the staged setup; both refused while armed: the last ActuatorCommand sent was armed and no
+// kIdle MissionCommand came since (kIdle and kReboot clear it: the motors are then at zero). A record is valid iff its magic,
 // schema hash, length and CRC match, every kind and value is within range and the setup is class-consistent; otherwise the stored setup is factory 0
 // and stored_valid is 0 (an old "MRVP" preset record among them).
 //
@@ -105,6 +106,8 @@ public:
             fsw_.on_truth(truth);
         } else if (pkt.as(mission)) {
             fsw_.on_mission(mission);
+            // kIdle zeroes every motor from the next tick on, so the motors may no longer spin.
+            if (mission.mode == Mode::kIdle) armed_ = false;
         } else if (pkt.as(request)) {
             send_setup();
         } else if (pkt.as(set)) {
@@ -136,9 +139,8 @@ public:
             save();
             send_header();
         } else if (pkt.as(reset)) {
-            // A rebuilt Fsw starts idle with the motors at zero, so nothing is armed any more.
-            armed_ = false;
-            restart();
+            // Refused while armed: a rebuilt Fsw starts idle, which would stop the motors in flight.
+            if (!armed_) restart();
             send_header();
         } else if (pkt.as(reboot)) {
             platform_.reboot();

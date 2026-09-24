@@ -444,7 +444,7 @@
 			</div>
 
 			<div class="row actions">
-				<button type="button" class="btn mono" disabled={!editable} onclick={apply} title="Rebuild the flight software from the staged setup">Apply</button>
+				<button type="button" class="btn mono" disabled={!editable || armed} onclick={apply} title={armed ? 'Refused while armed' : 'Rebuild the flight software from the staged setup'}>Apply</button>
 				<button type="button" class="btn mono" disabled={!editable || armed} onclick={save} title={armed ? 'Refused while armed' : 'Store the staged setup in flash'}>Save to flash</button>
 				<button type="button" class="btn mono" disabled={!header} onclick={reboot} title="Run the stored setup">Reboot</button>
 				<button type="button" class="btn mono" disabled={!wsOpen || flashing} onclick={flash}>Flash firmware</button>

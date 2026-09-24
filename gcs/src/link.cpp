@@ -195,10 +195,14 @@ void Link::sim(bool on) {
     sim_ = on;
     const auto now = Clock::now();
     if (tx_) std::fprintf(stderr, "marv_gcs: link: closing %s: %s\n", at_.c_str(), on ? "a sim is starting" : "the sim ended");
+    // Another vehicle from here on: stop the executor rather than fly it on the next one, its kIdle out on this link
+    // before it closes; and forget this one's setup.
+    if (mission_.engaged(seconds(now))) {
+        mission_.disarm(seconds(now));
+        mission_tick(now);
+    }
     tx_.reset();  // before the launcher starts the bridge: target fc needs this port
-    // Another vehicle from here on: forget this one's setup, and stop the executor rather than fly it on the next one.
     have_header_ = have_armed_ = false;
-    if (mission_.engaged(seconds(now))) mission_.disarm(seconds(now));
     fail_all(on ? "link switched to the sim bridge" : "the sim ended: link back to USB");
     reopen_at_ = now;
     if (on && !open()) reopen_at_ = now + kReopen;
@@ -431,8 +435,13 @@ void Link::on_header(const link::SetupHeader& h) {
             return complete();
         }
         case Kind::kSave:
-        case Kind::kReset:
             broadcast_(setup_message(false), false);
+            return complete();
+        case Kind::kReset:
+            // The flight controller refuses a reset while armed: the header comes back armed, running != staged.
+            broadcast_(setup_message(false), false);
+            if (h.armed != 0)
+                error(queue_.front().reply, queue_.front().name, "refused while armed: the flight software keeps running");
             return complete();
         case Kind::kSetParam:
             break;
