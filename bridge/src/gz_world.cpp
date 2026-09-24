@@ -56,8 +56,10 @@ bool GzWorld::connect(std::string& err) {
         !node_.Subscribe(sensor_ + "baro_sensor/air_pressure", &GzWorld::on_baro, this) ||
         !node_.Subscribe(sensor_ + "mag_sensor/magnetometer", &GzWorld::on_mag, this) ||
         !node_.Subscribe(sensor_ + "gps_sensor/navsat", &GzWorld::on_gnss, this) ||
-        // Last: the server's PUB socket applies subscriptions in the order they arrive on the one
-        // connection, so the first clock message proves every subscription above is live too.
+        // Last. The first clock proves this process's filters on the server's PUB connection, but the server
+        // publishes a topic here only once its discovery has registered this subscriber for that topic: one UDP
+        // datagram per topic, never resent. scripts/sim.sh keeps that traffic small enough not to be dropped
+        // (GZ_IP); step()'s 250 ms check catches a stream lost anyway.
         !node_.Subscribe(kClock, &GzWorld::on_clock, this)) {
         err = "cannot advertise or subscribe the gz topics";
         return false;

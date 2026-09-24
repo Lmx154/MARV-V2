@@ -45,6 +45,11 @@ else
     [ -n "$resources" ] && export GZ_SIM_RESOURCE_PATH="$resources${GZ_SIM_RESOURCE_PATH:+:$GZ_SIM_RESOURCE_PATH}"
 fi
 args=(--link base_link "${args[@]}")
+# gz-transport discovery is UDP multicast, sent on every host interface (docker bridges included) and answered on
+# each one it arrived on. The bridge's subscribe burst overflowed the server's 208 KiB receive buffer (measured: up
+# to 13 datagrams dropped at bridge start); a subscriber registration lost there is never resent, and that topic
+# (clock, gnss, ...) never reaches the bridge. On loopback alone the burst is a few datagrams per topic.
+export GZ_IP="${GZ_IP:-127.0.0.1}"
 
 gz_refuse_if_served
 
