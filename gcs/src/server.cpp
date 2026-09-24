@@ -36,6 +36,9 @@ public:
             if (ec) return;
             self->server_.add(self);
             self->send(self->server_.link().link_message(), false);
+            // Without a mission_state the page enables no mission control; a client joining while disarmed would
+            // otherwise wait for the next change.
+            self->send(self->server_.link().mission_message(), false);
             self->read();
         });
     }

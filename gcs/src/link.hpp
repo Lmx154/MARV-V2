@@ -54,6 +54,8 @@ public:
     boost::json::object state() const;
     // state() as a {type: "link"} message.
     std::string link_message() const;
+    // The current mission_state, for a client that has just connected (the broadcast only goes out on a change).
+    std::string mission_message() const;
 
 private:
     using Clock = std::chrono::steady_clock;

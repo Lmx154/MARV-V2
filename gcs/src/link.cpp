@@ -521,6 +521,8 @@ void Link::mission_request(const std::string& type, const json::object& m, const
     next_mission_ = now;  // the new frame and state go out on the next poll
 }
 
+std::string Link::mission_message() const { return json::serialize(mission_state(mission_.status(seconds(Clock::now())))); }
+
 // One 20 Hz period: the executor's frame, and mission_state on a change or every 500 ms while engaged.
 void Link::mission_tick(Clock::time_point now) {
     const double t = seconds(now);
