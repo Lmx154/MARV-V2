@@ -1,0 +1,623 @@
+<?xml version="1.0" ?>
+<!--
+  MARV SITL world.
+
+  THE AIRCRAFT IS NOT INVENTED. The model below is the published "X3 UAV"
+  (openrobotics/x3 uav, version 4) from Gazebo Fuel, copied verbatim -- mass
+  1.5 kg, Ixx 0.0347563, Iyy 0.07, Izz 0.0977, rotor arms at (+/-0.13,
+  +/-0.20..0.22) -- with exactly ONE addition: an IMU sensor on the base link.
+  It descends from the RotorS simulator (Furrer et al., ETH Zurich), which is
+  where those numbers were measured.
+
+  The motor plugin parameters are the ones the shipped world
+  /usr/share/gz/gz-sim8/worlds/multicopter_velocity_control.sdf uses for this
+  same model: maxRotVelocity 800, motorConstant 8.54858e-06, momentConstant
+  0.016, and the turningDirection assignment ccw/ccw/cw/cw on rotors 0..3.
+
+  An earlier version of this file carried an airframe whose mass and inertias
+  were made up. That was wrong on this project's own terms -- docs/validation.md
+  requires constants to come from a primary source -- and it was not harmless:
+  a symmetric invented inertia hid the fact that a real airframe has Ixx != Iyy,
+  and an invented spin layout could not have caught the yaw sign error in
+  core::presets::kQuadXPx4, which the published turningDirection assignment
+  did catch.
+
+  Thrust-to-weight here is about 1.47 (21.9 N against 14.9 N), so hover sits
+  near 0.68 of command and a steep bank runs out of thrust. That is a property
+  of the real aircraft, not of the harness, and the flight profile is sized to
+  respect it.
+
+  Physics at 1 kHz, real_time_factor 0: the harness steps this world
+  (ADR-0002, lockstep) rather than watching it.
+-->
+<sdf version="1.9">
+  <world name="marv">
+    <physics name="1ms" type="dart">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system"
+            name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-imu-system"
+            name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-air-pressure-system"
+            name="gz::sim::systems::AirPressure"/>
+    <!-- Phase 5 unit 2a. The navsat system is what turns the <sensor
+         type="navsat"> on the base link below into gz.msgs.NavSat traffic;
+         without it the sensor element loads and publishes nothing, which
+         looks exactly like a topic-name mistake. -->
+    <plugin filename="gz-sim-navsat-system"
+            name="gz::sim::systems::NavSat"/>
+    <!-- Magnetometer system, phase 5 unit 5a (ADR-0007 D35). Both params are
+         set EXPLICITLY; at -v 4 the plugin prints what it used
+         ("Magnetometer: using param [use_units_gauss: 0]", "[use_earth_frame_ned:
+         0]"). false/false means: the message's field_tesla is in Tesla, and
+         the world field the system computes from its tables (see the comment
+         at <gravity> above -- it does NOT read a <magnetic_field> element) is
+         expressed in ENU before the sensor rotates it into the body. The
+         bridge's mag-vs-truth pin (unit 5a.1), not this comment, proves the
+         frame and the unit. -->
+    <plugin filename="gz-sim-magnetometer-system"
+            name="gz::sim::systems::Magnetometer">
+      <use_units_gauss>false</use_units_gauss>
+      <use_earth_frame_ned>false</use_earth_frame_ned>
+    </plugin>
+
+    <gravity>0 0 -9.8066</gravity>
+    <!-- No <magnetic_field> element, and that is deliberate (phase 5 unit
+         5a.0, 2026-09-04): gz-sim 8's Magnetometer system recomputes the
+         world field on every update from its own 10-degree tables at the
+         <spherical_coordinates> below and overwrites whatever this element
+         says (Magnetometer.cc:440-506, gz-sim8 branch) -- unit 5a.0 set it to
+         WMM-2025 and read a different field off the topic. The field the
+         sensor publishes is that table value, reproduced and probe-verified:
+         NED (0.2162762, 0.0096861, 0.4291632) gauss, declination 2.5643 deg
+         (docs/datasheets/wmm-zurich.md, second section; constants.hpp
+         kGzMagFieldNedGauss). An element here would be a comment that lies;
+         the harness's mag-vs-truth pin is what holds the value. -->
+
+    <!-- WHERE THIS WORLD IS, and why it is not the equator.
+         Phase 5 unit 2a (ADR-0007 S2): the navsat sensor reports latitude,
+         longitude and altitude, and it can only do that against a stated
+         origin. gz-sim's SphericalCoordinates turns the model's ENU world
+         position into degrees about this datum, and sitl/src/gazebo_ports.cpp
+         projects them back to NED metres -- so these five numbers and the
+         GazeboConfig::gps_datum_* fields that mirror them are ONE fact
+         written in two places, exactly as <update_rate>50</update_rate> on
+         baro_sensor and GazeboConfig::baro_period_us already are.
+
+         The place is ETH Zurich's Zentrum campus, 47.376388 N 8.547778 E,
+         408 m -- the lab the X3 in this file was measured in (RotorS, Furrer
+         et al., the provenance this file's own header records). A location
+         has to be somewhere, and this aircraft's own is a better answer than
+         a default.
+
+         THE LATITUDE IS THE PART THAT MATTERS. The flat-earth projection
+         scales east by cos(lat0) and north by the meridian radius; at
+         latitude 0 the cosine is 1, the two radii are at their closest, and
+         a projection that dropped the cosine, or crossed north with east,
+         would read correct anyway. At 47.376388 deg cos(lat0) = 0.6773, so
+         an east metre and a north metre differ by a third and neither
+         mistake can hide. A datum on the equator would be a test that
+         cannot fail.
+
+         heading_deg 0, so the world frame is plain ENU (+X east, +Y north,
+         +Z up) -- which is what the bridge's ENU->NED mapping assumes and
+         what gz-sim documents its world frame to be. A nonzero heading
+         would rotate the world's X/Y away from east/north and silently
+         invalidate that mapping.
+
+         The elevation only enters as a DIFFERENCE (down = -(alt - alt0)) and
+         through the WGS-84 radii, where 408 m against 6.37e6 m is 6e-5 --
+         it is stated rather than defaulted so the SDF's number and the
+         bridge's can be compared by eye. -->
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>47.376388</latitude_deg>
+      <longitude_deg>8.547778</longitude_deg>
+      <elevation>408</elevation>
+      <heading_deg>0</heading_deg>
+    </spherical_coordinates>
+
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>200 200</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>200 200</size></plane></geometry>
+          <material><ambient>0.3 0.32 0.3 1</ambient><diffuse>0.45 0.5 0.45 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="marv_quad">
+    <!-- On the ground, at rest, which is where an aircraft powers up.
+         0.053302 is the published X3's own resting height -- the model
+         declares it a few lines below -- and it puts the base_link collision
+         box's underside on the plane.
+
+         It used to spawn at 8 m, and that was a FREE FALL, not a hover. An
+         accelerometer in free fall measures no specific force and genuinely
+         cannot say which way is down, so the estimator could not prime; what
+         it primed from instead was the 1.8e-15 m/s^2 of numerical noise left
+         over, whose sign put the aircraft 180 degrees inverted. Rate mode
+         never noticed, because it never asks which way is up. See the
+         priming note in core/include/marv/core/attitude.hpp.
+
+         The cost is a takeoff, and gz_fly now flies one. That is the honest
+         order of events anyway: prime at 1 g on the ground, then leave it. -->
+    <pose>0 0 0.053302 0 0 0</pose>
+
+            <pose>0 0 0.053302 0 0 0</pose>
+            <link name="X3/base_link">
+                <pose frame="">0 0 0 0 -0 0</pose>
+                <inertial>
+                    <pose frame="">0 0 0 0 -0 0</pose>
+                    <mass>1.5</mass>
+                    <inertia>
+                        <ixx>0.0347563</ixx>
+                        <ixy>0</ixy>
+                        <ixz>0</ixz>
+                        <iyy>0.07</iyy>
+                        <iyz>0</iyz>
+                        <izz>0.0977</izz>
+                    </inertia>
+                </inertial>
+                <collision name="X3/base_link_inertia_collision">
+                    <pose frame="">0 0 0 0 -0 0</pose>
+                    <geometry>
+                        <box>
+                            <size>0.47 0.47 0.11</size>
+                        </box>
+                    </geometry>
+                </collision>
+                <visual name="X3/base_link_inertia_visual">
+                    <pose frame="">0 0 0 0 -0 0</pose>
+                    <geometry>
+                        <mesh>
+                            <scale>1 1 1</scale>
+                            <uri>https://fuel.gazebosim.org/1.0/openrobotics/models/x3 uav/4/files/meshes/x3.dae</uri>
+                        </mesh>
+                    </geometry>
+                </visual>
+        
+              <!-- The ONLY addition to the published X3 model. 1 kHz to match the
+                   loop. No noise for this milestone: a step response graded
+                   against a threshold is hard enough to read without it, and
+                   adding noise is a separate experiment with its own criterion. -->
+              <sensor name="imu_sensor" type="imu">
+                <always_on>1</always_on>
+                <update_rate>1000</update_rate>
+              </sensor>
+
+              <!-- Barometer. 50 Hz, deliberately slower than the IMU's 1 kHz
+                   so the multi-rate staleness machinery is actually exercised
+                   rather than every sensor arriving in lockstep. -->
+              <sensor name="baro_sensor" type="air_pressure">
+                <always_on>1</always_on>
+                <update_rate>50</update_rate>
+              </sensor>
+
+              <!-- GPS, phase 5 unit 2a. 10 Hz, the NEO-M9N's own rate and the
+                   one MultiRateSource has always synthesised
+                   (sitl/include/marv/sitl/sources.hpp) -- a hundred control
+                   frames per sample, so the staleness the frame contract
+                   describes is real rather than nominal.
+
+                   NO NOISE, on the same terms as the IMU above ("No noise for
+                   this milestone"): the projection this feeds is graded to a
+                   centimetre in sitl/tests/test_gps_projection.cpp, and a
+                   metre of receiver noise on top of it would be a separate
+                   experiment with its own criterion. A real receiver's noise
+                   arrives with the phase 7 driver.
+
+                   The topic is gz-sim's own default for a navsat sensor --
+                   scopedName + "/navsat", VERIFIED against the running world
+                   with `gz topic -l` rather than assumed -- and
+                   marv::sitl::gps_topic() (sitl/src/gazebo_ports.cpp) must
+                   read identically to this sensor's NAME, exactly as
+                   imu_topic and baro_topic do for theirs. -->
+              <sensor name="gps_sensor" type="navsat">
+                <always_on>1</always_on>
+                <update_rate>10</update_rate>
+              </sensor>
+
+              <!-- Magnetometer, phase 5 unit 5a. 100 Hz, PROVISIONAL: a
+                   BMM350 output-data-rate the phase 7 driver will pick from
+                   the datasheet (not yet in docs/datasheets/), fast enough
+                   that the yaw datum lands before the first GPS fix at
+                   0.199 s and slow enough to stay a multi-rate sensor rather
+                   than a second IMU. Its period (10 ms) is under the baro's
+                   (20 ms), so prime()'s step floor, max(2 baro, 2 GPS
+                   periods), does not move and frame 0 stays at 201 000 us.
+
+                   NO NOISE, on the same terms as the IMU and GPS above: the
+                   body field this publishes is pinned against simulator truth
+                   (R_truth^T times the world field) by the bridge, and a real
+                   part's noise arrives with its driver.
+
+                   The topic is gz-sim's default, scopedName + "/magnetometer"
+                   (the literal in libgz-sim8-magnetometer-system.so), and
+                   marv::sitl::mag_topic() (unit 5a.1) must read identically
+                   to this sensor's NAME, as imu_topic, baro_topic and
+                   gps_topic do for theirs. Nothing subscribes to it in unit
+                   5a.0; the nine graded profiles must not move. -->
+              <sensor name="mag_sensor" type="magnetometer">
+                <always_on>1</always_on>
+                <update_rate>100</update_rate>
+              </sensor>
+            </link>
+            <link name="X3/rotor_0">
+                <pose frame="">0.13 -0.22 0.023 0 -0 0</pose>
+                <inertial>
+                    <pose frame="">0 0 0 0 -0 0</pose>
+                    <mass>0.005</mass>
+                    <inertia>
+                        <ixx>9.75e-07</ixx>
+                        <ixy>0</ixy>
+                        <ixz>0</ixz>
+                        <iyy>4.17041e-05</iyy>
+                        <iyz>0</iyz>
+                        <izz>4.26041e-05</izz>
+                    </inertia>
+                </inertial>
+                <collision name="X3/rotor_0_collision">
+                    <pose frame="">0 0 0 0 -0 0</pose>
+                    <geometry>
+                        <cylinder>
+                            <length>0.005</length>
+                            <radius>0.1</radius>
+                        </cylinder>
+                    </geometry>
+                    <surface>
+                        <contact>
+                            <ode/>
+                        </contact>
+                        <friction>
+                            <ode/>
+                        </friction>
+                    </surface>
+                </collision>
+                <visual name="X3/rotor_0_visual">
+                    <pose frame="">0 0 0 0 -0 0</pose>
+                    <geometry>
+                        <mesh>
+                            <scale>0.1 0.1 0.1</scale>
+                            <uri>https://fuel.gazebosim.org/1.0/openrobotics/models/x3 uav/4/files/meshes/propeller_ccw.dae</uri>
+                        </mesh>
+                    </geometry>
+                    <material>
+                        <script>
+                            <name>Gazebo/Blue</name>
+                            <uri>file://media/materials/scripts/gazebo.material</uri>
+                        </script>
+                    </material>
+                </visual>
+                <gravity>1</gravity>
+                <velocity_decay/>
+            </link>
+            <joint name="X3/rotor_0_joint" type="revolute">
+                <child>X3/rotor_0</child>
+                <parent>X3/base_link</parent>
+                <axis>
+                    <xyz>0 0 1</xyz>
+                    <limit>
+                        <lower>-1e+16</lower>
+                        <upper>1e+16</upper>
+                    </limit>
+                    <dynamics>
+                        <spring_reference>0</spring_reference>
+                        <spring_stiffness>0</spring_stiffness>
+                    </dynamics>
+                    <use_parent_model_frame>1</use_parent_model_frame>
+                </axis>
+            </joint>
+            <link name="X3/rotor_1">
+                <pose frame="">-0.13 0.2 0.023 0 -0 0</pose>
+                <inertial>
+                    <pose frame="">0 0 0 0 -0 0</pose>
+                    <mass>0.005</mass>
+                    <inertia>
+                        <ixx>9.75e-07</ixx>
+                        <ixy>0</ixy>
+                        <ixz>0</ixz>
+                        <iyy>4.17041e-05</iyy>
+                        <iyz>0</iyz>
+                        <izz>4.26041e-05</izz>
+                    </inertia>
+                </inertial>
+                <collision name="X3/rotor_1_collision">
+                    <pose frame="">0 0 0 0 -0 0</pose>
+                    <geometry>
+                        <cylinder>
+                            <length>0.005</length>
+                            <radius>0.1</radius>
+                        </cylinder>
+                    </geometry>
+                    <surface>
+                        <contact>
+                            <ode/>
+                        </contact>
+                        <friction>
+                            <ode/>
+                        </friction>
+                    </surface>
+                </collision>
+                <visual name="X3/rotor_1_visual">
+                    <pose frame="">0 0 0 0 -0 0</pose>
+                    <geometry>
+                        <mesh>
+                            <scale>0.1 0.1 0.1</scale>
+                            <uri>https://fuel.gazebosim.org/1.0/openrobotics/models/x3 uav/4/files/meshes/propeller_ccw.dae</uri>
+                        </mesh>
+                    </geometry>
+                    <material>
+                        <script>
+                            <name>Gazebo/Red</name>
+                            <uri>file://media/materials/scripts/gazebo.material</uri>
+                        </script>
+                    </material>
+                </visual>
+                <gravity>1</gravity>
+                <velocity_decay/>
+            </link>
+            <joint name="X3/rotor_1_joint" type="revolute">
+                <child>X3/rotor_1</child>
+                <parent>X3/base_link</parent>
+                <axis>
+                    <xyz>0 0 1</xyz>
+                    <limit>
+                        <lower>-1e+16</lower>
+                        <upper>1e+16</upper>
+                    </limit>
+                    <dynamics>
+                        <spring_reference>0</spring_reference>
+                        <spring_stiffness>0</spring_stiffness>
+                    </dynamics>
+                    <use_parent_model_frame>1</use_parent_model_frame>
+                </axis>
+            </joint>
+            <link name="X3/rotor_2">
+                <pose frame="">0.13 0.22 0.023 0 -0 0</pose>
+                <inertial>
+                    <pose frame="">0 0 0 0 -0 0</pose>
+                    <mass>0.005</mass>
+                    <inertia>
+                        <ixx>9.75e-07</ixx>
+                        <ixy>0</ixy>
+                        <ixz>0</ixz>
+                        <iyy>4.17041e-05</iyy>
+                        <iyz>0</iyz>
+                        <izz>4.26041e-05</izz>
+                    </inertia>
+                </inertial>
+                <collision name="X3/rotor_2_collision">
+                    <pose frame="">0 0 0 0 -0 0</pose>
+                    <geometry>
+                        <cylinder>
+                            <length>0.005</length>
+                            <radius>0.1</radius>
+                        </cylinder>
+                    </geometry>
+                    <surface>
+                        <contact>
+                            <ode/>
+                        </contact>
+                        <friction>
+                            <ode/>
+                        </friction>
+                    </surface>
+                </collision>
+                <visual name="X3/rotor_2_visual">
+                    <pose frame="">0 0 0 0 -0 0</pose>
+                    <geometry>
+                        <mesh>
+                            <scale>0.1 0.1 0.1</scale>
+                            <uri>https://fuel.gazebosim.org/1.0/openrobotics/models/x3 uav/4/files/meshes/propeller_cw.dae</uri>
+                        </mesh>
+                    </geometry>
+                    <material>
+                        <script>
+                            <name>Gazebo/Blue</name>
+                            <uri>file://media/materials/scripts/gazebo.material</uri>
+                        </script>
+                    </material>
+                </visual>
+                <gravity>1</gravity>
+                <velocity_decay/>
+            </link>
+            <joint name="X3/rotor_2_joint" type="revolute">
+                <child>X3/rotor_2</child>
+                <parent>X3/base_link</parent>
+                <axis>
+                    <xyz>0 0 1</xyz>
+                    <limit>
+                        <lower>-1e+16</lower>
+                        <upper>1e+16</upper>
+                    </limit>
+                    <dynamics>
+                        <spring_reference>0</spring_reference>
+                        <spring_stiffness>0</spring_stiffness>
+                    </dynamics>
+                    <use_parent_model_frame>1</use_parent_model_frame>
+                </axis>
+            </joint>
+            <link name="X3/rotor_3">
+                <pose frame="">-0.13 -0.2 0.023 0 -0 0</pose>
+                <inertial>
+                    <pose frame="">0 0 0 0 -0 0</pose>
+                    <mass>0.005</mass>
+                    <inertia>
+                        <ixx>9.75e-07</ixx>
+                        <ixy>0</ixy>
+                        <ixz>0</ixz>
+                        <iyy>4.17041e-05</iyy>
+                        <iyz>0</iyz>
+                        <izz>4.26041e-05</izz>
+                    </inertia>
+                </inertial>
+                <collision name="X3/rotor_3_collision">
+                    <pose frame="">0 0 0 0 -0 0</pose>
+                    <geometry>
+                        <cylinder>
+                            <length>0.005</length>
+                            <radius>0.1</radius>
+                        </cylinder>
+                    </geometry>
+                    <surface>
+                        <contact>
+                            <ode/>
+                        </contact>
+                        <friction>
+                            <ode/>
+                        </friction>
+                    </surface>
+                </collision>
+                <visual name="X3/rotor_3_visual">
+                    <pose frame="">0 0 0 0 -0 0</pose>
+                    <geometry>
+                        <mesh>
+                            <scale>0.1 0.1 0.1</scale>
+                            <uri>https://fuel.gazebosim.org/1.0/openrobotics/models/x3 uav/4/files/meshes/propeller_cw.dae</uri>
+                        </mesh>
+                    </geometry>
+                    <material>
+                        <script>
+                            <name>Gazebo/Red</name>
+                            <uri>file://media/materials/scripts/gazebo.material</uri>
+                        </script>
+                    </material>
+                </visual>
+                <gravity>1</gravity>
+                <velocity_decay/>
+            </link>
+            <joint name="X3/rotor_3_joint" type="revolute">
+                <child>X3/rotor_3</child>
+                <parent>X3/base_link</parent>
+                <axis>
+                    <xyz>0 0 1</xyz>
+                    <limit>
+                        <lower>-1e+16</lower>
+                        <upper>1e+16</upper>
+                    </limit>
+                    <dynamics>
+                        <spring_reference>0</spring_reference>
+                        <spring_stiffness>0</spring_stiffness>
+                    </dynamics>
+                    <use_parent_model_frame>1</use_parent_model_frame>
+                </axis>
+            </joint>
+              <plugin filename="gz-sim-multicopter-motor-model-system"
+                  name="gz::sim::systems::MulticopterMotorModel">
+            <jointName>X3/rotor_0_joint</jointName>
+            <linkName>X3/rotor_0</linkName>
+            <turningDirection>ccw</turningDirection>
+            <timeConstantUp>0.0125</timeConstantUp>
+            <timeConstantDown>0.025</timeConstantDown>
+            <maxRotVelocity>800.0</maxRotVelocity>
+            <motorConstant>8.54858e-06</motorConstant>
+            <momentConstant>0.016</momentConstant>
+            <rotorDragCoefficient>8.06428e-05</rotorDragCoefficient>
+            <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
+            <rotorVelocitySlowdownSim>100</rotorVelocitySlowdownSim>
+            <commandSubTopic>command/motor_speed</commandSubTopic>
+            <actuator_number>0</actuator_number>
+            <motorType>velocity</motorType>
+          </plugin>
+          <plugin filename="gz-sim-multicopter-motor-model-system"
+                  name="gz::sim::systems::MulticopterMotorModel">
+            <jointName>X3/rotor_1_joint</jointName>
+            <linkName>X3/rotor_1</linkName>
+            <turningDirection>ccw</turningDirection>
+            <timeConstantUp>0.0125</timeConstantUp>
+            <timeConstantDown>0.025</timeConstantDown>
+            <maxRotVelocity>800.0</maxRotVelocity>
+            <motorConstant>8.54858e-06</motorConstant>
+            <momentConstant>0.016</momentConstant>
+            <rotorDragCoefficient>8.06428e-05</rotorDragCoefficient>
+            <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
+            <rotorVelocitySlowdownSim>100</rotorVelocitySlowdownSim>
+            <commandSubTopic>command/motor_speed</commandSubTopic>
+            <actuator_number>1</actuator_number>
+            <motorType>velocity</motorType>
+          </plugin>
+          <plugin filename="gz-sim-multicopter-motor-model-system"
+                  name="gz::sim::systems::MulticopterMotorModel">
+            <jointName>X3/rotor_2_joint</jointName>
+            <linkName>X3/rotor_2</linkName>
+            <turningDirection>cw</turningDirection>
+            <timeConstantUp>0.0125</timeConstantUp>
+            <timeConstantDown>0.025</timeConstantDown>
+            <maxRotVelocity>800.0</maxRotVelocity>
+            <motorConstant>8.54858e-06</motorConstant>
+            <momentConstant>0.016</momentConstant>
+            <rotorDragCoefficient>8.06428e-05</rotorDragCoefficient>
+            <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
+            <rotorVelocitySlowdownSim>100</rotorVelocitySlowdownSim>
+            <commandSubTopic>command/motor_speed</commandSubTopic>
+            <actuator_number>2</actuator_number>
+            <motorType>velocity</motorType>
+          </plugin>
+          <plugin filename="gz-sim-multicopter-motor-model-system"
+                  name="gz::sim::systems::MulticopterMotorModel">
+            <jointName>X3/rotor_3_joint</jointName>
+            <linkName>X3/rotor_3</linkName>
+            <turningDirection>cw</turningDirection>
+            <timeConstantUp>0.0125</timeConstantUp>
+            <timeConstantDown>0.025</timeConstantDown>
+            <maxRotVelocity>800.0</maxRotVelocity>
+            <motorConstant>8.54858e-06</motorConstant>
+            <momentConstant>0.016</momentConstant>
+            <rotorDragCoefficient>8.06428e-05</rotorDragCoefficient>
+            <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
+            <rotorVelocitySlowdownSim>100</rotorVelocitySlowdownSim>
+            <commandSubTopic>command/motor_speed</commandSubTopic>
+            <actuator_number>3</actuator_number>
+            <motorType>velocity</motorType>
+          </plugin>
+          <!-- Ground truth pose/twist for phase 4 unit U1
+               (sitl/include/marv/sitl/gazebo_truth.hpp). 3D, because the
+               plugin's OWN default is planar (dimensions=2, verified against
+               the installed gz-sim8 8.15.0 OdometryPublisher.cc:132,198) and
+               a 2D odometry message carries no z velocity or roll/pitch rate
+               at all. odom_publish_frequency matches the physics rate
+               exactly -- 1000 Hz, this world's own <max_step_size> above --
+               so a sample is due on EVERY control frame, PROVEN each run by
+               GazeboSource::prime() (gazebo_ports.cpp) rather than assumed
+               from this number. odom_topic is explicit and chosen, not the
+               plugin's own "/model/<model>/odometry" default
+               (OdometryPublisher.cc:225-226) -- it must read identically in
+               gazebo_ports.cpp's odom_topic(). odom_frame/robot_base_frame
+               are header labels only (OdometryPublisher.cc:475-480); they do
+               not affect the pose/twist math and are set to this airframe's
+               own names rather than left at the plugin's generic
+               "<model>/odom" / "<model>/base_footprint" defaults
+               (OdometryPublisher.cc:157,186-187), since this model has no
+               base_footprint link. -->
+          <plugin filename="gz-sim-odometry-publisher-system"
+                  name="gz::sim::systems::OdometryPublisher">
+            <dimensions>3</dimensions>
+            <odom_publish_frequency>1000</odom_publish_frequency>
+            <odom_topic>/world/marv/model/marv_quad/odometry</odom_topic>
+            <odom_frame>marv_quad/odom</odom_frame>
+            <robot_base_frame>X3/base_link</robot_base_frame>
+          </plugin>
+        </model>
+  </world>
+</sdf>

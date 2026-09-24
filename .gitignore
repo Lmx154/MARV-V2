@@ -1,0 +1,8 @@
+build/
+*.uf2
+*.elf
+*.bin
+*.dis
+.codebase-memory/
+.serena/
+.claude/
