@@ -1,11 +1,12 @@
 <script lang="ts">
 	import type { Schema } from '$lib/gcs/types';
-	import type { Rejected } from '$lib/gcs/setup';
+	import { kindOptions, type Rejected } from '$lib/gcs/setup';
 	import BlockCard from './BlockCard.svelte';
 
 	let {
 		schema,
 		kinds,
+		kindErrors,
 		value,
 		reference,
 		rejected,
@@ -18,6 +19,8 @@
 		schema: Schema;
 		/** Staged kind index per family. */
 		kinds: number[];
+		/** Family -> the FC's refusal of the kind last asked for. */
+		kindErrors: Record<number, string>;
 		value: (index: number) => number;
 		/** Per family, the values "modified" is measured against for the block's current kind. */
 		reference: (family: number) => Record<string, number>;
@@ -37,6 +40,8 @@
 			<BlockCard
 				{family}
 				kind={kinds[i] ?? 0}
+				options={kindOptions(schema, i, kinds)}
+				error={kindErrors[i]}
 				{value}
 				reference={reference(i)}
 				{rejected}

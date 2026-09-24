@@ -12,13 +12,15 @@
 </script>
 
 <script lang="ts">
-	import type { FamilyDef } from '$lib/gcs/types';
+	import type { FamilyDef, KindDef } from '$lib/gcs/types';
 	import type { Rejected } from '$lib/gcs/setup';
 	import ParamSlider from './ParamSlider.svelte';
 
 	let {
 		family,
 		kind,
+		options,
+		error,
 		value,
 		reference,
 		rejected,
@@ -31,6 +33,10 @@
 		family: FamilyDef;
 		/** Kind index the FC reports staged for this family. */
 		kind: number;
+		/** The kinds offered: those that serve the staged vehicle (every class on the vehicle card). */
+		options: { kind: number; def: KindDef }[];
+		/** The FC's refusal of the last kind asked for, if any. */
+		error: string | undefined;
 		/** Value shown for an absolute param index. */
 		value: (index: number) => number;
 		/** Values "modified" is measured against: the factory values of this kind. */
@@ -71,7 +77,7 @@
 
 <div class="card" class:expanded style={`--family:${FAMILY_COLOUR[family.id] ?? 'var(--muted)'}`}>
 	<div class="family mono">{family.id}</div>
-	{#key kind}
+	{#key `${kind}:${error ?? ''}`}
 		<select
 			class="kind"
 			aria-label={`${family.id} block`}
@@ -79,11 +85,12 @@
 			{disabled}
 			onchange={(e) => onkind(Number((e.currentTarget as HTMLSelectElement).value))}
 		>
-			{#each family.kinds as k, i (k.id)}
-				<option value={i}>{k.label}</option>
+			{#each options as o (o.def.id)}
+				<option value={o.kind}>{o.def.label}</option>
 			{/each}
 		</select>
 	{/key}
+	{#if error}<p class="err mono" role="alert">{error}</p>{/if}
 	{#if def}<p class="summary" class:clamped={!expanded} title={expanded ? undefined : def.summary}>{def.summary}</p>{/if}
 	<div class="foot mono">
 		<span class="count">{def?.params.length ?? 0} params · <span class:accent={modifiedCount > 0}>{modifiedCount} modified</span></span>
@@ -157,6 +164,11 @@
 		padding: 0.2rem 0.4rem;
 		font: inherit;
 		font-size: 0.85rem;
+	}
+	.err {
+		margin: 0;
+		font-size: 0.75rem;
+		color: var(--bad);
 	}
 	.summary {
 		margin: 0;

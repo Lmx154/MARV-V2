@@ -58,13 +58,23 @@ export function parseServer(text: string): ServerMsg | null {
 			return { type: 'param', index: num(m.index, -1), value: num(m.value, NaN) };
 		case 'telemetry': {
 			const est = isObj(m.est) ? m.est : m;
-			const telemetry: Telemetry = { p_ned: vec3(est.p_ned), q: quat(est.q), preset: num(m.preset, 0xff), armed: Boolean(m.armed) };
+			const telemetry: Telemetry = {
+				p_ned: vec3(est.p_ned),
+				q: quat(est.q),
+				preset: num(m.preset, 0xff),
+				armed: Boolean(m.armed),
+				thrust_hover: num(m.thrust_hover, NaN),
+				brake: num(m.brake, NaN)
+			};
 			return { type: 'telemetry', telemetry };
 		}
 		case 'flash_log':
 			return { type: 'flash_log', line: String(m.line ?? '') };
-		case 'error':
-			return { type: 'error', request: String(m.request ?? ''), error: String(m.error ?? '') };
+		case 'error': {
+			const e: Extract<ServerMsg, { type: 'error' }> = { type: 'error', request: String(m.request ?? ''), error: String(m.error ?? '') };
+			if (typeof m.family === 'number') e.family = m.family;
+			return e;
+		}
 		default:
 			return null;
 	}

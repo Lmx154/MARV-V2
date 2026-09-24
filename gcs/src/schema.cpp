@@ -116,7 +116,15 @@ json::value schema() {
                 params.push_back(param_spec(r, index[i]));
                 if (!parts.empty()) parts.back().as_object()["params"].as_array().push_back(json::string(r.id));
             }
-            json::object kind{{"id", kr.id}, {"label", kr.label}, {"summary", kr.note}, {"params", std::move(params)}};
+            // The vehicle kinds this kind serves, by wire name.
+            json::array vehicles;
+            for (std::size_t vi = 0, v = 0; vi < kRows; ++vi) {
+                const SchemaRow& vr = kSchema[vi];
+                if (vr.type != RowType::kKind || vr.family != param::k_vehicle) continue;
+                if (param::compatible(kr.family, kr.kind, static_cast<std::uint8_t>(v++))) vehicles.push_back(json::string(vr.id));
+            }
+            json::object kind{{"id", kr.id}, {"label", kr.label}, {"summary", kr.note},
+                              {"vehicles", std::move(vehicles)}, {"params", std::move(params)}};
             if (!parts.empty()) kind["parts"] = std::move(parts);
             kinds.push_back(std::move(kind));
         }

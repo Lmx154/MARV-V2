@@ -1,8 +1,26 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fixture from '$lib/fixtures/schema.json';
+import { MockFc } from './mock';
 import { normalizeSchema, parseServer } from './protocol';
-import { applyHeader, editParam, emptySetup, exportSetup, paramCount, paramEcho, paramKeys, planImport, requestError, saveLanded, schemaMatches, shown, type SetupState } from './setup';
-import type { Schema, SetupHeader } from './types';
+import {
+	applyHeader,
+	editParam,
+	emptySetup,
+	exportSetup,
+	kindOptions,
+	paramCount,
+	paramEcho,
+	paramKeys,
+	planImport,
+	refusedFamily,
+	requestError,
+	saveLanded,
+	schemaMatches,
+	shown,
+	vehicleId,
+	type SetupState
+} from './setup';
+import type { ClientMsg, Schema, ServerMsg, SetupHeader } from './types';
 
 const schema = normalizeSchema(fixture as Schema);
 const n = paramCount(schema);
@@ -129,5 +147,77 @@ describe('protocol', () => {
 		expect(requestError(st, 'load_factory')).toBe('factory');
 		expect(requestError(st, 'set_param')).toBe('params');
 		expect(requestError(st, 'request_setup')).toBe('link');
+	});
+});
+
+describe('vehicle classes', () => {
+	const fam = (id: string): number => schema.families.findIndex((f) => f.id === id);
+	const ids = (family: number, kinds: number[]): string[] => kindOptions(schema, family, kinds).map((o) => o.def.id);
+	const uav = schema.factory[0].kinds.slice();
+	const rocket = schema.factory.find((f) => vehicleId(schema, f.kinds) === 'rocket')!.kinds.slice();
+
+	it('the vehicle card lists every class; the others only kinds that serve the staged vehicle', () => {
+		expect(vehicleId(schema, uav)).toBe('uav');
+		expect(ids(fam('vehicle'), uav)).toEqual(['uav', 'rocket']);
+		expect(ids(fam('vehicle'), rocket)).toEqual(['uav', 'rocket']);
+		expect(ids(fam('guidance'), uav)).toEqual(['passthrough']);
+		expect(ids(fam('guidance'), rocket)).toEqual(['apogee-predictor']);
+		expect(ids(fam('allocation'), rocket)).toEqual(['rocket-brake']);
+		expect(ids(fam('estimator'), rocket)).toEqual(schema.families[fam('estimator')].kinds.map((k) => k.id));
+		for (const kinds of [uav, rocket])
+			schema.families.forEach((_, fi) => {
+				if (fi !== fam('vehicle')) for (const o of kindOptions(schema, fi, kinds)) expect(o.def.vehicles).toContain(vehicleId(schema, kinds));
+			});
+	});
+
+	describe('with the mock FC', () => {
+		beforeEach(() => vi.useFakeTimers());
+		afterEach(() => vi.useRealTimers());
+
+		const run = () => {
+			const fc = new MockFc(schema, '');
+			const msgs: ServerMsg[] = [];
+			fc.onmessage = (ev) => {
+				const m = parseServer(ev.data);
+				if (m && m.type !== 'telemetry') msgs.push(m);
+			};
+			const st = loaded();
+			const send = (m: ClientMsg): ServerMsg[] => {
+				msgs.length = 0;
+				fc.send(JSON.stringify(m));
+				vi.advanceTimersByTime(40);
+				for (const r of msgs) if (r.type === 'setup') applyHeader(st, r.header, r.values);
+				return msgs.slice();
+			};
+			return { fc, st, send };
+		};
+
+		it('after a vehicle change the kinds are the ones the header reports, not assumed', () => {
+			const { fc, st, send } = run();
+			const before = st.header!.kind.slice();
+			fc.send(JSON.stringify({ type: 'set_kind', family: fam('vehicle'), kind: 1 }));
+			expect(st.header!.kind).toEqual(before); // nothing changes until the FC answers
+			const replies = send({ type: 'request_setup' });
+			expect(replies.some((r) => r.type === 'error')).toBe(false);
+			const kinds = st.header!.kind;
+			expect(vehicleId(schema, kinds)).toBe('rocket');
+			expect(schema.families[fam('guidance')].kinds[kinds[fam('guidance')]].id).toBe('apogee-predictor');
+			expect(schema.families[fam('allocation')].kinds[kinds[fam('allocation')]].id).toBe('rocket-brake');
+			expect(kinds[fam('estimator')]).toBe(before[fam('estimator')]);
+			fc.close();
+		});
+
+		it('a refused kind comes back as an error for its card, and the held kind stays', () => {
+			const { fc, st, send } = run();
+			send({ type: 'set_kind', family: fam('vehicle'), kind: 1 });
+			const held = st.header!.kind[fam('guidance')];
+			const replies = send({ type: 'set_kind', family: fam('guidance'), kind: 0 });
+			const err = replies.find((r) => r.type === 'error');
+			expect(err?.type === 'error' ? refusedFamily(err) : null).toBe(fam('guidance'));
+			expect(err?.type === 'error' ? err.error : '').toMatch(/refused/);
+			expect(st.header!.kind[fam('guidance')]).toBe(held);
+			expect(refusedFamily({ request: 'set_param' })).toBeNull();
+			fc.close();
+		});
 	});
 });

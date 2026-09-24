@@ -61,6 +61,7 @@ private:
         std::vector<std::uint8_t> frame;
         std::uint16_t index;  // kSetParam
         Reply reply;          // empty for the link's own requests
+        link::SetKind set{};  // kSetKind: refused when the header does not hold it
     };
 
     template <class T> void enqueue(Kind kind, const std::string& name, const T& msg, const Reply& reply,
@@ -82,6 +83,7 @@ private:
     std::string setup_message(bool with_values) const;
     std::string telemetry_message() const;
     void error(const Reply& reply, const std::string& request, const std::string& what) const;
+    std::string kind_refusal(const link::SetKind& k, const link::SetupHeader& h) const;
     void flash(const Reply& reply);
     void read_flash();
     void flash_log(const std::string& line) const;

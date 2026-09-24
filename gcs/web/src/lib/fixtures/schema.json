@@ -9,6 +9,9 @@
 					"id": "uav",
 					"label": "Multirotor",
 					"summary": "A multirotor: the controller works in fractions of full thrust and torque, so the airframe enters only through the thrust it needs to hover.",
+					"vehicles": [
+						"uav"
+					],
 					"params": [
 						{
 							"id": "hover_thrust",
@@ -38,6 +41,9 @@
 					"id": "rocket",
 					"label": "Rocket",
 					"summary": "A single-stage rocket with an air brake: no motors to command, the brake deployment only.",
+					"vehicles": [
+						"rocket"
+					],
 					"params": []
 				}
 			]
@@ -50,6 +56,10 @@
 					"id": "suite",
 					"label": "madflight FC3",
 					"summary": "Noise the filters assume for the FC3's LSM6DSV IMU, BMP580 barometer, MMC5603NJ magnetometer and an M10-class GNSS, the Earth field and gravity at the origin, and the stillness test of the alignment.",
+					"vehicles": [
+						"uav",
+						"rocket"
+					],
 					"params": [
 						{
 							"id": "sigma_accel",
@@ -359,6 +369,10 @@
 					"id": "eskf",
 					"label": "ESKF",
 					"summary": "15-state error-state Kalman filter (Solà 2017): position, velocity, attitude, accelerometer and gyro biases.",
+					"vehicles": [
+						"uav",
+						"rocket"
+					],
 					"params": [
 						{
 							"id": "sigma_p0",
@@ -430,6 +444,10 @@
 					"id": "ekf",
 					"label": "EKF",
 					"summary": "15-state extended Kalman filter on the full state; the same process noise, priors and measurements as the ESKF.",
+					"vehicles": [
+						"uav",
+						"rocket"
+					],
 					"params": [
 						{
 							"id": "sigma_p0",
@@ -501,6 +519,10 @@
 					"id": "mahony",
 					"label": "Mahony",
 					"summary": "Nonlinear complementary filter on SO(3) (Mahony, Hamel & Pflimlin 2008) with a PI gyro-bias term; position and velocity from the translation blend.",
+					"vehicles": [
+						"uav",
+						"rocket"
+					],
 					"params": [
 						{
 							"id": "k_p",
@@ -606,6 +628,10 @@
 					"id": "complementary",
 					"label": "Complementary",
 					"summary": "Integrated gyro pulled toward the accelerometer's gravity direction and the magnetometer heading; position and velocity from the translation blend. No gyro-bias estimate.",
+					"vehicles": [
+						"uav",
+						"rocket"
+					],
 					"params": [
 						{
 							"id": "k_acc",
@@ -717,12 +743,18 @@
 					"id": "passthrough",
 					"label": "Passthrough",
 					"summary": "The mission reference reaches the controller unchanged.",
+					"vehicles": [
+						"uav"
+					],
 					"params": []
 				},
 				{
 					"id": "apogee-predictor",
 					"label": "Apogee predictor",
 					"summary": "While the mission flags the coast it rolls a point-mass model of the rocket from the estimated altitude and vertical speed to apogee with the brake closed, every 20 ms, and passes the prediction and the target apogee to the controller.",
+					"vehicles": [
+						"rocket"
+					],
 					"params": [
 						{
 							"id": "predict_dt",
@@ -833,6 +865,9 @@
 					"id": "cascaded-pid",
 					"label": "Cascaded PID",
 					"summary": "Position, velocity, attitude and rate loops: thrust as a fraction of full collective from the learned hover thrust, torque as a fraction of each axis' full authority.",
+					"vehicles": [
+						"uav"
+					],
 					"params": [
 						{
 							"id": "pos_p",
@@ -1278,6 +1313,9 @@
 					"id": "apogee-pid",
 					"label": "Apogee PI (air brake)",
 					"summary": "Brake deployment = clamp(kp e + ki int(e), 0, 1) while the mission flags the coast and the predictor's apogee is valid, e the predicted apogee with the brake closed minus the target; closed otherwise. The integral starts at zero and is limited to +-i_limit.",
+					"vehicles": [
+						"rocket"
+					],
 					"params": [
 						{
 							"id": "kp",
@@ -1341,12 +1379,18 @@
 					"id": "quad-x",
 					"label": "Quad X",
 					"summary": "Thrust and torque fractions to four rotor thrust fractions with fixed +-0.5 factors (motor order 0 FR, 1 RL, 2 FL, 3 RR): collective up to the hover thrust, then roll and pitch, then the rest of the collective, then yaw.",
+					"vehicles": [
+						"uav"
+					],
 					"params": []
 				},
 				{
 					"id": "rocket-brake",
 					"label": "Air brake",
 					"summary": "The controller's brake deployment, 0..1, in flight; every motor command zero, always.",
+					"vehicles": [
+						"rocket"
+					],
 					"params": []
 				}
 			]
@@ -1359,6 +1403,9 @@
 					"id": "rotor-speed-fraction",
 					"label": "Rotor speed fraction",
 					"summary": "Each motor command is the rotor speed as a fraction of its maximum: spin_min + (spin_max - spin_min) times the inverse of the thrust curve (1 - e) x + e x^2 at the rotor's thrust fraction.",
+					"vehicles": [
+						"uav"
+					],
 					"params": [
 						{
 							"id": "thrust_expo",
@@ -1422,6 +1469,9 @@
 					"id": "brake-servo",
 					"label": "Brake servo",
 					"summary": "The brake servo command is the deployment, unchanged.",
+					"vehicles": [
+						"rocket"
+					],
 					"params": []
 				}
 			]

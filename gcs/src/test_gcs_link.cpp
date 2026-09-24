@@ -1,6 +1,7 @@
 // The backend end to end: a scripted flight-controller stub speaking protocol.hpp over UDP loopback, marv_gcs's Link and
 // Server on the same io_context thread, and a Beast WebSocket client checking the JSON replies.
-//   1. request_setup / set_param (held value echoed, out of range refused) / save / load_factory / set_kind.
+//   1. request_setup / set_param (held value echoed, out of range refused) / save / load_factory / set_kind; a vehicle
+//      change forwards the re-staged kinds, a kind that does not serve the vehicle is reported refused.
 //   2. telemetry at 200 Hz from the stub reaches the client at <= 30 Hz.
 //   3. no reply: the request is sent twice, 500 ms apart, then reported as "no reply".
 //   4. a flight controller with another schema hash: edits refused before they reach the link.
@@ -119,7 +120,16 @@ private:
             if (ok) staged_.values[sp.index] = sp.value;
             put(out, link::ParamValue{sp.index, sp.index < param::kParamCount ? staged_.values[sp.index] : 0.f});
         } else if (p.as(sk)) {
-            if (sk.family < param::kFamilyCount && sk.kind < param::kind_count(sk.family)) staged_.kind[sk.family] = sk.kind;
+            // dispatch.hpp's class rules: a vehicle change re-stages the families that do not serve it; a kind that
+            // does not serve the staged vehicle is refused, and the header echoes the held kind.
+            if (sk.family == param::k_vehicle && sk.kind < param::kind_count(sk.family)) {
+                staged_.kind[sk.family] = sk.kind;
+                for (std::uint8_t f = 0; f < param::kFamilyCount; ++f)
+                    if (!param::compatible(f, staged_.kind[f], sk.kind)) staged_.kind[f] = param::first_compatible(f, sk.kind);
+            } else if (sk.family < param::kFamilyCount && sk.kind < param::kind_count(sk.family) &&
+                       param::compatible(sk.family, sk.kind, staged_.kind[param::k_vehicle])) {
+                staged_.kind[sk.family] = sk.kind;
+            }
             header(out);
         } else if (p.as(sv)) {
             stored_ = staged_;
@@ -280,6 +290,31 @@ void test_exchange() {
     c.send({{"type", "set_kind"}, {"family", static_cast<int>(param::k_estimator)}, {"kind", param::k_estimator_ekf}});
     m = c.wait("setup");
     CHECK(u64(m.at("header").at("kind").at(param::k_estimator)) == param::k_estimator_ekf);
+
+    // A vehicle change: the stub re-stages the families that do not serve a rocket; the header carries them.
+    c.send({{"type", "set_kind"}, {"family", static_cast<int>(param::k_vehicle)}, {"kind", param::k_vehicle_rocket}});
+    m = c.wait("setup");
+    for (std::uint8_t f = 0; f < param::kFamilyCount; ++f) {
+        const std::uint64_t k = u64(m.at("header").at("kind").at(f));
+        CHECK(param::compatible(f, static_cast<std::uint8_t>(k), param::k_vehicle_rocket));
+    }
+    CHECK(u64(m.at("header").at("kind").at(param::k_vehicle)) == param::k_vehicle_rocket);
+    CHECK(u64(m.at("header").at("kind").at(param::k_estimator)) == param::k_estimator_ekf);  // serves both: kept
+    CHECK(u64(m.at("header").at("kind").at(param::k_guidance)) == param::k_guidance_apogee_predictor);
+    CHECK(u64(m.at("header").at("kind").at(param::k_allocation)) == param::k_allocation_rocket_brake);
+
+    // A kind that does not serve the rocket: the header echoes the held kind, and the requester gets the refusal.
+    c.send({{"type", "set_kind"}, {"family", static_cast<int>(param::k_guidance)}, {"kind", param::k_guidance_passthrough}});
+    m = c.wait("setup");
+    CHECK(u64(m.at("header").at("kind").at(param::k_guidance)) == param::k_guidance_apogee_predictor);
+    m = c.wait("error");
+    CHECK(m.at("request").as_string() == "set_kind");
+    CHECK(u64(m.at("family")) == param::k_guidance);
+    CHECK(m.at("error").as_string().find("does not serve the rocket") != std::string::npos);
+
+    c.send({{"type", "load_factory"}, {"id", 0}});
+    m = c.wait("setup");
+    CHECK(u64(m.at("header").at("kind").at(param::k_vehicle)) == param::k_vehicle_uav);
 
     c.send({{"type", "set_param"}, {"index", param::kParamCount}, {"value", 1.0}});  // bad index: refused here
     m = c.wait("error");
