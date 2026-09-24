@@ -8,7 +8,7 @@ behind fixed contracts.
 - **Gazebo** (`sitl/gazebo/marv_quad.sdf`): vehicle, environment, sensors, motor physics.
 - **Firmware** (`fsw/`, run by `firmware/` on the Pico or in-process by the bridge): estimator,
   guidance, controller, allocation, actuator commands. It *knows of* the vehicle and environment
-  (`vehicle.hpp`, filter constants) but never simulates them.
+  (the setup: `fsw/include/marv/fsw/params.def` is the one source of every parameter) but never simulates them.
 - **Mission software** (`ground/`): what to do — manual sticks, GPS setpoints, presets.
 - **Bridge** (`bridge/`): steps Gazebo 4 ms at a time, runs the flight software on every 1 ms step, and moves frames between it, the
   flight controller (`--sitl` in-process, or `--port` to the Pico) and the ground software.
@@ -37,5 +37,8 @@ scripts/sim.sh --port /dev/serial/by-id/usb-MARV_MARV_flight_controller_* --miss
 Fly by hand or by GPS point (a second terminal, while `scripts/sim.sh --sitl --ground --seconds 600` runs):
 `build/native/ground/marv_ground manual` (RadioMaster if plugged in, else the Xbox pad), `goto LAT LON ALT`,
 `waypoints FILE`, `preset N`, `reboot`. Presets are listed in `fsw/include/marv/fsw/presets.hpp`.
+Ground control GUI (http://127.0.0.1:8765/): in SITL `scripts/gcs.sh --udp 127.0.0.1:14650` beside
+`scripts/sim.sh --sitl --ground ...` (marv_ground can share the bridge); on the Pico with no sim
+`scripts/gcs.sh --serial /dev/serial/by-id/usb-MARV_MARV_flight_controller_*` (not under flock: its Flash button takes the lock).
 Flash over SWD (debug probe): `~/pico/openocd-install/bin/openocd -s ~/pico/openocd-install/share/openocd/scripts -f interface/cmsis-dap.cfg -f target/rp2350.cfg -c "adapter speed 5000" -c "program build/fw/marv_fw.elf verify reset exit"`.
 One Gazebo server and one Pico: when agents run in parallel, wrap sim/Pico use in `flock /tmp/marv-rig.lock`.
