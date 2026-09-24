@@ -24,12 +24,17 @@ export async function loadSchema(mock: string | null): Promise<Schema> {
 }
 
 export async function loadLink(mock: string | null): Promise<LinkInfo | null> {
-	if (mock !== null) return { mode: 'mock', connected: false };
+	if (mock !== null) return { mode: 'mock', connected: false, via: null, target: null };
 	try {
 		const r = await fetch('/api/link');
 		if (!r.ok) return null;
 		const j = (await r.json()) as Partial<LinkInfo>;
-		return { mode: String(j.mode ?? ''), connected: Boolean(j.connected) };
+		return {
+			mode: String(j.mode ?? ''),
+			connected: Boolean(j.connected),
+			via: typeof j.via === 'string' ? j.via : null,
+			target: typeof j.target === 'string' ? j.target : null
+		};
 	} catch {
 		return null;
 	}

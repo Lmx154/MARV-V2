@@ -62,7 +62,12 @@ export function parseServer(text: string): ServerMsg | null {
 	if (!isObj(m)) return null;
 	switch (m.type) {
 		case 'link': {
-			const link: LinkInfo = { mode: String(m.mode ?? ''), connected: Boolean(m.connected) };
+			const link: LinkInfo = {
+				mode: String(m.mode ?? ''),
+				connected: Boolean(m.connected),
+				via: typeof m.via === 'string' ? m.via : null,
+				target: typeof m.target === 'string' ? m.target : null
+			};
 			return { type: 'link', link, header: parseHeader(m.header) };
 		}
 		case 'setup': {

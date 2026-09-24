@@ -70,6 +70,10 @@ export interface SetupHeader {
 export interface LinkInfo {
 	mode: string;
 	connected: boolean;
+	/** How the backend reaches the FC now: 'usb', 'sim-bridge', or null (none open). */
+	via: string | null;
+	/** The device path or UDP address it is open on. */
+	target: string | null;
 }
 
 /** A geodetic point as the FC reports it (home): 1e-7 deg, altitude above mean sea level. */

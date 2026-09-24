@@ -334,10 +334,14 @@
 		<div class="conn mono">
 			<span class="pill" class:ok={wsOpen} class:bad={!wsOpen}>backend {wsOpen ? 'open' : 'closed'}</span>
 			<span class="pill">link {link?.mode || '—'}</span>
-			{#if header}
+			{#if link?.via}
+				<span class="pill" class:ok={header} class:bad={!header}>
+					FC via {link.via === 'usb' ? `USB (${link.target})` : link.via === 'sim-bridge' ? 'sim bridge' : link.via}{header ? '' : link.connected ? ' (waiting for setup)' : ' (not answering)'}
+				</span>
+			{:else if header}
 				<span class="pill ok">FC connected</span>
 			{:else}
-				<span class="pill bad">no FC {link?.connected ? '(waiting for setup)' : ''}</span>
+				<span class="pill bad">no FC — plug in a flight controller or launch a sim</span>
 			{/if}
 			{#if header}<span class="pill" class:bad={armed} class:ok={!armed}>{armed ? 'ARMED' : 'disarmed'}</span>{/if}
 		</div>
