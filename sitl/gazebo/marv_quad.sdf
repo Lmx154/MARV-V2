@@ -187,12 +187,28 @@
                 </visual>
         
               <!-- The ONLY addition to the published X3 model. 1 kHz to match the
-                   loop. No noise for this milestone: a step response graded
-                   against a threshold is hard enough to read without it, and
-                   adding noise is a separate experiment with its own criterion. -->
+                   loop. Noise is the madflight FC3's LSM6DSV (docs/datasheets/LSM6DSV.pdf, DS13476 Rev 2):
+                   per-sample sigma = noise density * sqrt(BW), BW = ODR/2 = 500 Hz (LPF1 cutoff in
+                   high-performance mode, p.33 note 1; RMS noise is quoted at BW = ODR/2, p.11 note 9).
+                   Turn-on bias per axis: zero mean, sigma = the typical zero-g / zero-rate level (the typical
+                   level "describes the standard deviation" over parts, p.18 sec 4.6.2); gz flips its sign at random. -->
               <sensor name="imu_sensor" type="imu">
                 <always_on>1</always_on>
                 <update_rate>1000</update_rate>
+                <imu>
+                  <!-- Rn 2.8 mdps/sqrt(Hz) * sqrt(500 Hz) = 0.0626 dps = 1.093e-3 rad/s; G_TyOff 1 dps = 0.01745 rad/s (p.10 Table 2). -->
+                  <angular_velocity>
+                    <x><noise type="gaussian"><mean>0</mean><stddev>1.093e-3</stddev><bias_mean>0</bias_mean><bias_stddev>0.01745</bias_stddev></noise></x>
+                    <y><noise type="gaussian"><mean>0</mean><stddev>1.093e-3</stddev><bias_mean>0</bias_mean><bias_stddev>0.01745</bias_stddev></noise></y>
+                    <z><noise type="gaussian"><mean>0</mean><stddev>1.093e-3</stddev><bias_mean>0</bias_mean><bias_stddev>0.01745</bias_stddev></noise></z>
+                  </angular_velocity>
+                  <!-- An 60 ug/sqrt(Hz) (HP) * sqrt(500 Hz) = 1.342 mg = 0.01316 m/s^2; LA_TyOff 12 mg = 0.1177 m/s^2 (p.10 Table 2). -->
+                  <linear_acceleration>
+                    <x><noise type="gaussian"><mean>0</mean><stddev>0.01316</stddev><bias_mean>0</bias_mean><bias_stddev>0.1177</bias_stddev></noise></x>
+                    <y><noise type="gaussian"><mean>0</mean><stddev>0.01316</stddev><bias_mean>0</bias_mean><bias_stddev>0.1177</bias_stddev></noise></y>
+                    <z><noise type="gaussian"><mean>0</mean><stddev>0.01316</stddev><bias_mean>0</bias_mean><bias_stddev>0.1177</bias_stddev></noise></z>
+                  </linear_acceleration>
+                </imu>
               </sensor>
 
               <!-- Barometer. 50 Hz, deliberately slower than the IMU's 1 kHz
@@ -201,6 +217,10 @@
               <sensor name="baro_sensor" type="air_pressure">
                 <always_on>1</always_on>
                 <update_rate>50</update_rate>
+                <!-- BMP580 (docs/datasheets/BMP580.pdf p.9 Table 1): Vp_hi_res 0.25 Pa RMS (max; typ 0.21). -->
+                <air_pressure>
+                  <pressure><noise type="gaussian"><mean>0</mean><stddev>0.25</stddev></noise></pressure>
+                </air_pressure>
               </sensor>
 
               <!-- GPS, phase 5 unit 2a. 10 Hz, the NEO-M9N's own rate and the
@@ -209,12 +229,10 @@
                    frames per sample, so the staleness the frame contract
                    describes is real rather than nominal.
 
-                   NO NOISE, on the same terms as the IMU above ("No noise for
-                   this milestone"): the projection this feeds is graded to a
-                   centimetre in sitl/tests/test_gps_projection.cpp, and a
-                   metre of receiver noise on top of it would be a separate
-                   experiment with its own criterion. A real receiver's noise
-                   arrives with the phase 7 driver.
+                   Noise: the FC3's GPS is an external module the board does not
+                   specify, so the values below are an ASSUMPTION of a u-blox
+                   M10-class receiver: position sigma 1.0 m horizontal, 1.5 m
+                   vertical, velocity sigma 0.05 m/s, white at 10 Hz.
 
                    The topic is gz-sim's own default for a navsat sensor --
                    scopedName + "/navsat", VERIFIED against the running world
@@ -225,6 +243,18 @@
               <sensor name="gps_sensor" type="navsat">
                 <always_on>1</always_on>
                 <update_rate>10</update_rate>
+                <navsat>
+                  <!-- ASSUMED u-blox M10 class. gz-sensors 8 applies the horizontal noise to latitude and longitude in
+                       DEGREES (NavSatSensor.cc, Update): 9.0e-6 deg = 1.0 m north, 0.68 m east at 47.38 deg N. -->
+                  <position_sensing>
+                    <horizontal><noise type="gaussian"><mean>0</mean><stddev>9.0e-6</stddev></noise></horizontal>
+                    <vertical><noise type="gaussian"><mean>0</mean><stddev>1.5</stddev></noise></vertical>
+                  </position_sensing>
+                  <velocity_sensing>
+                    <horizontal><noise type="gaussian"><mean>0</mean><stddev>0.05</stddev></noise></horizontal>
+                    <vertical><noise type="gaussian"><mean>0</mean><stddev>0.05</stddev></noise></vertical>
+                  </velocity_sensing>
+                </navsat>
               </sensor>
 
               <!-- Magnetometer, phase 5 unit 5a. 100 Hz, PROVISIONAL: a
@@ -236,10 +266,7 @@
                    (20 ms), so prime()'s step floor, max(2 baro, 2 GPS
                    periods), does not move and frame 0 stays at 201 000 us.
 
-                   NO NOISE, on the same terms as the IMU and GPS above: the
-                   body field this publishes is pinned against simulator truth
-                   (R_truth^T times the world field) by the bridge, and a real
-                   part's noise arrives with its driver.
+                   Noise: the FC3's MMC5603NJ, below.
 
                    The topic is gz-sim's default, scopedName + "/magnetometer"
                    (the literal in libgz-sim8-magnetometer-system.so), and
@@ -250,6 +277,13 @@
               <sensor name="mag_sensor" type="magnetometer">
                 <always_on>1</always_on>
                 <update_rate>100</update_rate>
+                <!-- MMC5603NJ (docs/datasheets/MMC5603NJ.pdf p.2): total RMS noise 2.0 mG = 2.0e-7 T per axis at BW=01,
+                     the bandwidth whose max ODR (150 Hz) covers 100 Hz. The field here is in tesla (use_units_gauss 0). -->
+                <magnetometer>
+                  <x><noise type="gaussian"><mean>0</mean><stddev>2.0e-7</stddev></noise></x>
+                  <y><noise type="gaussian"><mean>0</mean><stddev>2.0e-7</stddev></noise></y>
+                  <z><noise type="gaussian"><mean>0</mean><stddev>2.0e-7</stddev></noise></z>
+                </magnetometer>
               </sensor>
             </link>
             <link name="X3/rotor_0">

@@ -10,7 +10,8 @@
 //    estimated attitude and compared with the declination of the reference field.
 //  - Initialisation is stationary alignment (accel tilt, mag heading, gyro average as the pad calibration of
 //    createEstimator) instead of a truth-plus-error initial state; gravity aiding (a mission flag in the lab) is not
-//    ported: alignment levels the filter before it runs.
+//    ported: alignment levels the filter before it runs. It averages only over a window the IMU calls still.
+//  - A GNSS fix is fused over two ticks (position, then velocity), so no tick carries all six updates.
 #include <marv/fsw/eskf.hpp>
 
 #include <cmath>
@@ -28,17 +29,10 @@ constexpr int IAB = 9;
 constexpr int IWB = 12;
 constexpr int N = Eskf::kN;
 
-constexpr float kPi = 3.14159265358979f;
-constexpr float kRadPerE7 = 1e-7f * kPi / 180.f;
-
 // ISA troposphere (the model of gz-sim's air-pressure sensor): h = T0/L (1 - (P/P0)^(R L / g M)).
 constexpr float kIsaP0 = 101325.f;
 constexpr float kIsaT0OverL = 44330.77f;
 constexpr float kIsaExp = 0.190263f;
-
-// WGS84.
-constexpr float kWgsA = 6378137.f;
-constexpr float kWgsE2 = 6.69437999014e-3f;
 
 struct M3 {
     float m[3][3];
@@ -98,27 +92,11 @@ Eskf::Eskf(const EskfParams& p) : prm_(p), mag_decl_(std::atan2(p.mag_ref_ned_ut
 }
 
 void Eskf::update(const SensorBus& bus) {
-    if (!started_) {
-        started_ = true;
-        t_first_us_ = bus.t_us;
-    }
     t_us_ = bus.t_us;
 
     // The GNSS origin is the first fix, taken whenever it arrives (at start the vehicle is at rest there).
-    if ((bus.fresh & kGnss) && bus.gnss.fix && !have_origin_) {
-        have_origin_ = true;
-        lat0_e7_ = bus.gnss.lat_e7;
-        lon0_e7_ = bus.gnss.lon_e7;
-        alt0_ = bus.gnss.alt_m;
-        // Flat earth about the origin: meridian and prime-vertical radii of WGS84 at its latitude.
-        const float lat = static_cast<float>(lat0_e7_) * kRadPerE7;
-        const float s = std::sin(lat);
-        const float d = 1.f - kWgsE2 * s * s;
-        const float rn = kWgsA * (1.f - kWgsE2) / (d * std::sqrt(d));
-        const float re = kWgsA / std::sqrt(d);
-        m_per_e7_n_ = (rn + alt0_) * kRadPerE7;
-        m_per_e7_e_ = (re + alt0_) * std::cos(lat) * kRadPerE7;
-    }
+    if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid())
+        frame_.set(GeoPoint{bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m});
 
     if (!aligned_) {
         accumulate_alignment(bus);
@@ -131,29 +109,54 @@ void Eskf::update(const SensorBus& bus) {
         last_imu_us_ = bus.t_us;
         if (dt > 0.f) predict(bus.imu.accel_frd, bus.imu.gyro_frd, dt);
     }
-    if ((bus.fresh & kGnss) && bus.gnss.fix && have_origin_) fuse_gnss(bus.gnss);
+    // A fix's six scalar updates are split over two ticks: position on the tick the fix arrives, its velocity on
+    // the next, residual against the state then. That velocity is one tick (1 ms) stale when fused: at the 3 m/s^2
+    // of the square's corners that is 3 mm/s, 6 % of sigma_gnss_vel, so it is not compensated. A new fix while its
+    // predecessor's velocity is still pending supersedes it, so a tick never carries more than three GNSS updates.
+    const bool fix = (bus.fresh & kGnss) && bus.gnss.fix && frame_.valid();
+    if (fix) {
+        fuse_gnss_pos(bus.gnss);
+        vel_meas_ = bus.gnss.vel_ned;
+        vel_pending_ = true;
+    } else if (vel_pending_) {
+        fuse_gnss_vel();
+        vel_pending_ = false;
+    }
     if (bus.fresh & kBaro) fuse_baro(bus.baro.pressure_pa);
     if (bus.fresh & kMag) fuse_mag(bus.mag.field_frd_ut);
 }
 
 void Eskf::accumulate_alignment(const SensorBus& bus) {
-    const float t = static_cast<float>(bus.t_us - t_first_us_) * 1e-6f;
-    if (t >= prm_.align_skip_s && t < prm_.align_skip_s + prm_.align_window_s) {
-        if (bus.fresh & kImu) {
-            sum_f_ += bus.imu.accel_frd;
-            sum_w_ += bus.imu.gyro_frd;
-            ++n_imu_;
+    if (bus.fresh & kImu) {
+        const Vec3 f = bus.imu.accel_frd;
+        const Vec3 w = bus.imu.gyro_frd;
+        bool still = std::fabs(norm(f) - prm_.gravity) < prm_.still_g_err && norm(w) < prm_.still_rate;
+        if (still && n_imu_ > 0) {
+            const float inv = 1.f / static_cast<float>(n_imu_);
+            still = norm(f - inv * sum_f_) < prm_.still_accel_dev && norm(w - inv * sum_w_) < prm_.still_gyro_dev;
         }
-        if (bus.fresh & kMag) {
-            sum_m_ += bus.mag.field_frd_ut;
-            ++n_mag_;
+        if (!still) {
+            sum_f_ = sum_w_ = sum_m_ = Vec3{0.f, 0.f, 0.f};
+            sum_h_ = 0.f;
+            n_imu_ = n_mag_ = n_baro_ = 0;
+            return;
         }
-        if (bus.fresh & kBaro) {
-            sum_h_ += baro_height(bus.baro.pressure_pa);
-            ++n_baro_;
-        }
+        if (n_imu_ == 0) t_win_us_ = bus.t_us;
+        sum_f_ += f;
+        sum_w_ += w;
+        ++n_imu_;
     }
-    if (t >= prm_.align_skip_s + prm_.align_window_s && n_imu_ > 0 && n_mag_ > 0 && n_baro_ > 0) {
+    if (n_imu_ == 0) return;
+    if (bus.fresh & kMag) {
+        sum_m_ += bus.mag.field_frd_ut;
+        ++n_mag_;
+    }
+    if (bus.fresh & kBaro) {
+        sum_h_ += baro_height(bus.baro.pressure_pa);
+        ++n_baro_;
+    }
+    const float t = static_cast<float>(bus.t_us - t_win_us_) * 1e-6f;
+    if (t >= prm_.align_window_s && n_mag_ > 0 && n_baro_ > 0) {
         align();
         if (bus.fresh & kImu) {
             last_imu_us_ = bus.t_us;
@@ -240,14 +243,17 @@ void Eskf::predict(Vec3 am, Vec3 wm, float dt) {
 
 // One scalar row of kfUpdate: innovation y (about the nominal state) less what dx_ already explains,
 // K = P h / s, dx += K y, P <- (I - K h^T) P (I - K h^T)^T + K r K^T.
+// With u = P h and s = h^T u + r the Joseph form expands exactly to P - k u^T - u k^T + s k k^T: one pass over the
+// upper triangle, symmetric by construction, about half the work of forming (I - k h^T) P and its product.
 void Eskf::scalar_update(const float* h, float y, float r) {
-    float u[N];
+    float u[N] = {};
+    for (int j = 0; j < N; ++j) {
+        if (h[j] == 0.f) continue;
+        for (int i = 0; i < N; ++i) u[i] += P_[i][j] * h[j];
+    }
     float s = r;
     for (int i = 0; i < N; ++i) {
-        float a = 0.f;
-        for (int j = 0; j < N; ++j) a += P_[i][j] * h[j];
-        u[i] = a;
-        s += h[i] * a;
+        s += h[i] * u[i];
         y -= h[i] * dx_[i];
     }
     float k[N];
@@ -255,18 +261,12 @@ void Eskf::scalar_update(const float* h, float y, float r) {
         k[i] = u[i] / s;
         dx_[i] += k[i] * y;
     }
-    // B = (I - k h^T) P = P - k u^T; w = B h; P = B (I - k h^T)^T + r k k^T = B - w k^T + r k k^T.
     for (int i = 0; i < N; ++i)
-        for (int j = 0; j < N; ++j) P_[i][j] -= k[i] * u[j];
-    float w[N];
-    for (int i = 0; i < N; ++i) {
-        float a = 0.f;
-        for (int j = 0; j < N; ++j) a += P_[i][j] * h[j];
-        w[i] = a;
-    }
-    for (int i = 0; i < N; ++i)
-        for (int j = 0; j < N; ++j) P_[i][j] += (r * k[i] - w[i]) * k[j];
-    symmetrise(P_);
+        for (int j = i; j < N; ++j) {
+            const float v = P_[i][j] - k[i] * u[j] - u[i] * k[j] + s * k[i] * k[j];
+            P_[i][j] = v;
+            P_[j][i] = v;
+        }
 }
 
 // eskfCorrect injection and reset: q <- q (x) q{dtheta}, P <- G P G^T with G_theta = I - [dtheta / 2]x.
@@ -296,20 +296,22 @@ void Eskf::inject_and_reset() {
 }
 
 // fsw.ts order: position, then velocity, each corrected and injected.
-void Eskf::fuse_gnss(const GnssSample& g) {
-    const Vec3 z{static_cast<float>(g.lat_e7 - lat0_e7_) * m_per_e7_n_,
-                 static_cast<float>(g.lon_e7 - lon0_e7_) * m_per_e7_e_, -(g.alt_m - alt0_)};
+void Eskf::fuse_gnss_pos(const GnssSample& g) {
+    const Vec3 z = frame_.to_ned(GeoPoint{g.lat_e7, g.lon_e7, g.alt_m});
     const float zp[3] = {z.x, z.y, z.z};
     const float pp[3] = {p_.x, p_.y, p_.z};
-    const float rp = prm_.sigma_gnss_pos * prm_.sigma_gnss_pos;
+    const float rh = prm_.sigma_gnss_pos * prm_.sigma_gnss_pos;
+    const float rp[3] = {rh, rh, prm_.sigma_gnss_alt * prm_.sigma_gnss_alt};
     for (int i = 0; i < 3; ++i) {
         float h[N] = {};
         h[IP + i] = 1.f;
-        scalar_update(h, zp[i] - pp[i], rp);
+        scalar_update(h, zp[i] - pp[i], rp[i]);
     }
     inject_and_reset();
+}
 
-    const float zv[3] = {g.vel_ned.x, g.vel_ned.y, g.vel_ned.z};
+void Eskf::fuse_gnss_vel() {
+    const float zv[3] = {vel_meas_.x, vel_meas_.y, vel_meas_.z};
     const float vv[3] = {v_.x, v_.y, v_.z};
     const float rv = prm_.sigma_gnss_vel * prm_.sigma_gnss_vel;
     for (int i = 0; i < 3; ++i) {
