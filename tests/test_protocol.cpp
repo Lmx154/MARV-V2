@@ -90,11 +90,19 @@ int main() {
         CHECK(p.id == link::kTruth && p.as(so));
         CHECK(so.t_us == 77 && so.q.z == 0.7071f && so.w_frd.z == 0.3f && so.valid);
 
-        const Telemetry tm{78, st, {{0.f, 0.f, -14.9f}, {0.01f, -0.02f, 0.f}}};
+        const Telemetry tm{78, st, {{0.f, 0.f, -14.9f}, {0.01f, -0.02f, 0.f}}, 3, true, {473763880, 85477780, 408.5f}};
         CHECK(decode_all(frame, link::encode(tm, frame), d, p));
         Telemetry to{};
         CHECK(p.as(to));
         CHECK(to.t_us == 78 && to.est.p_ned.y == 2.f && to.req.force_ned.z == -14.9f && to.req.torque_frd.y == -0.02f);
+        CHECK(to.preset == 3 && to.home_valid && to.home.lat_e7 == 473763880 && to.home.alt_m == 408.5f);
+
+        link::SetPreset sp{};
+        CHECK(decode_all(frame, link::encode(link::SetPreset{4}, frame), d, p));
+        CHECK(p.as(sp) && sp.id == 4);
+        link::Reboot rb;
+        CHECK(decode_all(frame, link::encode(link::Reboot{}, frame), d, p));
+        CHECK(p.as(rb) && !p.as(sp));
     }
 
     // Reset has an empty body and is told apart from every other message by its id.

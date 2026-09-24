@@ -24,6 +24,8 @@ enum MsgId : std::uint8_t {
     kMission = 0x02,    // PC -> FC: marv::MissionCommand; held until the next one
     kTruth = 0x03,      // PC -> FC: marv::State from the simulator; sent before kSensors, lab use only
     kReset = 0x04,      // PC -> FC: link::Reset; starts a new run from power-on state (sent first by the bridge)
+    kSetPreset = 0x05,  // PC -> FC: link::SetPreset; stored (flash on the Pico), used from the next boot or kReset
+    kReboot = 0x06,     // PC -> FC: link::Reboot; restarts the controller (a Pico drops off USB and re-enumerates)
     kActuators = 0x81,  // FC -> PC: marv::ActuatorCommand; always the last reply of a tick
     kTelemetry = 0x82,  // FC -> PC: marv::Telemetry; sent before kActuators
 };
@@ -34,7 +36,7 @@ inline constexpr std::size_t kActuatorsBody = 8 + 4 * kMotorCount + 1;          
 inline constexpr std::size_t kStateBody = 8 + 12 + 12 + 16 + 12 + 1;                   // 61
 inline constexpr std::size_t kReferenceBody = 1 + 12 + 12 + 12 + 4 + 16;               // 57
 inline constexpr std::size_t kMissionBody = 1 + 1 + kReferenceBody;                    // 59
-inline constexpr std::size_t kTelemetryBody = 8 + kStateBody + 24;                     // 93
+inline constexpr std::size_t kTelemetryBody = 8 + kStateBody + 24 + 1 + 1 + 12;         // 107
 inline constexpr std::size_t kMaxBody = kTelemetryBody > kSensorsBody ? kTelemetryBody : kSensorsBody;
 inline constexpr std::size_t kMaxPayload = 1 + kMaxBody + 2;
 // COBS adds one byte per 254 plus one; then the delimiter.
@@ -42,6 +44,12 @@ inline constexpr std::size_t kMaxFrame = kMaxPayload + kMaxPayload / 254 + 2;
 
 // A new run: the flight software returns to its power-on state. No body.
 struct Reset {};
+// Selects the module preset to run from the next boot or kReset.
+struct SetPreset {
+    std::uint8_t id;
+};
+// Restart the flight controller. No body.
+struct Reboot {};
 
 // ---- CRC -----------------------------------------------------------------------------------------
 
@@ -244,6 +252,11 @@ inline void put(Writer& w, const Telemetry& t) {
     put(w, t.est);
     w.vec3(t.req.force_ned);
     w.vec3(t.req.torque_frd);
+    w.u8(t.preset);
+    w.u8(t.home_valid ? 1 : 0);
+    w.i32(t.home.lat_e7);
+    w.i32(t.home.lon_e7);
+    w.f32(t.home.alt_m);
 }
 
 inline void get(Reader& r, Telemetry& t) {
@@ -251,10 +264,19 @@ inline void get(Reader& r, Telemetry& t) {
     get(r, t.est);
     t.req.force_ned = r.vec3();
     t.req.torque_frd = r.vec3();
+    t.preset = r.u8();
+    t.home_valid = r.u8() != 0;
+    t.home.lat_e7 = r.i32();
+    t.home.lon_e7 = r.i32();
+    t.home.alt_m = r.f32();
 }
 
 inline void put(Writer&, const Reset&) {}
 inline void get(Reader&, Reset&) {}
+inline void put(Writer& w, const SetPreset& s) { w.u8(s.id); }
+inline void get(Reader& r, SetPreset& s) { s.id = r.u8(); }
+inline void put(Writer&, const Reboot&) {}
+inline void get(Reader&, Reboot&) {}
 
 template <class T> struct Traits;
 template <> struct Traits<SensorBus> {
@@ -267,6 +289,14 @@ template <> struct Traits<ActuatorCommand> {
 };
 template <> struct Traits<Reset> {
     static constexpr MsgId id = kReset;
+    static constexpr std::size_t body = 0;
+};
+template <> struct Traits<SetPreset> {
+    static constexpr MsgId id = kSetPreset;
+    static constexpr std::size_t body = 1;
+};
+template <> struct Traits<Reboot> {
+    static constexpr MsgId id = kReboot;
     static constexpr std::size_t body = 0;
 };
 template <> struct Traits<MissionCommand> {

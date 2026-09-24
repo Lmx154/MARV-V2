@@ -38,6 +38,13 @@ struct MagSample {
     Vec3 field_frd_ut;  // microtesla
 };
 
+// A geodetic position.
+struct GeoPoint {
+    std::int32_t lat_e7;  // degrees * 1e7
+    std::int32_t lon_e7;  // degrees * 1e7
+    float alt_m;          // above the WGS84 ellipsoid
+};
+
 struct GnssSample {
     std::int32_t lat_e7;  // degrees * 1e7
     std::int32_t lon_e7;  // degrees * 1e7
@@ -137,6 +144,9 @@ struct Telemetry {
     std::uint64_t t_us;
     State est;           // the estimator's output, whichever source is flying
     ControlRequest req;  // what the controller asked for
+    std::uint8_t preset; // the module preset running (see presets.hpp)
+    bool home_valid;     // home = the first GNSS fix, the origin of every p_ned
+    GeoPoint home;
 };
 
 }  // namespace marv
