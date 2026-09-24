@@ -43,4 +43,5 @@ One GUI per user (a lock): `scripts/gcs.sh` prints the running one's URL instead
 runs the sim (an airframe of `sitl/airframes`, wind/gusts/location, firmware on this computer or on the connected flight controller, the Gazebo window) holding the rig lock.
 With no sim running its Flash button flashes the plugged-in flight controller (it takes the lock). `--udp HOST:PORT` / `--serial DEV` fix the link instead.
 Flash over SWD (debug probe): `~/pico/openocd-install/bin/openocd -s ~/pico/openocd-install/share/openocd/scripts -f interface/cmsis-dap.cfg -f target/rp2350.cfg -c "adapter speed 5000" -c "program build/fw/marv_fw.elf verify reset exit"`.
+`scripts/sim.sh` keeps gz discovery on loopback (`GZ_IP=127.0.0.1`); a `gz topic`/`gz sim -g` in another terminal needs the same variable to see the sim.
 One Gazebo server and one flight controller: when agents run in parallel, wrap sim/FC use in `flock /tmp/marv-rig.lock`.
