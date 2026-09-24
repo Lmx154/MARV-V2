@@ -78,8 +78,7 @@ export class MockFc {
 				return this.emit({ type: 'param', index: m.index, value: this.staged.values[m.index] ?? 0 });
 			}
 			case 'set_kind':
-				if (this.schema.families[m.family]?.kinds[m.kind]) this.staged.kind[m.family] = m.kind;
-				return this.setup(false);
+				return this.setKind(m.family, m.kind);
 			case 'load_factory': {
 				const f = this.schema.factory.find((x) => x.id === m.id);
 				if (f) this.staged = { kind: f.kinds.slice(), values: f.values.map((v) => Math.fround(v)) };
@@ -103,6 +102,30 @@ export class MockFc {
 			case 'flash':
 				return this.flash();
 		}
+	}
+
+	/**
+	 * The FC's class rules: a vehicle change re-stages every family whose kind does not serve it to its first kind that
+	 * does; a kind that does not serve the staged vehicle is refused (the header echoes the held kind, the backend adds
+	 * the error).
+	 */
+	private setKind(family: number, kind: number): void {
+		const fams = this.schema.families;
+		const vf = fams.findIndex((f) => f.id === 'vehicle');
+		const def = fams[family]?.kinds[kind];
+		const serves = (f: number, k: number, v: string): boolean => fams[f].kinds[k]?.vehicles.includes(v) ?? false;
+		const vehicle = fams[vf].kinds[this.staged.kind[vf]].id;
+		if (def && family === vf) {
+			this.staged.kind[vf] = kind;
+			fams.forEach((_, f) => {
+				if (!serves(f, this.staged.kind[f], def.id)) this.staged.kind[f] = Math.max(0, fams[f].kinds.findIndex((k) => k.vehicles.includes(def.id)));
+			});
+		} else if (def && serves(family, kind, vehicle)) {
+			this.staged.kind[family] = kind;
+		}
+		this.setup(false);
+		if (this.staged.kind[family] !== kind)
+			this.emit({ type: 'error', request: 'set_kind', family, error: `refused: ${def?.id ?? `#${kind}`} does not serve the ${vehicle} vehicle` });
 	}
 
 	private flash(): void {
@@ -140,7 +163,14 @@ export class MockFc {
 		const yaw = 0.3 * this.t;
 		const roll = 0.05 * Math.sin(this.t);
 		const q = [Math.cos(yaw / 2) * Math.cos(roll / 2), Math.cos(yaw / 2) * Math.sin(roll / 2), -Math.sin(yaw / 2) * Math.sin(roll / 2), Math.sin(yaw / 2) * Math.cos(roll / 2)];
-		this.emit({ type: 'telemetry', est: { p_ned: [2 * Math.cos(0.3 * this.t), 2 * Math.sin(0.3 * this.t), -1.5], q }, preset, armed: this.armed });
+		this.emit({
+			type: 'telemetry',
+			est: { p_ned: [2 * Math.cos(0.3 * this.t), 2 * Math.sin(0.3 * this.t), -1.5], q },
+			preset,
+			armed: this.armed,
+			thrust_hover: 0.6811,
+			brake: 0
+		});
 	}
 
 	private emit(m: unknown): void {

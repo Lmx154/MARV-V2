@@ -137,6 +137,33 @@ export function statusWords(h: SetupHeader): { text: string; tone: 'ok' | 'warn'
 	return out;
 }
 
+/** Index of the vehicle family, whose staged kind is the vehicle class every other family must serve. */
+export function vehicleFamily(schema: Schema): number {
+	return schema.families.findIndex((f) => f.id === 'vehicle');
+}
+
+/** The staged vehicle kind's id ('uav', 'rocket'), from the FC's kinds; undefined before a header. */
+export function vehicleId(schema: Schema, kinds: number[]): string | undefined {
+	const vf = vehicleFamily(schema);
+	return vf < 0 ? undefined : schema.families[vf].kinds[kinds[vf]]?.id;
+}
+
+/**
+ * The kinds a family's card offers: every vehicle class on the vehicle card; elsewhere only the kinds that serve the
+ * staged vehicle, plus the kind the FC holds.
+ */
+export function kindOptions(schema: Schema, family: number, kinds: number[]): { kind: number; def: KindDef }[] {
+	const all = schema.families[family]?.kinds.map((def, kind) => ({ kind, def })) ?? [];
+	const vehicle = vehicleId(schema, kinds);
+	if (family === vehicleFamily(schema) || vehicle === undefined) return all;
+	return all.filter((o) => o.kind === kinds[family] || o.def.vehicles.includes(vehicle));
+}
+
+/** The card a backend error belongs beside: the family of a refused set_kind, else null. */
+export function refusedFamily(m: { request: string; family?: number }): number | null {
+	return m.request === 'set_kind' && m.family !== undefined ? m.family : null;
+}
+
 export function kindOf(schema: Schema, family: number, kind: number): KindDef | undefined {
 	return schema.families[family]?.kinds[kind];
 }

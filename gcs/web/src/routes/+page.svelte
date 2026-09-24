@@ -14,11 +14,13 @@
 		paramEcho,
 		planImport,
 		referenceValues,
+		refusedFamily,
 		requestError,
 		sameF32,
 		schemaMatches,
 		shown,
 		statusWords,
+		vehicleId,
 		type ErrorSlot,
 		type SetupState
 	} from '$lib/gcs/setup';
@@ -39,6 +41,8 @@
 	let note = $state<string | null>(null);
 	/** The backend's last error per slot, shown next to the control that caused it. */
 	let errors = $state<Partial<Record<ErrorSlot, string>>>({});
+	/** Family -> the FC's refusal of the kind last asked for, shown on that family's card. */
+	let kindErrors = $state<Record<number, string>>({});
 	let conn: Connection | null = null;
 	const sentAt = new Map<number, number>();
 
@@ -47,6 +51,7 @@
 	const loaded = $derived(schema !== null && st.values.length === paramCount(schema));
 	const editable = $derived(match && loaded);
 	const kinds = $derived(header?.kind ?? []);
+	const vehicle = $derived(schema ? vehicleId(schema, kinds) : undefined);
 	const armed = $derived(header?.armed ?? telem?.armed ?? false);
 	const factoryNow = $derived(schema && loaded ? matchingFactory(schema, kinds, st.values) : null);
 	const words = $derived(header ? statusWords(header) : []);
@@ -101,10 +106,13 @@
 			case 'flash_log':
 				flashLog = [...flashLog.slice(-499), m.line];
 				break;
-			case 'error':
-				errors[requestError(st, m.request)] = `${m.request}: ${m.error}`;
+			case 'error': {
+				const family = refusedFamily(m);
+				if (family !== null) kindErrors[family] = m.error;
+				else errors[requestError(st, m.request)] = `${m.request}: ${m.error}`;
 				if (m.request === 'flash') flashing = false;
 				break;
+			}
 		}
 	}
 
@@ -140,6 +148,7 @@
 
 	function setKind(family: number, kind: number): void {
 		delete errors.params;
+		delete kindErrors[family];
 		send({ type: 'set_kind', family, kind });
 	}
 
@@ -159,6 +168,7 @@
 	function loadFactory(id: number): void {
 		note = null;
 		delete errors.factory;
+		kindErrors = {};
 		send({ type: 'load_factory', id });
 	}
 
@@ -263,6 +273,11 @@
 			{#if telem}{telem.p_ned.map((v) => v.toFixed(2)).join(', ')} m{:else}—{/if}</span>
 		<span><span class="k">roll, pitch, yaw</span>
 			{#if att}{(att.roll * DEG).toFixed(1)}, {(att.pitch * DEG).toFixed(1)}, {(att.yaw * DEG).toFixed(1)} deg{:else}—{/if}</span>
+		{#if vehicle === 'rocket'}
+			<span><span class="k">brake</span> {telem && Number.isFinite(telem.brake) ? telem.brake.toFixed(2) : '—'}</span>
+		{:else}
+			<span><span class="k">hover thrust</span> {telem && Number.isFinite(telem.thrust_hover) ? telem.thrust_hover.toFixed(3) : '—'}</span>
+		{/if}
 		<span><span class="k">preset</span> {presetLabel}</span>
 		<span><span class="k">armed</span> {telem ? (telem.armed ? 'yes' : 'no') : '—'}</span>
 	</section>
@@ -304,6 +319,7 @@
 			<BlockChain
 				{schema}
 				{kinds}
+				{kindErrors}
 				{value}
 				{reference}
 				rejected={st.rejected}

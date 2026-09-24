@@ -1,5 +1,6 @@
 // /api/schema against params.hpp and presets.hpp: every parameter once, at its index, with the table's id, default and
-// range; the families and kinds in wire order; the factory setups value for value.
+// range; the families and kinds in wire order, each kind with the vehicle kinds it serves; the factory setups value
+// for value.
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -55,6 +56,17 @@ int main() {
         for (std::size_t k = 0; k < kinds.size(); ++k, ++kind_row) {
             const json::object& kind = kinds[k].as_object();
             CHECK(kind.at("id").as_string() == kKindName[kind_row]);
+            // vehicles: the vehicle kinds this kind serves, by id.
+            const json::array& vehicles = kind.at("vehicles").as_array();
+            const json::array& vkinds = families[k_vehicle].as_object().at("kinds").as_array();
+            std::size_t served = 0;
+            for (std::uint8_t v = 0; v < kind_count(k_vehicle); ++v) {
+                bool listed = false;
+                for (const json::value& id : vehicles) listed = listed || id == vkinds[v].as_object().at("id");
+                CHECK(listed == compatible(static_cast<std::uint8_t>(f), static_cast<std::uint8_t>(k), v));
+                served += listed;
+            }
+            CHECK(served == vehicles.size() && served > 0);
             std::vector<std::string> ids;
             for (const json::value& pv : kind.at("params").as_array()) {
                 const json::object& p = pv.as_object();

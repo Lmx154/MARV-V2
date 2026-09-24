@@ -7,8 +7,8 @@
 
 namespace marv::gcs {
 
-// {schema_hash, families[{id, label, kinds[{id, label, summary, params[ParamSpec + index], parts?}]}],
-//  factory[{id, label, kinds[7], values[kParamCount]}]}
+// {schema_hash, families[{id, label, kinds[{id, label, summary, vehicles[vehicle kind id], params[ParamSpec + index],
+//  parts?}]}], factory[{id, label, kinds[7], values[kParamCount]}]}
 boost::json::value schema();
 // schema(), serialized once.
 const std::string& schema_text();

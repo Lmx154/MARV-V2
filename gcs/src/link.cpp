@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <cstring>
 #include <limits>
+#include <type_traits>
 #include <utility>
 
 #include <boost/asio/buffers_iterator.hpp>
@@ -79,6 +80,14 @@ bool integer(const json::object& m, const char* key, long lo, long hi, long& out
 }
 
 std::uint8_t u8(long v) { return static_cast<std::uint8_t>(v); }
+
+// The wire name of a kind of a family ("#k" when out of range).
+std::string kind_name(std::uint8_t family, std::uint8_t kind) {
+    if (family >= param::kFamilyCount || kind >= param::kind_count(family)) return "#" + std::to_string(kind);
+    std::size_t row = kind;
+    for (std::uint8_t f = 0; f < family; ++f) row += param::kind_count(f);
+    return param::kKindName[row];
+}
 
 }  // namespace
 
@@ -160,6 +169,7 @@ void Link::enqueue(Kind kind, const std::string& name, const T& msg, const Reply
     if (queue_.size() >= kMaxQueue) return error(reply, name, "busy: too many requests waiting");
     Request r{kind, name, std::vector<std::uint8_t>(link::kMaxFrame), index, reply};
     r.frame.resize(link::encode(msg, r.frame.data()));
+    if constexpr (std::is_same_v<T, link::SetKind>) r.set = msg;
     queue_.push_back(std::move(r));
     if (queue_.size() == 1) issue();
 }
@@ -311,7 +321,15 @@ void Link::on_header(const link::SetupHeader& h) {
             deadline_ = Clock::now() + kReplyTimeout;
             if (rx_values_.empty()) on_value({0, 0.f});
             return;
-        case Kind::kSetKind:
+        case Kind::kSetKind: {
+            broadcast_(setup_message(false), false);
+            const Request& r = queue_.front();
+            const std::string refusal = kind_refusal(r.set, h);
+            if (!refusal.empty() && r.reply)
+                r.reply(json::serialize(json::object{
+                    {"type", "error"}, {"request", r.name}, {"family", r.set.family}, {"error", refusal}}));
+            return complete();
+        }
         case Kind::kSave:
         case Kind::kReset:
             broadcast_(setup_message(false), false);
@@ -410,6 +428,18 @@ std::string Link::telemetry_message() const {
         {"brake", fnum(tlm_.req.brake)},
         {"home_valid", tlm_.home_valid},
         {"home", json::object{{"lat_e7", tlm_.home.lat_e7}, {"lon_e7", tlm_.home.lon_e7}, {"alt_m", fnum(tlm_.home.alt_m)}}}});
+}
+
+// Empty when the header holds the requested kind; else why the flight controller kept the one it holds.
+std::string Link::kind_refusal(const link::SetKind& k, const link::SetupHeader& h) const {
+    if (k.family >= param::kFamilyCount || h.kind[k.family] == k.kind) return {};
+    const char* family = param::kSchema[k.family].id;
+    std::string why = "refused: " + std::string(family) + " holds " + kind_name(k.family, h.kind[k.family]) + "; ";
+    if (k.kind >= param::kind_count(k.family)) return why + kind_name(k.family, k.kind) + " is not a " + family + " kind";
+    if (!param::compatible(k.family, k.kind, h.kind[param::k_vehicle]))
+        return why + kind_name(k.family, k.kind) + " does not serve the " +
+               kind_name(param::k_vehicle, h.kind[param::k_vehicle]) + " vehicle";
+    return why + "the flight controller kept it";
 }
 
 void Link::error(const Reply& reply, const std::string& request, const std::string& what) const {

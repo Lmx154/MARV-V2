@@ -29,6 +29,8 @@ export interface KindDef {
 	id: string;
 	label: string;
 	summary: string;
+	/** The vehicle kinds (by id) this kind serves; a vehicle kind lists itself. */
+	vehicles: string[];
 	params: ParamSpec[];
 	parts?: BlockPart[];
 }
@@ -75,6 +77,10 @@ export interface Telemetry {
 	q: [number, number, number, number];
 	preset: number;
 	armed: boolean;
+	/** The controller's learned hover thrust, fraction of full collective (UAV). */
+	thrust_hover: number;
+	/** Air brake deployment 0..1 (rocket). */
+	brake: number;
 }
 
 export type ClientMsg =
@@ -94,4 +100,4 @@ export type ServerMsg =
 	| { type: 'param'; index: number; value: number }
 	| { type: 'telemetry'; telemetry: Telemetry }
 	| { type: 'flash_log'; line: string }
-	| { type: 'error'; request: string; error: string };
+	| { type: 'error'; request: string; error: string; family?: number };
