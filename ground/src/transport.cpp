@@ -65,7 +65,8 @@ public:
         if (r == 0) return 0;
         if (!(pfd.revents & POLLIN)) return -1;  // hung up: the device went away
         const ssize_t k = ::read(fd_, p, cap);
-        if (k < 0) return (errno == EAGAIN || errno == EINTR) ? 0 : -1;
+        if (k < 0) return (errno == EAGAIN || errno == EINTR) ? 0 : -1;  // EIO, ENXIO: the device went away
+        if (k == 0 && (pfd.revents & (POLLHUP | POLLERR))) return -1;   // a hung-up tty reads as end of file
         return static_cast<long>(k);
     }
 
