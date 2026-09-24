@@ -437,8 +437,9 @@ int main() {
         const link::SetupHeader hr = header(rocket, pf, &kFactory[4]);
         CHECK(hr.stored_valid == 1 && rocket.fsw().preset() == 4);
 
-        // A rocket setup never drives a motor: a fly mission on valid truth leaves every motor and the brake at zero,
-        // disarmed, while the uav factory arms on the same ticks (the control).
+        // A rocket setup never drives a motor: a fly mission on valid truth leaves every motor and the brake at zero
+        // (no coast bit, so no apogee demand) but counts as armed, so a flash save is refused; the uav factory arms on
+        // the same ticks (the control).
         const auto fly = [](const param::Setup& s) {
             Fsw fsw{s};
             fsw.on_mission(kFlyNorth);
@@ -450,7 +451,7 @@ int main() {
             return a;
         };
         const ActuatorCommand ar = fly(kFactory[4]), au = fly(kFactory[0]);
-        CHECK(!ar.armed && ar.brake == 0.f);
+        CHECK(ar.armed && ar.brake == 0.f);
         for (float m : ar.motor) CHECK(m == 0.f);
         CHECK(au.armed && au.brake == 0.f && au.motor[0] > 0.5f);
     }
