@@ -72,6 +72,7 @@ public:
 
     const Telemetry& tlm() const { return tlm_; }
     bool ready() const { return have_ && tlm_.est.valid; }
+    bool linked() const { return have_; }  // telemetry has arrived: the link carries our frames
     bool home() const { return have_ && tlm_.home_valid; }
     void target(const Vec3* t) {
         has_target_ = t != nullptr;
@@ -379,6 +380,14 @@ int run_manual(Ground& g, int argc, char** argv) {
 
 // Sends one frame, then shows telemetry for a second.
 template <class T> int run_once(Ground& g, const T& msg) {
+    // Send only once telemetry is arriving: that proves the far end knows our address and forwards our frames. A frame
+    // sent before that is silently lost, and kReboot must not be repeated blindly.
+    for (int i = 0; i < 500 && !g.linked(); ++i)
+        if (g_stop || !g.period(nullptr)) return 1;
+    if (!g.linked()) {
+        std::fprintf(stderr, "marv_ground: no telemetry within 10 s: is the bridge running with --ground?\n");
+        return 1;
+    }
     if (!g.send(msg)) {
         std::fprintf(stderr, "marv_ground: send failed\n");
         return 1;
