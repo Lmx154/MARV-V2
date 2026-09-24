@@ -163,13 +163,13 @@ bool StationaryAlignment::feed(const SensorBus& bus, Alignment& out) {
     return true;
 }
 
-Ekf::Ekf(const param::EskfPriors& p, const param::SensorParams& s, const param::VehicleParams& v)
+Ekf::Ekf(const param::EskfPriors& p, const param::SensorParams& s)
     : pri_(p),
       sns_(s),
-      gravity_(v.gravity),
+      gravity_(s.gravity),
       mag_ref_{s.mag_ref_ned_ut_x, s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_z},
       mag_decl_(std::atan2(s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_x)),
-      alignment_(s, v.gravity) {
+      alignment_(s, s.gravity) {
     for (int i = 0; i < N; ++i) {
         x_[i] = 0.f;
         for (int j = 0; j < N; ++j) {

@@ -1,5 +1,5 @@
-// The parameter table: unique ids, defaults within their ranges, every (family, kind) of the GCS decision in its
-// place, and a schema hash that is stable and follows the ids.
+// The parameter table: unique ids, defaults within their ranges, every (family, kind) of the GCS and airframe decisions
+// in its place with the vehicle classes it serves, and a schema hash that is stable and follows the ids.
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -26,7 +26,7 @@ constexpr bool same(const char* a, const char* b) {
 // The hash of params.def recomputed here, with one parameter id optionally renamed.
 constexpr std::uint32_t hash_with(const char* from, const char* to) {
     std::uint32_t h = kFnvBasis;
-#define MARV_KIND(f, k, name, label, summary) h = hash_kind(h, #f, #k, name);
+#define MARV_KIND(f, k, name, label, summary, vehicles) h = hash_kind(h, #f, #k, name);
 #define MARV_PARAM(f, k, id, label, unit, dflt, min, max, step, digits, note, source) \
     h = hash_param(h, #f, #k, same(#id, from) ? to : #id);
 #include <marv/fsw/params.def>
@@ -71,7 +71,7 @@ int main() {
         }
     }
 
-    // The families and kinds of the decision, in order; guidance and allocation have no parameters.
+    // The families and kinds of the decisions, in order, with their parameter counts and vehicle classes.
     {
         const char* const families[] = {"vehicle", "sensors", "estimator", "guidance", "controller", "allocation", "actuators"};
         struct Kind {
@@ -79,18 +79,25 @@ int main() {
             std::uint8_t index;
             const char* name;
             std::uint16_t params;
+            std::uint8_t vehicles;
         };
+        constexpr std::uint8_t kBoth = kClassUav | kClassRocket;
         const Kind kinds[] = {
-            {k_vehicle, k_vehicle_quad_x3, "quad-x3", 14},
-            {k_sensors, k_sensors_suite, "suite", 17},
-            {k_estimator, k_estimator_eskf, "eskf", 4},
-            {k_estimator, k_estimator_ekf, "ekf", 4},
-            {k_estimator, k_estimator_mahony, "mahony", 6},
-            {k_estimator, k_estimator_complementary, "complementary", 6},
-            {k_guidance, k_guidance_passthrough, "passthrough", 0},
-            {k_controller, k_controller_cascaded_pid, "cascaded-pid", 27},
-            {k_allocation, k_allocation_quad_x, "quad-x", 0},
-            {k_actuators, k_actuators_rotor_speed_fraction, "rotor-speed-fraction", 2},
+            {k_vehicle, k_vehicle_uav, "uav", 1, kClassUav},
+            {k_vehicle, k_vehicle_rocket, "rocket", 0, kClassRocket},
+            {k_sensors, k_sensors_suite, "suite", 18, kBoth},
+            {k_estimator, k_estimator_eskf, "eskf", 4, kBoth},
+            {k_estimator, k_estimator_ekf, "ekf", 4, kBoth},
+            {k_estimator, k_estimator_mahony, "mahony", 6, kBoth},
+            {k_estimator, k_estimator_complementary, "complementary", 6, kBoth},
+            {k_guidance, k_guidance_passthrough, "passthrough", 0, kClassUav},
+            {k_guidance, k_guidance_apogee_predictor, "apogee-predictor", 6, kClassRocket},
+            {k_controller, k_controller_cascaded_pid, "cascaded-pid", 29, kClassUav},
+            {k_controller, k_controller_apogee_pid, "apogee-pid", 3, kClassRocket},
+            {k_allocation, k_allocation_quad_x, "quad-x", 0, kClassUav},
+            {k_allocation, k_allocation_rocket_brake, "rocket-brake", 0, kClassRocket},
+            {k_actuators, k_actuators_rotor_speed_fraction, "rotor-speed-fraction", 3, kClassUav},
+            {k_actuators, k_actuators_brake_servo, "brake-servo", 0, kClassRocket},
         };
         std::size_t nf = 0, nk = 0;
         for (std::size_t r = 0; r < kRows; ++r) {
@@ -103,12 +110,40 @@ int main() {
                 CHECK(kSchema[r].family == k.family && kSchema[r].kind == k.index && std::strcmp(kSchema[r].id, k.name) == 0);
                 CHECK(std::strcmp(kKindName[nk], k.name) == 0);
                 CHECK(param_count(k.family, k.index) == k.params);
+                CHECK(kind_vehicles(k.family, k.index) == k.vehicles);
                 ++nk;
             }
         }
         CHECK(nf == kFamilyCount && nk == sizeof kinds / sizeof kinds[0]);
         CHECK(k_estimator_eskf == 0 && k_estimator_ekf == 1 && k_estimator_mahony == 2 && k_estimator_complementary == 3);
-        for (std::uint8_t f = 0; f < kFamilyCount; ++f) CHECK(kind_count(f) == (f == k_estimator ? 4 : 1));
+        for (std::uint8_t f = 0; f < kFamilyCount; ++f)
+            CHECK(kind_count(f) == (f == k_estimator ? 4 : f == k_sensors ? 1 : 2));
+    }
+
+    // Class consistency: each vehicle's first kinds, a kind of the other class refused, an out-of-range kind never.
+    {
+        const std::uint8_t uav[kFamilyCount] = {k_vehicle_uav, k_sensors_suite, k_estimator_eskf, k_guidance_passthrough,
+                                                k_controller_cascaded_pid, k_allocation_quad_x,
+                                                k_actuators_rotor_speed_fraction};
+        const std::uint8_t rocket[kFamilyCount] = {k_vehicle_rocket, k_sensors_suite, k_estimator_eskf,
+                                                   k_guidance_apogee_predictor, k_controller_apogee_pid,
+                                                   k_allocation_rocket_brake, k_actuators_brake_servo};
+        for (std::uint8_t f = 0; f < kFamilyCount; ++f) {
+            CHECK(first_compatible(f, k_vehicle_uav) == uav[f]);
+            CHECK(first_compatible(f, k_vehicle_rocket) == rocket[f]);
+            CHECK(!compatible(f, kind_count(f), k_vehicle_uav) && !compatible(f, kind_count(f), k_vehicle_rocket));
+        }
+        CHECK(compatible(k_estimator, k_estimator_mahony, k_vehicle_rocket));
+        CHECK(!compatible(k_controller, k_controller_cascaded_pid, k_vehicle_rocket));
+        CHECK(!compatible(k_actuators, k_actuators_brake_servo, k_vehicle_uav));
+        Setup s{};
+        for (std::uint8_t f = 0; f < kFamilyCount; ++f) s.kind[f] = rocket[f];
+        CHECK(consistent(s));
+        s.kind[k_allocation] = k_allocation_quad_x;
+        CHECK(!consistent(s));
+        s.kind[k_allocation] = k_allocation_rocket_brake;
+        s.kind[k_vehicle] = k_vehicle_uav;
+        CHECK(!consistent(s));
     }
 
     // The hash, computed at run time over the same table, and a renamed id.

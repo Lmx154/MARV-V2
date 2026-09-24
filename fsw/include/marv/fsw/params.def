@@ -2,7 +2,8 @@
 // Expanded by params.hpp (flight side: identifiers and numbers only, the string columns are dropped) and by the GCS
 // (every column). Row kinds, in file order:
 //   MARV_FAMILY(family, label)                        the seven families, in wire order (Setup::kind[] index)
-//   MARV_KIND(family, kind, name, label, summary)     a kind of the family; its index is its order within the family
+//   MARV_KIND(family, kind, name, label, summary, vehicles)  a kind of the family; its index is its order within the family;
+//                                                     vehicles: the vehicle classes it serves (kClassUav, kClassRocket)
 //   MARV_PART(family, kind, id, label)                a group of the kind's parameters: every MARV_PARAM up to the next part
 //   MARV_PARAM(family, kind, id, label, unit, default, min, max, step, digits, note, source)
 // A parameter's index (Setup::values[]) is its order in the file. Renaming, adding, removing or moving a family, kind or
@@ -13,7 +14,7 @@
 #define MARV_FAMILY(family, label)
 #endif
 #ifndef MARV_KIND
-#define MARV_KIND(family, kind, name, label, summary)
+#define MARV_KIND(family, kind, name, label, summary, vehicles)
 #endif
 #ifndef MARV_PART
 #define MARV_PART(family, kind, id, label)
@@ -32,35 +33,16 @@ MARV_FAMILY(actuators, "Actuators")
 
 // ---- vehicle -----------------------------------------------------------------------------------------------------------
 
-MARV_KIND(vehicle, quad_x3, "quad-x3", "Quadrotor X3", "The Gazebo X3 of sitl/gazebo/marv_quad.sdf: mass, inertia, rotor positions (FRD) and yaw torque per thrust, as the controller, allocation and estimators assume them.")
-MARV_PART(vehicle, quad_x3, airframe, "Airframe")
-// Toolbox vehicle.ts mass range: a 0.3 kg micro to a 5 kg heavy-lift quad.
-MARV_PARAM(vehicle, quad_x3, mass, "Mass", "kg", 1.5f + 4.f * 0.005f, 0.3f, 5.f, 0.01f, 2, "Take-off mass; hover thrust and every force command scale with it.", "vehicle.hpp:12 base_link 1.5 kg (SDF:161) + four rotors of 0.005 kg (SDF:259, 324, 389, 454)")
-// Toolbox vehicle.ts Ixx/Iyy range.
-MARV_PARAM(vehicle, quad_x3, Ixx, "Inertia Ixx (roll)", "kg·m²", 0.0347563f, 0.002f, 0.1f, 0.0001f, 4, "Principal moment about body x.", "vehicle.hpp:16 base_link principal inertia (SDF:163)")
-MARV_PARAM(vehicle, quad_x3, Iyy, "Inertia Iyy (pitch)", "kg·m²", 0.07f, 0.002f, 0.1f, 0.0001f, 4, "Principal moment about body y.", "vehicle.hpp:17 base_link principal inertia (SDF:166)")
-// Toolbox vehicle.ts Izz range.
-MARV_PARAM(vehicle, quad_x3, Izz, "Inertia Izz (yaw)", "kg·m²", 0.0977f, 0.002f, 0.2f, 0.0001f, 4, "Principal moment about body z.", "vehicle.hpp:18 base_link principal inertia (SDF:168)")
-MARV_PART(vehicle, quad_x3, geometry, "Rotor positions")
-// Rotor axes within 0.5 m of the centre of gravity: frames up to 1 m across.
-MARV_PARAM(vehicle, quad_x3, rotor_x_0, "Rotor 0 x (front)", "m", 0.13f, -0.5f, 0.5f, 0.005f, 3, "Body x of rotor 0 (ccw) from the centre of gravity.", "vehicle.hpp:23 SDF:256 rotor_0 (0.13, -0.22) FLU")
-MARV_PARAM(vehicle, quad_x3, rotor_x_1, "Rotor 1 x (front)", "m", -0.13f, -0.5f, 0.5f, 0.005f, 3, "Body x of rotor 1 (ccw) from the centre of gravity.", "vehicle.hpp:23 SDF:321 rotor_1 (-0.13, 0.2) FLU")
-MARV_PARAM(vehicle, quad_x3, rotor_x_2, "Rotor 2 x (front)", "m", 0.13f, -0.5f, 0.5f, 0.005f, 3, "Body x of rotor 2 (cw) from the centre of gravity.", "vehicle.hpp:23 SDF:386 rotor_2 (0.13, 0.22) FLU")
-MARV_PARAM(vehicle, quad_x3, rotor_x_3, "Rotor 3 x (front)", "m", -0.13f, -0.5f, 0.5f, 0.005f, 3, "Body x of rotor 3 (cw) from the centre of gravity.", "vehicle.hpp:23 SDF:451 rotor_3 (-0.13, -0.2) FLU")
-MARV_PARAM(vehicle, quad_x3, rotor_y_0, "Rotor 0 y (right)", "m", 0.22f, -0.5f, 0.5f, 0.005f, 3, "Body y of rotor 0 (ccw) from the centre of gravity.", "vehicle.hpp:24 SDF:256, FLU y negated")
-MARV_PARAM(vehicle, quad_x3, rotor_y_1, "Rotor 1 y (right)", "m", -0.2f, -0.5f, 0.5f, 0.005f, 3, "Body y of rotor 1 (ccw) from the centre of gravity.", "vehicle.hpp:24 SDF:321, FLU y negated")
-MARV_PARAM(vehicle, quad_x3, rotor_y_2, "Rotor 2 y (right)", "m", -0.22f, -0.5f, 0.5f, 0.005f, 3, "Body y of rotor 2 (cw) from the centre of gravity.", "vehicle.hpp:24 SDF:386, FLU y negated")
-MARV_PARAM(vehicle, quad_x3, rotor_y_3, "Rotor 3 y (right)", "m", 0.2f, -0.5f, 0.5f, 0.005f, 3, "Body y of rotor 3 (cw) from the centre of gravity.", "vehicle.hpp:24 SDF:451, FLU y negated")
-MARV_PART(vehicle, quad_x3, rotors, "Rotor torque")
-// Toolbox vehicle.ts kM range.
-MARV_PARAM(vehicle, quad_x3, moment_constant, "Yaw torque per thrust", "m", 0.016f, 0.005f, 0.06f, 0.001f, 3, "Rotor drag torque per newton of thrust (N·m/N): the only yaw authority.", "vehicle.hpp:36 yaw torque = km * thrust, SDF:524")
-MARV_PART(vehicle, quad_x3, model, "Gravity model")
-// Toolbox estimator.ts gravity range: the Moon (1.6) to above Jupiter's surface gravity.
-MARV_PARAM(vehicle, quad_x3, gravity, "Gravity", "m/s²", 9.8066f, 1.6f, 25.f, 0.0001f, 4, "Gravity the controller, allocation and estimators assume; a mismatch with the world reads as an acceleration.", "vehicle.hpp:9 SDF:71 <gravity>0 0 -9.8066</gravity>")
+MARV_KIND(vehicle, uav, "uav", "Multirotor", "A multirotor: the controller works in fractions of full thrust and torque, so the airframe enters only through the thrust it needs to hover.", kClassUav)
+MARV_PART(vehicle, uav, hover, "Hover")
+// 0.2 to 0.8 of full thrust: below, the thrust-to-weight is past 5; above, too little is left to climb and steer.
+MARV_PARAM(vehicle, uav, hover_thrust, "Hover thrust", "0–1", 0.6811f, 0.2f, 0.8f, 0.001f, 3, "Collective that holds the vehicle up, as a fraction of full thrust; the controller starts from it each run and learns the rest in flight.", "m g / (4 k w_max^2) of the X3: 1.52 kg (SDF:161, 259, 324, 389, 454) * 9.8066 m/s^2 (SDF:71) / (4 * 8.54858e-6 N/(rad/s)^2 (SDF:523) * (800 rad/s)^2 (SDF:522)) = 0.6811")
+
+MARV_KIND(vehicle, rocket, "rocket", "Rocket", "A single-stage rocket with an air brake: no motors to command, the brake deployment only.", kClassRocket)
 
 // ---- sensors -----------------------------------------------------------------------------------------------------------
 
-MARV_KIND(sensors, suite, "suite", "madflight FC3", "Noise the filters assume for the FC3's LSM6DSV IMU, BMP580 barometer, MMC5603NJ magnetometer and an M10-class GNSS, the Earth field at the origin, and the stillness test of the alignment.")
+MARV_KIND(sensors, suite, "suite", "madflight FC3", "Noise the filters assume for the FC3's LSM6DSV IMU, BMP580 barometer, MMC5603NJ magnetometer and an M10-class GNSS, the Earth field and gravity at the origin, and the stillness test of the alignment.", kClassUav | kClassRocket)
 MARV_PART(sensors, suite, accelerometer, "Accelerometer")
 // Toolbox estimator.ts sigmaAccel range; zero process noise would freeze the filter.
 MARV_PARAM(sensors, suite, sigma_accel, "Accel noise", "m/s²", 0.01316f, 0.001f, 1.f, 0.0001f, 5, "White noise per IMU sample (1σ) the filters assume.", "eskf.hpp:22 An 60 ug/sqrt(Hz) (high-performance) * sqrt(500 Hz) = 1.342 mg (LSM6DSV DS13476 p.10 Table 2)")
@@ -88,6 +70,9 @@ MARV_PARAM(sensors, suite, sigma_heading, "Heading noise", "rad", 0.0092f, 0.005
 MARV_PARAM(sensors, suite, mag_ref_ned_ut_x, "Earth field north", "µT", 21.62762f, -70.f, 70.f, 0.01f, 5, "North component of the Earth field at the origin; sets the declination.", "eskf.hpp:50 the Earth field (NED, microtesla) at the world origin")
 MARV_PARAM(sensors, suite, mag_ref_ned_ut_y, "Earth field east", "µT", 0.96861f, -70.f, 70.f, 0.01f, 5, "East component of the Earth field at the origin; sets the declination.", "eskf.hpp:50 the Earth field (NED, microtesla) at the world origin")
 MARV_PARAM(sensors, suite, mag_ref_ned_ut_z, "Earth field down", "µT", 42.91632f, -70.f, 70.f, 0.01f, 5, "Down component of the Earth field at the origin; sets the inclination.", "eskf.hpp:50 the Earth field (NED, microtesla) at the world origin")
+MARV_PART(sensors, suite, gravity_model, "Gravity")
+// Toolbox estimator.ts gravity range: the Moon (1.6) to above Jupiter's surface gravity.
+MARV_PARAM(sensors, suite, gravity, "Gravity", "m/s²", 9.8066f, 1.6f, 25.f, 0.0001f, 4, "Gravity the controller and estimators assume; a mismatch with the world reads as an acceleration.", "SDF:71 <gravity>0 0 -9.8066</gravity>")
 MARV_PART(sensors, suite, alignment, "Alignment")
 // A tenth of a second holds too few samples to average; ten seconds of stillness is a long wait on the pad.
 MARV_PARAM(sensors, suite, align_window_s, "Alignment window", "s", 1.0f, 0.1f, 10.f, 0.1f, 1, "Unbroken stillness averaged before the filter starts.", "eskf.hpp:56 IMU, magnetometer and barometer samples are averaged over align_window_s of unbroken stillness")
@@ -102,7 +87,7 @@ MARV_PARAM(sensors, suite, still_gyro_dev, "Still: gyro spread", "rad/s", 0.0066
 
 // ---- estimator ---------------------------------------------------------------------------------------------------------
 
-MARV_KIND(estimator, eskf, "eskf", "ESKF", "15-state error-state Kalman filter (Solà 2017): position, velocity, attitude, accelerometer and gyro biases.")
+MARV_KIND(estimator, eskf, "eskf", "ESKF", "15-state error-state Kalman filter (Solà 2017): position, velocity, attitude, accelerometer and gyro biases.", kClassUav | kClassRocket)
 MARV_PART(estimator, eskf, init, "Initialisation")
 // 1 cm to 50 m: from a surveyed pad to no position knowledge beyond the first fix.
 MARV_PARAM(estimator, eskf, sigma_p0, "Position prior", "m", 1.f, 0.01f, 50.f, 0.01f, 2, "Position 1σ at alignment, per axis.", "eskf.hpp:43 fsw.ts createEstimator (sigmaP 1)")
@@ -113,7 +98,7 @@ MARV_PARAM(estimator, eskf, sigma_theta0, "Attitude prior", "rad", 0.025f, 0.001
 // 0.1 mg to 0.2 g: past the worst MEMS turn-on bias.
 MARV_PARAM(estimator, eskf, sigma_ab0, "Accel bias prior", "m/s²", 0.1177f, 0.001f, 2.f, 0.0001f, 4, "Accelerometer bias 1σ at alignment, per axis.", "eskf.hpp:46 LSM6DSV typical zero-g level, 12 mg (p.10 Table 2)")
 
-MARV_KIND(estimator, ekf, "ekf", "EKF", "15-state extended Kalman filter on the full state; the same process noise, priors and measurements as the ESKF.")
+MARV_KIND(estimator, ekf, "ekf", "EKF", "15-state extended Kalman filter on the full state; the same process noise, priors and measurements as the ESKF.", kClassUav | kClassRocket)
 MARV_PART(estimator, ekf, init, "Initialisation")
 // As the ESKF's.
 MARV_PARAM(estimator, ekf, sigma_p0, "Position prior", "m", 1.f, 0.01f, 50.f, 0.01f, 2, "Position 1σ at alignment, per axis.", "eskf.hpp:43 fsw.ts createEstimator (sigmaP 1)")
@@ -121,7 +106,7 @@ MARV_PARAM(estimator, ekf, sigma_v0, "Velocity prior", "m/s", 1.f, 0.01f, 20.f, 
 MARV_PARAM(estimator, ekf, sigma_theta0, "Attitude prior", "rad", 0.025f, 0.001f, 1.f, 0.001f, 3, "Attitude 1σ at alignment, per axis.", "eskf.hpp:45 12 mg / g = 0.012 rad of tilt, 1.98 times that on the tilt-compensated heading")
 MARV_PARAM(estimator, ekf, sigma_ab0, "Accel bias prior", "m/s²", 0.1177f, 0.001f, 2.f, 0.0001f, 4, "Accelerometer bias 1σ at alignment, per axis.", "eskf.hpp:46 LSM6DSV typical zero-g level, 12 mg (p.10 Table 2)")
 
-MARV_KIND(estimator, mahony, "mahony", "Mahony", "Nonlinear complementary filter on SO(3) (Mahony, Hamel & Pflimlin 2008) with a PI gyro-bias term; position and velocity from the translation blend.")
+MARV_KIND(estimator, mahony, "mahony", "Mahony", "Nonlinear complementary filter on SO(3) (Mahony, Hamel & Pflimlin 2008) with a PI gyro-bias term; position and velocity from the translation blend.", kClassUav | kClassRocket)
 MARV_PART(estimator, mahony, attitude, "Attitude and gyro bias")
 // Toolbox estimator.ts kP range.
 MARV_PARAM(estimator, mahony, k_p, "Proportional gain kP", "1/s", 0.5f, 0.f, 10.f, 0.05f, 2, "Rate at which the attitude is pulled toward the gravity direction and the magnetometer heading.", "mahony.hpp:20 mahony block default (tuned in the lab on quad-square)")
@@ -135,7 +120,7 @@ MARV_PARAM(estimator, mahony, k_pos, "GNSS position gain", "1/s", 1.f, 0.f, 10.f
 MARV_PARAM(estimator, mahony, k_vel, "GNSS velocity gain", "1/s", 3.f, 0.f, 10.f, 0.05f, 2, "Crossover of the velocity blend toward the GNSS velocity.", "complementary.hpp:20 translationBlend (complementary block default, tuned in the lab on quad-square)")
 MARV_PARAM(estimator, mahony, k_baro, "Barometer gain", "1/s", 1.f, 0.f, 10.f, 0.05f, 2, "Crossover of the height blend toward the barometer.", "complementary.hpp:21 translationBlend (complementary block default, tuned in the lab on quad-square)")
 
-MARV_KIND(estimator, complementary, "complementary", "Complementary", "Integrated gyro pulled toward the accelerometer's gravity direction and the magnetometer heading; position and velocity from the translation blend. No gyro-bias estimate.")
+MARV_KIND(estimator, complementary, "complementary", "Complementary", "Integrated gyro pulled toward the accelerometer's gravity direction and the magnetometer heading; position and velocity from the translation blend. No gyro-bias estimate.", kClassUav | kClassRocket)
 MARV_PART(estimator, complementary, attitude, "Attitude")
 // Toolbox estimator.ts kAcc range.
 MARV_PARAM(estimator, complementary, k_acc, "Tilt correction gain", "1/s", 0.75f, 0.f, 10.f, 0.05f, 2, "Rate at which the attitude is pulled toward the gravity direction.", "complementary.hpp:49 tilt correction")
@@ -151,11 +136,23 @@ MARV_PARAM(estimator, complementary, k_baro, "Barometer gain", "1/s", 1.f, 0.f, 
 
 // ---- guidance ----------------------------------------------------------------------------------------------------------
 
-MARV_KIND(guidance, passthrough, "passthrough", "Passthrough", "The mission reference reaches the controller unchanged.")
+MARV_KIND(guidance, passthrough, "passthrough", "Passthrough", "The mission reference reaches the controller unchanged.", kClassUav)
+
+MARV_KIND(guidance, apogee_predictor, "apogee-predictor", "Apogee predictor", "While the mission flags the coast it rolls a point-mass model of the rocket from the estimated altitude and vertical speed to apogee with the brake closed, every 20 ms, and passes the prediction and the target apogee to the controller.", kClassRocket)
+MARV_PART(guidance, apogee_predictor, model, "Model")
+// Toolbox guidance.ts predictDt range, floored at the 20 ms prediction cadence.
+MARV_PARAM(guidance, apogee_predictor, predict_dt, "Prediction step", "s", 0.05f, 0.02f, 0.5f, 0.005f, 3, "Integration step of the rollout; coarser is cheaper and less accurate.", "toolbox guidance.ts:95 rocket1d DEFAULT_ROCKET.predictDt")
+MARV_PARAM(guidance, apogee_predictor, cd_base, "Drag coefficient (model)", "", 0.45f, 0.1f, 1.5f, 0.01f, 2, "Axial drag coefficient on the reference area, brake closed.", "toolbox guidance.ts:96")
+MARV_PARAM(guidance, apogee_predictor, ref_area, "Reference area (model)", "m²", 0.007854f, 0.001f, 0.1f, 0.0001f, 5, "Area the drag coefficient refers to (the body cross-section).", "toolbox guidance.ts:97 pi (0.1 m / 2)^2")
+MARV_PARAM(guidance, apogee_predictor, brake_cd_area, "Brake drag area (model)", "m²", 0.012f, 0.f, 0.05f, 0.0005f, 4, "C_D A the brake adds at full deployment.", "toolbox guidance.ts:98")
+MARV_PARAM(guidance, apogee_predictor, mass, "Coast mass (model)", "kg", 3.1f, 0.5f, 20.f, 0.05f, 2, "Dry mass: the motor has burnt out during the coast.", "toolbox guidance.ts:99")
+MARV_PART(guidance, apogee_predictor, target, "Target")
+// 20 m to 2 km of apogee.
+MARV_PARAM(guidance, apogee_predictor, target_apogee_m, "Target apogee", "m", 284.f, 20.f, 2000.f, 1.f, 0, "Apogee above the launch point the brake aims for.", "toolbox mission.ts:340")
 
 // ---- controller --------------------------------------------------------------------------------------------------------
 
-MARV_KIND(controller, cascaded_pid, "cascaded-pid", "Cascaded PID", "Position, velocity, attitude and rate loops, each written as an acceleration command: the airframe enters only through F = m a and tau = I alpha.")
+MARV_KIND(controller, cascaded_pid, "cascaded-pid", "Cascaded PID", "Position, velocity, attitude and rate loops: thrust as a fraction of full collective from the learned hover thrust, torque as a fraction of each axis' full authority.", kClassUav)
 MARV_PART(controller, cascaded_pid, position, "Position loop")
 // Toolbox controller.ts kpPos range.
 MARV_PARAM(controller, cascaded_pid, pos_p, "Position gain", "1/s", 0.7f, 0.f, 5.f, 0.05f, 2, "Velocity setpoint per metre of position error.", "controller.cpp:47 w_n = sqrt(Kv Kp) = 1.18 rad/s, about 7x below the attitude loop, zeta 0.85")
@@ -176,20 +173,22 @@ MARV_PARAM(controller, cascaded_pid, yaw_decel, "Yaw deceleration", "rad/s²", 0
 // Up to 1 rad/s (57 dps).
 MARV_PARAM(controller, cascaded_pid, yaw_rate_still, "Heading hold below", "rad/s", 0.1f, 0.f, 1.f, 0.01f, 2, "Below this yaw rate, with no yaw-rate reference, the heading is held.", "controller.cpp:41")
 MARV_PART(controller, cascaded_pid, rate, "Rate loop")
-// Up to 100 1/s, past the 40 to 80 rad/s motor poles that bound the loop.
-MARV_PARAM(controller, cascaded_pid, rate_p_x, "Rate P roll", "1/s", 25.f, 0.f, 100.f, 0.5f, 1, "Roll acceleration per rad/s of rate error.", "controller.cpp:22 about 45 deg of phase margin against the 40..80 rad/s motor poles")
-MARV_PARAM(controller, cascaded_pid, rate_p_y, "Rate P pitch", "1/s", 25.f, 0.f, 100.f, 0.5f, 1, "Pitch acceleration per rad/s of rate error.", "controller.cpp:22 about 45 deg of phase margin against the 40..80 rad/s motor poles")
-MARV_PARAM(controller, cascaded_pid, rate_p_z, "Rate P yaw", "1/s", 10.f, 0.f, 100.f, 0.5f, 1, "Yaw acceleration per rad/s of rate error.", "controller.cpp:22 yaw authority is small; more bandwidth only saturates")
-// Up to 500 1/s^2: the corner Ki / Kp stays below the rate bandwidth.
-MARV_PARAM(controller, cascaded_pid, rate_i_x, "Rate I roll", "1/s²", 62.5f, 0.f, 500.f, 0.5f, 1, "Roll acceleration per radian of integrated rate error.", "controller.cpp:23 Ki = Kp * Kp / 10: the integrator corner a decade lower")
-MARV_PARAM(controller, cascaded_pid, rate_i_y, "Rate I pitch", "1/s²", 62.5f, 0.f, 500.f, 0.5f, 1, "Pitch acceleration per radian of integrated rate error.", "controller.cpp:23 Ki = Kp * Kp / 10: the integrator corner a decade lower")
-MARV_PARAM(controller, cascaded_pid, rate_i_z, "Rate I yaw", "1/s²", 10.f, 0.f, 500.f, 0.5f, 1, "Yaw acceleration per radian of integrated rate error.", "controller.cpp:23")
-// Up to 0.5: the loop bandwidth is Kp / (1 + Kd), so more derivative mainly slows it.
-MARV_PARAM(controller, cascaded_pid, rate_d_x, "Rate D roll", "", 0.05f, 0.f, 0.5f, 0.005f, 3, "Roll acceleration per rad/s² of rate change.", "controller.cpp:24")
-MARV_PARAM(controller, cascaded_pid, rate_d_y, "Rate D pitch", "", 0.05f, 0.f, 0.5f, 0.005f, 3, "Pitch acceleration per rad/s² of rate change.", "controller.cpp:24")
-MARV_PARAM(controller, cascaded_pid, rate_d_z, "Rate D yaw", "", 0.f, 0.f, 0.5f, 0.005f, 3, "Yaw acceleration per rad/s² of rate change.", "controller.cpp:24")
-// Up to 50 rad/s^2, about the most roll acceleration this airframe can make.
-MARV_PARAM(controller, cascaded_pid, rate_int_accel, "Rate integrator limit", "rad/s²", 5.f, 0.f, 50.f, 0.5f, 1, "Most angular acceleration the rate integrator may add.", "controller.cpp:25")
+// Torque fractions per rad/s: each axis converted from 100 1/s of angular acceleration, past the 40 to 80 rad/s motor poles.
+MARV_PARAM(controller, cascaded_pid, rate_p_x, "Rate P roll", "1/(rad/s)", 0.3781f, 0.f, 1.5f, 0.001f, 4, "Roll torque (fraction of full roll authority) per rad/s of rate error.", "controller.cpp:22 25 1/s, K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 25 * 0.0347563 kg m^2 (SDF:163) / 2.2979 N m")
+MARV_PARAM(controller, cascaded_pid, rate_p_y, "Rate P pitch", "1/(rad/s)", 1.2302f, 0.f, 5.f, 0.005f, 4, "Pitch torque (fraction of full pitch authority) per rad/s of rate error.", "controller.cpp:22 25 1/s, K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 25 * 0.07 kg m^2 (SDF:166) / 1.4225 N m")
+MARV_PARAM(controller, cascaded_pid, rate_p_z, "Rate P yaw", "1/(rad/s)", 5.580f, 0.f, 56.f, 0.05f, 3, "Yaw torque (fraction of full yaw authority) per rad/s of rate error.", "controller.cpp:22 10 1/s, K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 10 * 0.0977 kg m^2 (SDF:168) / 0.17508 N m")
+// Converted from 500 1/s^2: the corner Ki / Kp stays below the rate bandwidth.
+MARV_PARAM(controller, cascaded_pid, rate_i_x, "Rate I roll", "1/rad", 0.9453f, 0.f, 7.5f, 0.005f, 4, "Roll torque fraction per radian of integrated rate error.", "controller.cpp:23 62.5 1/s^2 (Ki = Kp * Kp / 10), K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 62.5 * 0.0347563 / 2.2979")
+MARV_PARAM(controller, cascaded_pid, rate_i_y, "Rate I pitch", "1/rad", 3.0756f, 0.f, 25.f, 0.01f, 4, "Pitch torque fraction per radian of integrated rate error.", "controller.cpp:23 62.5 1/s^2 (Ki = Kp * Kp / 10), K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 62.5 * 0.07 / 1.4225")
+MARV_PARAM(controller, cascaded_pid, rate_i_z, "Rate I yaw", "1/rad", 5.580f, 0.f, 280.f, 0.1f, 3, "Yaw torque fraction per radian of integrated rate error.", "controller.cpp:23 10 1/s^2, K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 10 * 0.0977 / 0.17508")
+// Converted from 0.5: the loop bandwidth is Kp / (1 + Kd I / tau_max), so more derivative mainly slows it.
+MARV_PARAM(controller, cascaded_pid, rate_d_x, "Rate D roll", "1/(rad/s²)", 7.563e-4f, 0.f, 0.008f, 0.00001f, 7, "Roll torque fraction per rad/s² of rate change.", "controller.cpp:24 0.05, K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 0.05 * 0.0347563 / 2.2979")
+MARV_PARAM(controller, cascaded_pid, rate_d_y, "Rate D pitch", "1/(rad/s²)", 2.4605e-3f, 0.f, 0.025f, 0.00005f, 7, "Pitch torque fraction per rad/s² of rate change.", "controller.cpp:24 0.05, K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 0.05 * 0.07 / 1.4225")
+MARV_PARAM(controller, cascaded_pid, rate_d_z, "Rate D yaw", "1/(rad/s²)", 0.f, 0.f, 0.28f, 0.0005f, 4, "Yaw torque fraction per rad/s² of rate change.", "controller.cpp:24")
+// Up to the axis' full authority.
+MARV_PARAM(controller, cascaded_pid, rate_int_max_x, "Rate integrator limit roll", "0–1", 0.0756f, 0.f, 1.f, 0.005f, 4, "Most roll torque, as a fraction of full authority, the rate integrator may add.", "controller.cpp:25 5 rad/s^2, K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 5 * 0.0347563 / 2.2979")
+MARV_PARAM(controller, cascaded_pid, rate_int_max_y, "Rate integrator limit pitch", "0–1", 0.2460f, 0.f, 1.f, 0.005f, 4, "Most pitch torque, as a fraction of full authority, the rate integrator may add.", "controller.cpp:25 5 rad/s^2, K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 5 * 0.07 / 1.4225")
+MARV_PARAM(controller, cascaded_pid, rate_int_max_z, "Rate integrator limit yaw", "0–1", 1.0f, 0.f, 1.f, 0.005f, 4, "Most yaw torque, as a fraction of full authority, the rate integrator may add.", "controller.cpp:25 5 rad/s^2 is 2.79 of the yaw authority (5 * 0.0977 / 0.17508): capped at all of it")
 MARV_PART(controller, cascaded_pid, limits, "Limits")
 // Toolbox controller.ts rateMax range.
 MARV_PARAM(controller, cascaded_pid, rate_max_x, "Max roll rate", "rad/s", 3.f, 0.5f, 10.f, 0.1f, 1, "Limit of the roll-rate setpoint.", "controller.cpp:26")
@@ -203,21 +202,35 @@ MARV_PARAM(controller, cascaded_pid, tilt_max_deg, "Max tilt", "deg", 35.f, 5.f,
 MARV_PARAM(controller, cascaded_pid, thrust_min_g, "Min vertical thrust", "g", 0.2f, 0.f, 1.f, 0.05f, 2, "Floor of the vertical thrust demand, in multiples of the weight.", "controller.cpp:55 kThrustMin = 0.2 m g")
 // 30 % to all of the four rotors' full thrust; what is left is for the torques.
 MARV_PARAM(controller, cascaded_pid, thrust_max_frac, "Max total thrust", "0–1", 0.9f, 0.3f, 1.f, 0.01f, 2, "Ceiling of the total thrust, as a fraction of the four rotors' maximum.", "controller.cpp:56 kThrustMax = 0.9 * 4 * kMaxRotorThrust; the rest is left for the torques")
-// Up to 1 N m, well past what the rotor headroom of this airframe can carry.
-MARV_PARAM(controller, cascaded_pid, yaw_torque_max, "Max yaw torque", "N·m", 0.1f, 0.f, 1.f, 0.005f, 3, "Yaw torque limit; a yaw demand the rotors cannot carry is cut, never paid for with thrust.", "controller.cpp:38 4 km 1.74 N of hover headroom = 0.111 N m; 0.1 keeps 10 % for roll and pitch")
+// Up to all of the yaw authority.
+MARV_PARAM(controller, cascaded_pid, yaw_torque_max, "Max yaw torque", "0–1", 0.5712f, 0.f, 1.f, 0.005f, 4, "Yaw torque limit, as a fraction of full yaw authority; a yaw demand the rotors cannot carry is cut, never paid for with thrust.", "controller.cpp:38 0.1 N m / 0.17508 N m (4 km 0.5 T_max of the X3); 4 km 1.74 N of hover headroom = 0.111 N m, 0.1 keeps 10 % for roll and pitch")
+
+MARV_KIND(controller, apogee_pid, "apogee-pid", "Apogee PI (air brake)", "Brake deployment = clamp(kp e + ki int(e), 0, 1) while the mission flags the coast and the predictor's apogee is valid, e the predicted apogee with the brake closed minus the target; closed otherwise. The integral starts at zero and is limited to +-i_limit.", kClassRocket)
+MARV_PART(controller, apogee_pid, gains, "Gains")
+// Toolbox controller.ts kp range.
+MARV_PARAM(controller, apogee_pid, kp, "Proportional gain", "1/m", 0.05f, 0.f, 1.f, 0.005f, 3, "Deployment per metre of predicted overshoot.", "toolbox controller.ts:146 (PI tuned in the lab)")
+// Toolbox controller.ts ki range.
+MARV_PARAM(controller, apogee_pid, ki, "Integral gain", "1/(m·s)", 0.005f, 0.f, 0.5f, 0.001f, 3, "Deployment per metre-second of accumulated overshoot.", "toolbox controller.ts:147 (PI tuned in the lab)")
+// Toolbox controller.ts iLimit range.
+MARV_PARAM(controller, apogee_pid, i_limit, "Integral limit", "m·s", 20.f, 0.f, 500.f, 5.f, 0, "Bound on the accumulated overshoot.", "toolbox controller.ts:148 (PI tuned in the lab)")
 
 // ---- allocation --------------------------------------------------------------------------------------------------------
 
-MARV_KIND(allocation, quad_x, "quad-x", "Quad X", "Force and torque to four rotor thrusts from the vehicle geometry: collective up to m g, then roll and pitch, then the rest of the collective, then yaw.")
+MARV_KIND(allocation, quad_x, "quad-x", "Quad X", "Thrust and torque fractions to four rotor thrust fractions with fixed +-0.5 factors (motor order 0 FR, 1 RL, 2 FL, 3 RR): collective up to the hover thrust, then roll and pitch, then the rest of the collective, then yaw.", kClassUav)
+MARV_KIND(allocation, rocket_brake, "rocket-brake", "Air brake", "The controller's brake deployment, 0..1, in flight; every motor command zero, always.", kClassRocket)
 
 // ---- actuators ---------------------------------------------------------------------------------------------------------
 
-MARV_KIND(actuators, rotor_speed_fraction, "rotor-speed-fraction", "Rotor speed fraction", "Each motor command is the rotor speed as a fraction of its maximum, from thrust = k w².")
-MARV_PART(actuators, rotor_speed_fraction, motors, "Motors")
-// 1e-7 to 1e-4 N/(rad/s)^2: from micro props to 15-inch props.
-MARV_PARAM(actuators, rotor_speed_fraction, motor_constant, "Thrust constant", "N/(rad/s)²", 8.54858e-06f, 1e-7f, 1e-4f, 1e-7f, 9, "Rotor thrust per squared rad/s.", "vehicle.hpp:35 thrust = k w^2, SDF:523")
-// 100 to 5000 rad/s: about 1,000 to 48,000 rpm.
-MARV_PARAM(actuators, rotor_speed_fraction, max_rot_velocity, "Max rotor speed", "rad/s", 800.f, 100.f, 5000.f, 10.f, 0, "Rotor speed at full command; with the thrust constant it sets the most thrust per rotor.", "vehicle.hpp:37 SDF:522")
+MARV_KIND(actuators, rotor_speed_fraction, "rotor-speed-fraction", "Rotor speed fraction", "Each motor command is the rotor speed as a fraction of its maximum: spin_min + (spin_max - spin_min) times the inverse of the thrust curve (1 - e) x + e x^2 at the rotor's thrust fraction.", kClassUav)
+MARV_PART(actuators, rotor_speed_fraction, curve, "Thrust curve")
+// 0 is a linear thrust per command, 1 a thrust that goes with the square of the command.
+MARV_PARAM(actuators, rotor_speed_fraction, thrust_expo, "Thrust curve expo", "0–1", 1.0f, 0.f, 1.f, 0.01f, 2, "e of thrust = (1 - e) x + e x^2: 1 for a rotor-speed command (thrust = k w^2).", "AP_Motors_Thrust_Linearization.cpp:104-107; 1 = sqrt, the bridge's ESC is linear from fraction to rad/s (SDF:522-523 thrust = k w^2)")
+MARV_PART(actuators, rotor_speed_fraction, spin, "Spin range")
+// Up to 0.3: a higher floor leaves too little range to steer.
+MARV_PARAM(actuators, rotor_speed_fraction, spin_min, "Spin minimum", "0–1", 0.f, 0.f, 0.3f, 0.01f, 2, "Command at zero thrust while armed.", "AP_Motors_Thrust_Linearization.cpp:104-107; 0 = today's behaviour")
+// Down to 0.7: less wastes the rotor.
+MARV_PARAM(actuators, rotor_speed_fraction, spin_max, "Spin maximum", "0–1", 1.f, 0.7f, 1.f, 0.01f, 2, "Command at full thrust.", "AP_Motors_Thrust_Linearization.cpp:104-107; 1 = today's behaviour")
+MARV_KIND(actuators, brake_servo, "brake-servo", "Brake servo", "The brake servo command is the deployment, unchanged.", kClassRocket)
 
 #undef MARV_FAMILY
 #undef MARV_KIND

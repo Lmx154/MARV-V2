@@ -59,7 +59,7 @@ class Ekf {
 public:
     static constexpr int kN = 16;
 
-    explicit Ekf(const param::EskfPriors& p = {}, const param::SensorParams& s = {}, const param::VehicleParams& v = {});
+    explicit Ekf(const param::EskfPriors& p = {}, const param::SensorParams& s = {});
 
     // Once per tick. Predicts on a fresh IMU sample, then fuses GNSS position and velocity, baro and mag as fresh.
     void update(const SensorBus& bus);

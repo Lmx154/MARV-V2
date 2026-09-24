@@ -15,7 +15,7 @@
 namespace marv {
 
 // Constants from the setup (params.def): the sensors' noise, reference field and alignment thresholds, the priors and
-// the vehicle's gravity.
+// the sensors' gravity.
 //  - Process noise: white noise per IMU sample (eskf.ts: Q_v = sigma_accel^2 dt^2, Q_theta = sigma_gyro^2 dt^2); bias
 //    random walks per sqrt(s) (Q = sigma^2 dt).
 //  - Priors at alignment: sigma_p0, sigma_v0, sigma_theta0, sigma_ab0. The gyro-bias prior follows the pad
@@ -28,7 +28,7 @@ class Eskf {
 public:
     static constexpr int kN = 15;
 
-    explicit Eskf(const param::EskfPriors& p = {}, const param::SensorParams& s = {}, const param::VehicleParams& v = {});
+    explicit Eskf(const param::EskfPriors& p = {}, const param::SensorParams& s = {});
 
     // Once per tick. Predicts on a fresh IMU sample, then fuses baro and mag as fresh, GNSS position on the tick its
     // fix arrives and that fix's velocity on the next tick.

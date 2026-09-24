@@ -24,26 +24,25 @@ std::uint8_t factory_id(const param::Setup& s) {
 
 Fsw::Estimators Fsw::make_estimator(const param::Setup& s) {
     const param::SensorParams sensors = param::sensors_suite(s);
-    const param::VehicleParams vehicle = param::vehicle_quad_x3(s);
     switch (s.kind[param::k_estimator]) {
         case param::k_estimator_ekf:
-            return Estimators(std::in_place_type<Ekf>, param::estimator_ekf(s), sensors, vehicle);
+            return Estimators(std::in_place_type<Ekf>, param::estimator_ekf(s), sensors);
         case param::k_estimator_mahony:
-            return Estimators(std::in_place_type<Mahony>, param::estimator_mahony(s), sensors, vehicle);
+            return Estimators(std::in_place_type<Mahony>, param::estimator_mahony(s), sensors);
         case param::k_estimator_complementary:
-            return Estimators(std::in_place_type<Complementary>, param::estimator_complementary(s), sensors, vehicle);
+            return Estimators(std::in_place_type<Complementary>, param::estimator_complementary(s), sensors);
         default: break;
     }
-    return Estimators(std::in_place_type<Eskf>, param::estimator_eskf(s), sensors, vehicle);
+    return Estimators(std::in_place_type<Eskf>, param::estimator_eskf(s), sensors);
 }
 
 Fsw::Fsw(const param::Setup& setup)
     : preset_(factory_id(setup)),
       crc_(param::setup_crc(setup)),
+      uav_(setup.kind[param::k_vehicle] == param::k_vehicle_uav),
       estimator_(make_estimator(setup)),
-      controller_(param::controller_cascaded_pid(setup), param::vehicle_quad_x3(setup),
-                  param::actuators_rotor_speed_fraction(setup)),
-      allocation_(param::vehicle_quad_x3(setup), param::actuators_rotor_speed_fraction(setup)) {}
+      controller_(param::controller_cascaded_pid(setup), param::vehicle_uav(setup), param::sensors_suite(setup)),
+      actuators_(param::actuators_rotor_speed_fraction(setup)) {}
 
 Tick Fsw::step(const SensorBus& bus) {
     const float dt = have_prev_ && bus.t_us > t_prev_us_ ? static_cast<float>(bus.t_us - t_prev_us_) * 1e-6f : 0.f;
@@ -63,7 +62,7 @@ Tick Fsw::step(const SensorBus& bus) {
     const bool truth_ok = truth_.valid && truth_.t_us == bus.t_us;
     const State& nav = mission_.nav == NavSource::kTruth ? truth_ : est;
     const bool nav_ok = mission_.nav == NavSource::kTruth ? truth_ok : est.valid;
-    const Mode mode = nav_ok ? mission_.mode : Mode::kIdle;
+    const Mode mode = nav_ok && uav_ ? mission_.mode : Mode::kIdle;
 
     // Guidance: the mission's reference, passed through for now.
     const Reference& ref = mission_.ref;
@@ -71,6 +70,7 @@ Tick Fsw::step(const SensorBus& bus) {
     Tick out{};
     const ControlRequest req = controller_.run(ref, nav, mode, dt);
     out.act = allocation_.run(req, nav, mode);
+    actuators_.run(out.act);
     out.act.t_us = bus.t_us;
     out.tlm.t_us = bus.t_us;
     out.tlm.est = est;

@@ -81,10 +81,10 @@ void apply_fx(const float (&in)[N][N], float (&out)[N][N], const M3& A, const M3
 
 }  // namespace
 
-Eskf::Eskf(const param::EskfPriors& p, const param::SensorParams& s, const param::VehicleParams& v)
+Eskf::Eskf(const param::EskfPriors& p, const param::SensorParams& s)
     : pri_(p),
       sns_(s),
-      gravity_(v.gravity),
+      gravity_(s.gravity),
       mag_ref_{s.mag_ref_ned_ut_x, s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_z},
       mag_decl_(std::atan2(s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_x)) {
     for (int i = 0; i < N; ++i) {

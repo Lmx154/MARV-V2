@@ -257,13 +257,13 @@ void test_exchange() {
     CHECK(m.at("schema_ok").as_bool());
     CHECK(values_equal(m, kFactory[0]));
 
-    const std::uint16_t mass = param::k_vehicle_quad_x3_mass;
-    c.send({{"type", "set_param"}, {"index", mass}, {"value", 1.7}});
+    const std::uint16_t hover = param::k_vehicle_uav_hover_thrust;
+    c.send({{"type", "set_param"}, {"index", hover}, {"value", 0.7}});
     m = c.wait("param");
-    CHECK(u64(m.at("index")) == mass && f32(m.at("value")) == 1.7f);
-    c.send({{"type", "set_param"}, {"index", mass}, {"value", 100.0}});  // above max: the FC holds 1.7
+    CHECK(u64(m.at("index")) == hover && f32(m.at("value")) == 0.7f);
+    c.send({{"type", "set_param"}, {"index", hover}, {"value", 100.0}});  // above max: the FC holds 0.7
     m = c.wait("param");
-    CHECK(u64(m.at("index")) == mass && f32(m.at("value")) == 1.7f);
+    CHECK(u64(m.at("index")) == hover && f32(m.at("value")) == 0.7f);
 
     c.send({{"type", "save"}});
     m = c.wait("setup");

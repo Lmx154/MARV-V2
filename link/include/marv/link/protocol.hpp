@@ -44,11 +44,12 @@ enum MsgId : std::uint8_t {
 
 // Body sizes, fixed per message.
 inline constexpr std::size_t kSensorsBody = 8 + 1 + 24 + 8 + 12 + (4 + 4 + 4 + 12 + 1);  // 78
-inline constexpr std::size_t kActuatorsBody = 8 + 4 * kMotorCount + 1;                 // 25
+inline constexpr std::size_t kActuatorsBody = 8 + 4 * kMotorCount + 4 + 1;             // 29
 inline constexpr std::size_t kStateBody = 8 + 12 + 12 + 16 + 12 + 1;                   // 61
-inline constexpr std::size_t kReferenceBody = 1 + 12 + 12 + 12 + 4 + 4 + 16;           // 61
-inline constexpr std::size_t kMissionBody = 1 + 1 + kReferenceBody;                    // 63
-inline constexpr std::size_t kTelemetryBody = 8 + kStateBody + 24 + 1 + 1 + 12;         // 107
+inline constexpr std::size_t kReferenceBody = 1 + 12 + 12 + 12 + 4 + 4 + 16 + 4 + 4;   // 69
+inline constexpr std::size_t kMissionBody = 1 + 1 + kReferenceBody;                    // 71
+inline constexpr std::size_t kControlRequestBody = 12 + 12 + 4 + 4;                    // 32
+inline constexpr std::size_t kTelemetryBody = 8 + kStateBody + kControlRequestBody + 1 + 1 + 12;  // 115
 inline constexpr std::size_t kSetParamBody = 2 + 4;                                     // 6
 inline constexpr std::size_t kSetKindBody = 1 + 1;                                      // 2
 inline constexpr std::size_t kLoadFactoryBody = 1;
@@ -248,12 +249,14 @@ inline void get(Reader& r, SensorBus& s) {
 inline void put(Writer& w, const ActuatorCommand& a) {
     w.u64(a.t_us);
     for (float m : a.motor) w.f32(m);
+    w.f32(a.brake);
     w.u8(a.armed ? 1 : 0);
 }
 
 inline void get(Reader& r, ActuatorCommand& a) {
     a.t_us = r.u64();
     for (float& m : a.motor) m = r.f32();
+    a.brake = r.f32();
     a.armed = r.u8() != 0;
 }
 
@@ -283,6 +286,8 @@ inline void put(Writer& w, const Reference& f) {
     w.f32(f.yaw);
     w.f32(f.yaw_rate);
     w.quat(f.q);
+    w.f32(f.apogee_m);
+    w.f32(f.apogee_pred_m);
 }
 
 inline void get(Reader& r, Reference& f) {
@@ -293,6 +298,8 @@ inline void get(Reader& r, Reference& f) {
     f.yaw = r.f32();
     f.yaw_rate = r.f32();
     f.q = r.quat();
+    f.apogee_m = r.f32();
+    f.apogee_pred_m = r.f32();
 }
 
 inline void put(Writer& w, const MissionCommand& m) {
@@ -310,8 +317,10 @@ inline void get(Reader& r, MissionCommand& m) {
 inline void put(Writer& w, const Telemetry& t) {
     w.u64(t.t_us);
     put(w, t.est);
-    w.vec3(t.req.force_ned);
+    w.vec3(t.req.thrust_ned);
     w.vec3(t.req.torque_frd);
+    w.f32(t.req.thrust_hover);
+    w.f32(t.req.brake);
     w.u8(t.preset);
     w.u8(t.home_valid ? 1 : 0);
     w.i32(t.home.lat_e7);
@@ -322,8 +331,10 @@ inline void put(Writer& w, const Telemetry& t) {
 inline void get(Reader& r, Telemetry& t) {
     t.t_us = r.u64();
     get(r, t.est);
-    t.req.force_ned = r.vec3();
+    t.req.thrust_ned = r.vec3();
     t.req.torque_frd = r.vec3();
+    t.req.thrust_hover = r.f32();
+    t.req.brake = r.f32();
     t.preset = r.u8();
     t.home_valid = r.u8() != 0;
     t.home.lat_e7 = r.i32();

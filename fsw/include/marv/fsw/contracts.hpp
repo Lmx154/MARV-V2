@@ -97,6 +97,8 @@ enum RefBit : std::uint8_t {
     kRefYaw = 1u << 3,
     kRefAtt = 1u << 4,
     kRefYawRate = 1u << 5,
+    kRefCoast = 1u << 6,   // the mission: the rocket coasts (after burnout, before apogee)
+    kRefApogee = 1u << 7,  // guidance: apogee_m and apogee_pred_m hold
 };
 
 struct Reference {
@@ -107,6 +109,8 @@ struct Reference {
     float yaw;  // rad
     float yaw_rate;  // rad/s about body z (FRD: positive = clockwise seen from above)
     Quat q;
+    float apogee_m;       // m above the start, the target apogee (kRefApogee)
+    float apogee_pred_m;  // m above the start, the apogee predicted with the brake closed (kRefApogee)
 };
 
 // Where the controller takes its state from. kTruth is the lab's A/B switch (the toolbox's
@@ -125,19 +129,23 @@ struct MissionCommand {
 
 // ---- controller output ---------------------------------------------------------------------------
 
+// Normalized: the airframe's size enters only through the hover thrust the controller learns.
 struct ControlRequest {
-    Vec3 force_ned;   // N
-    Vec3 torque_frd;  // N m
+    Vec3 thrust_ned;     // thrust vector as a fraction of full collective, |.| <= 1
+    Vec3 torque_frd;     // each axis as a fraction of its full authority, -1..1
+    float thrust_hover;  // the controller's learned hover fraction: the collective allocation keeps before roll/pitch
+    float brake;         // air-brake deployment, 0..1
 };
 
 // ---- allocation / actuator output ----------------------------------------------------------------
 
 inline constexpr int kMotorCount = 4;
 
-// One command per motor as a fraction of full scale, 0..1. Motor i is Gazebo rotor i.
+// One command per motor as a fraction of full scale, 0..1 (motor i is Gazebo rotor i), and the air-brake servo.
 struct ActuatorCommand {
     std::uint64_t t_us;  // the SensorBus tick this answers
     float motor[kMotorCount];
+    float brake;  // air-brake deployment, 0..1
     bool armed;
 };
 

@@ -37,6 +37,10 @@ static bool decode_all(const std::uint8_t* p, std::size_t n, link::Decoder& d, l
     return got;
 }
 
+static_assert(link::kActuatorsBody == 29 && link::kReferenceBody == 69 && link::kMissionBody == 71 &&
+                  link::kControlRequestBody == 32 && link::kTelemetryBody == 115,
+              "the bodies of the airframe-agnostic contracts");
+
 int main() {
     std::uint8_t frame[link::kMaxFrame];
 
@@ -63,19 +67,19 @@ int main() {
 
     // ActuatorCommand round trip.
     {
-        const ActuatorCommand in{42, {0.f, 0.25f, 0.82f, 1.f}, true};
+        const ActuatorCommand in{42, {0.f, 0.25f, 0.82f, 1.f}, 0.37f, true};
         const std::size_t n = link::encode(in, frame);
         link::Decoder d;
         link::Packet p{};
         CHECK(decode_all(frame, n, d, p));
         ActuatorCommand out{};
         CHECK(p.as(out));
-        CHECK(out.t_us == 42 && out.armed && out.motor[2] == 0.82f && out.motor[0] == 0.f);
+        CHECK(out.t_us == 42 && out.armed && out.motor[2] == 0.82f && out.motor[0] == 0.f && out.brake == 0.37f);
     }
 
     // MissionCommand, State (truth) and Telemetry round trips: every byte of the body comes back.
     {
-        MissionCommand in{Mode::kFly, NavSource::kTruth, {kRefVel | kRefYawRate, {1.f, -2.f, -3.f}, {0.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, 1.5708f, -0.8f, {1.f, 0.f, 0.f, 0.f}}};
+        MissionCommand in{Mode::kFly, NavSource::kTruth, {kRefVel | kRefYawRate | kRefCoast | kRefApogee, {1.f, -2.f, -3.f}, {0.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, 1.5708f, -0.8f, {1.f, 0.f, 0.f, 0.f}, 284.f, 301.5f}};
         link::Decoder d;
         link::Packet p{};
         CHECK(decode_all(frame, link::encode(in, frame), d, p));
@@ -83,6 +87,8 @@ int main() {
         CHECK(p.as(out));
         CHECK(out.mode == Mode::kFly && out.nav == NavSource::kTruth && out.ref.has == in.ref.has);
         CHECK(out.ref.p_ned.z == -3.f && out.ref.yaw == 1.5708f && out.ref.yaw_rate == -0.8f && out.ref.q.w == 1.f);
+        CHECK(out.ref.has == (kRefVel | kRefYawRate | kRefCoast | kRefApogee) && out.ref.apogee_m == 284.f &&
+              out.ref.apogee_pred_m == 301.5f);
 
         const State st{77, {1.f, 2.f, 3.f}, {-1.f, 0.f, 0.5f}, {0.7071f, 0.f, 0.f, 0.7071f}, {0.1f, 0.2f, 0.3f}, true};
         CHECK(decode_all(frame, link::encode(st, frame), d, p));
@@ -90,11 +96,12 @@ int main() {
         CHECK(p.id == link::kTruth && p.as(so));
         CHECK(so.t_us == 77 && so.q.z == 0.7071f && so.w_frd.z == 0.3f && so.valid);
 
-        const Telemetry tm{78, st, {{0.f, 0.f, -14.9f}, {0.01f, -0.02f, 0.f}}, 3, true, {473763880, 85477780, 408.5f}};
+        const Telemetry tm{78, st, {{0.f, 0.f, -0.681f}, {0.01f, -0.02f, 0.f}, 0.6811f, 0.25f}, 3, true, {473763880, 85477780, 408.5f}};
         CHECK(decode_all(frame, link::encode(tm, frame), d, p));
         Telemetry to{};
         CHECK(p.as(to));
-        CHECK(to.t_us == 78 && to.est.p_ned.y == 2.f && to.req.force_ned.z == -14.9f && to.req.torque_frd.y == -0.02f);
+        CHECK(to.t_us == 78 && to.est.p_ned.y == 2.f && to.req.thrust_ned.z == -0.681f && to.req.torque_frd.y == -0.02f);
+        CHECK(to.req.thrust_hover == 0.6811f && to.req.brake == 0.25f);
         CHECK(to.preset == 3 && to.home_valid && to.home.lat_e7 == 473763880 && to.home.alt_m == 408.5f);
 
         link::SetPreset sp{};

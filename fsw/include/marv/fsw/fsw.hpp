@@ -11,11 +11,14 @@
 //
 // Every module is built once from the Setup given at construction (params.hpp): the estimator is its estimator
 // kind, and each module copies its constants from the setup's typed parameters. Nothing reads the Setup afterwards.
+// This build flies the uav vehicle only: on any other vehicle kind the mode is held idle (every motor zero, brake zero)
+// while the estimator runs.
 #pragma once
 
 #include <cstdint>
 #include <variant>
 
+#include <marv/fsw/actuators.hpp>
 #include <marv/fsw/allocation.hpp>
 #include <marv/fsw/complementary.hpp>
 #include <marv/fsw/contracts.hpp>
@@ -31,6 +34,7 @@ namespace marv {
 // The modules this build flies besides the preset's estimator.
 using ActiveController = Controller;
 using ActiveAllocation = Allocation;
+using ActiveActuators = Actuators;
 
 struct Tick {
     Telemetry tlm;
@@ -57,10 +61,12 @@ private:
 
     std::uint8_t preset_;
     std::uint32_t crc_;
+    bool uav_;  // the setup's vehicle kind is the one this build flies
     Estimators estimator_;
     LocalFrame home_;  // the first GNSS fix
     ActiveController controller_;
     ActiveAllocation allocation_;
+    ActiveActuators actuators_;
     std::uint64_t t_prev_us_ = 0;
     bool have_prev_ = false;
 };

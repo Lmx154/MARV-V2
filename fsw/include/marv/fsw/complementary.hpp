@@ -49,8 +49,7 @@ private:
 class Complementary {
 public:
     // s: the reference field and the alignment window (Eskf's); v: gravity.
-    explicit Complementary(const param::ComplementaryParams& p = {}, const param::SensorParams& s = {},
-                           const param::VehicleParams& v = {});
+    explicit Complementary(const param::ComplementaryParams& p = {}, const param::SensorParams& s = {});
 
     void update(const SensorBus& bus);
     State state() const;

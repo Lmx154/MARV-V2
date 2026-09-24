@@ -404,8 +404,10 @@ std::string Link::telemetry_message() const {
         {"armed", armed},
         {"est", json::object{{"t_us", e.t_us}, {"p_ned", vec3(e.p_ned)}, {"v_ned", vec3(e.v_ned)}, {"q", quat(e.q)},
                              {"w_frd", vec3(e.w_frd)}, {"valid", e.valid}}},
-        {"force_ned", vec3(tlm_.req.force_ned)},
+        {"thrust_ned", vec3(tlm_.req.thrust_ned)},
         {"torque_frd", vec3(tlm_.req.torque_frd)},
+        {"thrust_hover", fnum(tlm_.req.thrust_hover)},
+        {"brake", fnum(tlm_.req.brake)},
         {"home_valid", tlm_.home_valid},
         {"home", json::object{{"lat_e7", tlm_.home.lat_e7}, {"lon_e7", tlm_.home.lon_e7}, {"alt_m", fnum(tlm_.home.alt_m)}}}});
 }

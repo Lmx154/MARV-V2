@@ -8,10 +8,12 @@
 //   void reboot();                                              // restarts the controller; returns on a platform that cannot
 //
 // Setups (params.hpp). The running setup is the one the flight software was built from, fixed for the run. The staged
-// setup is what kSetParam, kSetKind and kLoadFactory edit, each value and kind checked against its range. The stored
+// setup is what kSetParam, kSetKind and kLoadFactory edit, each value and kind checked against its range. Setups are
+// class-consistent (param::consistent): kSetKind of the vehicle re-stages every family whose kind does not serve the new
+// vehicle to its first kind that does; kSetKind of a kind that does not serve the staged vehicle is refused. The stored
 // setup is the record's: power-on and kReboot run it and stage it; kReset runs the staged setup (a new run); kSaveSetup
 // stores the staged setup, refused while the last ActuatorCommand sent was armed (kReset and kReboot clear that: the motors are then at zero). A record is valid iff its magic,
-// schema hash, length and CRC match and every kind and value is within range; otherwise the stored setup is factory 0
+// schema hash, length and CRC match, every kind and value is within range and the setup is class-consistent; otherwise the stored setup is factory 0
 // and stored_valid is 0 (an old "MRVP" preset record among them).
 //
 // One reply per request is its acknowledgement: kSetupRequest and kLoadFactory -> kSetupHeader, then kParamValue for
@@ -52,13 +54,13 @@ inline void encode_record(const param::Setup& s, std::uint8_t (&out)[kRecordByte
     head.u16(link::crc16(out + kRecordHeaderBytes, kSetupBytes));
 }
 
-// Every kind and every value within its range (NaN is not).
+// Every kind and every value within its range (NaN is not), and every kind serving the vehicle's class.
 inline bool in_range(const param::Setup& s) {
     for (std::uint8_t f = 0; f < param::kFamilyCount; ++f)
         if (s.kind[f] >= param::kind_count(f)) return false;
     for (std::uint16_t i = 0; i < param::kParamCount; ++i)
         if (!(s.values[i] >= param::kParamMeta[i].min && s.values[i] <= param::kParamMeta[i].max)) return false;
-    return true;
+    return param::consistent(s);
 }
 
 // Decodes the n bytes of a record into out. False, and out unspecified, unless the record is valid.
@@ -114,8 +116,14 @@ public:
             }
             send(link::ParamValue{set.index, held});
         } else if (pkt.as(kind)) {
-            if (kind.family < param::kFamilyCount && kind.kind < param::kind_count(kind.family))
+            if (kind.family == param::k_vehicle && kind.kind < param::kind_count(param::k_vehicle)) {
+                staged_.kind[param::k_vehicle] = kind.kind;
+                for (std::uint8_t f = 0; f < param::kFamilyCount; ++f)
+                    if (!param::compatible(f, staged_.kind[f], kind.kind)) staged_.kind[f] = param::first_compatible(f, kind.kind);
+            } else if (kind.family < param::kFamilyCount && kind.kind < param::kind_count(kind.family) &&
+                       param::compatible(kind.family, kind.kind, staged_.kind[param::k_vehicle])) {
                 staged_.kind[kind.family] = kind.kind;
+            }
             send_header();
         } else if (pkt.as(store)) {
             save();

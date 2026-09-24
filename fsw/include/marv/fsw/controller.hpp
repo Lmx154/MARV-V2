@@ -1,8 +1,11 @@
-// Cascaded multirotor controller: reference and navigation state -> NED force and body torque request.
+// Cascaded multirotor controller: reference and navigation state -> thrust and torque request, normalized.
 //
-//   position P -> velocity PI -> acceleration (+ reference feed-forward) -> force m (a - g), tilt and
-//   thrust limited -> desired attitude (force direction + reference yaw) -> quaternion attitude P ->
-//   body-rate PID -> torque I alpha + w x I w.
+//   position P -> velocity PI -> acceleration (+ reference feed-forward) -> thrust fraction (hover / g)(a - g),
+//   tilt and thrust limited -> desired attitude (thrust direction + reference yaw) -> quaternion attitude P ->
+//   body-rate PID -> torque as a fraction of each axis' full authority.
+//
+// The airframe enters only through the hover thrust: seeded each run from the setup's vehicle, learned in level
+// hover (ArduPilot's low-pass, AP_MotorsMulticopter.cpp:561, gated as ArduCopter/Attitude.cpp:32-62), never stored.
 #pragma once
 
 #include <marv/fsw/contracts.hpp>
@@ -12,23 +15,22 @@ namespace marv {
 
 class Controller {
 public:
-    // Gains and limits from the setup; the force limits are derived from them, the airframe and the rotors here.
-    explicit Controller(const param::ControllerParams& c = {}, const param::VehicleParams& v = {},
-                        const param::ActuatorParams& a = {});
+    // Gains and limits from the setup; the hover thrust seed from the vehicle, gravity from the sensors.
+    explicit Controller(const param::ControllerParams& c = {}, const param::UavParams& v = {},
+                        const param::SensorParams& s = {});
 
-    // Anything but kFly: zero request, integrators reset.
+    // Anything but kFly: zero request but the learned hover thrust, integrators reset.
     ControlRequest run(const Reference& ref, const State& nav, Mode mode, float dt);
 
 private:
     param::ControllerParams c_;
-    float mass_;          // kg
     float gravity_;       // m/s^2
-    Vec3 inertia_;        // principal, kg m^2
     float tan_tilt_max_;  // tan(tilt_max_deg)
-    float thrust_min_;    // N, thrust_min_g m g
-    float thrust_max_;    // N, thrust_max_frac of the four rotors' full thrust
+    float hover_;         // learned hover thrust, fraction of full collective
+    float hover_min_;     // the range of vehicle/uav hover_thrust
+    float hover_max_;
     float iv_max_;        // m, velocity integrator limit: vel_int_accel / vel_i
-    Vec3 iw_max_;         // rad, rate integrator limit: rate_int_accel / rate_i
+    Vec3 iw_max_;         // rad, rate integrator limit: rate_int_max / rate_i
 
     Vec3 iv_{0.f, 0.f, 0.f};      // integrated velocity error, m
     Vec3 iw_{0.f, 0.f, 0.f};      // integrated body-rate error, rad

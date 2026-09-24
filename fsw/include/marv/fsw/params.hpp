@@ -11,6 +11,12 @@ namespace marv::param {
 
 // ---- families and kinds ------------------------------------------------------------------------------------------------
 
+// Vehicle classes: the vehicles column of a kind is the set it serves; a vehicle kind serves its own class.
+enum VehicleClass : std::uint8_t {
+    kClassUav = 1u << 0,
+    kClassRocket = 1u << 1,
+};
+
 // k_<family>: index into Setup::kind.
 enum Family : std::uint8_t {
 #define MARV_FAMILY(f, label) k_##f,
@@ -21,12 +27,16 @@ static_assert(kFamilyCount == 7, "seven families");
 
 namespace detail {
 enum KindRow : std::uint8_t {
-#define MARV_KIND(f, k, name, label, summary) kKindRow_##f##_##k,
+#define MARV_KIND(f, k, name, label, summary, vehicles) kKindRow_##f##_##k,
 #include <marv/fsw/params.def>
     kKindRowCount
 };
 inline constexpr Family kKindRowFamily[kKindRowCount] = {
-#define MARV_KIND(f, k, name, label, summary) k_##f,
+#define MARV_KIND(f, k, name, label, summary, vehicles) k_##f,
+#include <marv/fsw/params.def>
+};
+inline constexpr std::uint8_t kKindRowVehicles[kKindRowCount] = {
+#define MARV_KIND(f, k, name, label, summary, vehicles) static_cast<std::uint8_t>(vehicles),
 #include <marv/fsw/params.def>
 };
 constexpr std::uint8_t kind_index(std::uint8_t row) {
@@ -38,7 +48,7 @@ constexpr std::uint8_t kind_index(std::uint8_t row) {
 }  // namespace detail
 
 // k_<family>_<kind>: the kind's index within its family, the value of Setup::kind[k_<family>].
-#define MARV_KIND(f, k, name, label, summary) \
+#define MARV_KIND(f, k, name, label, summary, vehicles) \
     inline constexpr std::uint8_t k_##f##_##k = detail::kind_index(detail::kKindRow_##f##_##k);
 #include <marv/fsw/params.def>
 
@@ -49,6 +59,37 @@ constexpr std::uint8_t kind_count(std::uint8_t family) {
         if (detail::kKindRowFamily[r] == family) ++n;
     return n;
 }
+
+// The vehicle classes a kind of a family serves; 0 for a kind out of range.
+constexpr std::uint8_t kind_vehicles(std::uint8_t family, std::uint8_t kind) {
+    for (std::uint8_t r = 0; r < detail::kKindRowCount; ++r)
+        if (detail::kKindRowFamily[r] == family && detail::kind_index(r) == kind) return detail::kKindRowVehicles[r];
+    return 0;
+}
+
+// Whether a kind of a family serves the class of the vehicle kind.
+constexpr bool compatible(std::uint8_t family, std::uint8_t kind, std::uint8_t vehicle) {
+    return (kind_vehicles(family, kind) & kind_vehicles(k_vehicle, vehicle)) != 0;
+}
+
+// The first kind of a family that serves the vehicle kind's class (kind_count(family) if none).
+constexpr std::uint8_t first_compatible(std::uint8_t family, std::uint8_t vehicle) {
+    std::uint8_t k = 0;
+    while (k < kind_count(family) && !compatible(family, k, vehicle)) ++k;
+    return k;
+}
+
+// Every family has a kind for every vehicle kind, and each vehicle kind is exactly one class.
+constexpr bool every_class_served() {
+    for (std::uint8_t v = 0; v < kind_count(k_vehicle); ++v) {
+        const std::uint8_t c = kind_vehicles(k_vehicle, v);
+        if (c == 0 || (c & (c - 1)) != 0) return false;
+        for (std::uint8_t f = 0; f < kFamilyCount; ++f)
+            if (first_compatible(f, v) >= kind_count(f)) return false;
+    }
+    return true;
+}
+static_assert(every_class_served(), "every family has at least one kind per vehicle class");
 
 // ---- parameters --------------------------------------------------------------------------------------------------------
 
@@ -107,6 +148,13 @@ inline std::uint32_t setup_crc(const Setup& s) {
     return ~crc;
 }
 
+// Every family's kind serves the class of the setup's vehicle kind.
+constexpr bool consistent(const Setup& s) {
+    for (std::uint8_t f = 0; f < kFamilyCount; ++f)
+        if (!compatible(f, s.kind[f], s.kind[k_vehicle])) return false;
+    return true;
+}
+
 // ---- schema hash -------------------------------------------------------------------------------------------------------
 
 // FNV-1a (32 bit) over each string and its terminating NUL.
@@ -128,7 +176,7 @@ constexpr std::uint32_t hash_param(std::uint32_t h, const char* family, const ch
 // Every kind (family, kind, wire name) and every parameter (family, kind, id), in table order.
 constexpr std::uint32_t schema_hash() {
     std::uint32_t h = kFnvBasis;
-#define MARV_KIND(f, k, name, label, summary) h = hash_kind(h, #f, #k, name);
+#define MARV_KIND(f, k, name, label, summary, vehicles) h = hash_kind(h, #f, #k, name);
 #define MARV_PARAM(f, k, id, label, unit, dflt, min, max, step, digits, note, source) h = hash_param(h, #f, #k, #id);
 #include <marv/fsw/params.def>
     return h;
@@ -149,18 +197,18 @@ inline constexpr std::uint32_t kSchemaHash = schema_hash();
 #define MARV_PARAMS_FIELD(f, k, id, label, unit, dflt, ...) MARV_PARAMS_WHEN(f, k)(float id = dflt;)
 #define MARV_PARAMS_FILL(f, k, id, ...) MARV_PARAMS_WHEN(f, k)(p.id = s.values[k_##f##_##k##_##id];)
 
-#define MARV_PARAMS_SEL_vehicle_quad_x3 ~, 1
-struct VehicleParams {
+#define MARV_PARAMS_SEL_vehicle_uav ~, 1
+struct UavParams {
 #define MARV_PARAM MARV_PARAMS_FIELD
 #include <marv/fsw/params.def>
 };
-inline VehicleParams vehicle_quad_x3(const Setup& s) {
-    VehicleParams p;
+inline UavParams vehicle_uav(const Setup& s) {
+    UavParams p;
 #define MARV_PARAM MARV_PARAMS_FILL
 #include <marv/fsw/params.def>
     return p;
 }
-#undef MARV_PARAMS_SEL_vehicle_quad_x3
+#undef MARV_PARAMS_SEL_vehicle_uav
 
 #define MARV_PARAMS_SEL_sensors_suite ~, 1
 struct SensorParams {
@@ -225,6 +273,19 @@ inline ComplementaryParams estimator_complementary(const Setup& s) {
 }
 #undef MARV_PARAMS_SEL_estimator_complementary
 
+#define MARV_PARAMS_SEL_guidance_apogee_predictor ~, 1
+struct ApogeePredictorParams {
+#define MARV_PARAM MARV_PARAMS_FIELD
+#include <marv/fsw/params.def>
+};
+inline ApogeePredictorParams guidance_apogee_predictor(const Setup& s) {
+    ApogeePredictorParams p;
+#define MARV_PARAM MARV_PARAMS_FILL
+#include <marv/fsw/params.def>
+    return p;
+}
+#undef MARV_PARAMS_SEL_guidance_apogee_predictor
+
 #define MARV_PARAMS_SEL_controller_cascaded_pid ~, 1
 struct ControllerParams {
 #define MARV_PARAM MARV_PARAMS_FIELD
@@ -237,6 +298,19 @@ inline ControllerParams controller_cascaded_pid(const Setup& s) {
     return p;
 }
 #undef MARV_PARAMS_SEL_controller_cascaded_pid
+
+#define MARV_PARAMS_SEL_controller_apogee_pid ~, 1
+struct ApogeePidParams {
+#define MARV_PARAM MARV_PARAMS_FIELD
+#include <marv/fsw/params.def>
+};
+inline ApogeePidParams controller_apogee_pid(const Setup& s) {
+    ApogeePidParams p;
+#define MARV_PARAM MARV_PARAMS_FILL
+#include <marv/fsw/params.def>
+    return p;
+}
+#undef MARV_PARAMS_SEL_controller_apogee_pid
 
 #define MARV_PARAMS_SEL_actuators_rotor_speed_fraction ~, 1
 struct ActuatorParams {
@@ -286,7 +360,7 @@ struct SchemaRow {
 
 inline constexpr SchemaRow kSchema[] = {
 #define MARV_FAMILY(f, label) {RowType::kFamily, k_##f, 0, #f, label, "", 0.f, 0.f, 0.f, 0.f, 0, "", ""},
-#define MARV_KIND(f, k, name, label, summary) {RowType::kKind, k_##f, k_##f##_##k, name, label, "", 0.f, 0.f, 0.f, 0.f, 0, summary, ""},
+#define MARV_KIND(f, k, name, label, summary, vehicles) {RowType::kKind, k_##f, k_##f##_##k, name, label, "", 0.f, 0.f, 0.f, 0.f, 0, summary, ""},
 #define MARV_PART(f, k, id, label) {RowType::kPart, k_##f, k_##f##_##k, #id, label, "", 0.f, 0.f, 0.f, 0.f, 0, "", ""},
 #define MARV_PARAM(f, k, id, label, unit, dflt, min, max, step, digits, note, source) \
     {RowType::kParam, k_##f, k_##f##_##k, #id, label, unit, dflt, min, max, step, digits, note, source},
@@ -295,7 +369,7 @@ inline constexpr SchemaRow kSchema[] = {
 
 // Wire names of the kinds, in table order (kind_count(f) consecutive entries per family).
 inline constexpr const char* kKindName[detail::kKindRowCount] = {
-#define MARV_KIND(f, k, name, label, summary) name,
+#define MARV_KIND(f, k, name, label, summary, vehicles) name,
 #include <marv/fsw/params.def>
 };
 #endif

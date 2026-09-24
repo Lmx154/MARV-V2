@@ -19,8 +19,7 @@ namespace marv {
 class Mahony {
 public:
     // s: the reference field and the alignment window (Eskf's); v: gravity.
-    explicit Mahony(const param::MahonyParams& p = {}, const param::SensorParams& s = {},
-                    const param::VehicleParams& v = {});
+    explicit Mahony(const param::MahonyParams& p = {}, const param::SensorParams& s = {});
 
     void update(const SensorBus& bus);
     State state() const;

@@ -2,7 +2,9 @@
 // the stored setup and stage it, kReset runs the staged one, kSaveSetup stores the staged one unless the last
 // ActuatorCommand was armed; a record that is corrupt, of another schema, out of range, short or the old preset record
 // reads as factory 0 with stored_valid 0; kSetParam holds only values within range and echoes what it holds; each
-// request gets exactly one reply. And a changed gain changes what the flight software commands.
+// request gets exactly one reply. And a changed gain changes what the flight software commands. Setups stay
+// class-consistent: kSetKind of the vehicle re-stages the families whose kind does not serve it, a kind that does not
+// serve the staged vehicle is refused, an inconsistent record reads as factory 0, and a rocket setup never drives a motor.
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -351,9 +353,9 @@ int main() {
         CHECK(r.headers.size() == 1 && r.frames() == 1 && r.headers[0].staged_crc == crc(staged));
         r = ask(node, pf, link::SetKind{param::kFamilyCount, 0});
         CHECK(r.headers.size() == 1 && r.frames() == 1 && r.headers[0].staged_crc == crc(staged));
-        r = ask(node, pf, link::SetKind{param::k_vehicle, 1});  // one vehicle kind
+        r = ask(node, pf, link::SetKind{param::k_vehicle, 2});  // two vehicle kinds
         CHECK(r.headers.size() == 1 && r.frames() == 1 && r.headers[0].staged_crc == crc(staged));
-        r = ask(node, pf, link::LoadFactory{4});
+        r = ask(node, pf, link::LoadFactory{fw::kFactoryCount});
         CHECK(r.headers.size() == 1 && r.values.size() == param::kParamCount && r.frames() == 1 + param::kParamCount);
         CHECK(!r.headers.empty() && r.headers[0].staged_crc == crc(staged));
         header(node, pf, &staged);
@@ -376,22 +378,81 @@ int main() {
         CHECK(pf.writes == 2 && node.fsw().preset() == 1);
     }
 
-    // 8. A changed gain changes the flight software's command: vel_max halved halves the horizontal force a far
-    // position reference asks for; the same setup (the control) commands the same force, bit for bit.
+    // 8. A changed gain changes the flight software's command: vel_max halved halves the horizontal thrust a far
+    // position reference asks for; the same setup (the control) commands the same thrust, bit for bit.
     {
-        const auto force = [](const param::Setup& s) {
+        const auto thrust = [](const param::Setup& s) {
             Fsw fsw{s};
             fsw.on_mission(kFlyNorth);
             fsw.on_truth(truth_at(1000));
-            return fsw.step(bus_at(1000)).tlm.req.force_ned;
+            return fsw.step(bus_at(1000)).tlm.req.thrust_ned;
         };
         param::Setup slow = kFactory[0];
         slow.values[kVelMax] = 1.f;
-        const Vec3 f0 = force(kFactory[0]), f1 = force(slow), f0b = force(kFactory[0]);
-        std::printf("force north: vel_max 2 -> %.4f N, vel_max 1 -> %.4f N\n", static_cast<double>(f0.x),
+        const Vec3 f0 = thrust(kFactory[0]), f1 = thrust(slow), f0b = thrust(kFactory[0]);
+        std::printf("thrust north: vel_max 2 -> %.4f, vel_max 1 -> %.4f of full\n", static_cast<double>(f0.x),
                     static_cast<double>(f1.x));
-        CHECK(f0.x > 1.f && std::fabs(f1.x - 0.5f * f0.x) < 1e-4f);
+        CHECK(f0.x > 0.1f && std::fabs(f1.x - 0.5f * f0.x) < 1e-5f);
         CHECK(std::memcmp(&f0, &f0b, sizeof(Vec3)) == 0);
+    }
+
+    // 9. Class consistency. Every factory setup is consistent and in range; factory 4 is the rocket.
+    {
+        for (std::uint8_t i = 0; i < fw::kFactoryCount; ++i) CHECK(fw::in_range(kFactory[i]) && param::consistent(kFactory[i]));
+        CHECK(kFactory[4].kind[param::k_vehicle] == param::k_vehicle_rocket);
+        for (std::uint8_t i = 0; i < 4; ++i) CHECK(kFactory[i].kind[param::k_vehicle] == param::k_vehicle_uav);
+
+        FakePlatform pf;
+        Node node{pf};
+        // The vehicle to rocket: every uav-only family moves to its first rocket kind, the estimator (both) stays, no
+        // value changes: factory 0 so becomes factory 4.
+        Replies r = ask(node, pf, link::SetKind{param::k_vehicle, param::k_vehicle_rocket});
+        CHECK(r.headers.size() == 1 && r.frames() == 1);
+        CHECK(!r.headers.empty() && std::memcmp(r.headers[0].kind, kFactory[4].kind, sizeof(kFactory[4].kind)) == 0 &&
+              r.headers[0].staged_crc == crc(kFactory[4]));
+        // A uav kind under the rocket is refused: the header echoes the kind held.
+        r = ask(node, pf, link::SetKind{param::k_controller, param::k_controller_cascaded_pid});
+        CHECK(r.headers.size() == 1 && r.headers[0].kind[param::k_controller] == param::k_controller_apogee_pid &&
+              r.headers[0].staged_crc == crc(kFactory[4]));
+        r = ask(node, pf, link::SetKind{param::k_actuators, param::k_actuators_rotor_speed_fraction});
+        CHECK(r.headers.size() == 1 && r.headers[0].kind[param::k_actuators] == param::k_actuators_brake_servo);
+        // A kind of both classes is taken; back to the uav, the estimator chosen stays.
+        r = ask(node, pf, link::SetKind{param::k_estimator, param::k_estimator_mahony});
+        CHECK(r.headers.size() == 1 && r.headers[0].kind[param::k_estimator] == param::k_estimator_mahony);
+        r = ask(node, pf, link::SetKind{param::k_vehicle, param::k_vehicle_uav});
+        CHECK(r.headers.size() == 1 && std::memcmp(r.headers[0].kind, kFactory[2].kind, sizeof(kFactory[2].kind)) == 0 &&
+              r.headers[0].staged_crc == crc(kFactory[2]));
+
+        // An inconsistent record (the rocket with the quad's allocation) reads as factory 0; the consistent rocket
+        // record runs, as factory 4.
+        param::Setup mixed = kFactory[4];
+        mixed.kind[param::k_allocation] = param::k_allocation_quad_x;
+        CHECK(!fw::in_range(mixed));
+        pf.record = record_of(mixed);
+        Node bad{pf};
+        const link::SetupHeader hb = header(bad, pf, &kFactory[0]);
+        CHECK(hb.stored_valid == 0 && hb.running_crc == crc0 && bad.fsw().preset() == 0);
+        pf.record = record_of(kFactory[4]);
+        Node rocket{pf};
+        const link::SetupHeader hr = header(rocket, pf, &kFactory[4]);
+        CHECK(hr.stored_valid == 1 && rocket.fsw().preset() == 4);
+
+        // A rocket setup never drives a motor: a fly mission on valid truth leaves every motor and the brake at zero,
+        // disarmed, while the uav factory arms on the same ticks (the control).
+        const auto fly = [](const param::Setup& s) {
+            Fsw fsw{s};
+            fsw.on_mission(kFlyNorth);
+            ActuatorCommand a{};
+            for (std::uint64_t t = 1000; t <= 100000; t += 1000) {
+                fsw.on_truth(truth_at(t));
+                a = fsw.step(bus_at(t)).act;
+            }
+            return a;
+        };
+        const ActuatorCommand ar = fly(kFactory[4]), au = fly(kFactory[0]);
+        CHECK(!ar.armed && ar.brake == 0.f);
+        for (float m : ar.motor) CHECK(m == 0.f);
+        CHECK(au.armed && au.brake == 0.f && au.motor[0] > 0.5f);
     }
 
     std::printf(failures ? "FAIL (%d)\n" : "PASS\n", failures);

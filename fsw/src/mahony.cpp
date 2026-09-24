@@ -16,12 +16,12 @@
 
 namespace marv {
 
-Mahony::Mahony(const param::MahonyParams& p, const param::SensorParams& s, const param::VehicleParams& v)
+Mahony::Mahony(const param::MahonyParams& p, const param::SensorParams& s)
     : prm_(p),
-      gravity_(v.gravity),
+      gravity_(s.gravity),
       mag_decl_(std::atan2(s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_x)),
-      alignment_(s, v.gravity),
-      tr_({p.k_pos, p.k_vel, p.k_baro}, v.gravity) {}
+      alignment_(s, s.gravity),
+      tr_({p.k_pos, p.k_vel, p.k_baro}, s.gravity) {}
 
 void Mahony::update(const SensorBus& bus) {
     t_us_ = bus.t_us;
