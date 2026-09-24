@@ -27,14 +27,13 @@ struct EskfParams {
     // Measurement noise (1 sigma). GNSS: ASSUMED u-blox M10 class (the FC3's receiver is an unspecified external
     // module). Baro: BMP580 (docs/datasheets/BMP580.pdf p.9 Table 1) 0.25 Pa RMS * dh/dP = 1 / (1.225 kg/m^3 * g).
     // Heading: MMC5603NJ (docs/datasheets/MMC5603NJ.pdf p.2) 2.0 mG RMS across the 0.2165 G horizontal field is
-    // 0.0092 rad; the heading Jacobian is yaw-only, but a tilt error moves the tilt-compensated heading by
-    // tan(inclination) = 1.98 times itself, so the tilt the accelerometer's 12 mg zero-g level leaves unobservable
-    // (0.012 rad) adds 0.0238 rad in quadrature. With 0.0092 alone it diverged on tests/test_eskf.cpp's trajectory.
+    // 0.0092 rad. A tilt error moves the tilt-compensated heading by tan(inclination) = 1.98 times itself; the heading
+    // Jacobian carries that coupling, so R adds no allowance for it.
     float sigma_gnss_pos = 1.0f;    // m, horizontal
     float sigma_gnss_alt = 1.5f;    // m, vertical
     float sigma_gnss_vel = 0.05f;   // m/s
     float sigma_baro = 0.0208f;     // m
-    float sigma_heading = 0.0255f;  // rad
+    float sigma_heading = 0.0092f;  // rad
 
     // Priors at alignment: fsw.ts createEstimator (sigmaP 1, sigmaV 1). The accel-bias prior is the LSM6DSV typical
     // zero-g level, 12 mg (p.10 Table 2); aligned with it, tilt is off by up to 12 mg / g = 0.012 rad and the
