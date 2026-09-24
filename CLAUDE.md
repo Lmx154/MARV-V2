@@ -39,6 +39,7 @@ Fly by hand or by GPS point (a second terminal, while `scripts/sim.sh --sitl --g
 `build/native/ground/marv_ground manual` (RadioMaster if plugged in, else the Xbox pad), `goto LAT LON ALT`,
 `waypoints FILE`, `preset N`, `reboot`. Presets are listed in `fsw/include/marv/fsw/presets.hpp`.
 Ground control GUI (http://127.0.0.1:8765/): `scripts/gcs.sh` (not under flock); it finds the flight controller by itself: the one plugged in over USB, or the sim's bridge while its Development tab
+One GUI per user (a lock): `scripts/gcs.sh` prints the running one's URL instead of starting another; the Development tab's Resources panel shows and terminates whatever holds the FC port, the rig lock or the sim.
 runs the sim (an airframe of `sitl/airframes`, wind/gusts/location, firmware on this computer or on the connected flight controller, the Gazebo window) holding the rig lock.
 With no sim running its Flash button flashes the plugged-in flight controller (it takes the lock). `--udp HOST:PORT` / `--serial DEV` fix the link instead.
 Flash over SWD (debug probe): `~/pico/openocd-install/bin/openocd -s ~/pico/openocd-install/share/openocd/scripts -f interface/cmsis-dap.cfg -f target/rp2350.cfg -c "adapter speed 5000" -c "program build/fw/marv_fw.elf verify reset exit"`.
