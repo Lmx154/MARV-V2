@@ -1,0 +1,762 @@
+<?xml version="1.0" ?>
+<!--
+  MARV SITL world with PX4's x500 quadrotor: scripts/sim.sh --world x500. The world (name "marv", physics,
+  systems, gravity, spherical coordinates, ground) is sitl/gazebo/marv_quad.sdf's; see there for why each is set.
+
+  THE AIRCRAFT IS NOT INVENTED. Body, rotors, inertias, collisions, joints and motor constants are PX4's x500
+  (PX4 airframe gz_x500, the Holybro X500 V2 in PX4's docs) from PX4-gazebo-models @ 155f58e (BSD-3):
+  models/x500_base/model.sdf (base_link 2.0 kg, Ixx = Iyy 0.0216667, Izz 0.04; rotors 0.016077 kg at
+  (+/-0.174, +/-0.174, 0.06) FLU) and models/x500/model.sdf (maxRotVelocity 1000, motorConstant 8.54858e-06,
+  momentConstant 0.016, rotors 0, 1 ccw and 2, 3 cw -- the X3's order and spins, so the same Quad X allocation).
+  Measured 2026-09-24 (world paused, rotor speeds set open-loop, odometry after N 1 ms steps): (850, 850, 750, 750)
+  rad/s -> FLU angular z -0.202 rad/s at N 256 (nose right), (750, 750, 850, 850) -> +0.202; rotors 0, 2 at 850
+  and 1, 3 at 800 -> FLU y -0.828 at N 128 (nose up: 0 and 2 are the front); 0, 3 at 850 -> FLU x -0.808 (right
+  side up: 0 and 3 are the right). At rest the base link sinks 0.6 um in 2 s.
+  The visual meshes are referenced as model://x500_base/..., which scripts/sim.sh resolves from
+  ~/sim/PX4-gazebo-models/models when that checkout exists; without it the physics is unchanged and the viewer
+  shows no body. Changes from PX4: the sensors are ours (the FC3 noise of marv_quad.sdf, copied verbatim), not
+  PX4's; <actuator_number> replaces the deprecated <motorNumber>; PX4's MotorFailurePlugin is not loaded; the
+  model is named marv_quad and its base link X3/base_link, because the bridge's topics carry both names
+  (bridge/src/gz_world.cpp); the spawn height is 0.227 m, not PX4's 0.24, so the landing-gear bars
+  (base_link_collision_3/4, bottom at -0.2195 - 0.0075 m) rest on the ground rather than drop onto it.
+
+  Take-off mass 2.0643 kg; full thrust 4 * 8.54858e-06 * 1000^2 = 34.19 N against 20.24 N of weight
+  (thrust-to-weight 1.69), so hover sits at a thrust fraction of 0.592 (rotor speed fraction 0.769): the
+  bridge must be run with --max-rot-velocity 1000 against this world.
+-->
+<sdf version="1.9">
+  <world name="marv">
+    <physics name="1ms" type="dart">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system"
+            name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-imu-system"
+            name="gz::sim::systems::Imu"/>
+    <plugin filename="gz-sim-air-pressure-system"
+            name="gz::sim::systems::AirPressure"/>
+    <plugin filename="gz-sim-navsat-system"
+            name="gz::sim::systems::NavSat"/>
+    <plugin filename="gz-sim-magnetometer-system"
+            name="gz::sim::systems::Magnetometer">
+      <use_units_gauss>false</use_units_gauss>
+      <use_earth_frame_ned>false</use_earth_frame_ned>
+    </plugin>
+
+    <gravity>0 0 -9.8066</gravity>
+
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>47.376388</latitude_deg>
+      <longitude_deg>8.547778</longitude_deg>
+      <elevation>408</elevation>
+      <heading_deg>0</heading_deg>
+    </spherical_coordinates>
+
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.2 0.2 0.2 1</specular>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>200 200</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>200 200</size></plane></geometry>
+          <material><ambient>0.3 0.32 0.3 1</ambient><diffuse>0.45 0.5 0.45 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="marv_quad">
+    <pose>0 0 0.227 0 0 0</pose>
+    <self_collide>false</self_collide>
+    <static>false</static>
+    <link name="X3/base_link">
+      <inertial>
+        <mass>2.0</mass>
+        <inertia>
+          <ixx>0.02166666666666667</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.02166666666666667</iyy>
+          <iyz>0</iyz>
+          <izz>0.04000000000000001</izz>
+        </inertia>
+      </inertial>
+      <gravity>true</gravity>
+      <velocity_decay />
+      <visual name="base_link_visual">
+        <pose>0 0 .025 0 0 3.141592654</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>model://x500_base/meshes/NXP-HGD-CF.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <visual name="5010_motor_base_0">
+        <pose>0.174 0.174 .032 0 0 -.45</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>model://x500_base/meshes/5010Base.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <visual name="5010_motor_base_1">
+        <pose>-0.174 0.174 .032 0 0 -.45</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>model://x500_base/meshes/5010Base.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <visual name="5010_motor_base_2">
+        <pose>0.174 -0.174 .032 0 0 -.45</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>model://x500_base/meshes/5010Base.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <visual name="5010_motor_base_3">
+        <pose>-0.174 -0.174 .032 0 0 -.45</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>model://x500_base/meshes/5010Base.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <visual name="NXP_FMUK66_FRONT">
+        <pose>0.047 .001 .043 1 0 1.57</pose>
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>.013 .007</size>
+          </plane>
+        </geometry>
+        <material>
+          <diffuse>1.0 1.0 1.0</diffuse>
+          <specular>1.0 1.0 1.0</specular>
+          <pbr>
+            <metal>
+              <albedo_map>model://x500_base/materials/textures/nxp.png</albedo_map>
+            </metal>
+          </pbr>
+        </material>
+      </visual>
+      <visual name="NXP_FMUK66_TOP">
+        <pose>-0.023 0 .0515 0 0 -1.57</pose>
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>.013 .007</size>
+          </plane>
+        </geometry>
+        <material>
+          <diffuse>1.0 1.0 1.0</diffuse>
+          <specular>1.0 1.0 1.0</specular>
+          <pbr>
+            <metal>
+              <albedo_map>model://x500_base/materials/textures/nxp.png</albedo_map>
+            </metal>
+          </pbr>
+        </material>
+      </visual>
+      <visual name="RDDRONE_FMUK66_TOP">
+        <pose>-.03 0 .0515 0 0 -1.57</pose>
+        <cast_shadows>false</cast_shadows>
+        <geometry>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>.032 .0034</size>
+          </plane>
+        </geometry>
+        <material>
+          <diffuse>1.0 1.0 1.0</diffuse>
+          <specular>1.0 1.0 1.0</specular>
+          <pbr>
+            <metal>
+              <albedo_map>model://x500_base/materials/textures/rd.png</albedo_map>
+            </metal>
+          </pbr>
+        </material>
+      </visual>
+      <collision name="base_link_collision_0">
+        <pose>0 0 .007 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.35355339059327373 0.35355339059327373 0.05</size>
+          </box>
+        </geometry>
+        <surface>
+          <contact>
+            <ode>
+              <min_depth>0.001</min_depth>
+              <max_vel>0</max_vel>
+            </ode>
+          </contact>
+          <friction>
+            <ode />
+          </friction>
+        </surface>
+      </collision>
+      <collision name="base_link_collision_1">
+        <pose>0 -0.098 -.123 -0.35 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.015 0.015 0.21</size>
+          </box>
+        </geometry>
+        <surface>
+          <contact>
+            <ode>
+              <min_depth>0.001</min_depth>
+              <max_vel>0</max_vel>
+            </ode>
+          </contact>
+          <friction>
+            <ode />
+          </friction>
+        </surface>
+      </collision>
+      <collision name="base_link_collision_2">
+        <pose>0 0.098 -.123 0.35 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.015 0.015 0.21</size>
+          </box>
+        </geometry>
+        <surface>
+          <contact>
+            <ode>
+              <min_depth>0.001</min_depth>
+              <max_vel>0</max_vel>
+            </ode>
+          </contact>
+          <friction>
+            <ode />
+          </friction>
+        </surface>
+      </collision>
+      <collision name="base_link_collision_3">
+        <pose>0 -0.132 -.2195 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.25 0.015 0.015</size>
+          </box>
+        </geometry>
+        <surface>
+          <contact>
+            <ode>
+              <min_depth>0.001</min_depth>
+              <max_vel>0</max_vel>
+            </ode>
+          </contact>
+          <friction>
+            <ode />
+          </friction>
+        </surface>
+      </collision>
+      <collision name="base_link_collision_4">
+        <pose>0 0.132 -.2195 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.25 0.015 0.015</size>
+          </box>
+        </geometry>
+        <surface>
+          <contact>
+            <ode>
+              <min_depth>0.001</min_depth>
+              <max_vel>0</max_vel>
+            </ode>
+          </contact>
+          <friction>
+            <ode />
+          </friction>
+        </surface>
+      </collision>
+
+      <!-- MARV's sensors, not PX4's: the blocks below are marv_quad.sdf's, verbatim. -->
+      <sensor name="imu_sensor" type="imu">
+        <always_on>1</always_on>
+        <update_rate>1000</update_rate>
+        <imu>
+          <!-- Rn 2.8 mdps/sqrt(Hz) * sqrt(500 Hz) = 0.0626 dps = 1.093e-3 rad/s; G_TyOff 1 dps = 0.01745 rad/s (p.10 Table 2). -->
+          <angular_velocity>
+            <x><noise type="gaussian"><mean>0</mean><stddev>1.093e-3</stddev><bias_mean>0</bias_mean><bias_stddev>0.01745</bias_stddev></noise></x>
+            <y><noise type="gaussian"><mean>0</mean><stddev>1.093e-3</stddev><bias_mean>0</bias_mean><bias_stddev>0.01745</bias_stddev></noise></y>
+            <z><noise type="gaussian"><mean>0</mean><stddev>1.093e-3</stddev><bias_mean>0</bias_mean><bias_stddev>0.01745</bias_stddev></noise></z>
+          </angular_velocity>
+          <!-- An 60 ug/sqrt(Hz) (HP) * sqrt(500 Hz) = 1.342 mg = 0.01316 m/s^2; LA_TyOff 12 mg = 0.1177 m/s^2 (p.10 Table 2). -->
+          <linear_acceleration>
+            <x><noise type="gaussian"><mean>0</mean><stddev>0.01316</stddev><bias_mean>0</bias_mean><bias_stddev>0.1177</bias_stddev></noise></x>
+            <y><noise type="gaussian"><mean>0</mean><stddev>0.01316</stddev><bias_mean>0</bias_mean><bias_stddev>0.1177</bias_stddev></noise></y>
+            <z><noise type="gaussian"><mean>0</mean><stddev>0.01316</stddev><bias_mean>0</bias_mean><bias_stddev>0.1177</bias_stddev></noise></z>
+          </linear_acceleration>
+        </imu>
+      </sensor>
+
+      <!-- Barometer. 50 Hz, deliberately slower than the IMU's 1 kHz
+           so the multi-rate staleness machinery is actually exercised
+           rather than every sensor arriving in lockstep. -->
+      <sensor name="baro_sensor" type="air_pressure">
+        <always_on>1</always_on>
+        <update_rate>50</update_rate>
+        <!-- BMP580 (docs/datasheets/BMP580.pdf p.9 Table 1): Vp_hi_res 0.25 Pa RMS (max; typ 0.21). -->
+        <air_pressure>
+          <pressure><noise type="gaussian"><mean>0</mean><stddev>0.25</stddev></noise></pressure>
+        </air_pressure>
+      </sensor>
+
+      <!-- GPS, phase 5 unit 2a. 10 Hz, the NEO-M9N's own rate and the
+           one MultiRateSource has always synthesised
+           (sitl/include/marv/sitl/sources.hpp) -- a hundred control
+           frames per sample, so the staleness the frame contract
+           describes is real rather than nominal.
+
+           Noise: the FC3's GPS is an external module the board does not
+           specify, so the values below are an ASSUMPTION of a u-blox
+           M10-class receiver: position sigma 1.0 m horizontal, 1.5 m
+           vertical, velocity sigma 0.05 m/s, white at 10 Hz.
+
+           The topic is gz-sim's own default for a navsat sensor --
+           scopedName + "/navsat", VERIFIED against the running world
+           with `gz topic -l` rather than assumed -- and
+           marv::sitl::gps_topic() (sitl/src/gazebo_ports.cpp) must
+           read identically to this sensor's NAME, exactly as
+           imu_topic and baro_topic do for theirs. -->
+      <sensor name="gps_sensor" type="navsat">
+        <always_on>1</always_on>
+        <update_rate>10</update_rate>
+        <navsat>
+          <!-- ASSUMED u-blox M10 class. gz-sensors 8 applies the horizontal noise to latitude and longitude in
+               DEGREES (NavSatSensor.cc, Update): 9.0e-6 deg = 1.0 m north, 0.68 m east at 47.38 deg N. -->
+          <position_sensing>
+            <horizontal><noise type="gaussian"><mean>0</mean><stddev>9.0e-6</stddev></noise></horizontal>
+            <vertical><noise type="gaussian"><mean>0</mean><stddev>1.5</stddev></noise></vertical>
+          </position_sensing>
+          <velocity_sensing>
+            <horizontal><noise type="gaussian"><mean>0</mean><stddev>0.05</stddev></noise></horizontal>
+            <vertical><noise type="gaussian"><mean>0</mean><stddev>0.05</stddev></noise></vertical>
+          </velocity_sensing>
+        </navsat>
+      </sensor>
+
+      <!-- Magnetometer, phase 5 unit 5a. 100 Hz, PROVISIONAL: a
+           BMM350 output-data-rate the phase 7 driver will pick from
+           the datasheet (not yet in docs/datasheets/), fast enough
+           that the yaw datum lands before the first GPS fix at
+           0.199 s and slow enough to stay a multi-rate sensor rather
+           than a second IMU. Its period (10 ms) is under the baro's
+           (20 ms), so prime()'s step floor, max(2 baro, 2 GPS
+           periods), does not move and frame 0 stays at 201 000 us.
+
+           Noise: the FC3's MMC5603NJ, below.
+
+           The topic is gz-sim's default, scopedName + "/magnetometer"
+           (the literal in libgz-sim8-magnetometer-system.so), and
+           marv::sitl::mag_topic() (unit 5a.1) must read identically
+           to this sensor's NAME, as imu_topic, baro_topic and
+           gps_topic do for theirs. Nothing subscribes to it in unit
+           5a.0; the nine graded profiles must not move. -->
+      <sensor name="mag_sensor" type="magnetometer">
+        <always_on>1</always_on>
+        <update_rate>100</update_rate>
+        <!-- MMC5603NJ (docs/datasheets/MMC5603NJ.pdf p.2): total RMS noise 2.0 mG = 2.0e-7 T per axis at BW=01,
+             the bandwidth whose max ODR (150 Hz) covers 100 Hz. The field here is in tesla (use_units_gauss 0). -->
+        <magnetometer>
+          <x><noise type="gaussian"><mean>0</mean><stddev>2.0e-7</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>2.0e-7</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>2.0e-7</stddev></noise></z>
+        </magnetometer>
+      </sensor>
+    </link>
+    <link name="rotor_0">
+      <gravity>true</gravity>
+      <self_collide>false</self_collide>
+      <velocity_decay />
+      <pose>0.174 -0.174 0.06 0 0 0</pose>
+      <inertial>
+        <mass>0.016076923076923075</mass>
+        <inertia>
+          <ixx>3.8464910483993325e-07</ixx>
+          <iyy>2.6115851691700804e-05</iyy>
+          <izz>2.649858234714004e-05</izz>
+        </inertia>
+      </inertial>
+      <visual name="rotor_0_visual">
+        <pose>-0.022 -0.14638461538461536 -0.016 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>0.8461538461538461 0.8461538461538461 0.8461538461538461</scale>
+            <uri>model://x500_base/meshes/1345_prop_ccw.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <script>
+            <name>Gazebo/DarkGrey</name>
+            <uri>file://media/materials/scripts/gazebo.material</uri>
+          </script>
+        </material>
+      </visual>
+      <visual name="rotor_0_visual_motor_bell">
+        <pose>0 0 -.032 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>model://x500_base/meshes/5010Bell.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="rotor_0_collision">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.2792307692307692 0.016923076923076923 0.0008461538461538462</size>
+          </box>
+        </geometry>
+        <surface>
+          <contact>
+            <ode>
+              <min_depth>0.001</min_depth>
+              <max_vel>0</max_vel>
+            </ode>
+          </contact>
+          <friction>
+            <ode />
+          </friction>
+        </surface>
+      </collision>
+    </link>
+    <joint name="rotor_0_joint" type="revolute">
+      <parent>X3/base_link</parent>
+      <child>rotor_0</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-1e+16</lower>
+          <upper>1e+16</upper>
+        </limit>
+        <dynamics>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+    </joint>
+    <link name="rotor_1">
+      <gravity>true</gravity>
+      <self_collide>false</self_collide>
+      <velocity_decay />
+      <pose>-0.174 0.174 0.06 0 0 0</pose>
+      <inertial>
+        <mass>0.016076923076923075</mass>
+        <inertia>
+          <ixx>3.8464910483993325e-07</ixx>
+          <iyy>2.6115851691700804e-05</iyy>
+          <izz>2.649858234714004e-05</izz>
+        </inertia>
+      </inertial>
+      <visual name="rotor_1_visual">
+        <pose>-0.022 -0.14638461538461536 -0.016 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>0.8461538461538461 0.8461538461538461 0.8461538461538461</scale>
+            <uri>model://x500_base/meshes/1345_prop_ccw.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <script>
+            <name>Gazebo/DarkGrey</name>
+            <uri>file://media/materials/scripts/gazebo.material</uri>
+          </script>
+        </material>
+      </visual>
+      <visual name="rotor_1_visual_motor_bell">
+        <pose>0 0 -.032 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>model://x500_base/meshes/5010Bell.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="rotor_1_collision">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.2792307692307692 0.016923076923076923 0.0008461538461538462</size>
+          </box>
+        </geometry>
+        <surface>
+          <contact>
+            <ode>
+              <min_depth>0.001</min_depth>
+              <max_vel>0</max_vel>
+            </ode>
+          </contact>
+          <friction>
+            <ode />
+          </friction>
+        </surface>
+      </collision>
+    </link>
+    <joint name="rotor_1_joint" type="revolute">
+      <parent>X3/base_link</parent>
+      <child>rotor_1</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-1e+16</lower>
+          <upper>1e+16</upper>
+        </limit>
+        <dynamics>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+    </joint>
+    <link name="rotor_2">
+      <gravity>true</gravity>
+      <self_collide>false</self_collide>
+      <velocity_decay />
+      <pose>0.174 0.174 0.06 0 0 0</pose>
+      <inertial>
+        <mass>0.016076923076923075</mass>
+        <inertia>
+          <ixx>3.8464910483993325e-07</ixx>
+          <iyy>2.6115851691700804e-05</iyy>
+          <izz>2.649858234714004e-05</izz>
+        </inertia>
+      </inertial>
+      <visual name="rotor_2_visual">
+        <pose>-0.022 -0.14638461538461536 -0.016 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>0.8461538461538461 0.8461538461538461 0.8461538461538461</scale>
+            <uri>model://x500_base/meshes/1345_prop_cw.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <script>
+            <name>Gazebo/DarkGrey</name>
+            <uri>file://media/materials/scripts/gazebo.material</uri>
+          </script>
+        </material>
+      </visual>
+      <visual name="rotor_2_visual_motor_bell">
+        <pose>0 0 -.032 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>model://x500_base/meshes/5010Bell.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="rotor_2_collision">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.2792307692307692 0.016923076923076923 0.0008461538461538462</size>
+          </box>
+        </geometry>
+        <surface>
+          <contact>
+            <ode>
+              <min_depth>0.001</min_depth>
+              <max_vel>0</max_vel>
+            </ode>
+          </contact>
+          <friction>
+            <ode />
+          </friction>
+        </surface>
+      </collision>
+    </link>
+    <joint name="rotor_2_joint" type="revolute">
+      <parent>X3/base_link</parent>
+      <child>rotor_2</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-1e+16</lower>
+          <upper>1e+16</upper>
+        </limit>
+        <dynamics>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+    </joint>
+    <link name="rotor_3">
+      <gravity>true</gravity>
+      <self_collide>false</self_collide>
+      <velocity_decay />
+      <pose>-0.174 -0.174 0.06 0 0 0</pose>
+      <inertial>
+        <mass>0.016076923076923075</mass>
+        <inertia>
+          <ixx>3.8464910483993325e-07</ixx>
+          <iyy>2.6115851691700804e-05</iyy>
+          <izz>2.649858234714004e-05</izz>
+        </inertia>
+      </inertial>
+      <visual name="rotor_3_visual">
+        <pose>-0.022 -0.14638461538461536 -0.016 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>0.8461538461538461 0.8461538461538461 0.8461538461538461</scale>
+            <uri>model://x500_base/meshes/1345_prop_cw.stl</uri>
+          </mesh>
+        </geometry>
+        <material>
+          <script>
+            <name>Gazebo/DarkGrey</name>
+            <uri>file://media/materials/scripts/gazebo.material</uri>
+          </script>
+        </material>
+      </visual>
+      <visual name="rotor_3_visual_motor_bell">
+        <pose>0 0 -.032 0 0 0</pose>
+        <geometry>
+          <mesh>
+            <scale>1 1 1</scale>
+            <uri>model://x500_base/meshes/5010Bell.dae</uri>
+          </mesh>
+        </geometry>
+      </visual>
+      <collision name="rotor_3_collision">
+        <pose>0 0 0 0 0 0</pose>
+        <geometry>
+          <box>
+            <size>0.2792307692307692 0.016923076923076923 0.0008461538461538462</size>
+          </box>
+        </geometry>
+        <surface>
+          <contact>
+            <ode>
+              <min_depth>0.001</min_depth>
+              <max_vel>0</max_vel>
+            </ode>
+          </contact>
+          <friction>
+            <ode />
+          </friction>
+        </surface>
+      </collision>
+    </link>
+    <joint name="rotor_3_joint" type="revolute">
+      <parent>X3/base_link</parent>
+      <child>rotor_3</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-1e+16</lower>
+          <upper>1e+16</upper>
+        </limit>
+        <dynamics>
+          <spring_reference>0</spring_reference>
+          <spring_stiffness>0</spring_stiffness>
+        </dynamics>
+      </axis>
+    </joint>
+    <plugin filename="gz-sim-multicopter-motor-model-system"
+            name="gz::sim::systems::MulticopterMotorModel">
+      <jointName>rotor_0_joint</jointName>
+      <linkName>rotor_0</linkName>
+      <turningDirection>ccw</turningDirection>
+      <timeConstantUp>0.0125</timeConstantUp>
+      <timeConstantDown>0.025</timeConstantDown>
+      <maxRotVelocity>1000.0</maxRotVelocity>
+      <motorConstant>8.54858e-06</motorConstant>
+      <momentConstant>0.016</momentConstant>
+      <commandSubTopic>command/motor_speed</commandSubTopic>
+      <actuator_number>0</actuator_number>
+      <rotorDragCoefficient>8.06428e-05</rotorDragCoefficient>
+      <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
+      <rotorVelocitySlowdownSim>10</rotorVelocitySlowdownSim>
+      <motorType>velocity</motorType>
+    </plugin>
+    <plugin filename="gz-sim-multicopter-motor-model-system"
+            name="gz::sim::systems::MulticopterMotorModel">
+      <jointName>rotor_1_joint</jointName>
+      <linkName>rotor_1</linkName>
+      <turningDirection>ccw</turningDirection>
+      <timeConstantUp>0.0125</timeConstantUp>
+      <timeConstantDown>0.025</timeConstantDown>
+      <maxRotVelocity>1000.0</maxRotVelocity>
+      <motorConstant>8.54858e-06</motorConstant>
+      <momentConstant>0.016</momentConstant>
+      <commandSubTopic>command/motor_speed</commandSubTopic>
+      <actuator_number>1</actuator_number>
+      <rotorDragCoefficient>8.06428e-05</rotorDragCoefficient>
+      <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
+      <rotorVelocitySlowdownSim>10</rotorVelocitySlowdownSim>
+      <motorType>velocity</motorType>
+    </plugin>
+    <plugin filename="gz-sim-multicopter-motor-model-system"
+            name="gz::sim::systems::MulticopterMotorModel">
+      <jointName>rotor_2_joint</jointName>
+      <linkName>rotor_2</linkName>
+      <turningDirection>cw</turningDirection>
+      <timeConstantUp>0.0125</timeConstantUp>
+      <timeConstantDown>0.025</timeConstantDown>
+      <maxRotVelocity>1000.0</maxRotVelocity>
+      <motorConstant>8.54858e-06</motorConstant>
+      <momentConstant>0.016</momentConstant>
+      <commandSubTopic>command/motor_speed</commandSubTopic>
+      <actuator_number>2</actuator_number>
+      <rotorDragCoefficient>8.06428e-05</rotorDragCoefficient>
+      <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
+      <rotorVelocitySlowdownSim>10</rotorVelocitySlowdownSim>
+      <motorType>velocity</motorType>
+    </plugin>
+    <plugin filename="gz-sim-multicopter-motor-model-system"
+            name="gz::sim::systems::MulticopterMotorModel">
+      <jointName>rotor_3_joint</jointName>
+      <linkName>rotor_3</linkName>
+      <turningDirection>cw</turningDirection>
+      <timeConstantUp>0.0125</timeConstantUp>
+      <timeConstantDown>0.025</timeConstantDown>
+      <maxRotVelocity>1000.0</maxRotVelocity>
+      <motorConstant>8.54858e-06</motorConstant>
+      <momentConstant>0.016</momentConstant>
+      <commandSubTopic>command/motor_speed</commandSubTopic>
+      <actuator_number>3</actuator_number>
+      <rotorDragCoefficient>8.06428e-05</rotorDragCoefficient>
+      <rollingMomentCoefficient>1e-06</rollingMomentCoefficient>
+      <rotorVelocitySlowdownSim>10</rotorVelocitySlowdownSim>
+      <motorType>velocity</motorType>
+    </plugin>
+    <!-- Ground truth, as marv_quad.sdf (see there). -->
+    <plugin filename="gz-sim-odometry-publisher-system"
+            name="gz::sim::systems::OdometryPublisher">
+      <dimensions>3</dimensions>
+      <odom_publish_frequency>1000</odom_publish_frequency>
+      <odom_topic>/world/marv/model/marv_quad/odometry</odom_topic>
+      <odom_frame>marv_quad/odom</odom_frame>
+      <robot_base_frame>X3/base_link</robot_base_frame>
+    </plugin>
+    </model>
+  </world>
+</sdf>

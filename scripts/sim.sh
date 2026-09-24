@@ -6,6 +6,9 @@
 #
 # Exit code is the bridge's (2 if a gz server was already running, 1 if the world never came up).
 #   --gui (anywhere in the arguments) also opens the Gazebo window on the same world.
+#   --world x3|x500 (anywhere; default x3) picks the aircraft: x3 sitl/gazebo/marv_quad.sdf, x500 sitl/gazebo/x500.sdf
+#   (PX4's x500; the bridge gets its --max-rot-velocity 1000, and ~/sim/PX4-gazebo-models/models, when present, is
+#   added to GZ_SIM_RESOURCE_PATH for its meshes; without it the x500 flies with its mesh visuals removed).
 set -uo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 source "$root/scripts/lib/gz-server.sh"
@@ -14,10 +17,35 @@ bridge="$root/build/native/bridge/marv_bridge"
 [ -x "$bridge" ] || { echo "sim.sh: $bridge not built" >&2; exit 1; }
 
 gui=0
+world=x3
 args=()
-for a in "$@"; do
-    if [ "$a" = "--gui" ]; then gui=1; else args+=("$a"); fi
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --gui) gui=1 ;;
+        --world) world="${2:-}"; shift ;;
+        *) args+=("$1") ;;
+    esac
+    shift
 done
+case "$world" in
+    x3) sdf="$root/sitl/gazebo/marv_quad.sdf" ;;
+    x500)
+        sdf="$root/sitl/gazebo/x500.sdf"
+        args=(--max-rot-velocity 1000 "${args[@]}")
+        px4_models="$HOME/sim/PX4-gazebo-models/models"
+        if [ -d "$px4_models" ]; then
+            export GZ_SIM_RESOURCE_PATH="$px4_models${GZ_SIM_RESOURCE_PATH:+:$GZ_SIM_RESOURCE_PATH}"
+        else
+            # gz sim refuses to load a world whose model:// URIs do not resolve: drop the visuals that use them.
+            echo "sim.sh: no $px4_models: the x500 flies without its meshes (the viewer shows no aircraft)" >&2
+            nomesh="$(mktemp --suffix=.sdf)"
+            awk '/<visual /{buf = ""; v = 1} v {buf = buf $0 "\n"; if (/<\/visual>/) {v = 0; if (buf !~ /model:\/\//) printf "%s", buf}; next} {print}' \
+                "$sdf" >"$nomesh"
+            sdf="$nomesh"
+        fi
+        ;;
+    *) echo "sim.sh: --world x3|x500, not '$world'" >&2; exit 2 ;;
+esac
 
 gz_refuse_if_served
 
@@ -28,10 +56,11 @@ cleanup() {
     [ -n "$server" ] && kill "$server" 2>/dev/null
     wait "$server" 2>/dev/null
     gz_sweep_leaked
+    [ -n "${nomesh:-}" ] && rm -f "$nomesh"
 }
 trap cleanup EXIT
 
-gz sim -s -v 1 "$root/sitl/gazebo/marv_quad.sdf" &
+gz sim -s -v 1 "$sdf" &
 server=$!
 
 for _ in $(seq 1 100); do
