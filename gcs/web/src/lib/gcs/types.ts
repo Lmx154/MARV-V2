@@ -120,6 +120,65 @@ export interface Telemetry {
 	motor: [number, number, number, number] | null;
 }
 
+/** An airframe's physical specs as the sim reports them (GET /api/sim/airframes). */
+export interface AirframeSpecs {
+	mass_kg: number;
+	ixx: number;
+	iyy: number;
+	izz: number;
+	arm_m: number;
+	rotor_count: number;
+	/** Thrust per rotor = motor_constant * omega^2 (N s^2/rad^2). */
+	motor_constant: number;
+	/** Yaw torque per rotor = moment_constant * thrust (m). */
+	moment_constant: number;
+	/** rad/s */
+	max_rot_velocity: number;
+	time_constant_up: number;
+	time_constant_down: number;
+	/** Full thrust of one rotor, motor_constant * max_rot_velocity^2 (N). */
+	t_max_n: number;
+	thrust_to_weight: number;
+	hover_thrust_frac: number;
+	/** Rotor positions (x forward, y, m) when the backend reports them. */
+	rotors?: [number, number][];
+}
+
+export interface Airframe {
+	id: string;
+	label: string;
+	frame: string;
+	/** Where the specs come from, e.g. the model file. */
+	source: string;
+	specs: AirframeSpecs;
+}
+
+export type SimTarget = 'sitl' | 'pico';
+
+/** The world the sim is launched into. Wind direction is where it blows FROM, degrees clockwise from north. */
+export interface SimEnv {
+	wind_speed_ms: number;
+	wind_dir_deg: number;
+	/** Standard deviation of Gazebo's white-noise gusts. */
+	gust_sigma_ms: number;
+	lat: number;
+	lon: number;
+	elevation_m: number;
+	temperature_c: number | null;
+	pressure_pa: number | null;
+}
+
+/** The backend's launcher (server message sim_status). env is shown as the backend reports it. */
+export interface SimStatus {
+	running: boolean;
+	airframe: string | null;
+	env: Record<string, unknown> | null;
+	target: string | null;
+	gui: boolean;
+	started_at: number | string | null;
+	pid: number | null;
+}
+
 export type ClientMsg =
 	| { type: 'request_setup' }
 	| { type: 'set_param'; index: number; value: number }
@@ -134,7 +193,9 @@ export type ClientMsg =
 	| { type: 'climb'; alt_m: number }
 	| { type: 'mission_start'; waypoints: LatLonAlt[] }
 	| { type: 'rth' }
-	| { type: 'land' };
+	| { type: 'land' }
+	| { type: 'sim_launch'; airframe: string; env: SimEnv; gui: boolean; target: SimTarget }
+	| { type: 'sim_stop' };
 
 /** Server messages are parsed loosely (see link.ts); this is what the page acts on. */
 export type ServerMsg =
@@ -144,4 +205,6 @@ export type ServerMsg =
 	| { type: 'telemetry'; telemetry: Telemetry }
 	| { type: 'mission_state'; mission: MissionStatus }
 	| { type: 'flash_log'; line: string }
+	| { type: 'sim_status'; sim: SimStatus }
+	| { type: 'sim_log'; line: string }
 	| { type: 'error'; request: string; error: string; family?: number };

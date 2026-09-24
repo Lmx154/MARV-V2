@@ -1,6 +1,7 @@
 /** The page's connection to the GCS backend: /api/schema, /api/link and /ws, or the dev-only mock (?mock). */
 import { normalizeSchema, parseServer } from './protocol';
-import type { ClientMsg, LinkInfo, Schema, ServerMsg } from './types';
+import { parseAirframes } from './sim';
+import type { Airframe, ClientMsg, LinkInfo, Schema, ServerMsg } from './types';
 
 interface Socket {
 	onopen: (() => void) | null;
@@ -32,6 +33,14 @@ export async function loadLink(mock: string | null): Promise<LinkInfo | null> {
 	} catch {
 		return null;
 	}
+}
+
+/** The sim's airframe catalog (GET /api/sim/airframes). */
+export async function loadAirframes(mock: string | null): Promise<Airframe[]> {
+	if (import.meta.env.DEV && mock !== null) return parseAirframes((await import('./mock')).MOCK_AIRFRAMES);
+	const r = await fetch('/api/sim/airframes');
+	if (!r.ok) throw new Error(`GET /api/sim/airframes: ${r.status}`);
+	return parseAirframes(await r.json());
 }
 
 export interface Connection {

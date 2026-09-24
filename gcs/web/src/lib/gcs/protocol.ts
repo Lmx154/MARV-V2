@@ -107,6 +107,21 @@ export function parseServer(text: string): ServerMsg | null {
 		}
 		case 'flash_log':
 			return { type: 'flash_log', line: String(m.line ?? '') };
+		case 'sim_status':
+			return {
+				type: 'sim_status',
+				sim: {
+					running: Boolean(m.running),
+					airframe: typeof m.airframe === 'string' && m.airframe ? m.airframe : null,
+					env: isObj(m.env) ? m.env : null,
+					target: typeof m.target === 'string' && m.target ? m.target : null,
+					gui: Boolean(m.gui),
+					started_at: finite(m.started_at) ? m.started_at : typeof m.started_at === 'string' && m.started_at ? m.started_at : null,
+					pid: numOrNull(m.pid)
+				}
+			};
+		case 'sim_log':
+			return { type: 'sim_log', line: String(m.line ?? '') };
 		case 'error': {
 			const e: Extract<ServerMsg, { type: 'error' }> = { type: 'error', request: String(m.request ?? ''), error: String(m.error ?? '') };
 			if (typeof m.family === 'number') e.family = m.family;

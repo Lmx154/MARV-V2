@@ -2,11 +2,11 @@
  * Dev-only stand-in for the backend + FC (?mock): answers the client messages with the setup semantics of gcs decision
  * (b), (c). ?mock=armed starts armed (save refused); ?mock=mismatch reports another schema hash. A point-mass vehicle
  * flies the mission API about a fixed home with the executor's rules (ADR-0010 (b), (d)): arm, climb, hold, mission, return
- * to home and hold over it (no automatic landing), land and disarm.
+ * to home and hold over it (no automatic landing), land and disarm. A fake sim launcher answers sim_launch and sim_stop.
  */
 import { LocalFrame, type Ned } from './geo';
 import { climbError, missionError, type MissionMsg } from './mission';
-import type { ClientMsg, GeoPoint, LatLonAlt, MissionMode, Schema, SetupHeader } from './types';
+import type { ClientMsg, GeoPoint, LatLonAlt, MissionMode, Schema, SetupHeader, SimStatus } from './types';
 
 /** The Gazebo world's origin, as in tests/test_geo.cpp. */
 const HOME: GeoPoint = { lat_e7: 473763880, lon_e7: 85477780, alt_m: 408 };
@@ -17,6 +17,42 @@ const ARRIVED_M = 0.3;
 /** MOT_SPIN_ARM, and the mock's hover command. */
 const SPIN_ARM = 0.1;
 const HOVER = 0.68;
+
+/** An airframe as the backend lists it; the derived specs from the model's constants. */
+function airframe(id: string, label: string, source: string, mass: number, i: [number, number, number], rotors: [number, number][], w: number) {
+	const k = 8.54858e-6;
+	const t = k * w * w;
+	const arm = rotors.reduce((a, r) => a + Math.hypot(r[0], r[1]), 0) / rotors.length;
+	return {
+		id,
+		label,
+		frame: 'quad-x',
+		source,
+		specs: {
+			mass_kg: mass,
+			ixx: i[0],
+			iyy: i[1],
+			izz: i[2],
+			arm_m: arm,
+			rotor_count: rotors.length,
+			motor_constant: k,
+			moment_constant: 0.016,
+			max_rot_velocity: w,
+			time_constant_up: 0.0125,
+			time_constant_down: 0.025,
+			t_max_n: t,
+			thrust_to_weight: (rotors.length * t) / (mass * 9.80665),
+			hover_thrust_frac: (mass * 9.80665) / (rotors.length * t),
+			rotors
+		}
+	};
+}
+
+/** The two worlds' airframes (sitl/gazebo/marv_quad.sdf, x500.sdf). */
+export const MOCK_AIRFRAMES = [
+	airframe('x3', 'Gazebo X3', 'sitl/gazebo/marv_quad.sdf', 1.52, [0.0347563, 0.07, 0.0977], [[0.13, -0.22], [-0.13, 0.2], [0.13, 0.22], [-0.13, -0.2]], 800),
+	airframe('x500', 'PX4 x500', 'sitl/gazebo/x500.sdf', 2.0643, [0.02166666666666667, 0.02166666666666667, 0.04000000000000001], [[0.174, -0.174], [-0.174, 0.174], [0.174, 0.174], [-0.174, -0.174]], 1000)
+];
 
 interface Setup {
 	kind: number[];
@@ -67,6 +103,7 @@ export class MockFc {
 	private legs: Ned[] = [];
 	private reason = '';
 	private ticks = 0;
+	private sim: SimStatus = { running: false, airframe: null, env: null, target: null, gui: false, started_at: null, pid: null };
 
 	constructor(
 		private readonly schema: Schema,
@@ -84,6 +121,7 @@ export class MockFc {
 			this.onopen?.();
 			this.emit({ type: 'link', mode: 'mock', connected: true, header: this.header() });
 			this.missionState();
+			this.emit({ type: 'sim_status', ...this.sim });
 		}, 50);
 		this.timer = setInterval(() => this.telemetry(), 50);
 	}
@@ -132,6 +170,9 @@ export class MockFc {
 				return this.setup(true);
 			case 'flash':
 				return this.flash();
+			case 'sim_launch':
+			case 'sim_stop':
+				return this.simulate(m);
 			default:
 				return this.mission(m);
 		}
@@ -296,6 +337,38 @@ export class MockFc {
 			this.emit({ type: 'link', mode: 'mock', connected: true, header: this.header() });
 			this.setup(true);
 		}, 200 * (lines.length + 1));
+	}
+
+	/** The launcher: a launch logs the gz and bridge start-up, then reports running; a stop logs the shutdown. */
+	private simulate(m: Extract<ClientMsg, { type: 'sim_launch' | 'sim_stop' }>): void {
+		const refuse = (error: string): void => this.emit({ type: 'error', request: m.type, error });
+		const lines = (ls: string[], then: () => void): void => {
+			ls.forEach((line, i) => setTimeout(() => this.emit({ type: 'sim_log', line }), 150 * (i + 1)));
+			setTimeout(then, 150 * (ls.length + 1));
+		};
+		if (m.type === 'sim_stop') {
+			if (!this.sim.running) return refuse('no sim is running');
+			return lines(['[mock] stopping bridge', '[mock] stopping gz sim', '[mock] sim stopped'], () => {
+				this.sim = { ...this.sim, running: false, pid: null };
+				this.emit({ type: 'sim_status', ...this.sim });
+			});
+		}
+		if (this.sim.running) return refuse('a sim is already running');
+		if (!MOCK_AIRFRAMES.some((a) => a.id === m.airframe)) return refuse(`unknown airframe ${m.airframe}`);
+		const e = m.env;
+		lines(
+			[
+				`[mock] world: wind ${e.wind_speed_ms} m/s from ${e.wind_dir_deg} deg, white-noise gusts sigma ${e.gust_sigma_ms} m/s, origin ${e.lat}, ${e.lon}, ${e.elevation_m} m`,
+				e.temperature_c !== null || e.pressure_pa !== null ? '[mock] temperature and pressure: not used by Gazebo, ignored' : '[mock] temperature and pressure: not given',
+				`[mock] gz sim ${m.gui ? '' : '-s '}-r ${m.airframe}.sdf`,
+				'[mock] gz: world loaded',
+				m.target === 'pico' ? '[mock] bridge --pico /dev/ttyACM0: link up' : '[mock] bridge: sitl fsw up, link up'
+			],
+			() => {
+				this.sim = { running: true, airframe: m.airframe, env: { ...e, temperature_c: null, pressure_pa: null }, target: m.target, gui: m.gui, started_at: Date.now() / 1000, pid: 4242 };
+				this.emit({ type: 'sim_status', ...this.sim, ignored: ['temperature_c', 'pressure_pa'] });
+			}
+		);
 	}
 
 	private header(): SetupHeader {

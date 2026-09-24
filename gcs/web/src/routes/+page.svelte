@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import BlockChain from '$lib/components/BlockChain.svelte';
+	import DerivePanel from '$lib/components/DerivePanel.svelte';
+	import DevelopmentView from '$lib/components/DevelopmentView.svelte';
 	import MissionView from '$lib/components/MissionView.svelte';
-	import { connect, loadLink, loadSchema, mockFlag, type Connection } from '$lib/gcs/link';
+	import { connect, loadAirframes, loadLink, loadSchema, mockFlag, type Connection } from '$lib/gcs/link';
 	import { isMissionRequest, type MissionMsg, type MissionRequest } from '$lib/gcs/mission';
 	import { euler } from '$lib/gcs/protocol';
 	import {
@@ -26,11 +28,13 @@
 		type ErrorSlot,
 		type SetupState
 	} from '$lib/gcs/setup';
-	import type { ClientMsg, LinkInfo, MissionStatus, Schema, ServerMsg, Telemetry } from '$lib/gcs/types';
+	import type { Airframe, ClientMsg, LinkInfo, MissionStatus, Schema, ServerMsg, SimStatus, Telemetry } from '$lib/gcs/types';
 
 	/** An edit with no echo after this is dropped (the backend retries every 500 ms). */
 	const ECHO_TIMEOUT_MS = 1500;
 	const DEG = 180 / Math.PI;
+	/** A sim_launch / sim_stop with no answer after this is reported as unanswered. */
+	const SIM_TIMEOUT_MS = 15000;
 
 	let schema = $state.raw<Schema | null>(null);
 	let loadError = $state<string | null>(null);
@@ -49,7 +53,17 @@
 	/** The backend's last refusal per mission control, shown beside it. */
 	let missionErrors = $state<Partial<Record<MissionRequest, string>>>({});
 	/** The tab chosen; until then Mission while the FC is connected. */
-	let tab = $state<'mission' | 'setup' | null>(null);
+	let tab = $state<'mission' | 'setup' | 'development' | null>(null);
+	let airframes = $state.raw<Airframe[] | null>(null);
+	let airframesError = $state<string | null>(null);
+	/** The Development tab's selected airframe id. */
+	let simAirframe = $state('');
+	let simStatus = $state.raw<SimStatus | null>(null);
+	let simLog = $state<string[]>([]);
+	let simError = $state<string | null>(null);
+	let simPending = $state(false);
+	let simTimer: ReturnType<typeof setTimeout> | undefined;
+	let mockMode: string | null = null;
 	let conn: Connection | null = null;
 	const sentAt = new Map<number, number>();
 
@@ -64,6 +78,7 @@
 	const words = $derived(header ? statusWords(header) : []);
 	const view = $derived(tab ?? (header ? 'mission' : 'setup'));
 	const att = $derived(telem ? euler(telem.q) : null);
+	const selectedAirframe = $derived(airframes?.find((a) => a.id === simAirframe) ?? null);
 	const presetLabel = $derived.by(() => {
 		if (!telem || !schema) return '—';
 		if (telem.preset === 0xff) return 'custom';
@@ -81,6 +96,32 @@
 	function sendMission(m: MissionMsg): void {
 		delete missionErrors[m.type];
 		send(m);
+	}
+
+	function simDone(): void {
+		simPending = false;
+		clearTimeout(simTimer);
+	}
+
+	function sendSim(m: Extract<ClientMsg, { type: 'sim_launch' | 'sim_stop' }>): void {
+		simError = null;
+		simPending = true;
+		clearTimeout(simTimer);
+		simTimer = setTimeout(() => {
+			simPending = false;
+			simError = `${m.type}: no answer from the backend`;
+		}, SIM_TIMEOUT_MS);
+		send(m);
+	}
+
+	async function reloadAirframes(): Promise<void> {
+		airframesError = null;
+		try {
+			airframes = await loadAirframes(mockMode);
+			if (!airframes.some((a) => a.id === simAirframe)) simAirframe = '';
+		} catch (e) {
+			airframesError = e instanceof Error ? e.message : String(e);
+		}
 	}
 
 	function sendParam(index: number, v: number): void {
@@ -125,7 +166,19 @@
 			case 'flash_log':
 				flashLog = [...flashLog.slice(-499), m.line];
 				break;
+			case 'sim_status':
+				simStatus = m.sim;
+				simDone();
+				break;
+			case 'sim_log':
+				simLog = [...simLog.slice(-999), m.line];
+				break;
 			case 'error': {
+				if (m.request === 'sim_launch' || m.request === 'sim_stop') {
+					simError = `${m.request}: ${m.error}`;
+					simDone();
+					break;
+				}
 				const family = refusedFamily(m);
 				if (isMissionRequest(m.request)) missionErrors[m.request] = m.error;
 				else if (family !== null) kindErrors[family] = m.error;
@@ -138,6 +191,7 @@
 
 	onMount(() => {
 		const mock = mockFlag(new URL(location.href));
+		mockMode = mock;
 		let stopped = false;
 		const expire = setInterval(() => {
 			const now = performance.now();
@@ -154,9 +208,14 @@
 				schema = s;
 				link = await loadLink(mock);
 				if (stopped) return;
+				void reloadAirframes();
 				conn = connect(mock, s, { message: onMessage, open: (o) => {
 						wsOpen = o;
-						if (!o) mission = null;
+						if (!o) {
+							mission = null;
+							simStatus = null;
+							simDone();
+						}
 					}
 				});
 			} catch (e) {
@@ -166,6 +225,7 @@
 		return () => {
 			stopped = true;
 			clearInterval(expire);
+			clearTimeout(simTimer);
 			conn?.close();
 		};
 	});
@@ -309,6 +369,9 @@
 	<div class="tabs mono" role="tablist">
 		<button type="button" role="tab" aria-selected={view === 'mission'} class:on={view === 'mission'} onclick={() => (tab = 'mission')}>Mission</button>
 		<button type="button" role="tab" aria-selected={view === 'setup'} class:on={view === 'setup'} onclick={() => (tab = 'setup')}>Setup</button>
+		<button type="button" role="tab" aria-selected={view === 'development'} class:on={view === 'development'} onclick={() => (tab = 'development')}>
+			Development{simStatus?.running ? ' · sim running' : ''}
+		</button>
 	</div>
 
 	<div hidden={view !== 'mission'}>
@@ -349,6 +412,8 @@
 			{#if note}<p class="note mono" role="status">{note}</p>{/if}
 			{#if errors.params}<p class="err mono" role="alert">{errors.params}</p>{/if}
 
+			<DerivePanel {schema} {value} disabled={!editable} airframe={selectedAirframe} onparam={setParam} />
+
 			<BlockChain
 				{schema}
 				{kinds}
@@ -364,6 +429,22 @@
 			/>
 		</section>
 	{/if}
+
+	<div hidden={view !== 'development'}>
+		<DevelopmentView
+			{airframes}
+			{airframesError}
+			selected={simAirframe}
+			status={simStatus}
+			log={simLog}
+			error={simError}
+			pending={simPending}
+			{wsOpen}
+			onselect={(id) => (simAirframe = id)}
+			onreload={reloadAirframes}
+			onsend={sendSim}
+		/>
+	</div>
 
 	{#if flashing || flashLog.length}
 		<section class="section">
