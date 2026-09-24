@@ -10,7 +10,9 @@ class Allocation {
 public:
     Allocation();
 
-    // Idle: every motor zero, disarmed.
+    // Saturation priority: the collective up to the hover thrust m g, then roll/pitch (scaled together,
+    // the direction kept), then the rest of the collective, then yaw (only ever cut, never paid for with
+    // collective). Idle: every motor zero, disarmed.
     ActuatorCommand run(const ControlRequest& req, const State& nav, Mode mode);
 
 private:

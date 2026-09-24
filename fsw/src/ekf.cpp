@@ -367,7 +367,7 @@ State Ekf::state() const {
     s.v_ned = {x_[IV], x_[IV + 1], x_[IV + 2]};
     s.q = {x_[IQ], x_[IQ + 1], x_[IQ + 2], x_[IQ + 3]};
     s.w_frd = w_meas_ - gyro_bias();
-    s.valid = true;
+    s.valid = frame_.valid();
     return s;
 }
 

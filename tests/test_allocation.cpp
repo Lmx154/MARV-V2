@@ -1,5 +1,6 @@
 // Allocation against the mixer: the rotor thrusts it commands reproduce the requested collective and
-// torque when nothing saturates, and saturation gives up yaw and collective before roll and pitch.
+// torque when nothing saturates, and saturation keeps the collective up to m g, then roll and pitch, then the
+// rest of the collective, and gives up yaw first.
 #include <cmath>
 #include <cstdio>
 
@@ -90,13 +91,43 @@ int main() {
         CHECK(w.tau.z > 0.f && w.tau.z < 0.1f - 1e-3f);
         CHECK(w.t <= 14.9f + 1e-4f);
     }
-    // A collective above the rotors' limit: the torques are kept and the collective gives way.
+    // A collective above the rotors' limit: roll and pitch are kept, the collective gives way down to what
+    // they leave free (18.9 N, above m g), and yaw, last, is cut.
     {
         const Wrench w = mix(run(a, 21.5f, {0.3f, 0.2f, -0.05f}, level()));
+        std::printf("21.5 N + (0.3, 0.2, -0.05): thrust %.4f N, tau (%.4f %.4f %.4f)\n", (double)w.t, (double)w.tau.x,
+                    (double)w.tau.y, (double)w.tau.z);
         NEAR(w.tau.x, 0.3f, 1e-4f);
         NEAR(w.tau.y, 0.2f, 1e-4f);
-        NEAR(w.tau.z, -0.05f, 1e-4f);
-        CHECK(w.t < 21.5f - 0.1f);
+        NEAR(w.tau.z, 0.f, 1e-4f);
+        CHECK(w.t < 21.5f - 0.1f && w.t > 18.9f);
+    }
+    // Climb with a large pitch and yaw demand: the thrust stays at or above m g, roll and pitch are exact,
+    // yaw is cut.
+    {
+        const Wrench w = mix(run(a, 19.7f, {-0.2f, -0.6f, 0.1f}, level()));
+        std::printf("19.7 N + (-0.2, -0.6, 0.1): thrust %.4f N, tau (%.4f %.4f %.4f)\n", (double)w.t, (double)w.tau.x,
+                    (double)w.tau.y, (double)w.tau.z);
+        CHECK(w.t >= 14.9f - 1e-3f);
+        NEAR(w.tau.x, -0.2f, 1e-4f);
+        NEAR(w.tau.y, -0.6f, 1e-4f);
+        CHECK(w.tau.z < 0.1f);
+    }
+    // Yaw alone at a high collective: the collective is kept whole, yaw takes only the headroom above it.
+    {
+        const Wrench w = mix(run(a, 19.7f, {0.f, 0.f, 0.1f}, level()));
+        std::printf("19.7 N + (0, 0, 0.1): thrust %.4f N, tau z %.4f\n", (double)w.t, (double)w.tau.z);
+        NEAR(w.t, 19.7f, 1e-4f);
+        CHECK(w.tau.z <= 0.035f);
+    }
+    // Hover with roll/pitch beyond the headroom: the collective holds, roll/pitch are scaled together.
+    {
+        const Wrench w = mix(run(a, 14.9f, {1.0f, 1.5f, 0.f}, level()));
+        std::printf("14.9 N + (1.0, 1.5, 0): thrust %.4f N, tau (%.4f %.4f %.4f)\n", (double)w.t, (double)w.tau.x,
+                    (double)w.tau.y, (double)w.tau.z);
+        NEAR(w.t, 14.9f, 1e-4f);
+        NEAR(w.tau.y / w.tau.x, 1.5f, 1e-4f);
+        CHECK(w.tau.x > 0.f && w.tau.x < 1.0f);
     }
     // Roll/pitch alone beyond the rotors' spread: scaled down together, the direction kept.
     {

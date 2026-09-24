@@ -75,7 +75,7 @@ State Mahony::state() const {
     s.v_ned = tr_.vel();
     s.q = q_;
     s.w_frd = w_meas_ - bias_;
-    s.valid = true;
+    s.valid = frame_.valid();
     return s;
 }
 

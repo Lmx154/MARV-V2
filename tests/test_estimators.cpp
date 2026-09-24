@@ -39,6 +39,8 @@ struct Result {
     double att_max_deg = 0, vel_max = 0, pos_max = 0;
     double att_max_after30_deg = 0;
     double us_per_update = 0;
+    double fix_t = -1;     // the first GNSS fix delivered
+    bool dropped = false;  // valid went true -> false
 };
 
 double err3(Vec3 a, const double b[3]) {
@@ -46,19 +48,30 @@ double err3(Vec3 a, const double b[3]) {
     return std::sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-template <class E> Result run(E& f, const synth::Options& o) {
+// GNSS is withheld before gnss_from (s); position errors are about the truth at the first fix delivered, the
+// estimator's origin.
+template <class E> Result run(E& f, const synth::Options& o, double gnss_from = 0.0) {
     synth::Flight flight(o);
     SensorBus bus{};
     synth::Truth s{};
     Result r;
     long n = 0;
+    bool was_valid = false;
+    double origin[3] = {0, 0, 0};
     std::chrono::steady_clock::duration spent{};
     while (flight.next(bus, s)) {
+        if (s.t < gnss_from) bus.fresh = static_cast<std::uint8_t>(bus.fresh & ~kGnss);
+        if ((bus.fresh & kGnss) && r.fix_t < 0) {
+            r.fix_t = s.t;
+            for (int i = 0; i < 3; ++i) origin[i] = s.p[i];
+        }
         const auto t0 = std::chrono::steady_clock::now();
         f.update(bus);
         spent += std::chrono::steady_clock::now() - t0;
         ++n;
         const State e = f.state();
+        if (was_valid && !e.valid) r.dropped = true;
+        was_valid = e.valid;
         if (!e.valid) continue;
         if (!r.aligned) {
             r.aligned = true;
@@ -68,8 +81,10 @@ template <class E> Result run(E& f, const synth::Options& o) {
         r.att_max_deg = std::fmax(r.att_max_deg, att);
         if (s.t >= synth::kRest + 30.0) r.att_max_after30_deg = std::fmax(r.att_max_after30_deg, att);
         r.vel_max = std::fmax(r.vel_max, err3(e.v_ned, s.v));
-        r.pos_max = std::fmax(r.pos_max, err3(e.p_ned, s.p));
+        const double p[3] = {s.p[0] - origin[0], s.p[1] - origin[1], s.p[2] - origin[2]};
+        r.pos_max = std::fmax(r.pos_max, err3(e.p_ned, p));
     }
+    CHECK(!r.dropped);
     r.us_per_update = std::chrono::duration<double, std::micro>(spent).count() / static_cast<double>(n);
     return r;
 }
@@ -258,6 +273,77 @@ int main() {
         CHECK(pf.reboots == 1);
         CHECK(fsw.preset() == 1);
         std::printf("test4 preset selection: done\n");
+    }
+    // 5. GNSS withheld for the whole run: no estimator is ever valid, however well it aligned.
+    {
+        synth::Options o;
+        o.seconds = 10.0;
+        Eskf a;
+        Ekf b;
+        Ukf c;
+        Mahony d;
+        Complementary e;
+        const Result r[5] = {run(a, o, 1e9), run(b, o, 1e9), run(c, o, 1e9), run(d, o, 1e9), run(e, o, 1e9)};
+        for (const Result& x : r) CHECK(!x.aligned);
+        std::printf("test5 no GNSS: valid ever eskf %d ekf %d ukf %d mahony %d complementary %d\n", r[0].aligned,
+                    r[1].aligned, r[2].aligned, r[3].aligned, r[4].aligned);
+    }
+    // 6. GNSS withheld until 5 s (3 s into the motion): invalid until the first fix, valid first on it. Error bounds
+    // are graded with the first fix at rest (1.5 s): estimators do not re-reference p when the GNSS origin arrives
+    // after the vehicle has moved (first-fix-in-motion); open, see lead's list.
+    {
+        const auto late = [&](auto& f, const char* name, double from, const Limits* l) {
+            const Result r = run(f, ideal, from);
+            print(name, r);
+            CHECK(r.aligned);
+            CHECK(r.fix_t >= from && r.align_t == r.fix_t);
+            if (!l) return;
+            CHECK(r.att_max_deg < l->att_deg);
+            CHECK(r.vel_max < l->vel);
+            CHECK(r.pos_max < l->pos);
+        };
+        const Limits kf{0.5, 0.05, 0.15}, mahony{12.0, 0.5, 0.4}, comp{5.5, 0.25, 0.2};
+        const double froms[2] = {5.0, 1.5};
+        for (int k = 0; k < 2; ++k) {
+            const double from = froms[k];
+            const bool graded = k == 1;
+            std::printf("gnss from %.1f s\n", from);
+            Eskf a;
+            late(a, "eskf", from, graded ? &kf : nullptr);
+            Ekf b;
+            late(b, "ekf", from, graded ? &kf : nullptr);
+            Ukf c;
+            late(c, "ukf", from, graded ? &kf : nullptr);
+            Mahony d;
+            late(d, "mahony", from, graded ? &mahony : nullptr);
+            Complementary e;
+            late(e, "complementary", from, graded ? &comp : nullptr);
+        }
+    }
+    // 7. Fsw on the estimate: with GNSS withheld the mission to fly never arms a motor; with GNSS it arms once the
+    // estimator is valid.
+    for (int gnss = 0; gnss <= 1; ++gnss) {
+        Fsw fsw{0};
+        fsw.on_mission({Mode::kFly, NavSource::kEstimate, {}});
+        synth::Options o;
+        o.seconds = 3.0;
+        synth::Flight flight(o);
+        SensorBus bus{};
+        synth::Truth s{};
+        bool armed_off = false, motors_off = true, armed_ever = false, armed_before_valid = false;
+        while (flight.next(bus, s)) {
+            if (!gnss) bus.fresh = static_cast<std::uint8_t>(bus.fresh & ~kGnss);
+            const Tick t = fsw.step(bus);
+            armed_ever = armed_ever || t.act.armed;
+            armed_before_valid = armed_before_valid || (t.act.armed && !t.tlm.est.valid);
+            if (!gnss) {
+                armed_off = armed_off || t.act.armed;
+                for (float m : t.act.motor) motors_off = motors_off && m == 0.f;
+            }
+        }
+        std::printf("test7 fsw %s GNSS: armed ever %d\n", gnss ? "with" : "without", armed_ever);
+        if (gnss) CHECK(armed_ever && !armed_before_valid);
+        else CHECK(!armed_off && motors_off);
     }
     std::printf(failures ? "FAIL (%d)\n" : "PASS\n", failures);
     return failures ? EXIT_FAILURE : EXIT_SUCCESS;

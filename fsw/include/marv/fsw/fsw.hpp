@@ -6,7 +6,8 @@
 // The controller flies on the navigation source the mission selects: the simulator's truth (the lab's
 // truth-fed mode) or the estimate. The estimator runs every tick either way, so on a truth-fed flight it
 // is in shadow: its output is reported in telemetry and compared against truth, but flies nothing.
-// Until it has aligned its state is invalid, and a mission on it keeps the motors at zero.
+// Until it has aligned and taken its GNSS origin (the first fix) its state is invalid, and a mission on it keeps
+// the motors at zero; once valid it stays valid for the run.
 //
 // The estimator is the preset's (presets.hpp), chosen at construction: an unknown id runs preset 0.
 #pragma once

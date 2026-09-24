@@ -78,7 +78,8 @@ struct State {
     Vec3 v_ned;    // m/s
     Quat q;        // body FRD -> NED
     Vec3 w_frd;    // rad/s
-    bool valid;
+    bool valid;    // every field is fit to fly on: attitude and rate aligned, p_ned/v_ned about the estimator's
+                   // GNSS origin; latches, so it never drops within a run
 };
 
 // ---- mission and guidance ------------------------------------------------------------------------

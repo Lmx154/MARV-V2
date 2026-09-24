@@ -356,7 +356,7 @@ State Ukf::state() const {
     s.v_ned = v_;
     s.q = q_;
     s.w_frd = w_meas_ - wb_;
-    s.valid = true;
+    s.valid = frame_.valid();
     return s;
 }
 

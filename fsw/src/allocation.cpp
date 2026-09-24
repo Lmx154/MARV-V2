@@ -51,46 +51,50 @@ ActuatorCommand Allocation::run(const ControlRequest& req, const State& nav, Mod
     const float collective = std::fmax(0.f, dot(req.force_ned, rotate(nav.q, Vec3{0.f, 0.f, -1.f})));
 
     // Per-rotor thrust split into three parts. The collective column is uniform (T/4 on every rotor),
-    // since the rotors' moment arms and spins sum to zero.
+    // since the rotors' moment arms and spins sum to zero; so is the sum of each torque column, so the
+    // roll/pitch and yaw parts are zero-mean.
     float rp[kMotorCount], yaw[kMotorCount];
     for (int i = 0; i < kMotorCount; ++i) {
         rp[i] = inv_[i][1] * req.torque_frd.x + inv_[i][2] * req.torque_frd.y;
         yaw[i] = inv_[i][3] * req.torque_frd.z;
     }
 
-    // Saturation, priority roll/pitch > yaw > collective. Each rotor has the range [0, Tmax], so a
-    // differential fits if its spread (max - min) is at most Tmax.
-    //  1. Roll/pitch: if their spread alone exceeds Tmax, scale them down (the torque direction holds).
-    //  2. Yaw: scale it by the largest s in [0, 1] that keeps the spread of rp + s yaw within Tmax.
-    //  3. Collective: shift it into the band the differentials leave free.
+    // Saturation. Each rotor has the range [0, Tmax]. Priority: the collective up to the hover thrust,
+    // then roll/pitch, then the rest of the collective, then yaw.
+    //  1. Floor c_min: the per-rotor collective kept whatever the torques, the request up to m g / 4.
+    //  2. Roll/pitch: scaled by one factor (the torque direction holds) so the highest rotor stays within
+    //     min(Tmax / 2, Tmax - c_min) of the collective, and the spread within Tmax.
+    //  3. Collective: the request, clamped into the band roll/pitch leave free; never below c_min.
+    //  4. Yaw: scaled by the largest s in [0, 1] that keeps every rotor in [0, Tmax]; it never moves
+    //     the collective.
+    const float request = inv_[0][0] * collective;
+    const float c_min = std::fmin(request, kMass * kGravity / static_cast<float>(kMotorCount));
     float lo = rp[0], hi = rp[0];
     for (float v : rp) {
         lo = std::fmin(lo, v);
         hi = std::fmax(hi, v);
     }
-    if (hi - lo > kMaxRotorThrust) {
-        const float s = kMaxRotorThrust / (hi - lo);
-        for (float& v : rp) v *= s;
+    const float hi_max = std::fmin(0.5f * kMaxRotorThrust, kMaxRotorThrust - c_min);
+    float k = 1.f;
+    if (hi > hi_max) k = hi_max / hi;
+    if (k * (hi - lo) > kMaxRotorThrust) k = kMaxRotorThrust / (hi - lo);
+    if (k < 1.f) {
+        for (float& v : rp) v *= k;
+        lo *= k;
+        hi *= k;
     }
+    const float c = std::fmin(std::fmax(request, -lo), kMaxRotorThrust - hi);
     float s = 1.f;
-    for (int i = 0; i < kMotorCount; ++i)
-        for (int j = 0; j < kMotorCount; ++j) {
-            const float dy = yaw[i] - yaw[j];
-            if (dy > 0.f) s = std::fmin(s, (kMaxRotorThrust - (rp[i] - rp[j])) / dy);
-        }
-    s = std::fmax(s, 0.f);
-    float d[kMotorCount];
-    lo = hi = rp[0] + s * yaw[0];
     for (int i = 0; i < kMotorCount; ++i) {
-        d[i] = rp[i] + s * yaw[i];
-        lo = std::fmin(lo, d[i]);
-        hi = std::fmax(hi, d[i]);
+        const float base = c + rp[i];
+        if (yaw[i] > 0.f) s = std::fmin(s, (kMaxRotorThrust - base) / yaw[i]);
+        else if (yaw[i] < 0.f) s = std::fmin(s, -base / yaw[i]);
     }
-    const float c = std::fmin(std::fmax(inv_[0][0] * collective, -lo), kMaxRotorThrust - hi);
+    s = std::fmax(s, 0.f);
 
     // Thrust -> rotor speed -> fraction of full speed.
     for (int i = 0; i < kMotorCount; ++i) {
-        const float t = std::fmin(std::fmax(c + d[i], 0.f), kMaxRotorThrust);
+        const float t = std::fmin(std::fmax(c + rp[i] + s * yaw[i], 0.f), kMaxRotorThrust);
         cmd.motor[i] = std::sqrt(t / kMotorConstant) / kMaxRotVelocity;
     }
     cmd.armed = true;

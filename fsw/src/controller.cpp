@@ -32,9 +32,9 @@ constexpr Vec3 kRateMax{3.f, 3.f, 1.5f};                  // rad/s, rate setpoin
 constexpr Vec3 kAttP{8.f, 8.f, 4.f};                      // 1/s
 constexpr float kYawDecel = 0.7f;                         // rad/s^2
 // Yaw torque limit. At hover each rotor carries m g / 4 = 3.73 N and has 1.74 N left to kMaxRotorThrust;
-// the most yaw torque that leaves the collective intact is 4 km 1.74 = 0.111 N m. 0.1 N m keeps 10 %
-// of that headroom for roll and pitch, so the allocation (roll/pitch > yaw > collective) does not have
-// to take thrust from the collective to honour a yaw demand.
+// the most yaw torque that fits in that headroom is 4 km 1.74 = 0.111 N m, and 0.1 N m keeps 10 % of it
+// for roll and pitch. The allocation's priority is collective up to m g, then roll/pitch, then the rest
+// of the collective, then yaw: a yaw demand the rotors cannot carry is cut, never paid for with thrust.
 constexpr float kYawTorqueMax = 0.1f;                     // N m
 // Translation, v_sp = Kp e_p, a = Kv (v_sp - v) + Ki int(v_sp - v). With the inner loops ideal the
 // position error obeys e'' + Kv e' + Kv Kp e = 0: w_n = sqrt(Kv Kp) = 1.18 rad/s, about 7x below the
