@@ -19,7 +19,6 @@ namespace marv {
 Mahony::Mahony(const param::MahonyParams& p, const param::SensorParams& s)
     : prm_(p),
       gravity_(s.gravity),
-      mag_decl_(std::atan2(s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_x)),
       alignment_(s, s.gravity),
       tr_({p.k_pos, p.k_vel, p.k_baro}, s.gravity) {}
 
@@ -27,6 +26,7 @@ void Mahony::update(const SensorBus& bus) {
     t_us_ = bus.t_us;
     if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid()) {
         frame_.set({bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m});
+        alignment_.locate(bus.gnss.lat_e7, bus.gnss.lon_e7);
         tr_.reset_horizontal();  // first fix after alignment: horizontal position restarts there
     }
 
@@ -59,7 +59,7 @@ void Mahony::update(const SensorBus& bus) {
             if (bus.fresh & kMag) {
                 const float w_mag = static_cast<float>(bus.t_us - last_mag_us_) * 1e-6f / dt;
                 last_mag_us_ = bus.t_us;
-                e += (w_mag * heading_innovation(q_, bus.mag.field_frd_ut, mag_decl_)) * down;
+                e += (w_mag * heading_innovation(q_, bus.mag.field_frd_ut, alignment_.declination())) * down;
             }
             bias_ -= (prm_.k_i * dt) * e;
             q_ = normalized(q_ * quat_from_rotvec(dt * (wm - bias_ + prm_.k_p * e)));

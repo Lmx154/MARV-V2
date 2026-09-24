@@ -16,6 +16,7 @@
 
 #include <cmath>
 
+#include <marv/fsw/geo_mag.hpp>
 #include <marv/fsw/math.hpp>
 
 namespace marv {
@@ -86,7 +87,8 @@ Eskf::Eskf(const param::EskfPriors& p, const param::SensorParams& s)
       sns_(s),
       gravity_(s.gravity),
       mag_ref_{s.mag_ref_ned_ut_x, s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_z},
-      mag_decl_(std::atan2(s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_x)) {
+      mag_decl_(std::atan2(s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_x)),
+      mag_known_(s.mag_ref_ned_ut_x != 0.f || s.mag_ref_ned_ut_y != 0.f || s.mag_ref_ned_ut_z != 0.f) {
     for (int i = 0; i < N; ++i) {
         dx_[i] = 0.f;
         for (int j = 0; j < N; ++j) {
@@ -104,6 +106,11 @@ void Eskf::update(const SensorBus& bus) {
     // the alignment height (the fix's less the height climbed since).
     if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid()) {
         frame_.set(GeoPoint{bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m + (aligned_ ? p_.z : 0.f)});
+        if (!mag_known_) {
+            mag_ref_ = earth_field_ned_ut(bus.gnss.lat_e7, bus.gnss.lon_e7);
+            mag_decl_ = std::atan2(mag_ref_.y, mag_ref_.x);
+            mag_known_ = true;
+        }
         if (aligned_) {
             p_.x = p_.y = 0.f;
             for (int i = IP; i < IP + 2; ++i) {
@@ -171,7 +178,7 @@ void Eskf::accumulate_alignment(const SensorBus& bus) {
         ++n_baro_;
     }
     const float t = static_cast<float>(bus.t_us - t_win_us_) * 1e-6f;
-    if (t >= sns_.align_window_s && n_mag_ > 0 && n_baro_ > 0) {
+    if (t >= sns_.align_window_s && n_mag_ > 0 && n_baro_ > 0 && mag_known_) {
         align();
         if (bus.fresh & kImu) {
             last_imu_us_ = bus.t_us;

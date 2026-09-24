@@ -13,6 +13,7 @@
 
 #include <cmath>
 
+#include <marv/fsw/geo_mag.hpp>
 #include <marv/fsw/math.hpp>
 
 namespace marv {
@@ -116,7 +117,18 @@ float heading_innovation(Quat q, Vec3 m_frd, float declination) {
 }
 
 StationaryAlignment::StationaryAlignment(const param::SensorParams& s, float gravity)
-    : p_(s), gravity_(gravity), declination_(std::atan2(s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_x)) {}
+    : p_(s),
+      gravity_(gravity),
+      field_{s.mag_ref_ned_ut_x, s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_z},
+      declination_(std::atan2(s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_x)),
+      field_known_(s.mag_ref_ned_ut_x != 0.f || s.mag_ref_ned_ut_y != 0.f || s.mag_ref_ned_ut_z != 0.f) {}
+
+void StationaryAlignment::locate(std::int32_t lat_e7, std::int32_t lon_e7) {
+    if (field_known_) return;
+    field_ = earth_field_ned_ut(lat_e7, lon_e7);
+    declination_ = std::atan2(field_.y, field_.x);
+    field_known_ = true;
+}
 
 bool StationaryAlignment::feed(const SensorBus& bus, Alignment& out) {
     if (bus.fresh & kImu) {
@@ -148,7 +160,7 @@ bool StationaryAlignment::feed(const SensorBus& bus, Alignment& out) {
         ++n_baro_;
     }
     const float t = static_cast<float>(bus.t_us - t_win_us_) * 1e-6f;
-    if (!(t >= p_.align_window_s && n_mag_ > 0 && n_baro_ > 0)) return false;
+    if (!(t >= p_.align_window_s && n_mag_ > 0 && n_baro_ > 0 && field_known_)) return false;
     const Vec3 f = (1.f / static_cast<float>(n_imu_)) * sum_f_;
     const Vec3 m = (1.f / static_cast<float>(n_mag_)) * sum_m_;
     const float roll = std::atan2(-f.y, -f.z);
@@ -167,8 +179,6 @@ Ekf::Ekf(const param::EskfPriors& p, const param::SensorParams& s)
     : pri_(p),
       sns_(s),
       gravity_(s.gravity),
-      mag_ref_{s.mag_ref_ned_ut_x, s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_z},
-      mag_decl_(std::atan2(s.mag_ref_ned_ut_y, s.mag_ref_ned_ut_x)),
       alignment_(s, s.gravity) {
     for (int i = 0; i < N; ++i) {
         x_[i] = 0.f;
@@ -186,6 +196,7 @@ void Ekf::update(const SensorBus& bus) {
     // alignment height (as Eskf::update).
     if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid()) {
         frame_.set({bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m + (aligned_ ? x_[IP + 2] : 0.f)});
+        alignment_.locate(bus.gnss.lat_e7, bus.gnss.lon_e7);
         if (aligned_) {
             for (int i = IP; i < IP + 2; ++i) {
                 x_[i] = 0.f;
@@ -245,13 +256,13 @@ void Ekf::update(const SensorBus& bus) {
         const Quat q{x_[IQ], x_[IQ + 1], x_[IQ + 2], x_[IQ + 3]};
         const Vec3 mw = rotate(q, bus.mag.field_frd_ut);
         if (mw.x * mw.x + mw.y * mw.y > 1e-6f) {
-            const Vec3 m0 = mag_ref_;
+            const Vec3 m0 = alignment_.field();
             const float r = m0.x * m0.x + m0.y * m0.y;
             float J[3][4];
             drot_dq(q, rotate_inv(q, m0), J);
             float h[N] = {};
             for (int i = 0; i < 4; ++i) h[IQ + i] = (m0.x * J[1][i] - m0.y * J[0][i]) / r;
-            scalar_update(h, heading_innovation(q, bus.mag.field_frd_ut, mag_decl_), sns_.sigma_heading * sns_.sigma_heading);
+            scalar_update(h, heading_innovation(q, bus.mag.field_frd_ut, alignment_.declination()), sns_.sigma_heading * sns_.sigma_heading);
             normalise_q();
         }
     }

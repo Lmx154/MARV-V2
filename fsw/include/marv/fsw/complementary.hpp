@@ -58,8 +58,7 @@ public:
 private:
     param::ComplementaryParams prm_;
     float gravity_;
-    float mag_decl_;
-    StationaryAlignment alignment_;
+    StationaryAlignment alignment_;  // also the Earth field's declination
     LocalFrame frame_;
     TranslationBlend tr_;
     bool aligned_ = false;
