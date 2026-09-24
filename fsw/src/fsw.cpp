@@ -42,7 +42,9 @@ Fsw::Fsw(const param::Setup& setup)
       uav_(setup.kind[param::k_vehicle] == param::k_vehicle_uav),
       estimator_(make_estimator(setup)),
       controller_(param::controller_cascaded_pid(setup), param::vehicle_uav(setup), param::sensors_suite(setup)),
-      actuators_(param::actuators_rotor_speed_fraction(setup)) {}
+      actuators_(param::actuators_rotor_speed_fraction(setup)),
+      apogee_predictor_(param::guidance_apogee_predictor(setup), param::sensors_suite(setup)),
+      apogee_pid_(param::controller_apogee_pid(setup)) {}
 
 Tick Fsw::step(const SensorBus& bus) {
     const float dt = have_prev_ && bus.t_us > t_prev_us_ ? static_cast<float>(bus.t_us - t_prev_us_) * 1e-6f : 0.f;
@@ -62,15 +64,19 @@ Tick Fsw::step(const SensorBus& bus) {
     const bool truth_ok = truth_.valid && truth_.t_us == bus.t_us;
     const State& nav = mission_.nav == NavSource::kTruth ? truth_ : est;
     const bool nav_ok = mission_.nav == NavSource::kTruth ? truth_ok : est.valid;
-    const Mode mode = nav_ok && uav_ ? mission_.mode : Mode::kIdle;
-
-    // Guidance: the mission's reference, passed through for now.
-    const Reference& ref = mission_.ref;
+    const Mode mode = nav_ok ? mission_.mode : Mode::kIdle;
 
     Tick out{};
-    const ControlRequest req = controller_.run(ref, nav, mode, dt);
-    out.act = allocation_.run(req, nav, mode);
-    actuators_.run(out.act);
+    ControlRequest req;
+    if (uav_) {
+        // Guidance: the mission's reference, passed through.
+        req = controller_.run(mission_.ref, nav, mode, dt);
+        out.act = allocation_.run(req, nav, mode);
+        actuators_.run(out.act);
+    } else {
+        req = apogee_pid_.run(apogee_predictor_.run(mission_.ref, nav, mode, bus.t_us), mode, dt);
+        out.act = rocket_brake_.run(req, mode);
+    }
     out.act.t_us = bus.t_us;
     out.tlm.t_us = bus.t_us;
     out.tlm.est = est;

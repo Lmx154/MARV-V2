@@ -11,8 +11,10 @@
 //
 // Every module is built once from the Setup given at construction (params.hpp): the estimator is its estimator
 // kind, and each module copies its constants from the setup's typed parameters. Nothing reads the Setup afterwards.
-// This build flies the uav vehicle only: on any other vehicle kind the mode is held idle (every motor zero, brake zero)
-// while the estimator runs.
+// The vehicle kind picks the chain after the estimator:
+//   uav     passthrough guidance -> cascaded PID -> quad-x allocation -> rotor-speed-fraction actuators; brake zero
+//   rocket  apogee-predictor guidance -> apogee PID -> rocket-brake allocation -> brake-servo actuators (the
+//           deployment, unchanged); every motor zero, always
 #pragma once
 
 #include <cstdint>
@@ -20,14 +22,17 @@
 
 #include <marv/fsw/actuators.hpp>
 #include <marv/fsw/allocation.hpp>
+#include <marv/fsw/apogee_pid.hpp>
 #include <marv/fsw/complementary.hpp>
 #include <marv/fsw/contracts.hpp>
 #include <marv/fsw/controller.hpp>
 #include <marv/fsw/ekf.hpp>
 #include <marv/fsw/eskf.hpp>
 #include <marv/fsw/geo.hpp>
+#include <marv/fsw/guidance.hpp>
 #include <marv/fsw/mahony.hpp>
 #include <marv/fsw/presets.hpp>
+#include <marv/fsw/rocket_brake.hpp>
 
 namespace marv {
 
@@ -61,12 +66,15 @@ private:
 
     std::uint8_t preset_;
     std::uint32_t crc_;
-    bool uav_;  // the setup's vehicle kind is the one this build flies
+    bool uav_;  // the setup's vehicle kind is the uav, else the rocket
     Estimators estimator_;
     LocalFrame home_;  // the first GNSS fix
     ActiveController controller_;
     ActiveAllocation allocation_;
     ActiveActuators actuators_;
+    ApogeePredictor apogee_predictor_;
+    ApogeePid apogee_pid_;
+    RocketBrake rocket_brake_;
     std::uint64_t t_prev_us_ = 0;
     bool have_prev_ = false;
 };
