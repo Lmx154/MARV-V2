@@ -1,8 +1,8 @@
 // marv_ground: the mission software. Conveys the mission to the flight controller over link frames.
 //
 //   marv_ground [--udp HOST:PORT] manual [--js DEV]      RadioMaster if plugged in, else the first joystick
-//   marv_ground [--udp HOST:PORT] goto LAT LON ALT [YAW_DEG]
-//   marv_ground [--udp HOST:PORT] waypoints FILE        lines `lat lon alt [hold_s]`, '#' comments
+//   marv_ground [--udp HOST:PORT] goto LAT LON ALT [YAW_DEG]    ALT = metres above home
+//   marv_ground [--udp HOST:PORT] waypoints FILE        lines `lat lon alt [hold_s]` (alt above home), '#' comments
 //   marv_ground [--udp HOST:PORT] preset N
 //   marv_ground [--udp HOST:PORT] reboot
 //
@@ -44,8 +44,8 @@ volatile std::sig_atomic_t g_stop = 0;
 int usage() {
     std::fprintf(stderr,
                  "usage: marv_ground [--udp HOST:PORT] manual [--js DEV]\n"
-                 "       marv_ground [--udp HOST:PORT] goto LAT LON ALT [YAW_DEG]\n"
-                 "       marv_ground [--udp HOST:PORT] waypoints FILE   (lines: lat lon alt [hold_s])\n"
+                 "       marv_ground [--udp HOST:PORT] goto LAT LON ALT [YAW_DEG]   (ALT: metres above home)\n"
+                 "       marv_ground [--udp HOST:PORT] waypoints FILE   (lines: lat lon alt_above_home [hold_s])\n"
                  "       marv_ground [--udp HOST:PORT] preset N\n"
                  "       marv_ground [--udp HOST:PORT] reboot\n");
     return 2;
@@ -187,12 +187,21 @@ int fly_to(Ground& g, const Vec3& target, float yaw, float hold_s) {
     return 0;
 }
 
+// A GPS setpoint: horizontal from lat/lon about home, height as metres above home. Height is not taken from the
+// geodetic altitude: every estimator measures height from the barometer at the start point, while home's altitude is
+// one GNSS fix (metres of noise), so an absolute altitude would land off by that fix's error.
+Vec3 setpoint(const LocalFrame& frame, double lat_deg, double lon_deg, double alt_above_home_m) {
+    Vec3 p = frame.to_ned(geo(lat_deg, lon_deg, frame.origin().alt_m));
+    p.z = -static_cast<float>(alt_above_home_m);
+    return p;
+}
+
 int run_goto(Ground& g, int argc, char** argv) {
     if (argc != 3 && argc != 4) return usage();
     if (const int rc = wait_ready(g)) return rc;
     LocalFrame frame;
     frame.set(g.tlm().home);
-    const Vec3 target = frame.to_ned(geo(std::atof(argv[0]), std::atof(argv[1]), std::atof(argv[2])));
+    const Vec3 target = setpoint(frame, std::atof(argv[0]), std::atof(argv[1]), std::atof(argv[2]));
     const float yaw = argc == 4 ? static_cast<float>(std::atof(argv[3])) * kPi / 180.f : yaw_of(g.tlm().est.q);
     return fly_to(g, target, yaw, 0.f);
 }
@@ -232,7 +241,7 @@ int run_waypoints(Ground& g, int argc, char** argv) {
     frame.set(g.tlm().home);
     const float yaw = yaw_of(g.tlm().est.q);
     for (const Wp& w : wps)
-        if (const int rc = fly_to(g, frame.to_ned(geo(w.lat, w.lon, w.alt)), yaw, w.hold_s)) return rc;
+        if (const int rc = fly_to(g, setpoint(frame, w.lat, w.lon, w.alt), yaw, w.hold_s)) return rc;
     return 0;
 }
 
@@ -282,9 +291,10 @@ int open_pilot(const char* path, char* name, std::size_t cap) {
 
 // Two mappings, picked by the device name. Each gives climb, yaw, forward, right in -1..1 (positive =
 // up, clockwise, forward, right) and the arm switch.
-//   RadioMaster (EdgeTX USB joystick, AETR): a0 aileron = right, a1 elevator = forward, a2 throttle =
-//     climb with the stick centre = hold, a3 rudder = yaw, a4 (CH5) > 0 = arm. Arming needs CH5 turned
-//     on with the throttle centred; otherwise it is refused until CH5 goes off again.
+//   RadioMaster (EdgeTX USB joystick, AETR): a0 aileron = right, a1 elevator = forward, a2 throttle (bottom
+//     = -32767, read off the user's radio) = climb rate with the stick centre = hold height, a3 rudder = yaw,
+//     a4 (CH5) > 0 = arm. As on any quad, arming needs the throttle at the bottom when CH5 turns on; otherwise
+//     it is refused until CH5 goes off again. From the bottom the props idle; above centre it climbs.
 //   Xbox (xpad): a0 left X = yaw, a1 left Y = climb, a3/a4 right X/Y = right/forward (up is negative),
 //     button A = arm, B = disarm.
 int run_manual(Ground& g, int argc, char** argv) {
@@ -345,14 +355,14 @@ int run_manual(Ground& g, int argc, char** argv) {
         if (radio && seen[4]) {
             const int sw = axis[4] > 0 ? 1 : 0;
             if (!sw) fly = refused = false;
-            else if (prev_switch == 0 && climb == 0.f) fly = true;
+            else if (prev_switch == 0 && climb <= -0.95f) fly = true;  // throttle at the bottom
             else if (prev_switch == 0) refused = true;
             prev_switch = sw;
         }
         char note[160];
         std::snprintf(note, sizeof(note), " | climb=%+.2f yaw=%+.2f fwd=%+.2f right=%+.2f arm=%s", static_cast<double>(climb),
                       static_cast<double>(yaw_in), static_cast<double>(fwd), static_cast<double>(right),
-                      fly ? "on" : refused ? "REFUSED(centre throttle, cycle CH5)" : "off");
+                      fly ? "on" : refused ? "REFUSED(throttle to bottom, cycle CH5)" : "off");
         g.note(note);
         if (!g.ready()) {
             if (!g.period(nullptr)) {
