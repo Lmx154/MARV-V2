@@ -94,9 +94,19 @@ Eskf::Eskf(const EskfParams& p) : prm_(p), mag_decl_(std::atan2(p.mag_ref_ned_ut
 void Eskf::update(const SensorBus& bus) {
     t_us_ = bus.t_us;
 
-    // The GNSS origin is the first fix, taken whenever it arrives (at start the vehicle is at rest there).
-    if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid())
-        frame_.set(GeoPoint{bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m});
+    // The GNSS origin is the first fix, taken whenever it arrives. If the vehicle has moved since alignment, horizontal
+    // position restarts there (0, 0) with the GNSS prior; height stays the barometer's, so the origin's altitude is
+    // the alignment height (the fix's less the height climbed since).
+    if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid()) {
+        frame_.set(GeoPoint{bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m + (aligned_ ? p_.z : 0.f)});
+        if (aligned_) {
+            p_.x = p_.y = 0.f;
+            for (int i = IP; i < IP + 2; ++i) {
+                for (int j = 0; j < N; ++j) P_[i][j] = P_[j][i] = 0.f;
+                P_[i][i] = prm_.sigma_gnss_pos * prm_.sigma_gnss_pos;
+            }
+        }
+    }
 
     if (!aligned_) {
         accumulate_alignment(bus);

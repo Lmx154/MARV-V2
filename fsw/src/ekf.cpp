@@ -176,7 +176,18 @@ Ekf::Ekf(const EskfParams& p) : prm_(p), mag_decl_(std::atan2(p.mag_ref_ned_ut.y
 
 void Ekf::update(const SensorBus& bus) {
     t_us_ = bus.t_us;
-    if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid()) frame_.set({bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m});
+    // First fix after alignment: horizontal position restarts there with the GNSS prior, the origin's altitude is the
+    // alignment height (as Eskf::update).
+    if ((bus.fresh & kGnss) && bus.gnss.fix && !frame_.valid()) {
+        frame_.set({bus.gnss.lat_e7, bus.gnss.lon_e7, bus.gnss.alt_m + (aligned_ ? x_[IP + 2] : 0.f)});
+        if (aligned_) {
+            for (int i = IP; i < IP + 2; ++i) {
+                x_[i] = 0.f;
+                for (int j = 0; j < N; ++j) P_[i][j] = P_[j][i] = 0.f;
+                P_[i][i] = prm_.sigma_gnss_pos * prm_.sigma_gnss_pos;
+            }
+        }
+    }
 
     if (!aligned_) {
         Alignment a;
