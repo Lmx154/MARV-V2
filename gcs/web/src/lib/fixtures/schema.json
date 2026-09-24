@@ -1,238 +1,44 @@
 {
-	"schema_hash": 2425635746,
+	"schema_hash": 3555855537,
 	"families": [
 		{
 			"id": "vehicle",
 			"label": "Vehicle",
 			"kinds": [
 				{
-					"id": "quad-x3",
-					"label": "Quadrotor X3",
-					"summary": "The Gazebo X3 of sitl/gazebo/marv_quad.sdf: mass, inertia, rotor positions (FRD) and yaw torque per thrust, as the controller, allocation and estimators assume them.",
+					"id": "uav",
+					"label": "Multirotor",
+					"summary": "A multirotor: the controller works in fractions of full thrust and torque, so the airframe enters only through the thrust it needs to hover.",
 					"params": [
 						{
-							"id": "mass",
-							"label": "Mass",
-							"unit": "kg",
-							"default": 1.52,
-							"min": 0.3,
-							"max": 5,
-							"step": 0.01,
-							"digits": 2,
-							"note": "Take-off mass; hover thrust and every force command scale with it.",
-							"source": "vehicle.hpp:12 base_link 1.5 kg (SDF:161) + four rotors of 0.005 kg (SDF:259, 324, 389, 454)",
-							"index": 0
-						},
-						{
-							"id": "Ixx",
-							"label": "Inertia Ixx (roll)",
-							"unit": "kg·m²",
-							"default": 0.0347563,
-							"min": 0.002,
-							"max": 0.1,
-							"step": 0.0001,
-							"digits": 4,
-							"note": "Principal moment about body x.",
-							"source": "vehicle.hpp:16 base_link principal inertia (SDF:163)",
-							"index": 1
-						},
-						{
-							"id": "Iyy",
-							"label": "Inertia Iyy (pitch)",
-							"unit": "kg·m²",
-							"default": 0.07,
-							"min": 0.002,
-							"max": 0.1,
-							"step": 0.0001,
-							"digits": 4,
-							"note": "Principal moment about body y.",
-							"source": "vehicle.hpp:17 base_link principal inertia (SDF:166)",
-							"index": 2
-						},
-						{
-							"id": "Izz",
-							"label": "Inertia Izz (yaw)",
-							"unit": "kg·m²",
-							"default": 0.0977,
-							"min": 0.002,
-							"max": 0.2,
-							"step": 0.0001,
-							"digits": 4,
-							"note": "Principal moment about body z.",
-							"source": "vehicle.hpp:18 base_link principal inertia (SDF:168)",
-							"index": 3
-						},
-						{
-							"id": "rotor_x_0",
-							"label": "Rotor 0 x (front)",
-							"unit": "m",
-							"default": 0.13,
-							"min": -0.5,
-							"max": 0.5,
-							"step": 0.005,
-							"digits": 3,
-							"note": "Body x of rotor 0 (ccw) from the centre of gravity.",
-							"source": "vehicle.hpp:23 SDF:256 rotor_0 (0.13, -0.22) FLU",
-							"index": 4
-						},
-						{
-							"id": "rotor_x_1",
-							"label": "Rotor 1 x (front)",
-							"unit": "m",
-							"default": -0.13,
-							"min": -0.5,
-							"max": 0.5,
-							"step": 0.005,
-							"digits": 3,
-							"note": "Body x of rotor 1 (ccw) from the centre of gravity.",
-							"source": "vehicle.hpp:23 SDF:321 rotor_1 (-0.13, 0.2) FLU",
-							"index": 5
-						},
-						{
-							"id": "rotor_x_2",
-							"label": "Rotor 2 x (front)",
-							"unit": "m",
-							"default": 0.13,
-							"min": -0.5,
-							"max": 0.5,
-							"step": 0.005,
-							"digits": 3,
-							"note": "Body x of rotor 2 (cw) from the centre of gravity.",
-							"source": "vehicle.hpp:23 SDF:386 rotor_2 (0.13, 0.22) FLU",
-							"index": 6
-						},
-						{
-							"id": "rotor_x_3",
-							"label": "Rotor 3 x (front)",
-							"unit": "m",
-							"default": -0.13,
-							"min": -0.5,
-							"max": 0.5,
-							"step": 0.005,
-							"digits": 3,
-							"note": "Body x of rotor 3 (cw) from the centre of gravity.",
-							"source": "vehicle.hpp:23 SDF:451 rotor_3 (-0.13, -0.2) FLU",
-							"index": 7
-						},
-						{
-							"id": "rotor_y_0",
-							"label": "Rotor 0 y (right)",
-							"unit": "m",
-							"default": 0.22,
-							"min": -0.5,
-							"max": 0.5,
-							"step": 0.005,
-							"digits": 3,
-							"note": "Body y of rotor 0 (ccw) from the centre of gravity.",
-							"source": "vehicle.hpp:24 SDF:256, FLU y negated",
-							"index": 8
-						},
-						{
-							"id": "rotor_y_1",
-							"label": "Rotor 1 y (right)",
-							"unit": "m",
-							"default": -0.2,
-							"min": -0.5,
-							"max": 0.5,
-							"step": 0.005,
-							"digits": 3,
-							"note": "Body y of rotor 1 (ccw) from the centre of gravity.",
-							"source": "vehicle.hpp:24 SDF:321, FLU y negated",
-							"index": 9
-						},
-						{
-							"id": "rotor_y_2",
-							"label": "Rotor 2 y (right)",
-							"unit": "m",
-							"default": -0.22,
-							"min": -0.5,
-							"max": 0.5,
-							"step": 0.005,
-							"digits": 3,
-							"note": "Body y of rotor 2 (cw) from the centre of gravity.",
-							"source": "vehicle.hpp:24 SDF:386, FLU y negated",
-							"index": 10
-						},
-						{
-							"id": "rotor_y_3",
-							"label": "Rotor 3 y (right)",
-							"unit": "m",
-							"default": 0.2,
-							"min": -0.5,
-							"max": 0.5,
-							"step": 0.005,
-							"digits": 3,
-							"note": "Body y of rotor 3 (cw) from the centre of gravity.",
-							"source": "vehicle.hpp:24 SDF:451, FLU y negated",
-							"index": 11
-						},
-						{
-							"id": "moment_constant",
-							"label": "Yaw torque per thrust",
-							"unit": "m",
-							"default": 0.016,
-							"min": 0.005,
-							"max": 0.06,
+							"id": "hover_thrust",
+							"label": "Hover thrust",
+							"unit": "0–1",
+							"default": 0.6811,
+							"min": 0.2,
+							"max": 0.8,
 							"step": 0.001,
 							"digits": 3,
-							"note": "Rotor drag torque per newton of thrust (N·m/N): the only yaw authority.",
-							"source": "vehicle.hpp:36 yaw torque = km * thrust, SDF:524",
-							"index": 12
-						},
-						{
-							"id": "gravity",
-							"label": "Gravity",
-							"unit": "m/s²",
-							"default": 9.8066,
-							"min": 1.6,
-							"max": 25,
-							"step": 0.0001,
-							"digits": 4,
-							"note": "Gravity the controller, allocation and estimators assume; a mismatch with the world reads as an acceleration.",
-							"source": "vehicle.hpp:9 SDF:71 <gravity>0 0 -9.8066</gravity>",
-							"index": 13
+							"note": "Collective that holds the vehicle up, as a fraction of full thrust; the controller starts from it each run and learns the rest in flight.",
+							"source": "m g / (4 k w_max^2) of the X3: 1.52 kg (SDF:161, 259, 324, 389, 454) * 9.8066 m/s^2 (SDF:71) / (4 * 8.54858e-6 N/(rad/s)^2 (SDF:523) * (800 rad/s)^2 (SDF:522)) = 0.6811",
+							"index": 0
 						}
 					],
 					"parts": [
 						{
-							"id": "airframe",
-							"label": "Airframe",
+							"id": "hover",
+							"label": "Hover",
 							"params": [
-								"mass",
-								"Ixx",
-								"Iyy",
-								"Izz"
-							]
-						},
-						{
-							"id": "geometry",
-							"label": "Rotor positions",
-							"params": [
-								"rotor_x_0",
-								"rotor_x_1",
-								"rotor_x_2",
-								"rotor_x_3",
-								"rotor_y_0",
-								"rotor_y_1",
-								"rotor_y_2",
-								"rotor_y_3"
-							]
-						},
-						{
-							"id": "rotors",
-							"label": "Rotor torque",
-							"params": [
-								"moment_constant"
-							]
-						},
-						{
-							"id": "model",
-							"label": "Gravity model",
-							"params": [
-								"gravity"
+								"hover_thrust"
 							]
 						}
 					]
+				},
+				{
+					"id": "rocket",
+					"label": "Rocket",
+					"summary": "A single-stage rocket with an air brake: no motors to command, the brake deployment only.",
+					"params": []
 				}
 			]
 		},
@@ -243,7 +49,7 @@
 				{
 					"id": "suite",
 					"label": "madflight FC3",
-					"summary": "Noise the filters assume for the FC3's LSM6DSV IMU, BMP580 barometer, MMC5603NJ magnetometer and an M10-class GNSS, the Earth field at the origin, and the stillness test of the alignment.",
+					"summary": "Noise the filters assume for the FC3's LSM6DSV IMU, BMP580 barometer, MMC5603NJ magnetometer and an M10-class GNSS, the Earth field and gravity at the origin, and the stillness test of the alignment.",
 					"params": [
 						{
 							"id": "sigma_accel",
@@ -256,7 +62,7 @@
 							"digits": 5,
 							"note": "White noise per IMU sample (1σ) the filters assume.",
 							"source": "eskf.hpp:22 An 60 ug/sqrt(Hz) (high-performance) * sqrt(500 Hz) = 1.342 mg (LSM6DSV DS13476 p.10 Table 2)",
-							"index": 14
+							"index": 1
 						},
 						{
 							"id": "sigma_accel_walk",
@@ -269,7 +75,7 @@
 							"digits": 4,
 							"note": "Random walk of the accelerometer bias.",
 							"source": "eskf.hpp:24 the datasheet gives no bias instability; the fsw.ts preset",
-							"index": 15
+							"index": 2
 						},
 						{
 							"id": "sigma_gyro",
@@ -282,7 +88,7 @@
 							"digits": 6,
 							"note": "White noise per IMU sample (1σ) the filters assume.",
 							"source": "eskf.hpp:23 Rn 2.8 mdps/sqrt(Hz) * sqrt(500 Hz) = 0.0626 dps (LSM6DSV DS13476 p.10 Table 2)",
-							"index": 16
+							"index": 3
 						},
 						{
 							"id": "sigma_gyro_walk",
@@ -295,7 +101,7 @@
 							"digits": 5,
 							"note": "Random walk of the gyro bias.",
 							"source": "eskf.hpp:25 the datasheet gives no bias instability; the fsw.ts preset",
-							"index": 17
+							"index": 4
 						},
 						{
 							"id": "sigma_gnss_pos",
@@ -308,7 +114,7 @@
 							"digits": 2,
 							"note": "Horizontal, per axis, per fix (1σ).",
 							"source": "eskf.hpp:32 ASSUMED u-blox M10 class (the FC3's receiver is an unspecified external module)",
-							"index": 18
+							"index": 5
 						},
 						{
 							"id": "sigma_gnss_alt",
@@ -321,7 +127,7 @@
 							"digits": 2,
 							"note": "Vertical, per fix (1σ).",
 							"source": "eskf.hpp:33 ASSUMED u-blox M10 class",
-							"index": 19
+							"index": 6
 						},
 						{
 							"id": "sigma_gnss_vel",
@@ -334,7 +140,7 @@
 							"digits": 2,
 							"note": "Per axis, per fix (1σ).",
 							"source": "eskf.hpp:34 ASSUMED u-blox M10 class",
-							"index": 20
+							"index": 7
 						},
 						{
 							"id": "sigma_baro",
@@ -347,7 +153,7 @@
 							"digits": 4,
 							"note": "Height noise per sample (1σ).",
 							"source": "eskf.hpp:35 BMP580 (p.9 Table 1) 0.25 Pa RMS * dh/dP = 1 / (1.225 kg/m^3 * g)",
-							"index": 21
+							"index": 8
 						},
 						{
 							"id": "sigma_heading",
@@ -360,7 +166,7 @@
 							"digits": 4,
 							"note": "Magnetometer heading noise per sample (1σ).",
 							"source": "eskf.hpp:36 MMC5603NJ (p.2) 2.0 mG RMS across the 0.2165 G horizontal field",
-							"index": 22
+							"index": 9
 						},
 						{
 							"id": "mag_ref_ned_ut_x",
@@ -373,7 +179,7 @@
 							"digits": 5,
 							"note": "North component of the Earth field at the origin; sets the declination.",
 							"source": "eskf.hpp:50 the Earth field (NED, microtesla) at the world origin",
-							"index": 23
+							"index": 10
 						},
 						{
 							"id": "mag_ref_ned_ut_y",
@@ -386,7 +192,7 @@
 							"digits": 5,
 							"note": "East component of the Earth field at the origin; sets the declination.",
 							"source": "eskf.hpp:50 the Earth field (NED, microtesla) at the world origin",
-							"index": 24
+							"index": 11
 						},
 						{
 							"id": "mag_ref_ned_ut_z",
@@ -399,7 +205,20 @@
 							"digits": 5,
 							"note": "Down component of the Earth field at the origin; sets the inclination.",
 							"source": "eskf.hpp:50 the Earth field (NED, microtesla) at the world origin",
-							"index": 25
+							"index": 12
+						},
+						{
+							"id": "gravity",
+							"label": "Gravity",
+							"unit": "m/s²",
+							"default": 9.8066,
+							"min": 1.6,
+							"max": 25,
+							"step": 0.0001,
+							"digits": 4,
+							"note": "Gravity the controller and estimators assume; a mismatch with the world reads as an acceleration.",
+							"source": "SDF:71 <gravity>0 0 -9.8066</gravity>",
+							"index": 13
 						},
 						{
 							"id": "align_window_s",
@@ -412,7 +231,7 @@
 							"digits": 1,
 							"note": "Unbroken stillness averaged before the filter starts.",
 							"source": "eskf.hpp:56 IMU, magnetometer and barometer samples are averaged over align_window_s of unbroken stillness",
-							"index": 26
+							"index": 14
 						},
 						{
 							"id": "still_g_err",
@@ -425,7 +244,7 @@
 							"digits": 2,
 							"note": "Largest | |f| - g | of a still sample.",
 							"source": "eskf.hpp:57 3 sigma per axis of the 12 mg turn-on bias, plus noise",
-							"index": 27
+							"index": 15
 						},
 						{
 							"id": "still_rate",
@@ -438,7 +257,7 @@
 							"digits": 3,
 							"note": "Largest |w| of a still sample.",
 							"source": "eskf.hpp:58 3 sigma per axis of the 1 dps turn-on bias, plus noise",
-							"index": 28
+							"index": 16
 						},
 						{
 							"id": "still_accel_dev",
@@ -451,7 +270,7 @@
 							"digits": 3,
 							"note": "Largest distance of f from the window's mean.",
 							"source": "eskf.hpp:59 6 per-sample sigmas (norm of three axes)",
-							"index": 29
+							"index": 17
 						},
 						{
 							"id": "still_gyro_dev",
@@ -464,7 +283,7 @@
 							"digits": 4,
 							"note": "Largest distance of w from the window's mean.",
 							"source": "eskf.hpp:60 6 per-sample sigmas (norm of three axes)",
-							"index": 30
+							"index": 18
 						}
 					],
 					"parts": [
@@ -511,6 +330,13 @@
 							]
 						},
 						{
+							"id": "gravity_model",
+							"label": "Gravity",
+							"params": [
+								"gravity"
+							]
+						},
+						{
 							"id": "alignment",
 							"label": "Alignment",
 							"params": [
@@ -545,7 +371,7 @@
 							"digits": 2,
 							"note": "Position 1σ at alignment, per axis.",
 							"source": "eskf.hpp:43 fsw.ts createEstimator (sigmaP 1)",
-							"index": 31
+							"index": 19
 						},
 						{
 							"id": "sigma_v0",
@@ -558,7 +384,7 @@
 							"digits": 2,
 							"note": "Velocity 1σ at alignment, per axis.",
 							"source": "eskf.hpp:44 fsw.ts createEstimator (sigmaV 1)",
-							"index": 32
+							"index": 20
 						},
 						{
 							"id": "sigma_theta0",
@@ -571,7 +397,7 @@
 							"digits": 3,
 							"note": "Attitude 1σ at alignment, per axis.",
 							"source": "eskf.hpp:45 12 mg / g = 0.012 rad of tilt, 1.98 times that on the tilt-compensated heading",
-							"index": 33
+							"index": 21
 						},
 						{
 							"id": "sigma_ab0",
@@ -584,7 +410,7 @@
 							"digits": 4,
 							"note": "Accelerometer bias 1σ at alignment, per axis.",
 							"source": "eskf.hpp:46 LSM6DSV typical zero-g level, 12 mg (p.10 Table 2)",
-							"index": 34
+							"index": 22
 						}
 					],
 					"parts": [
@@ -616,7 +442,7 @@
 							"digits": 2,
 							"note": "Position 1σ at alignment, per axis.",
 							"source": "eskf.hpp:43 fsw.ts createEstimator (sigmaP 1)",
-							"index": 35
+							"index": 23
 						},
 						{
 							"id": "sigma_v0",
@@ -629,7 +455,7 @@
 							"digits": 2,
 							"note": "Velocity 1σ at alignment, per axis.",
 							"source": "eskf.hpp:44 fsw.ts createEstimator (sigmaV 1)",
-							"index": 36
+							"index": 24
 						},
 						{
 							"id": "sigma_theta0",
@@ -642,7 +468,7 @@
 							"digits": 3,
 							"note": "Attitude 1σ at alignment, per axis.",
 							"source": "eskf.hpp:45 12 mg / g = 0.012 rad of tilt, 1.98 times that on the tilt-compensated heading",
-							"index": 37
+							"index": 25
 						},
 						{
 							"id": "sigma_ab0",
@@ -655,7 +481,7 @@
 							"digits": 4,
 							"note": "Accelerometer bias 1σ at alignment, per axis.",
 							"source": "eskf.hpp:46 LSM6DSV typical zero-g level, 12 mg (p.10 Table 2)",
-							"index": 38
+							"index": 26
 						}
 					],
 					"parts": [
@@ -687,7 +513,7 @@
 							"digits": 2,
 							"note": "Rate at which the attitude is pulled toward the gravity direction and the magnetometer heading.",
 							"source": "mahony.hpp:20 mahony block default (tuned in the lab on quad-square)",
-							"index": 39
+							"index": 27
 						},
 						{
 							"id": "k_i",
@@ -700,7 +526,7 @@
 							"digits": 3,
 							"note": "Integrates the correction into the gyro-bias estimate.",
 							"source": "mahony.hpp:21 mahony block default (tuned in the lab on quad-square)",
-							"index": 40
+							"index": 28
 						},
 						{
 							"id": "accel_gate",
@@ -713,7 +539,7 @@
 							"digits": 2,
 							"note": "Tilt correction only while | |a_m| - g | is below this.",
 							"source": "mahony.hpp:22 mahony block default",
-							"index": 41
+							"index": 29
 						},
 						{
 							"id": "k_pos",
@@ -726,7 +552,7 @@
 							"digits": 2,
 							"note": "Crossover of the position blend toward the GNSS fix.",
 							"source": "complementary.hpp:19 translationBlend (complementary block default, tuned in the lab on quad-square)",
-							"index": 42
+							"index": 30
 						},
 						{
 							"id": "k_vel",
@@ -739,7 +565,7 @@
 							"digits": 2,
 							"note": "Crossover of the velocity blend toward the GNSS velocity.",
 							"source": "complementary.hpp:20 translationBlend (complementary block default, tuned in the lab on quad-square)",
-							"index": 43
+							"index": 31
 						},
 						{
 							"id": "k_baro",
@@ -752,7 +578,7 @@
 							"digits": 2,
 							"note": "Crossover of the height blend toward the barometer.",
 							"source": "complementary.hpp:21 translationBlend (complementary block default, tuned in the lab on quad-square)",
-							"index": 44
+							"index": 32
 						}
 					],
 					"parts": [
@@ -792,7 +618,7 @@
 							"digits": 2,
 							"note": "Rate at which the attitude is pulled toward the gravity direction.",
 							"source": "complementary.hpp:49 tilt correction",
-							"index": 45
+							"index": 33
 						},
 						{
 							"id": "accel_gate",
@@ -805,7 +631,7 @@
 							"digits": 2,
 							"note": "Tilt correction only while | |a_m| - g | is below this.",
 							"source": "complementary.hpp:50 complementary block default",
-							"index": 46
+							"index": 34
 						},
 						{
 							"id": "k_mag",
@@ -818,7 +644,7 @@
 							"digits": 2,
 							"note": "Rate at which the heading is pulled toward the magnetometer.",
 							"source": "complementary.hpp:51 heading correction",
-							"index": 47
+							"index": 35
 						},
 						{
 							"id": "k_pos",
@@ -831,7 +657,7 @@
 							"digits": 2,
 							"note": "Crossover of the position blend toward the GNSS fix.",
 							"source": "complementary.hpp:19 translationBlend (complementary block default, tuned in the lab on quad-square)",
-							"index": 48
+							"index": 36
 						},
 						{
 							"id": "k_vel",
@@ -844,7 +670,7 @@
 							"digits": 2,
 							"note": "Crossover of the velocity blend toward the GNSS velocity.",
 							"source": "complementary.hpp:20 translationBlend (complementary block default, tuned in the lab on quad-square)",
-							"index": 49
+							"index": 37
 						},
 						{
 							"id": "k_baro",
@@ -857,7 +683,7 @@
 							"digits": 2,
 							"note": "Crossover of the height blend toward the barometer.",
 							"source": "complementary.hpp:21 translationBlend (complementary block default, tuned in the lab on quad-square)",
-							"index": 50
+							"index": 38
 						}
 					],
 					"parts": [
@@ -892,6 +718,110 @@
 					"label": "Passthrough",
 					"summary": "The mission reference reaches the controller unchanged.",
 					"params": []
+				},
+				{
+					"id": "apogee-predictor",
+					"label": "Apogee predictor",
+					"summary": "While the mission flags the coast it rolls a point-mass model of the rocket from the estimated altitude and vertical speed to apogee with the brake closed, every 20 ms, and passes the prediction and the target apogee to the controller.",
+					"params": [
+						{
+							"id": "predict_dt",
+							"label": "Prediction step",
+							"unit": "s",
+							"default": 0.05,
+							"min": 0.02,
+							"max": 0.5,
+							"step": 0.005,
+							"digits": 3,
+							"note": "Integration step of the rollout; coarser is cheaper and less accurate.",
+							"source": "toolbox guidance.ts:95 rocket1d DEFAULT_ROCKET.predictDt",
+							"index": 39
+						},
+						{
+							"id": "cd_base",
+							"label": "Drag coefficient (model)",
+							"default": 0.45,
+							"min": 0.1,
+							"max": 1.5,
+							"step": 0.01,
+							"digits": 2,
+							"note": "Axial drag coefficient on the reference area, brake closed.",
+							"source": "toolbox guidance.ts:96",
+							"index": 40
+						},
+						{
+							"id": "ref_area",
+							"label": "Reference area (model)",
+							"unit": "m²",
+							"default": 0.007854,
+							"min": 0.001,
+							"max": 0.1,
+							"step": 0.0001,
+							"digits": 5,
+							"note": "Area the drag coefficient refers to (the body cross-section).",
+							"source": "toolbox guidance.ts:97 pi (0.1 m / 2)^2",
+							"index": 41
+						},
+						{
+							"id": "brake_cd_area",
+							"label": "Brake drag area (model)",
+							"unit": "m²",
+							"default": 0.012,
+							"min": 0,
+							"max": 0.05,
+							"step": 0.0005,
+							"digits": 4,
+							"note": "C_D A the brake adds at full deployment.",
+							"source": "toolbox guidance.ts:98",
+							"index": 42
+						},
+						{
+							"id": "mass",
+							"label": "Coast mass (model)",
+							"unit": "kg",
+							"default": 3.1,
+							"min": 0.5,
+							"max": 2e+01,
+							"step": 0.05,
+							"digits": 2,
+							"note": "Dry mass: the motor has burnt out during the coast.",
+							"source": "toolbox guidance.ts:99",
+							"index": 43
+						},
+						{
+							"id": "target_apogee_m",
+							"label": "Target apogee",
+							"unit": "m",
+							"default": 284,
+							"min": 2e+01,
+							"max": 2e+03,
+							"step": 1,
+							"digits": 0,
+							"note": "Apogee above the launch point the brake aims for.",
+							"source": "toolbox mission.ts:340",
+							"index": 44
+						}
+					],
+					"parts": [
+						{
+							"id": "model",
+							"label": "Model",
+							"params": [
+								"predict_dt",
+								"cd_base",
+								"ref_area",
+								"brake_cd_area",
+								"mass"
+							]
+						},
+						{
+							"id": "target",
+							"label": "Target",
+							"params": [
+								"target_apogee_m"
+							]
+						}
+					]
 				}
 			]
 		},
@@ -902,7 +832,7 @@
 				{
 					"id": "cascaded-pid",
 					"label": "Cascaded PID",
-					"summary": "Position, velocity, attitude and rate loops, each written as an acceleration command: the airframe enters only through F = m a and tau = I alpha.",
+					"summary": "Position, velocity, attitude and rate loops: thrust as a fraction of full collective from the learned hover thrust, torque as a fraction of each axis' full authority.",
 					"params": [
 						{
 							"id": "pos_p",
@@ -915,7 +845,7 @@
 							"digits": 2,
 							"note": "Velocity setpoint per metre of position error.",
 							"source": "controller.cpp:47 w_n = sqrt(Kv Kp) = 1.18 rad/s, about 7x below the attitude loop, zeta 0.85",
-							"index": 51
+							"index": 45
 						},
 						{
 							"id": "vel_p",
@@ -928,7 +858,7 @@
 							"digits": 2,
 							"note": "Acceleration per m/s of velocity error.",
 							"source": "controller.cpp:48 Kv * kVelMax = 4 m/s^2 bounds a velocity step to 22 deg of tilt",
-							"index": 52
+							"index": 46
 						},
 						{
 							"id": "vel_i",
@@ -941,7 +871,7 @@
 							"digits": 2,
 							"note": "Acceleration per metre of integrated velocity error.",
 							"source": "controller.cpp:49 corner Ki / Kv = 0.25 rad/s; takes up what the thrust model and the rotor drag leave",
-							"index": 53
+							"index": 47
 						},
 						{
 							"id": "vel_int_accel",
@@ -954,7 +884,7 @@
 							"digits": 1,
 							"note": "Most acceleration the velocity integrator may add.",
 							"source": "controller.cpp:50",
-							"index": 54
+							"index": 48
 						},
 						{
 							"id": "att_p_x",
@@ -967,7 +897,7 @@
 							"digits": 1,
 							"note": "Roll-rate setpoint per radian of attitude error.",
 							"source": "controller.cpp:32 a third of the rate bandwidth on roll and pitch",
-							"index": 55
+							"index": 49
 						},
 						{
 							"id": "att_p_y",
@@ -980,7 +910,7 @@
 							"digits": 1,
 							"note": "Pitch-rate setpoint per radian of attitude error.",
 							"source": "controller.cpp:32 a third of the rate bandwidth on roll and pitch",
-							"index": 56
+							"index": 50
 						},
 						{
 							"id": "att_p_z",
@@ -993,7 +923,7 @@
 							"digits": 1,
 							"note": "Yaw-rate setpoint per radian of heading error.",
 							"source": "controller.cpp:32",
-							"index": 57
+							"index": 51
 						},
 						{
 							"id": "yaw_decel",
@@ -1006,7 +936,7 @@
 							"digits": 2,
 							"note": "Caps the yaw-rate setpoint at sqrt(2 a |e|) so a heading step stops without overshoot.",
 							"source": "controller.cpp:33 70 % of the torque-limited 1.02 rad/s^2 (0.93 rad/s^2 measured in the sim)",
-							"index": 58
+							"index": 52
 						},
 						{
 							"id": "yaw_rate_still",
@@ -1019,134 +949,163 @@
 							"digits": 2,
 							"note": "Below this yaw rate, with no yaw-rate reference, the heading is held.",
 							"source": "controller.cpp:41",
-							"index": 59
+							"index": 53
 						},
 						{
 							"id": "rate_p_x",
 							"label": "Rate P roll",
-							"unit": "1/s",
-							"default": 25,
+							"unit": "1/(rad/s)",
+							"default": 0.3781,
 							"min": 0,
-							"max": 1e+02,
-							"step": 0.5,
-							"digits": 1,
-							"note": "Roll acceleration per rad/s of rate error.",
-							"source": "controller.cpp:22 about 45 deg of phase margin against the 40..80 rad/s motor poles",
-							"index": 60
+							"max": 1.5,
+							"step": 0.001,
+							"digits": 4,
+							"note": "Roll torque (fraction of full roll authority) per rad/s of rate error.",
+							"source": "controller.cpp:22 25 1/s, K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 25 * 0.0347563 kg m^2 (SDF:163) / 2.2979 N m",
+							"index": 54
 						},
 						{
 							"id": "rate_p_y",
 							"label": "Rate P pitch",
-							"unit": "1/s",
-							"default": 25,
+							"unit": "1/(rad/s)",
+							"default": 1.2302,
 							"min": 0,
-							"max": 1e+02,
-							"step": 0.5,
-							"digits": 1,
-							"note": "Pitch acceleration per rad/s of rate error.",
-							"source": "controller.cpp:22 about 45 deg of phase margin against the 40..80 rad/s motor poles",
-							"index": 61
+							"max": 5,
+							"step": 0.005,
+							"digits": 4,
+							"note": "Pitch torque (fraction of full pitch authority) per rad/s of rate error.",
+							"source": "controller.cpp:22 25 1/s, K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 25 * 0.07 kg m^2 (SDF:166) / 1.4225 N m",
+							"index": 55
 						},
 						{
 							"id": "rate_p_z",
 							"label": "Rate P yaw",
-							"unit": "1/s",
-							"default": 1e+01,
+							"unit": "1/(rad/s)",
+							"default": 5.58,
 							"min": 0,
-							"max": 1e+02,
-							"step": 0.5,
-							"digits": 1,
-							"note": "Yaw acceleration per rad/s of rate error.",
-							"source": "controller.cpp:22 yaw authority is small; more bandwidth only saturates",
-							"index": 62
+							"max": 56,
+							"step": 0.05,
+							"digits": 3,
+							"note": "Yaw torque (fraction of full yaw authority) per rad/s of rate error.",
+							"source": "controller.cpp:22 10 1/s, K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 10 * 0.0977 kg m^2 (SDF:168) / 0.17508 N m",
+							"index": 56
 						},
 						{
 							"id": "rate_i_x",
 							"label": "Rate I roll",
-							"unit": "1/s²",
-							"default": 62.5,
+							"unit": "1/rad",
+							"default": 0.9453,
 							"min": 0,
-							"max": 5e+02,
-							"step": 0.5,
-							"digits": 1,
-							"note": "Roll acceleration per radian of integrated rate error.",
-							"source": "controller.cpp:23 Ki = Kp * Kp / 10: the integrator corner a decade lower",
-							"index": 63
+							"max": 7.5,
+							"step": 0.005,
+							"digits": 4,
+							"note": "Roll torque fraction per radian of integrated rate error.",
+							"source": "controller.cpp:23 62.5 1/s^2 (Ki = Kp * Kp / 10), K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 62.5 * 0.0347563 / 2.2979",
+							"index": 57
 						},
 						{
 							"id": "rate_i_y",
 							"label": "Rate I pitch",
-							"unit": "1/s²",
-							"default": 62.5,
+							"unit": "1/rad",
+							"default": 3.0756,
 							"min": 0,
-							"max": 5e+02,
-							"step": 0.5,
-							"digits": 1,
-							"note": "Pitch acceleration per radian of integrated rate error.",
-							"source": "controller.cpp:23 Ki = Kp * Kp / 10: the integrator corner a decade lower",
-							"index": 64
+							"max": 25,
+							"step": 0.01,
+							"digits": 4,
+							"note": "Pitch torque fraction per radian of integrated rate error.",
+							"source": "controller.cpp:23 62.5 1/s^2 (Ki = Kp * Kp / 10), K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 62.5 * 0.07 / 1.4225",
+							"index": 58
 						},
 						{
 							"id": "rate_i_z",
 							"label": "Rate I yaw",
-							"unit": "1/s²",
-							"default": 1e+01,
+							"unit": "1/rad",
+							"default": 5.58,
 							"min": 0,
-							"max": 5e+02,
-							"step": 0.5,
-							"digits": 1,
-							"note": "Yaw acceleration per radian of integrated rate error.",
-							"source": "controller.cpp:23",
-							"index": 65
+							"max": 2.8e+02,
+							"step": 0.1,
+							"digits": 3,
+							"note": "Yaw torque fraction per radian of integrated rate error.",
+							"source": "controller.cpp:23 10 1/s^2, K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 10 * 0.0977 / 0.17508",
+							"index": 59
 						},
 						{
 							"id": "rate_d_x",
 							"label": "Rate D roll",
-							"default": 0.05,
+							"unit": "1/(rad/s²)",
+							"default": 0.0007563,
 							"min": 0,
-							"max": 0.5,
-							"step": 0.005,
-							"digits": 3,
-							"note": "Roll acceleration per rad/s² of rate change.",
-							"source": "controller.cpp:24",
-							"index": 66
+							"max": 0.008,
+							"step": 1e-05,
+							"digits": 7,
+							"note": "Roll torque fraction per rad/s² of rate change.",
+							"source": "controller.cpp:24 0.05, K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 0.05 * 0.0347563 / 2.2979",
+							"index": 60
 						},
 						{
 							"id": "rate_d_y",
 							"label": "Rate D pitch",
-							"default": 0.05,
+							"unit": "1/(rad/s²)",
+							"default": 0.0024605,
 							"min": 0,
-							"max": 0.5,
-							"step": 0.005,
-							"digits": 3,
-							"note": "Pitch acceleration per rad/s² of rate change.",
-							"source": "controller.cpp:24",
-							"index": 67
+							"max": 0.025,
+							"step": 5e-05,
+							"digits": 7,
+							"note": "Pitch torque fraction per rad/s² of rate change.",
+							"source": "controller.cpp:24 0.05, K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 0.05 * 0.07 / 1.4225",
+							"index": 61
 						},
 						{
 							"id": "rate_d_z",
 							"label": "Rate D yaw",
+							"unit": "1/(rad/s²)",
 							"default": 0,
 							"min": 0,
-							"max": 0.5,
-							"step": 0.005,
-							"digits": 3,
-							"note": "Yaw acceleration per rad/s² of rate change.",
+							"max": 0.28,
+							"step": 0.0005,
+							"digits": 4,
+							"note": "Yaw torque fraction per rad/s² of rate change.",
 							"source": "controller.cpp:24",
-							"index": 68
+							"index": 62
 						},
 						{
-							"id": "rate_int_accel",
-							"label": "Rate integrator limit",
-							"unit": "rad/s²",
-							"default": 5,
+							"id": "rate_int_max_x",
+							"label": "Rate integrator limit roll",
+							"unit": "0–1",
+							"default": 0.0756,
 							"min": 0,
-							"max": 5e+01,
-							"step": 0.5,
-							"digits": 1,
-							"note": "Most angular acceleration the rate integrator may add.",
-							"source": "controller.cpp:25",
-							"index": 69
+							"max": 1,
+							"step": 0.005,
+							"digits": 4,
+							"note": "Most roll torque, as a fraction of full authority, the rate integrator may add.",
+							"source": "controller.cpp:25 5 rad/s^2, K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 5 * 0.0347563 / 2.2979",
+							"index": 63
+						},
+						{
+							"id": "rate_int_max_y",
+							"label": "Rate integrator limit pitch",
+							"unit": "0–1",
+							"default": 0.246,
+							"min": 0,
+							"max": 1,
+							"step": 0.005,
+							"digits": 4,
+							"note": "Most pitch torque, as a fraction of full authority, the rate integrator may add.",
+							"source": "controller.cpp:25 5 rad/s^2, K_phys * I / tau_max, tau_max = 0.5 T_max times the X3 lever arms: 5 * 0.07 / 1.4225",
+							"index": 64
+						},
+						{
+							"id": "rate_int_max_z",
+							"label": "Rate integrator limit yaw",
+							"unit": "0–1",
+							"default": 1,
+							"min": 0,
+							"max": 1,
+							"step": 0.005,
+							"digits": 4,
+							"note": "Most yaw torque, as a fraction of full authority, the rate integrator may add.",
+							"source": "controller.cpp:25 5 rad/s^2 is 2.79 of the yaw authority (5 * 0.0977 / 0.17508): capped at all of it",
+							"index": 65
 						},
 						{
 							"id": "rate_max_x",
@@ -1159,7 +1118,7 @@
 							"digits": 1,
 							"note": "Limit of the roll-rate setpoint.",
 							"source": "controller.cpp:26",
-							"index": 70
+							"index": 66
 						},
 						{
 							"id": "rate_max_y",
@@ -1172,7 +1131,7 @@
 							"digits": 1,
 							"note": "Limit of the pitch-rate setpoint.",
 							"source": "controller.cpp:26",
-							"index": 71
+							"index": 67
 						},
 						{
 							"id": "rate_max_z",
@@ -1185,7 +1144,7 @@
 							"digits": 1,
 							"note": "Limit of the yaw-rate setpoint.",
 							"source": "controller.cpp:26",
-							"index": 72
+							"index": 68
 						},
 						{
 							"id": "vel_max",
@@ -1198,7 +1157,7 @@
 							"digits": 1,
 							"note": "Norm limit of the velocity setpoint.",
 							"source": "controller.cpp:51",
-							"index": 73
+							"index": 69
 						},
 						{
 							"id": "tilt_max_deg",
@@ -1211,7 +1170,7 @@
 							"digits": 0,
 							"note": "The thrust vector stays within this angle of vertical.",
 							"source": "controller.cpp:54 kTanTiltMax = tan(35 deg)",
-							"index": 74
+							"index": 70
 						},
 						{
 							"id": "thrust_min_g",
@@ -1224,7 +1183,7 @@
 							"digits": 2,
 							"note": "Floor of the vertical thrust demand, in multiples of the weight.",
 							"source": "controller.cpp:55 kThrustMin = 0.2 m g",
-							"index": 75
+							"index": 71
 						},
 						{
 							"id": "thrust_max_frac",
@@ -1237,20 +1196,20 @@
 							"digits": 2,
 							"note": "Ceiling of the total thrust, as a fraction of the four rotors' maximum.",
 							"source": "controller.cpp:56 kThrustMax = 0.9 * 4 * kMaxRotorThrust; the rest is left for the torques",
-							"index": 76
+							"index": 72
 						},
 						{
 							"id": "yaw_torque_max",
 							"label": "Max yaw torque",
-							"unit": "N·m",
-							"default": 0.1,
+							"unit": "0–1",
+							"default": 0.5712,
 							"min": 0,
 							"max": 1,
 							"step": 0.005,
-							"digits": 3,
-							"note": "Yaw torque limit; a yaw demand the rotors cannot carry is cut, never paid for with thrust.",
-							"source": "controller.cpp:38 4 km 1.74 N of hover headroom = 0.111 N m; 0.1 keeps 10 % for roll and pitch",
-							"index": 77
+							"digits": 4,
+							"note": "Yaw torque limit, as a fraction of full yaw authority; a yaw demand the rotors cannot carry is cut, never paid for with thrust.",
+							"source": "controller.cpp:38 0.1 N m / 0.17508 N m (4 km 0.5 T_max of the X3); 4 km 1.74 N of hover headroom = 0.111 N m, 0.1 keeps 10 % for roll and pitch",
+							"index": 73
 						}
 					],
 					"parts": [
@@ -1294,7 +1253,9 @@
 								"rate_d_x",
 								"rate_d_y",
 								"rate_d_z",
-								"rate_int_accel"
+								"rate_int_max_x",
+								"rate_int_max_y",
+								"rate_int_max_z"
 							]
 						},
 						{
@@ -1312,6 +1273,63 @@
 							]
 						}
 					]
+				},
+				{
+					"id": "apogee-pid",
+					"label": "Apogee PI (air brake)",
+					"summary": "Brake deployment = clamp(kp e + ki int(e), 0, 1) while the mission flags the coast and the predictor's apogee is valid, e the predicted apogee with the brake closed minus the target; closed otherwise. The integral starts at zero and is limited to +-i_limit.",
+					"params": [
+						{
+							"id": "kp",
+							"label": "Proportional gain",
+							"unit": "1/m",
+							"default": 0.05,
+							"min": 0,
+							"max": 1,
+							"step": 0.005,
+							"digits": 3,
+							"note": "Deployment per metre of predicted overshoot.",
+							"source": "toolbox controller.ts:146 (PI tuned in the lab)",
+							"index": 74
+						},
+						{
+							"id": "ki",
+							"label": "Integral gain",
+							"unit": "1/(m·s)",
+							"default": 0.005,
+							"min": 0,
+							"max": 0.5,
+							"step": 0.001,
+							"digits": 3,
+							"note": "Deployment per metre-second of accumulated overshoot.",
+							"source": "toolbox controller.ts:147 (PI tuned in the lab)",
+							"index": 75
+						},
+						{
+							"id": "i_limit",
+							"label": "Integral limit",
+							"unit": "m·s",
+							"default": 2e+01,
+							"min": 0,
+							"max": 5e+02,
+							"step": 5,
+							"digits": 0,
+							"note": "Bound on the accumulated overshoot.",
+							"source": "toolbox controller.ts:148 (PI tuned in the lab)",
+							"index": 76
+						}
+					],
+					"parts": [
+						{
+							"id": "gains",
+							"label": "Gains",
+							"params": [
+								"kp",
+								"ki",
+								"i_limit"
+							]
+						}
+					]
 				}
 			]
 		},
@@ -1322,7 +1340,13 @@
 				{
 					"id": "quad-x",
 					"label": "Quad X",
-					"summary": "Force and torque to four rotor thrusts from the vehicle geometry: collective up to m g, then roll and pitch, then the rest of the collective, then yaw.",
+					"summary": "Thrust and torque fractions to four rotor thrust fractions with fixed +-0.5 factors (motor order 0 FR, 1 RL, 2 FL, 3 RR): collective up to the hover thrust, then roll and pitch, then the rest of the collective, then yaw.",
+					"params": []
+				},
+				{
+					"id": "rocket-brake",
+					"label": "Air brake",
+					"summary": "The controller's brake deployment, 0..1, in flight; every motor command zero, always.",
 					"params": []
 				}
 			]
@@ -1334,45 +1358,71 @@
 				{
 					"id": "rotor-speed-fraction",
 					"label": "Rotor speed fraction",
-					"summary": "Each motor command is the rotor speed as a fraction of its maximum, from thrust = k w².",
+					"summary": "Each motor command is the rotor speed as a fraction of its maximum: spin_min + (spin_max - spin_min) times the inverse of the thrust curve (1 - e) x + e x^2 at the rotor's thrust fraction.",
 					"params": [
 						{
-							"id": "motor_constant",
-							"label": "Thrust constant",
-							"unit": "N/(rad/s)²",
-							"default": 8.54858e-06,
-							"min": 1e-07,
-							"max": 0.0001,
-							"step": 1e-07,
-							"digits": 9,
-							"note": "Rotor thrust per squared rad/s.",
-							"source": "vehicle.hpp:35 thrust = k w^2, SDF:523",
+							"id": "thrust_expo",
+							"label": "Thrust curve expo",
+							"unit": "0–1",
+							"default": 1,
+							"min": 0,
+							"max": 1,
+							"step": 0.01,
+							"digits": 2,
+							"note": "e of thrust = (1 - e) x + e x^2: 1 for a rotor-speed command (thrust = k w^2).",
+							"source": "AP_Motors_Thrust_Linearization.cpp:104-107; 1 = sqrt, the bridge's ESC is linear from fraction to rad/s (SDF:522-523 thrust = k w^2)",
+							"index": 77
+						},
+						{
+							"id": "spin_min",
+							"label": "Spin minimum",
+							"unit": "0–1",
+							"default": 0,
+							"min": 0,
+							"max": 0.3,
+							"step": 0.01,
+							"digits": 2,
+							"note": "Command at zero thrust while armed.",
+							"source": "AP_Motors_Thrust_Linearization.cpp:104-107; 0 = today's behaviour",
 							"index": 78
 						},
 						{
-							"id": "max_rot_velocity",
-							"label": "Max rotor speed",
-							"unit": "rad/s",
-							"default": 8e+02,
-							"min": 1e+02,
-							"max": 5e+03,
-							"step": 1e+01,
-							"digits": 0,
-							"note": "Rotor speed at full command; with the thrust constant it sets the most thrust per rotor.",
-							"source": "vehicle.hpp:37 SDF:522",
+							"id": "spin_max",
+							"label": "Spin maximum",
+							"unit": "0–1",
+							"default": 1,
+							"min": 0.7,
+							"max": 1,
+							"step": 0.01,
+							"digits": 2,
+							"note": "Command at full thrust.",
+							"source": "AP_Motors_Thrust_Linearization.cpp:104-107; 1 = today's behaviour",
 							"index": 79
 						}
 					],
 					"parts": [
 						{
-							"id": "motors",
-							"label": "Motors",
+							"id": "curve",
+							"label": "Thrust curve",
 							"params": [
-								"motor_constant",
-								"max_rot_velocity"
+								"thrust_expo"
+							]
+						},
+						{
+							"id": "spin",
+							"label": "Spin range",
+							"params": [
+								"spin_min",
+								"spin_max"
 							]
 						}
 					]
+				},
+				{
+					"id": "brake-servo",
+					"label": "Brake servo",
+					"summary": "The brake servo command is the deployment, unchanged.",
+					"params": []
 				}
 			]
 		}
@@ -1391,20 +1441,7 @@
 				0
 			],
 			"values": [
-				1.52,
-				0.0347563,
-				0.07,
-				0.0977,
-				0.13,
-				-0.13,
-				0.13,
-				-0.13,
-				0.22,
-				-0.2,
-				-0.22,
-				0.2,
-				0.016,
-				9.8066,
+				0.6811,
 				0.01316,
 				0.002,
 				0.001093,
@@ -1417,6 +1454,7 @@
 				21.62762,
 				0.96861,
 				42.91632,
+				9.8066,
 				1,
 				0.4,
 				0.1,
@@ -1442,6 +1480,12 @@
 				1,
 				3,
 				1,
+				0.05,
+				0.45,
+				0.007854,
+				0.012,
+				3.1,
+				284,
 				0.7,
 				2,
 				0.5,
@@ -1451,16 +1495,18 @@
 				4,
 				0.7,
 				0.1,
-				25,
-				25,
-				1e+01,
-				62.5,
-				62.5,
-				1e+01,
-				0.05,
-				0.05,
+				0.3781,
+				1.2302,
+				5.58,
+				0.9453,
+				3.0756,
+				5.58,
+				0.0007563,
+				0.0024605,
 				0,
-				5,
+				0.0756,
+				0.246,
+				1,
 				3,
 				3,
 				1.5,
@@ -1468,9 +1514,13 @@
 				35,
 				0.2,
 				0.9,
-				0.1,
-				8.54858e-06,
-				8e+02
+				0.5712,
+				0.05,
+				0.005,
+				2e+01,
+				1,
+				0,
+				1
 			]
 		},
 		{
@@ -1486,20 +1536,7 @@
 				0
 			],
 			"values": [
-				1.52,
-				0.0347563,
-				0.07,
-				0.0977,
-				0.13,
-				-0.13,
-				0.13,
-				-0.13,
-				0.22,
-				-0.2,
-				-0.22,
-				0.2,
-				0.016,
-				9.8066,
+				0.6811,
 				0.01316,
 				0.002,
 				0.001093,
@@ -1512,6 +1549,7 @@
 				21.62762,
 				0.96861,
 				42.91632,
+				9.8066,
 				1,
 				0.4,
 				0.1,
@@ -1537,6 +1575,12 @@
 				1,
 				3,
 				1,
+				0.05,
+				0.45,
+				0.007854,
+				0.012,
+				3.1,
+				284,
 				0.7,
 				2,
 				0.5,
@@ -1546,16 +1590,18 @@
 				4,
 				0.7,
 				0.1,
-				25,
-				25,
-				1e+01,
-				62.5,
-				62.5,
-				1e+01,
-				0.05,
-				0.05,
+				0.3781,
+				1.2302,
+				5.58,
+				0.9453,
+				3.0756,
+				5.58,
+				0.0007563,
+				0.0024605,
 				0,
-				5,
+				0.0756,
+				0.246,
+				1,
 				3,
 				3,
 				1.5,
@@ -1563,9 +1609,13 @@
 				35,
 				0.2,
 				0.9,
-				0.1,
-				8.54858e-06,
-				8e+02
+				0.5712,
+				0.05,
+				0.005,
+				2e+01,
+				1,
+				0,
+				1
 			]
 		},
 		{
@@ -1581,20 +1631,7 @@
 				0
 			],
 			"values": [
-				1.52,
-				0.0347563,
-				0.07,
-				0.0977,
-				0.13,
-				-0.13,
-				0.13,
-				-0.13,
-				0.22,
-				-0.2,
-				-0.22,
-				0.2,
-				0.016,
-				9.8066,
+				0.6811,
 				0.01316,
 				0.002,
 				0.001093,
@@ -1607,6 +1644,7 @@
 				21.62762,
 				0.96861,
 				42.91632,
+				9.8066,
 				1,
 				0.4,
 				0.1,
@@ -1632,6 +1670,12 @@
 				1,
 				3,
 				1,
+				0.05,
+				0.45,
+				0.007854,
+				0.012,
+				3.1,
+				284,
 				0.7,
 				2,
 				0.5,
@@ -1641,16 +1685,18 @@
 				4,
 				0.7,
 				0.1,
-				25,
-				25,
-				1e+01,
-				62.5,
-				62.5,
-				1e+01,
-				0.05,
-				0.05,
+				0.3781,
+				1.2302,
+				5.58,
+				0.9453,
+				3.0756,
+				5.58,
+				0.0007563,
+				0.0024605,
 				0,
-				5,
+				0.0756,
+				0.246,
+				1,
 				3,
 				3,
 				1.5,
@@ -1658,9 +1704,13 @@
 				35,
 				0.2,
 				0.9,
-				0.1,
-				8.54858e-06,
-				8e+02
+				0.5712,
+				0.05,
+				0.005,
+				2e+01,
+				1,
+				0,
+				1
 			]
 		},
 		{
@@ -1676,20 +1726,7 @@
 				0
 			],
 			"values": [
-				1.52,
-				0.0347563,
-				0.07,
-				0.0977,
-				0.13,
-				-0.13,
-				0.13,
-				-0.13,
-				0.22,
-				-0.2,
-				-0.22,
-				0.2,
-				0.016,
-				9.8066,
+				0.6811,
 				0.01316,
 				0.002,
 				0.001093,
@@ -1702,6 +1739,7 @@
 				21.62762,
 				0.96861,
 				42.91632,
+				9.8066,
 				1,
 				0.4,
 				0.1,
@@ -1727,6 +1765,12 @@
 				1,
 				3,
 				1,
+				0.05,
+				0.45,
+				0.007854,
+				0.012,
+				3.1,
+				284,
 				0.7,
 				2,
 				0.5,
@@ -1736,16 +1780,18 @@
 				4,
 				0.7,
 				0.1,
-				25,
-				25,
-				1e+01,
-				62.5,
-				62.5,
-				1e+01,
-				0.05,
-				0.05,
+				0.3781,
+				1.2302,
+				5.58,
+				0.9453,
+				3.0756,
+				5.58,
+				0.0007563,
+				0.0024605,
 				0,
-				5,
+				0.0756,
+				0.246,
+				1,
 				3,
 				3,
 				1.5,
@@ -1753,9 +1799,108 @@
 				35,
 				0.2,
 				0.9,
+				0.5712,
+				0.05,
+				0.005,
+				2e+01,
+				1,
+				0,
+				1
+			]
+		},
+		{
+			"id": 4,
+			"label": "rocket",
+			"kinds": [
+				1,
+				0,
+				0,
+				1,
+				1,
+				1,
+				1
+			],
+			"values": [
+				0.6811,
+				0.01316,
+				0.002,
+				0.001093,
+				0.0002,
+				1,
+				1.5,
+				0.05,
+				0.0208,
+				0.0092,
+				21.62762,
+				0.96861,
+				42.91632,
+				9.8066,
+				1,
+				0.4,
 				0.1,
-				8.54858e-06,
-				8e+02
+				0.08,
+				0.0066,
+				1,
+				1,
+				0.025,
+				0.1177,
+				1,
+				1,
+				0.025,
+				0.1177,
+				0.5,
+				0.1,
+				0.25,
+				1,
+				3,
+				1,
+				0.75,
+				0.25,
+				1,
+				1,
+				3,
+				1,
+				0.05,
+				0.45,
+				0.007854,
+				0.012,
+				3.1,
+				284,
+				0.7,
+				2,
+				0.5,
+				2,
+				8,
+				8,
+				4,
+				0.7,
+				0.1,
+				0.3781,
+				1.2302,
+				5.58,
+				0.9453,
+				3.0756,
+				5.58,
+				0.0007563,
+				0.0024605,
+				0,
+				0.0756,
+				0.246,
+				1,
+				3,
+				3,
+				1.5,
+				2,
+				35,
+				0.2,
+				0.9,
+				0.5712,
+				0.05,
+				0.005,
+				2e+01,
+				1,
+				0,
+				1
 			]
 		}
 	]

@@ -23,7 +23,7 @@ const loaded = (): SetupState => {
 	applyHeader(st, header(), defaults);
 	return st;
 };
-const mass = paramKeys(schema).get('vehicle.quad-x3.mass')!.spec;
+const mass = paramKeys(schema).get('controller.cascaded-pid.vel_max')!.spec;
 
 describe('fixture schema', () => {
 	it('has the seven families in tick order and absolute indices 0..n-1', () => {
@@ -85,7 +85,7 @@ describe('export / import', () => {
 		const values = defaults.slice();
 		values[mass.index] = 2.25;
 		const file = JSON.parse(JSON.stringify(exportSetup(schema, kinds, values)));
-		expect(file.values['vehicle.quad-x3.mass']).toBe(2.25);
+		expect(file.values['controller.cascaded-pid.vel_max']).toBe(2.25);
 		const plan = planImport(schema, file);
 		expect(plan.unknown).toEqual([]);
 		expect(plan.invalid).toEqual([]);
@@ -100,11 +100,11 @@ describe('export / import', () => {
 	it('reports unknown ids and out-of-range values without applying them', () => {
 		const file = exportSetup(schema, schema.factory[0].kinds, defaults);
 		file.values['vehicle.quad-x3.wingspan'] = 3;
-		file.values['vehicle.quad-x3.mass'] = mass.max + 1;
+		file.values['controller.cascaded-pid.vel_max'] = mass.max + 1;
 		file.kinds.estimator = 'ukf';
 		const plan = planImport(schema, file);
 		expect(plan.unknown.sort()).toEqual(['estimator=ukf', 'vehicle.quad-x3.wingspan']);
-		expect(plan.invalid).toEqual(['vehicle.quad-x3.mass']);
+		expect(plan.invalid).toEqual(['controller.cascaded-pid.vel_max']);
 		expect(plan.params.some((p) => p.index === mass.index)).toBe(false);
 		expect(plan.params).toHaveLength(n - 1);
 		expect(plan.kinds.some((x) => schema.families[x.family].id === 'estimator')).toBe(false);
