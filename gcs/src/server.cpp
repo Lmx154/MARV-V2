@@ -11,6 +11,7 @@
 #include <boost/beast/websocket.hpp>
 #include <boost/json.hpp>
 
+#include "launcher.hpp"
 #include "link.hpp"
 #include "schema.hpp"
 
@@ -39,6 +40,7 @@ public:
             // Without a mission_state the page enables no mission control; a client joining while disarmed would
             // otherwise wait for the next change.
             self->send(self->server_.link().mission_message(), false);
+            if (self->server_.sim()) self->send(self->server_.sim()->status_message(), false);
             self->read();
         });
     }
@@ -137,6 +139,10 @@ private:
         path = path.substr(0, path.find('?'));
         if (path == "/api/schema") return text(http::status::ok, "application/json", schema_text());
         if (path == "/api/link") return text(http::status::ok, "application/json", json::serialize(server_.link().state()));
+        if (path == "/api/sim/airframes" && server_.sim())
+            return text(http::status::ok, "application/json", json::serialize(server_.sim()->airframes()));
+        if (path == "/api/sim/status" && server_.sim())
+            return text(http::status::ok, "application/json", json::serialize(server_.sim()->status()));
         if (path.rfind("/api/", 0) == 0) return text(http::status::not_found, "text/plain", "no such api\n");
         if (path.find("..") != std::string::npos) return text(http::status::bad_request, "text/plain", "bad path\n");
 
@@ -227,6 +233,7 @@ void Server::message(const std::string& text, const std::weak_ptr<WsSession>& fr
         reply(json::serialize(json::object{{"type", "error"}, {"request", ""}, {"error", "not a JSON object"}}));
         return;
     }
+    if (sim_ && sim_->handle(v.get_object(), reply)) return;
     link_->handle(v.get_object(), reply);
 }
 

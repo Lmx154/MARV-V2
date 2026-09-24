@@ -1,10 +1,11 @@
 // marv_bridge: runs the Gazebo world and the flight software in lockstep over the wire protocol.
 //
 //   marv_bridge (--sitl | --port /dev/ttyACMx) --seconds S [--mission FILE | --ground] [--log out.csv]
-//               [--max-rot-velocity RAD_S]
+//               [--max-rot-velocity RAD_S] [--link NAME]
 //
 // --max-rot-velocity: the rotor speed a motor command of 1 asks of the world's motor models, its SDF's
-// maxRotVelocity: 800 (the default) for sitl/gazebo/marv_quad.sdf, 1000 for sitl/gazebo/x500.sdf.
+// maxRotVelocity (default 800, the X3's; scripts/sim.sh passes the airframe's). --link: the model's link that carries
+// the sensors (default X3/base_link; the worlds of the airframe catalog sitl/airframes name it base_link).
 //
 // Per block of bridge::kStepsPerBlock physics steps: step the world, then for each step in order send the
 // truth State it produced (when valid), the mission command (when the active mission line changed, and
@@ -48,7 +49,7 @@ using namespace marv;
 int usage() {
     std::fprintf(stderr,
                  "usage: marv_bridge (--sitl | --port /dev/ttyACMx) --seconds S [--mission FILE | --ground] [--log out.csv]\n"
-                 "                   [--max-rot-velocity RAD_S]\n");
+                 "                   [--max-rot-velocity RAD_S] [--link NAME]\n");
     return 2;
 }
 
@@ -239,7 +240,8 @@ int main(int argc, char** argv) {
     const char* mission_path = nullptr;
     bool ground_mode = false;
     double seconds = -1.0;
-    double max_rot_velocity = 800.0;  // rad/s, maxRotVelocity in sitl/gazebo/marv_quad.sdf
+    double max_rot_velocity = 800.0;  // rad/s, maxRotVelocity in sitl/airframes/x3/model.sdf
+    std::string link = "X3/base_link";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         const bool has_value = i + 1 < argc;
@@ -250,6 +252,7 @@ int main(int argc, char** argv) {
         else if (a == "--mission" && has_value) mission_path = argv[++i];
         else if (a == "--ground") ground_mode = true;
         else if (a == "--max-rot-velocity" && has_value) max_rot_velocity = std::strtod(argv[++i], nullptr);
+        else if (a == "--link" && has_value) link = argv[++i];
         else return usage();
     }
     if (sitl == (port != nullptr) || !(seconds > 0.0) || (ground_mode && mission_path) || !(max_rot_velocity > 0.0))
@@ -288,7 +291,7 @@ int main(int argc, char** argv) {
     }
     std::vector<std::uint8_t> ground_in, fc_out;
 
-    bridge::GzWorld world(max_rot_velocity);
+    bridge::GzWorld world(max_rot_velocity, link);
     if (!world.connect(err)) {
         std::fprintf(stderr, "marv_bridge: %s\n", err.c_str());
         return 1;

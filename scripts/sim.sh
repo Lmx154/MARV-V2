@@ -6,46 +6,45 @@
 #
 # Exit code is the bridge's (2 if a gz server was already running, 1 if the world never came up).
 #   --gui (anywhere in the arguments) also opens the Gazebo window on the same world.
-#   --world x3|x500 (anywhere; default x3) picks the aircraft: x3 sitl/gazebo/marv_quad.sdf, x500 sitl/gazebo/x500.sdf
-#   (PX4's x500; the bridge gets its --max-rot-velocity 1000, and ~/sim/PX4-gazebo-models/models, when present, is
-#   added to GZ_SIM_RESOURCE_PATH for its meshes; without it the x500 flies with its mesh visuals removed).
+#   --world ID (anywhere; default x3) picks the aircraft from the catalog sitl/airframes/ID (x3, x500, ...):
+#   build/native/gcs/marv_worldgen writes its world in calm air at ETH Zurich to build/native/sim/generated/ID.sdf and
+#   names its max rotor speed (the bridge's --max-rot-velocity) and mesh directory (added to GZ_SIM_RESOURCE_PATH;
+#   without it the model's model:// visuals are dropped and the viewer shows no aircraft).
+#   --world-file PATH instead runs a world generated beforehand (the GCS launcher's, with wind and a location); the
+#   caller passes the airframe's --max-rot-velocity and sets GZ_SIM_RESOURCE_PATH. The sensors are on link base_link.
 set -uo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 source "$root/scripts/lib/gz-server.sh"
 
 bridge="$root/build/native/bridge/marv_bridge"
+worldgen="$root/build/native/gcs/marv_worldgen"
 [ -x "$bridge" ] || { echo "sim.sh: $bridge not built" >&2; exit 1; }
 
 gui=0
 world=x3
+world_file=""
 args=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --gui) gui=1 ;;
         --world) world="${2:-}"; shift ;;
+        --world-file) world_file="${2:-}"; shift ;;
         *) args+=("$1") ;;
     esac
     shift
 done
-case "$world" in
-    x3) sdf="$root/sitl/gazebo/marv_quad.sdf" ;;
-    x500)
-        sdf="$root/sitl/gazebo/x500.sdf"
-        args=(--max-rot-velocity 1000 "${args[@]}")
-        px4_models="$HOME/sim/PX4-gazebo-models/models"
-        if [ -d "$px4_models" ]; then
-            export GZ_SIM_RESOURCE_PATH="$px4_models${GZ_SIM_RESOURCE_PATH:+:$GZ_SIM_RESOURCE_PATH}"
-        else
-            # gz sim refuses to load a world whose model:// URIs do not resolve: drop the visuals that use them.
-            echo "sim.sh: no $px4_models: the x500 flies without its meshes (the viewer shows no aircraft)" >&2
-            nomesh="$(mktemp --suffix=.sdf)"
-            awk '/<visual /{buf = ""; v = 1} v {buf = buf $0 "\n"; if (/<\/visual>/) {v = 0; if (buf !~ /model:\/\//) printf "%s", buf}; next} {print}' \
-                "$sdf" >"$nomesh"
-            sdf="$nomesh"
-        fi
-        ;;
-    *) echo "sim.sh: --world x3|x500, not '$world'" >&2; exit 2 ;;
-esac
+if [ -n "$world_file" ]; then
+    [ -f "$world_file" ] || { echo "sim.sh: --world-file $world_file: no such file" >&2; exit 2; }
+    sdf="$world_file"
+else
+    [ -x "$worldgen" ] || { echo "sim.sh: $worldgen not built" >&2; exit 1; }
+    sdf="$root/build/native/sim/generated/$world.sdf"
+    gen="$("$worldgen" "$world" "$sdf")" || { echo "sim.sh: --world $world: see above" >&2; exit 2; }
+    args=(--max-rot-velocity "$(sed -n 's/^max_rot_velocity=//p' <<<"$gen")" "${args[@]}")
+    resources="$(sed -n 's/^resource_path=//p' <<<"$gen")"
+    [ -n "$resources" ] && export GZ_SIM_RESOURCE_PATH="$resources${GZ_SIM_RESOURCE_PATH:+:$GZ_SIM_RESOURCE_PATH}"
+fi
+args=(--link base_link "${args[@]}")
 
 gz_refuse_if_served
 
@@ -56,7 +55,6 @@ cleanup() {
     [ -n "$server" ] && kill "$server" 2>/dev/null
     wait "$server" 2>/dev/null
     gz_sweep_leaked
-    [ -n "${nomesh:-}" ] && rm -f "$nomesh"
 }
 trap cleanup EXIT
 

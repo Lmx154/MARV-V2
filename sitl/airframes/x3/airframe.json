@@ -1,0 +1,8 @@
+{
+	"id": "x3",
+	"label": "X3 UAV (RotorS)",
+	"frame": "quad-x",
+	"source": "gz Fuel openrobotics/x3 uav v4; motors as gz-sim8 worlds/multicopter_velocity_control.sdf",
+	"spawn_z": 0.055,
+	"spawn_z_why": "half the base_link collision box height (0.11 m): the box's underside on the plane; Fuel's 0.053302 starts it 1.7 mm inside the ground"
+}

@@ -12,13 +12,9 @@ namespace {
 
 const std::string kControl = "/world/marv/control";
 const std::string kClock = "/world/marv/clock";
-const std::string kSensor = "/world/marv/model/marv_quad/link/X3/base_link/sensor/";
-const std::string kImuTopic = kSensor + "imu_sensor/imu";
-const std::string kBaroTopic = kSensor + "baro_sensor/air_pressure";
-const std::string kMagTopic = kSensor + "mag_sensor/magnetometer";
-const std::string kGnssTopic = kSensor + "gps_sensor/navsat";
-const std::string kOdomTopic = "/world/marv/model/marv_quad/odometry";
-const std::string kMotor = "/marv_quad/command/motor_speed";
+const std::string kModel = "marv_quad";
+const std::string kOdomTopic = "/world/marv/model/" + kModel + "/odometry";
+const std::string kMotor = "/" + kModel + "/command/motor_speed";
 
 std::uint64_t to_us(const gz::msgs::Time& t) {
     return static_cast<std::uint64_t>(t.sec()) * 1000000u + static_cast<std::uint64_t>(t.nsec()) / 1000u;
@@ -49,13 +45,17 @@ void rotate(const Qd& q, const double v[3], double out[3]) {
 
 }  // namespace
 
-GzWorld::GzWorld(double max_rot_velocity)
-    : max_rot_velocity_(max_rot_velocity), motor_pub_(node_.Advertise<gz::msgs::Actuators>(kMotor)) {}
+GzWorld::GzWorld(double max_rot_velocity, const std::string& link)
+    : max_rot_velocity_(max_rot_velocity),
+      sensor_("/world/marv/model/" + kModel + "/link/" + link + "/sensor/"),
+      motor_pub_(node_.Advertise<gz::msgs::Actuators>(kMotor)) {}
 
 bool GzWorld::connect(std::string& err) {
-    if (!motor_pub_ || !node_.Subscribe(kImuTopic, &GzWorld::on_imu, this) ||
-        !node_.Subscribe(kOdomTopic, &GzWorld::on_odom, this) || !node_.Subscribe(kBaroTopic, &GzWorld::on_baro, this) ||
-        !node_.Subscribe(kMagTopic, &GzWorld::on_mag, this) || !node_.Subscribe(kGnssTopic, &GzWorld::on_gnss, this) ||
+    if (!motor_pub_ || !node_.Subscribe(sensor_ + "imu_sensor/imu", &GzWorld::on_imu, this) ||
+        !node_.Subscribe(kOdomTopic, &GzWorld::on_odom, this) ||
+        !node_.Subscribe(sensor_ + "baro_sensor/air_pressure", &GzWorld::on_baro, this) ||
+        !node_.Subscribe(sensor_ + "mag_sensor/magnetometer", &GzWorld::on_mag, this) ||
+        !node_.Subscribe(sensor_ + "gps_sensor/navsat", &GzWorld::on_gnss, this) ||
         // Last: the server's PUB socket applies subscriptions in the order they arrive on the one
         // connection, so the first clock message proves every subscription above is live too.
         !node_.Subscribe(kClock, &GzWorld::on_clock, this)) {
