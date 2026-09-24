@@ -582,7 +582,11 @@ void Link::mission_request(const std::string& type, const json::object& m, const
         refusal = number(m, "alt_m", alt) ? mission_.climb(alt) : "want {alt_m: number}";
     } else if (type == "mission_start") {
         std::vector<Waypoint> wps;
-        refusal = waypoints(m, wps) ? mission_.start(wps) : "want {waypoints: [{lat, lon, alt_m}]}";
+        double speed = 0.0;
+        if (!waypoints(m, wps) || (m.if_contains("speed_mps") && !number(m, "speed_mps", speed)))
+            refusal = "want {waypoints: [{lat, lon, alt_m}], speed_mps?: number}";
+        else
+            refusal = mission_.start(wps, speed);
     } else if (type == "rth") {
         refusal = mission_.rth();
     } else {

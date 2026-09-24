@@ -13,7 +13,9 @@ namespace {
 // ADR-0010 (b), (c).
 constexpr double kStale = 1.0;        // s: telemetry older than this is stale
 constexpr double kIdleFor = 1.0;      // s of kIdle frames after a disarm or a landing
-constexpr float kArrive = 0.5f;       // m, 3-D in the estimate frame
+constexpr float kArrive = 0.5f;       // m, 3-D in the estimate frame: climb, the rth climb, hold
+constexpr float kArriveWp = 2.0f;     // m, 3-D: mission legs and the rth return (ArduPilot WP_RADIUS_M_DEFAULT)
+constexpr float kSpeedMin = 0.5f, kSpeedMax = 20.f;  // m/s, mission_start's speed_mps when not 0
 constexpr float kAltMin = 0.5f, kAltMax = 200.f;  // m above home: climb and waypoint altitudes
 constexpr float kRangeMax = 5000.f;   // m, a waypoint from home
 constexpr std::size_t kWaypointsMax = 64;
@@ -88,12 +90,15 @@ std::string Mission::climb(double alt_m) {
     target_ = {tlm_.est.p_ned.x, tlm_.est.p_ned.y, -climb_alt_};
     reason_.clear();
     state_ = State::kClimb;
+    hold_heading();
     return {};
 }
 
-std::string Mission::start(const std::vector<Waypoint>& wps) {
+std::string Mission::start(const std::vector<Waypoint>& wps, double speed_mps) {
     if (state_ != State::kHold) return std::string("not in ") + name(state_) + " (mission_start: hold)";
     if (wps.empty() || wps.size() > kWaypointsMax) return "want 1..64 waypoints";
+    if (!(speed_mps == 0.0 || (speed_mps >= kSpeedMin && speed_mps <= kSpeedMax)))
+        return "speed_mps must be 0.5..20 m/s (0: the cruise speed)";
     std::vector<Vec3> ned;
     for (std::size_t i = 0; i < wps.size(); ++i) {
         const Waypoint& w = wps[i];
@@ -107,6 +112,7 @@ std::string Mission::start(const std::vector<Waypoint>& wps) {
     }
     wps_ = std::move(ned);
     wp_ = 0;
+    speed_ = static_cast<float>(speed_mps);
     target_ = wps_[0];
     reason_.clear();
     state_ = State::kMission;
@@ -138,19 +144,28 @@ std::string Mission::land() {
     wp_ = -1;
     reason_.clear();
     state_ = State::kLand;
+    hold_heading();
     return {};
+}
+
+void Mission::hold_heading() { yaw_ = yaw_of(tlm_.est.q); }
+
+float Mission::accept() const {
+    if (state_ == State::kMission || (state_ == State::kRth && rth_leg_ == 1)) return kArriveWp;
+    return kArrive;
 }
 
 void Mission::advance(double now) {
     const marv::State& e = tlm_.est;
     switch (state_) {
     case State::kClimb:
-        if (dist(e.p_ned, target_) >= kArrive) break;
+        if (dist(e.p_ned, target_) >= accept()) break;
         state_ = State::kHold;
+        hold_heading();
         reason_ = "altitude reached";
         break;
     case State::kMission:
-        if (dist(e.p_ned, target_) >= kArrive) break;
+        if (dist(e.p_ned, target_) >= accept()) break;
         if (++wp_ < static_cast<int>(wps_.size())) {
             target_ = wps_[static_cast<std::size_t>(wp_)];
         } else {
@@ -159,12 +174,13 @@ void Mission::advance(double now) {
         }
         break;
     case State::kRth:
-        if (dist(e.p_ned, target_) >= kArrive) break;
+        if (dist(e.p_ned, target_) >= accept()) break;
         if (rth_leg_ == 0) {
             rth_leg_ = 1;
             target_ = {home_ned_.x, home_ned_.y, target_.z};
         } else {
             state_ = State::kHold;
+            hold_heading();
             reason_ = "home reached";
         }
         break;
@@ -197,7 +213,10 @@ MissionCommand Mission::frame(Mode mode, std::uint8_t has, const Vec3& p, const 
     c.ref.has = has;
     c.ref.p_ned = p;
     c.ref.p_next_ned = p;
-    c.ref.accept_m = kArrive;
+    if (state_ == State::kMission && wp_ + 1 < static_cast<int>(wps_.size()))
+        c.ref.p_next_ned = wps_[static_cast<std::size_t>(wp_ + 1)];
+    c.ref.speed_mps = state_ == State::kMission ? speed_ : 0.f;
+    c.ref.accept_m = accept();
     c.ref.v_ned = v;
     c.ref.yaw = yaw_;
     c.ref.q = {1.f, 0.f, 0.f, 0.f};
@@ -220,9 +239,11 @@ bool Mission::tick(double now, MissionCommand& out) {
         return true;
     case State::kClimb:
     case State::kHold:
+        out = frame(Mode::kFly, kRefPos | kRefYaw, target_, {});
+        return true;
     case State::kMission:
     case State::kRth:
-        out = frame(Mode::kFly, kRefPos | kRefYaw, target_, {});
+        out = frame(Mode::kFly, kRefPos, target_, {});
         return true;
     }
     return false;

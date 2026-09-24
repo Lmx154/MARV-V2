@@ -1,20 +1,27 @@
 #!/usr/bin/env node
 // SITL end to end of the GCS mission executor (ADR-0010 (e)): Gazebo and marv_bridge (scripts/sim.sh --sitl --ground
-// --seconds 400 --log), marv_gcs on the bridge's UDP link (scripts/gcs.sh), driven over the GCS WebSocket as the web
+// --seconds 600 --log), marv_gcs on the bridge's UDP link (scripts/gcs.sh), driven over the GCS WebSocket as the web
 // Mission view drives it. Truth comes from the bridge's --log, read while it is written. Not in ctest (needs Gazebo).
 //
-//   node scripts/gcs-mission-e2e.mjs [--out DIR] [--http PORT]     takes /tmp/marv-rig.lock itself
+//   node scripts/gcs-mission-e2e.mjs [--out DIR] [--http PORT] [--world ID] [--setup FILE]   takes /tmp/marv-rig.lock itself
+//
+//   --world ID goes to sim.sh (default x3). --setup FILE (a marv-setup JSON, e.g. setups/x500.json) is staged by id over
+//   the WebSocket and applied (reset) before the run; without it the running setup must be factory 0.
 //
 //   1. arm: for 5 s telemetry.armed, every motor == spin_arm +- 1e-6, truth_d_m > -0.05 (no liftoff).
 //   2. climb 5: hold within 30 s; truth_d over 2..5 s of hold at -5 +- 0.3.
-//   3. a 3-waypoint mission, 12 m legs at 6..8 m above home: at each wp_index advance, truth within 2.0 m
-//      horizontal / 0.5 m vertical of the waypoint; then the automatic rth to hold within 2.0 m of home.
+//   2b. a 20 m square at 5 m, starting at home (corners N, NE, E, home): the automatic rth to hold ("home reached").
+//      Metrics from truth, written to square-metrics.json: completion (first mission frame -> rth), per corner the
+//      closest 3-D approach, the truth horizontal speed there, the along-track overshoot past it; cross-track RMS
+//      to the square and the tilt peak, both over completion.
+//   3. a 3-waypoint mission, 12 m legs at 6..8 m above home: at each wp_index advance, truth within 2.5 m 3-D
+//      of the waypoint (the executor's 2.0 m accept_m and 0.5 m of estimate error); then the automatic rth to hold within 2.0 m of home.
 //   4. a second mission, rth after its first waypoint: hold within 2.0 m of home.
 //   5. land: disarmed ("landed") within 60 s, truth_d_m > -0.1, every motor 0.
 // Waypoints are placed in the truth frame (NED about the vehicle's spawn point, the world origin of
 // sitl/gazebo/world.sdf.in) and sent as lat/lon about that origin. Exit 0 when every check passes.
 import { spawn, spawnSync } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -35,6 +42,8 @@ if (process.env.MARV_E2E_LOCKED !== '1') {
 
 const out = resolve(opt('--out', join(root, 'build', 'e2e-mission')));
 const port = Number(opt('--http', '8779'));
+const world = opt('--world', 'x3');
+const setupFile = opt('--setup', null);
 mkdirSync(out, { recursive: true });
 const logPath = join(out, 'bridge.csv');
 
@@ -89,7 +98,7 @@ async function stopAll() {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---- the bridge log, read while it grows ----------------------------------------------------------------------------
-const truth = { t: [], n: [], e: [], d: [], m: [[], [], [], []] };
+const truth = { t: [], n: [], e: [], d: [], vn: [], ve: [], tilt: [], m: [[], [], [], []] };
 let csvFd = -1, csvRest = '', cols = null;
 function readCsv() {
 	if (csvFd < 0) {
@@ -112,6 +121,10 @@ function readCsv() {
 			truth.n.push(Number(c[cols.truth_n_m]));
 			truth.e.push(Number(c[cols.truth_e_m]));
 			truth.d.push(Number(c[cols.truth_d_m]));
+			truth.vn.push(Number(c[cols.truth_vn_mps]));
+			truth.ve.push(Number(c[cols.truth_ve_mps]));
+			const qx = Number(c[cols.truth_qx]), qy = Number(c[cols.truth_qy]);
+			truth.tilt.push((Math.acos(Math.min(1, Math.max(-1, 1 - 2 * (qx * qx + qy * qy)))) * 180) / Math.PI);
 			for (let k = 0; k < 4; ++k) truth.m[k].push(Number(c[cols[`motor${k}`]]));
 		}
 	}
@@ -213,17 +226,46 @@ async function run() {
 		MARV_GCS_LOCK: join(out, 'marv-gcs.lock')
 	});
 	await connect();
-	start(join(root, 'scripts/sim.sh'), ['--sitl', '--ground', '--seconds', '400', '--log', logPath], 'sim');
+	start(join(root, 'scripts/sim.sh'), ['--world', world, '--sitl', '--ground', '--seconds', '600', '--log', logPath], 'sim');
 
-	// The setup: factory 0 stored, and spin_arm of the running actuators kind.
+	// The setup: factory 0 (or --setup FILE, staged and applied) running, and spin_arm of the running actuators kind.
 	const schema = await (await fetch(`http://127.0.0.1:${port}/api/schema`)).json();
 	await until(() => tlm, 60000, 'telemetry');
 	send({ type: 'request_setup' });
 	await until(() => setup, 10000, 'setup');
-	const fac = schema.factory[0];
-	const same = setup.values.every((v, i) => v === fac.values[i]) && fac.kinds.every((k, i) => k === setup.header.kind[i]);
-	check('setup is factory 0', same && setup.header.running_crc === setup.header.staged_crc,
-		`values and kinds ${same ? '==' : '!='} factory 0 (${fac.label}); running_crc ${setup.header.running_crc} staged_crc ${setup.header.staged_crc}`);
+	if (setupFile) {
+		const file = JSON.parse(readFileSync(resolve(root, setupFile), 'utf8'));
+		const want = { kinds: [], values: [] };
+		for (const [fam, kid] of Object.entries(file.kinds)) {
+			const fi = schema.families.findIndex((x) => x.id === fam);
+			const ki = fi < 0 ? -1 : schema.families[fi].kinds.findIndex((x) => x.id === kid);
+			if (ki < 0) throw new Abort(`${setupFile}: no kind ${fam}=${kid} in this schema`);
+			want.kinds.push([fi, ki]);
+			await command({ type: 'set_kind', family: fi, kind: ki });
+		}
+		const spec = new Map();
+		schema.families.forEach((fa) => fa.kinds.forEach((ki) => ki.params.forEach((p) => spec.set(`${fa.id}.${ki.id}.${p.id}`, p))));
+		for (const [key, v] of Object.entries(file.values)) {
+			const p = spec.get(key);
+			if (!p) throw new Abort(`${setupFile}: no parameter ${key} in this schema`);
+			want.values.push([p.index, v]);
+			send({ type: 'set_param', index: p.index, value: v });
+		}
+		await command({ type: 'reset' });
+		await sleep(1000);
+		setup = null;
+		send({ type: 'request_setup' });
+		await until(() => setup, 10000, 'setup after reset');
+		const same = want.kinds.every(([fi, ki]) => setup.header.kind[fi] === ki) &&
+			want.values.every(([i, v]) => Math.fround(setup.values[i]) === Math.fround(v));
+		check(`setup is ${setupFile}`, same && setup.header.running_crc === setup.header.staged_crc,
+			`${want.kinds.length} kinds and ${want.values.length} values ${same ? '==' : '!='} the file; running_crc ${setup.header.running_crc} staged_crc ${setup.header.staged_crc}`);
+	} else {
+		const fac = schema.factory[0];
+		const same = setup.values.every((v, i) => v === fac.values[i]) && fac.kinds.every((k, i) => k === setup.header.kind[i]);
+		check('setup is factory 0', same && setup.header.running_crc === setup.header.staged_crc,
+			`values and kinds ${same ? '==' : '!='} factory 0 (${fac.label}); running_crc ${setup.header.running_crc} staged_crc ${setup.header.staged_crc}`);
+	}
 	const fa = schema.families.findIndex((x) => x.id === 'actuators');
 	const spinIdx = schema.families[fa].kinds[setup.header.kind[fa]].params.find((p) => p.id === 'spin_arm').index;
 	const spin = setup.values[spinIdx];
@@ -272,8 +314,62 @@ async function run() {
 	check('climb 5 -> hold', climbS <= 30 && hMin >= -5.3 && hMax <= -4.7 && hold.reason === 'altitude reached',
 		`hold after ${f(climbS, 1)} s ("${hold.reason}"), truth_d at entry ${f(truth.d[at(hold.t_us)])}, over 2..5 s of hold ${f(hMin)}..${f(hMax)} m`);
 
-	// 3. the mission, then the automatic rth to hold over home.
+	// 2b. the 20 m square at 5 m, then the automatic rth to hold over home; metrics from truth.
 	const home = { n: truth.n[at(tA)], e: truth.e[at(tA)] };
+	const SQ = [[20, 0], [20, 20], [0, 20], [0, 0]].map(([n, e]) => ({ n: home.n + n, e: home.e + e, alt: 5 }));
+	k = states.length;
+	await command({ type: 'mission_start', waypoints: SQ.map(wire) });
+	const sq0 = await nextState(k, (s) => s.state === 'mission', 2000, 'square: mission');
+	const sqAdv = [];
+	for (let w = 0; w < SQ.length; ++w)
+		sqAdv.push(await nextState(k, (s) => (w + 1 < SQ.length ? s.state === 'mission' && s.wp_index === w + 1 : s.state === 'rth'),
+			90000, `square: advance past corner ${w}`));
+	const sqHold = await nextState(k, (s) => s.state === 'hold', 90000, 'hold after the square');
+	await until(() => tlm.t_us >= sqHold.t_us + 2e6, 10000, 'hold 2 s');
+	await truthUntil(sqHold.t_us + 2e6);
+	{
+		const t0 = sq0.t_us, t1 = sqAdv[3].t_us;
+		const bound = [t0, ...sqAdv.map((s) => s.t_us), sqHold.t_us + 2e6];
+		const legs = [home, ...SQ];
+		const corners = SQ.map((c, w) => {
+			const prev = legs[w], L = Math.hypot(c.n - prev.n, c.e - prev.e);
+			const un = (c.n - prev.n) / L, ue = (c.e - prev.e) / L;
+			let best = -1, dBest = Infinity, over = -Infinity;
+			for (const j of rows(bound[w], bound[w + 2])) {
+				const dn = truth.n[j] - c.n, de = truth.e[j] - c.e, dd = truth.d[j] + c.alt;
+				const d3 = Math.hypot(dn, de, dd);
+				if (d3 < dBest) (dBest = d3), (best = j);
+				over = Math.max(over, dn * un + de * ue);
+			}
+			return { closest_m: dBest, pass_speed_mps: Math.hypot(truth.vn[best], truth.ve[best]), overshoot_m: over };
+		});
+		const seg = (pn, pe, a, b) => {
+			const vn = b.n - a.n, ve = b.e - a.e;
+			const u = Math.max(0, Math.min(1, ((pn - a.n) * vn + (pe - a.e) * ve) / (vn * vn + ve * ve)));
+			return Math.hypot(pn - a.n - u * vn, pe - a.e - u * ve);
+		};
+		let ss = 0, tiltPeak = 0;
+		const r = rows(t0, t1);
+		for (const j of r) {
+			let x = Infinity;
+			for (let w = 0; w < SQ.length; ++w) x = Math.min(x, seg(truth.n[j], truth.e[j], legs[w], legs[w + 1]));
+			ss += x * x;
+			tiltPeak = Math.max(tiltPeak, truth.tilt[j]);
+		}
+		const metrics = {
+			world, setup: setupFile ?? 'factory 0', completion_s: (t1 - t0) / 1e6, corners,
+			cross_track_rms_m: Math.sqrt(ss / r.length), tilt_peak_deg: tiltPeak,
+			overshoot_max_m: Math.max(...corners.map((c) => c.overshoot_m))
+		};
+		writeFileSync(join(out, 'square-metrics.json'), JSON.stringify(metrics, null, '\t') + '\n');
+		console.log(`square metrics: ${JSON.stringify(metrics)}`);
+	}
+	let i = at(sqHold.t_us + 2e6);
+	let dHome = Math.hypot(truth.n[i] - home.n, truth.e[i] - home.e);
+	check('square -> rth -> hold over home', sqHold.reason === 'home reached' && dHome <= 2.0,
+		`completion ${f((sqAdv[3].t_us - sq0.t_us) / 1e6, 2)} s, hold ("${sqHold.reason}"), truth 2 s later ${f(dHome)} m from home`);
+
+	// 3. the mission, then the automatic rth to hold over home.
 	console.log(`home (truth at arm) n ${f(home.n)} e ${f(home.e)}; waypoints ${JSON.stringify(WPS.map(wire))}`);
 	k = states.length;
 	await command({ type: 'mission_start', waypoints: WPS.map(wire) });
@@ -283,14 +379,14 @@ async function run() {
 		await truthUntil(adv.t_us);
 		const i = at(adv.t_us);
 		const dh = Math.hypot(truth.n[i] - WPS[w].n, truth.e[i] - WPS[w].e), dv = Math.abs(truth.d[i] + WPS[w].alt);
-		check(`waypoint ${w}`, dh <= 2.0 && dv <= 0.5,
-			`advance at t ${f(adv.t_us / 1e6, 2)} s: truth miss ${f(dh)} m horizontal, ${f(dv)} m vertical (${adv.state}${adv.reason ? ' "' + adv.reason + '"' : ''})`);
+		check(`waypoint ${w}`, Math.hypot(dh, dv) <= 2.5,
+			`advance at t ${f(adv.t_us / 1e6, 2)} s: truth miss ${f(Math.hypot(dh, dv))} m 3-D (${f(dh)} m horizontal, ${f(dv)} m vertical) (${adv.state}${adv.reason ? ' "' + adv.reason + '"' : ''})`);
 	}
 	const rthHold = await nextState(k, (s) => s.state === 'hold', 90000, 'hold after the automatic rth');
 	await until(() => tlm.t_us >= rthHold.t_us + 2e6, 10000, 'hold 2 s');
 	await truthUntil(rthHold.t_us + 2e6);
-	let i = at(rthHold.t_us + 2e6);
-	let dHome = Math.hypot(truth.n[i] - home.n, truth.e[i] - home.e);
+	i = at(rthHold.t_us + 2e6);
+	dHome = Math.hypot(truth.n[i] - home.n, truth.e[i] - home.e);
 	check('automatic rth -> hold over home', rthHold.reason === 'home reached' && dHome <= 2.0,
 		`hold ("${rthHold.reason}"), truth 2 s later ${f(dHome)} m from home, truth_d ${f(truth.d[i])} m`);
 
