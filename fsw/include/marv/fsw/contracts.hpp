@@ -96,6 +96,7 @@ enum RefBit : std::uint8_t {
     kRefAcc = 1u << 2,
     kRefYaw = 1u << 3,
     kRefAtt = 1u << 4,
+    kRefYawRate = 1u << 5,
 };
 
 struct Reference {
@@ -104,6 +105,7 @@ struct Reference {
     Vec3 v_ned;
     Vec3 a_ned;
     float yaw;  // rad
+    float yaw_rate;  // rad/s about body z (FRD: positive = clockwise seen from above)
     Quat q;
 };
 

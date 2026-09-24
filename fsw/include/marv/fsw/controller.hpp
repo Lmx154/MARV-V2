@@ -19,6 +19,8 @@ private:
     Vec3 iw_{0.f, 0.f, 0.f};      // integrated body-rate error, rad
     Vec3 w_prev_{0.f, 0.f, 0.f};  // body rate of the previous tick, for the derivative
     bool have_prev_ = false;
+    float yaw_hold_ = 0.f;        // heading held under a yaw rate reference, rad
+    bool have_hold_ = false;
 };
 
 }  // namespace marv

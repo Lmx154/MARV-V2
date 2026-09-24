@@ -34,8 +34,8 @@ enum MsgId : std::uint8_t {
 inline constexpr std::size_t kSensorsBody = 8 + 1 + 24 + 8 + 12 + (4 + 4 + 4 + 12 + 1);  // 78
 inline constexpr std::size_t kActuatorsBody = 8 + 4 * kMotorCount + 1;                 // 25
 inline constexpr std::size_t kStateBody = 8 + 12 + 12 + 16 + 12 + 1;                   // 61
-inline constexpr std::size_t kReferenceBody = 1 + 12 + 12 + 12 + 4 + 16;               // 57
-inline constexpr std::size_t kMissionBody = 1 + 1 + kReferenceBody;                    // 59
+inline constexpr std::size_t kReferenceBody = 1 + 12 + 12 + 12 + 4 + 4 + 16;           // 61
+inline constexpr std::size_t kMissionBody = 1 + 1 + kReferenceBody;                    // 63
 inline constexpr std::size_t kTelemetryBody = 8 + kStateBody + 24 + 1 + 1 + 12;         // 107
 inline constexpr std::size_t kMaxBody = kTelemetryBody > kSensorsBody ? kTelemetryBody : kSensorsBody;
 inline constexpr std::size_t kMaxPayload = 1 + kMaxBody + 2;
@@ -223,6 +223,7 @@ inline void put(Writer& w, const Reference& f) {
     w.vec3(f.v_ned);
     w.vec3(f.a_ned);
     w.f32(f.yaw);
+    w.f32(f.yaw_rate);
     w.quat(f.q);
 }
 
@@ -232,6 +233,7 @@ inline void get(Reader& r, Reference& f) {
     f.v_ned = r.vec3();
     f.a_ned = r.vec3();
     f.yaw = r.f32();
+    f.yaw_rate = r.f32();
     f.q = r.quat();
 }
 

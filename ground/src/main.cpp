@@ -306,15 +306,17 @@ int run_manual(Ground& g, int argc, char** argv) {
     if (fd < 0) return 1;
     const bool radio = is_radio(name);
     std::printf("pilot: %s, %s mapping\n", name, radio ? "RadioMaster" : "Xbox");
-    constexpr float kClimbMax = 1.5f, kYawRateMax = kPi / 2.f, kSpeedMax = 3.f;
+    // Full rudder asks for a yaw rate the airframe can follow both ways: its yaw torque tops out at 0.1 N m
+    // (fsw/src/controller.cpp kYawTorqueMax), 1.02 rad/s^2 on Izz = 0.0977 kg m^2 (0.93 measured in the sim),
+    // so 1 rad/s is reached, and after release stopped, in about 1.1 s.
+    constexpr float kClimbMax = 1.5f, kYawRateMax = 1.f, kSpeedMax = 3.f;
     std::int16_t axis[8] = {};
     bool seen[8] = {};
-    bool fly = false, have_yaw = false, refused = false;
+    bool fly = false, refused = false;
     // Nothing is sent until the pilot arms: starting manual against a vehicle that is already flying must
     // not disarm it. From the first arm on, the pilot owns the vehicle and disarm sends idle.
     bool engaged = false;
     int prev_switch = -1;  // CH5 at the last period; -1 until the device reported it
-    float yaw = 0.f;
     std::uint8_t ev_buf[sizeof(js_event)];
     std::size_t ev_n = 0;
     int rc = 0;
@@ -344,7 +346,7 @@ int run_manual(Ground& g, int argc, char** argv) {
         }
         if (lost) {
             std::fprintf(stderr, "marv_ground: joystick %s lost, holding\n", name);
-            if (engaged && have_yaw) g.send(command(fly ? Mode::kFly : Mode::kIdle, kRefVel | kRefYaw, {}, {0.f, 0.f, 0.f}, yaw));
+            if (engaged) g.send(command(fly ? Mode::kFly : Mode::kIdle, kRefVel | kRefYawRate, {}, {0.f, 0.f, 0.f}, 0.f));
             rc = 1;
             break;
         }
@@ -371,13 +373,13 @@ int run_manual(Ground& g, int argc, char** argv) {
             }
             continue;
         }
-        // Idle tracks the vehicle's heading, so arming keeps the nose where it is.
-        if (!fly || !have_yaw) yaw = yaw_of(g.tlm().est.q);
-        have_yaw = true;
-        yaw = std::remainder(yaw + yaw_in * kYawRateMax * kDt, 2.f * kPi);
+        // Rudder is a yaw rate; the flight controller holds the heading once the pilot and the body are still.
+        // The right stick moves along the vehicle's estimated heading, so forward is where the nose points.
+        const float yaw = yaw_of(g.tlm().est.q);
         const float c = std::cos(yaw), s = std::sin(yaw);
         const Vec3 v{(c * fwd - s * right) * kSpeedMax, (s * fwd + c * right) * kSpeedMax, -climb * kClimbMax};
-        const MissionCommand cmd = command(fly ? Mode::kFly : Mode::kIdle, kRefVel | kRefYaw, {}, v, yaw);
+        MissionCommand cmd = command(fly ? Mode::kFly : Mode::kIdle, kRefVel | kRefYawRate, {}, v, 0.f);
+        cmd.ref.yaw_rate = yaw_in * kYawRateMax;
         engaged = engaged || fly;
         if (!g.period(engaged ? &cmd : nullptr)) {
             rc = 1;

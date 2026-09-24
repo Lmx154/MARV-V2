@@ -36,6 +36,9 @@ constexpr float kYawDecel = 0.7f;                         // rad/s^2
 // for roll and pitch. The allocation's priority is collective up to m g, then roll/pitch, then the rest
 // of the collective, then yaw: a yaw demand the rotors cannot carry is cut, never paid for with thrust.
 constexpr float kYawTorqueMax = 0.1f;                     // N m
+// Yaw rate reference (kRefYawRate): while it is non-zero, or the body still turns faster than this, the
+// heading hold follows the vehicle and the rate loop tracks the reference; below it the heading is held.
+constexpr float kYawRateStill = 0.1f;                     // rad/s
 // Translation, v_sp = Kp e_p, a = Kv (v_sp - v) + Ki int(v_sp - v). With the inner loops ideal the
 // position error obeys e'' + Kv e' + Kv Kp e = 0: w_n = sqrt(Kv Kp) = 1.18 rad/s, about 7x below the
 // attitude loop, and zeta = sqrt(Kv / Kp) / 2 = 0.85. Kv * kVelMax = 4 m/s^2 bounds the acceleration a
@@ -65,6 +68,7 @@ ControlRequest Controller::run(const Reference& ref, const State& nav, Mode mode
     if (mode != Mode::kFly) {
         iv_ = iw_ = w_prev_ = {0.f, 0.f, 0.f};
         have_prev_ = false;
+        have_hold_ = false;
         return {{0.f, 0.f, 0.f}, {0.f, 0.f, 0.f}};
     }
 
@@ -72,7 +76,21 @@ ControlRequest Controller::run(const Reference& ref, const State& nav, Mode mode
     const Vec3 p_ref = (ref.has & kRefPos) ? ref.p_ned : nav.p_ned;
     const Vec3 v_ref = (ref.has & kRefVel) ? ref.v_ned : Vec3{0.f, 0.f, 0.f};
     const Vec3 a_ref = (ref.has & kRefAcc) ? ref.a_ned : Vec3{0.f, 0.f, 0.f};
-    const float yaw = (ref.has & kRefYaw) ? ref.yaw : yaw_of(nav.q);
+    // Yaw: a rate (kRefYawRate), else an absolute heading (kRefYaw), else free. With a rate the hold
+    // target follows the heading while the pilot or the body turns and is captured on the first tick both
+    // are still (and on entering fly or the rate reference), so a release while still turning brakes and
+    // holds where the rotation stopped.
+    float yaw = yaw_of(nav.q);
+    bool yaw_rate_ref = false;
+    if (ref.has & kRefYawRate) {
+        yaw_rate_ref = std::fabs(ref.yaw_rate) > 0.f || std::fabs(nav.w_frd.z) > kYawRateStill;
+        if (yaw_rate_ref || !have_hold_) yaw_hold_ = yaw;
+        have_hold_ = !yaw_rate_ref;
+        yaw = yaw_hold_;
+    } else {
+        have_hold_ = false;
+        if (ref.has & kRefYaw) yaw = ref.yaw;
+    }
     const Vec3 v_sp = clamp_norm(v_ref + kPosP * (p_ref - nav.p_ned), kVelMax);
     const Vec3 ev = v_sp - nav.v_ned;
     iv_ = clamp_norm(iv_ + dt * ev, kVelIntAccel / kVelI);
@@ -101,6 +119,7 @@ ControlRequest Controller::run(const Reference& ref, const State& nav, Mode mode
     const float yaw_rate_max = std::fmin(kRateMax.z, std::sqrt(2.f * kYawDecel * std::fabs(e.z)));
     w_sp = {clampf(w_sp.x, -kRateMax.x, kRateMax.x), clampf(w_sp.y, -kRateMax.y, kRateMax.y),
             clampf(w_sp.z, -yaw_rate_max, yaw_rate_max)};
+    if (yaw_rate_ref) w_sp.z = clampf(ref.yaw_rate, -kRateMax.z, kRateMax.z);
 
     // Body-rate PID -> angular acceleration -> torque.
     const Vec3 ew = w_sp - nav.w_frd;
