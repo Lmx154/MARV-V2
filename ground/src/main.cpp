@@ -299,6 +299,9 @@ int run_manual(Ground& g, int argc, char** argv) {
     std::int16_t axis[8] = {};
     bool seen[8] = {};
     bool fly = false, have_yaw = false, refused = false;
+    // Nothing is sent until the pilot arms: starting manual against a vehicle that is already flying must
+    // not disarm it. From the first arm on, the pilot owns the vehicle and disarm sends idle.
+    bool engaged = false;
     int prev_switch = -1;  // CH5 at the last period; -1 until the device reported it
     float yaw = 0.f;
     std::uint8_t ev_buf[sizeof(js_event)];
@@ -330,7 +333,7 @@ int run_manual(Ground& g, int argc, char** argv) {
         }
         if (lost) {
             std::fprintf(stderr, "marv_ground: joystick %s lost, holding\n", name);
-            if (have_yaw) g.send(command(fly ? Mode::kFly : Mode::kIdle, kRefVel | kRefYaw, {}, {0.f, 0.f, 0.f}, yaw));
+            if (engaged && have_yaw) g.send(command(fly ? Mode::kFly : Mode::kIdle, kRefVel | kRefYaw, {}, {0.f, 0.f, 0.f}, yaw));
             rc = 1;
             break;
         }
@@ -364,7 +367,8 @@ int run_manual(Ground& g, int argc, char** argv) {
         const float c = std::cos(yaw), s = std::sin(yaw);
         const Vec3 v{(c * fwd - s * right) * kSpeedMax, (s * fwd + c * right) * kSpeedMax, -climb * kClimbMax};
         const MissionCommand cmd = command(fly ? Mode::kFly : Mode::kIdle, kRefVel | kRefYaw, {}, v, yaw);
-        if (!g.period(&cmd)) {
+        engaged = engaged || fly;
+        if (!g.period(engaged ? &cmd : nullptr)) {
             rc = 1;
             break;
         }
