@@ -38,7 +38,7 @@ static bool decode_all(const std::uint8_t* p, std::size_t n, link::Decoder& d, l
     return got;
 }
 
-static_assert(link::kActuatorsBody == 29 && link::kReferenceBody == 69 && link::kMissionBody == 71 &&
+static_assert(link::kActuatorsBody == 29 && link::kReferenceBody == 89 && link::kMissionBody == 91 &&
                   link::kControlRequestBody == 32 && link::kTelemetryBody == 115,
               "the bodies of the airframe-agnostic contracts");
 
@@ -97,7 +97,7 @@ int main() {
 
     // MissionCommand, State (truth) and Telemetry round trips: every byte of the body comes back.
     {
-        MissionCommand in{Mode::kFly, NavSource::kTruth, {kRefVel | kRefYawRate | kRefCoast | kRefApogee, {1.f, -2.f, -3.f}, {0.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, 1.5708f, -0.8f, {1.f, 0.f, 0.f, 0.f}, 284.f, 301.5f}};
+        MissionCommand in{Mode::kFly, NavSource::kTruth, {kRefVel | kRefYawRate | kRefCoast | kRefApogee, {1.f, -2.f, -3.f}, {0.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, 1.5708f, -0.8f, {1.f, 0.f, 0.f, 0.f}, 284.f, 301.5f, {4.f, -5.f, -6.5f}, 7.25f, 2.f}};
         link::Decoder d;
         link::Packet p{};
         CHECK(decode_all(frame, link::encode(in, frame), d, p));
@@ -107,6 +107,21 @@ int main() {
         CHECK(out.ref.p_ned.z == -3.f && out.ref.yaw == 1.5708f && out.ref.yaw_rate == -0.8f && out.ref.q.w == 1.f);
         CHECK(out.ref.has == (kRefVel | kRefYawRate | kRefCoast | kRefApogee) && out.ref.apogee_m == 284.f &&
               out.ref.apogee_pred_m == 301.5f);
+        CHECK(out.ref.p_next_ned.x == 4.f && out.ref.p_next_ned.y == -5.f && out.ref.p_next_ned.z == -6.5f &&
+              out.ref.speed_mps == 7.25f && out.ref.accept_m == 2.f);
+        CHECK(p.len == link::kMissionBody && std::memcmp(&out.ref.p_next_ned, &in.ref.p_next_ned, sizeof(Vec3)) == 0);
+
+        // An older 69-byte Reference body (71-byte MissionCommand, before p_next_ned, speed_mps and accept_m) is rejected.
+        std::uint8_t raw[1 + 71 + 2] = {link::kMission, static_cast<std::uint8_t>(Mode::kFly)};
+        const std::uint16_t crc = link::crc16(raw, 1 + 71);
+        raw[1 + 71] = static_cast<std::uint8_t>(crc & 0xFF);
+        raw[1 + 71 + 1] = static_cast<std::uint8_t>(crc >> 8);
+        std::uint8_t old[link::kMaxFrame];
+        const std::size_t n = link::cobs_encode(raw, sizeof raw, old);
+        old[n] = 0;
+        MissionCommand stale{Mode::kArmed, NavSource::kEstimate, {}};
+        CHECK(decode_all(old, n + 1, d, p) && p.id == link::kMission && p.len == 71);
+        CHECK(!p.as(stale) && stale.mode == Mode::kArmed);
 
         const State st{77, {1.f, 2.f, 3.f}, {-1.f, 0.f, 0.5f}, {0.7071f, 0.f, 0.f, 0.7071f}, {0.1f, 0.2f, 0.3f}, true};
         CHECK(decode_all(frame, link::encode(st, frame), d, p));

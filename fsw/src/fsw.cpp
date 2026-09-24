@@ -69,7 +69,8 @@ Tick Fsw::step(const SensorBus& bus) {
     Tick out{};
     ControlRequest req;
     if (uav_) {
-        // Guidance: the mission's reference, passed through.
+        // Guidance: the mission's reference, passed through. The trajectory kind (params.def) is not implemented yet and
+        // flies as passthrough; phase B of ADR-0011 dispatches it here.
         req = controller_.run(mission_.ref, nav, mode, dt);
         out.act = allocation_.run(req, nav, mode);
         actuators_.run(out.act, mode);

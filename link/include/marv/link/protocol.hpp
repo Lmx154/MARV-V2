@@ -46,8 +46,8 @@ enum MsgId : std::uint8_t {
 inline constexpr std::size_t kSensorsBody = 8 + 1 + 24 + 8 + 12 + (4 + 4 + 4 + 12 + 1);  // 78
 inline constexpr std::size_t kActuatorsBody = 8 + 4 * kMotorCount + 4 + 1;             // 29
 inline constexpr std::size_t kStateBody = 8 + 12 + 12 + 16 + 12 + 1;                   // 61
-inline constexpr std::size_t kReferenceBody = 1 + 12 + 12 + 12 + 4 + 4 + 16 + 4 + 4;   // 69
-inline constexpr std::size_t kMissionBody = 1 + 1 + kReferenceBody;                    // 71
+inline constexpr std::size_t kReferenceBody = 1 + 12 + 12 + 12 + 4 + 4 + 16 + 4 + 4 + 12 + 4 + 4;  // 89
+inline constexpr std::size_t kMissionBody = 1 + 1 + kReferenceBody;                                // 91
 inline constexpr std::size_t kControlRequestBody = 12 + 12 + 4 + 4;                    // 32
 inline constexpr std::size_t kTelemetryBody = 8 + kStateBody + kControlRequestBody + 1 + 1 + 12;  // 115
 inline constexpr std::size_t kSetParamBody = 2 + 4;                                     // 6
@@ -288,6 +288,9 @@ inline void put(Writer& w, const Reference& f) {
     w.quat(f.q);
     w.f32(f.apogee_m);
     w.f32(f.apogee_pred_m);
+    w.vec3(f.p_next_ned);
+    w.f32(f.speed_mps);
+    w.f32(f.accept_m);
 }
 
 inline void get(Reader& r, Reference& f) {
@@ -300,6 +303,9 @@ inline void get(Reader& r, Reference& f) {
     f.q = r.quat();
     f.apogee_m = r.f32();
     f.apogee_pred_m = r.f32();
+    f.p_next_ned = r.vec3();
+    f.speed_mps = r.f32();
+    f.accept_m = r.f32();
 }
 
 inline void put(Writer& w, const MissionCommand& m) {

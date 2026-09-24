@@ -89,6 +89,7 @@ bool load_mission(const char* path, std::vector<MissionLine>& out) {
         m.cmd.nav = std::strcmp(nav, "truth") == 0 ? NavSource::kTruth : NavSource::kEstimate;
         m.cmd.ref.has = kRefPos | kRefYaw;
         m.cmd.ref.p_ned = {n, e, d};
+        m.cmd.ref.p_next_ned = m.cmd.ref.p_ned;
         m.cmd.ref.yaw = yaw_deg * 3.14159265f / 180.f;
         m.cmd.ref.q = {1.f, 0.f, 0.f, 0.f};
         out.push_back(m);

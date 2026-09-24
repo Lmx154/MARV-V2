@@ -152,6 +152,8 @@ MissionCommand command(Mode mode, std::uint8_t has, const Vec3& p, const Vec3& v
     c.nav = NavSource::kEstimate;
     c.ref.has = has;
     c.ref.p_ned = p;
+    c.ref.p_next_ned = p;
+    c.ref.accept_m = kArrive;
     c.ref.v_ned = v;
     c.ref.yaw = yaw;
     c.ref.q = {1.f, 0.f, 0.f, 0.f};

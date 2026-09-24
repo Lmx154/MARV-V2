@@ -112,6 +112,9 @@ struct Reference {
     Quat q;
     float apogee_m;       // m above the start, the target apogee (kRefApogee)
     float apogee_pred_m;  // m above the start, the apogee predicted with the brake closed (kRefApogee)
+    Vec3 p_next_ned;  // the waypoint after p_ned (kRefPos); equal to p_ned when there is no next waypoint
+    float speed_mps;  // m/s, the horizontal speed toward p_ned; 0 = the guidance's cruise speed parameter
+    float accept_m;   // m, the radius around p_ned the sender advances to p_next_ned at; the guidance corners inside it
 };
 
 // Where the controller takes its state from. kTruth is the lab's A/B switch (the toolbox's

@@ -160,7 +160,7 @@ describe('vehicle classes', () => {
 		expect(vehicleId(schema, uav)).toBe('uav');
 		expect(ids(fam('vehicle'), uav)).toEqual(['uav', 'rocket']);
 		expect(ids(fam('vehicle'), rocket)).toEqual(['uav', 'rocket']);
-		expect(ids(fam('guidance'), uav)).toEqual(['passthrough']);
+		expect(ids(fam('guidance'), uav)).toEqual(['passthrough', 'trajectory']);
 		expect(ids(fam('guidance'), rocket)).toEqual(['apogee-predictor']);
 		expect(ids(fam('allocation'), rocket)).toEqual(['rocket-brake']);
 		expect(ids(fam('estimator'), rocket)).toEqual(schema.families[fam('estimator')].kinds.map((k) => k.id));

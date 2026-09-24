@@ -73,6 +73,40 @@ int main() {
         CHECK(found);
     }
 
+    // The trajectory guidance: its twelve rows follow the apogee predictor's, in order, with ADR-0011's defaults and
+    // ranges; the controller's velocity limit reaches 20 m/s and keeps its 2 m/s default.
+    {
+        struct Row {
+            std::uint16_t index;
+            float dflt, min, max;
+        };
+        const Row rows[] = {
+            {k_guidance_trajectory_cruise_speed, 5.f, 0.5f, 20.f},
+            {k_guidance_trajectory_xy_vel_max, 12.f, 0.5f, 20.f},
+            {k_guidance_trajectory_z_vel_up, 3.f, 0.5f, 8.f},
+            {k_guidance_trajectory_z_vel_dn, 1.5f, 0.5f, 4.f},
+            {k_guidance_trajectory_acc_xy, 3.f, 2.f, 15.f},
+            {k_guidance_trajectory_acc_up, 4.f, 2.f, 15.f},
+            {k_guidance_trajectory_acc_dn, 3.f, 2.f, 15.f},
+            {k_guidance_trajectory_jerk, 4.f, 1.f, 80.f},
+            {k_guidance_trajectory_err_xy_max, 2.f, 0.f, 10.f},
+            {k_guidance_trajectory_err_z_max, 1.f, 0.f, 10.f},
+            {k_guidance_trajectory_yaw_rate_auto, 1.047f, 0.087f, 6.283f},
+            {k_guidance_trajectory_heading_min_speed, 0.3f, 0.f, 2.f},
+        };
+        for (std::size_t r = 0; r < sizeof rows / sizeof rows[0]; ++r) {
+            const ParamMeta& m = kParamMeta[rows[r].index];
+            CHECK(rows[r].index == k_guidance_apogee_predictor_target_apogee_m + 1 + r);
+            CHECK(m.family == k_guidance && m.kind == k_guidance_trajectory);
+            CHECK(m.dflt == rows[r].dflt && m.min == rows[r].min && m.max == rows[r].max);
+        }
+        const ParamMeta& v = kParamMeta[k_controller_cascaded_pid_vel_max];
+        CHECK(v.dflt == 2.f && v.min == 0.5f && v.max == 20.f);
+        CHECK(first_compatible(k_guidance, k_vehicle_uav) == k_guidance_passthrough);
+        CHECK(compatible(k_guidance, k_guidance_trajectory, k_vehicle_uav) &&
+              !compatible(k_guidance, k_guidance_trajectory, k_vehicle_rocket));
+    }
+
     // Defaults lie within [min, max]; the range is not empty; the table's default is the flight-side one.
     {
         std::uint16_t index = 0;
@@ -108,6 +142,7 @@ int main() {
             {k_estimator, k_estimator_complementary, "complementary", 6, kBoth},
             {k_guidance, k_guidance_passthrough, "passthrough", 0, kClassUav},
             {k_guidance, k_guidance_apogee_predictor, "apogee-predictor", 6, kClassRocket},
+            {k_guidance, k_guidance_trajectory, "trajectory", 12, kClassUav},
             {k_controller, k_controller_cascaded_pid, "cascaded-pid", 33, kClassUav},
             {k_controller, k_controller_apogee_pid, "apogee-pid", 3, kClassRocket},
             {k_allocation, k_allocation_quad_x, "quad-x", 0, kClassUav},
@@ -133,7 +168,7 @@ int main() {
         CHECK(nf == kFamilyCount && nk == sizeof kinds / sizeof kinds[0]);
         CHECK(k_estimator_eskf == 0 && k_estimator_ekf == 1 && k_estimator_mahony == 2 && k_estimator_complementary == 3);
         for (std::uint8_t f = 0; f < kFamilyCount; ++f)
-            CHECK(kind_count(f) == (f == k_estimator ? 4 : f == k_sensors ? 1 : 2));
+            CHECK(kind_count(f) == (f == k_estimator ? 4 : f == k_sensors ? 1 : f == k_guidance ? 3 : 2));
     }
 
     // Class consistency: each vehicle's first kinds, a kind of the other class refused, an out-of-range kind never.

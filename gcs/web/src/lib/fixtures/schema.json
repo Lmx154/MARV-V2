@@ -1,5 +1,5 @@
 {
-	"schema_hash": 1922133486,
+	"schema_hash": 1825767454,
 	"families": [
 		{
 			"id": "vehicle",
@@ -854,6 +854,210 @@
 							]
 						}
 					]
+				},
+				{
+					"id": "trajectory",
+					"label": "Trajectory",
+					"summary": "Jerk-limited position smoothing along the mission's waypoints (PX4 PositionSmoothing): the reference moves toward the target at the cruise speed within the velocity, acceleration and jerk limits, corners into the next waypoint inside the acceptance radius, waits while the vehicle falls behind by more than the tracking error limits, and turns the nose along the path when the mission leaves the heading free. Not implemented yet: selected, it flies as passthrough.",
+					"vehicles": [
+						"uav"
+					],
+					"params": [
+						{
+							"id": "cruise_speed",
+							"label": "Cruise speed",
+							"unit": "m/s",
+							"default": 5,
+							"min": 0.5,
+							"max": 2e+01,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Horizontal speed along a mission leg when the mission names none.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:49 MPC_XY_CRUISE default 5",
+							"index": 45
+						},
+						{
+							"id": "xy_vel_max",
+							"label": "Max horizontal speed",
+							"unit": "m/s",
+							"default": 12,
+							"min": 0.5,
+							"max": 2e+01,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Horizontal speed the trajectory never exceeds, whatever the mission asks.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_control_limits_params.yaml:5 MPC_XY_VEL_MAX default 12",
+							"index": 46
+						},
+						{
+							"id": "z_vel_up",
+							"label": "Max climb speed",
+							"unit": "m/s",
+							"default": 3,
+							"min": 0.5,
+							"max": 8,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Vertical speed up the trajectory never exceeds.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:60 MPC_Z_V_AUTO_UP default 3",
+							"index": 47
+						},
+						{
+							"id": "z_vel_dn",
+							"label": "Max descent speed",
+							"unit": "m/s",
+							"default": 1.5,
+							"min": 0.5,
+							"max": 4,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Vertical speed down the trajectory never exceeds.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:71 MPC_Z_V_AUTO_DN default 1.5",
+							"index": 48
+						},
+						{
+							"id": "acc_xy",
+							"label": "Max horizontal acceleration",
+							"unit": "m/s²",
+							"default": 3,
+							"min": 2,
+							"max": 15,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Horizontal acceleration of the trajectory.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:82 MPC_ACC_HOR default 3",
+							"index": 49
+						},
+						{
+							"id": "acc_up",
+							"label": "Max upward acceleration",
+							"unit": "m/s²",
+							"default": 4,
+							"min": 2,
+							"max": 15,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Upward acceleration of the trajectory.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:5 MPC_ACC_UP_MAX default 4",
+							"index": 50
+						},
+						{
+							"id": "acc_dn",
+							"label": "Max downward acceleration",
+							"unit": "m/s²",
+							"default": 3,
+							"min": 2,
+							"max": 15,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Downward acceleration of the trajectory.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:15 MPC_ACC_DOWN_MAX default 3",
+							"index": 51
+						},
+						{
+							"id": "jerk",
+							"label": "Max jerk",
+							"unit": "m/s³",
+							"default": 4,
+							"min": 1,
+							"max": 8e+01,
+							"step": 0.5,
+							"digits": 1,
+							"note": "Rate of change of the trajectory's acceleration.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:94 MPC_JERK_AUTO default 4",
+							"index": 52
+						},
+						{
+							"id": "err_xy_max",
+							"label": "Max horizontal lag",
+							"unit": "m",
+							"default": 2,
+							"min": 0,
+							"max": 1e+01,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Horizontal distance the vehicle may fall behind the trajectory before the trajectory slows to wait for it.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:116 MPC_XY_ERR_MAX default 2",
+							"index": 53
+						},
+						{
+							"id": "err_z_max",
+							"label": "Max vertical lag",
+							"unit": "m",
+							"default": 1,
+							"min": 0,
+							"max": 1e+01,
+							"step": 0.1,
+							"digits": 1,
+							"note": "Vertical distance the vehicle may fall behind the trajectory before the trajectory slows to wait for it.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:134 MPC_Z_ERR_MAX default 1",
+							"index": 54
+						},
+						{
+							"id": "yaw_rate_auto",
+							"label": "Max yaw rate",
+							"unit": "rad/s",
+							"default": 1.047,
+							"min": 0.087,
+							"max": 6.283,
+							"step": 0.001,
+							"digits": 3,
+							"note": "Rate the nose turns toward the path direction when the mission leaves the heading free.",
+							"source": "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:21 MPC_YAWRAUTO_MAX default 60 deg/s",
+							"index": 55
+						},
+						{
+							"id": "heading_min_speed",
+							"label": "Heading hold below",
+							"unit": "m/s",
+							"default": 0.3,
+							"min": 0,
+							"max": 2,
+							"step": 0.05,
+							"digits": 2,
+							"note": "Below this horizontal path speed the heading is held.",
+							"source": "toolbox@3b7387b src/lib/sim/lab/blocks/guidance.ts:25 headingMinSpeed",
+							"index": 56
+						}
+					],
+					"parts": [
+						{
+							"id": "speed",
+							"label": "Speed",
+							"params": [
+								"cruise_speed",
+								"xy_vel_max",
+								"z_vel_up",
+								"z_vel_dn"
+							]
+						},
+						{
+							"id": "dynamics",
+							"label": "Acceleration and jerk",
+							"params": [
+								"acc_xy",
+								"acc_up",
+								"acc_dn",
+								"jerk"
+							]
+						},
+						{
+							"id": "tracking",
+							"label": "Tracking",
+							"params": [
+								"err_xy_max",
+								"err_z_max"
+							]
+						},
+						{
+							"id": "heading",
+							"label": "Heading",
+							"params": [
+								"yaw_rate_auto",
+								"heading_min_speed"
+							]
+						}
+					]
 				}
 			]
 		},
@@ -880,7 +1084,7 @@
 							"digits": 2,
 							"note": "Velocity setpoint per metre of position error.",
 							"source": "controller.cpp:47 w_n = sqrt(Kv Kp) = 1.18 rad/s, about 7x below the attitude loop, zeta 0.85",
-							"index": 45
+							"index": 57
 						},
 						{
 							"id": "vel_p",
@@ -893,7 +1097,7 @@
 							"digits": 2,
 							"note": "Acceleration per m/s of velocity error.",
 							"source": "controller.cpp:48 Kv * kVelMax = 4 m/s^2 bounds a velocity step to 22 deg of tilt",
-							"index": 46
+							"index": 58
 						},
 						{
 							"id": "vel_i",
@@ -906,7 +1110,7 @@
 							"digits": 2,
 							"note": "Acceleration per metre of integrated velocity error.",
 							"source": "controller.cpp:49 corner Ki / Kv = 0.25 rad/s; takes up what the thrust model and the rotor drag leave",
-							"index": 47
+							"index": 59
 						},
 						{
 							"id": "vel_int_accel",
@@ -919,7 +1123,7 @@
 							"digits": 1,
 							"note": "Most horizontal acceleration the velocity integrator may add; the vertical one may reach 1 g.",
 							"source": "controller.cpp:50; vertical: PX4@af2e7b4311 src/modules/mc_pos_control/PositionControl/PositionControl.cpp:146 constrains the vertical integral to +-CONSTANTS_ONE_G",
-							"index": 48
+							"index": 60
 						},
 						{
 							"id": "att_p_x",
@@ -932,7 +1136,7 @@
 							"digits": 1,
 							"note": "Roll-rate setpoint per radian of attitude error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.h:15 AC_ATTITUDE_CONTROL_ANGLE_P 4.5 (ATC_ANG_RLL_P)",
-							"index": 49
+							"index": 61
 						},
 						{
 							"id": "att_p_y",
@@ -945,7 +1149,7 @@
 							"digits": 1,
 							"note": "Pitch-rate setpoint per radian of attitude error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.h:15 AC_ATTITUDE_CONTROL_ANGLE_P 4.5 (ATC_ANG_PIT_P)",
-							"index": 50
+							"index": 62
 						},
 						{
 							"id": "att_p_z",
@@ -958,7 +1162,7 @@
 							"digits": 1,
 							"note": "Yaw-rate setpoint per radian of heading error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.h:15 AC_ATTITUDE_CONTROL_ANGLE_P 4.5 (ATC_ANG_YAW_P)",
-							"index": 51
+							"index": 63
 						},
 						{
 							"id": "yaw_decel",
@@ -971,7 +1175,7 @@
 							"digits": 2,
 							"note": "Caps the yaw-rate setpoint at sqrt(2 a |e|) so a heading step stops without overshoot.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.cpp:1368 the yaw attitude-error sqrt controller runs at ATC_ACCEL_Y_MAX / 2 = 135 deg/s^2 (AC_AttitudeControl.h:23) clamped to 120 deg/s^2 (AC_AttitudeControl.h:13) = 2.094 rad/s^2",
-							"index": 52
+							"index": 64
 						},
 						{
 							"id": "yaw_rate_still",
@@ -984,7 +1188,7 @@
 							"digits": 2,
 							"note": "Below this yaw rate, with no yaw-rate reference, the heading is held.",
 							"source": "controller.cpp:41",
-							"index": 53
+							"index": 65
 						},
 						{
 							"id": "rate_p_x",
@@ -997,7 +1201,7 @@
 							"digits": 4,
 							"note": "Roll torque (fraction of full roll authority) per rad/s of rate error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:11 AC_ATC_MULTI_RATE_RP_P 0.135 (ATC_RAT_RLL_P); same units: rate PID output = torque fraction into +-0.5 motor factors (AC_AttitudeControl_Multi.cpp:476, AP_MotorsMatrix.cpp:1353-1375)",
-							"index": 54
+							"index": 66
 						},
 						{
 							"id": "rate_p_y",
@@ -1010,7 +1214,7 @@
 							"digits": 4,
 							"note": "Pitch torque (fraction of full pitch authority) per rad/s of rate error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:11 AC_ATC_MULTI_RATE_RP_P 0.135 (ATC_RAT_PIT_P); same units: rate PID output = torque fraction into +-0.5 motor factors (AC_AttitudeControl_Multi.cpp:476, AP_MotorsMatrix.cpp:1353-1375)",
-							"index": 55
+							"index": 67
 						},
 						{
 							"id": "rate_p_z",
@@ -1023,7 +1227,7 @@
 							"digits": 3,
 							"note": "Yaw torque (fraction of full yaw authority) per rad/s of rate error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:26 AC_ATC_MULTI_RATE_YAW_P 0.180 (ATC_RAT_YAW_P); same units as roll and pitch",
-							"index": 56
+							"index": 68
 						},
 						{
 							"id": "rate_i_x",
@@ -1036,7 +1240,7 @@
 							"digits": 4,
 							"note": "Roll torque fraction per radian of integrated rate error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:14 AC_ATC_MULTI_RATE_RP_I 0.135 (ATC_RAT_RLL_I)",
-							"index": 57
+							"index": 69
 						},
 						{
 							"id": "rate_i_y",
@@ -1049,7 +1253,7 @@
 							"digits": 4,
 							"note": "Pitch torque fraction per radian of integrated rate error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:14 AC_ATC_MULTI_RATE_RP_I 0.135 (ATC_RAT_PIT_I)",
-							"index": 58
+							"index": 70
 						},
 						{
 							"id": "rate_i_z",
@@ -1062,7 +1266,7 @@
 							"digits": 3,
 							"note": "Yaw torque fraction per radian of integrated rate error.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:29 AC_ATC_MULTI_RATE_YAW_I 0.018 (ATC_RAT_YAW_I)",
-							"index": 59
+							"index": 71
 						},
 						{
 							"id": "rate_d_x",
@@ -1075,7 +1279,7 @@
 							"digits": 7,
 							"note": "Roll torque fraction per rad/s² of rate change.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:17 AC_ATC_MULTI_RATE_RP_D 0.0036 (ATC_RAT_RLL_D)",
-							"index": 60
+							"index": 72
 						},
 						{
 							"id": "rate_d_y",
@@ -1088,7 +1292,7 @@
 							"digits": 7,
 							"note": "Pitch torque fraction per rad/s² of rate change.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:17 AC_ATC_MULTI_RATE_RP_D 0.0036 (ATC_RAT_PIT_D)",
-							"index": 61
+							"index": 73
 						},
 						{
 							"id": "rate_d_z",
@@ -1101,7 +1305,7 @@
 							"digits": 4,
 							"note": "Yaw torque fraction per rad/s² of rate change.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:32 AC_ATC_MULTI_RATE_YAW_D 0 (ATC_RAT_YAW_D)",
-							"index": 62
+							"index": 74
 						},
 						{
 							"id": "rate_int_max_x",
@@ -1114,7 +1318,7 @@
 							"digits": 4,
 							"note": "Most roll torque, as a fraction of full authority, the rate integrator may add.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:20 AC_ATC_MULTI_RATE_RP_IMAX 0.5 (ATC_RAT_RLL_IMAX)",
-							"index": 63
+							"index": 75
 						},
 						{
 							"id": "rate_int_max_y",
@@ -1127,7 +1331,7 @@
 							"digits": 4,
 							"note": "Most pitch torque, as a fraction of full authority, the rate integrator may add.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:20 AC_ATC_MULTI_RATE_RP_IMAX 0.5 (ATC_RAT_PIT_IMAX)",
-							"index": 64
+							"index": 76
 						},
 						{
 							"id": "rate_int_max_z",
@@ -1140,7 +1344,7 @@
 							"digits": 4,
 							"note": "Most yaw torque, as a fraction of full authority, the rate integrator may add.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.h:35 AC_ATC_MULTI_RATE_YAW_IMAX 0.5 (ATC_RAT_YAW_IMAX)",
-							"index": 65
+							"index": 77
 						},
 						{
 							"id": "rate_max_x",
@@ -1153,7 +1357,7 @@
 							"digits": 1,
 							"note": "Limit of the roll-rate setpoint.",
 							"source": "controller.cpp:26",
-							"index": 66
+							"index": 78
 						},
 						{
 							"id": "rate_max_y",
@@ -1166,7 +1370,7 @@
 							"digits": 1,
 							"note": "Limit of the pitch-rate setpoint.",
 							"source": "controller.cpp:26",
-							"index": 67
+							"index": 79
 						},
 						{
 							"id": "rate_max_z",
@@ -1179,7 +1383,7 @@
 							"digits": 1,
 							"note": "Limit of the yaw-rate setpoint.",
 							"source": "controller.cpp:26",
-							"index": 68
+							"index": 80
 						},
 						{
 							"id": "vel_max",
@@ -1187,12 +1391,12 @@
 							"unit": "m/s",
 							"default": 2,
 							"min": 0.5,
-							"max": 1e+01,
+							"max": 2e+01,
 							"step": 0.1,
 							"digits": 1,
 							"note": "Norm limit of the velocity setpoint.",
 							"source": "controller.cpp:51",
-							"index": 69
+							"index": 81
 						},
 						{
 							"id": "tilt_max_deg",
@@ -1205,7 +1409,7 @@
 							"digits": 0,
 							"note": "The thrust vector stays within this angle of vertical.",
 							"source": "controller.cpp:54 kTanTiltMax = tan(35 deg)",
-							"index": 70
+							"index": 82
 						},
 						{
 							"id": "thrust_min_g",
@@ -1218,7 +1422,7 @@
 							"digits": 2,
 							"note": "Floor of the vertical thrust demand, in multiples of the weight.",
 							"source": "controller.cpp:55 kThrustMin = 0.2 m g",
-							"index": 71
+							"index": 83
 						},
 						{
 							"id": "thrust_max_frac",
@@ -1231,7 +1435,7 @@
 							"digits": 2,
 							"note": "Ceiling of the total thrust, as a fraction of the four rotors' maximum.",
 							"source": "controller.cpp:56 kThrustMax = 0.9 * 4 * kMaxRotorThrust; the rest is left for the torques",
-							"index": 72
+							"index": 84
 						},
 						{
 							"id": "yaw_torque_max",
@@ -1244,7 +1448,7 @@
 							"digits": 4,
 							"note": "Yaw torque limit, as a fraction of full yaw authority; a yaw demand the rotors cannot carry is cut, never paid for with thrust.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl_Multi.cpp:476 the yaw rate PID output is not capped; the mixer cuts yaw to what fits (AP_MotorsMatrix.cpp:276-329), as the allocation does",
-							"index": 73
+							"index": 85
 						},
 						{
 							"id": "accel_max_x",
@@ -1257,7 +1461,7 @@
 							"digits": 2,
 							"note": "Angular acceleration of the attitude target on roll: the target moves toward the desired attitude within it and rate_max_x, and its rate is fed forward to the rate loop.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.h:22 AC_ATTITUDE_CONTROL_ACCEL_RP_MAX_DEFAULT_DEGSS 1100 deg/s^2 (ATC_ACC_R_MAX, AC_AttitudeControl.cpp:193) = 19.199 rad/s^2",
-							"index": 74
+							"index": 86
 						},
 						{
 							"id": "accel_max_y",
@@ -1270,7 +1474,7 @@
 							"digits": 2,
 							"note": "Angular acceleration of the attitude target on pitch: the target moves toward the desired attitude within it and rate_max_y, and its rate is fed forward to the rate loop.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.h:22 AC_ATTITUDE_CONTROL_ACCEL_RP_MAX_DEFAULT_DEGSS 1100 deg/s^2 (ATC_ACC_P_MAX, AC_AttitudeControl.cpp:203) = 19.199 rad/s^2",
-							"index": 75
+							"index": 87
 						},
 						{
 							"id": "accel_max_z",
@@ -1283,7 +1487,7 @@
 							"digits": 2,
 							"note": "Angular acceleration of the attitude target on yaw: the target heading moves toward the reference within it and rate_max_z, and its rate is fed forward to the rate loop.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.h:23 AC_ATTITUDE_CONTROL_ACCEL_Y_MAX_DEFAULT_DEGSS 270 deg/s^2 (ATC_ACC_Y_MAX, AC_AttitudeControl.cpp:183) = 4.712 rad/s^2",
-							"index": 76
+							"index": 88
 						},
 						{
 							"id": "input_tc",
@@ -1296,7 +1500,7 @@
 							"digits": 2,
 							"note": "The target's acceleration reaches its limit in this time: the jerk is the acceleration limit over it, on every axis.",
 							"source": "ArduPilot@0deeede043 libraries/AC_AttitudeControl/AC_AttitudeControl.cpp:16 AC_ATTITUDE_CONTROL_INPUT_TC_DEFAULT 0.10 s (ATC_INPUT_TC, Copter); jerk = accel_max / input_tc, AC_AttitudeControl.cpp:1128. ArduPilot's yaw uses PILOT_Y_RATE_TC instead (0: 10 ticks, AC_AttitudeControl.cpp:1120-1123)",
-							"index": 77
+							"index": 89
 						}
 					],
 					"parts": [
@@ -1390,7 +1594,7 @@
 							"digits": 3,
 							"note": "Deployment per metre of predicted overshoot.",
 							"source": "toolbox controller.ts:146 (PI tuned in the lab)",
-							"index": 78
+							"index": 90
 						},
 						{
 							"id": "ki",
@@ -1403,7 +1607,7 @@
 							"digits": 3,
 							"note": "Deployment per metre-second of accumulated overshoot.",
 							"source": "toolbox controller.ts:147 (PI tuned in the lab)",
-							"index": 79
+							"index": 91
 						},
 						{
 							"id": "i_limit",
@@ -1416,7 +1620,7 @@
 							"digits": 0,
 							"note": "Bound on the accumulated overshoot.",
 							"source": "toolbox controller.ts:148 (PI tuned in the lab)",
-							"index": 80
+							"index": 92
 						}
 					],
 					"parts": [
@@ -1480,7 +1684,7 @@
 							"digits": 2,
 							"note": "e of thrust = (1 - e) x + e x^2: 1 for a rotor-speed command (thrust = k w^2).",
 							"source": "AP_Motors_Thrust_Linearization.cpp:104-107; 1 = sqrt: the sim ESC is linear from command to rad/s for every airframe (bridge/src/gz_world.cpp:215) and the motor model's thrust is k w^2. ArduPilot's real-ESC 0.65 (AP_MotorsMulticopter.h:9, with SPIN_MIN/MAX 0.15/0.95) raises the x500's hover to 0.66 of the command range and left it 0.8 m low in hover",
-							"index": 81
+							"index": 93
 						},
 						{
 							"id": "spin_min",
@@ -1493,7 +1697,7 @@
 							"digits": 2,
 							"note": "Command at zero thrust while armed.",
 							"source": "AP_Motors_Thrust_Linearization.cpp:104-107; 0: the sim ESC's zero rotor speed is zero thrust (bridge/src/gz_world.cpp:215); ArduPilot's real-ESC 0.15 is AP_MotorsMulticopter.h:14",
-							"index": 82
+							"index": 94
 						},
 						{
 							"id": "spin_max",
@@ -1506,7 +1710,7 @@
 							"digits": 2,
 							"note": "Command at full thrust.",
 							"source": "AP_Motors_Thrust_Linearization.cpp:104-107; 1: the sim ESC reaches the motor model's full speed at a command of 1 (bridge/src/gz_world.cpp:215); ArduPilot's real-ESC 0.95 is AP_MotorsMulticopter.h:15",
-							"index": 83
+							"index": 95
 						},
 						{
 							"id": "spin_arm",
@@ -1519,7 +1723,7 @@
 							"digits": 2,
 							"note": "Every motor command while armed on the ground (kArmed).",
 							"source": "MOT_SPIN_ARM, AP_MotorsMulticopter.h:16 default 0.10",
-							"index": 84
+							"index": 96
 						}
 					],
 					"parts": [
@@ -1612,6 +1816,18 @@
 				0.012,
 				3.1,
 				284,
+				5,
+				12,
+				3,
+				1.5,
+				3,
+				4,
+				3,
+				4,
+				2,
+				1,
+				1.047,
+				0.3,
 				0.7,
 				2,
 				0.5,
@@ -1712,6 +1928,18 @@
 				0.012,
 				3.1,
 				284,
+				5,
+				12,
+				3,
+				1.5,
+				3,
+				4,
+				3,
+				4,
+				2,
+				1,
+				1.047,
+				0.3,
 				0.7,
 				2,
 				0.5,
@@ -1812,6 +2040,18 @@
 				0.012,
 				3.1,
 				284,
+				5,
+				12,
+				3,
+				1.5,
+				3,
+				4,
+				3,
+				4,
+				2,
+				1,
+				1.047,
+				0.3,
 				0.7,
 				2,
 				0.5,
@@ -1912,6 +2152,18 @@
 				0.012,
 				3.1,
 				284,
+				5,
+				12,
+				3,
+				1.5,
+				3,
+				4,
+				3,
+				4,
+				2,
+				1,
+				1.047,
+				0.3,
 				0.7,
 				2,
 				0.5,
@@ -2012,6 +2264,18 @@
 				0.012,
 				3.1,
 				284,
+				5,
+				12,
+				3,
+				1.5,
+				3,
+				4,
+				3,
+				4,
+				2,
+				1,
+				1.047,
+				0.3,
 				0.7,
 				2,
 				0.5,

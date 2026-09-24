@@ -150,6 +150,36 @@ MARV_PART(guidance, apogee_predictor, target, "Target")
 // 20 m to 2 km of apogee.
 MARV_PARAM(guidance, apogee_predictor, target_apogee_m, "Target apogee", "m", 284.f, 20.f, 2000.f, 1.f, 0, "Apogee above the launch point the brake aims for.", "toolbox mission.ts:340")
 
+MARV_KIND(guidance, trajectory, "trajectory", "Trajectory", "Jerk-limited position smoothing along the mission's waypoints (PX4 PositionSmoothing): the reference moves toward the target at the cruise speed within the velocity, acceleration and jerk limits, corners into the next waypoint inside the acceptance radius, waits while the vehicle falls behind by more than the tracking error limits, and turns the nose along the path when the mission leaves the heading free. Not implemented yet: selected, it flies as passthrough.", kClassUav)
+MARV_PART(guidance, trajectory, speed, "Speed")
+// 0.5 to 20 m/s: a walking pace to PX4's MPC_XY_CRUISE maximum.
+MARV_PARAM(guidance, trajectory, cruise_speed, "Cruise speed", "m/s", 5.f, 0.5f, 20.f, 0.1f, 1, "Horizontal speed along a mission leg when the mission names none.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:49 MPC_XY_CRUISE default 5")
+// 0.5 to 20 m/s: PX4's MPC_XY_VEL_MAX maximum, floored at a walking pace.
+MARV_PARAM(guidance, trajectory, xy_vel_max, "Max horizontal speed", "m/s", 12.f, 0.5f, 20.f, 0.1f, 1, "Horizontal speed the trajectory never exceeds, whatever the mission asks.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_position_control_limits_params.yaml:5 MPC_XY_VEL_MAX default 12")
+// PX4's MPC_Z_V_AUTO_UP range.
+MARV_PARAM(guidance, trajectory, z_vel_up, "Max climb speed", "m/s", 3.f, 0.5f, 8.f, 0.1f, 1, "Vertical speed up the trajectory never exceeds.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:60 MPC_Z_V_AUTO_UP default 3")
+// PX4's MPC_Z_V_AUTO_DN range.
+MARV_PARAM(guidance, trajectory, z_vel_dn, "Max descent speed", "m/s", 1.5f, 0.5f, 4.f, 0.1f, 1, "Vertical speed down the trajectory never exceeds.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:71 MPC_Z_V_AUTO_DN default 1.5")
+MARV_PART(guidance, trajectory, dynamics, "Acceleration and jerk")
+// PX4's MPC_ACC_HOR range.
+MARV_PARAM(guidance, trajectory, acc_xy, "Max horizontal acceleration", "m/s²", 3.f, 2.f, 15.f, 0.1f, 1, "Horizontal acceleration of the trajectory.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:82 MPC_ACC_HOR default 3")
+// PX4's MPC_ACC_UP_MAX range.
+MARV_PARAM(guidance, trajectory, acc_up, "Max upward acceleration", "m/s²", 4.f, 2.f, 15.f, 0.1f, 1, "Upward acceleration of the trajectory.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:5 MPC_ACC_UP_MAX default 4")
+// PX4's MPC_ACC_DOWN_MAX range.
+MARV_PARAM(guidance, trajectory, acc_dn, "Max downward acceleration", "m/s²", 3.f, 2.f, 15.f, 0.1f, 1, "Downward acceleration of the trajectory.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_altitude_mode_params.yaml:15 MPC_ACC_DOWN_MAX default 3")
+// PX4's MPC_JERK_AUTO range.
+MARV_PARAM(guidance, trajectory, jerk, "Max jerk", "m/s³", 4.f, 1.f, 80.f, 0.5f, 1, "Rate of change of the trajectory's acceleration.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:94 MPC_JERK_AUTO default 4")
+MARV_PART(guidance, trajectory, tracking, "Tracking")
+// PX4's MPC_XY_ERR_MAX range; 0 never waits for the vehicle.
+MARV_PARAM(guidance, trajectory, err_xy_max, "Max horizontal lag", "m", 2.f, 0.f, 10.f, 0.1f, 1, "Horizontal distance the vehicle may fall behind the trajectory before the trajectory slows to wait for it.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:116 MPC_XY_ERR_MAX default 2")
+// PX4's MPC_Z_ERR_MAX range; 0 never waits for the vehicle.
+MARV_PARAM(guidance, trajectory, err_z_max, "Max vertical lag", "m", 1.f, 0.f, 10.f, 0.1f, 1, "Vertical distance the vehicle may fall behind the trajectory before the trajectory slows to wait for it.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:134 MPC_Z_ERR_MAX default 1")
+MARV_PART(guidance, trajectory, heading, "Heading")
+// PX4's MPC_YAWRAUTO_MAX range, 5 to 360 deg/s.
+MARV_PARAM(guidance, trajectory, yaw_rate_auto, "Max yaw rate", "rad/s", 1.047f, 0.087f, 6.283f, 0.001f, 3, "Rate the nose turns toward the path direction when the mission leaves the heading free.", "PX4@af2e7b4311 src/modules/mc_pos_control/multicopter_autonomous_params.yaml:21 MPC_YAWRAUTO_MAX default 60 deg/s")
+// Toolbox guidance.ts headingMinSpeed range.
+MARV_PARAM(guidance, trajectory, heading_min_speed, "Heading hold below", "m/s", 0.3f, 0.f, 2.f, 0.05f, 2, "Below this horizontal path speed the heading is held.", "toolbox@3b7387b src/lib/sim/lab/blocks/guidance.ts:25 headingMinSpeed")
+
 // ---- controller --------------------------------------------------------------------------------------------------------
 
 MARV_KIND(controller, cascaded_pid, "cascaded-pid", "Cascaded PID", "Position, velocity, attitude and rate loops: thrust as a fraction of full collective from the learned hover thrust, torque as a fraction of each axis' full authority.", kClassUav)
@@ -194,8 +224,8 @@ MARV_PART(controller, cascaded_pid, limits, "Limits")
 MARV_PARAM(controller, cascaded_pid, rate_max_x, "Max roll rate", "rad/s", 3.f, 0.5f, 10.f, 0.1f, 1, "Limit of the roll-rate setpoint.", "controller.cpp:26")
 MARV_PARAM(controller, cascaded_pid, rate_max_y, "Max pitch rate", "rad/s", 3.f, 0.5f, 10.f, 0.1f, 1, "Limit of the pitch-rate setpoint.", "controller.cpp:26")
 MARV_PARAM(controller, cascaded_pid, rate_max_z, "Max yaw rate", "rad/s", 1.5f, 0.5f, 10.f, 0.1f, 1, "Limit of the yaw-rate setpoint.", "controller.cpp:26")
-// Toolbox controller.ts vMax range.
-MARV_PARAM(controller, cascaded_pid, vel_max, "Max velocity setpoint", "m/s", 2.f, 0.5f, 10.f, 0.1f, 1, "Norm limit of the velocity setpoint.", "controller.cpp:51")
+// Toolbox controller.ts vMax floor; up to 20 m/s, PX4's MPC_XY_VEL_MAX maximum, so the trajectory's limits fit under it.
+MARV_PARAM(controller, cascaded_pid, vel_max, "Max velocity setpoint", "m/s", 2.f, 0.5f, 20.f, 0.1f, 1, "Norm limit of the velocity setpoint.", "controller.cpp:51")
 // Toolbox controller.ts tiltMaxDeg range.
 MARV_PARAM(controller, cascaded_pid, tilt_max_deg, "Max tilt", "deg", 35.f, 5.f, 60.f, 1.f, 0, "The thrust vector stays within this angle of vertical.", "controller.cpp:54 kTanTiltMax = tan(35 deg)")
 // Toolbox controller.ts thrustMinG range.
