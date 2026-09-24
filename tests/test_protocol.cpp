@@ -75,14 +75,14 @@ int main() {
 
     // MissionCommand, State (truth) and Telemetry round trips: every byte of the body comes back.
     {
-        MissionCommand in{Mode::kFly, NavSource::kTruth, {kRefPos | kRefYaw, {1.f, -2.f, -3.f}, {0.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, 1.5708f, {1.f, 0.f, 0.f, 0.f}}};
+        MissionCommand in{Mode::kFly, NavSource::kTruth, {kRefVel | kRefYawRate, {1.f, -2.f, -3.f}, {0.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, 1.5708f, -0.8f, {1.f, 0.f, 0.f, 0.f}}};
         link::Decoder d;
         link::Packet p{};
         CHECK(decode_all(frame, link::encode(in, frame), d, p));
         MissionCommand out{};
         CHECK(p.as(out));
         CHECK(out.mode == Mode::kFly && out.nav == NavSource::kTruth && out.ref.has == in.ref.has);
-        CHECK(out.ref.p_ned.z == -3.f && out.ref.yaw == 1.5708f && out.ref.q.w == 1.f);
+        CHECK(out.ref.p_ned.z == -3.f && out.ref.yaw == 1.5708f && out.ref.yaw_rate == -0.8f && out.ref.q.w == 1.f);
 
         const State st{77, {1.f, 2.f, 3.f}, {-1.f, 0.f, 0.5f}, {0.7071f, 0.f, 0.f, 0.7071f}, {0.1f, 0.2f, 0.3f}, true};
         CHECK(decode_all(frame, link::encode(st, frame), d, p));
