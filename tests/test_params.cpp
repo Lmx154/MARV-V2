@@ -108,7 +108,7 @@ int main() {
             {k_estimator, k_estimator_complementary, "complementary", 6, kBoth},
             {k_guidance, k_guidance_passthrough, "passthrough", 0, kClassUav},
             {k_guidance, k_guidance_apogee_predictor, "apogee-predictor", 6, kClassRocket},
-            {k_controller, k_controller_cascaded_pid, "cascaded-pid", 29, kClassUav},
+            {k_controller, k_controller_cascaded_pid, "cascaded-pid", 33, kClassUav},
             {k_controller, k_controller_apogee_pid, "apogee-pid", 3, kClassRocket},
             {k_allocation, k_allocation_quad_x, "quad-x", 0, kClassUav},
             {k_allocation, k_allocation_rocket_brake, "rocket-brake", 0, kClassRocket},
