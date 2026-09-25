@@ -8,6 +8,9 @@
 //   4. a flight controller with another schema hash: edits refused before they reach the link.
 //   5. the automatic link, on fake transports: USB when a flight controller appears, closed before a sim starts and
 //      the sim's bridge instead, USB again when it ends, and a rescan after the device hangs up.
+//   6. ADR-0012 profile over the WebSocket: telemetry carries the FC's applied profile; {type: "profile"} in every state
+//      (disarmed: reported, nothing sent, carried from the arm), unknown ones refused; a switch in flight reaches the
+//      flight controller within 100 ms; mission_start's optional profile and its radius; a disarm returns it to hold.
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -32,6 +35,7 @@
 #include <boost/beast/websocket.hpp>
 #include <boost/json.hpp>
 
+#include <marv/fsw/geo.hpp>
 #include <marv/fsw/params.hpp>
 #include <marv/fsw/presets.hpp>
 #include <marv/link/protocol.hpp>
@@ -60,6 +64,8 @@ using tcp = asio::ip::tcp;
 using Clock = std::chrono::steady_clock;
 using namespace marv;
 
+const GeoPoint kHome{473763880, 85477780, 408.f};
+
 // The flight controller's side of the setup exchange (gcs decision (b)), on its own thread.
 class FcStub {
 public:
@@ -86,6 +92,10 @@ public:
     std::atomic<bool> silent{false};
     std::atomic<bool> telemetry{false};
     std::atomic<bool> armed{false};
+    std::atomic<int> tlm_profile{0};    // Telemetry::profile sent
+    std::atomic<int> cmd_profile{-1};   // the last MissionCommand's profile ...
+    std::atomic<float> cmd_accept{0.f}; // ... and accept_m
+    std::atomic<float> z{0.f};          // the vehicle: at (0, 0), at the last kFly frame's altitude at once
 
 private:
     template <class T> void put(std::vector<std::uint8_t>& out, const T& msg) {
@@ -117,7 +127,12 @@ private:
         link::SaveSetup sv;
         link::LoadFactory lf;
         link::Reset rs;
-        if (p.as(rq)) {
+        MissionCommand mc;
+        if (p.as(mc)) {
+            cmd_profile = mc.profile;
+            cmd_accept = mc.ref.accept_m;
+            if (mc.mode == Mode::kFly && (mc.ref.has & kRefPos)) z = mc.ref.p_ned.z;
+        } else if (p.as(rq)) {
             header(out);
             values(out);
         } else if (p.as(sp)) {
@@ -174,8 +189,12 @@ private:
                 next_tlm = Clock::now() + std::chrono::milliseconds(5);
                 Telemetry t{};
                 t.est.q = {1.f, 0.f, 0.f, 0.f};
+                t.est.p_ned = {0.f, 0.f, z};
                 t.est.valid = true;
+                t.home_valid = true;
+                t.home = kHome;
                 t.preset = 0;
+                t.profile = static_cast<std::uint8_t>(tlm_profile.load());
                 put(out, t);
             }
             if (!out.empty() && have_peer)
@@ -386,6 +405,88 @@ void test_exchange() {
     CHECK(link.at("target").as_string() == "127.0.0.1:" + std::to_string(fc.port()));
 }
 
+// Waits up to 1 s for the stub to hear a MissionCommand with this profile; the seconds it took, or -1.
+double heard(const FcStub& fc, int profile) {
+    const auto t0 = Clock::now();
+    while (Clock::now() - t0 < std::chrono::seconds(1)) {
+        if (fc.cmd_profile == profile) return std::chrono::duration<double>(Clock::now() - t0).count();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return -1.0;
+}
+
+// Whether one of the next 20 mission_state messages is in this state with this profile.
+bool reached(Client& c, const char* s, const char* profile) {
+    for (int i = 0; i < 20; ++i) {
+        const json::object m = c.wait("mission_state");
+        if (m.at("state").as_string() == s && m.at("profile").as_string() == profile) return true;
+    }
+    return false;
+}
+
+void test_profile() {
+    FcStub fc(param::kSchemaHash);
+    Backend be(fc.port());
+    Client c(be.server.port());
+    c.wait("link");
+    CHECK(c.wait("mission_state").at("profile").as_string() == "hold");
+    fc.tlm_profile = param::k_profile_stabilized;
+    fc.telemetry = true;
+    CHECK(c.wait("telemetry").at("profile").as_string() == "stabilized");
+
+    // Disarmed: reported, not sent; unknown ones refused.
+    c.send({{"type", "profile"}, {"profile", "agile"}});
+    json::object m = c.wait("mission_state");
+    CHECK(m.at("state").as_string() == "disarmed" && m.at("profile").as_string() == "agile");
+    for (const json::value& bad : {json::value("sport"), json::value(3), json::value(nullptr)}) {
+        c.send({{"type", "profile"}, {"profile", bad}});
+        m = c.wait("error");
+        CHECK(m.at("request").as_string() == "profile" && m.at("error").as_string().find("want {profile:") == 0);
+    }
+    c.send({{"type", "profile"}});
+    CHECK(c.wait("error").at("request").as_string() == "profile");
+    CHECK(fc.received(link::kMission) == 0);
+
+    // Armed: the frames carry it; a switch reaches the flight controller within 100 ms.
+    c.send({{"type", "arm"}});
+    CHECK(reached(c, "armed", "agile"));
+    CHECK(heard(fc, param::k_profile_agile) >= 0.0);
+    c.send({{"type", "profile"}, {"profile", "freestyle"}});
+    const double dt = heard(fc, param::k_profile_freestyle);
+    std::printf("profile: switch heard by the flight controller after %.1f ms\n", dt * 1e3);
+    CHECK(dt >= 0.0 && dt < 0.1);
+    CHECK(reached(c, "armed", "freestyle"));
+
+    // mission_start: a bad profile refuses it; a good one flies at its radius.
+    c.send({{"type", "climb"}, {"alt_m", 5.0}});
+    CHECK(reached(c, "hold", "freestyle"));
+    LocalFrame f;
+    f.set(kHome);
+    const GeoPoint g = f.to_geo({20.f, 0.f, 0.f});
+    const json::array wps{json::object{{"lat", g.lat_e7 * 1e-7}, {"lon", g.lon_e7 * 1e-7}, {"alt_m", 5.0}}};
+    c.send({{"type", "mission_start"}, {"waypoints", wps}, {"profile", "sport"}});
+    m = c.wait("error");
+    CHECK(m.at("request").as_string() == "mission_start" && m.at("error").as_string().find("profile?:") != std::string::npos);
+    c.send({{"type", "mission_start"}, {"waypoints", wps}, {"profile", "agile"}});
+    CHECK(reached(c, "mission", "agile"));
+    CHECK(heard(fc, param::k_profile_agile) >= 0.0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    CHECK(fc.cmd_accept == 1.f);
+    c.send({{"type", "profile"}, {"profile", "hold"}});
+    CHECK(heard(fc, param::k_profile_hold) >= 0.0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    CHECK(fc.cmd_accept == 2.f);
+    CHECK(reached(c, "mission", "hold"));
+
+    // Disarm: hold again.
+    c.send({{"type", "profile"}, {"profile", "stabilized"}});
+    CHECK(heard(fc, param::k_profile_stabilized) >= 0.0);
+    c.send({{"type", "disarm"}});
+    CHECK(reached(c, "disarmed", "hold"));
+    CHECK(heard(fc, param::k_profile_hold) >= 0.0);
+    fc.telemetry = false;
+}
+
 void test_mismatch() {
     const std::uint32_t other = param::kSchemaHash ^ 0x5a5a5a5au;
     FcStub fc(other);
@@ -532,6 +633,7 @@ int main() {
     test_exchange();
     test_mismatch();
     test_auto();
+    test_profile();
     if (g_fails) std::fprintf(stderr, "test_gcs_link: %d failures\n", g_fails);
     else std::printf("test_gcs_link: OK\n");
     return g_fails ? 1 : 0;

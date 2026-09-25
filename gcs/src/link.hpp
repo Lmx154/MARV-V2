@@ -61,7 +61,7 @@ public:
     // Opens the link and starts polling it. False when a UDP address is unusable.
     bool start();
     // One client message: request_setup | set_param | set_kind | load_factory | save | reset | reboot | flash, or a
-    // mission command: arm | disarm | climb | mission_start | rth | land.
+    // mission command: arm | disarm | climb | mission_start | rth | land | profile.
     void handle(const boost::json::object& msg, const Reply& reply);
     // kAuto: a sim is about to start its bridge (on: the serial port is closed before this returns and the link goes to
     // the bridge's --ground) or has ended (off: back to scanning USB). A no-op in the fixed modes.

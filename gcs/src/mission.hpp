@@ -9,8 +9,12 @@
 // and rth legs send kRefPos without kRefYaw (the guidance points the nose along the path). A mission leg's p_next is the
 // following waypoint; the last waypoint's p_next is itself (the vehicle stops there: the rth that follows starts with a
 // climb over the point it stopped at). Every other frame's p_next is its p. accept_m is the radius the executor
-// advances at, one function for both: 2.0 m on mission legs and the rth return over home, 0.5 m for climb, the rth
-// climb and hold. speed_mps is mission_start's on mission legs, 0 (the cruise parameter) elsewhere.
+// advances at, one function for both: the profile's on mission legs and the rth return over home (hold, freestyle,
+// stabilized 2.0 m; agile 1.0 m), 0.5 m for climb, the rth climb and hold. speed_mps is mission_start's on mission legs,
+// 0 (the cruise parameter) elsewhere.
+//
+// Profile (ADR-0012): every frame carries the selected flight profile. It is set in any state; set while disarmed it
+// waits for the next arm. A disarm or a landing returns it to hold, so a flight arms in hold unless one was set.
 #pragma once
 
 #include <cstdint>
@@ -42,6 +46,7 @@ public:
         float climb_alt_m;
         bool has_home;
         double home_lat, home_lon;
+        std::uint8_t profile;  // param::Profile, the one the frames carry
         std::string reason;
     };
 
@@ -56,6 +61,8 @@ public:
     std::string start(const std::vector<Waypoint>& wps, double speed_mps = 0.0);
     std::string rth();
     std::string land();
+    // Any state; profile < param::kProfileCount.
+    std::string set_profile(std::uint8_t profile);
 
     // One 20 Hz period: the automatic transitions, then true with the frame to send, or false to stay silent.
     bool tick(double now, MissionCommand& out);
@@ -89,6 +96,7 @@ private:
     std::vector<Vec3> wps_;
     int wp_ = -1;
     float speed_ = 0.f;    // mission_start's speed_mps
+    std::uint8_t profile_ = 0;  // param::Profile: hold until set
     int rth_leg_ = 0;      // 0: up to rth_alt over the start point, 1: over home
     Vec3 land_{};          // land: xy at the command
     bool still_ = false;                // land: the landed conditions hold since landed_since_ (telemetry t_us)

@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include <marv/fsw/math.hpp>
+#include <marv/fsw/params.hpp>
 
 #include "setpoint.hpp"
 
@@ -14,7 +15,8 @@ namespace {
 constexpr double kStale = 1.0;        // s: telemetry older than this is stale
 constexpr double kIdleFor = 1.0;      // s of kIdle frames after a disarm or a landing
 constexpr float kArrive = 0.5f;       // m, 3-D in the estimate frame: climb, the rth climb, hold
-constexpr float kArriveWp = 2.0f;     // m, 3-D: mission legs and the rth return (ArduPilot WP_RADIUS_M_DEFAULT)
+// m, 3-D, by profile: mission legs and the rth return (ArduPilot WP_RADIUS_M_DEFAULT 2.0; agile 1.0, ADR-0012)
+constexpr float kArriveWp[param::kProfileCount] = {2.0f, 2.0f, 2.0f, 1.0f};
 constexpr float kSpeedMin = 0.5f, kSpeedMax = 20.f;  // m/s, mission_start's speed_mps when not 0
 constexpr float kAltMin = 0.5f, kAltMax = 200.f;  // m above home: climb and waypoint altitudes
 constexpr float kRangeMax = 5000.f;   // m, a waypoint from home
@@ -76,6 +78,7 @@ std::string Mission::arm(bool link_open, double now) {
 std::string Mission::disarm(double now) {
     state_ = State::kDisarmed;
     wp_ = -1;
+    profile_ = param::k_profile_hold;
     idle_until_ = now + kIdleFor;
     reason_.clear();
     return {};
@@ -148,10 +151,16 @@ std::string Mission::land() {
     return {};
 }
 
+std::string Mission::set_profile(std::uint8_t profile) {
+    if (profile >= param::kProfileCount) return "unknown profile";
+    profile_ = profile;
+    return {};
+}
+
 void Mission::hold_heading() { yaw_ = yaw_of(tlm_.est.q); }
 
 float Mission::accept() const {
-    if (state_ == State::kMission || (state_ == State::kRth && rth_leg_ == 1)) return kArriveWp;
+    if (state_ == State::kMission || (state_ == State::kRth && rth_leg_ == 1)) return kArriveWp[profile_];
     return kArrive;
 }
 
@@ -194,6 +203,7 @@ void Mission::advance(double now) {
             landed_since_ = tlm_.t_us;
         } else if (tlm_.t_us - landed_since_ >= kLandedFor) {
             state_ = State::kDisarmed;
+            profile_ = param::k_profile_hold;
             idle_until_ = now + kIdleFor;
             reason_ = "landed";
         }
@@ -220,6 +230,7 @@ MissionCommand Mission::frame(Mode mode, std::uint8_t has, const Vec3& p, const 
     c.ref.v_ned = v;
     c.ref.yaw = yaw_;
     c.ref.q = {1.f, 0.f, 0.f, 0.f};
+    c.profile = profile_;
     return c;
 }
 
@@ -256,6 +267,7 @@ Mission::Status Mission::status(double now) const {
     s.state = state_;
     s.wp_index = state_ == State::kMission ? wp_ : -1;
     s.wp_count = state_ == State::kMission ? static_cast<int>(wps_.size()) : 0;
+    s.profile = profile_;
     s.reason = state_ != State::kDisarmed && stale(now) ? "telemetry stale" : reason_;
     if (state_ == State::kDisarmed) return s;
     const auto to_geo = [this](const Vec3& ned) {

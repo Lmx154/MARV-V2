@@ -4,6 +4,7 @@
 // Mission view drives it. Truth comes from the bridge's --log, read while it is written. Not in ctest (needs Gazebo).
 //
 //   node scripts/gcs-mission-e2e.mjs [--out DIR] [--http PORT] [--world ID] [--setup FILE] [--speed MPS] [--port DEV | --fc]
+//                                    [--profile NAME] [--zigzag] [--switching] [--expect-echo]
 //   takes /tmp/marv-rig.lock itself
 //
 //   --port DEV runs the flight controller on DEV in the loop (sim.sh --port DEV) instead of the firmware on this computer
@@ -11,6 +12,10 @@
 //   --world ID goes to sim.sh (default x3). --setup FILE (a marv-setup JSON, e.g. setups/x500.json) is staged by id over
 //   the WebSocket and applied (reset) before the run; without it the running setup must be factory 0. --speed MPS is
 //   every mission_start's speed_mps (default: none sent, the cruise speed).
+//   --profile NAME (hold | freestyle | stabilized | agile, ADR-0012) is every mission_start's profile (default: none sent,
+//   the executor's: hold from the arm); the waypoint checks allow its accept radius (gcs/src/mission.cpp kArriveWp:
+//   2, 2, 2, 1 m) + 0.5 m. --zigzag adds 2c, --switching 2d. --expect-echo adds the checks that need the flight
+//   controller to apply the profile (telemetry.profile, ADR-0012 phase B); without it those metrics are only reported.
 //
 //   1. arm: for 5 s telemetry.armed, every motor == spin_arm +- 1e-6, truth_d_m > -0.05 (no liftoff).
 //   2. climb 5: hold within 30 s; truth_d over 2..5 s of hold at -5 +- 0.3.
@@ -18,8 +23,18 @@
 //      Metrics from truth, written to square-metrics.json: completion (first mission frame -> rth), per corner the
 //      closest 3-D approach, the truth horizontal speed there, the along-track overshoot past it; cross-track RMS
 //      to the square and the tilt peak, both over completion.
-//   3. a 3-waypoint mission, 12 m legs at 6..8 m above home: at each wp_index advance, truth within 2.5 m 3-D
-//      of the waypoint (the executor's 2.0 m accept_m and 0.5 m of estimate error); then the automatic rth to hold within 2.0 m of home.
+//   2c. --zigzag: a 6-point zig-zag at 5 m (10 m along, 10 m across per leg, from home), then the automatic rth to hold
+//      within 2.0 m of home, every point's closest 3-D approach within accept + 0.5 m. Metrics in zigzag-metrics.json:
+//      completion, closest per point, cross-track RMS to the path, altitude excursion |truth_d + 5|, tilt peak.
+//   2d. --switching: all four profiles in turn via {type: "profile"} (ending on the one it started in), 3 s apart, at
+//      hover over home and then during a leg (a mission to 80 m north, sent without a profile; its rth to hold over home).
+//      Per switch, in switching-metrics.json: mission_state.profile follow (wall ms), telemetry.profile follow (ms of
+//      telemetry t_us, null when it never follows within 1 s), altitude excursion from truth_d at the switch over 3 s,
+//      the truth jerk peak over the first 1 s and the steady peaks over the 1.5 s before and 1.5..3 s after (|d2v/dt2|,
+//      central differences over +-20 ms of truth velocity). Checks: mission_state follows within 500 ms; with
+//      --expect-echo also telemetry follows <= 100 ms, excursion <= 0.3 m, jerk peak <= 1.5x the larger steady peak.
+//   3. a 3-waypoint mission, 12 m legs at 6..8 m above home: at each wp_index advance, truth within accept + 0.5 m 3-D
+//      of the waypoint (the executor's accept_m and 0.5 m of estimate error); then the automatic rth to hold within 2.0 m of home.
 //   4. a second mission, rth after its first waypoint: hold within 2.0 m of home.
 //   5. land: disarmed ("landed") within 60 s, truth_d_m > -0.1, every motor 0.
 // Waypoints are placed in the truth frame (NED about the vehicle's spawn point, the world origin of
@@ -56,7 +71,19 @@ if (args.includes('--fc') && !fcPort) {
 	console.error(`--fc: want exactly one ${BY_ID}/usb-MARV_MARV_flight_controller_*, found ${fcs().length}`);
 	process.exit(2);
 }
-const missionStart = (waypoints) => ({ type: 'mission_start', waypoints, ...(speed === null ? {} : { speed_mps: Number(speed) }) });
+const PROFILES = ['hold', 'freestyle', 'stabilized', 'agile'];
+const ACCEPT = { hold: 2, freestyle: 2, stabilized: 2, agile: 1 }; // m, gcs/src/mission.cpp kArriveWp
+const profile = opt('--profile', null);
+if (profile !== null && !PROFILES.includes(profile)) {
+	console.error(`--profile: want one of ${PROFILES.join(', ')}, got ${profile}`);
+	process.exit(2);
+}
+const accept = ACCEPT[profile ?? 'hold'];
+const zigzag = args.includes('--zigzag'), switching = args.includes('--switching'), expectEcho = args.includes('--expect-echo');
+const missionStart = (waypoints, withProfile = true) => ({
+	type: 'mission_start', waypoints, ...(speed === null ? {} : { speed_mps: Number(speed) }),
+	...(profile !== null && withProfile ? { profile } : {})
+});
 mkdirSync(out, { recursive: true });
 const logPath = join(out, 'bridge.csv');
 
@@ -111,7 +138,7 @@ async function stopAll() {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---- the bridge log, read while it grows ----------------------------------------------------------------------------
-const truth = { t: [], n: [], e: [], d: [], vn: [], ve: [], tilt: [], m: [[], [], [], []] };
+const truth = { t: [], n: [], e: [], d: [], vn: [], ve: [], vd: [], tilt: [], m: [[], [], [], []] };
 let csvFd = -1, csvRest = '', cols = null;
 function readCsv() {
 	if (csvFd < 0) {
@@ -136,6 +163,7 @@ function readCsv() {
 			truth.d.push(Number(c[cols.truth_d_m]));
 			truth.vn.push(Number(c[cols.truth_vn_mps]));
 			truth.ve.push(Number(c[cols.truth_ve_mps]));
+			truth.vd.push(Number(c[cols.truth_vd_mps]));
 			const qx = Number(c[cols.truth_qx]), qy = Number(c[cols.truth_qy]);
 			truth.tilt.push((Math.acos(Math.min(1, Math.max(-1, 1 - 2 * (qx * qx + qy * qy)))) * 180) / Math.PI);
 			for (let k = 0; k < 4; ++k) truth.m[k].push(Number(c[cols[`motor${k}`]]));
@@ -170,8 +198,22 @@ function rows(t0, t1) {
 	return r;
 }
 
+// |d2v/dt2| of truth at row i: central differences over +-20 rows (20 ms at the log's 1 kHz); NaN near the ends.
+function jerkAt(i) {
+	const h = 20;
+	if (i - 2 * h < 0 || i + 2 * h >= truth.t.length) return NaN;
+	const acc = (k) => {
+		const dt = (truth.t[k + h] - truth.t[k - h]) / 1e6;
+		return [truth.vn, truth.ve, truth.vd].map((v) => (v[k + h] - v[k - h]) / dt);
+	};
+	const a1 = acc(i + h), a0 = acc(i - h), dt = (truth.t[i + h] - truth.t[i - h]) / 1e6;
+	return Math.hypot((a1[0] - a0[0]) / dt, (a1[1] - a0[1]) / dt, (a1[2] - a0[2]) / dt);
+}
+const jerkPeak = (t0, t1) => rows(t0, t1).reduce((m, i) => (Number.isNaN(jerkAt(i)) ? m : Math.max(m, jerkAt(i))), 0);
+
 // ---- the GCS WebSocket -----------------------------------------------------------------------------------------------
 let ws = null, tlm = null, mission = null, setup = null;
+let tlmProfile = null; // telemetry.profile, and the telemetry t_us at which it last changed
 const states = []; // every mission_state, with the telemetry t_us current when it arrived
 const errors = [];
 async function connect() {
@@ -191,7 +233,10 @@ async function connect() {
 	}
 	ws.onmessage = (ev) => {
 		const m = JSON.parse(ev.data);
-		if (m.type === 'telemetry') tlm = m;
+		if (m.type === 'telemetry') {
+			if (!tlm || tlm.profile !== m.profile) tlmProfile = { profile: m.profile, t_us: m.t_us };
+			tlm = m;
+		}
 		else if (m.type === 'mission_state') {
 			const prev = mission;
 			mission = m;
@@ -333,6 +378,12 @@ async function run() {
 	k = states.length;
 	await command(missionStart(SQ.map(wire)));
 	const sq0 = await nextState(k, (s) => s.state === 'mission', 2000, 'square: mission');
+	const sqProfile = profile ?? 'hold';
+	await until(() => tlm.profile === sqProfile || tlm.t_us >= sq0.t_us + 1e6, 3000, 'square: 1 s of telemetry');
+	const sqEchoMs = tlm.profile === sqProfile ? Math.max(0, (tlmProfile.t_us - sq0.t_us) / 1e3) : null;
+	if (expectEcho)
+		check('square: telemetry.profile follows', sqEchoMs !== null && sqEchoMs <= 100,
+			`telemetry.profile ${tlm.profile} (want ${sqProfile}) ${sqEchoMs === null ? 'never within 1 s' : `after ${f(sqEchoMs, 0)} ms`}`);
 	const sqAdv = [];
 	for (let w = 0; w < SQ.length; ++w)
 		sqAdv.push(await nextState(k, (s) => (w + 1 < SQ.length ? s.state === 'mission' && s.wp_index === w + 1 : s.state === 'rth'),
@@ -370,7 +421,8 @@ async function run() {
 			tiltPeak = Math.max(tiltPeak, truth.tilt[j]);
 		}
 		const metrics = {
-			world, setup: setupFile ?? 'factory 0', speed_mps: speed === null ? null : Number(speed), completion_s: (t1 - t0) / 1e6, corners,
+			world, setup: setupFile ?? 'factory 0', speed_mps: speed === null ? null : Number(speed), profile: sqProfile,
+			telemetry_profile: tlm.profile, completion_s: (t1 - t0) / 1e6, corners,
 			cross_track_rms_m: Math.sqrt(ss / r.length), tilt_peak_deg: tiltPeak,
 			overshoot_max_m: Math.max(...corners.map((c) => c.overshoot_m))
 		};
@@ -379,8 +431,11 @@ async function run() {
 	}
 	let i = at(sqHold.t_us + 2e6);
 	let dHome = Math.hypot(truth.n[i] - home.n, truth.e[i] - home.e);
-	check('square -> rth -> hold over home', sqHold.reason === 'home reached' && dHome <= 2.0,
-		`completion ${f((sqAdv[3].t_us - sq0.t_us) / 1e6, 2)} s, hold ("${sqHold.reason}"), truth 2 s later ${f(dHome)} m from home`);
+	check('square -> rth -> hold over home', sqHold.reason === 'home reached' && dHome <= 2.0 && sq0.profile === sqProfile,
+		`profile ${sq0.profile}, completion ${f((sqAdv[3].t_us - sq0.t_us) / 1e6, 2)} s, hold ("${sqHold.reason}"), truth 2 s later ${f(dHome)} m from home`);
+
+	if (zigzag) await flyZigzag(home);
+	if (switching) await switchAll(home);
 
 	// 3. the mission, then the automatic rth to hold over home.
 	console.log(`home (truth at arm) n ${f(home.n)} e ${f(home.e)}; waypoints ${JSON.stringify(WPS.map(wire))}`);
@@ -392,7 +447,7 @@ async function run() {
 		await truthUntil(adv.t_us);
 		const i = at(adv.t_us);
 		const dh = Math.hypot(truth.n[i] - WPS[w].n, truth.e[i] - WPS[w].e), dv = Math.abs(truth.d[i] + WPS[w].alt);
-		check(`waypoint ${w}`, Math.hypot(dh, dv) <= 2.5,
+		check(`waypoint ${w}`, Math.hypot(dh, dv) <= accept + 0.5,
 			`advance at t ${f(adv.t_us / 1e6, 2)} s: truth miss ${f(Math.hypot(dh, dv))} m 3-D (${f(dh)} m horizontal, ${f(dv)} m vertical) (${adv.state}${adv.reason ? ' "' + adv.reason + '"' : ''})`);
 	}
 	const rthHold = await nextState(k, (s) => s.state === 'hold', 90000, 'hold after the automatic rth');
@@ -438,6 +493,106 @@ async function run() {
 		`disarmed ("${landed.reason}") ${f(landS, 1)} s after land, truth_d ${f(truth.d[i], 4)} m, telemetry motors 0 at t ${f(tZ / 1e6, 2)} s, max log motor over the next 1 s ${mMax}`);
 	await sleep(1500);
 	check('disarmed 1.5 s after landing', mission.state === 'disarmed' && !tlm.armed, `mission_state ${mission.state}, telemetry.armed ${tlm.armed}, refusals ${errors.length}`);
+}
+
+// 2c. the zig-zag under --profile, then the automatic rth to hold over home.
+async function flyZigzag(home) {
+	const ZZ = [[10, 5], [20, -5], [30, 5], [40, -5], [50, 5], [60, -5]].map(([n, e]) => ({ n: home.n + n, e: home.e + e, alt: 5 }));
+	const k = states.length;
+	await command(missionStart(ZZ.map(wire)));
+	const z0 = await nextState(k, (s) => s.state === 'mission', 2000, 'zigzag: mission');
+	const zEnd = await nextState(k, (s) => s.state === 'rth', 120000, 'zigzag: rth');
+	const zHold = await nextState(k, (s) => s.state === 'hold', 120000, 'hold after the zigzag');
+	await until(() => tlm.t_us >= zHold.t_us + 2e6, 10000, 'hold 2 s');
+	await truthUntil(zHold.t_us + 2e6);
+	const legs = [home, ...ZZ];
+	const seg = (pn, pe, a, b) => {
+		const vn = b.n - a.n, ve = b.e - a.e;
+		const u = Math.max(0, Math.min(1, ((pn - a.n) * vn + (pe - a.e) * ve) / (vn * vn + ve * ve)));
+		return Math.hypot(pn - a.n - u * vn, pe - a.e - u * ve);
+	};
+	const r = rows(z0.t_us, zEnd.t_us);
+	const closest = ZZ.map((c) => r.reduce((m, j) => Math.min(m, Math.hypot(truth.n[j] - c.n, truth.e[j] - c.e, truth.d[j] + c.alt)), Infinity));
+	let ss = 0, tiltPeak = 0, altExc = 0;
+	for (const j of r) {
+		let x = Infinity;
+		for (let w = 0; w < ZZ.length; ++w) x = Math.min(x, seg(truth.n[j], truth.e[j], legs[w], legs[w + 1]));
+		ss += x * x;
+		tiltPeak = Math.max(tiltPeak, truth.tilt[j]);
+		altExc = Math.max(altExc, Math.abs(truth.d[j] + 5));
+	}
+	const metrics = {
+		world, setup: setupFile ?? 'factory 0', speed_mps: speed === null ? null : Number(speed), profile: z0.profile,
+		telemetry_profile: tlm.profile, completion_s: (zEnd.t_us - z0.t_us) / 1e6, closest_m: closest,
+		cross_track_rms_m: Math.sqrt(ss / r.length), altitude_excursion_m: altExc, tilt_peak_deg: tiltPeak
+	};
+	writeFileSync(join(out, 'zigzag-metrics.json'), JSON.stringify(metrics, null, '\t') + '\n');
+	console.log(`zigzag metrics: ${JSON.stringify(metrics)}`);
+	const i = at(zHold.t_us + 2e6);
+	const dHome = Math.hypot(truth.n[i] - home.n, truth.e[i] - home.e);
+	check('zigzag -> rth -> hold over home', zHold.reason === 'home reached' && dHome <= 2.0 && closest.every((c) => c <= accept + 0.5) &&
+		z0.profile === (profile ?? 'hold'),
+		`profile ${z0.profile}, completion ${f(metrics.completion_s, 2)} s, closest max ${f(Math.max(...closest))} m (<= ${accept + 0.5}), ` +
+		`xtrack RMS ${f(metrics.cross_track_rms_m)} m, altitude excursion ${f(altExc)} m, hold ("${zHold.reason}"), truth 2 s later ${f(dHome)} m from home`);
+}
+
+// 2d. One switch: sent, followed, flown 3 s; its metrics.
+async function switchTo(to) {
+	const from = mission.profile, where = mission.state, t0 = tlm.t_us, w0 = Date.now(), n = errors.length;
+	send({ type: 'profile', profile: to });
+	const gcs = await until(() => (mission.profile === to ? Date.now() : errors.length > n ? -1 : 0), 2000, `mission_state.profile ${to}`);
+	if (gcs < 0) throw new Abort(`profile ${to} refused: ${errors[errors.length - 1].error}`);
+	await until(() => tlm.t_us >= t0 + 3e6, 10000, `3 s in ${to}`);
+	await truthUntil(t0 + 3e6);
+	const echo = tlmProfile.profile === to && tlmProfile.t_us >= t0 && tlmProfile.t_us <= t0 + 1e6 ? (tlmProfile.t_us - t0) / 1e3 : null;
+	const d0 = truth.d[at(t0)];
+	const alt = rows(t0, t0 + 3e6).reduce((m, j) => Math.max(m, Math.abs(truth.d[j] - d0)), 0);
+	return {
+		from, to, where, gcs_follow_ms: gcs - w0, telemetry_follow_ms: echo, alt_excursion_m: alt,
+		jerk_peak: jerkPeak(t0, t0 + 1e6), jerk_steady_before: jerkPeak(t0 - 1.5e6, t0), jerk_steady_after: jerkPeak(t0 + 1.5e6, t0 + 3e6)
+	};
+}
+
+// All four, ending on the current one.
+async function switchCycle() {
+	const i0 = PROFILES.indexOf(mission.profile);
+	const res = [];
+	for (let s = 1; s <= PROFILES.length; ++s) res.push(await switchTo(PROFILES[(i0 + s) % PROFILES.length]));
+	return res;
+}
+
+async function switchAll(home) {
+	const hover = await switchCycle();
+	check('switching at hover: mission_state follows', hover.every((s) => s.gcs_follow_ms <= 500) && mission.state === 'hold',
+		hover.map((s) => `${s.from}->${s.to} ${s.gcs_follow_ms} ms`).join(', ') + `; state ${mission.state}`);
+
+	const k = states.length;
+	await command(missionStart([wire({ n: home.n + 80, e: home.e, alt: 5 })], false));
+	const m0 = await nextState(k, (s) => s.state === 'mission', 2000, 'switching: mission');
+	await until(() => tlm.t_us >= m0.t_us + 1e6, 10000, 'switching: 1 s into the leg');
+	const leg = await switchCycle();
+	const legHold = await nextState(k, (s) => s.state === 'hold', 120000, 'hold after the switching leg');
+	await until(() => tlm.t_us >= legHold.t_us + 2e6, 10000, 'hold 2 s');
+	await truthUntil(legHold.t_us + 2e6);
+	const i = at(legHold.t_us + 2e6);
+	const dHome = Math.hypot(truth.n[i] - home.n, truth.e[i] - home.e);
+	check('switching in a leg: mission_state follows, rth -> hold over home',
+		leg.every((s) => s.gcs_follow_ms <= 500) && legHold.reason === 'home reached' && dHome <= 2.0,
+		leg.map((s) => `${s.from}->${s.to} ${s.gcs_follow_ms} ms (${s.where})`).join(', ') + `; hold ("${legHold.reason}") ${f(dHome)} m from home`);
+
+	const all = [...hover, ...leg];
+	writeFileSync(join(out, 'switching-metrics.json'), JSON.stringify({ world, setup: setupFile ?? 'factory 0', switches: all }, null, '\t') + '\n');
+	for (const s of all)
+		console.log(`switch ${s.from}->${s.to} (${s.where}): telemetry ${s.telemetry_follow_ms === null ? 'never' : f(s.telemetry_follow_ms, 0) + ' ms'}, ` +
+			`alt excursion ${f(s.alt_excursion_m)} m, jerk peak ${f(s.jerk_peak, 2)} (steady ${f(s.jerk_steady_before, 2)} / ${f(s.jerk_steady_after, 2)}) m/s^3`);
+	if (!expectEcho) return;
+	check('switching: telemetry.profile follows <= 100 ms', all.every((s) => s.telemetry_follow_ms !== null && s.telemetry_follow_ms <= 100),
+		all.map((s) => `${s.to} ${s.telemetry_follow_ms === null ? 'never' : f(s.telemetry_follow_ms, 0)}`).join(', '));
+	check('switching: altitude excursion <= 0.3 m', all.every((s) => s.alt_excursion_m <= 0.3),
+		`max ${f(Math.max(...all.map((s) => s.alt_excursion_m)))} m`);
+	check('switching: jerk peak <= 1.5x the larger steady peak',
+		all.every((s) => s.jerk_peak <= 1.5 * Math.max(s.jerk_steady_before, s.jerk_steady_after)),
+		all.map((s) => `${s.to} ${f(s.jerk_peak, 2)}/${f(Math.max(s.jerk_steady_before, s.jerk_steady_after), 2)}`).join(', '));
 }
 
 let rc = 1;
