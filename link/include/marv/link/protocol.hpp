@@ -110,13 +110,24 @@ struct ParamValue {
 
 // ---- CRC -----------------------------------------------------------------------------------------
 
+// crc16_table.t[b]: the CRC register after shifting b in from the top, 8 bits at a time.
+struct Crc16Table {
+    std::uint16_t t[256];
+    constexpr Crc16Table() : t{} {
+        for (int i = 0; i < 256; ++i) {
+            std::uint16_t c = static_cast<std::uint16_t>(i << 8);
+            for (int b = 0; b < 8; ++b)
+                c = (c & 0x8000) ? static_cast<std::uint16_t>((c << 1) ^ 0x1021) : static_cast<std::uint16_t>(c << 1);
+            t[i] = c;
+        }
+    }
+};
+inline constexpr Crc16Table crc16_table{};
+
 inline std::uint16_t crc16(const std::uint8_t* p, std::size_t n) {
     std::uint16_t crc = 0xFFFF;
-    for (std::size_t i = 0; i < n; ++i) {
-        crc ^= static_cast<std::uint16_t>(p[i]) << 8;
-        for (int b = 0; b < 8; ++b)
-            crc = (crc & 0x8000) ? static_cast<std::uint16_t>((crc << 1) ^ 0x1021) : static_cast<std::uint16_t>(crc << 1);
-    }
+    for (std::size_t i = 0; i < n; ++i)
+        crc = static_cast<std::uint16_t>((crc << 8) ^ crc16_table.t[((crc >> 8) ^ p[i]) & 0xFF]);
     return crc;
 }
 

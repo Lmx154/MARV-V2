@@ -39,6 +39,17 @@ static bool decode_all(const std::uint8_t* p, std::size_t n, link::Decoder& d, l
     return got;
 }
 
+// The bitwise CRC-16/CCITT-FALSE the table-driven link::crc16 replaced.
+static std::uint16_t crc16_bitwise(const std::uint8_t* p, std::size_t n) {
+    std::uint16_t crc = 0xFFFF;
+    for (std::size_t i = 0; i < n; ++i) {
+        crc ^= static_cast<std::uint16_t>(p[i]) << 8;
+        for (int b = 0; b < 8; ++b)
+            crc = (crc & 0x8000) ? static_cast<std::uint16_t>((crc << 1) ^ 0x1021) : static_cast<std::uint16_t>(crc << 1);
+    }
+    return crc;
+}
+
 static_assert(link::kActuatorsBody == 29 && link::kReferenceBody == 89 && link::kMissionBody == 109 &&
                   link::kControlRequestBody == 32 && link::kTelemetryBody == 116 && link::kMaxBody == 116,
               "the bodies of the airframe-agnostic contracts");
@@ -261,6 +272,27 @@ int main() {
         const std::size_t e = link::cobs_encode(in, sizeof in, enc);
         const std::size_t n = link::cobs_decode(enc, e, dec, sizeof dec);
         CHECK(n == sizeof in && std::memcmp(in, dec, n) == 0);
+    }
+
+    // The table CRC equals the bitwise one: the check value, and random buffers of every length up to kMaxFrame.
+    {
+        const std::uint8_t check[] = {'1', '2', '3', '4', '5', '6', '7', '8', '9'};
+        CHECK(link::crc16(check, sizeof check) == 0x29B1 && crc16_bitwise(check, sizeof check) == 0x29B1);
+        CHECK(link::crc16(check, 0) == 0xFFFF);
+        std::uint32_t x = 0x12345678u;
+        std::uint8_t buf[link::kMaxFrame];
+        int differ = 0;
+        for (int k = 0; k < 20000; ++k) {
+            const std::size_t n = static_cast<std::size_t>(k) % (sizeof buf + 1);
+            for (std::size_t i = 0; i < n; ++i) {
+                x ^= x << 13;
+                x ^= x >> 17;
+                x ^= x << 5;
+                buf[i] = static_cast<std::uint8_t>(x);
+            }
+            if (link::crc16(buf, n) != crc16_bitwise(buf, n)) ++differ;
+        }
+        CHECK(differ == 0);
     }
 
     std::printf("%s (%d failures)\n", failures ? "FAIL" : "PASS", failures);
