@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import BlockChain from '$lib/components/BlockChain.svelte';
+	import ControllerView from '$lib/components/ControllerView.svelte';
 	import DerivePanel from '$lib/components/DerivePanel.svelte';
 	import DevelopmentView from '$lib/components/DevelopmentView.svelte';
 	import MissionView from '$lib/components/MissionView.svelte';
@@ -9,6 +10,7 @@
 	import { connect, loadAirframes, loadLink, loadSchema, mockFlag, type Connection } from '$lib/gcs/link';
 	import { isMissionRequest, type MissionMsg, type MissionRequest } from '$lib/gcs/mission';
 	import { euler } from '$lib/gcs/protocol';
+	import type { RadioDevice, RadioLive } from '$lib/gcs/radio';
 	import { busyBadge } from '$lib/gcs/resources';
 	import {
 		applyHeader,
@@ -56,7 +58,7 @@
 	/** The backend's last refusal per mission control, shown beside it. */
 	let missionErrors = $state<Partial<Record<MissionRequest | 'profile', string>>>({});
 	/** The tab chosen; until then Mission while the FC is connected. */
-	let tab = $state<'mission' | 'setup' | 'development' | null>(null);
+	let tab = $state<'mission' | 'setup' | 'development' | 'controller' | null>(null);
 	let airframes = $state.raw<Airframe[] | null>(null);
 	let airframesError = $state<string | null>(null);
 	/** The Development tab's selected airframe id. */
@@ -71,7 +73,11 @@
 	let resourcesError = $state<string | null>(null);
 	let terminating = $state<number | null>(null);
 	let terminateTimer: ReturnType<typeof setTimeout> | undefined;
-	let mockMode: string | null = null;
+	/** The Controller tab: the last radio frame, the last hot-plug device list, the refusal of radio_subscribe. */
+	let radioLive = $state.raw<RadioLive | null>(null);
+	let radioDevices = $state.raw<RadioDevice[] | null>(null);
+	let radioError = $state<string | null>(null);
+	let mockMode = $state<string | null>(null);
 	let conn: Connection | null = null;
 	const sentAt = new Map<number, number>();
 
@@ -204,7 +210,17 @@
 					clearTimeout(terminateTimer);
 				}
 				break;
+			case 'radio':
+				radioLive = m.radio;
+				break;
+			case 'radio_devices':
+				radioDevices = m.devices;
+				break;
 			case 'error': {
+				if (m.request === 'radio_subscribe') {
+					radioError = `${m.request}: ${m.error}`;
+					break;
+				}
 				if (m.request === 'terminate' || m.request === 'resources_request' || m.request === 'resources_subscribe') {
 					resourcesError = `${m.request}: ${m.error}`;
 					terminating = null;
@@ -416,6 +432,7 @@
 	<div class="tabs mono" role="tablist">
 		<button type="button" role="tab" aria-selected={view === 'mission'} class:on={view === 'mission'} onclick={() => (tab = 'mission')}>Mission</button>
 		<button type="button" role="tab" aria-selected={view === 'setup'} class:on={view === 'setup'} onclick={() => (tab = 'setup')}>Setup</button>
+		<button type="button" role="tab" aria-selected={view === 'controller'} class:on={view === 'controller'} onclick={() => (tab = 'controller')}>Controller</button>
 		<button type="button" role="tab" aria-selected={view === 'development'} class:on={view === 'development'} onclick={() => (tab = 'development')}>
 			Development{simStatus?.running ? ' · sim running' : ''}
 		</button>
@@ -477,6 +494,24 @@
 				onreset={resetBlock}
 			/>
 		</section>
+	{/if}
+
+	{#if schema}
+		<div hidden={view !== 'controller'}>
+			<ControllerView
+				profiles={schema.profiles}
+				live={radioLive}
+				hotplug={radioDevices}
+				error={radioError}
+				{wsOpen}
+				visible={view === 'controller'}
+				mock={mockMode}
+				onsubscribe={(device) => {
+					radioError = null;
+					send({ type: 'radio_subscribe', device });
+				}}
+			/>
+		</div>
 	{/if}
 
 	<div hidden={view !== 'development'}>

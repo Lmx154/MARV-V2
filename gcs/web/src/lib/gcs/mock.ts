@@ -7,9 +7,11 @@
  * Flight profiles (ADR-0012): profile (any state) and mission_start's profile select one by id (anything else refused, as the
  * backend does), arm selects hold; telemetry and mission_state echo its id; the vehicle's cruise speed and horizontal acceleration are the active profile's.
  * A fake resource scan answers resources_request / resources_subscribe and terminate (itself refused, others removed).
+ * radio_subscribe streams mock-radio's frames at the telemetry rate; an Xbox pad is plugged in (radio_devices) 3 s after open.
  */
 import { LocalFrame, type Ned } from './geo';
 import { ACCEPT_WP_M, climbError, missionError, speedError, type MissionMsg } from './mission';
+import { MOCK_XBOX, mockRadio } from './mock-radio';
 import type { ClientMsg, GeoPoint, LatLonAlt, MissionMode, RigResource, Schema, SetupHeader, SimStatus } from './types';
 
 /** The Gazebo world's origin, as in tests/test_geo.cpp. */
@@ -139,6 +141,9 @@ export class MockFc {
 			]
 		}
 	];
+	/** The device radio_subscribe asked for, or null. */
+	private radio: string | null = null;
+	private readonly plugTimer: ReturnType<typeof setTimeout>;
 	private sim: SimStatus = { running: false, airframe: null, env: null, target: null, gui: false, started_at: null, pid: null };
 
 	constructor(
@@ -164,10 +169,14 @@ export class MockFc {
 			this.emit({ type: 'sim_status', ...this.sim });
 		}, 50);
 		this.timer = setInterval(() => this.telemetry(), 50);
+		this.plugTimer = setTimeout(() => {
+			if (mockRadio.plug(MOCK_XBOX)) this.emit({ type: 'radio_devices', devices: mockRadio.devices });
+		}, 3000);
 	}
 
 	close(): void {
 		clearInterval(this.timer);
+		clearTimeout(this.plugTimer);
 		this.onclose?.();
 	}
 
@@ -218,6 +227,13 @@ export class MockFc {
 				return this.emit({ type: 'resources', resources: this.resources });
 			case 'terminate':
 				return this.terminate(m.pid);
+			case 'radio_subscribe':
+				if (m.device !== null && !mockRadio.devices.some((d) => d.name === m.device)) {
+					this.radio = null;
+					return this.emit({ type: 'error', request: 'radio_subscribe', error: `no device named ${m.device}` });
+				}
+				this.radio = m.device;
+				return;
 			case 'profile':
 				if (!this.select(m.profile)) return this.emit({ type: 'error', request: 'profile', error: 'want {profile: hold|freestyle|stabilized|agile}' });
 				return this.missionState();
@@ -486,6 +502,8 @@ export class MockFc {
 	private telemetry(): void {
 		this.t += 0.05;
 		this.fly(0.05);
+		const radio = this.radio === null ? null : mockRadio.frame(this.radio, this.t);
+		if (radio) this.emit(radio);
 		if (++this.ticks % 10 === 0 && this.mode !== 'disarmed') this.missionState();
 		const r = crc(this.running);
 		const preset = this.schema.factory.find((f) => crc({ kind: f.kinds, values: f.values }) === r)?.id ?? 0xff;

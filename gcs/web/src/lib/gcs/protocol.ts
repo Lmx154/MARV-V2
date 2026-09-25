@@ -1,3 +1,4 @@
+import { parseDevices, parseLive } from './radio';
 import { linkHolder, parseResources } from './resources';
 import type { GeoPoint, LatLonAlt, LinkInfo, MissionMode, MissionStatus, Schema, ServerMsg, SetupHeader, Telemetry } from './types';
 
@@ -135,6 +136,10 @@ export function parseServer(text: string): ServerMsg | null {
 			return { type: 'sim_log', line: String(m.line ?? '') };
 		case 'resources':
 			return { type: 'resources', resources: parseResources(m.resources) };
+		case 'radio':
+			return { type: 'radio', radio: parseLive(m) };
+		case 'radio_devices':
+			return { type: 'radio_devices', devices: parseDevices(m.devices) };
 		case 'error': {
 			const e: Extract<ServerMsg, { type: 'error' }> = { type: 'error', request: String(m.request ?? ''), error: String(m.error ?? '') };
 			if (typeof m.family === 'number') e.family = m.family;
