@@ -53,10 +53,12 @@
 	const uid = $props.id();
 
 	const def = $derived(family.kinds[kind]);
+	/** Profiled params are edited in the Profiles table, not on the card. */
+	const profiledCount = $derived(def ? def.params.filter((p) => p.profile !== undefined).length : 0);
 	const modifiedCount = $derived(def ? def.params.filter((p) => Math.fround(value(p.index)) !== Math.fround(reference[p.id] ?? p.default)).length : 0);
 	const groups = $derived.by(() => {
 		if (!def) return [];
-		const byId = new Map(def.params.map((p) => [p.id, p]));
+		const byId = new Map(def.params.filter((p) => p.profile === undefined).map((p) => [p.id, p]));
 		const used = new Set<string>();
 		const out = (def.parts ?? []).map((part) => ({
 			id: part.id,
@@ -69,7 +71,7 @@
 				return [spec];
 			})
 		}));
-		const rest = def.params.filter((p) => !used.has(p.id));
+		const rest = def.params.filter((p) => p.profile === undefined && !used.has(p.id));
 		if (rest.length) out.push({ id: 'rest', label: 'Parameters', note: undefined, params: rest });
 		return out.filter((g) => g.params.length);
 	});
@@ -93,7 +95,7 @@
 	{#if error}<p class="err mono" role="alert">{error}</p>{/if}
 	{#if def}<p class="summary" class:clamped={!expanded} title={expanded ? undefined : def.summary}>{def.summary}</p>{/if}
 	<div class="foot mono">
-		<span class="count">{def?.params.length ?? 0} params · <span class:accent={modifiedCount > 0}>{modifiedCount} modified</span></span>
+		<span class="count">{def?.params.length ?? 0} params{#if profiledCount} ({profiledCount} in Profiles){/if} · <span class:accent={modifiedCount > 0}>{modifiedCount} modified</span></span>
 		{#if def && def.params.length > 0}
 			<button type="button" class="toggle mono" aria-expanded={expanded} aria-controls={`${uid}-params`} onclick={() => (expanded = !expanded)}>
 				{expanded ? '▾ collapse' : '▸ expand'}

@@ -4,6 +4,7 @@
 	import DerivePanel from '$lib/components/DerivePanel.svelte';
 	import DevelopmentView from '$lib/components/DevelopmentView.svelte';
 	import MissionView from '$lib/components/MissionView.svelte';
+	import ProfilesEditor from '$lib/components/ProfilesEditor.svelte';
 	import ResourcesPanel from '$lib/components/ResourcesPanel.svelte';
 	import { connect, loadAirframes, loadLink, loadSchema, mockFlag, type Connection } from '$lib/gcs/link';
 	import { isMissionRequest, type MissionMsg, type MissionRequest } from '$lib/gcs/mission';
@@ -53,7 +54,7 @@
 	let kindErrors = $state<Record<number, string>>({});
 	let mission = $state.raw<MissionStatus | null>(null);
 	/** The backend's last refusal per mission control, shown beside it. */
-	let missionErrors = $state<Partial<Record<MissionRequest, string>>>({});
+	let missionErrors = $state<Partial<Record<MissionRequest | 'profile', string>>>({});
 	/** The tab chosen; until then Mission while the FC is connected. */
 	let tab = $state<'mission' | 'setup' | 'development' | null>(null);
 	let airframes = $state.raw<Airframe[] | null>(null);
@@ -101,7 +102,7 @@
 		conn?.send(m);
 	}
 
-	function sendMission(m: MissionMsg): void {
+	function sendMission(m: MissionMsg | Extract<ClientMsg, { type: 'profile' }>): void {
 		delete missionErrors[m.type];
 		send(m);
 	}
@@ -216,7 +217,7 @@
 					break;
 				}
 				const family = refusedFamily(m);
-				if (isMissionRequest(m.request)) missionErrors[m.request] = m.error;
+				if (isMissionRequest(m.request) || m.request === 'profile') missionErrors[m.request] = m.error;
 				else if (family !== null) kindErrors[family] = m.error;
 				else errors[requestError(st, m.request)] = `${m.request}: ${m.error}`;
 				if (m.request === 'flash') flashing = false;
@@ -421,7 +422,7 @@
 	</div>
 
 	<div hidden={view !== 'mission'}>
-		<MissionView {telem} {mission} connected={wsOpen && header !== null} errors={missionErrors} visible={view === 'mission'} onsend={sendMission} />
+		<MissionView {telem} {mission} profiles={schema?.profiles ?? []} connected={wsOpen && header !== null} errors={missionErrors} visible={view === 'mission'} onsend={sendMission} />
 	</div>
 
 	{#if schema}
@@ -459,6 +460,8 @@
 			{#if errors.params}<p class="err mono" role="alert">{errors.params}</p>{/if}
 
 			<DerivePanel {schema} {value} disabled={!editable} airframe={selectedAirframe} onparam={setParam} />
+
+			<ProfilesEditor {schema} {value} {reference} rejected={st.rejected} {pending} disabled={!editable} onparam={setParam} />
 
 			<BlockChain
 				{schema}

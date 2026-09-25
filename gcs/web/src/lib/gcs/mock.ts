@@ -4,6 +4,8 @@
  * flies the mission API about a fixed home with the executor's rules (ADR-0010 (b), (d)): arm, climb, hold, mission, return
  * to home and hold over it (no automatic landing), land and disarm. Mission legs fly at the mission's speed_mps, else the
  * running setup's guidance cruise_speed, acceleration-limited, advancing within ACCEPT_WP_M so corners round (ADR-0011). A fake sim launcher answers sim_launch and sim_stop.
+ * Flight profiles (ADR-0012): profile (any state) and mission_start's profile select one (unknown: hold), arm selects hold;
+ * telemetry and mission_state echo it; the vehicle's cruise speed and horizontal acceleration are the active profile's.
  * A fake resource scan answers resources_request / resources_subscribe and terminate (itself refused, others removed).
  */
 import { LocalFrame, type Ned } from './geo';
@@ -16,7 +18,7 @@ const SPEED_H = 6;
 const SPEED_V = 2.5;
 const SPEED_LAND = 1;
 const ARRIVED_M = 0.3;
-/** Horizontal acceleration limit (guidance trajectory acc_xy default), and the least speed kept through a mission corner. */
+/** Horizontal acceleration limit when the setup has no acc_xy (the hold profile's default), and the least speed kept through a mission corner. */
 const ACC_H = 3;
 const CORNER_MPS = 1.5;
 /** MOT_SPIN_ARM, and the mock's hover command. */
@@ -100,8 +102,11 @@ export class MockFc {
 	private v: [number, number] = [0, 0];
 	/** The mission's speed; null flies cruise. */
 	private speed: number | null = null;
-	/** Absolute index of guidance/trajectory cruise_speed, or -1. */
-	private readonly cruiseIndex: number;
+	/** The active profile, an index into Schema.profiles. */
+	private profile = 0;
+	/** Per profile, the absolute index of guidance/trajectory cruise_speed and acc_xy, or -1. */
+	private readonly cruiseIndex: number[];
+	private readonly accIndex: number[];
 	private mode: MissionMode;
 	private climbAlt: number | null = null;
 	/** Where climb, hold and land hold the horizontal position (and climb/hold the altitude). */
@@ -141,11 +146,10 @@ export class MockFc {
 		flag: string
 	) {
 		for (const f of schema.families) for (const k of f.kinds) for (const p of k.params) this.specs[p.index] = { min: p.min, max: p.max };
-		this.cruiseIndex =
-			schema.families
-				.find((f) => f.id === 'guidance')
-				?.kinds.find((k) => k.id === 'trajectory')
-				?.params.find((p) => p.id === 'cruise_speed.hold')?.index ?? -1;
+		const traj = schema.families.find((f) => f.id === 'guidance')?.kinds.find((k) => k.id === 'trajectory')?.params ?? [];
+		const at = (id: string): number => traj.find((p) => p.id === id)?.index ?? -1;
+		this.cruiseIndex = schema.profiles.map((p) => at(`cruise_speed.${p.id}`));
+		this.accIndex = schema.profiles.map((p) => at(`acc_xy.${p.id}`));
 		const f0 = schema.factory[0];
 		this.staged = { kind: f0.kinds.slice(), values: f0.values.map((v) => Math.fround(v)) };
 		this.running = copy(this.staged);
@@ -214,9 +218,17 @@ export class MockFc {
 				return this.emit({ type: 'resources', resources: this.resources });
 			case 'terminate':
 				return this.terminate(m.pid);
+			case 'profile':
+				this.select(m.profile);
+				return this.missionState();
 			default:
 				return this.mission(m);
 		}
+	}
+
+	/** An unknown profile selects hold. */
+	private select(profile: unknown): void {
+		this.profile = typeof profile === 'number' && Number.isInteger(profile) && profile >= 0 && profile < this.schema.profiles.length ? profile : 0;
 	}
 
 	private disarm(reason = ''): void {
@@ -256,6 +268,7 @@ export class MockFc {
 				if (s !== 'disarmed') return refuse('already armed');
 				this.armed = true;
 				this.homeNed = [n, e];
+				this.profile = 0;
 				return this.enter('armed', '');
 			case 'disarm':
 				if (s === 'disarmed') return refuse('already disarmed');
@@ -275,6 +288,7 @@ export class MockFc {
 				const slow = speedError(speed);
 				if (slow) return refuse(slow);
 				this.speed = speed;
+				if (m.profile !== undefined) this.select(m.profile);
 				this.wps = m.waypoints.map((w) => ({ ...w }));
 				this.wpIndex = 0;
 				return this.enter('mission', '');
@@ -309,10 +323,20 @@ export class MockFc {
 		}
 	}
 
-	/** The running setup's cruise speed, else SPEED_H. */
+	/** The running setup's value at index i when positive, else d. */
+	private runningOr(i: number | undefined, d: number): number {
+		const c = i !== undefined && i >= 0 ? this.running.values[i] : NaN;
+		return Number.isFinite(c) && c > 0 ? c : d;
+	}
+
+	/** The active profile's cruise speed in the running setup, else SPEED_H. */
 	private cruise(): number {
-		const c = this.cruiseIndex >= 0 ? this.running.values[this.cruiseIndex] : NaN;
-		return Number.isFinite(c) && c > 0 ? c : SPEED_H;
+		return this.runningOr(this.cruiseIndex[this.profile], SPEED_H);
+	}
+
+	/** The active profile's horizontal acceleration limit in the running setup, else ACC_H. */
+	private acc(): number {
+		return this.runningOr(this.accIndex[this.profile], ACC_H);
 	}
 
 	/** One tick of the point mass toward the target; arriving advances the state. */
@@ -324,11 +348,12 @@ export class MockFc {
 		// Mission legs keep CORNER_MPS through the waypoint; every other target is braked to a stop at it.
 		const through = this.mode === 'mission';
 		const limit = this.mode === 'mission' ? (this.speed ?? this.cruise()) : this.mode === 'rth' ? this.cruise() : SPEED_H;
-		const want = h > 1e-6 ? Math.min(limit, Math.sqrt(2 * ACC_H * h) + (through ? CORNER_MPS : 0), h / dt) : 0;
+		const acc = this.acc();
+		const want = h > 1e-6 ? Math.min(limit, Math.sqrt(2 * acc * h) + (through ? CORNER_MPS : 0), h / dt) : 0;
 		const dvn = (h > 1e-6 ? (want * dn) / h : 0) - this.v[0];
 		const dve = (h > 1e-6 ? (want * de) / h : 0) - this.v[1];
 		const dv = Math.hypot(dvn, dve);
-		const k = dv > ACC_H * dt ? (ACC_H * dt) / dv : 1;
+		const k = dv > acc * dt ? (acc * dt) / dv : 1;
 		this.v[0] += dvn * k;
 		this.v[1] += dve * k;
 		this.p[0] += this.v[0] * dt;
@@ -360,7 +385,8 @@ export class MockFc {
 			dist_m: t ? Math.hypot(t[0] - this.p[0], t[1] - this.p[1], t[2] - this.p[2]) : null,
 			climb_alt_m: this.climbAlt,
 			home: this.homeLatLon(),
-			reason: this.reason
+			reason: this.reason,
+			profile: this.profile
 		});
 	}
 
@@ -467,7 +493,8 @@ export class MockFc {
 			home_valid: true,
 			home: HOME,
 			geo: this.frame.latLonOf(this.p),
-			motor: [0, 1, 2, 3].map((i) => (!this.armed ? 0 : this.mode === 'armed' ? SPIN_ARM : HOVER + 0.01 * Math.sin(3 * this.t + i)))
+			motor: [0, 1, 2, 3].map((i) => (!this.armed ? 0 : this.mode === 'armed' ? SPIN_ARM : HOVER + 0.01 * Math.sin(3 * this.t + i))),
+			profile: this.profile
 		});
 	}
 

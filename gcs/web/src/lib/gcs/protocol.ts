@@ -1,5 +1,5 @@
 import { linkHolder, parseResources } from './resources';
-import type { GeoPoint, LatLonAlt, LinkInfo, MissionMode, Schema, ServerMsg, SetupHeader, Telemetry } from './types';
+import type { GeoPoint, LatLonAlt, LinkInfo, MissionMode, MissionStatus, Schema, ServerMsg, SetupHeader, Telemetry } from './types';
 
 type Obj = Record<string, unknown>;
 
@@ -23,6 +23,8 @@ function quat(v: unknown): [number, number, number, number] {
 const MODES: readonly MissionMode[] = ['disarmed', 'armed', 'climb', 'hold', 'mission', 'rth', 'land'];
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const numOrNull = (v: unknown): number | null => (finite(v) ? v : null);
+/** A reported profile index: a non-negative integer, else undefined. */
+const profileOf = (v: unknown): number | undefined => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : undefined);
 
 /** {lat, lon, alt_m} in degrees and metres above home, or null without a finite lat and lon. */
 function latLonAlt(v: unknown): LatLonAlt | null {
@@ -93,24 +95,26 @@ export function parseServer(text: string): ServerMsg | null {
 				geo: latLonAlt(m.geo ?? est.geo),
 				motor: Array.isArray(m.motor) && m.motor.length === 4 ? [num(m.motor[0], NaN), num(m.motor[1], NaN), num(m.motor[2], NaN), num(m.motor[3], NaN)] : null
 			};
+			const profile = profileOf(m.profile);
+			if (profile !== undefined) telemetry.profile = profile;
 			return { type: 'telemetry', telemetry };
 		}
 		case 'mission_state': {
 			const state = MODES.find((x) => x === m.state);
 			if (!state) return null;
-			return {
-				type: 'mission_state',
-				mission: {
-					state,
-					wp_index: num(m.wp_index, -1),
-					wp_count: num(m.wp_count, 0),
-					target: latLonAlt(m.target),
-					dist_m: numOrNull(m.dist_m),
-					climb_alt_m: numOrNull(m.climb_alt_m),
-					home: isObj(m.home) && finite(m.home.lat) && finite(m.home.lon) ? { lat: m.home.lat, lon: m.home.lon } : null,
-					reason: typeof m.reason === 'string' ? m.reason : ''
-				}
+			const mission: MissionStatus = {
+				state,
+				wp_index: num(m.wp_index, -1),
+				wp_count: num(m.wp_count, 0),
+				target: latLonAlt(m.target),
+				dist_m: numOrNull(m.dist_m),
+				climb_alt_m: numOrNull(m.climb_alt_m),
+				home: isObj(m.home) && finite(m.home.lat) && finite(m.home.lon) ? { lat: m.home.lat, lon: m.home.lon } : null,
+				reason: typeof m.reason === 'string' ? m.reason : ''
 			};
+			const profile = profileOf(m.profile);
+			if (profile !== undefined) mission.profile = profile;
+			return { type: 'mission_state', mission };
 		}
 		case 'flash_log':
 			return { type: 'flash_log', line: String(m.line ?? '') };
@@ -146,6 +150,7 @@ export function normalizeSchema(s: Schema): Schema {
 	return {
 		...s,
 		schema_hash: s.schema_hash >>> 0,
+		profiles: Array.isArray(s.profiles) ? s.profiles : [],
 		factory: s.factory.map((f) => ({
 			...f,
 			kinds: f.kinds.map((k, fi) => (typeof k === 'number' ? k : Math.max(0, s.families[fi]?.kinds.findIndex((d) => d.id === String(k)) ?? 0)))

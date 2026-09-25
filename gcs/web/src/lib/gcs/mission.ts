@@ -76,10 +76,12 @@ export function parseSpeed(s: string): number | null | string {
 	return speedError(v) ?? v;
 }
 
-/** The mission_start message; speed_mps only when a speed is given. */
-export function missionStart(wps: readonly LatLonAlt[], speed_mps: number | null): Extract<ClientMsg, { type: 'mission_start' }> {
+/** The mission_start message; speed_mps only when a speed is given, profile only when one is selected. */
+export function missionStart(wps: readonly LatLonAlt[], speed_mps: number | null, profile: number | null = null): Extract<ClientMsg, { type: 'mission_start' }> {
 	const waypoints = wps.map((w) => ({ ...w }));
-	return speed_mps === null ? { type: 'mission_start', waypoints } : { type: 'mission_start', waypoints, speed_mps };
+	const m: Extract<ClientMsg, { type: 'mission_start' }> = speed_mps === null ? { type: 'mission_start', waypoints } : { type: 'mission_start', waypoints, speed_mps };
+	if (profile !== null) m.profile = profile;
+	return m;
 }
 
 export function climbError(alt_m: number): string | null {
