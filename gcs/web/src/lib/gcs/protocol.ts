@@ -23,8 +23,8 @@ function quat(v: unknown): [number, number, number, number] {
 const MODES: readonly MissionMode[] = ['disarmed', 'armed', 'climb', 'hold', 'mission', 'rth', 'land'];
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const numOrNull = (v: unknown): number | null => (finite(v) ? v : null);
-/** A reported profile index: a non-negative integer, else undefined. */
-const profileOf = (v: unknown): number | undefined => (typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : undefined);
+/** A reported profile name: a non-empty string (an id, or "#n"), else undefined. */
+const profileOf = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
 
 /** {lat, lon, alt_m} in degrees and metres above home, or null without a finite lat and lon. */
 function latLonAlt(v: unknown): LatLonAlt | null {

@@ -39,13 +39,13 @@ export function profiledRows(schema: Schema): ProfiledRow[] {
 	return out;
 }
 
-/** The live profile switch: an index into Schema.profiles. */
-export function profileMsg(profile: number): Extract<ClientMsg, { type: 'profile' }> {
+/** The live profile switch: a Schema.profiles id. */
+export function profileMsg(profile: string): Extract<ClientMsg, { type: 'profile' }> {
 	return { type: 'profile', profile };
 }
 
 /** The profile the FC reports applying: telemetry's, else the executor's. */
-export function reportedProfile(telem: Telemetry | null, mission: MissionStatus | null): number | null {
+export function reportedProfile(telem: Telemetry | null, mission: MissionStatus | null): string | null {
 	return telem?.profile ?? mission?.profile ?? null;
 }
 
@@ -57,7 +57,7 @@ export interface ProfileStatus {
 }
 
 /** Labels of the requested and reported profiles, and whether they differ. */
-export function profileStatus(profiles: readonly ProfileDef[], requested: number | null, reported: number | null): ProfileStatus {
-	const label = (i: number | null): string => (i === null ? '—' : (profiles[i]?.label ?? `#${i}`));
+export function profileStatus(profiles: readonly ProfileDef[], requested: string | null, reported: string | null): ProfileStatus {
+	const label = (id: string | null): string => (id === null ? '—' : (profiles.find((p) => p.id === id)?.label ?? id));
 	return { requested: label(requested), reported: label(reported), mismatch: requested !== null && reported !== null && requested !== reported };
 }

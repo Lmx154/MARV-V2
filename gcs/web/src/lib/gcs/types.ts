@@ -19,7 +19,7 @@ export interface ParamSpec {
 	profile?: string;
 }
 
-/** A flight profile, in the schema's (and the wire's index) order. */
+/** A flight profile, in the schema's order; its id is the wire's profile name. */
 export interface ProfileDef {
 	id: string;
 	label: string;
@@ -136,8 +136,8 @@ export interface MissionStatus {
 	home: { lat: number; lon: number } | null;
 	/** Why the state is what it is, e.g. "landed", "telemetry stale"; empty when none. */
 	reason: string;
-	/** The profile the executor runs (index into Schema.profiles), when reported. */
-	profile?: number;
+	/** The profile the executor runs (a Schema.profiles id, or "#n" for an unknown one), when reported. */
+	profile?: string;
 }
 
 export interface Telemetry {
@@ -155,8 +155,8 @@ export interface Telemetry {
 	geo: LatLonAlt | null;
 	/** The last actuator command, one value per motor; null when not reported. */
 	motor: [number, number, number, number] | null;
-	/** The profile the FC applies (index into Schema.profiles), when reported. */
-	profile?: number;
+	/** The profile the FC applies (a Schema.profiles id, or "#n" for an unknown one), when reported. */
+	profile?: string;
 }
 
 /** An airframe's physical specs as the sim reports them (GET /api/sim/airframes). */
@@ -232,8 +232,8 @@ export type ClientMsg =
 	| { type: 'arm' }
 	| { type: 'disarm' }
 	| { type: 'climb'; alt_m: number }
-	| { type: 'mission_start'; waypoints: LatLonAlt[]; speed_mps?: number; profile?: number }
-	| { type: 'profile'; profile: number }
+	| { type: 'mission_start'; waypoints: LatLonAlt[]; speed_mps?: number; profile?: string }
+	| { type: 'profile'; profile: string }
 	| { type: 'rth' }
 	| { type: 'land' }
 	| { type: 'sim_launch'; airframe: string; env: SimEnv; gui: boolean; target: SimTarget }

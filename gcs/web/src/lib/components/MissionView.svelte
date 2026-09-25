@@ -37,7 +37,7 @@
 	interface Props {
 		telem: Telemetry | null;
 		mission: MissionStatus | null;
-		/** The schema's flight profiles, in wire-index order. */
+		/** The schema's flight profiles, in order. */
 		profiles: ProfileDef[];
 		/** Backend open and FC connected. */
 		connected: boolean;
@@ -60,7 +60,7 @@
 	/** The speed the last START asked for (null: cruise). */
 	let startedSpeed = $state<number | null>(null);
 	/** The profile last selected here (null: none yet); START sends it too. */
-	let requestedProfile = $state<number | null>(null);
+	let requestedProfile = $state<string | null>(null);
 	let presets = $state<MissionPreset[]>([]);
 	let presetName = $state('');
 	let note = $state<string | null>(null);
@@ -132,9 +132,9 @@
 		onsend(missionStart(waypoints, speed, requestedProfile));
 	}
 
-	function selectProfile(i: number): void {
-		requestedProfile = i;
-		onsend(profileMsg(i));
+	function selectProfile(id: string): void {
+		requestedProfile = id;
+		onsend(profileMsg(id));
 	}
 
 	function disarm(): void {
@@ -217,8 +217,8 @@
 		<div class="controls mono" aria-label="Flight profile">
 			<div class="ctl">
 				<span class="k">profile</span>
-				{#each profiles as p, i (p.id)}
-					<button type="button" class="btn" class:selected={requestedProfile === i} aria-pressed={requestedProfile === i} disabled={!connected} onclick={() => selectProfile(i)}>{p.label}</button>
+				{#each profiles as p (p.id)}
+					<button type="button" class="btn" class:selected={requestedProfile === p.id} aria-pressed={requestedProfile === p.id} disabled={!connected} onclick={() => selectProfile(p.id)}>{p.label}</button>
 				{/each}
 			</div>
 			<div class="ctl" role="status">

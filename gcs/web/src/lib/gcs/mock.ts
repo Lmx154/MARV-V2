@@ -4,8 +4,8 @@
  * flies the mission API about a fixed home with the executor's rules (ADR-0010 (b), (d)): arm, climb, hold, mission, return
  * to home and hold over it (no automatic landing), land and disarm. Mission legs fly at the mission's speed_mps, else the
  * running setup's guidance cruise_speed, acceleration-limited, advancing within ACCEPT_WP_M so corners round (ADR-0011). A fake sim launcher answers sim_launch and sim_stop.
- * Flight profiles (ADR-0012): profile (any state) and mission_start's profile select one (unknown: hold), arm selects hold;
- * telemetry and mission_state echo it; the vehicle's cruise speed and horizontal acceleration are the active profile's.
+ * Flight profiles (ADR-0012): profile (any state) and mission_start's profile select one by id (anything else refused, as the
+ * backend does), arm selects hold; telemetry and mission_state echo its id; the vehicle's cruise speed and horizontal acceleration are the active profile's.
  * A fake resource scan answers resources_request / resources_subscribe and terminate (itself refused, others removed).
  */
 import { LocalFrame, type Ned } from './geo';
@@ -219,16 +219,23 @@ export class MockFc {
 			case 'terminate':
 				return this.terminate(m.pid);
 			case 'profile':
-				this.select(m.profile);
+				if (!this.select(m.profile)) return this.emit({ type: 'error', request: 'profile', error: 'want {profile: hold|freestyle|stabilized|agile}' });
 				return this.missionState();
 			default:
 				return this.mission(m);
 		}
 	}
 
-	/** An unknown profile selects hold. */
-	private select(profile: unknown): void {
-		this.profile = typeof profile === 'number' && Number.isInteger(profile) && profile >= 0 && profile < this.schema.profiles.length ? profile : 0;
+	/** The active profile's wire name. */
+	private profileId(): string {
+		return this.schema.profiles[this.profile]?.id ?? `#${this.profile}`;
+	}
+
+	/** Selects the profile with this id; false (nothing selected) for anything else. */
+	private select(profile: unknown): boolean {
+		const i = this.schema.profiles.findIndex((p) => p.id === profile);
+		if (i >= 0) this.profile = i;
+		return i >= 0;
 	}
 
 	private disarm(reason = ''): void {
@@ -281,6 +288,8 @@ export class MockFc {
 				return this.enter('climb', '', [n, e, -m.alt_m]);
 			}
 			case 'mission_start': {
+				if (m.profile !== undefined && !this.schema.profiles.some((p) => p.id === m.profile))
+					return this.emit({ type: 'error', request: m.type, error: 'want {waypoints: [{lat, lon, alt_m}], speed_mps?: number, profile?: hold|freestyle|stabilized|agile}' });
 				if (s !== 'hold') return refuse('climb to the safe altitude first');
 				const why = missionError(Array.isArray(m.waypoints) ? m.waypoints : [], this.homeLatLon());
 				if (why) return refuse(why);
@@ -386,7 +395,7 @@ export class MockFc {
 			climb_alt_m: this.climbAlt,
 			home: this.homeLatLon(),
 			reason: this.reason,
-			profile: this.profile
+			profile: this.profileId()
 		});
 	}
 
@@ -494,7 +503,7 @@ export class MockFc {
 			home: HOME,
 			geo: this.frame.latLonOf(this.p),
 			motor: [0, 1, 2, 3].map((i) => (!this.armed ? 0 : this.mode === 'armed' ? SPIN_ARM : HOVER + 0.01 * Math.sin(3 * this.t + i))),
-			profile: this.profile
+			profile: this.profileId()
 		});
 	}
 
