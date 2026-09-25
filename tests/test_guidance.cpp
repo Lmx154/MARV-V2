@@ -12,6 +12,12 @@
 //    the control); a land leg's kRefVel is fed forward; no kRefPos, or a mode other than kFly, passes the reference
 //    unchanged and restarts the trajectory from nav; the heading turns along the path at yaw_rate_auto when the mission
 //    leaves it free. Host ns/tick measured.
+// 3. Flight profiles (ADR-0012): the ported ManualVelocitySmoothingXY / Z against PX4's own code on the same scenarios, bit for
+//    bit (a hash of every tick), with a negative control; a profile switch mid-flight (auto and manual, with and without a
+//    turn of the plan's direction): from the switch tick every axis within the new jerk, the acceleration back within the
+//    new limit in (a_old - a_new) / j_new along a ramp at j_new, position and velocity continuous; PX4's plan alone does
+//    not settle (the control for the replan); manual sticks scaled by the profile (cruise speed along the heading,
+//    z_vel_up / z_vel_dn, yaw_rate_auto); a silent sender with centred sticks leaves a position lock.
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -499,6 +505,304 @@ void heading() {
     CHECK(bits && held_until > 0.f && rate <= kP.yaw_rate_auto[param::k_profile_hold] * 1.001f && std::fabs(last - 1.5707963f) < 1e-3f);
 }
 
+// ---- 3. Flight profiles (ADR-0012) -----------------------------------------------------------------------------------------
+
+unsigned long long fnv(unsigned long long h, float f) {
+    unsigned char b[4];
+    std::memcpy(b, &f, 4);
+    for (unsigned char c : b) {
+        h ^= c;
+        h *= 1099511628211ull;
+    }
+    return h;
+}
+constexpr unsigned long long kFnv0 = 1469598103934665603ull;
+
+// The manual smoothers against PX4's own (PX4@af2e7b4311 src/lib/motion_planning/ManualVelocitySmoothingXY.cpp,
+// ManualVelocitySmoothingZ.cpp and VelocitySmoothing.cpp compiled unchanged, g++ x86-64 -O0) on one scenario each, 2 ms
+// ticks: the target a step, zero (the trajectory brakes and locks), another step (the lock releases onto the velocity
+// feedback), zero; the feedback the velocity plus an offset, the position estimate 0.98 of the integrated velocity. PX4's
+// run gives the FNV-1a hash of every tick's jerk, acceleration, velocity and locked position (float bits; NaN unlocked),
+// the ticks the lock engaged and released, and the states below (hex floats): the port must give them bit for bit. The
+// negative control: a feedback offset 0.01 m/s off changes the hash.
+Vec3 manual_target_xy(int k) {
+    if (k < 400) return {3.f, -2.f, 0.f};
+    if (k < 1900) return {0.f, 0.f, 0.f};
+    if (k < 2200) return {-1.f, 4.f, 0.f};
+    return {0.f, 0.f, 0.f};
+}
+float manual_target_z(int k) {
+    if (k < 500) return -2.f;
+    if (k < 2000) return 0.f;
+    if (k < 2400) return 1.f;
+    return 0.f;
+}
+
+void manual_port() {
+    const float dt = 0.002f;
+    for (float fb : {0.1f, 0.11f}) {
+        ManualVelocitySmoothingXY s;
+        s.set_max_jerk(8.f);
+        s.set_max_accel(5.f);
+        s.set_max_vel(10.f);
+        Vec3 pos{1.f, -2.f, 0.f};
+        s.reset({0.f, 0.f, 0.f}, {0.f, 0.f, 0.f}, pos);
+        unsigned long long h = kFnv0;
+        int lock_on = -1, lock_off = -1;
+        bool was = false, points = true;
+        for (int k = 0; k < 3000; ++k) {
+            const Vec3 v = s.current_velocity();
+            s.set_vel_sp_feedback({v.x + fb, v.y - 0.05f, 0.f});
+            s.set_current_position_estimate(pos);
+            s.update(dt, manual_target_xy(k));
+            const Vec3 j = s.current_jerk(), a = s.current_acceleration(), vv = s.current_velocity(), x = s.current_position();
+            for (int i = 0; i < 2; i++) {
+                h = fnv(h, at(j, i));
+                h = fnv(h, at(a, i));
+                h = fnv(h, at(vv, i));
+                h = fnv(h, at(x, i));
+            }
+            const bool locked = std::isfinite(x.x);
+            if (locked && !was && lock_on < 0) lock_on = k;
+            if (!locked && was && lock_off < 0) lock_off = k;
+            was = locked;
+            pos += 0.98f * dt * vv;
+            if (k == 399)
+                points = points && a.x == 0x1.b4fd12p+1f && a.y == -0x1.0907ecp+1f && vv.x == 0x1.22c264p+1f &&
+                         vv.y == -0x1.6264bp+0f && std::isnan(x.x) && std::isnan(x.y);
+            if (k == 1899) points = points && a.x == 0.f && vv.x == 0.f && x.x == 0x1.2672f8p+2f && x.y == -0x1.fe7b4ap+1f;
+            if (k == 2199)
+                points = points && a.x == -0x1.a6e6ep-1f && a.y == 0x1.322cfap+2f && vv.x == -0x1.67ba2ap-2f &&
+                         vv.y == 0x1.6162d2p+0f;
+        }
+        points = points && pos.x == 0x1.0b3fbp+2f && pos.y == -0x1.6d142cp-1f;
+        std::printf("ManualVelocitySmoothingXY, feedback offset %.2f: hash %016llx (PX4 7ecf54d74e403fc7), lock at tick %d "
+                    "(PX4 1216), released at %d (PX4 1900)\n",
+                    static_cast<double>(fb), h, lock_on, lock_off);
+        if (fb == 0.1f) CHECK(h == 0x7ecf54d74e403fc7ull && lock_on == 1216 && lock_off == 1900 && points);
+        else CHECK(h != 0x7ecf54d74e403fc7ull);
+    }
+    for (float fb : {0.07f, 0.08f}) {
+        ManualVelocitySmoothingZ s;
+        s.set_max_jerk(8.f);
+        s.set_max_accel_up(4.f);
+        s.set_max_accel_down(3.f);
+        s.set_max_vel_up(3.f);
+        s.set_max_vel_down(1.5f);
+        float pos = -2.f;
+        s.reset(0.f, 0.f, pos);
+        unsigned long long h = kFnv0;
+        int lock_on = -1, lock_off = -1;
+        bool was = false, points = true;
+        for (int k = 0; k < 3000; ++k) {
+            s.set_vel_sp_feedback(s.current_velocity() + fb);
+            s.set_current_position_estimate(pos);
+            s.update(dt, manual_target_z(k));
+            const float j = s.current_jerk(), a = s.current_acceleration(), v = s.current_velocity(), x = s.current_position();
+            h = fnv(fnv(fnv(fnv(h, j), a), v), x);
+            const bool locked = std::isfinite(x);
+            if (locked && !was && lock_on < 0) lock_on = k;
+            if (!locked && was && lock_off < 0) lock_off = k;
+            was = locked;
+            pos += 0.98f * dt * v;
+            if (k == 499) points = points && a == -0x1.0616a2p-6f && v == -0x1.ffff4p+0f && std::isnan(x);
+            if (k == 1999) points = points && x == -0x1.000db8p+2f;
+            if (k == 2399) points = points && v == 0x1p+0f;
+            if (k == 2999) points = points && x == -0x1.972bf8p+1f;
+        }
+        points = points && pos == -0x1.972be2p+1f;
+        std::printf("ManualVelocitySmoothingZ, feedback offset %.2f: hash %016llx (PX4 d8a68283df1ba7a8), lock at tick %d "
+                    "(PX4 1009), released at %d (PX4 2000)\n",
+                    static_cast<double>(fb), h, lock_on, lock_off);
+        if (fb == 0.07f) CHECK(h == 0xd8a68283df1ba7a8ull && lock_on == 1009 && lock_off == 2000 && points);
+        else CHECK(h != 0xd8a68283df1ba7a8ull);
+    }
+}
+
+// A profile switch at 1 kHz, the vehicle tracking the reference perfectly (position and velocity; in manual it follows the
+// velocity), switched on the first tick |a| of axis 0 reaches the old profile's acc_xy. From that tick on, on every axis:
+// |da/dt| at most the new jerk; |a| within the new limit from (a_old - a_new) / j_new after the switch (a_old the axis'
+// |a| at the switch; one tick of float slack); at the half of that time |a| is a_old - j_new t (the ramp at the new jerk);
+// p and v continuous (a step no larger than the limits allow).
+struct Switch {
+    int violations = 0;
+    float jerk = 0.f;       // the largest |da/dt| after the switch, any axis
+    float settle = 0.f;     // s, the longest (a_old - a_new) / j_new
+    float mid_error = 0.f;  // the largest |a - (a_old - j_new t)| at t = settle / 2
+    bool switched = false;
+};
+
+Switch switch_run(bool manual, std::uint8_t from, std::uint8_t to, float speed_mps, Sticks sticks) {
+    TrajectoryGuidance g{kP};
+    State nav = at_rest({0.f, 0.f, -2.f});
+    Reference ref = position_ref({500.f, 0.f, -2.f}, {500.f, 0.f, -2.f}, 0.5f);
+    ref.speed_mps = speed_mps;
+    Switch r;
+    std::uint8_t profile = from;
+    Reference last{};
+    int k_switch = -1;
+    Vec3 a_old{};
+    int k_mid = -1, k_settled = -1;
+    const float a_new_xy = kP.acc_xy[to], j_new = kP.jerk[to];
+    for (int k = 0; k < 12000; ++k) {
+        const Reference out = g.run(ref, nav, Mode::kFly, kDt, profile, manual ? &sticks : nullptr, nav.v_ned);
+        if (k_switch >= 0 && k > k_switch) {
+            for (int i = 0; i < 3; ++i) {
+                const float j = std::fabs(at(out.a_ned, i) - at(last.a_ned, i)) / kDt;
+                r.jerk = std::fmax(r.jerk, j);
+                const float a_lim = i < 2 ? a_new_xy : std::fmax(kP.acc_up[to], kP.acc_dn[to]);
+                if (j > j_new * 1.001f + 0.01f) ++r.violations;
+                if (k >= k_settled && std::fabs(at(out.a_ned, i)) > a_lim + 1e-4f) ++r.violations;
+                const float dv = std::fabs(at(out.v_ned, i) - at(last.v_ned, i));
+                if (dv > std::fmax(std::fabs(at(a_old, i)), a_lim) * kDt * 1.001f + 1e-5f) ++r.violations;
+            }
+            if (!manual && norm(out.p_ned - last.p_ned) > norm(last.v_ned) * kDt + 1e-4f) ++r.violations;
+            if (k == k_mid)
+                for (int i = 0; i < 2; ++i)
+                    if (std::fabs(at(a_old, i)) > a_new_xy)
+                        r.mid_error = std::fmax(r.mid_error, std::fabs(std::fabs(at(out.a_ned, i)) -
+                                                                       (std::fabs(at(a_old, i)) - j_new * r.settle * 0.5f)));
+        }
+        if (k_switch < 0 && std::fabs(out.a_ned.x) >= kP.acc_xy[from] - 1e-4f) {
+            k_switch = k + 1;  // the next tick flies the new profile
+            a_old = out.a_ned;
+            for (int i = 0; i < 2; ++i)
+                r.settle = std::fmax(r.settle, (std::fabs(at(a_old, i)) - a_new_xy) / j_new);
+            k_settled = k_switch + static_cast<int>(std::ceil(r.settle / kDt)) + 1;
+            k_mid = k_switch + static_cast<int>(std::lround(0.5f * r.settle / kDt)) - 1;
+            profile = to;
+            r.switched = true;
+        }
+        last = out;
+        nav.v_ned = out.v_ned;
+        nav.p_ned = manual ? nav.p_ned + kDt * out.v_ned : out.p_ned;
+    }
+    return r;
+}
+
+void profile_switch() {
+    struct Case {
+        const char* what;
+        bool manual;
+        std::uint8_t from, to;
+        float speed;
+        Sticks sticks;
+    };
+    // agile -> hold at 12 m/s and manual freestyle -> hold keep the direction (the settle: T0); freestyle -> stabilized
+    // (auto and manual) turns it (PX4's own plan passes the limit).
+    const Case cases[] = {
+        {"auto agile -> hold, 12 m/s", false, param::k_profile_agile, param::k_profile_hold, 12.f, {}},
+        {"auto freestyle -> stabilized", false, param::k_profile_freestyle, param::k_profile_stabilized, 0.f, {}},
+        {"manual freestyle -> hold, fwd 1 right 0.3 up 1", true, param::k_profile_freestyle, param::k_profile_hold, 0.f,
+         {1.f, 0.3f, 1.f, 0.f}},
+        {"manual freestyle -> stabilized, fwd 1", true, param::k_profile_freestyle, param::k_profile_stabilized, 0.f,
+         {1.f, 0.f, 0.f, 0.f}},
+    };
+    for (const Case& c : cases) {
+        const Switch r = switch_run(c.manual, c.from, c.to, c.speed, c.sticks);
+        std::printf("switch %s: |da/dt| after %.3f m/s^3 (new jerk %.1f), settles in %.3f s, mid-ramp error %.2g m/s^2, "
+                    "%d violations\n",
+                    c.what, static_cast<double>(r.jerk), static_cast<double>(kP.jerk[c.to]), static_cast<double>(r.settle),
+                    static_cast<double>(r.mid_error), r.violations);
+        CHECK(r.switched && r.violations == 0 && r.settle > 0.1f && r.mid_error < 2.f * kP.jerk[c.to] * kDt);
+    }
+    // The settle is the replan's (T0): PX4's plan alone holds an acceleration above a lowered limit while the velocity is
+    // still short of the setpoint (the negative control); replan() brings it to the limit in (a - a_max) / j.
+    for (bool replan : {false, true}) {
+        VelocitySmoothing v(kP.acc_xy[param::k_profile_agile], 1.76f, 0.f);
+        v.set_max_jerk(kP.jerk[param::k_profile_hold]);
+        v.set_max_accel(kP.acc_xy[param::k_profile_hold]);
+        v.set_max_vel(12.f);
+        v.update_durations(12.f);
+        if (replan) v.replan();
+        const float t_settle = (kP.acc_xy[param::k_profile_agile] - kP.acc_xy[param::k_profile_hold]) / kP.jerk[param::k_profile_hold];
+        const int n = static_cast<int>(std::ceil(t_settle / kDt)) + 1;
+        for (int k = 0; k < n; ++k) {
+            v.update_traj(kDt);
+            v.update_durations(12.f);
+        }
+        std::printf("a %.2f above a lowered limit %.1f, %s: after (a - a_max) / j = %.3f s it is %.4f\n",
+                    static_cast<double>(kP.acc_xy[param::k_profile_agile]), static_cast<double>(kP.acc_xy[param::k_profile_hold]),
+                    replan ? "replan" : "PX4's plan (the control)", static_cast<double>(t_settle),
+                    static_cast<double>(v.current_acceleration()));
+        if (replan) CHECK(v.current_acceleration() <= kP.acc_xy[param::k_profile_hold] + 1e-4f);
+        else CHECK(v.current_acceleration() > kP.acc_xy[param::k_profile_hold] + 1.f);
+    }
+}
+
+// Manual flight: full stick is the profile's cruise speed along the heading, the vertical z_vel_up / z_vel_dn, the yaw
+// stick the profile's yaw_rate_auto; a diagonal is limited to the cruise speed. The vehicle follows the velocity.
+void manual_sticks() {
+    for (std::uint8_t p = 0; p < param::kProfileCount; ++p) {
+        struct Stick {
+            Sticks s;
+            float yaw;
+            Vec3 v;
+        };
+        const float c = kP.cruise_speed[p];
+        const float h = 0.70710678f * c;
+        const Stick sticks[] = {
+            {{1.f, 0.f, 0.f, 0.f}, 0.f, {c, 0.f, 0.f}},
+            {{1.f, 0.f, 0.f, 0.f}, 1.5707963f, {0.f, c, 0.f}},
+            {{0.f, 1.f, 0.f, 0.f}, 1.5707963f, {-c, 0.f, 0.f}},
+            {{1.f, 1.f, 0.f, 0.f}, 0.f, {h, h, 0.f}},
+            {{0.f, 0.f, 1.f, 0.f}, 0.f, {0.f, 0.f, -kP.z_vel_up}},
+            {{0.f, 0.f, -1.f, 0.f}, 0.f, {0.f, 0.f, kP.z_vel_dn}},
+        };
+        bool ok = true;
+        for (const Stick& st : sticks) {
+            TrajectoryGuidance g{kP};
+            State nav = at_rest({0.f, 0.f, -50.f}, st.yaw);
+            Reference out{};
+            for (int k = 0; k < 10000; ++k) {
+                out = g.run(Reference{}, nav, Mode::kFly, kDt, p, &st.s, nav.v_ned);
+                nav.v_ned = out.v_ned;
+                nav.p_ned += kDt * out.v_ned;
+            }
+            ok = ok && norm(out.v_ned - st.v) < 1e-3f && (out.has & (kRefVel | kRefAcc | kRefYawRate)) == (kRefVel | kRefAcc | kRefYawRate);
+        }
+        TrajectoryGuidance g{kP};
+        const Sticks yaw{0.f, 0.f, 0.f, 0.5f};
+        ok = ok && g.run(Reference{}, at_rest({0.f, 0.f, -2.f}), Mode::kFly, kDt, p, &yaw).yaw_rate == 0.5f * kP.yaw_rate_auto[p];
+        std::printf("manual sticks, profile %u: full stick %.1f m/s along the heading, up %.1f down %.1f m/s, half yaw %.3f "
+                    "rad/s: %s\n",
+                    static_cast<unsigned>(p), static_cast<double>(c), static_cast<double>(kP.z_vel_up),
+                    static_cast<double>(kP.z_vel_dn), static_cast<double>(0.5f * kP.yaw_rate_auto[p]), ok ? "ok" : "FAIL");
+        CHECK(ok);
+    }
+}
+
+// A silent sender with centred sticks: after 3 s of full forward stick the sticks centre and stay so (the same command for
+// 60 s): the reference brakes and locks the position (kRefPos, fixed to the bit, velocity and acceleration zero), where the
+// vehicle came to rest within the braking from the lock (|v| < 0.1 m/s). Back to auto the trajectory restarts from nav.
+void manual_lock() {
+    TrajectoryGuidance g{kP};
+    State nav = at_rest({0.f, 0.f, -2.f});
+    const Sticks fwd{1.f, 0.f, 0.f, 0.f}, centred{0.f, 0.f, 0.f, 0.f};
+    Reference out{}, last{};
+    int moved_at = -1;  // the last tick the reference position changed or had no kRefPos
+    for (int k = 0; k < 63000; ++k) {
+        out = g.run(Reference{}, nav, Mode::kFly, kDt, param::k_profile_hold, k < 3000 ? &fwd : &centred, nav.v_ned);
+        if (!(out.has & kRefPos) || std::memcmp(&out.p_ned, &last.p_ned, sizeof(Vec3)) != 0) moved_at = k;
+        last = out;
+        nav.v_ned = out.v_ned;
+        nav.p_ned += kDt * out.v_ned;
+    }
+    const Vec3 lock = out.p_ned;
+    std::printf("manual release after 3 s at full stick: the reference position fixed %.3f s after the release, %.3f m "
+                "north; the vehicle, following the velocity, %.4f m from it after 60 s; velocity %g, acceleration %g\n",
+                static_cast<double>(moved_at + 1 - 3000) * kDt, static_cast<double>(lock.x),
+                static_cast<double>(norm(nav.p_ned - lock)), static_cast<double>(norm(out.v_ned)),
+                static_cast<double>(norm(out.a_ned)));
+    CHECK(moved_at > 3000 && moved_at < 8000 && (out.has & kRefPos) && norm(out.v_ned) == 0.f && norm(out.a_ned) == 0.f);
+    CHECK(lock.x > 5.f && std::fabs(lock.y) < 1e-6f && std::fabs(lock.z + 2.f) < 1e-6f && norm(nav.p_ned - lock) < 0.05f);
+    // Back to auto: the trajectory starts from the vehicle.
+    nav.v_ned = {1.f, 0.f, 0.f};
+    const Reference to = position_ref({50.f, 0.f, -2.f}, {50.f, 0.f, -2.f}, 0.5f);
+    out = g.run(to, nav, Mode::kFly, kDt, param::k_profile_hold, nullptr, nav.v_ned);
+    CHECK(near(out.p_ned, nav.p_ned + kDt * nav.v_ned) && near(out.v_ned, nav.v_ned));
+}
+
 }  // namespace
 
 int main() {
@@ -510,6 +814,10 @@ int main() {
     land_leg();
     restart();
     heading();
+    manual_port();
+    profile_switch();
+    manual_sticks();
+    manual_lock();
     std::printf(failures ? "FAIL (%d)\n" : "PASS\n", failures);
     return failures ? EXIT_FAILURE : EXIT_SUCCESS;
 }

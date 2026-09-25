@@ -6,9 +6,9 @@
 // class-consistent: kSetKind of the vehicle re-stages the families whose kind does not serve it, a kind that does not
 // serve the staged vehicle is refused, an inconsistent record reads as factory 0, and a rocket setup never drives a motor.
 // The guidance kind is dispatched: the trajectory kind flies a far position reference from the vehicle, at rest.
-// Profiles (ADR-0012 phase A): each profile's acc_xy is clamped to g tan(2/3 tilt_max) when the typed parameters are built;
-// the flight software flies the hold profile whatever profile, manual flag and sticks the mission sends, reads no other
-// profile's values, and reports profile 0.
+// Profiles (ADR-0012): each profile's acc_xy is clamped to g tan(2/3 tilt_max) when the typed parameters are built; the
+// flight software flies the profile the mission names and reports it, an unknown one as hold; hold reads no other
+// profile's values; manual 1 flies the sticks, any other value the reference.
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -563,30 +563,38 @@ int main() {
         CHECK(std::fabs(param::guidance_trajectory(s).acc_xy[param::k_profile_agile] - 1.62 * std::tan(30.0 * deg)) < 1e-5);
     }
 
-    // Profile 0 only: over 2 s of kFlyNorth on the trajectory kind, a mission with profile agile, manual 1 and full
-    // sticks, and a setup with every non-hold profile value changed, fly bit for bit what hold, auto and centred sticks
-    // fly on factory 0; telemetry reports profile 0 on every tick. The control: hold's own jerk changed changes the flight.
+    // Profiles through Fsw: 2 s of kFlyNorth on the trajectory kind. Hold on a setup with every non-hold profile value
+    // changed flies bit for bit what factory 0 flies (hold reads only hold's values); so do an unknown profile (4, 255) and
+    // an unknown manual flag (2, with full sticks), and each reports profile 0 on every tick. Agile flies differently and
+    // reports 3; manual 1 with full sticks flies differently (the controls). A switch hold -> agile after 1 s is reported
+    // on the tick it is applied and flies hold's commands bit for bit until then.
     {
-        const auto fly = [](const param::Setup& s, const MissionCommand& m, bool& profile0) {
+        const auto fly = [](const param::Setup& s, const MissionCommand& m, std::uint8_t reported, int switch_at = -1,
+                            std::uint8_t to = 0) {
             Fsw fsw{s};
             fsw.on_mission(m);
             std::vector<float> out;
-            profile0 = true;
+            bool reports = true;
             for (int k = 1; k <= 2000; ++k) {
                 const std::uint64_t t = 1000u * static_cast<std::uint64_t>(k);
+                if (k == switch_at) {
+                    MissionCommand n = m;
+                    n.profile = to;
+                    fsw.on_mission(n);
+                }
                 fsw.on_truth(truth_at(t));
                 const Tick tk = fsw.step(bus_at(t));
-                profile0 = profile0 && tk.tlm.profile == param::k_profile_hold;
+                reports = reports && tk.tlm.profile == (switch_at > 0 && k >= switch_at ? to : reported);
                 const float* v = &tk.tlm.req.thrust_ned.x;
                 out.insert(out.end(), v, v + 3);
                 out.insert(out.end(), tk.act.motor, tk.act.motor + kMotorCount);
             }
+            CHECK(reports);
             return out;
         };
-        MissionCommand agile = kFlyNorth;
-        agile.profile = param::k_profile_agile;
-        agile.manual = 1;
-        agile.sticks = {1.f, -1.f, 1.f, 1.f};
+        const auto same = [](const std::vector<float>& a, const std::vector<float>& b, std::size_t n) {
+            return a.size() == b.size() && std::memcmp(a.data(), b.data(), n * sizeof(float)) == 0;
+        };
         param::Setup others = kFactory[0];
         for (std::uint16_t base : {param::k_guidance_trajectory_cruise_speed, param::k_guidance_trajectory_acc_xy,
                                    param::k_guidance_trajectory_acc_up, param::k_guidance_trajectory_acc_dn,
@@ -594,15 +602,25 @@ int main() {
                                    param::k_controller_cascaded_pid_tilt_max_deg, param::k_controller_cascaded_pid_input_tc})
             for (std::uint8_t pr = 1; pr < param::kProfileCount; ++pr) others.values[base + pr] = param::kParamMeta[base + pr].min;
         CHECK(fw::in_range(others) && param::setup_crc(others) != param::setup_crc(kFactory[0]));
-        param::Setup hold_jerk = kFactory[0];
-        hold_jerk.values[param::k_guidance_trajectory_jerk] = 8.f;
-        bool p0 = false, p1 = false, p2 = false, p3 = false;
-        const std::vector<float> ref = fly(kFactory[0], kFlyNorth, p0), a = fly(kFactory[0], agile, p1),
-                                 b = fly(others, agile, p2), ctl = fly(hold_jerk, kFlyNorth, p3);
-        CHECK(p0 && p1 && p2 && p3);
-        CHECK(a.size() == ref.size() && std::memcmp(a.data(), ref.data(), ref.size() * sizeof(float)) == 0);
-        CHECK(b.size() == ref.size() && std::memcmp(b.data(), ref.data(), ref.size() * sizeof(float)) == 0);
-        CHECK(ctl.size() == ref.size() && std::memcmp(ctl.data(), ref.data(), ref.size() * sizeof(float)) != 0);
+        MissionCommand agile = kFlyNorth, unknown = kFlyNorth, unknown2 = kFlyNorth, not_manual = kFlyNorth,
+                       manual = kFlyNorth;
+        agile.profile = param::k_profile_agile;
+        unknown.profile = 4;
+        unknown2.profile = 255;
+        not_manual.manual = 2;
+        not_manual.sticks = {1.f, -1.f, 1.f, 1.f};
+        manual.manual = 1;
+        manual.sticks = not_manual.sticks;
+        const std::vector<float> ref = fly(kFactory[0], kFlyNorth, 0);
+        const std::size_t all = ref.size();
+        CHECK(same(fly(others, kFlyNorth, 0), ref, all));
+        CHECK(same(fly(kFactory[0], unknown, 0), ref, all) && same(fly(kFactory[0], unknown2, 0), ref, all));
+        CHECK(same(fly(kFactory[0], not_manual, 0), ref, all));
+        CHECK(!same(fly(kFactory[0], agile, param::k_profile_agile), ref, all));
+        CHECK(!same(fly(kFactory[0], manual, 0), ref, all));
+        const std::vector<float> sw = fly(kFactory[0], kFlyNorth, 0, 1000, param::k_profile_agile);
+        const std::size_t before = 999u * (3u + kMotorCount);
+        CHECK(same(sw, ref, before) && !same(sw, ref, all));
     }
 
     std::printf(failures ? "FAIL (%d)\n" : "PASS\n", failures);

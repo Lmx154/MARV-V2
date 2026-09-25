@@ -7,6 +7,10 @@
 //
 // The airframe enters only through the hover thrust: seeded each run from the setup's vehicle, learned in level
 // hover (ArduPilot's low-pass, AP_MotorsMulticopter.cpp:561, gated as ArduCopter/Attitude.cpp:32-62), never stored.
+//
+// Flight profiles (ADR-0012): the tilt limit (tilt_max_deg) and the input shaping's time constant (input_tc) are the
+// profile's; nothing else differs, so a switch keeps every gain, integrator, the learned hover thrust and the attitude
+// target's state, which moves on at the new time constant.
 #pragma once
 
 #include <marv/fsw/contracts.hpp>
@@ -20,13 +24,16 @@ public:
     explicit Controller(const param::ControllerParams& c = {}, const param::UavParams& v = {},
                         const param::SensorParams& s = {});
 
-    // Anything but kFly: zero request but the learned hover thrust, integrators reset.
-    ControlRequest run(const Reference& ref, const State& nav, Mode mode, float dt);
+    // Anything but kFly: zero request but the learned hover thrust, integrators reset. profile < param::kProfileCount.
+    ControlRequest run(const Reference& ref, const State& nav, Mode mode, float dt,
+                       std::uint8_t profile = param::k_profile_hold);
+    // The velocity setpoint of the last run (position P plus the reference velocity, within vel_max); zero out of kFly.
+    Vec3 velocity_setpoint() const { return v_sp_; }
 
 private:
     param::ControllerParams c_;
     float gravity_;       // m/s^2
-    float tan_tilt_max_;  // tan(tilt_max_deg)
+    float tan_tilt_max_[param::kProfileCount];  // tan(tilt_max_deg), by profile
     float hover_;         // learned hover thrust, fraction of full collective
     float hover_min_;     // the range of vehicle/uav hover_thrust
     float hover_max_;
@@ -34,6 +41,7 @@ private:
     float iv_max_z_;      // m, vertical velocity integrator limit: gravity / vel_i
     Vec3 iw_max_;         // rad, rate integrator limit: rate_int_max / rate_i
 
+    Vec3 v_sp_{0.f, 0.f, 0.f};    // the last velocity setpoint, m/s
     Vec3 iv_{0.f, 0.f, 0.f};      // integrated velocity error, m
     Vec3 iw_{0.f, 0.f, 0.f};      // integrated body-rate error, rad
     Vec3 w_prev_{0.f, 0.f, 0.f};  // body rate of the previous tick, for the derivative

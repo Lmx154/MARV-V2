@@ -96,7 +96,8 @@ void command_model(float e, float& w, float& a, float w_max, float a_max, float 
 Controller::Controller(const param::ControllerParams& c, const param::UavParams& v, const param::SensorParams& s)
     : c_(c),
       gravity_(s.gravity),
-      tan_tilt_max_(std::tan(c.tilt_max_deg[param::k_profile_hold] * kRadPerDeg)),
+      tan_tilt_max_{std::tan(c.tilt_max_deg[0] * kRadPerDeg), std::tan(c.tilt_max_deg[1] * kRadPerDeg),
+                    std::tan(c.tilt_max_deg[2] * kRadPerDeg), std::tan(c.tilt_max_deg[3] * kRadPerDeg)},
       hover_(v.hover_thrust),
       hover_min_(param::kParamMeta[param::k_vehicle_uav_hover_thrust].min),
       hover_max_(param::kParamMeta[param::k_vehicle_uav_hover_thrust].max),
@@ -104,9 +105,9 @@ Controller::Controller(const param::ControllerParams& c, const param::UavParams&
       iv_max_z_(s.gravity / c.vel_i),
       iw_max_{c.rate_int_max_x / c.rate_i_x, c.rate_int_max_y / c.rate_i_y, c.rate_int_max_z / c.rate_i_z} {}
 
-ControlRequest Controller::run(const Reference& ref, const State& nav, Mode mode, float dt) {
+ControlRequest Controller::run(const Reference& ref, const State& nav, Mode mode, float dt, std::uint8_t profile) {
     if (mode != Mode::kFly) {
-        iv_ = iw_ = w_prev_ = {0.f, 0.f, 0.f};
+        v_sp_ = iv_ = iw_ = w_prev_ = {0.f, 0.f, 0.f};
         have_prev_ = false;
         have_hold_ = false;
         have_target_ = false;
@@ -135,6 +136,7 @@ ControlRequest Controller::run(const Reference& ref, const State& nav, Mode mode
         if (ref.has & kRefYaw) yaw = ref.yaw;
     }
     const Vec3 v_sp = clamp_norm(v_ref + c_.pos_p * (p_ref - nav.p_ned), c_.vel_max);
+    v_sp_ = v_sp;
     const Vec3 ev = v_sp - nav.v_ned;
     const float iv_z_prev = iv_.z;
     iv_ += dt * ev;
@@ -147,7 +149,7 @@ ControlRequest Controller::run(const Reference& ref, const State& nav, Mode mode
     if ((f.z <= -c_.thrust_max_frac && ev.z <= 0.f) || (f.z >= -c_.thrust_min_g * hover_ && ev.z >= 0.f)) iv_.z = iv_z_prev;
     f.z = clampf(f.z, -c_.thrust_max_frac, -c_.thrust_min_g * hover_);
     const float fh = std::sqrt(f.x * f.x + f.y * f.y);
-    const float fh_max = std::fmin(-f.z * tan_tilt_max_, std::sqrt(c_.thrust_max_frac * c_.thrust_max_frac - f.z * f.z));
+    const float fh_max = std::fmin(-f.z * tan_tilt_max_[profile], std::sqrt(c_.thrust_max_frac * c_.thrust_max_frac - f.z * f.z));
     if (fh > fh_max) {
         f.x *= fh_max / fh;
         f.y *= fh_max / fh;
@@ -172,9 +174,9 @@ ControlRequest Controller::run(const Reference& ref, const State& nav, Mode mode
         w_t_.z = a_t_.z = 0.f;
     }
     const Vec3 et = rotvec_from_quat(conj(q_t_) * q_des);
-    command_model(et.x, w_t_.x, a_t_.x, c_.rate_max_x, c_.accel_max_x, c_.input_tc[param::k_profile_hold], dt);
-    command_model(et.y, w_t_.y, a_t_.y, c_.rate_max_y, c_.accel_max_y, c_.input_tc[param::k_profile_hold], dt);
-    command_model(et.z, w_t_.z, a_t_.z, c_.rate_max_z, c_.accel_max_z, c_.input_tc[param::k_profile_hold], dt);
+    command_model(et.x, w_t_.x, a_t_.x, c_.rate_max_x, c_.accel_max_x, c_.input_tc[profile], dt);
+    command_model(et.y, w_t_.y, a_t_.y, c_.rate_max_y, c_.accel_max_y, c_.input_tc[profile], dt);
+    command_model(et.z, w_t_.z, a_t_.z, c_.rate_max_z, c_.accel_max_z, c_.input_tc[profile], dt);
 
     // Attitude P on the quaternion error to the target, in the body frame, plus the target's rate.
     const Quat q_bt = conj(nav.q) * q_t_;

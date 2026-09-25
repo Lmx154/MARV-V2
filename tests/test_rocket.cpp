@@ -7,7 +7,8 @@
 //  3. the ESKF in shadow cannot run on the fixture's sensors (the preset has no magnetometer, which our alignment needs):
 //     1 and 2 again on the truth, against the toolbox's predictApogee and apogee-pid run on the truth.
 //  4. invariants: a rocket setup commands every motor zero on every tick; a uav setup commands the brake zero on every
-//     tick; a rollout takes at most 400 steps. And factory 4 brakes only while the mission flags the coast.
+//     tick; a rollout takes at most 400 steps. And factory 4 brakes only while the mission flags the coast. A flight
+//     profile, the manual flag and sticks change nothing on a rocket, which reports the hold profile (ADR-0012).
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -349,6 +350,29 @@ int main() {
         for (float x : nb) none = none && x == 0.f;
         CHECK(none);
         CHECK(Fsw{kFactory[4]}.preset() == 4);
+
+        // Profile agile, manual 1 and full sticks: the brake bit for bit the plain run's, profile 0 reported.
+        Fsw fsw{kFactory[4]};
+        bool same = true, hold = true;
+        for (std::size_t k = 0; k < fx.rows.size(); ++k) {
+            const std::uint64_t t = us_of(fx.at(k, "t"));
+            State nav = nav_of(fx, k, "nav_");
+            nav.t_us = t;
+            MissionCommand m = mission_of(fx, k, true);
+            m.profile = param::k_profile_agile;
+            m.manual = 1;
+            m.sticks = {1.f, 1.f, 1.f, 1.f};
+            fsw.on_mission(m);
+            fsw.on_truth(nav);
+            SensorBus bus{};
+            bus.t_us = t;
+            const Tick tk = fsw.step(bus);
+            same = same && tk.act.brake == b[k] && motors_zero(tk.act);
+            hold = hold && tk.tlm.profile == param::k_profile_hold;
+        }
+        std::printf("factory 4 with profile agile, manual 1 and full sticks: brake as without %d, profile 0 reported %d\n",
+                    same, hold);
+        CHECK(same && hold);
     }
 
     std::printf(failures ? "FAIL (%d)\n" : "PASS\n", failures);
