@@ -7,8 +7,12 @@
 // up to 1 g and holds at a thrust limit; the horizontal one stops at vel_int_accel.
 // Input shaping against truth: a rigid body flown with a tight rate loop follows the shaped attitude target within its
 // rate and acceleration limits, and the target's rate is fed forward.
+// Flight profiles (ADR-0012): each profile's tilt limit cuts the horizontal thrust and never the vertical; a switch leaves
+// the gains, the integrators and the learned hover thrust bit for bit as they were; each profile's input_tc shapes the
+// attitude target.
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <initializer_list>
 
 #include <marv/fsw/controller.hpp>
@@ -309,6 +313,87 @@ int main() {
         }
         std::printf("true hover 0.81: learned %.4f, altitude %.4f m\n", (double)h, (double)-x.p_ned.z);
         CHECK(h == param::kParamMeta[param::k_vehicle_uav_hover_thrust].max);
+    }
+
+    // Flight profiles (ADR-0012). Tilt: a horizontal demand far past every profile's tilt limit (a reference 100 m north)
+    // is cut to tilt_max_deg of that profile, and the vertical thrust is bit for bit the one asked for with no horizontal
+    // demand (the reference overhead): the horizontal cut never reduces vertical thrust.
+    {
+        const param::ControllerParams p{};
+        Reference far{}, here{};
+        far.has = here.has = kRefPos;
+        far.p_ned = {100.f, 0.f, -2.f};
+        here.p_ned = {0.f, 0.f, -2.f};
+        for (std::uint8_t pr = 0; pr < param::kProfileCount; ++pr) {
+            Controller c, c0;
+            const Vec3 f = c.run(far, at(0.f, 0.f), Mode::kFly, dt, pr).thrust_ned;
+            const Vec3 f0 = c0.run(here, at(0.f, 0.f), Mode::kFly, dt, pr).thrust_ned;
+            const float tilt = std::atan2(std::sqrt(f.x * f.x + f.y * f.y), -f.z) * 180.f / 3.14159265f;
+            std::printf("profile %u: thrust cut to %.4f deg of tilt (tilt_max %.0f), vertical %.6f (none asked %.6f)\n",
+                        static_cast<unsigned>(pr), (double)tilt, (double)p.tilt_max_deg[pr], (double)f.z, (double)f0.z);
+            CHECK(f.z == f0.z && std::fabs(tilt - p.tilt_max_deg[pr]) < 1e-3f);
+        }
+    }
+
+    // A switch changes only the tilt limit and the input shaping's time constant: gains, integrators and the learned hover
+    // thrust carry on untouched. On a scripted state (not flown by the output), switched through every profile every
+    // 0.25 s against a controller held in hold:
+    //  1. level, descending at 0.05 m/s with a body-rate error (the velocity and rate integrators wind, the hover thrust is
+    //     learned, the attitude target sits at the desired attitude): every output bit for bit hold's, every tick;
+    //  2. a horizontal manoeuvre within every profile's tilt: the thrust (velocity loop, its integrator, the learned hover
+    //     thrust) bit for bit hold's every tick; the torque differs (the time constant: the control that it switched).
+    {
+        State level = at(0.f, 0.f);
+        level.v_ned = {0.f, 0.f, 0.05f};
+        level.w_frd = {0.01f, -0.02f, 0.005f};
+        Reference hold_here{};
+        hold_here.has = kRefPos;
+        hold_here.p_ned = level.p_ned;
+        Reference north = hold_here;
+        north.p_ned.x = 1.5f;
+        for (int scenario = 1; scenario <= 2; ++scenario) {
+            const Reference& ref = scenario == 1 ? hold_here : north;
+            Controller held, switched;
+            bool same_all = true, same_thrust = true, torque_differs = false;
+            ControlRequest first{}, last{};
+            for (int i = 0; i < 2000; ++i) {
+                const std::uint8_t pr = static_cast<std::uint8_t>((i / 62) % param::kProfileCount);
+                const ControlRequest a = held.run(ref, level, Mode::kFly, dt);
+                const ControlRequest b = switched.run(ref, level, Mode::kFly, dt, pr);
+                if (i == 0) first = a;
+                last = a;
+                same_all = same_all && std::memcmp(&a, &b, sizeof(a)) == 0;
+                same_thrust = same_thrust && std::memcmp(&a.thrust_ned, &b.thrust_ned, sizeof(Vec3)) == 0 &&
+                              a.thrust_hover == b.thrust_hover;
+                torque_differs = torque_differs || std::memcmp(&a.torque_frd, &b.torque_frd, sizeof(Vec3)) != 0;
+            }
+            std::printf("switching every 0.25 s, scenario %d: all outputs hold's %d, thrust and hover hold's %d, torque "
+                        "differs %d; hover %.6f -> %.6f, torque x %.5f -> %.5f\n",
+                        scenario, same_all, same_thrust, torque_differs, (double)first.thrust_hover,
+                        (double)last.thrust_hover, (double)first.torque_frd.x, (double)last.torque_frd.x);
+            if (scenario == 1) CHECK(same_all && first.thrust_hover != last.thrust_hover && first.torque_frd.x != last.torque_frd.x);
+            else CHECK(same_thrust && torque_differs);
+        }
+    }
+
+    // input_tc per profile: the attitude target toward a small tilt (a reference 1 m north, level at rest) moves faster
+    // with a shorter time constant: the pitch torque after 20 ms is largest on freestyle (0.05 s), then hold and agile
+    // (0.1 s, bit for bit alike: their tilt limits do not bind), then stabilized (0.2 s).
+    {
+        Reference north{};
+        north.has = kRefPos;
+        north.p_ned = {1.f, 0.f, -2.f};
+        float tq[param::kProfileCount];
+        for (std::uint8_t pr = 0; pr < param::kProfileCount; ++pr) {
+            Controller c;
+            ControlRequest r{};
+            for (int i = 0; i < 20; ++i) r = c.run(north, at(0.f, 0.f), Mode::kFly, 0.001f, pr);
+            tq[pr] = std::fabs(r.torque_frd.y);
+        }
+        std::printf("pitch torque after 20 ms: hold %.5f freestyle %.5f stabilized %.5f agile %.5f\n", (double)tq[0],
+                    (double)tq[1], (double)tq[2], (double)tq[3]);
+        CHECK(tq[param::k_profile_freestyle] > tq[param::k_profile_hold] && tq[param::k_profile_hold] > tq[param::k_profile_stabilized]);
+        CHECK(tq[param::k_profile_agile] == tq[param::k_profile_hold]);
     }
 
     if (failures) std::printf("%d failure(s)\n", failures);

@@ -1,5 +1,6 @@
 // Ported from PX4@af2e7b43 src/lib/motion_planning/VelocitySmoothing.cpp, PositionSmoothing.cpp,
-// TrajectoryConstraints.hpp and src/lib/mathlib/math/TrajMath.hpp; the notice and the conditions are in smoothing.hpp.
+// ManualVelocitySmoothingXY.cpp, ManualVelocitySmoothingZ.cpp, TrajectoryConstraints.hpp and
+// src/lib/mathlib/math/TrajMath.hpp; the notice and the conditions are in smoothing.hpp.
 //
 // Copyright (c) 2018-2021 PX4 Development Team. All rights reserved.
 //
@@ -110,13 +111,15 @@ VelocitySmoothing::VelocitySmoothing(float initial_accel, float initial_vel, flo
     reset(initial_accel, initial_vel, initial_pos);
 }
 
-// VelocitySmoothing.cpp:48-56.
+// VelocitySmoothing.cpp:48-56; and no T0 (MARV, replan).
 void VelocitySmoothing::reset(float accel, float vel, float pos) {
     state_.j = 0.f;
     state_.a = accel;
     state_.v = vel;
     state_.x = pos;
     state_init_ = state_;
+    t0_ = 0.f;
+    settle_ = false;
 }
 
 // VelocitySmoothing.cpp:58-72.
@@ -177,6 +180,12 @@ float VelocitySmoothing::compute_t2(float t123, float t1, float t3) const { retu
 // VelocitySmoothing.cpp:157-161.
 float VelocitySmoothing::compute_t3(float t1, float a0, float j_max) const { return max(a0 / j_max + t1, 0.f); }
 
+// MARV (ADR-0012), see smoothing.hpp.
+void VelocitySmoothing::replan() {
+    settle_ = true;
+    update_durations(vel_sp_);
+}
+
 // VelocitySmoothing.cpp:163-172.
 void VelocitySmoothing::update_durations(float vel_setpoint) {
     vel_sp_ = constrain(vel_setpoint, -max_vel_, max_vel_);
@@ -206,14 +215,19 @@ float VelocitySmoothing::compute_vel_at_zero_acc() const {
     return vel_zero_acc;
 }
 
-// VelocitySmoothing.cpp:205-223.
+// VelocitySmoothing.cpp:205-223. MARV (replan): an acceleration beyond max_accel toward the setpoint first returns to
+// it at the opposite jerk (T0), and T1..T3 are planned from where T0 ends; T0 keeps the velocity at zero acceleration,
+// hence the direction.
 void VelocitySmoothing::update_durations_minimize_total_time() {
     const float jerk_max_t1 = static_cast<float>(direction_) * max_jerk_;
-    const float delta_v = vel_sp_ - state_.v;
+    settle_ = settle_ && std::fabs(jerk_max_t1) > FLT_EPSILON && static_cast<float>(direction_) * state_.a > max_accel_;
+    t0_ = settle_ ? (static_cast<float>(direction_) * state_.a - max_accel_) / max_jerk_ : 0.f;
+    const Trajectory s = settle_ ? evaluate_poly(max_jerk_, state_.a, state_.v, state_.x, t0_, -direction_) : state_;
+    const float delta_v = vel_sp_ - s.v;
     if (std::fabs(jerk_max_t1) > FLT_EPSILON) {  // zero direction or jerk: no division by zero
-        t1_ = compute_t1(state_.a, delta_v, jerk_max_t1, max_accel_);
-        t3_ = compute_t3(t1_, state_.a, jerk_max_t1);
-        t2_ = compute_t2(t1_, t3_, state_.a, delta_v, jerk_max_t1);
+        t1_ = compute_t1(s.a, delta_v, jerk_max_t1, max_accel_);
+        t3_ = compute_t3(t1_, s.a, jerk_max_t1);
+        t2_ = compute_t2(t1_, t3_, s.a, delta_v, jerk_max_t1);
     } else {
         t1_ = t2_ = t3_ = 0.f;
     }
@@ -232,13 +246,23 @@ VelocitySmoothing::Trajectory VelocitySmoothing::evaluate_poly(float j, float a0
     return traj;
 }
 
-// VelocitySmoothing.cpp:240-264.
+// VelocitySmoothing.cpp:240-264, after T0 (MARV, replan).
 void VelocitySmoothing::update_traj(float dt, float time_stretch) {
     local_time_ += dt * time_stretch;
     float t_remain = local_time_;
 
+    Trajectory s = state_init_;
+    if (t0_ > 0.f) {
+        const float t0 = min(t_remain, t0_);
+        s = evaluate_poly(max_jerk_, s.a, s.v, s.x, t0, -direction_);
+        t_remain -= t0;
+        if (!(t_remain > 0.f)) {
+            state_ = s;
+            return;
+        }
+    }
     const float t1 = min(t_remain, t1_);
-    state_ = evaluate_poly(max_jerk_, state_init_.a, state_init_.v, state_init_.x, t1, direction_);
+    state_ = evaluate_poly(max_jerk_, s.a, s.v, s.x, t1, direction_);
     t_remain -= t1;
 
     if (t_remain > 0.f) {
@@ -272,14 +296,16 @@ void VelocitySmoothing::time_synchronization(VelocitySmoothing* traj, int n_traj
     }
 }
 
-// VelocitySmoothing.cpp:290-308.
+// VelocitySmoothing.cpp:290-308; with a T0 (MARV, replan), T1..T3 fill the time left after it.
 void VelocitySmoothing::update_durations_given_total_time(float t123) {
     const float jerk_max_t1 = static_cast<float>(direction_) * max_jerk_;
-    const float delta_v = vel_sp_ - state_.v;
+    const Trajectory s = t0_ > 0.f ? evaluate_poly(max_jerk_, state_.a, state_.v, state_.x, t0_, -direction_) : state_;
+    const float t = t123 - t0_;
+    const float delta_v = vel_sp_ - s.v;
     if (std::fabs(jerk_max_t1) > FLT_EPSILON) {  // zero direction or jerk: no division by zero
-        t1_ = compute_t1(t123, state_.a, delta_v, jerk_max_t1, max_accel_);
-        t3_ = compute_t3(t1_, state_.a, jerk_max_t1);
-        t2_ = compute_t2(t123, t1_, t3_);
+        t1_ = compute_t1(t, s.a, delta_v, jerk_max_t1, max_accel_);
+        t3_ = compute_t3(t1_, s.a, jerk_max_t1);
+        t2_ = compute_t2(t, t1_, t3_);
     } else {
         t1_ = t2_ = t3_ = 0.f;
     }
@@ -303,6 +329,12 @@ void PositionSmoothing::generate_setpoints(Vec3 position, Vec3 waypoint, Vec3 fe
 // PositionSmoothing.hpp:126-131.
 void PositionSmoothing::reset(Vec3 acceleration, Vec3 velocity, Vec3 position) {
     for (int i = 0; i < 3; i++) trajectory_[i].reset(at(acceleration, i), at(velocity, i), at(position, i));
+}
+
+// MARV (ADR-0012), see smoothing.hpp.
+void PositionSmoothing::replan() {
+    for (VelocitySmoothing& t : trajectory_) t.replan();
+    VelocitySmoothing::time_synchronization(trajectory_, 3);
 }
 
 // PositionSmoothing.hpp:265-270.
@@ -463,6 +495,140 @@ void PositionSmoothing::generate_trajectory(Vec3 position, Vec3 velocity_setpoin
     }
     for (int i = 0; i < 3; ++i) trajectory_[i].update_durations(at(velocity_setpoint, i));
     VelocitySmoothing::time_synchronization(trajectory_, 3);
+}
+
+// ---- ManualVelocitySmoothingXY ----------------------------------------------------------------------------------------
+
+namespace {
+float length_xy(Vec3 v) { return std::sqrt(v.x * v.x + v.y * v.y); }  // matrix Vector2f length
+}  // namespace
+
+// ManualVelocitySmoothingXY.cpp:41-48.
+void ManualVelocitySmoothingXY::reset(Vec3 accel, Vec3 vel, Vec3 pos) {
+    trajectory_[0].reset(accel.x, vel.x, pos.x);
+    trajectory_[1].reset(accel.y, vel.y, pos.y);
+    reset_position_lock();
+}
+
+// ManualVelocitySmoothingXY.cpp:50-55.
+void ManualVelocitySmoothingXY::reset_position_lock() {
+    position_lock_active_ = false;
+    position_setpoint_locked_.x = NAN;
+    position_setpoint_locked_.y = NAN;
+}
+
+// ManualVelocitySmoothingXY.cpp:57-68: the state, then the lock (before the durations), then the durations.
+void ManualVelocitySmoothingXY::update(float dt, Vec3 velocity_target) {
+    update_trajectories(dt);
+    check_position_lock(velocity_target);
+    update_traj_durations(velocity_target);
+}
+
+// MARV (ADR-0012), see smoothing.hpp.
+void ManualVelocitySmoothingXY::replan() {
+    trajectory_[0].replan();
+    trajectory_[1].replan();
+    VelocitySmoothing::time_synchronization(trajectory_, 2);
+}
+
+// ManualVelocitySmoothingXY.cpp:70-80.
+void ManualVelocitySmoothingXY::update_trajectories(float dt) {
+    for (int i = 0; i < 2; ++i) {
+        trajectory_[i].update_traj(dt);
+        at(state_.j, i) = trajectory_[i].current_jerk();
+        at(state_.a, i) = trajectory_[i].current_acceleration();
+        at(state_.v, i) = trajectory_[i].current_velocity();
+        at(state_.x, i) = trajectory_[i].current_position();
+    }
+}
+
+// ManualVelocitySmoothingXY.cpp:82-89.
+void ManualVelocitySmoothingXY::update_traj_durations(Vec3 velocity_target) {
+    for (int i = 0; i < 2; ++i) trajectory_[i].update_durations(at(velocity_target, i));
+    VelocitySmoothing::time_synchronization(trajectory_, 2);
+}
+
+// ManualVelocitySmoothingXY.cpp:91-121: lock where the trajectory rests with no target; on the target after a lock, the
+// trajectory's velocity becomes the controller's velocity setpoint (the position loop's share of it vanishes with the
+// lock), and while unlocked its position is the estimate.
+void ManualVelocitySmoothingXY::check_position_lock(Vec3 velocity_target) {
+    if (length_xy(state_.v) < 0.1f && length_xy(state_.a) < .2f && length_xy(velocity_target) <= FLT_EPSILON) {
+        position_lock_active_ = true;
+        position_setpoint_locked_ = {state_.x.x, state_.x.y, 0.f};
+    } else {
+        if (position_lock_active_) {
+            trajectory_[0].set_current_velocity(velocity_setpoint_feedback_.x);
+            trajectory_[1].set_current_velocity(velocity_setpoint_feedback_.y);
+            state_.v = {velocity_setpoint_feedback_.x, velocity_setpoint_feedback_.y, 0.f};
+            reset_position_lock();
+        }
+        trajectory_[0].set_current_position(position_estimate_.x);
+        trajectory_[1].set_current_position(position_estimate_.y);
+    }
+}
+
+// ---- ManualVelocitySmoothingZ -----------------------------------------------------------------------------------------
+
+// ManualVelocitySmoothingZ.cpp:39-44.
+void ManualVelocitySmoothingZ::reset(float accel, float vel, float pos) {
+    trajectory_.reset(accel, vel, pos);
+    reset_position_lock();
+}
+
+// ManualVelocitySmoothingZ.cpp:46-50.
+void ManualVelocitySmoothingZ::reset_position_lock() {
+    position_lock_active_ = false;
+    position_setpoint_locked_ = NAN;
+}
+
+// ManualVelocitySmoothingZ.cpp:52-67: the state, the limits of the target's direction and the lock (both before the
+// durations), then the durations.
+void ManualVelocitySmoothingZ::update(float dt, float velocity_target) {
+    update_trajectories(dt);
+    update_traj_constraints(velocity_target);
+    check_position_lock(velocity_target);
+    trajectory_.update_durations(velocity_target);
+}
+
+// MARV (ADR-0012), see smoothing.hpp: the last plan's setpoint has the last target's sign.
+void ManualVelocitySmoothingZ::replan() {
+    update_traj_constraints(trajectory_.vel_sp());
+    trajectory_.replan();
+}
+
+// ManualVelocitySmoothingZ.cpp:69-77.
+void ManualVelocitySmoothingZ::update_trajectories(float dt) {
+    trajectory_.update_traj(dt);
+    state_.j = trajectory_.current_jerk();
+    state_.a = trajectory_.current_acceleration();
+    state_.v = trajectory_.current_velocity();
+    state_.x = trajectory_.current_position();
+}
+
+// ManualVelocitySmoothingZ.cpp:79-89.
+void ManualVelocitySmoothingZ::update_traj_constraints(float velocity_target) {
+    if (velocity_target < 0.f) {  // up
+        trajectory_.set_max_accel(max_accel_up_);
+        trajectory_.set_max_vel(max_vel_up_);
+    } else {  // down
+        trajectory_.set_max_accel(max_accel_down_);
+        trajectory_.set_max_vel(max_vel_down_);
+    }
+}
+
+// ManualVelocitySmoothingZ.cpp:91-119, as the horizontal one.
+void ManualVelocitySmoothingZ::check_position_lock(float velocity_target) {
+    if (std::fabs(state_.v) < 0.1f && std::fabs(state_.a) < .2f && std::fabs(velocity_target) <= FLT_EPSILON) {
+        position_lock_active_ = true;
+        position_setpoint_locked_ = state_.x;
+    } else {
+        if (position_lock_active_) {
+            trajectory_.set_current_velocity(velocity_setpoint_feedback_);
+            state_.v = velocity_setpoint_feedback_;
+            reset_position_lock();
+        }
+        trajectory_.set_current_position(position_estimate_);
+    }
 }
 
 }  // namespace marv

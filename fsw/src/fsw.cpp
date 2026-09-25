@@ -67,14 +67,20 @@ Tick Fsw::step(const SensorBus& bus) {
     const State& nav = mission_.nav == NavSource::kTruth ? truth_ : est;
     const bool nav_ok = mission_.nav == NavSource::kTruth ? truth_ok : est.valid;
     const Mode mode = nav_ok ? mission_.mode : Mode::kIdle;
+    // The flight profile (ADR-0012): an unknown one flies hold; a rocket flies none and reports hold.
+    const std::uint8_t profile =
+        uav_ && mission_.profile < param::kProfileCount ? mission_.profile : std::uint8_t{param::k_profile_hold};
 
     Tick out{};
     ControlRequest req;
     if (uav_) {
-        // Guidance by kind: the trajectory shapes the mission's reference, passthrough hands it on unchanged.
-        const Reference ref =
-            guidance_ == param::k_guidance_trajectory ? trajectory_.run(mission_.ref, nav, mode, dt) : mission_.ref;
-        req = controller_.run(ref, nav, mode, dt);
+        // Guidance by kind: the trajectory shapes the mission's reference, or with manual 1 flies the sticks; passthrough
+        // hands the reference on unchanged.
+        const Sticks* sticks = mission_.manual == 1 ? &mission_.sticks : nullptr;
+        const Reference ref = guidance_ == param::k_guidance_trajectory
+                                  ? trajectory_.run(mission_.ref, nav, mode, dt, profile, sticks, controller_.velocity_setpoint())
+                                  : mission_.ref;
+        req = controller_.run(ref, nav, mode, dt, profile);
         out.act = allocation_.run(req, nav, mode);
         actuators_.run(out.act, mode);
     } else {
@@ -88,7 +94,7 @@ Tick Fsw::step(const SensorBus& bus) {
     out.tlm.preset = preset_;
     out.tlm.home_valid = home_.valid();
     out.tlm.home = home_.origin();
-    out.tlm.profile = param::k_profile_hold;
+    out.tlm.profile = profile;
     return out;
 }
 

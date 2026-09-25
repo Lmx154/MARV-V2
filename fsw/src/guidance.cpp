@@ -33,14 +33,19 @@ TrajectoryGuidance::TrajectoryGuidance(const param::TrajectoryParams& p) : p_(p)
     smoothing_.set_max_allowed_vertical_error(p.err_z_max);
     smoothing_.set_vertical_acceptance_radius(kAltAcceptRad);
     smoothing_.set_horizontal_trajectory_gain(kXyTrajP);
-    smoothing_.set_max_jerk(p.jerk[param::k_profile_hold]);
 }
 
-Reference TrajectoryGuidance::run(const Reference& ref, const State& nav, Mode mode, float dt) {
+Reference TrajectoryGuidance::run(const Reference& ref, const State& nav, Mode mode, float dt, std::uint8_t profile,
+                                  const Sticks* sticks, Vec3 v_sp) {
+    if (mode == Mode::kFly && sticks) return run_manual(nav, dt, profile, *sticks, v_sp);
+    manual_ = false;
+    const bool switched = profile != profile_;
+    profile_ = profile;
     if (mode != Mode::kFly || !(ref.has & kRefPos)) {
         active_ = false;
         return ref;
     }
+    const bool replan = active_ && switched;
     if (!active_) {
         smoothing_.reset({0.f, 0.f, 0.f}, nav.v_ned, nav.p_ned);
         prev_ = target_ = nav.p_ned;
@@ -58,12 +63,14 @@ Reference TrajectoryGuidance::run(const Reference& ref, const State& nav, Mode m
     // FlightTaskAuto.cpp:406-420 and 770-808: the cruise speed, and the vertical limits of the direction the last
     // unsmoothed velocity setpoint pointed.
     smoothing_.set_cruise_speed(
-        std::fmin(ref.speed_mps > 0.f ? ref.speed_mps : p_.cruise_speed[param::k_profile_hold], p_.xy_vel_max));
+        std::fmin(ref.speed_mps > 0.f ? ref.speed_mps : p_.cruise_speed[profile], p_.xy_vel_max));
     smoothing_.set_target_acceptance_radius(ref.accept_m);
     const bool up = unsmoothed_z_ < 0.f;
-    const std::uint8_t h = param::k_profile_hold;
+    const std::uint8_t h = profile;
+    smoothing_.set_max_jerk(p_.jerk[h]);
     smoothing_.set_max_acceleration({p_.acc_xy[h], p_.acc_xy[h], up ? p_.acc_up[h] : p_.acc_dn[h]});
     smoothing_.set_max_velocity({p_.xy_vel_max, p_.xy_vel_max, up ? p_.z_vel_up : p_.z_vel_dn});
+    if (replan) smoothing_.replan();
 
     const Vec3 ff = (ref.has & kRefVel) ? ref.v_ned : Vec3{0.f, 0.f, 0.f};
     PositionSmoothing::Setpoints sp;
@@ -84,11 +91,70 @@ Reference TrajectoryGuidance::run(const Reference& ref, const State& nav, Mode m
     if (ref.has & kRefYaw) {
         yaw_ = ref.yaw;
     } else if (std::sqrt(sp.velocity.x * sp.velocity.x + sp.velocity.y * sp.velocity.y) > p_.heading_min_speed) {
-        const float step = p_.yaw_rate_auto[param::k_profile_hold] * dt;
+        const float step = p_.yaw_rate_auto[profile] * dt;
         const float e = wrap_pi(std::atan2(sp.velocity.y, sp.velocity.x) - yaw_);
         yaw_ = wrap_pi(yaw_ + std::fmin(std::fmax(e, -step), step));
     }
     out.yaw = yaw_;
+    return out;
+}
+
+// See guidance.hpp; the order of FlightTaskManualPositionSmoothVel::_updateSetpoints (.cpp:96-111): limits, feedback and
+// position estimate, the scaled sticks, the smoothing, the output.
+Reference TrajectoryGuidance::run_manual(const State& nav, float dt, std::uint8_t profile, const Sticks& sticks, Vec3 v_sp) {
+    active_ = false;
+    const bool switched = profile != profile_;
+    profile_ = profile;
+    const float speed = std::fmin(p_.cruise_speed[profile], p_.xy_vel_max);
+    // FlightTaskManualPositionSmoothVel.cpp:119-135.
+    manual_xy_.set_max_jerk(p_.jerk[profile]);
+    manual_xy_.set_max_accel(p_.acc_xy[profile]);
+    manual_xy_.set_max_vel(speed);
+    manual_z_.set_max_jerk(p_.jerk[profile]);
+    manual_z_.set_max_accel_up(p_.acc_up[profile]);
+    manual_z_.set_max_vel_up(p_.z_vel_up);
+    manual_z_.set_max_accel_down(p_.acc_dn[profile]);
+    manual_z_.set_max_vel_down(p_.z_vel_dn);
+    if (!manual_) {
+        manual_xy_.reset({0.f, 0.f, 0.f}, nav.v_ned, nav.p_ned);
+        manual_z_.reset(0.f, nav.v_ned.z, nav.p_ned.z);
+        manual_ = true;
+    } else if (switched) {
+        manual_xy_.replan();
+        manual_z_.replan();
+    }
+    // FlightTaskManualPositionSmoothVel.cpp:137-147.
+    manual_xy_.set_vel_sp_feedback(v_sp);
+    manual_z_.set_vel_sp_feedback(v_sp.z);
+    manual_xy_.set_current_position_estimate(nav.p_ned);
+    manual_z_.set_current_position_estimate(nav.p_ned.z);
+
+    // The sticks: Sticks.cpp:91-98, FlightTaskManualPosition.cpp:92-97 @2ef2911c36^, FlightTaskManualAltitude.cpp:92-95.
+    float fwd = sticks.fwd, right = sticks.right;
+    const float l = std::sqrt(fwd * fwd + right * right);
+    if (l > 1.f) {
+        fwd /= l;
+        right /= l;
+    }
+    const float yaw = yaw_of(nav.q), c = std::cos(yaw), s = std::sin(yaw);
+    const Vec3 vel_xy{(c * fwd - s * right) * speed, (s * fwd + c * right) * speed, 0.f};
+    const float vel_z = (sticks.up < 0.f ? p_.z_vel_dn : p_.z_vel_up) * -sticks.up;
+    // FlightTaskManualPositionSmoothVel.cpp:149-153.
+    manual_xy_.update(dt, vel_xy);
+    manual_z_.update(dt, vel_z);
+
+    // FlightTaskManualPositionSmoothVel.cpp:161-185: the position setpoint is the lock, NaN (none) while unlocked.
+    const Vec3 lock_xy = manual_xy_.current_position();
+    const float lock_z = manual_z_.current_position();
+    const bool xy_locked = std::isfinite(lock_xy.x) && std::isfinite(lock_xy.y), z_locked = std::isfinite(lock_z);
+    const Vec3 a_xy = manual_xy_.current_acceleration(), v_xy = manual_xy_.current_velocity();
+    Reference out{};
+    out.has = static_cast<std::uint8_t>(kRefVel | kRefAcc | kRefYawRate | (xy_locked || z_locked ? kRefPos : 0));
+    out.p_ned = {xy_locked ? lock_xy.x : nav.p_ned.x, xy_locked ? lock_xy.y : nav.p_ned.y, z_locked ? lock_z : nav.p_ned.z};
+    out.p_next_ned = out.p_ned;
+    out.v_ned = {v_xy.x, v_xy.y, manual_z_.current_velocity()};
+    out.a_ned = {a_xy.x, a_xy.y, manual_z_.current_acceleration()};
+    out.yaw_rate = sticks.yaw * p_.yaw_rate_auto[profile];
     return out;
 }
 
