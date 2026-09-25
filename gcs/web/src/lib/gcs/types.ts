@@ -1,4 +1,5 @@
 /** Shapes of the GCS backend's HTTP and WebSocket API (gcs decision (b), (d)). */
+import type { RadioDevice, RadioLive } from './radio';
 
 export interface ParamSpec {
 	id: string;
@@ -240,7 +241,8 @@ export type ClientMsg =
 	| { type: 'sim_stop' }
 	| { type: 'resources_request' }
 	| { type: 'resources_subscribe'; on: boolean }
-	| { type: 'terminate'; pid: number };
+	| { type: 'terminate'; pid: number }
+	| { type: 'radio_subscribe'; device: string | null };
 
 /** Server messages are parsed loosely (see link.ts); this is what the page acts on. */
 export type ServerMsg =
@@ -253,4 +255,6 @@ export type ServerMsg =
 	| { type: 'sim_status'; sim: SimStatus }
 	| { type: 'sim_log'; line: string }
 	| { type: 'resources'; resources: RigResource[] }
+	| { type: 'radio'; radio: RadioLive }
+	| { type: 'radio_devices'; devices: RadioDevice[] }
 	| { type: 'error'; request: string; error: string; family?: number };
