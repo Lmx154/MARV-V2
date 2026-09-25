@@ -25,6 +25,7 @@
 
 #include "launcher.hpp"
 #include "link.hpp"
+#include "radio.hpp"
 #include "resources.hpp"
 #include "schema.hpp"
 #include "server.hpp"
@@ -104,6 +105,8 @@ int main(int argc, char** argv) {
             [&server](const std::string& text, bool droppable) { server.broadcast(text, droppable); },
             [&link](bool on) { link.sim(on); });
         server.set_sim(&sim);
+        Radio radio(io, [&server](const std::string& text, bool droppable) { server.broadcast(text, droppable); });
+        server.set_radio(&radio);
         if (!link.start()) return 1;
         boost::asio::signal_set signals(io, SIGINT, SIGTERM);
         signals.async_wait([&io](const boost::system::error_code&, int) { io.stop(); });

@@ -29,6 +29,7 @@
 #include <marv/link/protocol.hpp>
 
 #include "pilot.hpp"
+#include "radio_json.hpp"
 #include "setpoint.hpp"
 #include "transport.hpp"
 
@@ -237,14 +238,14 @@ int run_waypoints(Ground& g, int argc, char** argv) {
     return 0;
 }
 
-bool is_radio(const char* name) { return strcasestr(name, "edgetx") || strcasestr(name, "radiomaster"); }
-
 // Opens the pilot's device: --js PATH, else the RadioMaster if one is plugged in, else the first joystick.
-// name is the device's JSIOCGNAME, or the path when it is not a joystick device (a FIFO replaying events).
-int open_pilot(const char* path, char* name, std::size_t cap) {
+// name is the device's JSIOCGNAME, or the path when it is not a joystick device (a FIFO replaying events); where is the
+// path opened.
+int open_pilot(const char* path, char* name, char* where, std::size_t cap) {
     int fd = -1;
     if (path) {
         std::snprintf(name, cap, "%s", path);
+        std::snprintf(where, cap, "%s", path);
         fd = ::open(path, O_RDONLY);  // blocks until a FIFO has a writer; a device opens at once
         if (fd >= 0) ::ioctl(fd, JSIOCGNAME(cap), name);
     } else {
@@ -254,11 +255,12 @@ int open_pilot(const char* path, char* name, std::size_t cap) {
             const int f = ::open(dev, O_RDONLY | O_NONBLOCK);
             if (f < 0) continue;
             ::ioctl(f, JSIOCGNAME(sizeof(dev_name)), dev_name);
-            if (fd < 0 || is_radio(dev_name)) {
+            if (fd < 0 || ground::is_radio(dev_name)) {
                 if (fd >= 0) ::close(fd);
                 fd = f;
-                std::snprintf(name, cap, "%s (%s)", dev_name, dev);
-                if (is_radio(dev_name)) break;
+                std::snprintf(name, cap, "%s", dev_name);
+                std::snprintf(where, cap, "%s", dev);
+                if (ground::is_radio(dev_name)) break;
             } else {
                 ::close(f);
             }
@@ -278,12 +280,24 @@ int run_manual(Ground& g, int argc, char** argv) {
     const char* path = nullptr;
     if (argc == 2 && std::strcmp(argv[0], "--js") == 0) path = argv[1];
     else if (argc != 0) return usage();
-    char name[160];
-    const int fd = open_pilot(path, name, sizeof(name));
+    char name[160], where[160];
+    const int fd = open_pilot(path, name, where, sizeof(name));
     if (fd < 0) return 1;
-    const bool radio = is_radio(name);
-    std::printf("pilot: %s, %s mapping\n", name, radio ? "RadioMaster" : "Xbox");
-    ground::Pilot pilot(radio);
+    // The device's stored config (the GCS's radio page), else the built-in mapping; one that does not read stops here.
+    ground::RadioConfig cfg;
+    std::string why;
+    if (ground::load_radio(name, cfg, why)) {
+        std::printf("pilot: %s (%s), stored config %s\n", name, where, ground::radio_path(name).c_str());
+    } else if (why.empty()) {
+        cfg = ground::default_config(name);
+        std::printf("pilot: %s (%s), built-in %s mapping (no %s)\n", name, where,
+                    ground::is_radio(name) ? "RadioMaster" : "Xbox", ground::radio_path(name).c_str());
+    } else {
+        std::fprintf(stderr, "marv_ground: radio config %s\n", why.c_str());
+        ::close(fd);
+        return 1;
+    }
+    ground::Pilot pilot(cfg);
     // Nothing is sent until the pilot arms: starting manual against a vehicle that is already flying must
     // not disarm it. From the first arm on, the pilot owns the vehicle and disarm sends idle.
     bool engaged = false;
@@ -318,7 +332,7 @@ int run_manual(Ground& g, int argc, char** argv) {
         std::snprintf(note, sizeof(note), " | profile=%s up=%+.2f yaw=%+.2f fwd=%+.2f right=%+.2f arm=%s",
                       param::kProfileId[pilot.profile()], static_cast<double>(s.up), static_cast<double>(s.yaw),
                       static_cast<double>(s.fwd), static_cast<double>(s.right),
-                      pilot.fly() ? "on" : pilot.refused() ? "REFUSED(throttle to bottom, cycle CH5)" : "off");
+                      pilot.fly() ? "on" : pilot.refused() ? "REFUSED(throttle to bottom, then arm again)" : "off");
         g.note(note);
         if (!g.ready()) {
             if (!g.period(nullptr)) {

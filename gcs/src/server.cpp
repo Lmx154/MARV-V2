@@ -4,6 +4,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <climits>
 #include <cmath>
@@ -21,6 +22,7 @@
 
 #include "launcher.hpp"
 #include "link.hpp"
+#include "radio.hpp"
 #include "schema.hpp"
 
 namespace marv::gcs {
@@ -68,6 +70,8 @@ public:
 
     bool closed() const { return closed_; }
     bool resources = false;  // resources_subscribe: a scan every 2 s (the Development tab is open)
+    bool radio = false;      // radio_subscribe: radio_device's radio messages at 20 Hz
+    std::string radio_device;
 
 private:
     void read() {
@@ -119,6 +123,28 @@ const char* mime(const std::string& path) {
     return "application/octet-stream";
 }
 
+// The value of key in a URL query, percent-decoded ('+' is a space); empty when absent.
+std::string query_param(const std::string& query, const std::string& key) {
+    for (std::size_t at = 0; at <= query.size();) {
+        const std::size_t end = std::min(query.find('&', at), query.size());
+        const std::string pair = query.substr(at, end - at);
+        if (pair.rfind(key + "=", 0) == 0) {
+            std::string out;
+            for (std::size_t i = key.size() + 1; i < pair.size(); ++i) {
+                if (pair[i] == '+') out += ' ';
+                else if (pair[i] == '%' && i + 2 < pair.size() && std::isxdigit(static_cast<unsigned char>(pair[i + 1])) &&
+                         std::isxdigit(static_cast<unsigned char>(pair[i + 2]))) {
+                    out += static_cast<char>(std::stoi(pair.substr(i + 1, 2), nullptr, 16));
+                    i += 2;
+                } else out += pair[i];
+            }
+            return out;
+        }
+        at = end + 1;
+    }
+    return "";
+}
+
 // One HTTP connection: requests until it closes, or its upgrade to a WebSocket on /ws.
 class HttpSession : public std::enable_shared_from_this<HttpSession> {
 public:
@@ -143,9 +169,20 @@ private:
             if (req_.target() == "/ws") std::make_shared<WsSession>(stream_.release_socket(), server_)->run(std::move(req_));
             return;
         }
-        if (req_.method() != http::verb::get) return text(http::status::method_not_allowed, "text/plain", "GET only\n");
         std::string path(req_.target());
-        path = path.substr(0, path.find('?'));
+        const std::size_t q = path.find('?');
+        const std::string query = q == std::string::npos ? "" : path.substr(q + 1);
+        path = path.substr(0, q);
+        if (path == "/api/radio/config" && server_.radio()) {
+            HttpReply r{405, "{\"error\":\"GET, PUT or DELETE only\"}"};
+            if (req_.method() == http::verb::get) r = server_.radio()->http_get(query_param(query, "device"));
+            else if (req_.method() == http::verb::put) r = server_.radio()->http_put(req_.body());
+            else if (req_.method() == http::verb::delete_) r = server_.radio()->http_delete(query_param(query, "device"));
+            return text(static_cast<http::status>(r.status), "application/json", r.body);
+        }
+        if (req_.method() != http::verb::get) return text(http::status::method_not_allowed, "text/plain", "GET only\n");
+        if (path == "/api/radio/devices" && server_.radio())
+            return text(http::status::ok, "application/json", server_.radio()->http_devices().body);
         if (path == "/api/schema") return text(http::status::ok, "application/json", schema_text());
         if (path == "/api/link") return text(http::status::ok, "application/json", json::serialize(server_.link().state()));
         if (path == "/api/resources") return text(http::status::ok, "application/json", json::serialize(server_.resources()));
@@ -208,12 +245,14 @@ private:
 Server::Server(asio::io_context& io, const std::string& address, unsigned short port, std::string web_root)
     : acceptor_(io, tcp::endpoint(asio::ip::make_address(address), port)),
       web_root_(std::move(web_root)),
-      resources_timer_(io) {
+      resources_timer_(io),
+      radio_timer_(io) {
     targets_.self = ::getpid();
     targets_.uid = ::getuid();
     targets_.http = this->port();
     accept();
     resources_tick();
+    radio_tick();
 }
 
 unsigned short Server::port() const { return acceptor_.local_endpoint().port(); }
@@ -258,6 +297,7 @@ void Server::message(const std::string& text, const std::weak_ptr<WsSession>& fr
         return reply(resources_message());
     }
     if (t && t->is_string() && t->get_string() == "terminate") return terminate(m, reply);
+    if (t && t->is_string() && t->get_string() == "radio_subscribe") return radio_subscribe(m, from, reply);
     if (sim_ && sim_->handle(m, reply)) return;
     link_->handle(m, reply);
 }
@@ -296,6 +336,40 @@ void Server::resources_tick() {
             s->send(text, true);
         }
         resources_tick();
+    });
+}
+
+void Server::radio_subscribe(const json::object& m, const std::weak_ptr<WsSession>& from, const Reply& reply) {
+    const auto refuse = [&reply](const std::string& why) {
+        reply(json::serialize(json::object{{"type", "error"}, {"request", "radio_subscribe"}, {"error", why}}));
+    };
+    const auto s = from.lock();
+    if (!s) return;
+    if (!radio_) return refuse("no joystick access in this marv_gcs");
+    const json::value* d = m.if_contains("device");
+    if (!d || !(d->is_null() || d->is_string())) return refuse("device: a joystick name or null");
+    s->radio = false;
+    if (d->is_null()) return;
+    const std::string name(d->get_string());
+    if (!radio_->present(name)) return refuse("no joystick named \"" + name + "\"");
+    s->radio = true;
+    s->radio_device = name;
+    reply(radio_->devices_message());
+}
+
+void Server::radio_tick() {
+    radio_timer_.expires_after(std::chrono::milliseconds(50));
+    radio_timer_.async_wait([this](beast::error_code ec) {
+        if (ec) return;
+        std::vector<std::pair<std::string, std::string>> sent;  // (device, message) this tick
+        for (const auto& w : clients_) {
+            const auto s = w.lock();
+            if (!radio_ || !s || s->closed() || !s->radio) continue;
+            auto it = std::find_if(sent.begin(), sent.end(), [&s](const auto& p) { return p.first == s->radio_device; });
+            if (it == sent.end()) it = sent.insert(sent.end(), {s->radio_device, radio_->message(s->radio_device)});
+            if (!it->second.empty()) s->send(it->second, true);
+        }
+        radio_tick();
     });
 }
 
