@@ -11,8 +11,12 @@ import {
 	calFinish,
 	calSample,
 	calStart,
+	errorPage,
+	errorPath,
+	errorsAt,
 	evenBands,
 	insertBand,
+	ApiError,
 	makeRadioApi,
 	moveBand,
 	normalizeStick,
@@ -23,6 +27,7 @@ import {
 	setUpper,
 	toWire,
 	validateConfig,
+	validateWire,
 	type Band,
 	type FetchFn,
 	type RadioConfig
@@ -136,51 +141,104 @@ describe('calibration', () => {
 });
 
 describe('config validation', () => {
-	it('accepts the two defaults', () => {
+	it('accepts the two defaults, on the device and unplugged', () => {
 		expect(validateConfig(rm(), IDS, 8, 2)).toEqual([]);
+		expect(validateConfig(rm(), IDS)).toEqual([]);
 		expect(validateConfig(mockDefault(MOCK_XBOX.name), IDS, 8, 11)).toEqual([]);
+		expect(rm().profile.bands.map((b) => b.upper)).toEqual([-0.50002, 0, 0.5, 1]);
 	});
 
-	it('refuses band counts, order, the last edge and unknown profiles', () => {
+	it("refuses band counts, order, the last edge and unknown profiles with the backend's messages", () => {
 		const c = rm();
 		const at = (bands: Band[]): string[] => validateConfig({ ...c, profile: { ...c.profile, bands } }, IDS, 8, 2);
-		expect(at(four.slice(3))).toContain('flight modes: 2 to 6 bands, not 1');
-		expect(at([...evenBands(6, IDS), { upper: 1, profile: 'hold' }]).some((e) => e.includes('not 7'))).toBe(true);
-		expect(at([four[1], four[0], four[2], four[3]])).toContain("flight modes: band 2's upper edge must be above band 1's");
-		expect(at([four[0], four[1], four[2], { upper: 0.9, profile: 'agile' }])).toContain('flight modes: the last band must end at 1.0');
-		expect(at([four[0], { upper: 1, profile: 'sport' }])).toContain('flight modes: band 2 has no known profile');
-		expect(at([{ upper: -1, profile: 'hold' }, four[3]])).toContain("flight modes: band 1's upper edge must be in (-1, 1]");
+		expect(at(four.slice(3))).toEqual(['profile.bands: not 2 to 6 bands']);
+		expect(at([...evenBands(6, IDS), { upper: 1, profile: 'hold' }])).toEqual(['profile.bands: not 2 to 6 bands']);
+		expect(at([four[1], four[0], four[2], four[3]])).toEqual(['profile.bands[1].upper: not above the band before']);
+		expect(at([four[0], four[1], four[2], { upper: 0.9, profile: 'agile' }])).toEqual(["profile.bands[3].upper: the last band's is not 1"]);
+		expect(at([four[0], { upper: 1, profile: 'sport' }])).toEqual(['profile.bands[1].profile: not a profile id']);
+		expect(at([{ upper: -1, profile: 'hold' }, four[3]])).toEqual(['profile.bands[0].upper: not above -1']);
+		expect(at([{ upper: -1.5, profile: 'hold' }, four[3]])).toEqual(['profile.bands[0].upper: outside -1E0..1E0']);
+		expect(at([four[0], { upper: 0.999999999, profile: 'agile' }])).toEqual([]);
 	});
 
-	it('refuses axes, buttons and stick ranges the device does not have', () => {
+	it('refuses stick axes twice, arm or profile on a stick axis, and indices past the device', () => {
 		const c = rm();
 		c.sticks.pitch.axis = 0;
 		c.sticks.yaw.axis = 9;
-		c.sticks.throttle.min = 5;
-		c.sticks.throttle.max = 5;
+		c.sticks.throttle.center = -32767;
 		c.sticks.roll.deadband = 0.7;
-		c.profile.axis = 4;
-		const e = validateConfig(c, IDS, 8, 2);
-		expect(e).toContain('pitch: axis 0 is already roll');
-		expect(e).toContain('yaw: axis 9 is not an axis of this device');
-		expect(e).toContain('throttle: min must be below max');
-		expect(e).toContain('roll: deadband must be 0..0.5');
-		expect(validateConfig({ ...rm(), arm: { ...rm().arm, index: 2 } }, IDS, 8, 2)).toContain('arm: axis 2 is the throttle stick');
-		expect(e).toContain('flight modes: axis 4 is the arm switch');
+		c.profile.index = 4;
+		expect(validateConfig(c, IDS, 8, 2)).toEqual([
+			'sticks.roll.deadband: outside 0E0..5E-1',
+			'sticks.pitch: axis 0 is already sticks.roll',
+			'sticks.throttle.min: not below center',
+			'sticks.yaw.axis: outside 0..7',
+			'profile: axis 4 is already arm'
+		]);
+		expect(validateConfig(c, IDS)).toEqual([
+			'sticks.roll.deadband: outside 0E0..5E-1',
+			'sticks.pitch: axis 0 is already sticks.roll',
+			'sticks.throttle.min: not below center',
+			'profile: axis 4 is already arm'
+		]);
+		expect(validateConfig({ ...rm(), arm: { ...rm().arm, index: 2 } }, IDS, 8, 2)).toEqual(['arm: axis 2 is already sticks.throttle']);
+		expect(validateConfig({ ...rm(), profile: { ...rm().profile, index: 3 } }, IDS, 8, 2)).toEqual(['profile: axis 3 is already sticks.yaw']);
+		expect(validateConfig({ ...rm(), arm: { ...rm().arm, on_above: 1.5 } }, IDS)).toEqual(['arm.on_above: outside -1E0..1E0']);
+		expect(validateConfig({ ...rm(), throttle_centre_hold: false }, IDS)).toEqual(["throttle_centre_hold: only true (the throttle's centre holds height) is supported"]);
+		expect(validateConfig({ ...rm(), version: 2, device_name: '' }, IDS)).toEqual(['version: outside 1..1', 'device_name: empty']);
+		const s = rm();
+		s.sticks.roll.min = 1.5;
+		s.sticks.pitch.max = NaN;
+		expect(validateConfig(s, IDS)).toEqual(['sticks.roll.min: not an integer', 'sticks.pitch.max: not a number']);
+		expect(validateConfig(rm(), IDS, 20, 40)).toEqual([]);
+		const wide = rm();
+		wide.sticks.yaw.axis = 15;
+		expect(validateConfig(wide, IDS, 20)).toEqual([]);
+		wide.sticks.yaw.axis = 16;
+		expect(validateConfig(wide, IDS, 20)).toEqual(['sticks.yaw.axis: outside 0..15']);
+	});
 
+	it('needs a disarm button with an arm button, and keeps profile buttons off both', () => {
 		const x = mockDefault(MOCK_XBOX.name);
 		x.profile.buttons['0'] = 'hold';
 		x.profile.buttons['1'] = 'agile';
 		x.profile.buttons['12'] = 'nope';
-		const ex = validateConfig(x, IDS, 8, 11);
-		expect(ex).toContain('flight modes: button 0 is the arm button');
-		expect(ex).toContain('flight modes: button 1 is the disarm button');
-		expect(ex).toContain('flight modes: button 12 is not a button of this device');
-		expect(ex).toContain('flight modes: button 12 has no known profile');
-		x.arm.disarm_button = 0;
-		expect(validateConfig(x, IDS, 8, 11)).toContain('arm: the disarm button is the arm button');
-		expect(validateConfig({ ...x, profile: { ...x.profile, buttons: {} } }, IDS)).toContain('flight modes: assign at least one button');
-		expect(validateConfig({ ...rm(), version: 2, device_name: '' }, IDS)).toEqual(['version 2: only 1 is known', 'no device name']);
+		expect(validateConfig(x, IDS, 8, 11)).toEqual([
+			'profile.buttons.0: the button already arms or disarms',
+			'profile.buttons.1: the button already arms or disarms',
+			'profile.buttons.12: not a button 0..10'
+		]);
+		expect(validateConfig(x, IDS)).toContain('profile.buttons.12: not a profile id');
+		const y = mockDefault(MOCK_XBOX.name);
+		expect(validateConfig({ ...y, arm: { ...y.arm, disarm_button: null } }, IDS, 8, 11)).toEqual(['arm.disarm_button: required with an arm button']);
+		expect(validateConfig({ ...y, arm: { ...y.arm, disarm_button: 0 } }, IDS, 8, 11)).toEqual(['arm.disarm_button: the arm button itself']);
+		expect(validateConfig({ ...y, arm: { ...y.arm, button: 11 } }, IDS, 8, 11)).toEqual(['arm.button: outside 0..10']);
+		expect(validateConfig({ ...y, profile: { ...y.profile, buttons: {} } }, IDS)).toEqual(['profile.buttons: empty']);
+		const r = rm();
+		expect(validateConfig({ ...r, arm: { ...r.arm, disarm_button: 1 }, profile: { ...r.profile, source: 'buttons', buttons: { '1': 'hold' } } }, IDS)).toEqual([
+			'profile.buttons.1: the button already arms or disarms'
+		]);
+		expect(validateConfig({ ...r, arm: { ...r.arm, disarm_button: 1 }, profile: { ...r.profile, source: 'buttons', buttons: { '0': 'hold' } } }, IDS)).toEqual([]);
+	});
+
+	it('reads the wire as the backend does: missing fields, types, the arm button by index', () => {
+		expect(validateWire([], IDS)).toEqual(['not a JSON object']);
+		expect(validateWire({}, IDS)[0]).toBe('version: missing');
+		const w = toWire(mockDefault(MOCK_XBOX.name)) as Record<string, Record<string, unknown>>;
+		expect(validateWire({ ...w, arm: { source: 'button', index: 7, require_throttle_low: false, disarm_button: 1 } }, IDS)).toEqual([]);
+		expect(validateWire({ ...w, arm: { source: 'button', index: 3, require_throttle_low: false, disarm_button: 1 } }, IDS)).toEqual(['profile.buttons.3: the button already arms or disarms']);
+		expect(validateWire({ ...w, arm: { ...w.arm, source: 'switch' } }, IDS)).toEqual(['arm.source: not "axis" or "button"']);
+		expect(validateWire({ ...w, profile: { source: 'knob' } }, IDS)).toEqual(['profile.source: not "axis", "buttons" or "none"']);
+		expect(validateWire({ ...w, sticks: { ...w.sticks, yaw: { ...(w.sticks.yaw as object), reverse: 1 } } }, IDS)).toEqual(['sticks.yaw.reverse: not true or false']);
+		expect(errorPath('sticks.yaw.axis: outside 0..7')).toBe('sticks.yaw.axis');
+		expect(errorPath('no path here')).toBe('');
+		expect(errorPage('sticks.yaw.axis: outside 0..7')).toBe('sticks');
+		expect(errorPage('arm: axis 2 is already sticks.throttle')).toBe('sticks');
+		expect(errorPage('profile.bands[2].upper: not above -1')).toBe('modes');
+		expect(errorPage('profile.buttons.12: not a button 0..10')).toBe('modes');
+		expect(errorPage('device_name: empty')).toBeNull();
+		expect(errorPage("throttle_centre_hold: only true (the throttle's centre holds height) is supported")).toBeNull();
+		expect(errorsAt(['arm: x', 'arm.index: y', 'sticks.roll: z'], 'arm', 'arm.index')).toEqual(['arm: x', 'arm.index: y']);
 	});
 });
 
@@ -191,10 +249,18 @@ describe('wire shape', () => {
 		const w = toWire(c);
 		expect(w.arm).toEqual({ source: 'button', button: 0, require_throttle_low: false, disarm_button: 1 });
 		expect(w.profile).toEqual({ source: 'buttons', buttons: { '2': 'hold', '3': 'stabilized', '4': 'freestyle', '5': 'agile' } });
-		expect(toWire(rm()).arm).toEqual({ source: 'axis', index: 4, on_above: 0, require_throttle_low: true });
+		expect(toWire(rm()).arm).toEqual({ source: 'axis', index: 4, on_above: 0, require_throttle_low: true, disarm_button: null });
+		expect(toWire(rm()).profile).toMatchObject({ source: 'axis', index: 5 });
+		expect(Object.keys(toWire(rm()).profile as object)).toEqual(['source', 'index', 'bands']);
+		expect(parseConfig({ profile: { source: 'axis', index: 6, bands: [] } }).profile.index).toBe(6);
 		expect(toWire({ ...rm(), profile: { ...rm().profile, source: 'none' } }).profile).toEqual({ source: 'none' });
 		expect(sameConfig(rm(), parseConfig(toWire(rm())))).toBe(true);
 		expect(sameConfig(rm(), { ...rm(), throttle_centre_hold: false })).toBe(false);
+		// GET's body for the Xbox pad, as gcs/src/radio.cpp writes it (to_json + source).
+		const got = parseConfig(JSON.parse(
+			'{"version":1,"device_name":"Microsoft X-Box 360 pad","sticks":{"roll":{"axis":3,"min":-32767,"center":0,"max":32767,"reverse":false,"deadband":0.1},"pitch":{"axis":4,"min":-32767,"center":0,"max":32767,"reverse":true,"deadband":0.1},"throttle":{"axis":1,"min":-32767,"center":0,"max":32767,"reverse":true,"deadband":0.1},"yaw":{"axis":0,"min":-32767,"center":0,"max":32767,"reverse":false,"deadband":0.1}},"throttle_centre_hold":true,"arm":{"source":"button","button":0,"require_throttle_low":false,"disarm_button":1},"profile":{"source":"buttons","buttons":{"2":"hold","3":"stabilized","4":"freestyle","5":"agile"}},"source":"default"}'
+		));
+		expect(sameConfig(got, mockDefault(MOCK_XBOX.name))).toBe(true);
 	});
 
 	it('parses the radio and radio_devices messages', () => {
@@ -217,7 +283,9 @@ describe('API client', () => {
 		};
 
 	it('reports the backend error, the status without one, and a network failure', async () => {
-		await expect(makeRadioApi(reply(400, { error: 'arm: axis 9 out of range' })).save(rm())).rejects.toThrow('PUT /api/radio/config: arm: axis 9 out of range');
+		await expect(makeRadioApi(reply(400, { error: 'sticks.yaw.axis: outside 0..7' })).save(rm())).rejects.toThrow('PUT /api/radio/config: sticks.yaw.axis: outside 0..7');
+		await expect(makeRadioApi(reply(400, { error: 'sticks.yaw.axis: outside 0..7' })).save(rm())).rejects.toMatchObject({ status: 400, detail: 'sticks.yaw.axis: outside 0..7' });
+		await expect(makeRadioApi(reply(500, { error: 'rename to /x: EACCES' })).save(rm())).rejects.toBeInstanceOf(ApiError);
 		await expect(makeRadioApi(reply(404, undefined)).devices()).rejects.toThrow('GET /api/radio/devices: HTTP 404');
 		const down: FetchFn = async () => {
 			throw new TypeError('Failed to fetch');
@@ -230,6 +298,9 @@ describe('API client', () => {
 		const r = await makeRadioApi(reply(200, { ...toWire(rm()), source: 'stored' }, seen)).config('RM TX16S & co');
 		expect(seen[0].url).toBe('/api/radio/config?device=RM%20TX16S%20%26%20co');
 		expect(r.source).toBe('stored');
+		expect(r.error).toBeNull();
+		const ignored = await makeRadioApi(reply(200, { ...toWire(rm()), source: 'default', error: '/c/x.json: sticks.yaw.axis: outside 0..15' })).config('x');
+		expect(ignored).toMatchObject({ source: 'default', error: '/c/x.json: sticks.yaw.axis: outside 0..15' });
 		await makeRadioApi(reply(200, toWire(rm()), seen)).save(rm());
 		expect(seen[1].init).toEqual({ method: 'PUT', body: JSON.stringify(toWire(rm())), headers: { 'Content-Type': 'application/json' } });
 		await makeRadioApi(reply(200, {}, seen)).reset('pad');
@@ -251,7 +322,15 @@ describe('mock round trip', () => {
 		expect((await api.config(MOCK_RADIOMASTER.name)).source).toBe('stored');
 		expect((await api.devices())[0].has_config).toBe(true);
 		c.profile.bands = [{ upper: 0.5, profile: 'hold' }];
-		await expect(api.save(c)).rejects.toThrow('flight modes: 2 to 6 bands, not 1; flight modes: the last band must end at 1.0');
+		await expect(api.save(c)).rejects.toMatchObject({ status: 400, detail: 'profile.bands: not 2 to 6 bands' });
+		c.profile.bands = moveBand(c.profile.bands, 0, 1);
+		const bad = await store.fetch('/api/radio/config', { method: 'PUT', body: JSON.stringify({ ...toWire(rm()), sticks: { ...(toWire(rm()).sticks as object), yaw: { ...rm().sticks.yaw, axis: 8 } } }) });
+		expect(await bad.json()).toEqual({ error: 'sticks.yaw.axis: outside 0..7' });
+		expect(await (await store.fetch('/api/radio/config', { method: 'PUT', body: '{' })).json()).toMatchObject({ error: expect.stringMatching(/^not JSON: /) });
+		expect(await (await store.fetch('/api/radio/config?device=', { method: 'GET' })).json()).toEqual({ error: 'device: missing' });
+		store.ignore(MOCK_RADIOMASTER.name, 'x.json: version: outside 1..1');
+		expect(await api.config(MOCK_RADIOMASTER.name)).toMatchObject({ source: 'default', error: 'x.json: version: outside 1..1' });
+		expect((await api.devices())[0].has_config).toBe(true);
 		await api.reset(MOCK_RADIOMASTER.name);
 		const back = await api.config(MOCK_RADIOMASTER.name);
 		expect(back.source).toBe('default');

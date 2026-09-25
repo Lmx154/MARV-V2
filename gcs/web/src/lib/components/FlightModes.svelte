@@ -5,6 +5,7 @@
 		axisValue,
 		bandIndex,
 		bandLower,
+		errorsAt,
 		evenBands,
 		insertBand,
 		moveBand,
@@ -28,13 +29,19 @@
 		axisRole: Record<number, string>;
 		/** The profile the backend computes from the stored config. */
 		serverProfile: string | null;
+		/** The config's errors, backend style ("profile.bands[1].upper: ..."); the profile ones show here. */
+		errors: string[];
 		onchange: (p: ProfileCfg) => void;
 	}
-	let { cfg, profiles, axes, buttons, raw, pressed, axisRole, serverProfile, onchange }: Props = $props();
+	let { cfg, profiles, axes, buttons, raw, pressed, axisRole, serverProfile, errors, onchange }: Props = $props();
+
+	const at = (...paths: string[]): string[] => errorsAt(errors, ...paths);
+	/** The device's buttons, and any assigned beyond them (so they show, with their error, and can be cleared). */
+	const buttonRows = $derived(Math.max(buttons, ...Object.keys(cfg.buttons).map((k) => (/^\d+$/.test(k) ? Number(k) + 1 : 0))));
 
 	const ids = $derived(profiles.map((p) => p.id));
 	const label = (id: string | null): string => (id === null ? '—' : (profiles.find((p) => p.id === id)?.label ?? id));
-	const v = $derived(raw && raw[cfg.axis] !== undefined ? axisValue(raw[cfg.axis]) : NaN);
+	const v = $derived(raw && raw[cfg.index] !== undefined ? axisValue(raw[cfg.index]) : NaN);
 	const current = $derived(bandIndex(cfg.bands, v));
 	const pct = (u: number): string => `${(u * 100).toFixed(0)}%`;
 	const rawOf = (u: number): number => Math.round(u * 32767);
@@ -78,23 +85,26 @@
 				<option value="none">nothing (no profile input)</option>
 			</select>
 		</label>
+		{#each at('profile.source') as m (m)}<span class="ferr">{m}</span>{/each}
 		{#if cfg.source === 'axis'}
 			<label>
 				Channel
-				<select value={cfg.axis} onchange={(e) => onchange({ ...cfg, axis: Number(e.currentTarget.value) })}>
-					{#each Array.from({ length: Math.max(axes, cfg.axis + 1) }, (_, i) => i) as i (i)}
+				<select value={cfg.index} onchange={(e) => onchange({ ...cfg, index: Number(e.currentTarget.value) })}>
+					{#each Array.from({ length: Math.max(axes, cfg.index + 1) }, (_, i) => i) as i (i)}
 						<option value={i}>CH{i + 1} (a{i}){axisRole[i] ? ` — ${axisRole[i]}` : ''}</option>
 					{/each}
 				</select>
 			</label>
+			{#each at('profile.index', 'profile') as m (m)}<span class="ferr">{m}</span>{/each}
 			<label>
 				Positions
 				<select value={cfg.bands.length} onchange={(e) => count(Number(e.currentTarget.value))}>
 					{#each Array.from({ length: BANDS_MAX - BANDS_MIN + 1 }, (_, i) => i + BANDS_MIN) as n (n)}<option value={n}>{n}</option>{/each}
 				</select>
 			</label>
+			{#each at('profile.bands') as m (m)}<span class="ferr">{m}</span>{/each}
 			<button type="button" class="btn sm" onclick={() => bands(evenBands(cfg.bands.length, ids))} title="Equal bands, profiles in schema order">Even split</button>
-			<span class="k">now: {Number.isFinite(v) ? `${raw?.[cfg.axis]} (${pct(v)})` : 'no data'}</span>
+			<span class="k">now: {Number.isFinite(v) ? `${raw?.[cfg.index]} (${pct(v)})` : 'no data'}</span>
 		{/if}
 		<span class="k">backend selects: <b class="cur">{label(serverProfile)}</b></span>
 	</div>
@@ -121,12 +131,14 @@
 							{:else}
 								<input type="number" min="-0.99" max="0.99" step="0.01" value={b.upper} onchange={(e) => bands(setUpper(cfg.bands, i, Number(e.currentTarget.value)))} />
 							{/if}
+							{#each at(`profile.bands[${i}].upper`) as m (m)}<div class="ferr">{m}</div>{/each}
 						</td>
 						<td>
 							<select value={b.profile} onchange={(e) => bands(setBandProfile(cfg.bands, i, e.currentTarget.value))}>
 								{#if !ids.includes(b.profile)}<option value={b.profile} disabled>{b.profile || '(none)'}</option>{/if}
 								{#each profiles as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
 							</select>
+							{#each at(`profile.bands[${i}].profile`) as m (m)}<div class="ferr">{m}</div>{/each}
 						</td>
 						<td class="ops">
 							<button type="button" class="btn sm" disabled={i === 0} title="Swap profile with the band below" onclick={() => bands(moveBand(cfg.bands, i, -1))}>↑</button>
@@ -140,10 +152,11 @@
 		</table>
 		<p class="hint">A band runs from the edge below it up to its upper edge (switch value = raw / 32767). Move the switch: the current band lights up.</p>
 	{:else if cfg.source === 'buttons'}
+		{#each at('profile.buttons') as m (m)}<p class="ferr">{m}</p>{/each}
 		<table class="specs">
 			<thead><tr><th>button</th><th>pressed</th><th>profile</th></tr></thead>
 			<tbody>
-				{#each Array.from({ length: buttons }, (_, i) => i) as i (i)}
+				{#each Array.from({ length: buttonRows }, (_, i) => i) as i (i)}
 					{@const id = cfg.buttons[String(i)] ?? ''}
 					<tr class:on={Boolean(pressed?.[i])}>
 						<td><b>{i}</b></td>
@@ -154,6 +167,7 @@
 								{#if id && !ids.includes(id)}<option value={id} disabled>{id}</option>{/if}
 								{#each profiles as p (p.id)}<option value={p.id}>{p.label}</option>{/each}
 							</select>
+							{#each at(`profile.buttons.${i}`) as m (m)}<div class="ferr">{m}</div>{/each}
 						</td>
 					</tr>
 				{/each}
@@ -235,6 +249,11 @@
 		border-radius: 50%;
 		border: 1px solid var(--border-strong);
 		background: var(--surface-2);
+	}
+	.ferr {
+		margin: 0;
+		color: var(--bad);
+		white-space: normal;
 	}
 	.led.lit {
 		background: var(--ok);

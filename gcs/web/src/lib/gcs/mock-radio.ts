@@ -2,20 +2,21 @@
  * Dev-only stand-in for the backend's radio API (?mock): an in-memory config store behind a fetch-shaped function
  * (GET /api/radio/devices, GET/PUT/DELETE /api/radio/config), and the radio stream's frames. A RadioMaster (8 axes, AETR,
  * CH5 arm, CH6 four-position profile switch) is plugged in and moves its sticks and switches on a 20 s loop; MockFc plugs
- * an Xbox pad in 3 s after it opens. Defaults follow marv_ground's two mappings (ground/src/pilot.hpp).
+ * an Xbox pad in 3 s after it opens. Defaults, validation and replies follow the backend's (ground/src/radio_config.hpp,
+ * radio_json.hpp, gcs/src/radio.cpp).
  */
 import fixture from '$lib/fixtures/schema.json';
-import { axisValue, bandIndex, normalizeStick, parseConfig, STICKS, toWire, validateConfig, type FetchFn, type RadioConfig, type RadioDevice } from './radio';
+import { axisValue, bandIndex, normalizeStick, parseConfig, STICKS, toWire, validateWire, type FetchFn, type RadioConfig, type RadioDevice } from './radio';
 
-export const MOCK_RADIOMASTER: RadioDevice = { path: '/dev/input/js0', name: 'OpenTX RM TX16S Joystick', axes: 8, buttons: 2, has_config: false };
+export const MOCK_RADIOMASTER: RadioDevice = { path: '/dev/input/js0', name: 'EdgeTX RadioMaster Pocket Joystick', axes: 8, buttons: 2, has_config: false };
 export const MOCK_XBOX: RadioDevice = { path: '/dev/input/js1', name: 'Microsoft X-Box 360 pad', axes: 8, buttons: 11, has_config: false };
 
 const CH6 = [-32767, -10923, 10923, 32767];
 
-/** The backend's default for a device: the RadioMaster or Xbox mapping by name, else the RadioMaster's. */
+/** The backend's default for a device: the RadioMaster's when the name says EdgeTX or RadioMaster, else the Xbox pad's. */
 export function mockDefault(name: string): RadioConfig {
 	const stick = (axis: number, reverse = false) => ({ axis, min: -32767, center: 0, max: 32767, reverse, deadband: 0.1 });
-	if (/x-?box/i.test(name))
+	if (!/edgetx|radiomaster/i.test(name))
 		return parseConfig({
 			version: 1,
 			device_name: name,
@@ -29,12 +30,12 @@ export function mockDefault(name: string): RadioConfig {
 		device_name: name,
 		sticks: { roll: stick(0), pitch: stick(1), throttle: stick(2), yaw: stick(3) },
 		throttle_centre_hold: true,
-		arm: { source: 'axis', index: 4, on_above: 0, require_throttle_low: true },
+		arm: { source: 'axis', index: 4, on_above: 0, require_throttle_low: true, disarm_button: null },
 		profile: {
 			source: 'axis',
-			axis: 5,
+			index: 5,
 			bands: [
-				{ upper: -0.5, profile: 'hold' },
+				{ upper: -0.50002, profile: 'hold' },
 				{ upper: 0, profile: 'freestyle' },
 				{ upper: 0.5, profile: 'stabilized' },
 				{ upper: 1, profile: 'agile' }
@@ -49,7 +50,7 @@ const ramp = (u: number, a: number, b: number): number => Math.max(0, Math.min(1
 /** The devices' raw state at time t (s). */
 function rawAt(d: RadioDevice, t: number): { axes: number[]; buttons: number[] } {
 	const u = t % 20;
-	if (/x-?box/i.test(d.name)) {
+	if (!/edgetx|radiomaster/i.test(d.name)) {
 		const axes = [9000 * Math.sin(0.5 * t), -12000 * Math.sin(0.3 * t), -32767, 15000 * Math.sin(0.8 * t), -15000 * Math.cos(0.7 * t), -32767, 0, 0].map(clamp16);
 		const buttons = Array(d.buttons).fill(0);
 		const beat = Math.floor(t / 3) % 4;
@@ -70,6 +71,8 @@ const res = (status: number, body: unknown): Res => ({ ok: status >= 200 && stat
 export class MockRadioStore {
 	devices: RadioDevice[];
 	private readonly stored = new Map<string, RadioConfig>();
+	/** Devices whose stored file the backend would ignore, and why (GET's error). */
+	private readonly ignored = new Map<string, string>();
 	private readonly latch = new Map<string, { armed: boolean; sw: boolean | null; buttons: number[]; profile: string | null }>();
 
 	constructor(
@@ -86,7 +89,7 @@ export class MockRadioStore {
 	/** Adds a device; false when one of that name is already there. */
 	plug(d: RadioDevice): boolean {
 		if (this.device(d.name)) return false;
-		this.devices.push({ ...d, has_config: this.stored.has(d.name) });
+		this.devices.push({ ...d, has_config: this.hasFile(d.name) });
 		return true;
 	}
 
@@ -100,13 +103,26 @@ export class MockRadioStore {
 		return this.stored.get(name) ?? mockDefault(name);
 	}
 
+	/** Makes the device's stored file one the backend ignores (its default applies, GET says why) until a PUT or DELETE. */
+	ignore(name: string, why: string): void {
+		this.stored.delete(name);
+		this.ignored.set(name, why);
+		this.mark(name);
+	}
+
+	/** has_config: a file is there, read or ignored. */
+	private hasFile(name: string): boolean {
+		return this.stored.has(name) || this.ignored.has(name);
+	}
+
 	private body(name: string): unknown {
-		return { ...toWire(this.configOf(name)), source: this.stored.has(name) ? 'stored' : 'default' };
+		const why = this.ignored.get(name);
+		return { ...toWire(this.configOf(name)), source: this.stored.has(name) ? 'stored' : 'default', ...(why ? { error: why } : {}) };
 	}
 
 	private mark(name: string): void {
 		const d = this.device(name);
-		if (d) d.has_config = this.stored.has(name);
+		if (d) d.has_config = this.hasFile(name);
 	}
 
 	fetch: FetchFn = async (url, init) => {
@@ -116,25 +132,29 @@ export class MockRadioStore {
 		if (u.pathname !== '/api/radio/config') return res(404, { error: `no route ${method} ${u.pathname}` });
 		const name = u.searchParams.get('device');
 		if (method === 'GET' || method === 'DELETE') {
-			if (!name) return res(400, { error: 'want ?device=<name>' });
+			if (!name) return res(400, { error: 'device: missing' });
 			if (method === 'DELETE') {
 				this.stored.delete(name);
+				this.ignored.delete(name);
 				this.mark(name);
 			}
 			return res(200, this.body(name));
 		}
-		if (method !== 'PUT') return res(405, { error: `${method} not allowed` });
+		if (method !== 'PUT') return res(405, { error: 'GET, PUT or DELETE only' });
 		let j: unknown;
 		try {
 			j = JSON.parse(init?.body ?? '');
-		} catch {
-			return res(400, { error: 'body is not JSON' });
+		} catch (e) {
+			return res(400, { error: `not JSON: ${e instanceof Error ? e.message : String(e)}` });
 		}
+		// Indices are checked against the device's counts when it is plugged in; the first refusal is the reply.
+		const dn = typeof j === 'object' && j !== null && !Array.isArray(j) ? (j as Record<string, unknown>).device_name : undefined;
+		const d = typeof dn === 'string' ? this.device(dn) : undefined;
+		const errors = validateWire(j, this.profiles, d?.axes, d?.buttons);
+		if (errors.length) return res(400, { error: errors[0] });
 		const c = parseConfig(j);
-		const d = this.device(c.device_name);
-		const errors = validateConfig(c, this.profiles, d?.axes ?? 0, d?.buttons ?? 0);
-		if (errors.length) return res(400, { error: errors.join('; ') });
 		this.stored.set(c.device_name, c);
+		this.ignored.delete(c.device_name);
 		this.mark(c.device_name);
 		return res(200, this.body(c.device_name));
 	};
@@ -157,7 +177,7 @@ export class MockRadioStore {
 		} else if (pressed(c.arm.button) && low) l.armed = true;
 		if (pressed(c.arm.disarm_button)) l.armed = false;
 		const p = c.profile;
-		if (p.source === 'axis') l.profile = p.bands[bandIndex(p.bands, axisValue(axes[p.axis] ?? 0))]?.profile ?? null;
+		if (p.source === 'axis') l.profile = p.bands[bandIndex(p.bands, axisValue(axes[p.index] ?? 0))]?.profile ?? null;
 		else if (p.source === 'buttons') {
 			for (const [k, id] of Object.entries(p.buttons)) if (pressed(Number(k))) l.profile = id;
 		} else l.profile = null;

@@ -3,6 +3,7 @@
 	import ChannelBars from './ChannelBars.svelte';
 	import FlightModes from './FlightModes.svelte';
 	import {
+		ApiError,
 		DEADBAND_MAX,
 		STICKS,
 		axisValue,
@@ -11,6 +12,8 @@
 		calFinish,
 		calSample,
 		calStart,
+		errorPage,
+		errorsAt,
 		normalizeStick,
 		radioApi,
 		sameConfig,
@@ -56,6 +59,9 @@
 	let source = $state<'stored' | 'default'>('default');
 	let draft = $state<RadioConfig | null>(null);
 	let apiError = $state<string | null>(null);
+	/** Why the backend ignored the device's stored file (GET's error), and its refusal of the last Save (PUT 400). */
+	let storedError = $state<string | null>(null);
+	let refusal = $state<string | null>(null);
 	let note = $state<string | null>(null);
 	let busy = $state(false);
 	let page = $state<Page>('radio');
@@ -71,7 +77,12 @@
 	const nButtons = $derived(dev?.buttons ?? cur?.buttons.length ?? 0);
 	const ids = $derived(profiles.map((p) => p.id));
 	const dirty = $derived(draft !== null && !sameConfig(draft, saved));
-	const problems = $derived(draft ? validateConfig(draft, ids, dev?.axes ?? 0, dev?.buttons ?? 0) : []);
+	const problems = $derived(draft ? validateConfig(draft, ids, dev?.axes, dev?.buttons) : []);
+	const errors = $derived(refusal && !problems.includes(refusal) ? [refusal, ...problems] : problems);
+	/** Errors with no field on a page show at the top; the others next to their field, counted here while that page is not shown. */
+	const topErrors = $derived(errors.filter((e) => errorPage(e) === null));
+	const elsewhere = $derived(PAGES.filter((p) => p.id !== page).map((p) => ({ ...p, n: errors.filter((e) => errorPage(e) === p.id).length })).filter((p) => p.n > 0));
+	const at = (...paths: string[]): string[] => errorsAt(errors, ...paths);
 	const profileLabel = (id: string | null): string => (id === null ? '—' : (profiles.find((p) => p.id === id)?.label ?? id));
 
 	const axisRole = $derived.by(() => {
@@ -79,7 +90,7 @@
 		if (!draft) return r;
 		for (const k of STICKS) r[draft.sticks[k].axis] = k;
 		if (draft.arm.source === 'axis') r[draft.arm.index] = r[draft.arm.index] ? `${r[draft.arm.index]}+arm` : 'arm';
-		if (draft.profile.source === 'axis') r[draft.profile.axis] = r[draft.profile.axis] ? `${r[draft.profile.axis]}+modes` : 'flight modes';
+		if (draft.profile.source === 'axis') r[draft.profile.index] = r[draft.profile.index] ? `${r[draft.profile.index]}+modes` : 'flight modes';
 		return r;
 	});
 	const buttonRole = $derived.by(() => {
@@ -100,6 +111,12 @@
 		void radioApi(mock).then((a) => (api = a));
 		const tick = setInterval(() => (now = performance.now()), 250);
 		return () => clearInterval(tick);
+	});
+
+	// A refusal is about the draft it was sent with.
+	$effect(() => {
+		JSON.stringify(draft);
+		untrack(() => (refusal = null));
 	});
 
 	// Frames: their time, and the calibration's samples.
@@ -161,12 +178,14 @@
 		const r = await api.config(name);
 		saved = r.config;
 		source = r.source;
+		storedError = r.error;
 		draft = structuredClone(r.config);
 	}
 
 	async function select(name: string): Promise<void> {
 		if (dirty && !confirm(`Discard the unsaved changes to ${device}?`)) return;
 		device = name;
+		storedError = null;
 		cal = null;
 		calErrors = [];
 		note = null;
@@ -178,8 +197,15 @@
 		const d = $state.snapshot(draft) as RadioConfig;
 		void guarded(async () => {
 			if (!api) return;
-			saved = await api.save(d);
+			try {
+				saved = await api.save(d);
+			} catch (e) {
+				if (!(e instanceof ApiError) || e.status !== 400) throw e;
+				refusal = e.detail;
+				return;
+			}
 			source = 'stored';
+			storedError = null;
 			draft = structuredClone(saved);
 			devices = devices.map((x) => (x.name === d.device_name ? { ...x, has_config: true } : x));
 			note = 'Saved: the backend maps this device with it now.';
@@ -221,6 +247,16 @@
 		note = r.errors.length ? null : 'Calibration captured: review the sticks, then Save.';
 	}
 
+	/** Arming by button needs a disarm button: the first other one, when none is set. */
+	function armSource(v: string): void {
+		if (!draft) return;
+		draft.arm.source = v === 'button' ? 'button' : 'axis';
+		if (draft.arm.source === 'button' && draft.arm.disarm_button === null) {
+			const other = Array.from({ length: nButtons }, (_, i) => i).find((i) => i !== draft?.arm.button);
+			if (other !== undefined) draft.arm.disarm_button = other;
+		}
+	}
+
 	const numIn = (e: Event): number => Number((e.currentTarget as HTMLInputElement).value);
 	const f2 = (v: number | undefined): string => (v === undefined || !Number.isFinite(v) ? '—' : v.toFixed(2));
 </script>
@@ -246,11 +282,18 @@
 	</div>
 	{#if apiError}<p class="err" role="alert">{apiError}</p>{/if}
 	{#if error}<p class="err" role="alert">{error}</p>{/if}
+	{#if storedError}<p class="err" role="alert">The stored mapping was ignored (the default applies): {storedError}</p>{/if}
 	{#if note}<p class="hint" role="status">{note}</p>{/if}
-	{#if problems.length}
+	{#if topErrors.length}
 		<ul class="problems" role="alert">
-			{#each problems as p (p)}<li>{p}</li>{/each}
+			{#each topErrors as p (p)}<li>{p}</li>{/each}
 		</ul>
+	{/if}
+	{#if elsewhere.length}
+		<p class="err" role="alert">
+			Not saved as is:
+			{#each elsewhere as p (p.id)}<button type="button" class="btn sm" onclick={() => (page = p.id)}>{p.label}: {p.n} problem{p.n > 1 ? 's' : ''}</button>{/each}
+		</p>
 	{/if}
 
 	<div class="preview">
@@ -308,7 +351,7 @@
 						{axisRole}
 						{buttonRole}
 						{marks}
-						bandAxis={draft.profile.source === 'axis' ? draft.profile.axis : null}
+						bandAxis={draft.profile.source === 'axis' ? draft.profile.index : null}
 						bands={draft.profile.bands}
 						{cal}
 					/>
@@ -328,12 +371,13 @@
 										<select value={s.axis} onchange={(e) => setStick(k, 'axis', Number(e.currentTarget.value))}>
 											{#each Array.from({ length: Math.max(nAxes, s.axis + 1) }, (_, i) => i) as i (i)}<option value={i}>CH{i + 1} (a{i})</option>{/each}
 										</select>
+										{#each at(`sticks.${k}.axis`, `sticks.${k}`) as m (m)}<div class="ferr">{m}</div>{/each}
 									</td>
-									<td><input type="number" step="1" value={s.min} onchange={(e) => setStick(k, 'min', numIn(e))} /></td>
-									<td><input type="number" step="1" value={s.center} onchange={(e) => setStick(k, 'center', numIn(e))} /></td>
-									<td><input type="number" step="1" value={s.max} onchange={(e) => setStick(k, 'max', numIn(e))} /></td>
-									<td><input type="checkbox" checked={s.reverse} onchange={(e) => setStick(k, 'reverse', e.currentTarget.checked)} /></td>
-									<td><input type="number" class="short" min="0" max={DEADBAND_MAX} step="0.01" value={s.deadband} onchange={(e) => setStick(k, 'deadband', numIn(e))} /></td>
+									<td><input type="number" step="1" value={s.min} onchange={(e) => setStick(k, 'min', numIn(e))} />{#each at(`sticks.${k}.min`) as m (m)}<div class="ferr">{m}</div>{/each}</td>
+									<td><input type="number" step="1" value={s.center} onchange={(e) => setStick(k, 'center', numIn(e))} />{#each at(`sticks.${k}.center`) as m (m)}<div class="ferr">{m}</div>{/each}</td>
+									<td><input type="number" step="1" value={s.max} onchange={(e) => setStick(k, 'max', numIn(e))} />{#each at(`sticks.${k}.max`) as m (m)}<div class="ferr">{m}</div>{/each}</td>
+									<td><input type="checkbox" checked={s.reverse} onchange={(e) => setStick(k, 'reverse', e.currentTarget.checked)} />{#each at(`sticks.${k}.reverse`) as m (m)}<div class="ferr">{m}</div>{/each}</td>
+									<td><input type="number" class="short" min="0" max={DEADBAND_MAX} step="0.01" value={s.deadband} onchange={(e) => setStick(k, 'deadband', numIn(e))} />{#each at(`sticks.${k}.deadband`) as m (m)}<div class="ferr">{m}</div>{/each}</td>
 									<td class="k">{r ?? '—'}</td>
 									<td>
 										<span class="mini"><span class="mini-fill" style:left="{Math.min(50, 50 + 50 * (Number.isFinite(out) ? out : 0))}%" style:width="{50 * Math.abs(Number.isFinite(out) ? out : 0)}%"></span></span>
@@ -345,18 +389,19 @@
 					</table>
 					<p class="hint">
 						Out: this mapping applied to the live value (deadband is the fraction of each half-travel that reads 0).
-						{draft.throttle_centre_hold ? 'Throttle centre holds height; up climbs, down descends.' : ''}
+						Throttle: the centre holds height, up climbs, down descends (fixed: the backend supports no other).
 					</p>
 
 					<h2>Arming</h2>
 					<div class="line">
 						<label>
 							Arm with
-							<select value={draft.arm.source} onchange={(e) => draft && (draft.arm.source = e.currentTarget.value === 'button' ? 'button' : 'axis')}>
+							<select value={draft.arm.source} onchange={(e) => armSource(e.currentTarget.value)}>
 								<option value="axis">a switch channel</option>
 								<option value="button">a button</option>
 							</select>
 						</label>
+						{#each at('arm.source') as m (m)}<span class="ferr">{m}</span>{/each}
 						{#if draft.arm.source === 'axis'}
 							<label>
 								Channel
@@ -364,10 +409,12 @@
 									{#each Array.from({ length: Math.max(nAxes, draft.arm.index + 1) }, (_, i) => i) as i (i)}<option value={i}>CH{i + 1} (a{i}){axisRole[i] && axisRole[i] !== 'arm' ? ` — ${axisRole[i]}` : ''}</option>{/each}
 								</select>
 							</label>
+							{#each at('arm.index', 'arm') as m (m)}<span class="ferr">{m}</span>{/each}
 							<label>
 								on above
-								<input type="number" class="short" min="-0.99" max="0.99" step="0.05" value={draft.arm.on_above} onchange={(e) => draft && (draft.arm.on_above = numIn(e))} />
+								<input type="number" class="short" min="-1" max="1" step="0.05" value={draft.arm.on_above} onchange={(e) => draft && (draft.arm.on_above = numIn(e))} />
 							</label>
+							{#each at('arm.on_above') as m (m)}<span class="ferr">{m}</span>{/each}
 							{@const sw = cur?.axes[draft.arm.index]}
 							<span class="k">switch now: {sw === undefined ? '—' : `${f2(axisValue(sw))} → ${axisValue(sw) > draft.arm.on_above ? 'ON' : 'off'}`}</span>
 						{:else}
@@ -377,18 +424,21 @@
 									{#each Array.from({ length: Math.max(nButtons, draft.arm.button + 1) }, (_, i) => i) as i (i)}<option value={i}>{i}</option>{/each}
 								</select>
 							</label>
+							{#each at('arm.button') as m (m)}<span class="ferr">{m}</span>{/each}
 						{/if}
 						<label>
-							Disarm button
+							Disarm button{draft.arm.source === 'button' ? ' (required)' : ''}
 							<select value={draft.arm.disarm_button ?? -1} onchange={(e) => draft && (draft.arm.disarm_button = Number(e.currentTarget.value) < 0 ? null : Number(e.currentTarget.value))}>
-								<option value={-1}>none</option>
+								<option value={-1} disabled={draft.arm.source === 'button'}>none</option>
 								{#each Array.from({ length: Math.max(nButtons, (draft.arm.disarm_button ?? -1) + 1) }, (_, i) => i) as i (i)}<option value={i}>{i}</option>{/each}
 							</select>
 						</label>
+						{#each at('arm.disarm_button') as m (m)}<span class="ferr">{m}</span>{/each}
 						<label>
 							<input type="checkbox" checked={draft.arm.require_throttle_low} onchange={(e) => draft && (draft.arm.require_throttle_low = e.currentTarget.checked)} />
 							arm only with throttle low
 						</label>
+						{#each at('arm.require_throttle_low') as m (m)}<span class="ferr">{m}</span>{/each}
 						<span class:armed={cur?.arm}>{cur ? (cur.arm ? 'ARM' : 'disarm') : ''}</span>
 					</div>
 				{:else}
@@ -402,6 +452,7 @@
 						pressed={cur?.buttons ?? null}
 						{axisRole}
 						serverProfile={cur?.profile ?? null}
+						{errors}
 						onchange={(p: ProfileCfg) => draft && (draft.profile = p)}
 					/>
 				{/if}
@@ -517,6 +568,10 @@
 		margin: 0;
 		padding-left: 1.2rem;
 		color: var(--bad);
+	}
+	.ferr {
+		color: var(--bad);
+		white-space: normal;
 	}
 	.mini {
 		position: relative;
