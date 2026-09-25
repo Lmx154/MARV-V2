@@ -104,10 +104,28 @@ bool waypoints(const json::object& m, std::vector<Waypoint>& out) {
     return true;
 }
 
+// The wire name of a flight profile ("#p" when out of range).
+std::string profile_name(std::uint8_t p) {
+    return p < param::kProfileCount ? std::string(param::kProfileId[p]) : "#" + std::to_string(p);
+}
+
+// {profile: "hold" | "freestyle" | "stabilized" | "agile"}: false when absent or not one of them.
+bool profile(const json::object& m, std::uint8_t& out) {
+    const json::value* v = m.if_contains("profile");
+    if (!v || !v->is_string()) return false;
+    for (std::uint8_t p = 0; p < param::kProfileCount; ++p)
+        if (v->get_string() == param::kProfileId[p]) {
+            out = p;
+            return true;
+        }
+    return false;
+}
+
 json::object mission_state(const Mission::Status& s) {
     json::object o{{"type", "mission_state"}, {"state", Mission::name(s.state)}, {"wp_index", s.wp_index},
                    {"wp_count", s.wp_count},  {"target", nullptr},                 {"dist_m", nullptr},
-                   {"climb_alt_m", nullptr},  {"home", nullptr},                   {"reason", s.reason}};
+                   {"climb_alt_m", nullptr},  {"home", nullptr},                   {"reason", s.reason},
+                   {"profile", profile_name(s.profile)}};
     if (s.has_target) {
         o["target"] = json::object{
             {"lat", s.target.lat}, {"lon", s.target.lon}, {"alt_m", fnum(static_cast<float>(s.target.alt_m))}};
@@ -229,7 +247,8 @@ void Link::handle(const json::object& m, const Reply& reply) {
         return set_connected(false);
     }
     if (type == "flash") return flash(reply);
-    if (type == "arm" || type == "disarm" || type == "climb" || type == "mission_start" || type == "rth" || type == "land")
+    if (type == "arm" || type == "disarm" || type == "climb" || type == "mission_start" || type == "rth" || type == "land" ||
+        type == "profile")
         return mission_request(type, m, reply);
     if (type != "set_param" && type != "set_kind" && type != "load_factory" && type != "save")
         return error(reply, type, "unknown request");
@@ -552,6 +571,7 @@ std::string Link::telemetry_message() const {
         {"type", "telemetry"},
         {"t_us", tlm_.t_us},
         {"preset", tlm_.preset},
+        {"profile", profile_name(tlm_.profile)},
         {"armed", armed},
         {"est", json::object{{"t_us", e.t_us}, {"p_ned", vec3(e.p_ned)}, {"v_ned", vec3(e.v_ned)}, {"q", quat(e.q)},
                              {"w_frd", vec3(e.w_frd)}, {"valid", e.valid}}},
@@ -592,10 +612,17 @@ void Link::mission_request(const std::string& type, const json::object& m, const
     } else if (type == "mission_start") {
         std::vector<Waypoint> wps;
         double speed = 0.0;
-        if (!waypoints(m, wps) || (m.if_contains("speed_mps") && !number(m, "speed_mps", speed)))
-            refusal = "want {waypoints: [{lat, lon, alt_m}], speed_mps?: number}";
+        std::uint8_t p = 0;
+        const bool has_p = m.if_contains("profile");
+        if (!waypoints(m, wps) || (m.if_contains("speed_mps") && !number(m, "speed_mps", speed)) ||
+            (has_p && !profile(m, p)))
+            refusal = "want {waypoints: [{lat, lon, alt_m}], speed_mps?: number, profile?: hold|freestyle|stabilized|agile}";
         else
             refusal = mission_.start(wps, speed);
+        if (refusal.empty() && has_p) mission_.set_profile(p);
+    } else if (type == "profile") {
+        std::uint8_t p = 0;
+        refusal = profile(m, p) ? mission_.set_profile(p) : "want {profile: hold|freestyle|stabilized|agile}";
     } else if (type == "rth") {
         refusal = mission_.rth();
     } else {

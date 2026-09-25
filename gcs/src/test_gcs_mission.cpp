@@ -9,6 +9,9 @@
 //   7. ADR-0011: p_next chained through the mission (the last waypoint's is itself); the executor advances at exactly
 //      the accept_m it sends, in every state that advances; speed_mps bounds and where it is sent; the heading
 //      re-captured on entering climb, hold and land, and held there.
+//   8. ADR-0012 profile: hold at arm unless set; set in every state (disarmed: carried from the next arm), unknown ones
+//      refused; every frame carries it; the leg radius per profile {2, 2, 2, 1} m, advanced at exactly as sent, also
+//      after a switch mid-leg and on the rth return; a disarm and a landing return it to hold.
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -17,6 +20,7 @@
 
 #include <marv/fsw/geo.hpp>
 #include <marv/fsw/math.hpp>
+#include <marv/fsw/params.hpp>
 
 #include "mission.hpp"
 
@@ -515,6 +519,73 @@ void test_yaw() {
     std::printf("yaw: climb %.2f, hold %.2f, hold after rth %.2f, land %.2f rad\n", 0.9, 1.1, -0.5, 2.0);
 }
 
+void test_profile() {
+    constexpr float kLeg[param::kProfileCount] = {2.f, 2.f, 2.f, 1.f};
+    Rig r;
+    r.feed();
+    CHECK(r.m.status(r.t()).profile == param::k_profile_hold);
+    for (std::uint8_t bad : {std::uint8_t{4}, std::uint8_t{255}})
+        CHECK(r.m.set_profile(bad) == "unknown profile" && r.m.status(r.t()).profile == param::k_profile_hold);
+
+    // Set while disarmed: reported, nothing sent, carried from the arm on.
+    CHECK(r.m.set_profile(param::k_profile_stabilized).empty());
+    CHECK(!r.tick() && r.m.status(r.t()).profile == param::k_profile_stabilized);
+    CHECK(r.m.arm(true, r.t()).empty());
+    CHECK(r.step() && r.cmd.mode == Mode::kArmed && r.cmd.profile == param::k_profile_stabilized);
+    CHECK(r.m.climb(5.0).empty());
+    r.step();
+    CHECK(r.cmd.profile == param::k_profile_stabilized && r.cmd.ref.accept_m == 0.5f);
+    r.reach();
+    CHECK(r.state() == S::kHold && r.cmd.profile == param::k_profile_stabilized);
+
+    // Every profile in flight: the next frame carries it; its leg radius, advanced at exactly; climb/hold stay 0.5 m.
+    for (std::uint8_t pr = 0; pr < param::kProfileCount; ++pr) {
+        CHECK(r.m.set_profile(pr).empty());
+        r.step();
+        CHECK(r.state() == S::kHold && r.cmd.profile == pr && r.cmd.ref.accept_m == 0.5f);
+        CHECK(r.m.start({wp(20.f, 0.f, 5.0), wp(20.f, 20.f, 5.0)}).empty());
+        r.step();
+        CHECK(r.cmd.profile == pr && r.cmd.ref.accept_m == kLeg[pr] && r.m.status(r.t()).profile == pr);
+        CHECK(advances_at_accept(r) && r.m.status(r.t()).wp_index == 1 && r.cmd.ref.accept_m == kLeg[pr]);
+        CHECK(advances_at_accept(r) && r.state() == S::kRth);  // the last waypoint
+        CHECK(advances_at_accept(r) && r.cmd.ref.accept_m == kLeg[pr]);  // the rth climb, then the return over home
+        CHECK(advances_at_accept(r) && r.state() == S::kHold && r.reason() == "home reached");
+        std::printf("profile %u: leg radius %.1f m\n", static_cast<unsigned>(pr), static_cast<double>(kLeg[pr]));
+    }
+
+    // A switch mid-leg: the next frame has the new radius, and the executor advances at it.
+    CHECK(r.m.set_profile(param::k_profile_hold).empty());
+    CHECK(r.m.start({wp(20.f, 0.f, 5.0)}).empty());
+    r.step();
+    CHECK(r.cmd.ref.accept_m == 2.f && r.cmd.profile == param::k_profile_hold);
+    CHECK(r.m.set_profile(param::k_profile_agile).empty());
+    r.step();
+    CHECK(r.state() == S::kMission && r.cmd.ref.accept_m == 1.f && r.cmd.profile == param::k_profile_agile);
+    CHECK(advances_at_accept(r) && r.state() == S::kRth);
+
+    // Disarm: back to hold, the kIdle second carries hold, and the next arm is in hold.
+    CHECK(r.m.disarm(r.t()).empty());
+    CHECK(r.m.status(r.t()).profile == param::k_profile_hold);
+    CHECK(r.step() && r.cmd.mode == Mode::kIdle && r.cmd.profile == param::k_profile_hold);
+    r.ms += 1100;
+    r.feed();
+    CHECK(r.m.arm(true, r.t()).empty());
+    CHECK(r.step() && r.cmd.profile == param::k_profile_hold);
+
+    // A landing: back to hold.
+    CHECK(r.m.climb(3.0).empty());
+    r.step();
+    r.reach();
+    CHECK(r.m.set_profile(param::k_profile_freestyle).empty());
+    r.at({0.2f, -0.1f, -0.5f});
+    CHECK(r.m.land().empty());
+    for (int i = 0; i < 30 && r.state() == S::kLand; ++i) {
+        CHECK(r.cmd.profile == param::k_profile_freestyle || i == 0);
+        r.step();
+    }
+    CHECK(r.state() == S::kDisarmed && r.reason() == "landed" && r.m.status(r.t()).profile == param::k_profile_hold);
+}
+
 }  // namespace
 
 int main() {
@@ -527,6 +598,7 @@ int main() {
     test_chaining();
     test_speed();
     test_yaw();
+    test_profile();
     if (g_fails) std::fprintf(stderr, "test_gcs_mission: %d failures\n", g_fails);
     else std::printf("test_gcs_mission: OK\n");
     return g_fails ? 1 : 0;
