@@ -37,4 +37,7 @@ target_link_libraries(marv_fw PRIVATE pico_stdlib pico_unique_id tinyusb_device 
 pico_enable_stdio_usb(marv_fw 0)
 pico_enable_stdio_uart(marv_fw 0)
 
+# Run from SRAM: ~80 KB of hot code thrashed the 16 KB XIP cache (on the Pico, fsw step max 1116 -> 264 us, mean 510 -> 102 us).
+pico_set_binary_type(marv_fw copy_to_ram)
+
 pico_add_extra_outputs(marv_fw)
