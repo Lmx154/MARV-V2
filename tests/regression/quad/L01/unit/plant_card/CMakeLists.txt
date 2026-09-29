@@ -1,0 +1,4 @@
+add_executable(unit_plant_card_hover hover_card_test.cpp)
+target_link_libraries(unit_plant_card_hover PRIVATE marv_plant marv_plant_card marv_prim GTest::gtest_main)
+marv_apply_flags(unit_plant_card_hover)
+marv_frozen_suite(unit_plant_card_hover)
