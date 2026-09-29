@@ -4,7 +4,9 @@
 #include <cstdint>
 
 // The only file under fw/ exempt from gate G1 (no numeric literals other than 0, 1, 2 and 0.5).
-// Every constant here carries its citation.
+// Every constant here carries its citation and a kind: math, physics or a published standard (SI, WGS 84, a protocol
+// spec). Vehicle and part numbers (card, sensor profile, datasheet) never go here. Checked by
+// tools/ci/check_constants.py.
 // NOLINTBEGIN(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)
 namespace marv::prim {
 

@@ -38,7 +38,10 @@ conditional on such a check, so it is added in this same change:
   accepted.
 - `constants.hpp` holds physics, mathematics and published-standard constants only. Vehicle numbers (pole count, mass,
   and so on) belong in the card, never there: a paragraph whose comment refers to `vehicles/`, `sensors/profiles/`,
-  `design/budget`, or the words card, vehicle card or profile fails.
+  `design/budget`, or the words card, vehicle card, profile or datasheet fails (a datasheet number belongs to a part,
+  so it goes in the card or a sensor profile). A citation that is only a placeholder (TODO, TBD, UNKNOWN, n/a,
+  FIXME) fails. This vehicle-number guard is a keyword rule: a vehicle number described without any of those words
+  would pass it, so review of `constants.hpp` changes remains the last line of defence.
 - `constants.hpp` holds `constexpr` variables only: a `#define` whose replacement contains a numeric literal, or an
   enum with an explicit numeric initialiser, fails regardless of any citation, so no constant escapes the rule.
 - The existing paragraphs gained a `Kind:` line in their comments; no declaration, value, name or order changed.

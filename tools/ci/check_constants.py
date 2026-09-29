@@ -10,7 +10,7 @@ in a paragraph whose `//` comment lines before its first declaration contain
   - exactly one kind tag: `Kind: math`, `Kind: physics` or `Kind: standard` (standard = a published standard or
     specification such as SI, WGS 84 or the DShot protocol),
 
-and whose comment does not refer to vehicle data (vehicles/, sensors/profiles/, design/budget, or the words card,
+and whose comment does not refer to vehicle data (vehicles/, sensors/profiles/, design/budget, or the words card, datasheet,
 vehicle card, profile).
 
 Usage: check_constants.py [FILE]   (default: fw/prim/include/marv/prim/constants.hpp)
@@ -29,7 +29,10 @@ KINDS = ("math", "physics", "standard")
 
 _CITATION = re.compile(r"Citation(?: for every entry below)?:")
 _KIND = re.compile(r"Kind:[ \t]*(\w*)")
-_VEHICLE = re.compile(r"vehicles/|sensors/profiles/|design/budget|\b(?:card|vehicle card|profile)\b", re.IGNORECASE)
+_VEHICLE = re.compile(r"vehicles/|sensors/profiles/|design/budget|\b(?:card|vehicle card|profile|datasheet)\b",
+                      re.IGNORECASE)
+# A citation whose text is only a placeholder is not a citation.
+_PLACEHOLDER = re.compile(r"^\W*(?:todo|tbd|tbc|fixme|unknown|n/?a|none|xxx|\?+)\W*$", re.IGNORECASE)
 _NUMBER = re.compile(r"(?<![A-Za-z_0-9])(?:[0-9]|\.[0-9])")
 _NAMESPACE_OPEN = re.compile(r"\s*(?:inline\s+)?namespace\b[^;{}=()]*$|\s*extern\s*$")
 _SKIP_HEAD = re.compile(r"\s*(?:using|typedef|struct|class|enum|union|friend|static_assert)\b")
@@ -276,6 +279,8 @@ def check_text(text: str, shown: str) -> list[str]:
             reasons.append("no 'Citation:' before the first declaration of its paragraph")
         elif not re.search(r"\w", _KIND.sub("", comment[cite.end():])):
             reasons.append("'Citation:' has no text")
+        elif _PLACEHOLDER.match(_KIND.sub("", comment[cite.end():]).strip()):
+            reasons.append("'Citation:' is a placeholder, not a source")
         kinds = _KIND.findall(comment)
         if not kinds:
             reasons.append("no 'Kind: math|physics|standard' before the first declaration of its paragraph")
@@ -284,7 +289,8 @@ def check_text(text: str, shown: str) -> list[str]:
         elif kinds[0] not in KINDS:
             reasons.append(f"Kind '{kinds[0]}' is not one of math, physics, standard")
         if _VEHICLE.search(_KIND.sub("", comment)):
-            reasons.append("comment refers to vehicle data; vehicle numbers belong in the card, not in constants.hpp")
+            reasons.append("comment refers to vehicle or part data (card, profile, budget or a datasheet); those "
+                           "numbers belong in the card or a sensor profile, not in constants.hpp")
         for line, name, what in para:
             for reason in reasons:
                 findings.append(f"constants: {shown}:{line}: {name}: {reason}")

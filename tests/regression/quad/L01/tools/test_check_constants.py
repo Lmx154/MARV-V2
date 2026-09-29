@@ -91,11 +91,19 @@ def test_duplicate_identical_kind_tags_fail():
         "the vehicle card",
         "the Card",
         "the sensor profile",
+        "the Hobbywing XRotor 2306 datasheet, 14 poles",
+        "the motor Datasheet",
     ],
 )
 def test_citation_referring_to_vehicle_data_fails(citation):
     body = f"// Motor pole count. Citation: {citation}.\n// Kind: physics.\ninline constexpr int kMotorPoleCount = 14;\n"
-    assert_one_reason(wrap(body), "kMotorPoleCount", "vehicle numbers belong in the card")
+    assert_one_reason(wrap(body), "kMotorPoleCount", "belong in the card or a sensor profile")
+
+
+@pytest.mark.parametrize("placeholder", ["TODO", "tbd.", "UNKNOWN", "n/a", "FIXME"])
+def test_placeholder_citation_fails(placeholder):
+    body = f"// Gravity. Citation: {placeholder}\n// Kind: physics.\ninline constexpr double kG = 9.80665;\n"
+    assert_one_reason(wrap(body), "kG", "is a placeholder, not a source")
 
 
 def test_vehicle_word_inside_another_word_is_not_a_reference():
@@ -179,7 +187,7 @@ def test_committed_controls_fail_with_the_intended_reason():
     uncited = cc.check_text((CONTROLS / "constants_uncited.hpp").read_text(), "u")
     assert uncited and any("no 'Citation:'" in f for f in uncited)
     vehicle = cc.check_text((CONTROLS / "constants_vehicle_number.hpp").read_text(), "v")
-    assert vehicle and all("vehicle numbers belong in the card" in f for f in vehicle)
+    assert vehicle and all("belong in the card or a sensor profile" in f for f in vehicle)
     assert cc.main([str(CONTROLS / "constants_uncited.hpp")]) == 1
     assert cc.main([str(CONTROLS / "constants_vehicle_number.hpp")]) == 1
 

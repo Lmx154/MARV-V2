@@ -146,7 +146,7 @@ constants_uncited_control() {
 }
 
 constants_vehicle_number_control() {
-  constants_control tests/regression/quad/L01/controls/constants_vehicle_number.hpp "comment refers to vehicle data"
+  constants_control tests/regression/quad/L01/controls/constants_vehicle_number.hpp "comment refers to vehicle or part data"
 }
 
 g8_check() {
