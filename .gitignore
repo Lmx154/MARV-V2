@@ -1,5 +1,7 @@
 build/
 .venv/
 __pycache__/
+.pytest_cache/
+.claude/worktrees/
 .serena/cache/
 .serena/project.local.yml
