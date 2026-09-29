@@ -1,7 +1,7 @@
 import importlib.util
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[5]
 spec = importlib.util.spec_from_file_location("check_claude_md", ROOT / "tools" / "ci" / "check_claude_md.py")
 check = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(check)
@@ -60,7 +60,7 @@ def test_gate_name_must_be_a_whole_word():
 
 
 def test_control_file_fails_for_the_unknown_rule_only():
-    control = (ROOT / "tests" / "controls" / "g8_claude_md_missing_unknown.md").read_text()
+    control = (ROOT / "tests" / "regression" / "quad" / "L00" / "controls" / "g8_claude_md_missing_unknown.md").read_text()
     assert check.violations(control) == ["section '## UNKNOWN rule' is missing"]
 
 

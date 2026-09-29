@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-CHECKER = Path(__file__).resolve().parents[2] / "tools" / "ci" / "check_regression_changes.py"
+CHECKER = Path(__file__).resolve().parents[5] / "tools" / "ci" / "check_regression_changes.py"
 TEMPLATE = CHECKER.parents[2] / "docs" / "decisions" / "0000-template.md"
 
 FROZEN = "tests/regression/quad/L00/frozen_test.cpp"

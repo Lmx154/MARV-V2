@@ -14,7 +14,7 @@
 //   --manifest PATH           params_manifest.json (default: the one generated for this build)
 //   --trace-out PATH          also write the per-tick trace as text (n t_us motors... servos...)
 //   --write-golden PATH       write the golden file (comment line + hash) instead of printing; needs --note; refuses
-//                             --set and --flip-bit. ONLY run inside the CI image (see tests/replay/L00/CMakeLists.txt)
+//                             --set and --flip-bit. ONLY run inside the CI image (see tests/regression/quad/L00/replay/CMakeLists.txt)
 //   --note TEXT               text appended to the golden file's comment line
 // Output: the 16-hex-digit trace hash and a newline on stdout. Exit 0 ok; 1 usage; 2 SIL status error; 3 check failed.
 #include <marv_sil.h>
