@@ -1,12 +1,19 @@
 # G3 target manifest (core section 7.4, row G3).
 #
 # marv_write_g3_manifest(<file> [FLIGHT <target>...] [SIL <target>...])
-#   Writes <file> at generate time. JSON: {"flight_targets": [{"name", "archive", "objects"}],
-#   "sil_libraries": [{"name", "file"}]}. tools/ci/check_g3.py reads it.
+#   Writes <file> at generate time. JSON: {"flight_targets": [...], "sil_libraries": [{"name", "file"}]}.
+#   A flight entry always has "name" and "type" (the CMake TYPE property); by type it also has
+#     STATIC/SHARED/MODULE_LIBRARY, EXECUTABLE  "file" (linked file), "objects"
+#     OBJECT_LIBRARY                            "objects"
+#     INTERFACE_LIBRARY                         "include_dirs", "system_include_dirs" (generator expressions
+#                                               evaluated: INTERFACE_INCLUDE_DIRECTORIES and
+#                                               INTERFACE_SYSTEM_INCLUDE_DIRECTORIES)
+#   Any other type has no more keys; tools/ci/check_g3.py fails on it. tools/ci/check_g3.py reads the file.
 #
 # marv_collect_flight_targets(<out-var>)
-#   Every STATIC library defined anywhere in the project whose source directory is under fw/, except fw/hal/sim and
-#   fw/sil. Derived from the directory tree, so a new fw/ library is a flight target without any list to update.
+#   Every target of any type defined anywhere in the project whose source directory is under fw/, except fw/hal/sim
+#   and fw/sil. Derived from the directory tree, so a new fw/ target is a flight target without any list to update;
+#   a type the checker cannot handle fails the checker rather than being skipped.
 #
 # marv_collect_sil_libraries(<out-var>)
 #   Every SHARED or MODULE library defined in the project (all of them are SIL entry libraries), except the negative
@@ -32,10 +39,6 @@ function(marv_collect_flight_targets out)
   set(sil_dir "${fw_dir}/sil")
   set(flight "")
   foreach(tgt IN LISTS all_targets)
-    get_target_property(type ${tgt} TYPE)
-    if(NOT type STREQUAL "STATIC_LIBRARY")
-      continue()
-    endif()
     get_target_property(src_dir ${tgt} SOURCE_DIR)
     cmake_path(IS_PREFIX fw_dir "${src_dir}" NORMALIZE in_fw)
     cmake_path(IS_PREFIX hal_sim_dir "${src_dir}" NORMALIZE in_hal_sim)
@@ -69,8 +72,20 @@ function(marv_write_g3_manifest file)
   cmake_parse_arguments(ARG "" "" "FLIGHT;SIL" ${ARGN})
   set(flight_entries "")
   foreach(tgt IN LISTS ARG_FLIGHT)
-    list(APPEND flight_entries
-      "    {\"name\": \"${tgt}\", \"archive\": \"$<TARGET_FILE:${tgt}>\", \"objects\": [\"$<JOIN:$<TARGET_OBJECTS:${tgt}>,\"$<COMMA> \">\"]}")
+    get_target_property(type ${tgt} TYPE)
+    set(objects "\"objects\": [\"$<JOIN:$<TARGET_OBJECTS:${tgt}>,\"$<COMMA> \">\"]")
+    set(head "{\"name\": \"${tgt}\", \"type\": \"${type}\"")
+    if(type STREQUAL "STATIC_LIBRARY" OR type STREQUAL "SHARED_LIBRARY" OR type STREQUAL "MODULE_LIBRARY"
+       OR type STREQUAL "EXECUTABLE")
+      set(entry "${head}, \"file\": \"$<TARGET_FILE:${tgt}>\", ${objects}}")
+    elseif(type STREQUAL "OBJECT_LIBRARY")
+      set(entry "${head}, ${objects}}")
+    elseif(type STREQUAL "INTERFACE_LIBRARY")
+      set(entry "${head}, \"include_dirs\": [\"$<JOIN:$<TARGET_PROPERTY:${tgt},INTERFACE_INCLUDE_DIRECTORIES>,\"$<COMMA> \">\"], \"system_include_dirs\": [\"$<JOIN:$<TARGET_PROPERTY:${tgt},INTERFACE_SYSTEM_INCLUDE_DIRECTORIES>,\"$<COMMA> \">\"]}")
+    else()
+      set(entry "${head}}")
+    endif()
+    list(APPEND flight_entries "    ${entry}")
   endforeach()
   set(sil_entries "")
   foreach(tgt IN LISTS ARG_SIL)

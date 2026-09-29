@@ -2,13 +2,20 @@
 """Gate G3: no truth or harness symbol in any flight composition (core contracts 7.4, row G3).
 
 Three checks, each reading the target manifest that CMake writes into every build tree (cmake/flight_targets.cmake;
-build/<preset>/g3_manifest.json). A flight target is every STATIC library under fw/ except fw/hal/sim and fw/sil; the
-manifest is derived from the directory tree, never from a list.
+build/<preset>/g3_manifest.json). A flight target is every target of any type defined under fw/ except under
+fw/hal/sim and fw/sil; the manifest is derived from the directory tree, never from a list. Each entry carries its CMake
+TYPE. Known types: STATIC_LIBRARY, SHARED_LIBRARY, MODULE_LIBRARY and EXECUTABLE (linked file), OBJECT_LIBRARY (object
+files) and INTERFACE_LIBRARY (usage requirements only). Any other type is a G3-ERROR, so a new kind of target can
+never be skipped silently.
 
-  symbols   nm -C over every flight archive: no defined or undefined symbol (demangled) may contain
-            marv::sil::, marv_sil_, marv::hal_sim::, marv::truth:: or marv_truth_
+  symbols   nm -C over the linked file of every flight target (over the object files of an OBJECT library): no defined
+            or undefined symbol (demangled) may contain marv::sil::, marv_sil_, marv::hal_sim::, marv::truth:: or
+            marv_truth_
   includes  every translation unit of a flight target in compile_commands.json: no include directory (-I, -isystem,
-            -iquote, -idirafter) may lie inside fw/sil, fw/hal/sim, sim/ or tests/
+            -iquote, -idirafter; a leading '=' of the sysroot-relative spelling is stripped) and no forced include
+            (-include, -imacros) may lie inside fw/sil, fw/hal/sim, sim/ or tests/; the INTERFACE_INCLUDE_DIRECTORIES
+            and INTERFACE_SYSTEM_INCLUDE_DIRECTORIES of every INTERFACE library are held to the same rule, consumed
+            or not
   exports   nm -D --defined-only over every SIL shared library: only marv_sil_* symbols
 
 Exit status: 0 clean, 1 violations, 2 vacuous run (nothing to check) or tool failure. Diagnostics start with
@@ -31,6 +38,10 @@ ROOT = Path(__file__).resolve().parents[2]
 FORBIDDEN_SYMBOLS = ("marv::sil::", "marv_sil_", "marv::hal_sim::", "marv::truth::", "marv_truth_")
 FORBIDDEN_INCLUDE_DIRS = ("fw/sil", "fw/hal/sim", "sim", "tests")
 INCLUDE_OPTIONS = ("-isystem", "-iquote", "-idirafter", "-I")
+FORCED_INCLUDE_OPTIONS = ("-include", "-imacros")
+LINKED_TYPES = ("STATIC_LIBRARY", "SHARED_LIBRARY", "MODULE_LIBRARY", "EXECUTABLE")
+OBJECT_TYPE = "OBJECT_LIBRARY"
+INTERFACE_TYPE = "INTERFACE_LIBRARY"
 SIL_EXPORT = re.compile(r"^marv_sil_[A-Za-z0-9_]+$")
 
 _NM_SYMBOL = re.compile(r"^(?:[0-9A-Fa-f]+|\s*)\s([A-Za-z?-])\s(.+)$")
@@ -85,13 +96,13 @@ def non_sil_exports(symbols: list[tuple[str, str, str]]) -> list[str]:
     return [name for _, _, name in symbols if not SIL_EXPORT.match(name)]
 
 
-def include_dirs(args: list[str], directory: str) -> list[str]:
-    """Include directories named by -I, -isystem, -iquote and -idirafter (attached or separate), resolved."""
+def _option_values(args: list[str], options: tuple[str, ...]) -> list[str]:
+    """Values of the given options in either spelling: '-Xvalue' (attached) and '-X value' (separate)."""
     found = []
     i = 0
     while i < len(args):
         arg = args[i]
-        for opt in INCLUDE_OPTIONS:
+        for opt in options:
             if arg == opt:
                 if i + 1 < len(args):
                     found.append(args[i + 1])
@@ -101,7 +112,21 @@ def include_dirs(args: list[str], directory: str) -> list[str]:
                 found.append(arg[len(opt):])
                 break
         i += 1
+    return found
+
+
+def include_dirs(args: list[str], directory: str) -> list[str]:
+    """Include directories named by -I, -isystem, -iquote and -idirafter (attached or separate), resolved.
+
+    The sysroot-relative spelling (-I=dir, -isystem=dir) has its '=' stripped; the remainder is checked as a path.
+    """
+    found = [d[1:] if d.startswith("=") else d for d in _option_values(args, INCLUDE_OPTIONS)]
     return [os.path.realpath(os.path.join(directory, d)) for d in found]
+
+
+def forced_includes(args: list[str], directory: str) -> list[str]:
+    """Files named by -include and -imacros (attached or separate), resolved."""
+    return [os.path.realpath(os.path.join(directory, f)) for f in _option_values(args, FORCED_INCLUDE_OPTIONS)]
 
 
 def forbidden_include_dir(path: str, root: str) -> str | None:
@@ -139,6 +164,45 @@ def load_manifest(path: Path) -> dict:
     return manifest
 
 
+def _field(target: dict, key: str) -> list[str] | str:
+    if key not in target:
+        raise G3Error(f"flight target {target.get('name')} ({target.get('type')}) has no '{key}' in the manifest")
+    return target[key]
+
+
+def _paths(target: dict, key: str) -> list[str]:
+    """A list field of a manifest entry without the empty strings that an empty generator-expression list yields."""
+    value = _field(target, key)
+    if not isinstance(value, list):
+        raise G3Error(f"flight target {target.get('name')}: '{key}' is not a list")
+    return [p for p in value if p]
+
+
+def target_kind(target: dict) -> str:
+    """The type of a flight target if check_g3.py knows how to check it; G3Error otherwise."""
+    kind = target.get("type")
+    if kind in LINKED_TYPES or kind in (OBJECT_TYPE, INTERFACE_TYPE):
+        return kind
+    raise G3Error(f"flight target {target.get('name')} has type {kind!r}, which check_g3.py does not know how to "
+                  f"check: teach it (and add a negative control) or move the target out of fw/")
+
+
+def symbol_artifacts(target: dict) -> list[str]:
+    """The files whose symbols are scanned for a flight target; empty for an INTERFACE library."""
+    kind = target_kind(target)
+    if kind == INTERFACE_TYPE:
+        return []
+    if kind == OBJECT_TYPE:
+        objects = _paths(target, "objects")
+        if not objects:
+            raise G3Vacuous(f"OBJECT library {target['name']} lists no object files: the symbol check would be vacuous")
+        return objects
+    artifact = _field(target, "file")
+    if not artifact:
+        raise G3Error(f"flight target {target['name']} ({kind}) has an empty 'file' in the manifest")
+    return [artifact]
+
+
 def run_nm(nm: str, flags: list[str], artifact: str) -> list[tuple[str, str, str]]:
     if not os.path.isfile(artifact):
         raise G3Error(f"artifact does not exist (not built?): {artifact}")
@@ -157,17 +221,25 @@ def check_symbols(manifest: dict, nm: str) -> int:
         raise G3Vacuous("the manifest lists zero flight targets: the symbol check would be vacuous")
     violations = 0
     scanned = 0
+    checked = []
     for target in targets:
-        symbols = run_nm(nm, ["-C"], target["archive"])
-        scanned += len(symbols)
-        for member, kind, name, pattern in find_forbidden_symbols(symbols):
-            violations += 1
-            print(f"G3-SYMBOL {target['name']} ({target['archive']}) member {member}: '{name}' "
-                  f"[{kind}] contains '{pattern}'")
+        artifacts = symbol_artifacts(target)
+        if not artifacts:
+            continue
+        checked.append(target["name"])
+        for artifact in artifacts:
+            symbols = run_nm(nm, ["-C"], artifact)
+            scanned += len(symbols)
+            for member, kind, name, pattern in find_forbidden_symbols(symbols):
+                violations += 1
+                print(f"G3-SYMBOL {target['name']} ({artifact}) member {member or os.path.basename(artifact)}: "
+                      f"'{name}' [{kind}] contains '{pattern}'")
+    if not checked:
+        raise G3Vacuous("the manifest lists no flight target with an artifact: the symbol check would be vacuous")
     if scanned == 0:
-        raise G3Vacuous("the flight archives contain no symbols at all: the symbol check would be vacuous")
-    print(f"G3 symbols: {len(targets)} flight targets, {scanned} symbols scanned, "
-          f"{violations} violations ({', '.join(t['name'] for t in targets)})")
+        raise G3Vacuous("the flight artifacts contain no symbols at all: the symbol check would be vacuous")
+    print(f"G3 symbols: {len(checked)} flight targets, {scanned} symbols scanned, "
+          f"{violations} violations ({', '.join(checked)})")
     return 1 if violations else 0
 
 
@@ -180,28 +252,50 @@ def check_includes(manifest: dict, compile_commands: Path, root: Path) -> int:
     except (OSError, ValueError) as exc:
         raise G3Error(f"cannot read {compile_commands}: {exc}") from exc
     object_owner = {}
+    tu_count = {}
+    interfaces = []
     for target in targets:
-        for obj in target["objects"]:
+        if target_kind(target) == INTERFACE_TYPE:
+            interfaces.append(target)
+            continue
+        tu_count[target["name"]] = 0
+        for obj in _paths(target, "objects"):
             object_owner[os.path.normpath(obj)] = target["name"]
-    tu_count = {t["name"]: 0 for t in targets}
     violations = 0
+    for target in interfaces:
+        declared = _paths(target, "include_dirs") + _paths(target, "system_include_dirs")
+        for directory in declared:
+            resolved = os.path.realpath(os.path.join(str(root), directory))
+            forbidden = forbidden_include_dir(resolved, str(root))
+            if forbidden is not None:
+                violations += 1
+                print(f"G3-INCLUDE {target['name']}: INTERFACE include directory {resolved} inside {forbidden}/")
     for entry in database:
         owner = object_owner.get(entry_output(entry))
         if owner is None:
             continue
         tu_count[owner] += 1
-        for directory in include_dirs(command_args(entry), entry["directory"]):
+        args = command_args(entry)
+        for directory in include_dirs(args, entry["directory"]):
             forbidden = forbidden_include_dir(directory, str(root))
             if forbidden is not None:
                 violations += 1
                 print(f"G3-INCLUDE {owner}: {entry['file']} has include directory {directory} "
                       f"inside {forbidden}/")
+        for forced in forced_includes(args, entry["directory"]):
+            forbidden = forbidden_include_dir(forced, str(root))
+            if forbidden is not None:
+                violations += 1
+                print(f"G3-INCLUDE {owner}: {entry['file']} has forced include {forced} inside {forbidden}/")
     empty = [name for name, count in tu_count.items() if count == 0]
     if empty:
         raise G3Vacuous(f"no compile_commands entry found for flight targets {empty}: the include check would be vacuous")
     total = sum(tu_count.values())
-    print(f"G3 includes: {len(targets)} flight targets, {total} translation units, {violations} violations "
-          f"({', '.join(f'{n}={c}' for n, c in tu_count.items())})")
+    if total == 0:
+        raise G3Vacuous("no flight target has a translation unit: the include check would be vacuous")
+    print(f"G3 includes: {len(targets)} flight targets ({len(interfaces)} INTERFACE), {total} translation units, "
+          f"{violations} violations ({', '.join(f'{n}={c}' for n, c in tu_count.items())}; "
+          f"INTERFACE: {', '.join(t['name'] for t in interfaces)})")
     return 1 if violations else 0
 
 
