@@ -12,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
+          fetch-depth: 0
       - name: Build CI image
         run: docker build -t marv-ci -f ci/Dockerfile .
       - name: Run CI

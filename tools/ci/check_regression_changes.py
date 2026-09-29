@@ -7,7 +7,7 @@ import subprocess
 import sys
 
 REGRESSION_PREFIX = "tests/regression/"
-RECORD_RE = re.compile(r"^docs/decisions/\d{4}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
+RECORD_RE = re.compile(r"^docs/decisions/(?!0000-)\d{4}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
 TEMPLATE = "docs/decisions/0000-template.md"
 HEADINGS = ("## What changed", "## Why", "## Evidence", "## Approval")
 
@@ -35,7 +35,7 @@ def parse_name_status(raw):
 
 
 def references(text, path):
-    pattern = r"(?<![\w./-])" + re.escape(path) + r"(?![\w/-])"
+    pattern = r"(?<![\w./-])" + re.escape(path) + r"(?![\w/-]|\.\w)"
     return re.search(pattern, text) is not None
 
 

@@ -137,6 +137,21 @@ def test_path_prefix_is_not_a_reference(repo):
     assert repo.run_checker().returncode == 1
 
 
+def test_path_with_extra_extension_is_not_a_reference(repo):
+    repo.write(FROZEN, "// frozen v2\n")
+    repo.write("docs/decisions/0001-fix-frozen.md", record_text(FROZEN + ".bak"))
+    repo.commit("record names the path plus an extension")
+    assert repo.run_checker().returncode == 1
+
+
+def test_path_at_sentence_end_is_a_reference(repo):
+    repo.write(FROZEN, "// frozen v2\n")
+    repo.write("docs/decisions/0001-fix-frozen.md", record_text(FROZEN + "."))
+    repo.commit("record names the path, then a full stop")
+    result = repo.run_checker()
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
 def test_deletion_without_record_fails(repo):
     (repo.root / FROZEN).unlink()
     repo.commit("delete")
@@ -188,6 +203,13 @@ def test_template_alone_is_not_a_record(repo):
     result = repo.run_checker()
     assert result.returncode == 1, result.stdout + result.stderr
     assert f"{FROZEN}: frozen file" in result.stdout
+
+
+def test_record_numbered_0000_is_not_a_record(repo):
+    repo.write(FROZEN, "// frozen v2\n")
+    repo.write("docs/decisions/0000-fix-frozen.md", record_text(FROZEN))
+    repo.commit("record numbered like the template")
+    assert repo.run_checker().returncode == 1
 
 
 def test_record_with_bad_name_is_not_a_record(repo):
