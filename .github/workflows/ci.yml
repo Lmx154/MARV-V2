@@ -11,7 +11,11 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
       - name: Build CI image
         run: docker build -t marv-ci -f ci/Dockerfile .
       - name: Run CI
-        run: docker run --rm -v "$PWD":/src -w /src marv-ci ci/run_ci.sh
+        env:
+          MARV_CI_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+        run: docker run --rm -e MARV_CI_BASE_REF -v "$PWD":/src -w /src marv-ci ci/run_ci.sh
