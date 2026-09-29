@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-LINT = Path(__file__).resolve().parents[2] / "tools" / "ci" / "lint_g1.py"
+LINT = Path(__file__).resolve().parents[5] / "tools" / "ci" / "lint_g1.py"
 _spec = importlib.util.spec_from_file_location("lint_g1", LINT)
 lint = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(lint)

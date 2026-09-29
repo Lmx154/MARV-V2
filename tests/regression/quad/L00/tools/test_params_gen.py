@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[5]
 GEN = ROOT / "tools" / "gen" / "params_gen.py"
-FIXTURES = ROOT / "tests" / "fixtures" / "params"
+FIXTURES = ROOT / "tests" / "regression" / "quad" / "L00" / "fixtures"
 _spec = importlib.util.spec_from_file_location("params_gen", GEN)
 gen = importlib.util.module_from_spec(_spec)
 sys.modules["params_gen"] = gen

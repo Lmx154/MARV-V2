@@ -17,7 +17,7 @@
 #
 # marv_collect_sil_libraries(<out-var>)
 #   Every SHARED or MODULE library defined in the project (all of them are SIL entry libraries), except the negative
-#   controls under tests/controls.
+#   controls under tests/regression/quad/L00/controls.
 
 function(marv_all_project_targets out)
   set(dirs "${PROJECT_SOURCE_DIR}")
@@ -52,7 +52,7 @@ endfunction()
 
 function(marv_collect_sil_libraries out)
   marv_all_project_targets(all_targets)
-  set(controls_dir "${PROJECT_SOURCE_DIR}/tests/controls")
+  set(controls_dir "${PROJECT_SOURCE_DIR}/tests/regression/quad/L00/controls")
   set(sil "")
   foreach(tgt IN LISTS all_targets)
     get_target_property(type ${tgt} TYPE)

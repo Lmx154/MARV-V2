@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-CHECK = Path(__file__).resolve().parents[2] / "tools" / "ci" / "check_g3.py"
+CHECK = Path(__file__).resolve().parents[5] / "tools" / "ci" / "check_g3.py"
 _spec = importlib.util.spec_from_file_location("check_g3", CHECK)
 g3 = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(g3)

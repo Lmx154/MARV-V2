@@ -101,7 +101,7 @@ g8_check() {
 g8_control() {
   local log status=0
   log="$(mktemp)"
-  uv run python tools/ci/check_claude_md.py tests/controls/g8_claude_md_missing_unknown.md >"${log}" 2>&1 || status=$?
+  uv run python tools/ci/check_claude_md.py tests/regression/quad/L00/controls/g8_claude_md_missing_unknown.md >"${log}" 2>&1 || status=$?
   cat "${log}"
   if [[ ${status} -ne 1 ]] || ! grep -q "^G8-MISSING: .*'## UNKNOWN rule' is missing" "${log}"; then
     echo "control did not fail for the missing UNKNOWN rule (exit ${status}): G8 is not enforced"
@@ -112,15 +112,15 @@ g8_control() {
 }
 
 g1_literal_control() {
-  g1_control tests/controls/g1_planted_literal.cpp G1-TIDY G1-NOLINT
+  g1_control tests/regression/quad/L00/controls/g1_planted_literal.cpp G1-TIDY G1-NOLINT
 }
 
 g1_constexpr_control() {
-  g1_control tests/controls/g1_planted_constexpr.cpp G1-SCAN G1-TIDY G1-NOLINT
+  g1_control tests/regression/quad/L00/controls/g1_planted_constexpr.cpp G1-SCAN G1-TIDY G1-NOLINT
 }
 
 g1_nolint_control() {
-  g1_control tests/controls/g1_planted_nolint.cpp G1-NOLINT G1-TIDY G1-SCAN
+  g1_control tests/regression/quad/L00/controls/g1_planted_nolint.cpp G1-NOLINT G1-TIDY G1-SCAN
 }
 
 g3_check() {
@@ -187,49 +187,49 @@ g3_m33_includes() {
 
 g3_symbol_control() {
   g3_control host-debug g3_planted_truth G3-SYMBOL "contains 'marv::truth::'" \
-    symbols --manifest build/host-debug/tests/controls/g3_control_symbol.json --nm nm
+    symbols --manifest build/host-debug/tests/regression/quad/L00/controls/g3_control_symbol.json --nm nm
 }
 
 g3_m33_symbol_control() {
   g3_control m33 g3_planted_truth G3-SYMBOL "contains 'marv::truth::'" \
-    symbols --manifest build/m33/tests/controls/g3_control_symbol.json --nm arm-none-eabi-nm
+    symbols --manifest build/m33/tests/regression/quad/L00/controls/g3_control_symbol.json --nm arm-none-eabi-nm
 }
 
 g3_include_control() {
   g3_control host-debug g3_planted_include G3-INCLUDE "inside fw/hal/sim/" \
-    includes --manifest build/host-debug/tests/controls/g3_control_include.json \
+    includes --manifest build/host-debug/tests/regression/quad/L00/controls/g3_control_include.json \
     --compile-commands build/host-debug/compile_commands.json
 }
 
 g3_object_control() {
   g3_control host-debug g3_planted_object G3-SYMBOL "contains 'marv::truth::'" \
-    symbols --manifest build/host-debug/tests/controls/g3_control_object.json --nm nm
+    symbols --manifest build/host-debug/tests/regression/quad/L00/controls/g3_control_object.json --nm nm
 }
 
 g3_m33_object_control() {
   g3_control m33 g3_planted_object G3-SYMBOL "contains 'marv::truth::'" \
-    symbols --manifest build/m33/tests/controls/g3_control_object.json --nm arm-none-eabi-nm
+    symbols --manifest build/m33/tests/regression/quad/L00/controls/g3_control_object.json --nm arm-none-eabi-nm
 }
 
 g3_interface_control() {
   g3_control host-debug g3_planted_interface_carrier G3-INCLUDE "INTERFACE include directory" \
-    includes --manifest build/host-debug/tests/controls/g3_control_interface.json \
+    includes --manifest build/host-debug/tests/regression/quad/L00/controls/g3_control_interface.json \
     --compile-commands build/host-debug/compile_commands.json
 }
 
 g3_forced_control() {
   g3_control host-debug g3_planted_forced G3-INCLUDE "forced include" \
-    includes --manifest build/host-debug/tests/controls/g3_control_forced.json \
+    includes --manifest build/host-debug/tests/regression/quad/L00/controls/g3_control_forced.json \
     --compile-commands build/host-debug/compile_commands.json
 }
 
 g3_export_control() {
   g3_control host-debug g3_planted_export G3-EXPORT "exports 'planted_extra_export'" \
-    exports --manifest build/host-debug/tests/controls/g3_control_export.json --nm nm
+    exports --manifest build/host-debug/tests/regression/quad/L00/controls/g3_control_export.json --nm nm
 }
 
 step "uv sync --frozen" uv sync --frozen
-step "tools tests (pytest tests/tools)" uv run pytest tests/tools -q
+step "tools tests (pytest tests/regression/quad/L00/tools)" uv run pytest tests/regression/quad/L00/tools -q
 step "G8: CLAUDE.md keeps the ACTIVE-spec, number, UNKNOWN and CI-gate sections" g8_check
 if [[ -n "${MARV_CI_BASE_REF:-}" ]]; then
   step "regression change check against ${MARV_CI_BASE_REF}" regression_change_check
