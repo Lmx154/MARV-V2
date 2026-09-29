@@ -168,7 +168,7 @@ hardware (tilt the board, spin each motor) before anything depends on it.
     is ever used, convert only through named accessors, never by memory layout.
 - **Signs.** Body rates in rad/s about FRD axes, right-handed: positive roll is right side down, positive pitch is
   nose up, positive yaw is nose right.
-- **Units.** SI at every interface: m, s, kg, N, N·m, rad, rad/s, Pa, T. Degrees appear only in user-facing text.
+- **Units.** SI at every interface: m, s, kg, N, N·m, rad, rad/s, Pa, T, K. Degrees appear only in user-facing text.
 - **Time.** Monotonic `uint64_t` microseconds, since boot on the target and since run start in SIL, read only
   through `hal_time_us()` (§4).
   - *Rationale:* identical to the Pico SDK's `time_us_64()` and PX4's `hrt_abstime`. A 64-bit microsecond counter
@@ -218,7 +218,7 @@ hardware (tilt the board, spin each motor) before anything depends on it.
   configuration, IF-6). Bidirectional DShot eRPM and ESC telemetry come back from the motor model.
 - **Transports carrying the boundary:**
   - **In-process** (SIL, both Gazebo modes): the firmware is built as a library and the host's lockstep plugin calls
-    it once per tick. The GUI and headless modes use this same path. *Change from Draft 0, which used a socket for
+    it once per host step, advancing an integer number of ticks (§3). The GUI and headless modes use this same path. *Change from Draft 0, which used a socket for
     Gazebo.* The entry point is a C ABI (init, tick, shutdown) so C++ hosts and Python harnesses call the same symbols.
     Firmware state is static (EMB-4), so one process holds one firmware instance; parallel runs are parallel
     processes.
@@ -419,7 +419,7 @@ Rules in prose do not stop an agent or a deadline, so each of these is a CI chec
 | --- | --- | --- |
 | G1 | No unexplained numeric literals in GNC code. | clang-tidy `readability-magic-numbers` / `cppcoreguidelines-avoid-magic-numbers` over everything under `fw/`, allow-listing only 0, 1, 2 and ½. Cited constants (π, WGS 84, USSA76, χ² tables…) live in one constants header, each with its citation; it is the only exempt file. |
 | G2 | Every tunable is a parameter with provenance. | The generator refuses a parameter without a card, register or rule source. The firmware has no compiled-in tunable numbers, except the declared bootstrap exception (§4). |
-| G3 | The flight software never sees the truth. | `truth` kinds and truth-fed modes exist only in SIL harness targets, under the `marv::truth` namespace (`marv_truth_` for C symbols). No flight composition, host or target, may contain such a symbol (checked on each artifact's symbol table). A validation run that used one is rejected. |
+| G3 | The flight software never sees the truth. | `truth` kinds and truth-fed modes exist only in SIL harness targets, under the `marv::truth` namespace (`marv_truth_` for C symbols). No flight composition, host or target, may contain such a symbol (checked on each artifact's symbol table), and no flight target may have a harness include directory on its include path (header-only code inlined into a flight translation unit leaves no symbol). A validation run that used one is rejected. |
 | G4 | Nothing is tuned to one simulated vehicle. | Once the vehicle zoo is active: Monte Carlo over dispersions and every zoo vehicle, plus a held-out vehicle never used in development. |
 | G5 | "It flies" is not a result. | The validation report checks each derived requirement with its margin; a missing requirement is a failure. |
 | G6 | The simulator must match reality, not only itself. | Replay against published flight data runs in CI once that branch is active. |
