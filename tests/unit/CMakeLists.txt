@@ -12,3 +12,13 @@ add_executable(unit_params params/param_defaults_test.cpp)
 target_link_libraries(unit_params PRIVATE marv_params_generated GTest::gtest_main)
 marv_apply_flags(unit_params)
 gtest_discover_tests(unit_params)
+
+add_executable(unit_types types/dshot_test.cpp types/layout_test.cpp)
+target_link_libraries(unit_types PRIVATE marv_types GTest::gtest_main)
+marv_apply_flags(unit_types)
+gtest_discover_tests(unit_types)
+
+add_executable(unit_hal_sim hal_sim/clock_test.cpp hal_sim/actuator_latch_test.cpp)
+target_link_libraries(unit_hal_sim PRIVATE marv_hal_sim GTest::gtest_main)
+marv_apply_flags(unit_hal_sim)
+gtest_discover_tests(unit_hal_sim)

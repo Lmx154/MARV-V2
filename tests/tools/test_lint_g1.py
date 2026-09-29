@@ -97,7 +97,7 @@ def test_exempt_file_is_constants_hpp_only():
 
 def test_real_constants_hpp_holds_its_literal_and_repo_sources_are_otherwise_clean():
     constants = lint.EXEMPT
-    assert bad(constants.read_text()) == ["3"]
+    assert bad(constants.read_text()) == ["3", "48", "2047"]
     for path in lint.fw_sources():
         if path != constants:
             assert bad(path.read_text()) == [], path
