@@ -14,6 +14,7 @@ if(NOT MARV_TARGET STREQUAL "host" AND NOT MARV_TARGET STREQUAL "m33")
 endif()
 
 include(cmake/flags.cmake)
+include(cmake/flight_targets.cmake)
 
 add_subdirectory(fw/prim)
 add_subdirectory(fw/types)
@@ -34,3 +35,5 @@ if(MARV_TARGET STREQUAL "host")
   add_subdirectory(tools/gen)
   add_subdirectory(tools/ci)
 endif()
+
+marv_generate_g3_manifest()
