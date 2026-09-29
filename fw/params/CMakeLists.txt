@@ -40,3 +40,7 @@ add_library(marv_params_generated STATIC
 target_include_directories(marv_params_generated PUBLIC "${CMAKE_BINARY_DIR}/generated")
 target_link_libraries(marv_params_generated PUBLIC marv_params)
 marv_apply_flags(marv_params_generated FIRMWARE)
+
+add_library(marv_params_runtime STATIC src/param.cpp)
+target_link_libraries(marv_params_runtime PUBLIC marv_params_generated marv_hal)
+marv_apply_flags(marv_params_runtime FIRMWARE)
