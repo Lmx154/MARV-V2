@@ -13,6 +13,13 @@ if(NOT EXISTS "${MARV_PYTHON}")
     "MARV_PYTHON='${MARV_PYTHON}' does not exist. Run `uv sync --frozen` in ${PROJECT_SOURCE_DIR} "
     "to create the uv environment, or set -DMARV_PYTHON=<python with PyYAML>.")
 endif()
+execute_process(COMMAND "${MARV_PYTHON}" -c "import yaml"
+  RESULT_VARIABLE _marv_yaml_result OUTPUT_QUIET ERROR_VARIABLE _marv_yaml_error)
+if(NOT _marv_yaml_result EQUAL 0)
+  message(FATAL_ERROR
+    "MARV_PYTHON='${MARV_PYTHON}' cannot import PyYAML (${_marv_yaml_error}). Run `uv sync --frozen` in "
+    "${PROJECT_SOURCE_DIR}, or set -DMARV_PYTHON=<python with PyYAML>.")
+endif()
 
 set(MARV_PARAMS_GEN_SCRIPT "${PROJECT_SOURCE_DIR}/tools/gen/params_gen.py")
 set(MARV_PARAMS_RUNTIME_SOURCE "${CMAKE_CURRENT_LIST_DIR}/src/param.cpp")
