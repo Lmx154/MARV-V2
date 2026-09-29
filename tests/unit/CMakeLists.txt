@@ -9,17 +9,17 @@ marv_apply_flags(unit_prim)
 gtest_discover_tests(unit_prim)
 
 add_executable(unit_params params/param_defaults_test.cpp)
-target_link_libraries(unit_params PRIVATE marv_params_generated GTest::gtest_main)
+target_link_libraries(unit_params PRIVATE marv_params_l0_generated GTest::gtest_main)
 marv_apply_flags(unit_params)
 gtest_discover_tests(unit_params)
 
 add_executable(unit_params_runtime params/param_runtime_test.cpp)
-target_link_libraries(unit_params_runtime PRIVATE marv_params_runtime marv_hal_sim GTest::gtest_main)
+target_link_libraries(unit_params_runtime PRIVATE marv_params_l0_runtime marv_hal_sim GTest::gtest_main)
 marv_apply_flags(unit_params_runtime)
 gtest_discover_tests(unit_params_runtime)
 
 add_executable(unit_params_runtime_uninit params/param_runtime_uninit_test.cpp)
-target_link_libraries(unit_params_runtime_uninit PRIVATE marv_params_runtime marv_hal_sim GTest::gtest_main)
+target_link_libraries(unit_params_runtime_uninit PRIVATE marv_params_l0_runtime marv_hal_sim GTest::gtest_main)
 marv_apply_flags(unit_params_runtime_uninit)
 gtest_discover_tests(unit_params_runtime_uninit)
 
@@ -42,13 +42,13 @@ gtest_discover_tests(unit_sched)
 # per process, so every test that initialises runs in a forked child (sil/sil_test_util.hpp).
 add_library(marv_test_composition STATIC sil/composition/composition.cpp)
 target_include_directories(marv_test_composition PUBLIC sil/composition/include)
-target_link_libraries(marv_test_composition PUBLIC marv_hal marv_types PRIVATE marv_params_runtime)
+target_link_libraries(marv_test_composition PUBLIC marv_hal marv_types PRIVATE marv_params_l0_runtime)
 marv_apply_flags(marv_test_composition FIRMWARE)
-marv_add_sil_library(marv_sil_test COMPOSITION marv_test_composition)
+marv_add_sil_library(marv_sil_test COMPOSITION marv_test_composition PARAMS marv_params_l0)
 
 add_executable(unit_sil sil/lifecycle_test.cpp sil/validation_test.cpp sil/behavior_test.cpp)
 target_include_directories(unit_sil PRIVATE sil/composition/include)
-target_link_libraries(unit_sil PRIVATE marv_sil_test marv_types marv_params_generated GTest::gtest_main)
+target_link_libraries(unit_sil PRIVATE marv_sil_test marv_types marv_params_l0_generated GTest::gtest_main)
 marv_apply_flags(unit_sil)
 gtest_discover_tests(unit_sil)
 

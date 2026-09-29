@@ -5,5 +5,5 @@ add_library(marv_composition_l0 STATIC src/l0.cpp)
 target_include_directories(marv_composition_l0 PUBLIC include)
 target_link_libraries(marv_composition_l0
   PUBLIC marv_hal marv_types
-  PRIVATE marv_sched marv_params_runtime)
+  PRIVATE marv_sched marv_params_l0_runtime)
 marv_apply_flags(marv_composition_l0 FIRMWARE)
