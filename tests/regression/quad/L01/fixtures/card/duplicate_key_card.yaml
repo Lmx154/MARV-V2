@@ -1,0 +1,5 @@
+# A card whose `mass` key appears twice: the loader must refuse it (core 2.1 rule 3, no silent override).
+vehicle: dup_key_card
+mass: {value: 0.772, unit: kg, method: published, source: "first", sigma: 0.010, sigma_rule: "stated by first"}
+mass: {value: 0.752, unit: kg, method: published, source: "second", sigma: 0.010, sigma_rule: "stated by second"}
+sensor_profile: marv_v2_board_default

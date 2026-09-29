@@ -1,0 +1,11 @@
+# vehicles/uzh_neurobem_5in.yaml  (values as published; the simulated sensors are MARV's parts)
+mass:          {value: 0.772, unit: kg, method: published, source: "NeuroBEM dataset readme",
+                conflict: "0.752 kg in Bauersfeld et al., RSS 2021", status: UNVERIFIED}
+inertia_diag:  {value: [0.0025, 0.0021, 0.0043], unit: kg m^2, method: published, source: "NeuroBEM dataset readme"}
+rotors:
+  thrust_coeff: {value: 1.562522e-6, unit: N/(rad/s)^2, method: published,
+                 source: "uzh-rpg/agile_flight envsim/parameters/quads/blackbird.yaml (MIT)", check: "NeuroBEM replay"}
+  torque_ratio: {value: 0.022, unit: m, method: published, source: "same file"}
+  speed_range:  {value: [150, 2800], unit: rad/s, method: published, source: "same file"}
+  motor_lag:    {model: first_order, tau_s: 0.033, method: published, source: "Bauersfeld et al., RSS 2021"}
+sensor_profile: marv_v2_board_default    # a profile file (§5); swap it to change sensors

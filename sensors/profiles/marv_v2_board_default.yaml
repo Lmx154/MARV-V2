@@ -1,0 +1,165 @@
+# Sensor profile: MARV V2 board default parts (core contracts 5, "Datasheet priors"). Figures are recorded as the
+# table states them, in the datasheet's units (conversion to SI belongs to the profile flattener). A "±" figure is a
+# datasheet tolerance recorded as its bound; it is not a 1-sigma, so sigma stays UNKNOWN.
+profile: marv_v2_board_default
+
+classes:
+  imu:
+    part: "TDK ICM-45686"
+    entries:
+      gyro_fsr:
+        value: 4000
+        unit: deg/s
+        method: datasheet
+        source: "DS-000489 rev 1.1, tables 1–2"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'gyro FSR up to ±4000 °/s'; the value is the largest full-scale range, ±."
+      gyro_noise_density:
+        value: 3.8
+        unit: mdeg/s/sqrt(Hz)
+        method: datasheet
+        source: "DS-000489 rev 1.1, tables 1–2"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: '3.8 m°/s/√Hz'."
+      gyro_zero_rate_offset:
+        value: 0.4
+        unit: deg/s
+        method: datasheet
+        source: "DS-000489 rev 1.1, tables 1–2"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'zero-rate offset ±0.4 °/s (board)'; the value is the ± tolerance, not a sigma."
+      gyro_offset_tempco:
+        value: 0.005
+        unit: deg/s/degC
+        method: datasheet
+        source: "DS-000489 rev 1.1, tables 1–2"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: '±0.005 °/s/°C'; the value is the ± tolerance, not a sigma."
+      accel_fsr:
+        value: 32
+        unit: g
+        method: datasheet
+        source: "DS-000489 rev 1.1, tables 1–2"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'accel FSR up to ±32 g'; the value is the largest full-scale range, ±."
+      accel_noise_density:
+        value: [70, 80, 110]
+        shape: set
+        unit: ug/sqrt(Hz)
+        method: datasheet
+        source: "DS-000489 rev 1.1, tables 1–2"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Keyed by full-scale range: 70 / 80 / 110 µg/√Hz at ≤ 8 / 16 / 32 g respectively."
+      accel_offset:
+        value: 20
+        unit: mg
+        method: datasheet
+        source: "DS-000489 rev 1.1, tables 1–2"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'offset ±20 mg (board)'; the value is the ± tolerance, not a sigma."
+      odr:
+        value: [12.5, 6400]
+        shape: range
+        unit: Hz
+        method: datasheet
+        source: "DS-000489 rev 1.1, tables 1–2"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'ODR 12.5–6400 Hz'; [min, max]."
+  high_g_accel:
+    part: "ADI ADXL375"
+    entries:
+      range:
+        value: 200
+        unit: g
+        method: datasheet
+        source: "ADXL375 Rev. B, table 1"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: '±200 g'; the value is the ± full-scale."
+      sensitivity:
+        value: 49
+        unit: mg/LSB
+        method: datasheet
+        source: "ADXL375 Rev. B, table 1"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: '49 mg/LSB'."
+      noise_density:
+        value: 5
+        unit: mg/sqrt(Hz)
+        method: datasheet
+        source: "ADXL375 Rev. B, table 1"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: '5 mg/√Hz'."
+      odr_max:
+        value: 3200
+        unit: Hz
+        method: datasheet
+        source: "ADXL375 Rev. B, table 1"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'bandwidth = ODR/2, ODR up to 3200 Hz'."
+      offset:
+        value: 400
+        unit: mg
+        method: datasheet
+        source: "ADXL375 Rev. B, table 1"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'offset ±400 mg typical'; the value is the ± typical figure, not a sigma."
+  barometer:
+    part: "Bosch BMP581"
+    entries:
+      noise:
+        value: [0.78, 0.21]
+        shape: set
+        unit: Pa
+        method: datasheet
+        source: "BST-BMP581-DS004-13, tables 1, 7, 9"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'noise 0.78 Pa (OSR ×1) to 0.21 Pa (×16)'; listed [OSR ×1, OSR ×16], intermediate oversampling settings not in the table."
+      odr_max:
+        value: 240
+        unit: Hz
+        method: datasheet
+        source: "BST-BMP581-DS004-13, tables 1, 7, 9"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'ODR ≤ 240 Hz'."
+      relative_accuracy:
+        value: 6
+        unit: Pa
+        method: datasheet
+        source: "BST-BMP581-DS004-13, tables 1, 7, 9"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'relative accuracy ±6 Pa'; the value is the ± tolerance, not a sigma."
+      tco:
+        value: 0.5
+        unit: Pa/K
+        method: datasheet
+        source: "BST-BMP581-DS004-13, tables 1, 7, 9"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'TCO ±0.5 Pa/K'; the value is the ± tolerance, not a sigma."
+  rotor_speed:
+    part: "Hobbywing XRotor 2306"
+    entries:
+      pole_count:
+        value: 14
+        unit: "1"
+        method: datasheet
+        source: "Hobbywing Xrotor 2306 Race Pro product page, https://www.hobbywing.com/en/products/xrotor-2306-race-pro167 (fetched 2026-09-29): stator 12S, rotor 14P, same for the 1600/1750/2400/2700 KV variants"
+        sigma: exact
+        status: [INFERRED]
+        note: "Bauersfeld et al. 2021 §IV-B names only 'Hobbywing XRotor 2306 motors' (no variant or KV); the Race Pro is the only Hobbywing 2306 found, so the variant match is inferred"

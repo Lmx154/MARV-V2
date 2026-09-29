@@ -1,0 +1,88 @@
+# Design-budget register (core contracts 2.2). Each entry: value (or UNKNOWN), unit, method: design-budget,
+# sigma: choice (a choice has no uncertainty), rationale, used_by. Requirements reference entries by name and never
+# restate a value. A value is filled when the first layer that tests against it is specified.
+# Toolbox citations are to /home/luis/Projects/Web/avionics-toolbox at commit 8865850.
+
+PM_min:
+  value: 0.7853981633974483
+  unit: rad
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    45 degrees, stored in radians (pi/4 = 0.7853981633974483 rad; degrees appear only in user-facing text, core 3).
+    The toolbox states one requirement for every controller loop, a 45 degree phase margin, "the middle of the 30–60°
+    range of robust designs (Åström & Murray, Feedback Systems, §10.3)" (src/lib/sim/lab/blocks/controller.ts:45)
+    and lists it as "a design choice derived by a stated rule" (docs/physics.md:13). Its rate loops are the symmetric
+    optimum of Kessler (1958), whose spacing a = 1 + sqrt(2) gives exactly 45 degrees (src/lib/calc/loopshape.ts:5-8).
+    The toolbox states no derivation of why 45 rather than another value in the 30-60 degree range: the stated rule
+    is the mid-range convention.
+  used_by: [QF-3, attitude-loop design]
+
+chi2_gate_quantile:
+  value: 0.999
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    The innovation gate for a k-dimensional measurement is the chi-square quantile at this probability: a measurement
+    is rejected when its normalised innovation squared exceeds it (src/lib/physics/tuning.ts:9-11). At 0.999, "one
+    good measurement in 1000 is wrongly rejected" (src/lib/physics/tuning.ts:23); docs/physics.md:143 states the same
+    rule ("chi-square quantile at 99.9 % for the measurement's dimension"). The toolbox states no derivation of the
+    number 0.999 beyond that false-rejection probability of 1e-3 (convention value).
+  used_by: [QM-1, estimator gates]
+
+p:
+  value: UNKNOWN
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: "Required confidence or probability. No value yet; set when the first layer that tests QM-2, RK-1, RK-9, REC-2 or REC-3 against it is specified."
+  used_by: [QM-2, RK-1, RK-9, REC-2, REC-3]
+
+k:
+  value: UNKNOWN
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: "Multiplier on the sigma of position and range margins. No value yet; set when the first layer that tests QS-3 or QO-2 against it is specified."
+  used_by: [QS-3, QO-2]
+
+b:
+  value: UNKNOWN
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: "Allowed motion blur, in pixels (a dimensionless count of pixels). No value yet; set when the layer that tests QS-1 is specified."
+  used_by: [QS-1]
+
+E:
+  value: UNKNOWN
+  unit: m
+  method: design-budget
+  sigma: choice
+  rationale: "Apogee error tolerance. To be derived from the accepted points lost in apogee scoring (see 30-rocket.md, RK-1); no value yet."
+  used_by: [RK-1]
+
+false_alarm_budgets:
+  value: UNKNOWN
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: "False-alarm probability budget, one per detector (QX detectors, GS-6, flight-event detectors). No value yet; each is set when the first layer that tests its detector is specified, and the per-detector split will replace this single entry."
+  used_by: [QX, GS-6, flight-event detectors]
+
+cv_phase_budget:
+  value: UNKNOWN
+  unit: rad
+  method: design-budget
+  sigma: choice
+  rationale: "Phase at crossover allowed to CV latency. No value yet; set when the layer that tests QS-4 is specified."
+  used_by: [QS-4]
+
+batch_plan:
+  value: UNKNOWN
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: "The batch: vehicles x scenarios x draws x flight length, and the time window. A composite of several quantities, so its final form will be several entries; no value yet, set when the layer that tests SIM-3 is specified."
+  used_by: [SIM-3]
