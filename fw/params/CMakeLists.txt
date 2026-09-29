@@ -74,26 +74,29 @@ function(marv_add_param_set name)
   marv_apply_flags(${name}_runtime FIRMWARE)
 endfunction()
 
+# marv_card_profile_file(<out-var> <name> <card.yaml>): the sensor profile file named by the card's `sensor_profile:` line.
+function(marv_card_profile_file out name card)
+  file(STRINGS "${card}" _profile_line REGEX "^sensor_profile:")
+  string(REGEX REPLACE "^sensor_profile:[ ]*([A-Za-z0-9_]+).*$" "\\1" _profile "${_profile_line}")
+  if(NOT _profile OR _profile STREQUAL _profile_line)
+    message(FATAL_ERROR "marv_add_card_param_set(${name}): no `sensor_profile: <id>` line in ${card}")
+  endif()
+  set(${out} "${PROJECT_SOURCE_DIR}/sensors/profiles/${_profile}.yaml" PARENT_SCOPE)
+endfunction()
+
 # marv_add_card_param_set(<name> CARD <card.yaml> BUDGET <budget.yaml>)
 #
 # A parameter set (marv_add_param_set) whose sources are a vehicle card and the design-budget register: a build-time
 # custom command runs tools/card/flatten.py (lints first; a lint finding fails the build) into
 # ${CMAKE_BINARY_DIR}/generated/<name>/flatten/ and marv_add_param_set consumes its two outputs. The command depends on
-# the card, the sensor profile the card names, the budget and tools/card/*.py. The target <name>_report ALWAYS runs at
-# build time (the generator commit is part of it) and writes ${CMAKE_BINARY_DIR}/generated/<name>/l1_report.txt,
-# tools/card/report.py's L1 run report.
+# the card, the sensor profile the card names, the budget and tools/card/*.py.
 function(marv_add_card_param_set name)
   cmake_parse_arguments(ARG "" "CARD;BUDGET" "" ${ARGN})
   cmake_path(ABSOLUTE_PATH ARG_CARD BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
   cmake_path(ABSOLUTE_PATH ARG_BUDGET BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ARG_CARD}")
 
-  file(STRINGS "${ARG_CARD}" _profile_line REGEX "^sensor_profile:")
-  string(REGEX REPLACE "^sensor_profile:[ ]*([A-Za-z0-9_]+).*$" "\\1" _profile "${_profile_line}")
-  if(NOT _profile OR _profile STREQUAL _profile_line)
-    message(FATAL_ERROR "marv_add_card_param_set(${name}): no `sensor_profile: <id>` line in ${ARG_CARD}")
-  endif()
-  set(profile_file "${PROJECT_SOURCE_DIR}/sensors/profiles/${_profile}.yaml")
+  marv_card_profile_file(profile_file ${name} "${ARG_CARD}")
 
   set(flat_dir "${CMAKE_BINARY_DIR}/generated/${name}/flatten")
   set(flat_card "${flat_dir}/${name}_card.yaml")
@@ -110,6 +113,20 @@ function(marv_add_card_param_set name)
     VERBATIM)
 
   marv_add_param_set(${name} CARD "${flat_card}" REGISTER "${flat_register}")
+endfunction()
+
+# marv_add_card_report(<name> CARD <card.yaml> BUDGET <budget.yaml>)
+#
+# The target <name>_report ALWAYS runs at build time (the generator commit is part of it) and writes
+# ${CMAKE_BINARY_DIR}/generated/<name>/l1_report.txt, tools/card/report.py's L1 run report. It is a custom (UTILITY)
+# target with no code, so it is called from the top-level CMakeLists.txt, outside fw/, where G3 does not treat it as a
+# flight target (tools/ci/check_g3.py refuses a target type it cannot scan).
+function(marv_add_card_report name)
+  cmake_parse_arguments(ARG "" "CARD;BUDGET" "" ${ARGN})
+  cmake_path(ABSOLUTE_PATH ARG_CARD BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
+  cmake_path(ABSOLUTE_PATH ARG_BUDGET BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
+  marv_card_profile_file(profile_file ${name} "${ARG_CARD}")
+  file(GLOB marv_card_tools CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/tools/card/*.py")
 
   add_custom_target(${name}_report ALL
     COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/card/report.py"

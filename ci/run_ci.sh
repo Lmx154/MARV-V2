@@ -71,7 +71,9 @@ g1_control() {
   local file="$1" want="$2" log status=0
   shift 2
   log="$(mktemp)"
-  uv run python tools/ci/lint_g1.py --clang-tidy clang-tidy-18 "${file}" >"${log}" 2>&1 || status=$?
+  # G1_ARGS (optional, word-split) adds lint_g1.py options such as --scope sim-plant
+  # shellcheck disable=SC2086
+  uv run python tools/ci/lint_g1.py --clang-tidy clang-tidy-18 ${G1_ARGS:-} "${file}" >"${log}" 2>&1 || status=$?
   cat "${log}"
   if [[ ${status} -ne 1 ]]; then
     echo "control did not fail as a lint violation (exit ${status}): G1 is not enforced for ${file}"
@@ -121,6 +123,122 @@ g1_constexpr_control() {
 
 g1_nolint_control() {
   g1_control tests/regression/quad/L00/controls/g1_planted_nolint.cpp G1-NOLINT G1-TIDY G1-SCAN
+}
+
+g1_plant_literal_control() {
+  G1_ARGS="--scope sim-plant" g1_control tests/regression/quad/L01/controls/g1_planted_plant_literal.cpp G1-TIDY G1-NOLINT
+}
+
+l1_card_lint() {
+  uv run python tools/card/lint.py --card vehicles/uzh_neurobem_5in.yaml --budget design/budget.yaml
+}
+
+# The core 2.1 example card lacks sigma on every published entry: the linter must exit 1 with a sigma reason on it.
+l1_card_lint_control() {
+  local log status=0
+  log="$(mktemp)"
+  uv run python tools/card/lint.py --card tests/regression/quad/L01/fixtures/card/spec_2_1_example_card.yaml \
+    >"${log}" 2>&1 || status=$?
+  cat "${log}"
+  if [[ ${status} -ne 1 ]] || ! grep -q '^tests/regression/quad/L01/fixtures/card/spec_2_1_example_card.yaml: [^:]*: sigma: missing' "${log}"; then
+    echo "control did not fail with a sigma finding (exit ${status}): the card linter does not enforce the sigma policy"
+    rm -f "${log}"
+    return 1
+  fi
+  rm -f "${log}"
+}
+
+# The product parameter set is built from the linted card (tools/card/flatten.py, run at build time). A card that fails
+# the sigma policy (sigma = 0 on a published entry) must fail the build of the generated set, with the sigma finding.
+l1_flatten_control() {
+  local dir log status=0
+  dir="$(mktemp -d)"
+  log="$(mktemp)"
+  if ! cmake -S . -B "${dir}" -G Ninja -DMARV_TARGET=host -DCMAKE_BUILD_TYPE=Debug \
+       -DMARV_VEHICLE_CARD=tests/regression/quad/L01/controls/card_sigma_zero.yaml \
+       -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="${PWD}/build/host-debug/_deps/googletest-src" >"${log}" 2>&1; then
+    cat "${log}"
+    echo "control configure failed: the sigma-zero card must be refused at build time, not at configure time"
+    rm -rf "${dir}" "${log}"
+    return 1
+  fi
+  cmake --build "${dir}" --target marv_params_generated >"${log}" 2>&1 || status=$?
+  cat "${log}"
+  if [[ ${status} -eq 0 ]]; then
+    echo "control built: the product parameter set accepts a card that fails the sigma policy"
+    rm -rf "${dir}" "${log}"
+    return 1
+  fi
+  if ! grep -q 'card_sigma_zero.yaml: mass: sigma: 0 is rejected' "${log}"; then
+    echo "control build failed, but not with the sigma finding on the card"
+    rm -rf "${dir}" "${log}"
+    return 1
+  fi
+  rm -rf "${dir}" "${log}"
+}
+
+# Configuring with a Python that cannot import PyYAML must stop with the PyYAML message (fw/params/CMakeLists.txt).
+l1_pyyaml_control() {
+  local dir venv log status=0
+  dir="$(mktemp -d)"
+  venv="$(mktemp -d)"
+  log="$(mktemp)"
+  python3 -m venv --without-pip "${venv}"
+  if "${venv}/bin/python" -c "import yaml" 2>/dev/null; then
+    echo "control setup failed: ${venv}/bin/python imports PyYAML"
+    rm -rf "${dir}" "${venv}" "${log}"
+    return 1
+  fi
+  cmake -S . -B "${dir}" -G Ninja -DMARV_TARGET=host -DMARV_PYTHON="${venv}/bin/python" >"${log}" 2>&1 || status=$?
+  cat "${log}"
+  if [[ ${status} -eq 0 ]] || ! grep -q "cannot import PyYAML" "${log}"; then
+    echo "control did not fail with the PyYAML message (exit ${status}): the PyYAML configure check is not enforced"
+    rm -rf "${dir}" "${venv}" "${log}"
+    return 1
+  fi
+  rm -rf "${dir}" "${venv}" "${log}"
+}
+
+l1_report() {
+  cat build/host-debug/generated/marv_params/l1_report.txt
+}
+
+# plant_ref.py writes plant_ref_expected.txt beside itself, so it runs on a copy of the reference directory.
+plant_ref_reference_dir=tests/regression/quad/L01/unit/plant/reference
+
+plant_ref_run() {
+  local dir="$1"
+  cp "${plant_ref_reference_dir}/plant_ref.py" "${dir}/plant_ref.py"
+  uv run python "${dir}/plant_ref.py"
+}
+
+plant_ref_reproduces() {
+  local dir status=0
+  dir="$(mktemp -d)"
+  cp "${plant_ref_reference_dir}/plant_ref_inputs.txt" "${dir}/plant_ref_inputs.txt"
+  plant_ref_run "${dir}"
+  diff -u "${plant_ref_reference_dir}/plant_ref_expected.txt" "${dir}/plant_ref_expected.txt" || status=$?
+  rm -rf "${dir}"
+  return "${status}"
+}
+
+# The same run on inputs with the mass changed must differ from the committed expected file.
+plant_ref_control() {
+  local dir
+  dir="$(mktemp -d)"
+  sed 's/^mass_kg .*/mass_kg 0.76/' "${plant_ref_reference_dir}/plant_ref_inputs.txt" >"${dir}/plant_ref_inputs.txt"
+  if cmp -s "${plant_ref_reference_dir}/plant_ref_inputs.txt" "${dir}/plant_ref_inputs.txt"; then
+    echo "control setup failed: the perturbation did not change the inputs"
+    rm -rf "${dir}"
+    return 1
+  fi
+  plant_ref_run "${dir}"
+  if diff -q "${plant_ref_reference_dir}/plant_ref_expected.txt" "${dir}/plant_ref_expected.txt" >/dev/null; then
+    echo "control produced the committed expected file from perturbed inputs: the reproduction check cannot fail"
+    rm -rf "${dir}"
+    return 1
+  fi
+  rm -rf "${dir}"
 }
 
 g3_check() {
@@ -228,13 +346,24 @@ g3_export_control() {
     exports --manifest build/host-debug/tests/regression/quad/L00/controls/g3_control_export.json --nm nm
 }
 
+g3_plant_control() {
+  g3_control host-debug g3_planted_plant G3-SYMBOL "contains 'marv_plant_'" \
+    symbols --manifest build/host-debug/tests/regression/quad/L01/controls/g3_control_plant.json --nm nm \
+    && g3_control host-debug g3_planted_plant G3-SYMBOL "contains 'marv::plant::'" \
+    symbols --manifest build/host-debug/tests/regression/quad/L01/controls/g3_control_plant.json --nm nm
+}
+
 step "uv sync --frozen" uv sync --frozen
-step "tools tests (pytest tests/regression/quad/L00/tools)" uv run pytest tests/regression/quad/L00/tools -q
+step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools)" \
+  uv run pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools -q
 step "G8: CLAUDE.md keeps the ACTIVE-spec, number, UNKNOWN and CI-gate sections" g8_check
+step "L1: the committed vehicle card, its sensor profile and the design budget lint clean (sigma policy)" l1_card_lint
+step "L1: plant known-answer reference reproduces plant_ref_expected.txt from plant_ref_inputs.txt" plant_ref_reproduces
 if [[ -n "${MARV_CI_BASE_REF:-}" ]]; then
   step "regression change check against ${MARV_CI_BASE_REF}" regression_change_check
 fi
 step "host-debug: configure, build, ctest" host_preset host-debug
+step "L1: the run report of the product parameter set (card, budget, provenance)" l1_report
 step "G1: no unexplained numeric literals under fw/ (clang-tidy, token scan, NOLINT check)" g1_lint
 step "G3: no truth or harness symbol in any host flight library (nm -C)" g3_host_symbols
 step "G3: no flight translation unit has a harness include directory (host)" g3_host_includes
@@ -257,5 +386,11 @@ step "G3 negative control (planted fw/hal/sim in an INTERFACE library's include 
 step "G3 negative control (planted -include of a fw/hal/sim file must fail the include check)" g3_forced_control
 step "G3 negative control (planted extra SIL export must fail the export check)" g3_export_control
 step "G8 negative control (a CLAUDE.md without the UNKNOWN rule must fail)" g8_control
+step "G1 negative control (planted magic literal in a sim/plant-scope file must fail clang-tidy)" g1_plant_literal_control
+step "G3 negative control (planted marv_plant_ and marv::plant:: symbols in a flight library must fail the symbol check)" g3_plant_control
+step "L1 negative control (the core 2.1 example card without sigma must fail the card linter)" l1_card_lint_control
+step "L1 negative control (a card with sigma = 0 on a published entry must fail the parameter set build)" l1_flatten_control
+step "L1 negative control (a Python without PyYAML must fail the configure)" l1_pyyaml_control
+step "L1 negative control (perturbed plant reference inputs must not reproduce the committed expected file)" plant_ref_control
 
 echo "ALL STEPS PASSED"

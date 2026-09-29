@@ -9,8 +9,8 @@ files) and INTERFACE_LIBRARY (usage requirements only). Any other type is a G3-E
 never be skipped silently.
 
   symbols   nm -C over the linked file of every flight target (over the object files of an OBJECT library): no defined
-            or undefined symbol (demangled) may contain marv::sil::, marv_sil_, marv::hal_sim::, marv::truth:: or
-            marv_truth_
+            or undefined symbol (demangled) may contain marv::sil::, marv_sil_, marv::hal_sim::, marv::truth::,
+            marv_truth_, marv::plant:: or marv_plant_
   includes  every translation unit of a flight target in compile_commands.json: no include directory (-I, -isystem,
             -iquote, -idirafter; a leading '=' of the sysroot-relative spelling is stripped) and no forced include
             (-include, -imacros) may lie inside fw/sil, fw/hal/sim, sim/ or tests/; the INTERFACE_INCLUDE_DIRECTORIES
@@ -35,7 +35,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 
-FORBIDDEN_SYMBOLS = ("marv::sil::", "marv_sil_", "marv::hal_sim::", "marv::truth::", "marv_truth_")
+FORBIDDEN_SYMBOLS = ("marv::sil::", "marv_sil_", "marv::hal_sim::", "marv::truth::", "marv_truth_", "marv::plant::",
+                     "marv_plant_")
 FORBIDDEN_INCLUDE_DIRS = ("fw/sil", "fw/hal/sim", "sim", "tests")
 INCLUDE_OPTIONS = ("-isystem", "-iquote", "-idirafter", "-I")
 FORCED_INCLUDE_OPTIONS = ("-include", "-imacros")

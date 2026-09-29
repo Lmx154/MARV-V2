@@ -11,6 +11,11 @@ fw/prim/include/marv/prim/constants.hpp. Three checks run:
 
 With no file arguments it lints every fw/ translation unit in the host-debug compile database and every C++
 source under fw/. With file arguments it lints exactly those files (used by the negative controls).
+--scope sim-plant applies the same three checks to sim/plant (the truth physics) instead of fw/: its translation units
+in the compile database, every C/C++ source and header under sim/plant, and clang-tidy diagnostics in sim/plant headers.
+The default scope, fw, is unchanged. Constants still come only from the exempt fw/prim constants.hpp, which is not
+scanned in either scope.
+
 Exit status: 0 clean, 1 violations, 2 vacuous run or tool failure.
 """
 
@@ -191,11 +196,18 @@ def fw_sources() -> list[Path]:
     return sorted(p for p in (ROOT / "fw").rglob("*") if p.is_file() and p.suffix in SOURCE_SUFFIXES)
 
 
-def compile_db_units(build_dir: Path) -> list[dict]:
+def plant_sources() -> list[Path]:
+    return sorted(p for p in (ROOT / "sim" / "plant").rglob("*") if p.is_file() and p.suffix in SOURCE_SUFFIXES)
+
+
+SCOPES = {"fw": (ROOT / "fw", fw_sources, None), "sim-plant": (ROOT / "sim" / "plant", plant_sources, r"(^|/)sim/plant/")}
+
+
+def compile_db_units(build_dir: Path, scope_dir: Path = ROOT / "fw") -> list[dict]:
     db = build_dir / "compile_commands.json"
     if not db.is_file():
         return []
-    fw_dir = ROOT / "fw"
+    fw_dir = scope_dir
     units = {}
     for entry in json.loads(db.read_text()):
         path = (Path(entry["directory"]) / entry["file"]).resolve()
@@ -204,12 +216,14 @@ def compile_db_units(build_dir: Path) -> list[dict]:
     return [units[p] for p in sorted(units)]
 
 
-def run_tidy(tidy: str, files: list[Path], build_dir: Path | None) -> tuple[int, str]:
+def run_tidy(tidy: str, files: list[Path], build_dir: Path | None, header_filter: str | None = None) -> tuple[int, str]:
     """Run clang-tidy on each file; return (failed file count, combined output)."""
     failed = 0
     output = []
     for path in files:
         cmd = [tidy, "--quiet", f"--config-file={ROOT / '.clang-tidy'}", "--extra-arg=-Wno-unknown-warning-option"]
+        if header_filter is not None:
+            cmd.append(f"--header-filter={header_filter}")
         if build_dir is not None:
             cmd += ["-p", str(build_dir), str(path)]
         else:
@@ -226,7 +240,9 @@ def main(argv: list[str]) -> int:
     ap.add_argument("files", nargs="*", type=Path, help="lint exactly these files (negative controls)")
     ap.add_argument("--build-dir", type=Path, default=ROOT / "build" / "host-debug")
     ap.add_argument("--clang-tidy", default="clang-tidy-18")
+    ap.add_argument("--scope", choices=sorted(SCOPES), default="fw", help="tree to lint when no files are given")
     args = ap.parse_args(argv)
+    scope_dir, scope_sources, header_filter = SCOPES[args.scope]
 
     if args.files:
         files = [p.resolve() for p in args.files]
@@ -234,11 +250,11 @@ def main(argv: list[str]) -> int:
         tidy_db = None
         tu_count = len(tidy_files)
     else:
-        files = fw_sources()
-        units = compile_db_units(args.build_dir)
+        files = scope_sources()
+        units = compile_db_units(args.build_dir, scope_dir)
         tu_count = len(units)
         if tu_count == 0:
-            print(f"G1-VACUOUS: no fw/ translation units in {args.build_dir}/compile_commands.json")
+            print(f"G1-VACUOUS: no {_display(scope_dir)}/ translation units in {args.build_dir}/compile_commands.json")
             return 2
         tidy_files = [(Path(u["directory"]) / u["file"]).resolve() for u in units]
         tidy_db = args.build_dir
@@ -255,7 +271,7 @@ def main(argv: list[str]) -> int:
 
     failed = False
 
-    tidy_failed, tidy_out = run_tidy(args.clang_tidy, tidy_files, tidy_db)
+    tidy_failed, tidy_out = run_tidy(args.clang_tidy, tidy_files, tidy_db, header_filter)
     sys.stdout.write(tidy_out)
     if tidy_failed:
         failed = True

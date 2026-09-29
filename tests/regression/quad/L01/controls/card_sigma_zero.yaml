@@ -1,0 +1,137 @@
+# Negative control (CI): the committed card with sigma = 0 on a published entry (mass). The sigma policy in tools/card/schema.py rejects it; the product parameter set build must therefore fail.
+# Frames: FRD body, CM origin. Spin: ccw = counter-clockwise viewed from above.
+vehicle: uzh_neurobem_5in
+
+mass:
+  value: 0.772
+  unit: kg
+  method: published
+  source: "NeuroBEM dataset readme, https://rpg.ifi.uzh.ch/neuro_bem/Readme.html ('Our drone has a mass of 0.772 kg')"
+  sigma: 0
+  sigma_rule: "half the spread between the conflicting sources: |0.772 - 0.752| / 2"
+  status: [UNVERIFIED]
+  conflict:
+    - value: 0.752
+      unit: kg
+      source: "Bauersfeld et al., NeuroBEM, RSS 2021, arXiv:2106.08015v1 §IV-B ('total weight of 752 g')"
+      state: open
+    - value: 0.752
+      unit: kg
+      source: "uzh-rpg/agile_flight envsim/parameters/quads/blackbird.yaml @ 24f21c4 (mass)"
+      state: open
+  check: "B1 log replay settles it"
+
+inertia_diag:
+  value: [0.0025, 0.0021, 0.0043]
+  shape: diag3
+  unit: kg m^2
+  method: published
+  source: "NeuroBEM dataset readme; uzh-rpg/agile_flight blackbird.yaml @ 24f21c4 (inertia) — agree"
+  sigma: UNKNOWN
+  note: "source frame FLU; a diagonal inertia is unchanged by FLU→FRD (180° about x)"
+
+rotors:
+  layout: quad_x
+  thrust_coeff:
+    value: 1.562522e-6
+    unit: N/(rad/s)^2
+    method: published
+    source: "uzh-rpg/agile_flight envsim/parameters/quads/blackbird.yaml @ 24f21c4, thrust_map[0]"
+    sigma: UNKNOWN
+    status: [INFERRED]
+    note: "reading thrust_map as [c2, c1, c0] of T = c2 ω² + c1 ω + c0 and its unit are inferred; the file states neither"
+    check: "NeuroBEM replay"
+  torque_ratio:
+    value: 0.022
+    unit: m
+    method: published
+    source: "blackbird.yaml @ 24f21c4, kappa ('# [Nm/N]')"
+    sigma: UNKNOWN
+  speed_range:
+    value: [150, 2800]
+    shape: range
+    unit: rad/s
+    method: published
+    source: "blackbird.yaml @ 24f21c4, motor_omega_min / motor_omega_max"
+    sigma: UNKNOWN
+  motor_lag:
+    model: first_order
+    tau:
+      value: 0.033
+      unit: s
+      method: published
+      source: "Bauersfeld et al. 2021 §V-D eq. (20) ('τ_Ω = 33 ms'); blackbird.yaml @ 24f21c4 motor_tau — agree"
+      sigma: UNKNOWN
+  esc_map:
+    model: linear_in_omega
+    method: scenario
+    source: "scenario value (Luis, 2026-09-29): no source gives a DShot→rotor-speed map for this vehicle"
+    sigma: choice
+    status: [INFERRED]
+    note: "endpoints are the DShot throttle range (core §4) and rotors.speed_range: the lowest DShot throttle value maps to speed_range[0], the highest to speed_range[1], linear in rotor speed between, 0 is stop; replaced by B1 or bench data"
+  m1:
+    position:
+      value: [0.075, 0.10, 0.0]
+      shape: frd3
+      unit: m
+      method: "derived(FLU→FRD: y_FRD = −y_FLU, z_FRD = −z_FLU, from blackbird.yaml @ 24f21c4 tbm_*)"
+      source: "uzh-rpg/agile_flight blackbird.yaml @ 24f21c4, tbm_fr/tbm_bl/tbm_fl/tbm_br"
+      sigma: UNKNOWN
+      note: "tbm_fr"
+    spin:
+      value: ccw
+      method: published
+      source: &spin_source "Bauersfeld et al. 2021, arXiv:2106.08015v1 Fig. 3 rotation arrows (read from the rendered figure), with the dataset readme's motor order (1 back right, 2 front right, 3 back left, 4 front left): NeuroBEM 2→m1, 3→m2, 4→m3, 1→m4"
+      status: [INFERRED]
+      note: "agrees with the PX4/ArduPilot quad-X directions"
+      check: "B1 replay checks the yaw-torque sign"
+  m2:
+    position:
+      value: [-0.075, -0.10, 0.0]
+      shape: frd3
+      unit: m
+      method: "derived(FLU→FRD: y_FRD = −y_FLU, z_FRD = −z_FLU, from blackbird.yaml @ 24f21c4 tbm_*)"
+      source: "uzh-rpg/agile_flight blackbird.yaml @ 24f21c4, tbm_fr/tbm_bl/tbm_fl/tbm_br"
+      sigma: UNKNOWN
+      note: "tbm_bl"
+    spin:
+      value: ccw
+      method: published
+      source: *spin_source
+      status: [INFERRED]
+      note: "agrees with the PX4/ArduPilot quad-X directions"
+      check: "B1 replay checks the yaw-torque sign"
+  m3:
+    position:
+      value: [0.075, -0.10, 0.0]
+      shape: frd3
+      unit: m
+      method: "derived(FLU→FRD: y_FRD = −y_FLU, z_FRD = −z_FLU, from blackbird.yaml @ 24f21c4 tbm_*)"
+      source: "uzh-rpg/agile_flight blackbird.yaml @ 24f21c4, tbm_fr/tbm_bl/tbm_fl/tbm_br"
+      sigma: UNKNOWN
+      note: "tbm_fl"
+    spin:
+      value: cw
+      method: published
+      source: *spin_source
+      status: [INFERRED]
+      note: "agrees with the PX4/ArduPilot quad-X directions"
+      check: "B1 replay checks the yaw-torque sign"
+  m4:
+    position:
+      value: [-0.075, 0.10, 0.0]
+      shape: frd3
+      unit: m
+      method: "derived(FLU→FRD: y_FRD = −y_FLU, z_FRD = −z_FLU, from blackbird.yaml @ 24f21c4 tbm_*)"
+      source: "uzh-rpg/agile_flight blackbird.yaml @ 24f21c4, tbm_fr/tbm_bl/tbm_fl/tbm_br"
+      sigma: UNKNOWN
+      note: "tbm_br"
+    spin:
+      value: cw
+      method: published
+      source: *spin_source
+      status: [INFERRED]
+      note: "agrees with the PX4/ArduPilot quad-X directions"
+      check: "B1 replay checks the yaw-torque sign"
+
+sensor_profile: marv_v2_board_default
