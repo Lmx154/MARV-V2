@@ -12,6 +12,8 @@ RUN apt-get update \
         g++=4:13.2.0-7ubuntu1 \
         g++-13=13.3.0-6ubuntu2~24.04.1 \
         gcc-arm-none-eabi=15:13.2.rel1-2 \
+        libnewlib-arm-none-eabi=4.4.0.20231231-2 \
+        libstdc++-arm-none-eabi-newlib=15:13.2.rel1-2+26 \
         git=1:2.43.0-1ubuntu7.3 \
         clang-tidy-18=1:18.1.3-1ubuntu1 \
         cmake=3.28.3-1build7 \
