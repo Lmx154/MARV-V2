@@ -1,10 +1,10 @@
 add_library(marv_params INTERFACE)
 target_include_directories(marv_params INTERFACE include)
 
-set(MARV_PARAM_CARD_FILES "${PROJECT_SOURCE_DIR}/tests/regression/quad/L00/fixtures/l0_card.yaml" CACHE STRING
-    "Vehicle-card parameter sources (origin default-from-card); the L0 test fixture until L1 supplies the card")
-set(MARV_PARAM_REGISTER_FILES "${PROJECT_SOURCE_DIR}/tests/regression/quad/L00/fixtures/l0_register.yaml" CACHE STRING
-    "Design-budget register parameter sources (origin default-from-register); the L0 test fixture until L1")
+set(MARV_VEHICLE_CARD "vehicles/uzh_neurobem_5in.yaml" CACHE STRING
+    "Vehicle card of the product parameter set (repository-relative or absolute); linted and flattened by tools/card/flatten.py")
+set(MARV_DESIGN_BUDGET "design/budget.yaml" CACHE STRING
+    "Design-budget register of the product parameter set (repository-relative or absolute)")
 set(MARV_PYTHON "${PROJECT_SOURCE_DIR}/.venv/bin/python" CACHE FILEPATH
     "Python of the uv environment (created by `uv sync --frozen`) that runs tools/gen/params_gen.py")
 
@@ -74,7 +74,57 @@ function(marv_add_param_set name)
   marv_apply_flags(${name}_runtime FIRMWARE)
 endfunction()
 
-marv_add_param_set(marv_params CARD ${MARV_PARAM_CARD_FILES} REGISTER ${MARV_PARAM_REGISTER_FILES})
+# marv_add_card_param_set(<name> CARD <card.yaml> BUDGET <budget.yaml>)
+#
+# A parameter set (marv_add_param_set) whose sources are a vehicle card and the design-budget register: a build-time
+# custom command runs tools/card/flatten.py (lints first; a lint finding fails the build) into
+# ${CMAKE_BINARY_DIR}/generated/<name>/flatten/ and marv_add_param_set consumes its two outputs. The command depends on
+# the card, the sensor profile the card names, the budget and tools/card/*.py. The target <name>_report ALWAYS runs at
+# build time (the generator commit is part of it) and writes ${CMAKE_BINARY_DIR}/generated/<name>/l1_report.txt,
+# tools/card/report.py's L1 run report.
+function(marv_add_card_param_set name)
+  cmake_parse_arguments(ARG "" "CARD;BUDGET" "" ${ARGN})
+  cmake_path(ABSOLUTE_PATH ARG_CARD BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
+  cmake_path(ABSOLUTE_PATH ARG_BUDGET BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ARG_CARD}")
+
+  file(STRINGS "${ARG_CARD}" _profile_line REGEX "^sensor_profile:")
+  string(REGEX REPLACE "^sensor_profile:[ ]*([A-Za-z0-9_]+).*$" "\\1" _profile "${_profile_line}")
+  if(NOT _profile OR _profile STREQUAL _profile_line)
+    message(FATAL_ERROR "marv_add_card_param_set(${name}): no `sensor_profile: <id>` line in ${ARG_CARD}")
+  endif()
+  set(profile_file "${PROJECT_SOURCE_DIR}/sensors/profiles/${_profile}.yaml")
+
+  set(flat_dir "${CMAKE_BINARY_DIR}/generated/${name}/flatten")
+  set(flat_card "${flat_dir}/${name}_card.yaml")
+  set(flat_register "${flat_dir}/${name}_register.yaml")
+  file(GLOB marv_card_tools CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/tools/card/*.py")
+
+  add_custom_command(
+    OUTPUT "${flat_card}" "${flat_register}"
+    COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/card/flatten.py"
+            --card "${ARG_CARD}" --budget "${ARG_BUDGET}"
+            --out-card "${flat_card}" --out-register "${flat_register}" --root "${PROJECT_SOURCE_DIR}"
+    DEPENDS "${ARG_CARD}" "${profile_file}" "${ARG_BUDGET}" ${marv_card_tools}
+    COMMENT "Linting and flattening the vehicle card and design budget (${name})"
+    VERBATIM)
+
+  marv_add_param_set(${name} CARD "${flat_card}" REGISTER "${flat_register}")
+
+  add_custom_target(${name}_report ALL
+    COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/card/report.py"
+            --card "${ARG_CARD}" --budget "${ARG_BUDGET}" --root "${PROJECT_SOURCE_DIR}"
+            --out "${CMAKE_BINARY_DIR}/generated/${name}/l1_report.txt"
+    BYPRODUCTS "${CMAKE_BINARY_DIR}/generated/${name}/l1_report.txt"
+    DEPENDS "${ARG_CARD}" "${profile_file}" "${ARG_BUDGET}" ${marv_card_tools}
+    COMMENT "Writing the L1 run report (${name})"
+    VERBATIM)
+endfunction()
+
+# The product parameter set: the vehicle card and the design-budget register. (The INTERFACE library `marv_params`
+# above is the include root that every set's <name>_generated links; this set's targets are marv_params_generated and
+# marv_params_runtime.)
+marv_add_card_param_set(marv_params CARD "${MARV_VEHICLE_CARD}" BUDGET "${MARV_DESIGN_BUDGET}")
 
 # The L0 parameter set: built from the frozen L0 fixtures, whatever MARV_PARAM_*_FILES name. The L0 composition, the
 # null plant, the SIL test library and the L0 tests link it, so later layers can change the product's parameter
