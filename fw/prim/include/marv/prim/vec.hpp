@@ -3,10 +3,9 @@
 #include <cmath>
 #include <cstddef>
 
-namespace marv::prim {
+#include "marv/prim/constants.hpp"
 
-// Dimension of physical space, written as 2 + 1 so no literal other than 0, 1, 2 appears under fw/.
-inline constexpr std::size_t kSpatialDim = 2 + 1;
+namespace marv::prim {
 
 // Fixed-size vector of N scalars of type T. Static storage, no heap, no exceptions.
 // Indexing is unchecked: the caller keeps 0 <= i < N.

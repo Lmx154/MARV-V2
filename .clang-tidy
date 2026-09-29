@@ -1,0 +1,24 @@
+# Gate G1 (core contracts 7.4): no unexplained numeric literals under fw/.
+# Allowed literals are exactly 0, 1, 2 and 0.5. Cited constants live in
+# fw/prim/include/marv/prim/constants.hpp, the only exempt file (NOLINTBEGIN/NOLINTEND there).
+# These checks skip literals that initialise const/constexpr variables; tools/ci/lint_g1.py closes that
+# hole with a token scan. Only the two magic-number checks are enabled.
+Checks: '-*,readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers'
+WarningsAsErrors: 'readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers'
+HeaderFilterRegex: '(^|/)fw/'
+SystemHeaders: false
+CheckOptions:
+  readability-magic-numbers.IgnoredIntegerValues: '0;1;2'
+  readability-magic-numbers.IgnoredFloatingPointValues: '0.0;1.0;2.0;0.5'
+  readability-magic-numbers.IgnoreAllFloatingPointValues: false
+  readability-magic-numbers.IgnoreBitFieldsWidths: false
+  readability-magic-numbers.IgnorePowersOf2IntegerValues: false
+  readability-magic-numbers.IgnoreTypeAliases: false
+  readability-magic-numbers.IgnoreUserDefinedLiterals: false
+  cppcoreguidelines-avoid-magic-numbers.IgnoredIntegerValues: '0;1;2'
+  cppcoreguidelines-avoid-magic-numbers.IgnoredFloatingPointValues: '0.0;1.0;2.0;0.5'
+  cppcoreguidelines-avoid-magic-numbers.IgnoreAllFloatingPointValues: false
+  cppcoreguidelines-avoid-magic-numbers.IgnoreBitFieldsWidths: false
+  cppcoreguidelines-avoid-magic-numbers.IgnorePowersOf2IntegerValues: false
+  cppcoreguidelines-avoid-magic-numbers.IgnoreTypeAliases: false
+  cppcoreguidelines-avoid-magic-numbers.IgnoreUserDefinedLiterals: false
