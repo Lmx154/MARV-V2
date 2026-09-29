@@ -22,3 +22,8 @@ add_executable(unit_hal_sim hal_sim/clock_test.cpp hal_sim/actuator_latch_test.c
 target_link_libraries(unit_hal_sim PRIVATE marv_hal_sim GTest::gtest_main)
 marv_apply_flags(unit_hal_sim)
 gtest_discover_tests(unit_hal_sim)
+
+add_executable(unit_sched sched/rate_groups_test.cpp)
+target_link_libraries(unit_sched PRIVATE marv_sched marv_hal_sim GTest::gtest_main)
+marv_apply_flags(unit_sched)
+gtest_discover_tests(unit_sched)
