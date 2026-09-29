@@ -16,6 +16,11 @@ enum class ParamMethod : std::uint8_t {
   Scenario
 };
 
+// How to read ParamRecord::sigma. Known: a 1-sigma > 0. Exact: no uncertainty (a definition or a count), sigma is +0.
+// Unknown: the uncertainty has not been established, sigma is +0 and must not be read as Exact. Choice: a design
+// choice or scenario value, not a measurement, sigma is +0.
+enum class SigmaKind : std::uint8_t { Known = 0, Exact, Unknown, Choice };
+
 struct ParamValue {
   ParamType type;
   float f32;
@@ -24,10 +29,11 @@ struct ParamValue {
 
 struct ParamRecord {
   ParamValue value;
-  float sigma;  // 1-sigma, same unit; finite, >= 0
+  float sigma;  // 1-sigma, same unit; > 0 for SigmaKind::Known, +0.0f for every other kind
   ParamOrigin origin;
   ParamMethod method;
   bool locked;
+  SigmaKind sigma_kind;
   const char* unit;    // SI symbol, static storage; "1" if dimensionless
   const char* source;  // source text, or the rule for Derived; static storage
 };

@@ -1,0 +1,16 @@
+# L1 parameter-record fixture (tests/regression/quad/L01/fixtures/l1_card.yaml): one entry per sigma kind, a lock and
+# the vector shapes. Every value is fixture test data, not a vehicle number.
+l1_known_kg:
+  {type: f32, value: 0.75, unit: kg, method: measured, source: "L1 fixture value (tests/regression/quad/L01/fixtures/l1_card.yaml)", sigma: 0.01}
+l1_exact_count:
+  {type: i32, value: 4, unit: "1", method: scenario, source: "L1 fixture value (tests/regression/quad/L01/fixtures/l1_card.yaml)", sigma: 0}
+l1_unknown_s:
+  {type: f32, value: 0.02, unit: s, method: datasheet, source: "L1 fixture value (tests/regression/quad/L01/fixtures/l1_card.yaml)", sigma: UNKNOWN}
+l1_locked_kg:
+  {type: f32, value: 1.25, unit: kg, method: measured, source: "L1 fixture value (tests/regression/quad/L01/fixtures/l1_card.yaml)", sigma: 0.002,
+   lock: {by: fixture, on: 2026-09-29, via: manual}}
+l1_arm_m:
+  {type: f32, value: [0.1, -0.1, 0.0], shape: frd3, unit: m, method: measured, source: "L1 fixture value (tests/regression/quad/L01/fixtures/l1_card.yaml)", sigma: [0.001, UNKNOWN, 0.002],
+   lock: {by: fixture, on: 2026-09-29, via: manual}}
+l1_inertia_kgm2:
+  {type: f32, value: [0.01, 0.02, 0.03], shape: diag3, unit: kg*m^2, method: identified, source: "L1 fixture value (tests/regression/quad/L01/fixtures/l1_card.yaml)", sigma: UNKNOWN}

@@ -21,7 +21,7 @@ struct OverrideStatus {
                                                 std::span<const marv_sil_param_override> overrides) noexcept;
 
 // Validates first (merged is untouched on failure), then copies the defaults into merged and applies each override:
-// value and sigma replaced, origin Manual, method Scenario, source "sil-override"; lock and unit unchanged.
+// value and sigma replaced (sigma_kind Known if sigma > 0, else Exact with sigma +0), origin Manual, method Scenario, source "sil-override"; lock and unit unchanged.
 [[nodiscard]] OverrideStatus apply_overrides(std::span<const ParamRecord, kParamCount> defaults,
                                              std::span<const marv_sil_param_override> overrides,
                                              std::span<ParamRecord, kParamCount> merged) noexcept;

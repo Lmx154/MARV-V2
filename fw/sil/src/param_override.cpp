@@ -49,7 +49,8 @@ OverrideStatus apply_overrides(std::span<const ParamRecord, kParamCount> default
     } else {
       r.value = ParamValue{ParamType::I32, 0.0f, o.i32};
     }
-    r.sigma = o.sigma;
+    r.sigma = o.sigma > 0.0f ? o.sigma : 0.0f;
+    r.sigma_kind = o.sigma > 0.0f ? SigmaKind::Known : SigmaKind::Exact;
     r.origin = ParamOrigin::Manual;
     r.method = ParamMethod::Scenario;
     r.source = "sil-override";

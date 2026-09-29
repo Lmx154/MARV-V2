@@ -1,0 +1,8 @@
+# L1 parameter-record fixture (tests/regression/quad/L01/fixtures/l1_register.yaml): design-budget entries with the
+# choice sigma kind and the range and motors shapes. Every value is fixture test data, not a vehicle number.
+l1_choice_gain:
+  {type: f32, value: 3.5, unit: "1", method: design-budget, source: "L1 fixture value (tests/regression/quad/L01/fixtures/l1_register.yaml)", sigma: choice}
+l1_limit_hz:
+  {type: f32, value: [10.0, 100.0], shape: range, unit: Hz, method: design-budget, source: "L1 fixture value (tests/regression/quad/L01/fixtures/l1_register.yaml)", sigma: choice}
+l1_motor_gain:
+  {type: f32, value: [1.0, 1.1, 1.2, 1.3], shape: motors, unit: "1", method: scenario, source: "L1 fixture value (tests/regression/quad/L01/fixtures/l1_register.yaml)", sigma: [0.1, 0.1, 0.1, 0.1]}

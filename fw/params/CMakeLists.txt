@@ -52,9 +52,10 @@ function(marv_add_param_set name)
     OUTPUT "${gen_dir}/param_ids.hpp"
            "${gen_dir}/param_defaults.cpp"
            "${gen_dir}/params_manifest.json"
+           "${gen_dir}/params_provenance.json"
     COMMAND "${MARV_PYTHON}" "${MARV_PARAMS_GEN_SCRIPT}" ${gen_args} --out-dir "${gen_dir}"
     DEPENDS "${MARV_PARAMS_GEN_SCRIPT}" ${ARG_CARD} ${ARG_REGISTER}
-    COMMENT "Generating parameter ids, defaults and manifest (${name})"
+    COMMENT "Generating parameter ids, defaults, manifest and provenance (${name})"
     VERBATIM)
 
   add_library(${name}_generated STATIC
@@ -81,3 +82,8 @@ marv_add_param_set(marv_params CARD ${MARV_PARAM_CARD_FILES} REGISTER ${MARV_PAR
 marv_add_param_set(marv_params_l0
   CARD "${PROJECT_SOURCE_DIR}/tests/regression/quad/L00/fixtures/l0_card.yaml"
   REGISTER "${PROJECT_SOURCE_DIR}/tests/regression/quad/L00/fixtures/l0_register.yaml")
+
+# The L1 parameter-record fixture set: every sigma kind, lock and the vector shapes, exercised through params_init.
+marv_add_param_set(marv_params_l1_fixture
+  CARD "${PROJECT_SOURCE_DIR}/tests/regression/quad/L01/fixtures/l1_card.yaml"
+  REGISTER "${PROJECT_SOURCE_DIR}/tests/regression/quad/L01/fixtures/l1_register.yaml")

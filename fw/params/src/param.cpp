@@ -13,11 +13,23 @@ bool g_loaded = false;
 
 [[nodiscard]] bool id_valid(ParamId id) noexcept { return static_cast<std::size_t>(id) < kParamCount; }
 
+[[nodiscard]] bool sigma_valid(const ParamRecord& r) noexcept {
+  switch (r.sigma_kind) {
+    case SigmaKind::Known:
+      return std::isfinite(r.sigma) && r.sigma > 0.0f;
+    case SigmaKind::Exact:
+    case SigmaKind::Unknown:
+    case SigmaKind::Choice:
+      return r.sigma == 0.0f && !std::signbit(r.sigma);
+  }
+  return false;
+}
+
 [[nodiscard]] bool record_valid(const ParamRecord& r, const ParamRecord& generated) noexcept {
   if (r.value.type != generated.value.type || r.unit != generated.unit || r.source == nullptr) {
     return false;
   }
-  if (!std::isfinite(r.sigma) || r.sigma < 0.0f) {
+  if (!sigma_valid(r)) {
     return false;
   }
   if (r.value.type == ParamType::F32) {
