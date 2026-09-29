@@ -106,6 +106,89 @@ g1_nolint_control() {
   g1_control tests/controls/g1_planted_nolint.cpp G1-NOLINT G1-TIDY G1-SCAN
 }
 
+g3_check() {
+  uv run python tools/ci/check_g3.py "$@"
+}
+
+# g3_control <preset> <target> <intended tag> <intended text> <check args...>
+# Builds the planted target, runs the G3 check on the control manifest and requires exit status 1 (violation), the
+# intended diagnostic, and no diagnostic of another G3 check.
+g3_control() {
+  local preset="$1" target="$2" want="$3" text="$4" log status=0 build_log
+  shift 4
+  build_log="$(mktemp)"
+  if ! cmake --build --preset "${preset}" --target "${target}" >"${build_log}" 2>&1; then
+    cat "${build_log}"
+    echo "control target ${target} did not build"
+    rm -f "${build_log}"
+    return 1
+  fi
+  rm -f "${build_log}"
+  log="$(mktemp)"
+  g3_check "$@" >"${log}" 2>&1 || status=$?
+  cat "${log}"
+  if [[ ${status} -ne 1 ]]; then
+    echo "control did not fail as a G3 violation (exit ${status}): G3 is not enforced for ${target}"
+    rm -f "${log}"
+    return 1
+  fi
+  if ! grep -q "^${want} " "${log}" || ! grep -qF -- "${text}" "${log}"; then
+    echo "control failed, but not with a ${want} diagnostic containing ${text}"
+    rm -f "${log}"
+    return 1
+  fi
+  local other
+  for other in G3-SYMBOL G3-INCLUDE G3-EXPORT G3-VACUOUS G3-ERROR; do
+    if [[ "${other}" != "${want}" ]] && grep -q "^${other}" "${log}"; then
+      echo "control failed with an unintended ${other} diagnostic"
+      rm -f "${log}"
+      return 1
+    fi
+  done
+  rm -f "${log}"
+}
+
+g3_host_symbols() {
+  g3_check symbols --manifest build/host-debug/g3_manifest.json --nm nm
+}
+
+g3_host_includes() {
+  g3_check includes --manifest build/host-debug/g3_manifest.json
+}
+
+g3_host_exports() {
+  g3_check exports --manifest build/host-debug/g3_manifest.json --nm nm
+}
+
+g3_m33_symbols() {
+  g3_check symbols --manifest build/m33/g3_manifest.json --nm arm-none-eabi-nm
+}
+
+g3_m33_includes() {
+  g3_check includes --manifest build/m33/g3_manifest.json
+}
+
+g3_symbol_control() {
+  g3_control host-debug g3_planted_truth G3-SYMBOL "contains 'marv::truth::'" \
+    symbols --manifest build/host-debug/tests/controls/g3_control_symbol.json --nm nm
+}
+
+g3_m33_symbol_control() {
+  g3_control m33 g3_planted_truth G3-SYMBOL "contains 'marv::truth::'" \
+    symbols --manifest build/m33/tests/controls/g3_control_symbol.json --nm arm-none-eabi-nm
+}
+
+g3_include_control() {
+  g3_control host-debug g3_planted_include G3-INCLUDE "inside fw/hal/sim/" \
+    includes --manifest build/host-debug/tests/controls/g3_control_include.json \
+    --compile-commands build/host-debug/compile_commands.json
+}
+
+g3_export_control() {
+  g3_control host-debug g3_planted_export G3-EXPORT "exports 'planted_extra_export'" \
+    exports --manifest build/host-debug/tests/controls/g3_control_export.json --nm nm
+}
+
 step "uv sync --frozen" uv sync --frozen
 step "tools tests (pytest tests/tools)" uv run pytest tests/tools -q
 if [[ -n "${MARV_CI_BASE_REF:-}" ]]; then
@@ -113,12 +196,21 @@ if [[ -n "${MARV_CI_BASE_REF:-}" ]]; then
 fi
 step "host-debug: configure, build, ctest" host_preset host-debug
 step "G1: no unexplained numeric literals under fw/ (clang-tidy, token scan, NOLINT check)" g1_lint
+step "G3: no truth or harness symbol in any host flight library (nm -C)" g3_host_symbols
+step "G3: no flight translation unit has a harness include directory (host)" g3_host_includes
+step "G3: the SIL libraries export only marv_sil_* (nm -D)" g3_host_exports
 step "host-release: configure, build, ctest" host_preset host-release
 step "frozen suites (ctest -L frozen)" frozen_suites
 step "m33: configure, build" m33_build
+step "G3: no truth or harness symbol in any m33 flight library (arm-none-eabi-nm -C)" g3_m33_symbols
+step "G3: no flight translation unit has a harness include directory (m33)" g3_m33_includes
 step "PB2 negative control (planted float to double promotion must fail m33)" pb2_negative_control
 step "G1 negative control (planted magic literal must fail clang-tidy)" g1_literal_control
 step "G1 negative control (planted literal-initialised constexpr must fail the token scan)" g1_constexpr_control
 step "G1 negative control (planted NOLINT of a magic-number check must fail)" g1_nolint_control
+step "G3 negative control (planted marv::truth symbol in a flight library must fail the symbol check, host)" g3_symbol_control
+step "G3 negative control (planted marv::truth symbol in a flight library must fail the symbol check, m33)" g3_m33_symbol_control
+step "G3 negative control (planted fw/hal/sim include directory must fail the include check)" g3_include_control
+step "G3 negative control (planted extra SIL export must fail the export check)" g3_export_control
 
 echo "ALL STEPS PASSED"
