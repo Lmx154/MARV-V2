@@ -196,3 +196,49 @@ def test_cli_exit_codes(tmp_path, capsys):
     assert cc.main([str(tmp_path / "missing.hpp")]) == 2
     assert cc.main(["a", "b"]) == 2
     assert cc.main(["--help"]) == 2
+
+
+def _plant_in_real_copy(snippet):
+    text = REAL.read_text()
+    assert cc.check_text(text, "copy") == []
+    planted = text.replace("}  // namespace marv::prim", snippet + "\n}  // namespace marv::prim")
+    assert planted != text
+    return cc.check_text(planted, "copy")
+
+
+@pytest.mark.parametrize(
+    "define",
+    ["#define K_PLANTED 3", "#define K_PLANTED (2 * 3.14)", "#define K_PLANTED(x) ((x) * 9)", "#define K_PLANTED \\\n  7"],
+)
+def test_define_with_numeric_replacement_fails_even_in_a_cited_paragraph(define):
+    got = _plant_in_real_copy("// Cited. Citation: something.\n// Kind: math.\n" + define + "\n")
+    assert len(got) == 1, got
+    assert ": K_PLANTED: #define with a numeric literal; constants.hpp holds constexpr variables only" in got[0]
+
+
+@pytest.mark.parametrize("define", ["#define MARV_PLANTED_H", "#define K_ALIAS kPi", "#define K_V2 kPi"])
+def test_define_without_numeric_replacement_is_accepted(define):
+    assert _plant_in_real_copy(define + "\n") == []
+
+
+def test_define_line_number_is_reported():
+    got = cc.check_text("#pragma once\n#define K 5\n" + VALID, "x.hpp")
+    assert got and got[0].startswith("constants: x.hpp:2: K: #define")
+
+
+@pytest.mark.parametrize(
+    "enum, name",
+    [
+        ("enum { kPlanted = 3 };", "kPlanted"),
+        ("enum class Mode : int { kA, kPlanted = 0x10, kC };", "kPlanted"),
+        ("enum E { kA = 1 << 3 };", "kA"),
+    ],
+)
+def test_enum_with_numeric_initialiser_fails_even_in_a_cited_paragraph(enum, name):
+    got = _plant_in_real_copy("// Cited. Citation: something.\n// Kind: math.\n" + enum + "\n")
+    assert len(got) == 1, got
+    assert f": {name}: enum with an explicit numeric initialiser" in got[0]
+
+
+def test_enum_without_numeric_initialiser_is_accepted():
+    assert _plant_in_real_copy("enum class Mode { kA, kB, kC = kA };\n") == []

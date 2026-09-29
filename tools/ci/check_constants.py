@@ -37,8 +37,8 @@ _TEMPLATE_HEAD = re.compile(r"\s*template\s*<[^<>]*>")
 _ATTRIBUTE = re.compile(r"\[\[[^\]]*\]\]")
 
 
-def blank_comments(text: str) -> str:
-    """Text with comments, string and char literals and preprocessor lines blanked; newlines are kept."""
+def blank_comments(text: str, keep_preprocessor: bool = False) -> str:
+    """Text with comments, string and char literals (and, unless kept, preprocessor lines) blanked; newlines are kept."""
     out = []
     n = len(text)
     i = 0
@@ -68,8 +68,11 @@ def blank_comments(text: str) -> str:
             continue
         if c == "#" and at_line_start:
             while i < n and text[i] != "\n":
-                out.append(" ")
+                if text.startswith("//", i) or text.startswith("/*", i):
+                    break
+                out.append(text[i] if keep_preprocessor else " ")
                 i += 1
+            at_line_start = keep_preprocessor and (i >= n or text[i] == "\n")
             continue
         at_line_start = False
         if c in "\"'":
@@ -163,6 +166,36 @@ def statements(stripped: str) -> list[tuple[int, str]]:
     return found
 
 
+def defines(stripped_with_pp: str) -> list[tuple[int, str]]:
+    """(line, name) of every #define whose replacement contains a numeric literal."""
+    found = []
+    lines = stripped_with_pp.split("\n")
+    no = 0
+    while no < len(lines):
+        start = no + 1
+        text = lines[no]
+        while text.rstrip().endswith("\\") and no + 1 < len(lines):
+            no += 1
+            text = text.rstrip()[:-1] + " " + lines[no]
+        no += 1
+        m = re.match(r"\s*#\s*define\s+(\w+)(\([^)]*\))?(.*)$", text)
+        if m and _NUMBER.search(m.group(3)):
+            found.append((start, m.group(1)))
+    return found
+
+
+def enum_initialisers(line: int, text: str) -> list[tuple[int, str]]:
+    """(line, enumerator) for every enumerator with an explicit numeric initialiser."""
+    found = []
+    open_at = text.find("{")
+    if open_at < 0:
+        return found
+    for m in re.finditer(r"(\w+)\s*=\s*([^,}]*)", text[open_at:]):
+        if _NUMBER.search(m.group(2)):
+            found.append((line + text.count("\n", 0, open_at + m.start()), m.group(1)))
+    return found
+
+
 def declarations(stripped: str) -> list[tuple[int, str, str]]:
     """(line, name, what) per constant: what is 'constexpr', or 'numeric' (non-constexpr, numeric initialiser)."""
     found = []
@@ -173,7 +206,12 @@ def declarations(stripped: str) -> list[tuple[int, str, str]]:
                 break
             text = text[m.end():]
         text = _ATTRIBUTE.sub(" ", text).strip()
-        if not text or _SKIP_HEAD.match(text):
+        if not text:
+            continue
+        if re.match(r"enum\b", text):
+            found.extend((ln, name, "enum") for ln, name in enum_initialisers(line, text))
+            continue
+        if _SKIP_HEAD.match(text):
             continue
         m = re.search(r"[=({]", text)
         if m is not None and m.group() == "(":
@@ -208,10 +246,21 @@ def paragraphs(lines: list[str]) -> list[tuple[int, int]]:
 
 def check_text(text: str, shown: str) -> list[str]:
     lines = text.splitlines()
-    decls = declarations(blank_comments(text))
-    if not decls:
-        return [f"constants: {shown}:1: <none>: no constant declaration found; the check would be vacuous"]
+    all_decls = declarations(blank_comments(text))
+    decls = [d for d in all_decls if d[2] != "enum"]
+    macros = defines(blank_comments(text, keep_preprocessor=True))
     findings: list[str] = []
+    for line, name in macros:
+        findings.append(
+            f"constants: {shown}:{line}: {name}: #define with a numeric literal; constants.hpp holds constexpr variables only"
+        )
+    for line, name, _ in (d for d in all_decls if d[2] == "enum"):
+        findings.append(
+            f"constants: {shown}:{line}: {name}: enum with an explicit numeric initialiser; "
+            "constants.hpp holds constexpr variables only"
+        )
+    if not decls and not findings:
+        return [f"constants: {shown}:1: <none>: no constant declaration found; the check would be vacuous"]
 
     for first, last in paragraphs(lines):
         para = [d for d in decls if first <= d[0] <= last]
