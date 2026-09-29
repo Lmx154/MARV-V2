@@ -18,6 +18,12 @@ inline constexpr std::size_t kSpatialDim = 3;
 inline constexpr std::uint16_t kDshotThrottleMin = 48;
 inline constexpr std::uint16_t kDshotThrottleMax = 2047;
 
+// Pi. Citation: the mathematical constant, the ratio of a circle's circumference to its diameter.
+inline constexpr double kPi = 3.14159265358979323846;
+
+// Seconds per minute. Citation: SI definition (the minute is exactly 60 s, an accepted non-SI unit of time).
+inline constexpr double kSecondsPerMinute = 60.0;
+
 // WGS 84 normal-gravity constants. Citation for every entry below: NIMA TR8350.2, "Department of Defense World
 // Geodetic System 1984", 3rd ed., 4 July 1997, incl. Amendment 1 (3 January 2000) ("NIMA TR8350.2 3rd ed. Amdt 1
 // (2000)").

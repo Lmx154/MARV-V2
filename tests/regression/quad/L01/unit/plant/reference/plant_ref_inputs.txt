@@ -1,0 +1,25 @@
+# Frozen path: tests/regression/quad/L01/unit/plant/reference/plant_ref_inputs.txt
+# Inputs of the known-answer test of marv_plant v0. Read by plant_ref.py and by kat_test.cpp.
+# Every value below is a scenario value (L1 test fixture): a labelled choice, not a measurement, not a vehicle card.
+# Format: "key v..." lines; "case name px py pz qw qx qy qz d1 d2 d3 d4" lines (pos NED m, q body FRD -> NED,
+# DShot per logical motor 1..4). Each case is run from motor state 0 by one step of settle_taus * motor_tau_s, so
+# the rotor speeds are the ESC-map speeds to within exp(-settle_taus) < 2e-22 relative.
+mass_kg 0.75
+rotor_position_frd_m 0.11 0.09 0.0 -0.11 -0.09 0.0 0.11 -0.09 0.0 -0.11 0.09 0.0
+yaw_sign 1 1 -1 -1
+thrust_coeff 2e-07
+torque_ratio_m 0.016
+omega_min_rad_s 250.0
+omega_max_rad_s 3800.0
+motor_tau_s 0.03
+motor_substep_s 0.005
+pole_count 14
+site_lat_rad 0.82
+site_height_m 500.0
+settle_taus 50
+case identity_equal 0.0 0.0 0.0 1.0 0.0 0.0 0.0 1000 1000 1000 1000
+case identity_unequal 0.0 0.0 0.0 1.0 0.0 0.0 0.0 700 1500 400 1900
+case rotated_high 10.0 -20.0 -120.0 0.2222222222222222 0.4444444444444444 0.5555555555555556 0.6666666666666666 1100 900 1300 1700
+case tilted_high 0.0 0.0 -300.0 0.9 0.1 -0.3 0.3 1800 300 1200 0
+case gravity_only 5.0 5.0 -50.0 0.9 0.1 -0.3 0.3 0 0 0 0
+case yawed_180_low 0.0 0.0 30.0 0.0 0.0 0.0 1.0 1100 900 1300 1000
