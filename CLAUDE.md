@@ -49,10 +49,10 @@ CI enforces these whether or not anyone reads this file (core §7.4):
 
 ## Frozen tests and decisions
 
-- Frozen suites live in `tests/regression/quad/Lnn/`. All of them run on every merge; merges to `main` go through
-  pull requests Luis approves.
+- Frozen suites live in `tests/regression/quad/Lnn/`. All of them run on every change to `master` (a pull request
+  or a push; CI checks the whole pushed range).
 - Modifying or deleting anything under `tests/regression/` needs a decision record, `docs/decisions/NNNN-<slug>.md`,
-  in the same pull request (core §7.3). Never loosen a test to make it pass.
+  in the same change (core §7.3). Never loosen a test to make it pass.
 - Every metric test has a negative control that must break it (core §7.2).
 
 ## Commands

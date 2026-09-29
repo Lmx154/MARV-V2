@@ -395,7 +395,7 @@ Mechanics:
    delay) that must break it. A test that cannot fail is caught by its control. Each control is a CI step that
    passes only if the controlled test fails.
 4. **Every opening has contract tests on both sides.**
-5. A layer is passed when its suite is green on `main` and the commit is tagged `<product>-L<n>-pass` (e.g.
+5. A layer is passed when its suite is green on `master` and the commit is tagged `<product>-L<n>-pass` (e.g.
    `quad-L0-pass`).
 6. Passing a layer does not mean it will never be reopened. Integration can reveal problems below; the regression
    suites then say at once whether a fix broke what already worked.
@@ -406,9 +406,11 @@ A change to anything under `tests/regression/` needs a decision record, `docs/de
 change: what changed, why, the evidence, and Luis's approval. CI fails a change to a regression file that no decision
 record in the same change references. This stops "fixing" a failure by loosening its test.
 
-- A **change** is a pull request. Merges to `main` go only through pull requests; Luis's approval is his approval of
-  the pull request.
-- Adding a layer's tests under `tests/regression/` in the pull request that freezes the layer needs no record.
+- A **change** is a pull request into `master`, or a push to `master`; CI checks the whole pushed range. Luis's
+  approval is his approval of the pull request, or his push. Branch protection is not enforced (Luis, 2026-09-29:
+  "just use master instead i don't feel like changing it and branch protection is not important since we;re the only
+  ones messing with it").
+- Adding a layer's tests under `tests/regression/` in the change that freezes the layer needs no record.
   Modifying or deleting a frozen file always does.
 
 ### 7.4 Guardrails, enforced by CI

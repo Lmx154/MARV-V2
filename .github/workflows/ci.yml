@@ -2,9 +2,9 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 jobs:
   ci:
@@ -17,5 +17,7 @@ jobs:
         run: docker build -t marv-ci -f ci/Dockerfile .
       - name: Run CI
         env:
-          MARV_CI_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+          # Pull request: check against the target branch. Push: check the whole pushed range (the commit before the
+          # push), except when the push creates the branch (before is all zeros).
+          MARV_CI_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before || '') }}
         run: docker run --rm -e MARV_CI_BASE_REF -v "$PWD":/src -w /src marv-ci ci/run_ci.sh
