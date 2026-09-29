@@ -13,6 +13,16 @@ target_link_libraries(unit_params PRIVATE marv_params_generated GTest::gtest_mai
 marv_apply_flags(unit_params)
 gtest_discover_tests(unit_params)
 
+add_executable(unit_params_runtime params/param_runtime_test.cpp)
+target_link_libraries(unit_params_runtime PRIVATE marv_params_runtime marv_hal_sim GTest::gtest_main)
+marv_apply_flags(unit_params_runtime)
+gtest_discover_tests(unit_params_runtime)
+
+add_executable(unit_params_runtime_uninit params/param_runtime_uninit_test.cpp)
+target_link_libraries(unit_params_runtime_uninit PRIVATE marv_params_runtime marv_hal_sim GTest::gtest_main)
+marv_apply_flags(unit_params_runtime_uninit)
+gtest_discover_tests(unit_params_runtime_uninit)
+
 add_executable(unit_types types/dshot_test.cpp types/layout_test.cpp)
 target_link_libraries(unit_types PRIVATE marv_types GTest::gtest_main)
 marv_apply_flags(unit_types)
