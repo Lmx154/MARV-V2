@@ -249,6 +249,9 @@ def _check_sigma(entry, path, out, file, kind, value_unknown, list_len):
         return
     if isinstance(sigma, list) and list_len is not None and len(sigma) != list_len:
         out.add(file, path, f"sigma: list of {len(sigma)} does not match the value's {list_len} components")
+    if not isinstance(sigma, list) and list_len is not None and is_number(sigma):
+        out.add(file, path, f"sigma: a vector value needs one sigma per component (a list of {list_len}), or "
+                            f"{UNKNOWN}; a single number is ambiguous")
     if kind in CHOICE_METHODS:
         if sigma != CHOICE:
             out.add(file, path, f"sigma: a {kind} entry is a choice and has no uncertainty; write sigma: {CHOICE}, "

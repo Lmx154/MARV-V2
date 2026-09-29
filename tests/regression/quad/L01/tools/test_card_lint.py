@@ -484,3 +484,19 @@ def test_neurobem_card_keeps_mass_conflict_unverified():
     assert mass["value"] == 0.772 and mass["status"] == ["UNVERIFIED"]
     assert [c["value"] for c in mass["conflict"]] == [0.752, 0.752]
     assert all(c["state"] == "open" for c in mass["conflict"])
+
+
+def test_single_number_sigma_on_vector_rejected(tmp_path):
+    def mutate(d):
+        d["inertia_diag"]["sigma"] = 0.0001
+        d["inertia_diag"]["sigma_rule"] = "test value"
+    p = card(tmp_path, mutate)
+    reject("--card", p, "inertia_diag: sigma: a vector value needs one sigma per component")
+
+
+def test_per_component_sigma_on_vector_accepted(tmp_path):
+    def mutate(d):
+        d["inertia_diag"]["sigma"] = [0.0001, 0.0001, 0.0001]
+        d["inertia_diag"]["sigma_rule"] = "test value"
+    p = card(tmp_path, mutate)
+    assert run_lint("--card", p).returncode == 0
