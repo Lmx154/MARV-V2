@@ -18,5 +18,26 @@ inline constexpr std::size_t kSpatialDim = 3;
 inline constexpr std::uint16_t kDshotThrottleMin = 48;
 inline constexpr std::uint16_t kDshotThrottleMax = 2047;
 
+// WGS 84 normal-gravity constants. Citation for every entry below: NIMA TR8350.2, "Department of Defense World
+// Geodetic System 1984", 3rd ed., 4 July 1997, incl. Amendment 1 (3 January 2000) ("NIMA TR8350.2 3rd ed. Amdt 1
+// (2000)").
+// Semi-major axis a, m. Table 3.1.
+inline constexpr double kWgs84A = 6378137.0;
+// Inverse flattening 1/f, defining parameter. Table 3.1.
+inline constexpr double kWgs84InvF = 298.257223563;
+// Flattening f. Derived: f = 1 / (1/f) from the defining parameter above.
+inline constexpr double kWgs84F = 1.0 / kWgs84InvF;
+// First eccentricity squared e^2. Table 3.3.
+inline constexpr double kWgs84E2 = 6.69437999014e-3;
+// Normal gravity at the equator gamma_e, m/s^2. Table 3.4.
+inline constexpr double kWgs84GammaE = 9.7803253359;
+// Somigliana's constant k = b gamma_p / (a gamma_e) - 1. Table 3.4.
+inline constexpr double kWgs84K = 0.00193185265241;
+// m = omega^2 a^2 b / GM. Table 3.4.
+inline constexpr double kWgs84M = 0.00344978650684;
+// Coefficient of the h^2 term of the height series, gamma_h = gamma [1 - (2/a)(1 + f + m - 2 f sin^2 phi) h +
+// (3/a^2) h^2]. Eq. (4-3).
+inline constexpr double kWgs84HeightQuadCoeff = 3.0;
+
 }  // namespace marv::prim
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

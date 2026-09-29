@@ -1,5 +1,6 @@
 #include <cstddef>
 
+#include "marv/prim/gravity.hpp"
 #include "marv/prim/mat.hpp"
 #include "marv/prim/quat.hpp"
 #include "marv/prim/vec.hpp"
@@ -19,5 +20,8 @@ template struct Quat<float>;
 
 template Mat<float, kSpatialDim, kSpatialDim> operator*(
     const Mat<float, kSpatialDim, kSpatialDim>&, const Mat<float, kSpatialDim, kSpatialDim>&);
+
+template float normal_gravity_ellipsoid<float>(float);
+template float normal_gravity<float>(float, float);
 
 }  // namespace marv::prim
