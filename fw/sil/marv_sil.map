@@ -1,0 +1,6 @@
+{
+  global:
+    marv_sil_*;
+  local:
+    *;
+};

@@ -37,3 +37,21 @@ add_executable(unit_sched sched/rate_groups_test.cpp)
 target_link_libraries(unit_sched PRIVATE marv_sched marv_hal_sim GTest::gtest_main)
 marv_apply_flags(unit_sched)
 gtest_discover_tests(unit_sched)
+
+# SIL entry library, built with a test-only composition. It is linked (not dlopen-ed) into unit_sil; init succeeds once
+# per process, so every test that initialises runs in a forked child (sil/sil_test_util.hpp).
+add_library(marv_test_composition STATIC sil/composition/composition.cpp)
+target_include_directories(marv_test_composition PUBLIC sil/composition/include)
+target_link_libraries(marv_test_composition PUBLIC marv_hal marv_types PRIVATE marv_params_runtime)
+marv_apply_flags(marv_test_composition FIRMWARE)
+marv_add_sil_library(marv_sil_test COMPOSITION marv_test_composition)
+
+add_executable(unit_sil sil/lifecycle_test.cpp sil/validation_test.cpp sil/behavior_test.cpp)
+target_include_directories(unit_sil PRIVATE sil/composition/include)
+target_link_libraries(unit_sil PRIVATE marv_sil_test marv_types marv_params_generated GTest::gtest_main)
+marv_apply_flags(unit_sil)
+gtest_discover_tests(unit_sil)
+
+add_test(NAME sil_exports
+  COMMAND "${CMAKE_COMMAND}" -DLIB=$<TARGET_FILE:marv_sil_test> -DNM=${CMAKE_NM}
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/sil/check_exports.cmake")
