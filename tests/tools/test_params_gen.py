@@ -97,6 +97,8 @@ def test_missing_field_is_refused(tmp_path, field):
         ({"value": "-.inf"}, "value"),
         ({"value": ".nan"}, "value"),
         ({"value": "1e300"}, "value"),
+        ({"value": "1e-50"}, "value"),
+        ({"sigma": "1e-50"}, "sigma"),
         ({"value": '"0.75"'}, "value"),
         ({"type": "i32", "value": "4.0"}, "value"),
         ({"type": "i32", "value": "2.5"}, "value"),

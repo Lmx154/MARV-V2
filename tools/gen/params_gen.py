@@ -130,6 +130,8 @@ def _finite_f32(v, what: str) -> float:
         raise Refusal(f"{what} {v!r} does not fit a float") from None
     if not math.isfinite(f):
         raise Refusal(f"{what} {v!r} is not finite")
+    if f == 0.0 and float(v) != 0.0:
+        raise Refusal(f"{what} {v!r} underflows to zero as a float")
     return f
 
 
