@@ -25,7 +25,8 @@ Board evidence: `/home/luis/Documents/kicad/MARV-V2`.
    becomes ACTIVE only when Luis edits this table.
 2. **The core owns anything two products share.** Product specs reference it and never redefine it. If a product
    spec contradicts the core, the core wins and the contradiction is a bug to fix in the product spec.
-3. **Draft 0 is retired.** Move it to an archive path that agents do not read by default (decision C-5).
+3. **Draft 0 is retired.** It is archived at `~/Documents/Notes/marv-archive/`, outside both repositories; agents do
+   not read it (decision C-5).
 4. **A frozen requirement or test changes only through a decision record** (§7.3).
 5. **These four specs are the only planning documents.** No roadmap, plan or milestone file exists beside them. The
    quad spine (`10-quad-flight-software.md` §4) is the build order. A task file, if one is used, names the layer it
@@ -159,7 +160,8 @@ hardware (tilt the board, spin each motor) before anything depends on it.
 
 - **Frames.** World NED. Body FRD, with the body origin at the centre of mass.
 - **Attitude.** Hamilton quaternion rotating body (FRD) → world (NED), stored scalar-first as `[w, x, y, z]` and kept
-  normalized. When a unique sign is needed (logs, comparisons), use w ≥ 0.
+  normalized. When a unique sign is needed (logs, comparisons), use w ≥ 0; when w = 0, the first nonzero of x, y, z
+  is positive.
   - *Rationale:* the same convention as PX4's attitude quaternion and ArduPilot's `Quaternion` (q1 = w), so code
     ported from or compared against either needs no reordering.
   - Eigen stores quaternion coefficients as x, y, z, w in memory even though its constructor takes w first. If Eigen
@@ -172,12 +174,15 @@ hardware (tilt the board, spin each motor) before anything depends on it.
   - *Rationale:* identical to the Pico SDK's `time_us_64()` and PX4's `hrt_abstime`. A 64-bit microsecond counter
     never wraps in practice (about 584,000 years); a 32-bit one wraps after about 71.6 minutes, inside a long session.
   - Intervals used in math (dt) are converted once to `float` seconds. The scheduler counts ticks, not microseconds.
+  - **A tick is one sample of the primary IMU.** The tick counter is `uint64_t`. A FIFO read that delivers k samples
+    runs k ticks. In SIL, one host step advances an integer number of ticks, with one sample set per tick.
   - When the IMU period is not a whole number of microseconds (6.4 kHz → 156.25 µs), SIL's virtual clock keeps exact
     time internally and stamps each sample by truncating to microseconds, as a hardware timer does. dt comes from
     sample timestamps (or the IMU FIFO's own), so SIL and target compute it the same way.
 - **Motors.** Three separate things, so any one can change without touching the others:
   1. **Logical numbering (fixed, in code).** Quad X, viewed from above: 1 front-right, 2 rear-left, 3 front-left,
-     4 rear-right, the PX4 and ArduPilot quad-X order. The mixer and every test use logical numbers only.
+     4 rear-right, the PX4 and ArduPilot quad-X order. The mixer and every test use logical numbers only. Arrays
+     indexed by motor use index = logical number − 1, through one named mapping.
   2. **Spin direction per logical motor (vehicle data).** Lives in the card, with provenance; the mixer's yaw column
      comes from it. There is no default: a card without directions fails the linter. (PX4 and ArduPilot's quad X
      spins 1 and 2 counter-clockwise and 3 and 4 clockwise, a common choice.)
@@ -189,9 +194,12 @@ hardware (tilt the board, spin each motor) before anything depends on it.
     checked against the card by eye. A mismatch is fixed in the mapping or the ESC setting, never in code.
 - **Host frames.** Gazebo (ENU world, FLU body) and RocketPy convert once, in their adapter, with unit tests. Nothing
   above an adapter sees a host frame.
-- **Numerics.** Estimator and control code is `float` on every build (`-fsingle-precision-constant
-  -Wdouble-promotion`). A deliberate `double` maps to the RP2354B's double coprocessor on the target and is used only
-  where float range fails (latitude and longitude).
+- **Numerics.** Primitives, estimator and control code are templated on the scalar type. Every flight composition
+  instantiates `float`; the `double` instantiation exists only for the SIL float64 shadow (EMB-5) and golden-vector
+  matching (§9). Builds use `-Wdouble-promotion -Wfloat-conversion`, never `-fsingle-precision-constant` (it would
+  silently make the float64 instantiation and deliberate doubles single precision); literals reach code as typed
+  constants. Host builds use `-ffp-contract=off`. A deliberate `double` maps to the RP2354B's double coprocessor on
+  the target and is used only where float range fails (latitude and longitude).
 
 ---
 
@@ -204,12 +212,16 @@ hardware (tilt the board, spin each motor) before anything depends on it.
   reads wall-clock time.
 - **Sensors enter at the sensor abstraction** as timestamped SI samples per class (§5), exactly where drivers deliver
   them on the target. Drivers sit below that line and are tested on hardware, one per part.
-- **Actuators leave as DShot values** (0–2047, captured above the PIO encoder) and servo commands in µs. Bidirectional
-  DShot eRPM and ESC telemetry come back from the motor model.
+- **Actuators leave as DShot values** (0 = stop, or throttle 48–2047, captured above the PIO encoder) and servo
+  commands in µs. DShot values 1–47 are ESC commands (spin direction, 3D mode, save settings); they never pass through
+  the actuator-output struct, only through a separate path that works only while disarmed (motor test and ESC
+  configuration, IF-6). Bidirectional DShot eRPM and ESC telemetry come back from the motor model.
 - **Transports carrying the boundary:**
   - **In-process** (SIL, both Gazebo modes): the firmware is built as a library and the host's lockstep plugin calls
     it once per tick. The GUI and headless modes use this same path. *Change from Draft 0, which used a socket for
-    Gazebo.*
+    Gazebo.* The entry point is a C ABI (init, tick, shutdown) so C++ hosts and Python harnesses call the same symbols.
+    Firmware state is static (EMB-4), so one process holds one firmware instance; parallel runs are parallel
+    processes.
   - **Socket** (SIL): the firmware's link port, for the GCS, using the link codec.
   - **USB** (HIL): the codec's HIL messages (IF-9), tick-stamped (tick number, simulated time) so lockstep is exact.
 - **HIL injects at the same point as SIL.** The bench sensors do not move, so HIL messages carry SI samples injected
@@ -220,9 +232,15 @@ hardware (tilt the board, spin each motor) before anything depends on it.
   Two runs on the same machine are bit-identical; CI checks this. Host and M33 are not expected to be bit-identical
   (FMA contraction differs): compare with a tolerance, or build both with `-ffp-contract=off` for comparison runs.
 - **Parameters.** The firmware reads tunables only through one parameter interface (get by id, with provenance).
+  - **Id and record.** The id is a generated enum. Each record holds value (`float` or `int32`), unit, origin ∈
+    {`default-from-card`, `default-from-register`, `manual`, `identified`}, method and source (§2.1), σ, and a lock
+    flag. IF-5 carries the same fields.
+  - **SIL override.** Only the SIL harness can override a value before a run starts (§2 rule 5). The override
+    path is not built into flight compositions.
   - **Final form:** values come from the universal config file (`20-ground-segment.md`).
   - **Bootstrap, until that system exists:** values come from a struct generated from the card and the budget
-    register. In SIL the harness injects it. On the target it is a generated header, marked `default-from-card`.
+    register (from quad L1; at L0 the generator runs on a test fixture). SIL and target build the same generated
+    source; SIL may then apply the harness override.
   - This is a **declared, time-limited exception to guardrail G2** (§7.4). It ends when ground segment phase G3
     passes. The parameter interface does not change when it ends, so nothing above it changes either.
 
@@ -254,7 +272,7 @@ The GNC code sees sensor **classes**. A part is a **driver plus a profile**.
 
 | Class | What the GNC code receives | What the profile states |
 | --- | --- | --- |
-| IMU (gyro + accel) | timestamped Δθ, Δv or rates and specific force (SI), saturation flags | white-noise density, bias (turn-on and random walk), range, resolution, rate, latency, mounting pose |
+| IMU (gyro + accel) | timestamped body rates (rad/s) and specific force (m/s²), temperature, per-axis saturation flags | white-noise density, bias (turn-on and random walk), range, resolution, rate, latency, mounting pose |
 | High-g accelerometer | specific force (SI), saturation flag | the same |
 | Barometer | pressure (Pa), temperature | noise, relative accuracy, temperature coefficient, rate, latency |
 | GNSS | position, velocity, their reported accuracies, fix state | latency, rate, error correlation time |
@@ -298,7 +316,7 @@ errors.
 
 ## 6. Physics ownership and hosts
 
-**`marv_plant`** (C++17, C ABI) is one library that holds every physics model except rigid-body integration and
+**`marv_plant`** (C++20, C ABI) is one library that holds every physics model except rigid-body integration and
 contact:
 
 - rotor thrust and torque, motor and ESC dynamics, battery, rotor and body drag, ground effect, vibration;
@@ -371,12 +389,14 @@ Each product is built as a stack of **layers**. For each layer the product spec 
 
 Mechanics:
 
-1. Frozen tests live in `tests/regression/<product>/Lxx/`.
-2. A merge is blocked if any frozen suite at or below the changed layer is red.
+1. Frozen tests live in `tests/regression/<product>/Lnn/` (two digits: `L00` … `L10`).
+2. Every frozen suite runs on every merge; a merge is blocked if any is red.
 3. **Every metric test has a negative control:** a deliberate perturbation (e.g. gains × 1.1, one tick of added
-   delay) that must break it. A test that cannot fail is caught by its control.
+   delay) that must break it. A test that cannot fail is caught by its control. Each control is a CI step that
+   passes only if the controlled test fails.
 4. **Every opening has contract tests on both sides.**
-5. A layer is passed when its suite is green on `main` and the commit is tagged `<product>-Lxx-pass`.
+5. A layer is passed when its suite is green on `main` and the commit is tagged `<product>-L<n>-pass` (e.g.
+   `quad-L0-pass`).
 6. Passing a layer does not mean it will never be reopened. Integration can reveal problems below; the regression
    suites then say at once whether a fix broke what already worked.
 
@@ -386,20 +406,25 @@ A change to anything under `tests/regression/` needs a decision record, `docs/de
 change: what changed, why, the evidence, and Luis's approval. CI fails a change to a regression file that no decision
 record in the same change references. This stops "fixing" a failure by loosening its test.
 
+- A **change** is a pull request. Merges to `main` go only through pull requests; Luis's approval is his approval of
+  the pull request.
+- Adding a layer's tests under `tests/regression/` in the pull request that freezes the layer needs no record.
+  Modifying or deleting a frozen file always does.
+
 ### 7.4 Guardrails, enforced by CI
 
 Rules in prose do not stop an agent or a deadline, so each of these is a CI check:
 
 | # | Guardrail | How CI enforces it |
 | --- | --- | --- |
-| G1 | No unexplained numeric literals in GNC code. | clang-tidy `readability-magic-numbers` / `cppcoreguidelines-avoid-magic-numbers` over the GNC library, allow-listing only mathematical constants (0, 1, 2, ½, π…). |
+| G1 | No unexplained numeric literals in GNC code. | clang-tidy `readability-magic-numbers` / `cppcoreguidelines-avoid-magic-numbers` over everything under `fw/`, allow-listing only 0, 1, 2 and ½. Cited constants (π, WGS 84, USSA76, χ² tables…) live in one constants header, each with its citation; it is the only exempt file. |
 | G2 | Every tunable is a parameter with provenance. | The generator refuses a parameter without a card, register or rule source. The firmware has no compiled-in tunable numbers, except the declared bootstrap exception (§4). |
-| G3 | The flight software never sees the truth. | `truth` kinds and truth-fed modes exist only in the SIL harness target; the firmware build cannot link them (checked on the link map). A validation run that used one is rejected. |
+| G3 | The flight software never sees the truth. | `truth` kinds and truth-fed modes exist only in SIL harness targets, under the `marv::truth` namespace (`marv_truth_` for C symbols). No flight composition, host or target, may contain such a symbol (checked on each artifact's symbol table). A validation run that used one is rejected. |
 | G4 | Nothing is tuned to one simulated vehicle. | Once the vehicle zoo is active: Monte Carlo over dispersions and every zoo vehicle, plus a held-out vehicle never used in development. |
 | G5 | "It flies" is not a result. | The validation report checks each derived requirement with its margin; a missing requirement is a failure. |
 | G6 | The simulator must match reality, not only itself. | Replay against published flight data runs in CI once that branch is active. |
 | G7 | Only validated configurations fly. | Once the ground segment exists: the GCS flashes and uploads only (image, config) pairs with a passing report. |
-| G8 | Agents get the rules, and CI holds them to them. | `CLAUDE.md` states the number rule, the ACTIVE-spec rule and these gates. CI enforces G1–G7 whether or not anyone reads it. |
+| G8 | Agents get the rules, and CI holds them to them. | `CLAUDE.md` states the number rule, the ACTIVE-spec rule, the `UNKNOWN` rule and these gates; CI fails if any of those sections is missing. CI enforces G1–G7 whether or not anyone reads it. |
 
 `CLAUDE.md` must also say: an agent that needs a number it cannot source tags it `UNKNOWN` and stops to ask.
 
@@ -469,8 +494,11 @@ No image, on any port, has a command that fires a charge.
 
 ## 9. Shared code
 
-- **One primitives layer**, header-only, float, fixed-size: quaternions, small matrices, RK4, table interpolation,
-  biquads, χ² tables, atmosphere and gravity. Every product and harness uses it.
+- **One primitives layer**, header-only, scalar-templated (§3 Numerics), fixed-size: quaternions, small matrices, RK4,
+  table interpolation, biquads, χ² tables, atmosphere and gravity. Every product and harness uses it. Each piece joins
+  the layer with the first layer that uses it, and its tests join that layer's pass bar: vectors, matrices and
+  quaternions at quad L0; gravity, RK4 and interpolation at L1; biquads at L6; atmosphere in B1; χ² in B2.
+- **Language:** C++20 in every product and harness.
 - **One estimator core with pluggable measurement models.** Quad and rocket estimators share IMU propagation, fusion,
   gating and covariance hygiene; they differ only in measurement models and states.
 - **Compile-time composition.** Only the kinds a structure names are compiled (templates, no virtual dispatch in the
@@ -501,10 +529,11 @@ No image, on any port, has a command that fires a charge.
 | C-1 | **Decided 2026-09-28:** quaternion `[w, x, y, z]`, Hamilton, body → NED; time `uint64_t` µs via `hal_time_us()` (§3). |
 | C-2 | **Decided 2026-09-28:** logical quad-X numbering in code; spin direction in the card; pad mapping in configuration; direction set at the ESC (§3). |
 | C-3 | **Decided 2026-09-28:** no roadmap or plan file. These four specs are the only reference set (§0 rule 5). |
-| C-4 | Licence posture. If MARV V2 is permissively licensed: borrow code only from BSD / MIT / Apache projects (PX4, RocketPy, MuJoCo, Gazebo); use GPL-3.0 projects (Betaflight, ArduPilot, INDIflight) as references for ideas only. |
-| C-5 | Archive location for Draft 0. |
+| C-4 | **Decided 2026-09-29:** BSD-3-Clause. Borrow code only from BSD / MIT / Apache projects (PX4, RocketPy, MuJoCo, Gazebo); use GPL-3.0 projects (Betaflight, ArduPilot, INDIflight) as references for ideas only. |
+| C-5 | **Decided 2026-09-29:** Draft 0 archived at `~/Documents/Notes/marv-archive/` (§0 rule 3). |
 | C-6 | Values for the design-budget register (§2.2), as their layers are specified. |
-| C-7 | Where code lives. Draft 0 proposed a separate `marv-sim` repository for `marv_plant`, cards and generators, with the Gazebo worlds and plugin and the RocketPy harness beside it. Keep that, or one repository. |
+| C-7 | **Decided 2026-09-29:** one repository holds the firmware, `marv_plant`, cards, generators, the Gazebo plugin and worlds, and (when active) the RocketPy harness. |
+| C-8 | **Decided 2026-09-29:** build and CI. CMake + Ninja with presets `host-debug`, `host-release`, `m33` (arm-none-eabi, compile-only until quad L9); GoogleTest pinned by hash; Python 3.12 + uv lockfile + pytest for generators; GitHub Actions running every job in one pinned Docker image, which is also the only place goldens are regenerated. `hal_sim` is plain C++; nothing above the HAL includes Pico SDK headers. |
 
 ---
 

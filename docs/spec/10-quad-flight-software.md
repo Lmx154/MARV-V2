@@ -79,7 +79,8 @@ A gz-sim System plugin, the only host-specific code:
    `WorldLinearAcceleration` (for contact phases).
 2. Convert ENU/FLU → NED/FRD.
 3. Call `marv_plant`: advance motor states, compute the wrench about the CM and the sensor samples.
-4. Step the firmware one tick, in-process (core §4), with those samples; take its actuator outputs.
+4. Step the firmware an integer number of ticks per host step (core §3), in-process (core §4), with one sample set per
+   tick; take its actuator outputs.
 5. Convert the wrench back to Gazebo's frame and apply it.
 
 The plugin blocks until the firmware's tick completes. Nothing reads the wall clock. (Precedent: ArduPilot's plugin
@@ -143,20 +144,31 @@ of freezing: core §7.2–7.3.
 
 ### L0 — Foundations
 
-- **Builds:** the primitives layer (core §9); the conventions of core §3 (quaternion storage, time type, logical motor
-  numbering); the HAL interface with `hal_sim` and its virtual clock; the rate-group scheduler; the parameter
-  interface with the bootstrap struct (core §4); the CI gates G1, G3 and G8.
-- **Opening:** `hal_time_us()`; the sensor-sample structs per class (timestamped SI); the actuator-output struct (DShot
-  values, servo µs); `param_get(id)` with provenance.
+- **Builds:** the L0 primitives (vectors, small matrices, quaternions; core §9); the conventions of core §3
+  (quaternion storage and sign, time type, tick, logical motor numbering and its index mapping); the HAL interface with
+  `hal_sim` and its virtual clock; the IMU sample struct and the actuator-output struct (other sensor classes join
+  with the layer that first uses them); the rate-group scheduler; the parameter interface and its bootstrap generator,
+  run on a test fixture until L1 supplies the card and register (core §4); the SIL entry point (core §4); the CI gates
+  G1, G3 and G8; the freezing machinery of core §7.2–7.3.
+- **Opening:** `hal_time_us()`; the IMU sample struct (timestamped SI, core §5); the actuator-output struct (DShot 0
+  or 48–2047, servo µs; core §4); `param_get(id)` with provenance; the SIL entry point (init, tick, shutdown; C ABI).
 - **Pass bar:**
   - T1: quaternion and matrix operations against analytic answers, including composition order, `[w, x, y, z]`
-    storage and the body → NED direction.
-  - T1: the float build has zero `-Wdouble-promotion` warnings; the magic-number lint runs and fails on a planted
-    literal (negative control).
-  - T1: rate groups fire at exact integer divisions of the master tick (EMB-2).
-  - T1: the virtual clock stamps a 6.4 kHz sample stream by truncation to µs with no accumulated drift over a
-    long run (the exact time at tick N is N × 156.25 µs).
-  - T2: the main loop runs N ticks under a null plant, bit-identical across two runs.
+    storage, the canonical sign rule and the body → NED direction; float and double instantiations.
+  - T1: the float build for the M33 (`m33` preset) has zero `-Wdouble-promotion` warnings; a planted float → double
+    promotion fails it (negative control).
+  - T1: the magic-number lint runs over `fw/` and fails on a planted literal (negative control).
+  - T1: rate groups fire at exact integer divisions of the tick (EMB-2).
+  - T1: the virtual clock's stamp at tick N is ⌊N × 156.25⌋ µs for a 6.4 kHz stream, computed from N and never
+    accumulated. Checked in closed form for every N below 10⁶ and for 10⁶-tick windows straddling 2³² and 2⁴⁰.
+  - T1: contract tests on both sides of each opening: units and ranges of the structs, the actuator range (1–47
+    rejected), `param_get` returning value and provenance for every generated id, the generator refusing an entry
+    without provenance.
+  - T2: a fixed L0 test composition (scheduler, clock, parameter reads, a deterministic synthetic IMU stream, null
+    plant) runs N ticks through the SIL entry point; the hash of its per-tick trace equals a committed golden.
+    Negative control: perturbing one sample changes the hash.
+  - CI: G3 finds no truth symbol in the firmware library and fails on a planted one (negative control); G8 fails
+    when a required `CLAUDE.md` section is missing (negative control).
 - **Freezes:** all of the above.
 
 ### L1 — Vehicle card and `marv_plant` v0
@@ -307,7 +319,7 @@ real silicon.
 
 | Module | Inputs → outputs | Rate (rule) | Core |
 | --- | --- | --- | --- |
-| IMU driver (per part) | the part's FIFO or data-ready interrupt → timestamped Δθ, Δv, temperature | ODR from QF-8 | 1 |
+| IMU driver (per part) | the part's FIFO or data-ready interrupt → timestamped body rates, specific force, temperature | ODR from QF-8 | 1 |
 | Gyro chain | raw rates → RPM notches, low-pass | every IMU sample | 1 |
 | Rate controller (PID; INDI after B3) | rate error → torque request | QF-8 | 1 |
 | Allocation + thrust linearization | wrench → rotor-speed targets → DShot values (battery-compensated) | rate loop | 1 |
@@ -368,8 +380,8 @@ measured worst case still passes EMB-3. Memory is the tighter constraint: budget
 own timestamps, or drive the IMU from CLKIN (the board wires INT2/FSYNC/CLKIN to GPIO18; Betaflight added gyro CLKIN
 in 2026.6.1). The simulator models the ODR error either way.
 
-**SIL host build:** the Pico SDK builds for the host (`PICO_PLATFORM=host`), and `time_us_64()` is a weak symbol a
-virtual clock can replace.
+**SIL host build:** `hal_sim` is plain C++ and nothing above the HAL includes Pico SDK headers (core C-8). The Pico
+SDK is used only by `hal_target` (L9).
 
 ### 5.5 Embedded requirements (EMB)
 
