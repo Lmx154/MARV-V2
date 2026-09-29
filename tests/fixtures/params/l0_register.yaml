@@ -4,3 +4,28 @@ fixture_rate_limit_rad_s:
   {type: f32, value: 6.5, unit: rad/s, method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_register.yaml)", sigma: 0.5}
 fixture_gate_count:
   {type: i32, value: -3, unit: "1", method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_register.yaml)", sigma: 0}
+# L0 composition (fw/compositions/l0) parameters: scenario test data, not vehicle numbers. Appended after the ids above.
+l0_div_fast:
+  {type: i32, value: 1, unit: "1", method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_register.yaml)", sigma: 0}
+l0_div_mid:
+  {type: i32, value: 4, unit: "1", method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_register.yaml)", sigma: 0}
+l0_div_slow:
+  {type: i32, value: 16, unit: "1", method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_register.yaml)", sigma: 0}
+l0_alpha_fast:
+  {type: f32, value: 0.35, unit: "1", method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_register.yaml)", sigma: 0.05}
+l0_alpha_mid:
+  {type: f32, value: 0.2, unit: "1", method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_register.yaml)", sigma: 0.05}
+l0_alpha_slow:
+  {type: f32, value: 0.05, unit: "1", method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_register.yaml)", sigma: 0.01}
+l0_base_throttle:
+  {type: f32, value: 0.3, unit: "1", method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_register.yaml)", sigma: 0.05}
+l0_gain_rate:
+  {type: f32, value: 0.08, unit: "s/rad", method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_register.yaml)", sigma: 0.05}
+l0_gain_accel:
+  {type: f32, value: 0.01, unit: "s2/m", method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_register.yaml)", sigma: 0.005}
+l0_gain_bias:
+  {type: f32, value: 0.05, unit: "s/rad", method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_register.yaml)", sigma: 0.05}
+l0_gain_temp:
+  {type: f32, value: 0.005, unit: "1/K", method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_register.yaml)", sigma: 0.005}
+l0_temp_ref_k:
+  {type: f32, value: 300.0, unit: "K", method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_register.yaml)", sigma: 1.0}
