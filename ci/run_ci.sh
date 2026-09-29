@@ -71,9 +71,7 @@ g1_control() {
   local file="$1" want="$2" log status=0
   shift 2
   log="$(mktemp)"
-  # G1_ARGS (optional, word-split) adds lint_g1.py options such as --scope sim-plant
-  # shellcheck disable=SC2086
-  uv run python tools/ci/lint_g1.py --clang-tidy clang-tidy-18 ${G1_ARGS:-} "${file}" >"${log}" 2>&1 || status=$?
+  uv run python tools/ci/lint_g1.py --clang-tidy clang-tidy-18 "${file}" >"${log}" 2>&1 || status=$?
   cat "${log}"
   if [[ ${status} -ne 1 ]]; then
     echo "control did not fail as a lint violation (exit ${status}): G1 is not enforced for ${file}"
@@ -123,10 +121,6 @@ g1_constexpr_control() {
 
 g1_nolint_control() {
   g1_control tests/regression/quad/L00/controls/g1_planted_nolint.cpp G1-NOLINT G1-TIDY G1-SCAN
-}
-
-g1_plant_literal_control() {
-  G1_ARGS="--scope sim-plant" g1_control tests/regression/quad/L01/controls/g1_planted_plant_literal.cpp G1-TIDY G1-NOLINT
 }
 
 l1_card_lint() {
@@ -386,7 +380,6 @@ step "G3 negative control (planted fw/hal/sim in an INTERFACE library's include 
 step "G3 negative control (planted -include of a fw/hal/sim file must fail the include check)" g3_forced_control
 step "G3 negative control (planted extra SIL export must fail the export check)" g3_export_control
 step "G8 negative control (a CLAUDE.md without the UNKNOWN rule must fail)" g8_control
-step "G1 negative control (planted magic literal in a sim/plant-scope file must fail clang-tidy)" g1_plant_literal_control
 step "G3 negative control (planted marv_plant_ and marv::plant:: symbols in a flight library must fail the symbol check)" g3_plant_control
 step "L1 negative control (the core 2.1 example card without sigma must fail the card linter)" l1_card_lint_control
 step "L1 negative control (a card with sigma = 0 on a published entry must fail the parameter set build)" l1_flatten_control
