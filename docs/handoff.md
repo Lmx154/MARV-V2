@@ -1,4 +1,4 @@
-# Handoff: quad L1 built, next is quad L2
+# Handoff: quad L1 passed, next is quad L2
 
 2026-09-29. Written for the next agent working in this repository. This file records state; it adds no scope. The
 specs remain the only planning documents (core §0 rule 5). Replace this file at the next handoff.
@@ -10,7 +10,7 @@ specs remain the only planning documents (core §0 rule 5). Replace this file at
 2. `docs/spec/00-core-contracts.md` (ACTIVE): shared contracts. §2 numbers and provenance, §3 conventions, §4 firmware
    boundary and parameters, §6 physics ownership, §7 testing and freezing.
 3. `docs/spec/10-quad-flight-software.md` (ACTIVE): §3 Gazebo simulation, §4 the spine. **§4 "L2 — Gazebo host" is the
-   next step** once L1 is tagged.
+   next step.**
 4. `docs/spec/20-ground-segment.md` and `30-rocket.md` are PARKED: read for context, never implement from them.
 5. `docs/decisions/0001-*.md` and `0002-*.md`: the two L1 decision records.
 
@@ -18,15 +18,12 @@ Luis (the owner) makes the final calls. Numbers you cannot source are tagged `UN
 
 ## Current state
 
-- `master` is at `3da4d82`. It is tagged `quad-L0-pass` at `6cca7ec`.
-- L1 is built on the local branch `quad-l1` and passes the full Docker CI. It is not pushed yet.
-- Closing L1 needs four things:
-  1. Luis approves the change. That includes decisions 0001 and 0002: 0002 modifies one frozen L00 test.
-  2. `quad-l1` is merged or pushed to `master`.
-  3. GitHub Actions is green on it.
-  4. The commit is tagged `quad-L1-pass` (core §7.2 rule 5).
-- Housekeeping is done: `quad-l0` has been deleted locally and on origin, the L0 worktree branches are gone, and
-  `.serena/` is ignored.
+- **L1 has passed.** `master` is at `b8ed690`, tagged `quad-L1-pass` and pushed to `github.com:Lmx154/MARV-V2`.
+  GitHub Actions run 36609144674 is green on it. The earlier tag `quad-L0-pass` is at `6cca7ec`.
+- **Decisions.** Luis approved decisions 0001 and 0002 on 2026-09-29, with conditions, and both conditions are met.
+  - 0001: the generator and a `static_assert` reject a `sigma_kind`/σ mismatch at build time.
+  - 0002: `tools/ci/check_constants.py` enforces a citation and a math, physics or standard kind on every constant.
+- **Branches.** Only `master` exists.
 
 ### Owner decisions (Luis, 2026-09-29), recorded in the card, budget and decision records
 
