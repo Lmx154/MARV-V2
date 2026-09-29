@@ -20,3 +20,25 @@ if(MARV_TARGET STREQUAL "host")
   marv_apply_flags(g3_planted_export FIRMWARE)
   marv_write_g3_manifest("${CMAKE_CURRENT_BINARY_DIR}/g3_control_export.json" SIL g3_planted_export)
 endif()
+
+# G3 target-coverage controls: an OBJECT library, an INTERFACE library and a forced include, each planted in the way
+# the widened checker must catch.
+add_library(g3_planted_object OBJECT EXCLUDE_FROM_ALL g3_planted_truth.cpp)
+marv_apply_flags(g3_planted_object FIRMWARE)
+marv_write_g3_manifest("${CMAKE_CURRENT_BINARY_DIR}/g3_control_object.json" FLIGHT g3_planted_object)
+
+# The INTERFACE library has no translation unit of its own, so the manifest also lists a clean carrier that does not
+# consume it: the violation can only come from the INTERFACE include rule and the run is not vacuous.
+add_library(g3_planted_interface INTERFACE)
+target_include_directories(g3_planted_interface INTERFACE "${PROJECT_SOURCE_DIR}/fw/hal/sim/include")
+add_library(g3_planted_interface_carrier STATIC EXCLUDE_FROM_ALL g3_clean.cpp)
+marv_apply_flags(g3_planted_interface_carrier FIRMWARE)
+marv_write_g3_manifest("${CMAKE_CURRENT_BINARY_DIR}/g3_control_interface.json"
+  FLIGHT g3_planted_interface g3_planted_interface_carrier)
+
+add_library(g3_planted_forced STATIC EXCLUDE_FROM_ALL g3_clean.cpp)
+target_compile_options(g3_planted_forced PRIVATE
+  "SHELL:-include ${PROJECT_SOURCE_DIR}/fw/hal/sim/include/marv/hal_sim/hal_sim.hpp")
+target_link_libraries(g3_planted_forced PRIVATE marv_hal)
+marv_apply_flags(g3_planted_forced FIRMWARE)
+marv_write_g3_manifest("${CMAKE_CURRENT_BINARY_DIR}/g3_control_forced.json" FLIGHT g3_planted_forced)

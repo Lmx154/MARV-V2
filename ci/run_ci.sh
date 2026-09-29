@@ -201,6 +201,28 @@ g3_include_control() {
     --compile-commands build/host-debug/compile_commands.json
 }
 
+g3_object_control() {
+  g3_control host-debug g3_planted_object G3-SYMBOL "contains 'marv::truth::'" \
+    symbols --manifest build/host-debug/tests/controls/g3_control_object.json --nm nm
+}
+
+g3_m33_object_control() {
+  g3_control m33 g3_planted_object G3-SYMBOL "contains 'marv::truth::'" \
+    symbols --manifest build/m33/tests/controls/g3_control_object.json --nm arm-none-eabi-nm
+}
+
+g3_interface_control() {
+  g3_control host-debug g3_planted_interface_carrier G3-INCLUDE "INTERFACE include directory" \
+    includes --manifest build/host-debug/tests/controls/g3_control_interface.json \
+    --compile-commands build/host-debug/compile_commands.json
+}
+
+g3_forced_control() {
+  g3_control host-debug g3_planted_forced G3-INCLUDE "forced include" \
+    includes --manifest build/host-debug/tests/controls/g3_control_forced.json \
+    --compile-commands build/host-debug/compile_commands.json
+}
+
 g3_export_control() {
   g3_control host-debug g3_planted_export G3-EXPORT "exports 'planted_extra_export'" \
     exports --manifest build/host-debug/tests/controls/g3_control_export.json --nm nm
@@ -229,6 +251,10 @@ step "G1 negative control (planted NOLINT of a magic-number check must fail)" g1
 step "G3 negative control (planted marv::truth symbol in a flight library must fail the symbol check, host)" g3_symbol_control
 step "G3 negative control (planted marv::truth symbol in a flight library must fail the symbol check, m33)" g3_m33_symbol_control
 step "G3 negative control (planted fw/hal/sim include directory must fail the include check)" g3_include_control
+step "G3 negative control (planted marv::truth symbol in an OBJECT library must fail the symbol check, host)" g3_object_control
+step "G3 negative control (planted marv::truth symbol in an OBJECT library must fail the symbol check, m33)" g3_m33_object_control
+step "G3 negative control (planted fw/hal/sim in an INTERFACE library's include directories must fail the include check)" g3_interface_control
+step "G3 negative control (planted -include of a fw/hal/sim file must fail the include check)" g3_forced_control
 step "G3 negative control (planted extra SIL export must fail the export check)" g3_export_control
 step "G8 negative control (a CLAUDE.md without the UNKNOWN rule must fail)" g8_control
 
