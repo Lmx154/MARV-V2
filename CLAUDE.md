@@ -2,6 +2,8 @@
 
 C++20 GNC firmware for the MARV V2 board (RP2354B), its SIL simulation and its test tooling.
 
+Current state and next step: `docs/handoff.md`.
+
 ## ACTIVE-spec rule
 
 - Work only from ACTIVE specs in `docs/spec/`: `00-core-contracts.md` and `10-quad-flight-software.md`.
