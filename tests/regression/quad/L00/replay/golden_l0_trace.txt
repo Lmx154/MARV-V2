@@ -1,2 +1,2 @@
-# L0 T2 golden trace hash (FNV-1a 64 over the per-tick trace). Scenario values (labelled, core 2): seed=0x4d41525630303031 ticks=4000 period=625/4 us batch=1,3,7,16,5,2,64,9 composition=l0. fixtures: l0_card.yaml sha256=670bd30543f842e6ff595fbe443c8dbb407e7d64ca06502a5fcbea7370edd3d6 l0_register.yaml sha256=46c73b47e71fdf79e25dd2a304c8885aa83c2e550e135c79f63926fc8df02471
+# L0 T2 golden trace hash (FNV-1a 64 over the per-tick trace). Scenario values (labelled, core 2): seed=0x4d41525630303031 ticks=4000 period=625/4 us batch=1,3,7,16,5,2,64,9 composition=l0. fixtures: l0_card.yaml sha256=a439e81a1baf323257e5b5797245a383d4c8afa2bd1ceb026a3fc60293205e6e l0_register.yaml sha256=46429ab3a4f516a953240671d57950a5804bd460a785bfd224db34e870644d1d
 96ab3c6663da1c63
