@@ -20,6 +20,7 @@ add_subdirectory(fw/types)
 add_subdirectory(fw/hal)
 add_subdirectory(fw/sched)
 add_subdirectory(fw/params)
+add_subdirectory(fw/compositions/l0)
 add_subdirectory(tests/controls)
 
 if(MARV_TARGET STREQUAL "host")
