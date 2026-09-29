@@ -94,6 +94,23 @@ g1_control() {
   rm -f "${log}"
 }
 
+g8_check() {
+  uv run python tools/ci/check_claude_md.py CLAUDE.md
+}
+
+g8_control() {
+  local log status=0
+  log="$(mktemp)"
+  uv run python tools/ci/check_claude_md.py tests/controls/g8_claude_md_missing_unknown.md >"${log}" 2>&1 || status=$?
+  cat "${log}"
+  if [[ ${status} -ne 1 ]] || ! grep -q "^G8-MISSING: .*'## UNKNOWN rule' is missing" "${log}"; then
+    echo "control did not fail for the missing UNKNOWN rule (exit ${status}): G8 is not enforced"
+    rm -f "${log}"
+    return 1
+  fi
+  rm -f "${log}"
+}
+
 g1_literal_control() {
   g1_control tests/controls/g1_planted_literal.cpp G1-TIDY G1-NOLINT
 }
@@ -191,6 +208,7 @@ g3_export_control() {
 
 step "uv sync --frozen" uv sync --frozen
 step "tools tests (pytest tests/tools)" uv run pytest tests/tools -q
+step "G8: CLAUDE.md keeps the ACTIVE-spec, number, UNKNOWN and CI-gate sections" g8_check
 if [[ -n "${MARV_CI_BASE_REF:-}" ]]; then
   step "regression change check against ${MARV_CI_BASE_REF}" regression_change_check
 fi
@@ -212,5 +230,6 @@ step "G3 negative control (planted marv::truth symbol in a flight library must f
 step "G3 negative control (planted marv::truth symbol in a flight library must fail the symbol check, m33)" g3_m33_symbol_control
 step "G3 negative control (planted fw/hal/sim include directory must fail the include check)" g3_include_control
 step "G3 negative control (planted extra SIL export must fail the export check)" g3_export_control
+step "G8 negative control (a CLAUDE.md without the UNKNOWN rule must fail)" g8_control
 
 echo "ALL STEPS PASSED"

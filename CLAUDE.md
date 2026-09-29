@@ -55,6 +55,15 @@ CI enforces these whether or not anyone reads this file (core §7.4):
   in the same pull request (core §7.3). Never loosen a test to make it pass.
 - Every metric test has a negative control that must break it (core §7.2).
 
+## Commands
+
+- `uv sync --frozen` first (the parameter generator runs from `.venv`).
+- Build and test: `cmake --preset host-debug && cmake --build --preset host-debug && ctest --preset host-debug`
+  (also `host-release`); target compile check: `cmake --preset m33 && cmake --build --preset m33`.
+- Full CI, the definition of verified: `docker build -t marv-ci -f ci/Dockerfile .` then
+  `docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/src -w /src marv-ci ci/run_ci.sh` (run on a clean
+  copy if a host `build/` exists). Goldens are regenerated only inside this image.
+
 ## Code conventions (core §3)
 
 - Frames NED / FRD. Quaternion Hamilton, body → NED, stored `[w, x, y, z]`, canonical sign w ≥ 0.
