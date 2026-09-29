@@ -26,6 +26,21 @@ still holds:
 
 G1 itself (clang-tidy over `fw/`, `tools/ci/lint_g1.py`, and its CI negative control) is not changed.
 
+The pin was the only thing that made a new literal in `constants.hpp` visible, and no check existed that every constant
+in that file carries a citation (the file's header comment only asserted it). Luis's approval of this record is
+conditional on such a check, so it is added in this same change:
+
+- `tools/ci/check_constants.py` (default target `constants.hpp`) splits the file into paragraphs by blank lines. Every
+  namespace-scope `constexpr` variable, and every non-`constexpr` variable defined with a numeric initialiser, must sit
+  in a paragraph whose comment lines before its first declaration contain a `Citation:` (or
+  `Citation for every entry below:`) with text, and exactly one kind tag: `Kind: math`, `Kind: physics` or
+  `Kind: standard` (a published standard or specification: SI, WGS 84, a protocol such as DShot). No other kind is
+  accepted.
+- `constants.hpp` holds physics, mathematics and published-standard constants only. Vehicle numbers (pole count, mass,
+  and so on) belong in the card, never there: a paragraph whose comment refers to `vehicles/`, `sensors/profiles/`,
+  `design/budget`, or the words card, vehicle card or profile fails.
+- The existing paragraphs gained a `Kind:` line in their comments; no declaration, value, name or order changed.
+
 ## Evidence
 
 - On `quad-l1` after commit 5081e3a (WGS 84 gravity), before this change:
@@ -34,6 +49,13 @@ G1 itself (clang-tidy over `fw/`, `tools/ci/lint_g1.py`, and its CI negative con
 - After this change the same command gives 259 passed (see the commit that adds this record).
 - Negative control: removing `48` from `constants.hpp` still fails the test, so the scanner's positive control keeps
   its resolving power.
+- The citation check did not exist before this change. It is added by `tools/ci/check_constants.py`, the CI step
+  "constants: every constant in constants.hpp carries a citation and a physics/standard/math kind" (right after the G1
+  step of `ci/run_ci.sh`), and two CI negative controls that pass only if the tool exits 1 with the intended reason:
+  `tests/regression/quad/L01/controls/constants_uncited.hpp` (a planted uncited constant) and
+  `constants_vehicle_number.hpp` (a planted vehicle number citing the card). The pytest
+  `tests/regression/quad/L01/tools/test_check_constants.py` also plants an uncited constant in an otherwise valid copy
+  of the real file and removes the Citation line from a copy of the WGS 84 paragraph; both must fail.
 
 ## Approval
 

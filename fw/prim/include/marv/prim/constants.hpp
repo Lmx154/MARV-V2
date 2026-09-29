@@ -10,23 +10,28 @@ namespace marv::prim {
 
 // Dimension of physical space. Citation: the definition of physical 3-D Euclidean space, which has three
 // dimensions.
+// Kind: math.
 inline constexpr std::size_t kSpatialDim = 3;
 
 // Smallest and largest DShot throttle value. Citation: Betaflight DShot notes
 // (https://github.com/betaflight/betaflight.com/blob/master/docs/development/API/Dshot.mdx): 0 is reserved for
 // disarmed, 1-47 are special commands, 48-2047 is throttle, the field is 11 bits wide.
+// Kind: standard.
 inline constexpr std::uint16_t kDshotThrottleMin = 48;
 inline constexpr std::uint16_t kDshotThrottleMax = 2047;
 
 // Pi. Citation: the mathematical constant, the ratio of a circle's circumference to its diameter.
+// Kind: math.
 inline constexpr double kPi = 3.14159265358979323846;
 
 // Seconds per minute. Citation: SI definition (the minute is exactly 60 s, an accepted non-SI unit of time).
+// Kind: standard.
 inline constexpr double kSecondsPerMinute = 60.0;
 
 // WGS 84 normal-gravity constants. Citation for every entry below: NIMA TR8350.2, "Department of Defense World
 // Geodetic System 1984", 3rd ed., 4 July 1997, incl. Amendment 1 (3 January 2000) ("NIMA TR8350.2 3rd ed. Amdt 1
 // (2000)").
+// Kind: standard.
 // Semi-major axis a, m. Table 3.1.
 inline constexpr double kWgs84A = 6378137.0;
 // Inverse flattening 1/f, defining parameter. Table 3.1.

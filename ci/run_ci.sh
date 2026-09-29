@@ -118,6 +118,37 @@ g1_control() {
   rm -f "${log}"
 }
 
+constants_check() {
+  uv run python tools/ci/check_constants.py
+}
+
+# constants_control <file> <reason text that must appear>
+constants_control() {
+  local file="$1" want="$2" log status=0
+  log="$(mktemp)"
+  uv run python tools/ci/check_constants.py "${file}" >"${log}" 2>&1 || status=$?
+  cat "${log}"
+  if [[ ${status} -ne 1 ]]; then
+    echo "control did not fail as a constants finding (exit ${status}): the constants check is not enforced for ${file}"
+    rm -f "${log}"
+    return 1
+  fi
+  if ! grep -q "^constants: ${file}:[0-9]*: [A-Za-z0-9_]*: ${want}" "${log}"; then
+    echo "control failed, but not with the reason: ${want}"
+    rm -f "${log}"
+    return 1
+  fi
+  rm -f "${log}"
+}
+
+constants_uncited_control() {
+  constants_control tests/regression/quad/L01/controls/constants_uncited.hpp "no 'Citation:'"
+}
+
+constants_vehicle_number_control() {
+  constants_control tests/regression/quad/L01/controls/constants_vehicle_number.hpp "comment refers to vehicle data"
+}
+
 g8_check() {
   uv run python tools/ci/check_claude_md.py CLAUDE.md
 }
@@ -383,6 +414,7 @@ fi
 step "host-debug: configure, build, ctest" host_preset host-debug
 step "L1: the run report of the product parameter set (card, budget, provenance)" l1_report
 step "G1: no unexplained numeric literals under fw/ (clang-tidy, token scan, NOLINT check)" g1_lint
+step "constants: every constant in constants.hpp carries a citation and a physics/standard/math kind" constants_check
 step "G3: no truth or harness symbol in any host flight library (nm -C)" g3_host_symbols
 step "G3: no flight translation unit has a harness include directory (host)" g3_host_includes
 step "G3: the SIL libraries export only marv_sil_* (nm -D)" g3_host_exports
@@ -396,6 +428,8 @@ step "L1 negative control (a record table with a Known record of sigma 0 must fa
 step "G1 negative control (planted magic literal must fail clang-tidy)" g1_literal_control
 step "G1 negative control (planted literal-initialised constexpr must fail the token scan)" g1_constexpr_control
 step "G1 negative control (planted NOLINT of a magic-number check must fail)" g1_nolint_control
+step "constants negative control (a planted uncited constant must fail the constants check)" constants_uncited_control
+step "constants negative control (a planted vehicle number citing the card must fail the constants check)" constants_vehicle_number_control
 step "G3 negative control (planted marv::truth symbol in a flight library must fail the symbol check, host)" g3_symbol_control
 step "G3 negative control (planted marv::truth symbol in a flight library must fail the symbol check, m33)" g3_m33_symbol_control
 step "G3 negative control (planted fw/hal/sim include directory must fail the include check)" g3_include_control
