@@ -1,6 +1,9 @@
 #pragma once
 
+#include <bit>
+#include <cstddef>
 #include <cstdint>
+#include <limits>
 
 namespace marv {
 
@@ -37,5 +40,32 @@ struct ParamRecord {
   const char* unit;    // SI symbol, static storage; "1" if dimensionless
   const char* source;  // source text, or the rule for Derived; static storage
 };
+
+// Invariant I1 (docs/decisions/0001), the one implementation: a record is consistent iff (kind Known and sigma finite
+// and > 0) or (kind Exact, Unknown or Choice and sigma exactly +0.0f); any other kind value is inconsistent. Usable in
+// constant expressions: no std::isfinite or std::signbit, only comparisons (NaN and inf fail the range test) and a bit
+// test for +0.0f.
+[[nodiscard]] constexpr bool sigma_consistent(SigmaKind kind, float sigma) noexcept {
+  switch (kind) {
+    case SigmaKind::Known:
+      return sigma > 0.0f && sigma <= std::numeric_limits<float>::max();
+    case SigmaKind::Exact:
+    case SigmaKind::Unknown:
+    case SigmaKind::Choice:
+      return std::bit_cast<std::uint32_t>(sigma) == 0;
+  }
+  return false;
+}
+
+// I1 over every record of a table; the generated param_defaults.cpp static_asserts it.
+template <std::size_t N>
+[[nodiscard]] constexpr bool sigma_table_consistent(const ParamRecord (&table)[N]) noexcept {
+  for (const ParamRecord& r : table) {
+    if (!sigma_consistent(r.sigma_kind, r.sigma)) {
+      return false;
+    }
+  }
+  return true;
+}
 
 }  // namespace marv

@@ -88,6 +88,8 @@ CHOICE_METHODS = frozenset({"design-budget", "scenario"})
 FIXED_SHAPES = {"frd3": ("_x", "_y", "_z"), "diag3": ("_xx", "_yy", "_zz"), "range": ("_min", "_max")}
 SHAPES = (*FIXED_SHAPES, "motors")
 LOCK_FIELDS = ("by", "on", "via")
+SIGMA_ASSERT_MESSAGE = ("param_defaults: a record violates invariant I1 (SigmaKind::Known needs a finite sigma > 0, "
+                        "every other SigmaKind needs sigma +0.0f)")
 ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 IGNORED = ("conflict", "status", "check")
 IDENTIFIER = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
@@ -402,6 +404,23 @@ def load_sources(sources: list[tuple[str, Path]]) -> tuple[list[Param], list[Ent
     return params, entries
 
 
+def sigma_consistent(kind: str, sigma: float) -> bool:
+    """Invariant I1 (docs/decisions/0001), the Python mirror of marv::sigma_consistent in param_types.hpp."""
+    if kind == "Known":
+        return math.isfinite(sigma) and sigma > 0
+    if kind in ("Exact", "Unknown", "Choice"):
+        return struct.pack("<f", sigma) == struct.pack("<f", 0.0)
+    return False
+
+
+def check_records(params: list[Param]) -> None:
+    """Validates the final records, after every token to kind mapping, so it does not trust that mapping."""
+    bad = [f"entry '{p.name}': sigma kind {p.sigma_kind} does not match sigma {p.sigma!r} (invariant I1)"
+           for p in params if not sigma_consistent(p.sigma_kind, p.sigma)]
+    if bad:
+        raise Refusal("\n".join(bad))
+
+
 def schema_hash(params: list[Param]) -> int:
     h = hashlib.sha256()
     for p in params:
@@ -490,7 +509,9 @@ def render_defaults(params: list[Param]) -> str:
         "",
         "namespace marv::generated {",
         "",
-        "const ParamRecord kParamDefaults[kParamCount] = {",
+        "// constexpr so the static_assert below can evaluate the table; the earlier extern const declaration in",
+        "// param_ids.hpp gives it external linkage.",
+        "constexpr ParamRecord kParamDefaults[kParamCount] = {",
     ]
     for p in params:
         enum_name = TYPES[p.type][0]
@@ -505,7 +526,14 @@ def render_defaults(params: list[Param]) -> str:
             f"     SigmaKind::{p.sigma_kind},",
             f"     {c_string(p.unit)}, {c_string(p.source)}}},",
         ]
-    lines += ["};", "", "const char* const kParamNames[kParamCount] = {"]
+    lines += [
+        "};",
+        "",
+        "static_assert(sigma_table_consistent(kParamDefaults),",
+        f'              {c_string(SIGMA_ASSERT_MESSAGE)});',
+        "",
+        "const char* const kParamNames[kParamCount] = {",
+    ]
     lines += [f"    {c_string(p.name)}," for p in params]
     lines += ["};", "", "}  // namespace marv::generated", ""]
     return "\n".join(lines)
@@ -560,6 +588,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         params, entries = load_sources(args.sources)
+        check_records(params)
     except Refusal as e:
         print(f"params_gen: refused:\n{e}", file=sys.stderr)
         return 1

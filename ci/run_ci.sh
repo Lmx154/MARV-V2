@@ -62,6 +62,30 @@ pb2_negative_control() {
   rm -f "${log}"
 }
 
+sigma_check_control() {
+  local log status=0 want='error: static assertion failed: param_defaults: a record violates invariant I1'
+  cmake --preset host-debug >/dev/null || return 1
+  log="$(mktemp)"
+  cmake --build --preset host-debug --target sigma_kind_mismatch >"${log}" 2>&1 || status=$?
+  cat "${log}"
+  if [[ ${status} -eq 0 ]]; then
+    echo "control compiled cleanly: the sigma_kind / sigma static_assert is not enforced"
+    rm -f "${log}"
+    return 1
+  fi
+  if ! grep -q "${want}" "${log}"; then
+    echo "control failed, but not with the I1 static_assert"
+    rm -f "${log}"
+    return 1
+  fi
+  if grep 'error:' "${log}" | grep -vq "${want}"; then
+    echo "control failed with a diagnostic other than the I1 static_assert"
+    rm -f "${log}"
+    return 1
+  fi
+  rm -f "${log}"
+}
+
 g1_lint() {
   uv run python tools/ci/lint_g1.py --clang-tidy clang-tidy-18
 }
@@ -368,6 +392,7 @@ step "m33: configure, build" m33_build
 step "G3: no truth or harness symbol in any m33 flight library (arm-none-eabi-nm -C)" g3_m33_symbols
 step "G3: no flight translation unit has a harness include directory (m33)" g3_m33_includes
 step "PB2 negative control (planted float to double promotion must fail m33)" pb2_negative_control
+step "L1 negative control (a record table with a Known record of sigma 0 must fail the static_assert, host)" sigma_check_control
 step "G1 negative control (planted magic literal must fail clang-tidy)" g1_literal_control
 step "G1 negative control (planted literal-initialised constexpr must fail the token scan)" g1_constexpr_control
 step "G1 negative control (planted NOLINT of a magic-number check must fail)" g1_nolint_control
