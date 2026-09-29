@@ -1,0 +1,6 @@
+# L0 test fixture standing in for the design-budget register (core 2.2) until L1 supplies it.
+# Every value is fixture test data, not a design choice.
+fixture_rate_limit_rad_s:
+  {type: f32, value: 6.5, unit: rad/s, method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_register.yaml)", sigma: 0.5}
+fixture_gate_count:
+  {type: i32, value: -3, unit: "1", method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_register.yaml)", sigma: 0}

@@ -1,0 +1,12 @@
+# L0 test fixture standing in for the vehicle card (core 2.1) until L1 supplies it.
+# Every value is fixture test data, not a vehicle number.
+fixture_mass_kg:
+  {type: f32, value: 0.75, unit: kg, method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_card.yaml)", sigma: 0.01}
+fixture_motor_count:
+  {type: i32, value: 4, unit: "1", method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_card.yaml)", sigma: 0}
+fixture_time_constant_s:
+  {type: f32, value: 0.033, unit: s, method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_card.yaml)", sigma: 1.0e-3}
+fixture_drag_ratio:
+  {type: f32, value: 0.1, unit: "1", method: scenario, source: "L0 fixture value (tests/fixtures/params/l0_card.yaml)", sigma: 0.02}
+fixture_inertia_scale_kg:
+  {type: f32, value: 1.5, unit: kg, method: "derived(fixture_mass_kg * 2)", source: "L0 fixture value from fixture_mass_kg", sigma: 0.02}
