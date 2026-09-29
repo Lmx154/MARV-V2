@@ -97,7 +97,11 @@ def test_exempt_file_is_constants_hpp_only():
 
 def test_real_constants_hpp_holds_its_literal_and_repo_sources_are_otherwise_clean():
     constants = lint.EXEMPT
-    assert bad(constants.read_text()) == ["3", "48", "2047"]
+    # constants.hpp is the one exempt file and grows with each layer's cited constants (decision 0002); the scan must
+    # still find the L0 literals in it, in order.
+    found = bad(constants.read_text())
+    l0_literals = ["3", "48", "2047"]
+    assert [lit for lit in found if lit in l0_literals] == l0_literals
     for path in lint.fw_sources():
         if path != constants:
             assert bad(path.read_text()) == [], path
