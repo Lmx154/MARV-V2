@@ -1,0 +1,18 @@
+set(CMAKE_SYSTEM_NAME Generic)
+set(CMAKE_SYSTEM_PROCESSOR cortex-m33)
+
+set(CMAKE_C_COMPILER arm-none-eabi-gcc)
+set(CMAKE_CXX_COMPILER arm-none-eabi-g++)
+set(CMAKE_AR arm-none-eabi-ar)
+set(CMAKE_RANLIB arm-none-eabi-ranlib)
+
+set(MARV_M33_FLAGS -mcpu=cortex-m33 -mthumb -mfloat-abi=hard -mfpu=fpv5-sp-d16)
+string(JOIN " " MARV_M33_FLAGS_STR ${MARV_M33_FLAGS})
+set(CMAKE_C_FLAGS_INIT "${MARV_M33_FLAGS_STR}")
+set(CMAKE_CXX_FLAGS_INIT "${MARV_M33_FLAGS_STR}")
+
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)

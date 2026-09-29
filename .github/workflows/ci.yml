@@ -1,0 +1,17 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  ci:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build CI image
+        run: docker build -t marv-ci -f ci/Dockerfile .
+      - name: Run CI
+        run: docker run --rm -v "$PWD":/src -w /src marv-ci ci/run_ci.sh

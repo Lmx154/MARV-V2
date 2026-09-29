@@ -1,0 +1,34 @@
+cmake_minimum_required(VERSION 3.28)
+
+project(marv VERSION 0.0.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+set(MARV_TARGET "host" CACHE STRING "Build target class: host or m33")
+set_property(CACHE MARV_TARGET PROPERTY STRINGS host m33)
+if(NOT MARV_TARGET STREQUAL "host" AND NOT MARV_TARGET STREQUAL "m33")
+  message(FATAL_ERROR "MARV_TARGET must be host or m33, got '${MARV_TARGET}'")
+endif()
+
+include(cmake/flags.cmake)
+
+add_subdirectory(fw/prim)
+add_subdirectory(fw/types)
+add_subdirectory(fw/hal)
+add_subdirectory(fw/sched)
+add_subdirectory(fw/params)
+add_subdirectory(tests/controls)
+
+if(MARV_TARGET STREQUAL "host")
+  include(cmake/googletest.cmake)
+  add_subdirectory(fw/hal/sim)
+  add_subdirectory(fw/sil)
+  add_subdirectory(sim/null_plant)
+  add_subdirectory(tests/unit)
+  add_subdirectory(tests/replay)
+  add_subdirectory(tools/gen)
+  add_subdirectory(tools/ci)
+endif()

@@ -1,0 +1,1 @@
+add_library(marv_null_plant INTERFACE)

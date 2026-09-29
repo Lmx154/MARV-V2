@@ -1,0 +1,57 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 28, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}"
+    },
+    {
+      "name": "host-debug",
+      "inherits": "base",
+      "displayName": "Host, Debug",
+      "cacheVariables": {
+        "MARV_TARGET": "host",
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "host-release",
+      "inherits": "base",
+      "displayName": "Host, Release",
+      "cacheVariables": {
+        "MARV_TARGET": "host",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "m33",
+      "inherits": "base",
+      "displayName": "Cortex-M33 (arm-none-eabi), compile-only",
+      "toolchainFile": "${sourceDir}/cmake/toolchain-m33.cmake",
+      "cacheVariables": {
+        "MARV_TARGET": "m33",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "host-debug", "configurePreset": "host-debug" },
+    { "name": "host-release", "configurePreset": "host-release" },
+    { "name": "m33", "configurePreset": "m33" }
+  ],
+  "testPresets": [
+    {
+      "name": "host-debug",
+      "configurePreset": "host-debug",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "host-release",
+      "configurePreset": "host-release",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}
