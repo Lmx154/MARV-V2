@@ -454,13 +454,136 @@ g3_plant_control() {
     symbols --manifest build/host-debug/tests/regression/quad/L01/controls/g3_control_plant.json --nm nm
 }
 
+
+# L5 T3: attitude_t3_oracle.py reads attitude_t3_inputs.txt and writes attitude_t3_golden.txt and
+# attitude_t3_envelope.txt into --dir (decision 0006 F).
+att_t3_reference_dir=tests/regression/quad/L05/t3/reference
+
+att_t3_oracle_run() {
+  local dir="$1"
+  uv run python "${att_t3_reference_dir}/attitude_t3_oracle.py" --dir "${dir}"
+}
+
+att_t3_reference_reproduces() {
+  local dir status=0
+  dir="$(mktemp -d)"
+  cp "${att_t3_reference_dir}/attitude_t3_inputs.txt" "${dir}/attitude_t3_inputs.txt"
+  att_t3_oracle_run "${dir}" || status=$?
+  if [[ ${status} -eq 0 ]]; then
+    cmp "${att_t3_reference_dir}/attitude_t3_golden.txt" "${dir}/attitude_t3_golden.txt" || status=$?
+    cmp "${att_t3_reference_dir}/attitude_t3_envelope.txt" "${dir}/attitude_t3_envelope.txt" || status=$?
+  fi
+  rm -rf "${dir}"
+  return "${status}"
+}
+
+# The same run with att_kp one float32 ulp up must differ from the committed golden.
+att_t3_reference_control() {
+  local dir
+  dir="$(mktemp -d)"
+  uv run python - "${att_t3_reference_dir}/attitude_t3_inputs.txt" "${dir}/attitude_t3_inputs.txt" <<'PY'
+import struct
+import sys
+
+out = []
+for line in open(sys.argv[1]):
+    if line.startswith("att_kp "):
+        x = float.fromhex(line.split()[1])
+        bits = struct.unpack("<I", struct.pack("<f", x))[0] + 1
+        line = f"att_kp {struct.unpack('<f', struct.pack('<I', bits))[0].hex()}\n"
+    out.append(line)
+open(sys.argv[2], "w").write("".join(out))
+PY
+  if cmp -s "${att_t3_reference_dir}/attitude_t3_inputs.txt" "${dir}/attitude_t3_inputs.txt"; then
+    echo "control setup failed: the perturbation did not change the inputs"
+    rm -rf "${dir}"
+    return 1
+  fi
+  att_t3_oracle_run "${dir}" || { rm -rf "${dir}"; return 1; }
+  if cmp -s "${att_t3_reference_dir}/attitude_t3_golden.txt" "${dir}/attitude_t3_golden.txt"; then
+    echo "control produced the committed golden from a perturbed input: the reproduction check cannot fail"
+    rm -rf "${dir}"
+    return 1
+  fi
+  rm -rf "${dir}"
+}
+
+# L5 rate bypass (decision 0006 A, I-A1): the fixture and the acro golden regenerate from fw/ at quad-L4-pass.
+rate_bypass_dir=tests/regression/quad/L05/unit/rate_bypass
+
+rate_bypass_fixture_reproduces() {
+  local dir status=0
+  dir="$(mktemp -d)"
+  uv run python "${rate_bypass_dir}/gen_fixture.py" --dir "${dir}" || status=$?
+  if [[ ${status} -eq 0 ]]; then
+    cmp "${rate_bypass_dir}/reference/rate_bypass_fixture.txt" "${dir}/rate_bypass_fixture.txt" || status=$?
+  fi
+  rm -rf "${dir}"
+  return "${status}"
+}
+
+rate_bypass_golden_reproduces() {
+  local dir status=0
+  dir="$(mktemp -d)"
+  "${rate_bypass_dir}/regenerate.sh" --out "${dir}/golden.txt" || status=$?
+  if [[ ${status} -eq 0 ]]; then
+    cmp "${rate_bypass_dir}/reference/rate_bypass_acro_golden.txt" "${dir}/golden.txt" || status=$?
+  fi
+  rm -rf "${dir}"
+  return "${status}"
+}
+
+# The golden regenerated with rate_kp_roll one float32 ulp up must differ from the committed one.
+rate_bypass_golden_control() {
+  local dir
+  dir="$(mktemp -d)"
+  uv run python - "${rate_bypass_dir}/reference/rate_bypass_inputs.txt" "${dir}/inputs.txt" <<'PY'
+import struct
+import sys
+
+out = []
+for line in open(sys.argv[1]):
+    if line.startswith("rate_kp_roll "):
+        x = float.fromhex(line.split()[1])
+        bits = struct.unpack("<I", struct.pack("<f", x))[0] + 1
+        line = f"rate_kp_roll {struct.unpack('<f', struct.pack('<I', bits))[0].hex()}\n"
+    out.append(line)
+open(sys.argv[2], "w").write("".join(out))
+PY
+  if cmp -s "${rate_bypass_dir}/reference/rate_bypass_inputs.txt" "${dir}/inputs.txt"; then
+    echo "control setup failed: the perturbation did not change the inputs"
+    rm -rf "${dir}"
+    return 1
+  fi
+  "${rate_bypass_dir}/regenerate.sh" --inputs "${dir}/inputs.txt" --out "${dir}/golden.txt" || { rm -rf "${dir}"; return 1; }
+  if cmp -s "${rate_bypass_dir}/reference/rate_bypass_acro_golden.txt" "${dir}/golden.txt"; then
+    echo "control produced the committed golden from a perturbed input: the reproduction check cannot fail"
+    rm -rf "${dir}"
+    return 1
+  fi
+  rm -rf "${dir}"
+}
+
+g3_truth_unflagged_control() {
+  g3_control host-debug g3_truth_unflagged_export G3-EXPORT "exports 'marv_truth_state_set'" \
+    exports --manifest build/host-debug/tests/regression/quad/L05/controls/g3_control_truth_unflagged.json --nm nm
+}
+
+g3_truth_planted_control() {
+  g3_control host-debug g3_truth_planted_export G3-EXPORT "exports 'marv_truth_planted'" \
+    exports --manifest build/host-debug/tests/regression/quad/L05/controls/g3_control_truth_planted.json --nm nm
+}
+
 step "uv sync --frozen" uv sync --frozen
-step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools)" \
-  uv run pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools -q
+step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools)" \
+  uv run pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools -q
 step "G8: CLAUDE.md keeps the ACTIVE-spec, number, UNKNOWN and CI-gate sections" g8_check
 step "L1: the committed vehicle card, its sensor profile and the design budget lint clean (sigma policy)" l1_card_lint
 step "L1: plant known-answer reference reproduces plant_ref_expected.txt from plant_ref_inputs.txt" plant_ref_reproduces
 step "L4: T3 oracle reproduces rate_t3_golden.txt and rate_t3_envelope.txt from rate_t3_inputs.txt" t3_reference_reproduces
+step "L5: T3 oracle reproduces attitude_t3_golden.txt and attitude_t3_envelope.txt from attitude_t3_inputs.txt" att_t3_reference_reproduces
+step "L5: rate-bypass fixture reproduces from gen_fixture.py" rate_bypass_fixture_reproduces
+step "L5: acro identity golden reproduces from fw/ at quad-L4-pass" rate_bypass_golden_reproduces
 if [[ -n "${MARV_CI_BASE_REF:-}" ]]; then
   step "regression change check against ${MARV_CI_BASE_REF}" regression_change_check
 fi
@@ -498,5 +621,9 @@ step "L1 negative control (a card with sigma = 0 on a published entry must fail 
 step "L1 negative control (a Python without PyYAML must fail the configure)" l1_pyyaml_control
 step "L1 negative control (perturbed plant reference inputs must not reproduce the committed expected file)" plant_ref_control
 step "L4 negative control (a perturbed T3 input, kp one ulp up, must not reproduce the committed golden)" t3_reference_control
+step "L5 negative control (a perturbed T3 input, att_kp one ulp up, must not reproduce the committed golden)" att_t3_reference_control
+step "L5 negative control (a perturbed rate-bypass input, kp one ulp up, must not reproduce the acro identity golden)" rate_bypass_golden_control
+step "G3 negative control (unflagged SIL library exporting marv_truth_state_set must fail the export check)" g3_truth_unflagged_control
+step "G3 negative control (truth_state library also exporting marv_truth_planted must fail the export check)" g3_truth_planted_control
 
 echo "ALL STEPS PASSED"
