@@ -1,13 +1,19 @@
 # 0006: quad L5 attitude-loop choices
 
-**DRAFT (architect, 2026-09-30; revised after owner decisions 13–18 and lead decisions Q4 and Q6).** Not yet
-approved by Luis. Numbers marked PENDING come from the generator, the T3 oracle or the T4 runs.
+**Revised 2026-09-30** after owner decisions 13–25 and the L5 build. Not yet approved by Luis. Items marked PENDING
+are still to come.
 
 ## What changed
 
-**Frozen files changed.** None expected. Files L5 adds under `tests/regression/quad/L05/` need no record (core §7.3).
-The design below was checked against the frozen files it could touch (G, last bullet). If implementation finds a
-frozen edit is needed, it is recorded here with Luis's approval. PENDING.
+**Frozen files changed.** One. Files L5 adds under `tests/regression/quad/L05/` need no record (core §7.3).
+- **`tests/regression/quad/L01/tools/test_gen_sdf_plant_config.py`.** The `SCENARIO_FIELDS` line classifies the new
+  plant field `initial_omega_rad_s`, and a new negative control makes an unclassified planted field fail.
+- **Record.** 0007 (`docs/decisions/0007-l2-initial-rotor-speed.md`) records the change, with Luis's approval (owner
+  decision 25).
+- **The test stays a pinned set, deliberately.** It forces a vehicle-versus-scenario classification of every new plant
+  field. It is not one of the snapshot tests to generalise.
+- **Nothing else.** No other file under `tests/regression/quad/L00`–`L04` changes. The regression-change check in full
+  CI confirms this (pending).
 
 **Interfaces changed (all additive).**
 - L4 opening: `RateLoop::execute_bypass` (owner decision 8). There is no other L4 change (owner decision 14: no new L4
@@ -17,9 +23,23 @@ frozen edit is needed, it is recorded here with Luis's approval. PENDING.
 - G3: the exports check distinguishes product and truth-state SIL libraries, with negative controls.
 - Gazebo plugin: an optional `<attitude_source>truth</attitude_source>` element and a log record type 5 (TRUTH).
 - A new firmware type, `AttitudeState<T>`, which is the L5 input now and L7's opening later.
+- L2: `marv_plant_config` and the scenario gain an initial rotor speed. It defaults to 0, so every existing scenario
+  and frozen golden stays bit-identical (owner decision 23; record 0007).
 
-**Known failing item.** If the large-angle recovery scenario R2 hits the gyroscopic coupling limit, it extends the L4
-item, with the same gating: it blocks L6 and must pass before L8 (owner decision 15). PENDING.
+**Specs changed (owner decision 21).** Commit `b194ea3`:
+- core §7.5 gains a "Flight rate groups" paragraph;
+- quad §3.3 SIM-7, §4 L5 Builds and §5.1 (the attitude and estimator rows) follow it.
+
+The lead scoped the core rule (H).
+
+**Superseded owner decisions.** Decisions 3 and 10, and the SIM-7 half of decision 20, are superseded by decision 21.
+Their text is kept below.
+
+**Known failing items.** Both are strict xfails on "`tests/regression/quad/L06/` does not exist". Each blocks L6 and
+must pass before L8.
+- **L4 acro recovery** (0005 owner decision 12). Unchanged.
+- **L5 recovery R2** (new; owner decision 15). The cause is of the same class, gyroscopic coupling that the per-axis
+  design cannot reject, with no L3 saturation. The gating is the same. The measurements are in F.
 
 This record holds the owner's choices for quad L5 (quad spec §4 L5) where the spec left a choice, and the lead's
 choices that follow from them.
@@ -29,7 +49,7 @@ choices that follow from them.
 1. Band box: rate gains fixed at nominal; at each τ×J corner, close the rate loop on that corner's plant, then check
    attitude-loop margin around it. Worst corner ≥ PM_min.
 2. Design model: exact sampled-data closed rate loop (tools/card/rate.py).
-3. Loop rate: SIM-7.
+3. **[Superseded by decision 21.]** Loop rate: SIM-7.
 4. **[Overridden by decision 11.]** Truth attitude: same pattern as truth gyro, covered by G3, no SIL ABI change.
 5. Large-angle recovery: shortest-rotation quaternion error. If the coupling limit appears, report it and extend the
    open safety item; don't tune.
@@ -44,10 +64,10 @@ choices that follow from them.
    AttitudeControl (reduced attitude + yaw weight, BSD-3); Brescianini & D'Andrea, "Tilt-prioritized quadrocopter
    attitude control", IEEE TCST 2020. The yaw weight needs a rule or a register entry, not a literal. Large-angle
    recovery uses the same law."
-10. SIM-7 quantity and uncertainty (the option Luis selected, "PM loss vs meas. U"): quantity = the worst-corner
-    attitude PM of the gains designed at the rate-loop rate (3.2 kHz), evaluated at each lower candidate rate
-    3.2 kHz/2^k; uncertainty = the chirp margin-measurement uncertainty E_H + U_A + U_d, derived as at L4 (0.056° there,
-    0005 lines 253-268). No new number.
+10. **[Superseded by decision 21.]** SIM-7 quantity and uncertainty (the option Luis selected, "PM loss vs meas.
+    U"): quantity = the worst-corner attitude PM of the gains designed at the rate-loop rate (3.2 kHz), evaluated at
+    each lower candidate rate 3.2 kHz/2^k; uncertainty = the chirp margin-measurement uncertainty E_H + U_A + U_d,
+    derived as at L4 (0.056° there, 0005 lines 253-268). No new number.
 11. "Truth attitude: Option 1. Test-only, optional truth-state entry, exported only by test SIL libraries; G3 extended
     so product SIL libraries cannot export it, with a negative control. Record in 0006 as overriding my decision 4."
 12. "Yaw weight: Option 1 (w = α_max,yaw / min(α_max,roll, α_max,pitch)), clamped to at most 1. Report the resulting
@@ -70,6 +90,45 @@ choices that follow from them.
     depend on ω_r, and the generator emits it as a derived parameter). "Option 1. You're right: my ω_r/α_min term was
     the fastest stop, not the maximum. t_cross is a derived, generated parameter, so it regenerates when L6 changes the
     rate loop. Add a T4 case with a constant yaw disturbance (no zero crossing) to exercise the fallback directly."
+19. DShot quantisation in the T4 step tolerance.
+    - **The option Luis chose.** Q = the maximum over the box (corners plus the grid check) of |quantised −
+      unquantised| design-model trajectory for the same script, quantised by the firmware's `thrust_to_dshot` and the
+      card's ESC map. The T3 envelope is unchanged; T4 checks within envelope ± (E + F + Q).
+    - **His words.** "Option 1. Before recording it, confirm the fine negative controls (gains × 1.1, one tick of added
+      delay) still fail the widened T4 predicate. If they don't, record that T4 angle steps now catch gross failures
+      only and the fine metric is enforced at T3.
+
+      Log for L6: evaluate DShot error diffusion (carry the rounding residual to the next tick) in the actuator-chain
+      work. It would remove the hover limit cycle without relying on noise dither. It changes L3 output, so it needs
+      its own decision record there."
+20. **[The SIM-7 half is superseded by decision 21.]** "Chirp amplitude: not the tilt-limit rule (60° is a pilot
+    envelope, not a linearity bound). Use the sweep you already ran: measured roll/pitch margin = min over the
+    amplitudes A_env/2^k that produce a crossover (k = 1..5), and U_A = spread of that plateau. Pass: min − U_A ≥
+    PM_min. Include a gains × 2 negative control on roll and pitch, as for yaw.
+
+    SIM-7: apply the recorded rule (re-measure at 800 Hz; if it flips back, take the higher rate and report it).
+
+    Separately, draft a spec amendment for my review (don't apply it yet): SIM-7 minimisation applies only where the
+    rate choice has a material cost against the EMB-3 CPU budget; otherwise a loop runs at its parent loop's rate.
+    Include what it would change for L5."
+21. "Adopt the SIM-7 amendment, with this definition: a loop runs at its parent loop's rate unless that fails EMB-3
+    schedulability; only then does SIM-7 minimisation choose a lower rate. Use the §5.4 CPU estimates until L9
+    measures WCET, and re-check at L9. Record in 0006 and apply the text to the spec.
+
+    Attitude loop = 3.2 kHz. Stop the 800 Hz re-measure; it's moot. Regenerate the T3 fixture and envelopes at
+    3.2 kHz, then start yaw release, fallback and recovery R1/R2."
+22. "R1: Option 1. δ = labelled scenario test value. Keep the exact-180° α-only side check." (R1 starts at 180° − δ
+    about roll, with the full envelope predicate, plus an α-only side check at exactly 180°.)
+23. "Spin-up: Option 2. Add an initial rotor speed to marv_plant_config and the scenario, defaulting to 0 so all
+    existing scenarios and frozen goldens stay bit-identical (prove it: full L00–L04 suites green, goldens unchanged).
+    Recovery scenarios start at the card's hover rotor speed. Decision record for the additive L2 interface change."
+    (The record is `docs/decisions/0007-l2-initial-rotor-speed.md`.)
+24. "General: the T4 tolerance is now E + F + Q. Prefer fixing harness/setup limitations over adding derived terms,
+    and after any new term re-confirm the fine negative controls still fail."
+25. The frozen L01 edit, approved and recorded in 0007: "Option 1, approved, recorded in 0007. Add the negative
+    control (an unclassified planted field fails). Note in 0007 that this test is kept as a pinned set deliberately:
+    it forces a vehicle-vs-scenario classification for every new plant field, and plant-config changes already need a
+    decision record. It is not one of the snapshot tests to generalise."
 
 ## Lead decisions
 
@@ -392,7 +451,7 @@ Inputs per attitude execution: the sticks s = (s_r, s_p, s_ψ) and the measured 
 - **Time-dependent state.** The only one is the fallback timer. It is measured from stamps, and C's period check
   applies to the execution.
 - **Consequence (architect scratch, the linear design model at N = 2, no torque limit, full-rate release after a 1 s
-  hold).**
+  hold).** This is from before decision 21; the built T4 results at N = 1 are in F.
   - The crossing sets the lock at every corner, 0.112–0.249 s after release. The fallback, max(0.256 s, 0.140 s), is
     never reached.
   - Travel from release to lock is 0.66–1.51 rad.
@@ -458,7 +517,7 @@ Inputs per attitude execution: the sticks s = (s_r, s_p, s_ψ) and the measured 
   - An Euler setpoint: 75.5° on the diagonal, and singular at 90° pitch.
   - Betaflight's yaw as a pure rate axis in angle mode (`pid.c:899-916`): it has no heading lock, against decision 9.
 
-### E. Gain rule and design model (`tools/card/attitude.py`; `flatten.py --out-attitude --sim7-u`)
+### E. Gain rule, loop rate and design model (`tools/card/attitude.py`; `flatten.py --out-attitude`)
 
 - **Rate-loop model at T.**
   - **Scope.** Per axis a and per corner (j, τ_c) of `rate.py`'s `corner_list` (J_true/J_a = j, J-normalised).
@@ -474,6 +533,8 @@ Inputs per attitude execution: the sticks s = (s_r, s_p, s_ψ) and the measured 
   - **Exactness.** So s_{n+1} = A·s_n + B·r_n exactly. These are the ZOH closed forms of `rate.py:13-15, 212-216`,
     plus the angle.
 - **Attitude at T_a = N·T, by lifting.**
+  - N = `att_loop_ratio` = 1 by the parent-rate rule (below). The lifting is kept for the case where EMB-3 fails and
+    a lower rate is chosen; at N = 1 it is the plain closed rate loop.
   - The attitude law samples θ at n = kN, and its output is held for N rate executions.
   - The computation delay is zero. The composition runs the attitude group before the rate group in the same tick,
     and the output acts at that tick, as L4's torque does.
@@ -506,33 +567,18 @@ Inputs per attitude execution: the sticks s = (s_r, s_p, s_ψ) and the measured 
     the band cancels). w is clamped to at most 1.
   - The generator refuses w ≤ 0 or a non-finite w. w is emitted and reported.
   - By the compensation, w does not enter the linear loop.
-- **SIM-7 (owner decisions 3 and 10).**
-  1. k_ref is the rule at N = 1 (3.2 kHz).
-  2. q(N) = PM_worst(k_ref, N) for N = 2^i.
-  3. Δ_i = |q(2^i) − q(2^{i−1})|. N* = 2^{i*}, where i* is the largest i with Δ_j < U for every j ≤ i (N* = 1 if
-     Δ_1 ≥ U). The scan stops at the first failure, or where k_ref has no unique crossover or is unstable.
-  4. The final gains are the rule at T_a = N*·T. Running k_ref at N* would sit below PM_min, since q(2) < q(1).
-  - The report prints the halving table (core §7.5).
-- **U and the circularity (lead, Q4, accepted).**
-  - **Definition.** U = the minimum over axes of (E_H + U_A + U_d), the chirp rule of 0005 (lines 253-268). The
-    minimum, because a smaller U gives the higher, safer rate.
-  - **The circularity.** The attitude chirp that measures U runs at N*, and N* depends on U. It is closed as a fixed
-    point:
-    1. **Seed U⁰.** The L4 rate-loop chirp's U, re-measured with the frozen L4 chirp harness, which does not depend on
-       N*. It is committed as a measurement (core §2 rule 3) under `design/measured/sim7_u/`: the command; the inputs
-       (scenarios, card hash, commit); the raw per-axis PMs (m = 1 and 2, A and A/2) and U_d terms; and `u.yaml`
-       (value in rad, method measured, source). 0005's 0.056° is prose, not a source.
-    2. **Iteration.** N*⁰ = SIM-7(U⁰). Build. The L5 T4 attitude chirp at N*⁰ measures U_att by the same rule, and U_att
-       replaces the seed as the committed measurement. Regenerate: N*¹ = SIM-7(U_att).
-    3. **Termination.** Done when N*¹ = N*⁰. A two-cycle takes the higher rate and is reported.
-  - **Frozen check.** The frozen T4 chirp test asserts that SIM-7(U_att measured on the run) equals the live
-    `att_loop_ratio`. Its control is a planted U that moves N*.
-  - **Location.** `design/measured/` is outside `tests/regression`. L6 can re-measure after its rate-loop change
-    without a decision record (owner decision 7), and the frozen fixed-point check catches a stale value.
+- **Loop rate (owner decision 21; supersedes decisions 3 and 10).** `att_loop_ratio` = 1: the attitude loop runs at
+  its parent group's rate, the rate loop's 3.2 kHz (core §7.5, "Flight rate groups"; quad §4 L5 Builds).
+  - **EMB-3.** It holds on §5.4's estimates. By §5.4's cost model (`10-quad-flight-software.md:364`), the attitude law
+    adds under 1 % of core 1 at 3.2 kHz, on top of §5.4's core-1 Freestyle rows (3–7 % and 2–4 %). This is the lead's
+    estimate; L9 re-checks it with measured WCET.
+  - **What is removed.** SIM-7 minimisation, its uncertainty U, the fixed point and `design/measured/sim7_u/` are all
+    gone. The 800 Hz re-measure was stopped as moot.
+  - **Consequence for the chirp.** It still measures its own U per axis (F), but that U no longer chooses a rate.
 - **Parameters emitted** (the product set; `tests/regression/quad/L05/param_ids`):
   - `att_kp` (f32, 1/s, derived, σ UNKNOWN);
   - `att_yaw_weight` (f32, unit "1", derived by owner decision 12's rule, σ UNKNOWN);
-  - `att_loop_ratio` (i32, unit "1", derived by SIM-7, σ exact);
+  - `att_loop_ratio` (i32, unit "1", derived by the flight-rate-group rule of core §7.5, σ exact);
   - `angle_tilt_max` (f32, rad, scenario, σ choice);
   - `yaw_deadband` (f32, unit "1", scenario, σ choice);
   - `att_yaw_alpha_min` (f32, rad/s², derived, σ UNKNOWN), for the fallback of owner decision 17.
@@ -545,60 +591,55 @@ Inputs per attitude execution: the sticks s = (s_r, s_p, s_ψ) and the measured 
     - The firmware validates α_min > 0 and finite.
   - `att_yaw_t_cross` (f32, s, derived, σ UNKNOWN), for the fallback of owner decision 18.
     - **Model.** The yaw axis of the lifted model: that axis's f32 rate gains, the bypass law and attitude period
-      T_a = N*·T. It starts from the steady state of tracking a unit yaw rate (ω = 1, m = 0, I = 0, e_prev = 0), and the
-      reference is zero from the release execution on. This is D's braking: yaw error zero, ω_ff = 0.
+      T_a = `att_loop_ratio`·T. It starts from the steady state of tracking a unit yaw rate (ω = 1, m = 0, I = 0,
+      e_prev = 0), and the reference is zero from the release execution on. This is D's braking: yaw error zero,
+      ω_ff = 0.
     - **Crossing time.** t_c = n·T_a, with n the first attitude execution n ≥ 1 at which ω ≤ 0. The model is linear
       from a unit rate, so t_c does not depend on ω_r.
     - **Value.** t_cross = the maximum of t_c over nominal and the four corners, stored as the smallest f32 at or above
       it (rounded up, so the fallback never fires before a linear-regime crossing).
     - **Refusals.** The generator refuses if some member does not cross within its scan bound (`MAX_STEP_SAMPLES`, the
       method constant `rate.py` uses for t63).
-    - It regenerates whenever the rate loop or N* changes (owner decision 18).
+    - It regenerates whenever the rate loop or `att_loop_ratio` changes (owner decision 18).
     - The firmware validates t_cross > 0 and finite.
   - The firmware also reads `rate_max_*` (the clamp and the yaw-rate command), `rate_loop_divisor` and the tick
     period. The attitude divisor is `rate_loop_divisor` × `att_loop_ratio` ticks.
 - **Report** (`marv_params_attitude_report.txt`). It contains:
   - the inputs and the f32 rate gains used;
   - the model statement;
-  - per-corner PM, crossover and Jury radius, at N = 1 and at N*, per axis;
-  - the SIM-7 table, with U, its source file and the verdicts;
+  - per-corner PM, crossover and Jury radius at T_a, per axis;
+  - the loop-rate rule and its EMB-3 basis;
   - w, with the three α;
   - k in f32 and double, and the yaw axis's effective linear gain;
   - `att_yaw_alpha_min`, with its τ_max,yaw and J inputs;
   - t_c per corner, and `att_yaw_t_cross`;
   - δ_num, the bracket, the bisections and the stepped-down flag.
-- **Scratch values.** These were computed by the architect with numpy in a session scratch. They are not a source;
-  the generator produces the real ones.
+- **Live values** (generator, 2026-09-30, `att_loop_ratio` = 1).
 
   | Quantity | Value |
   | --- | --- |
-  | w | 0.14326 (α_yaw 83.33 / α_pitch 581.67 rad/s², from the L4 report) |
-  | k_ref (N = 1) | 3.0873 s⁻¹ |
-  | q(N) for N = 1, 2, 4, 8 | 45.000°, 44.959°, 44.876°, 44.712° |
-  | Δ₁, Δ₂ with U = 0.056° | 0.041° (< U), 0.082° (≥ U), so N* = 2 (1.6 kHz) |
-  | k at N = 2 | 3.0855 s⁻¹ |
-  | PM at N = 2, every axis | 69.38° nominal; worst 45.000° at (J+, τ+) |
-  | Crossover at N = 2, every axis | 3.47–4.61 rad/s |
-  | α_min,yaw, and ω_r/α_min at 11.69 rad/s | 83.33 rad/s², 0.140 s |
-  | t_c per corner | nominal 0.190 s; (J−, τ−) 0.111 s; (J−, τ+) 0.118 s; (J+, τ−) 0.256 s; (J+, τ+) 0.254 s |
-  | t_cross | 0.25625 s at (J+, τ−); a 9×9 grid maximum equals it |
-  | Yaw release: travel release→lock, then excursion past the lock | 0.66–1.51 rad, then 0.32–1.07 rad (D) |
-  | Fallback case: d = τ_held,yaw ≈ 0.164 N·m from full-stick release | no member crosses before its fallback |
+  | k (`att_kp`, f32) | 3.0872879 s⁻¹ |
+  | PM, every axis | 69.390° nominal; worst 45.000018° at (J+, τ+) |
+  | Crossover, every axis | 3.477–4.610 rad/s |
+  | w (`att_yaw_weight`) | 0.143255815 |
+  | `att_yaw_alpha_min` | 83.327 rad/s² |
+  | `att_yaw_t_cross` | 0.25625 s |
 
-  - Under the compensated law the yaw loop is the tilt loop, up to f32 rounding. The attitude loop's worst corner is
-    (J+, τ+); the rate loop's is (J−, τ+). A 5×5 grid's minimum is that corner.
+  - Under the compensated law the yaw loop is the tilt loop, up to f32 rounding.
+  - The attitude loop's worst corner is (J+, τ+); the rate loop's is (J−, τ+).
 - **Rejected.**
   - loopshape's e^{−sT} model (owner decision 2).
-  - Designing at N = 1 and running at N*.
-  - Comparing q(N) with q(1) instead of halving.
-  - U from 0005's prose.
-  - U under `tests/regression`: L6 would need a record to re-measure it.
+  - SIM-7 minimisation of the attitude rate (decisions 3, 10 and 20; superseded by 21). The saving was under 1 % of
+    core 1, and the rule needed a rate-dependent uncertainty closed by a fixed point.
   - A separate yaw gain w·k (the first draft; owner decision 13).
 
-### F. Tests and controls (core §7.2; owner decisions 7, 14, 15 and 16)
+### F. Tests and controls (core §7.2; owner decisions 7, 14–21)
 
-- **Goldens.** There are only two, both on a fixed input the test owns: the T3 step golden and the acro bit-identity
-  golden (A). Every other test asserts a rule on the live parameters.
+- **Fixed-input references.** Each is on a fixed input the test owns:
+  - the T3 step golden with its envelope;
+  - the Q table (`t3/reference/attitude_t3_q_inputs.txt` → `attitude_t3_q.txt`);
+  - the acro bit-identity golden (A).
+  Every other test asserts a rule on the live parameters.
 - **T1.**
   - A: `unit/rate_bypass`.
   - B: `unit/truth_state`. The status codes and the valid-bit rule. Also, the float-cast source keeps |‖q‖ − 1| within
@@ -623,7 +664,7 @@ Inputs per attitude execution: the sticks s = (s_r, s_p, s_ψ) and the measured 
     - Grid check: on the 17×17 box grid (halving), every member's t_c ≤ `att_yaw_t_cross`, else T3 fails and the
       finding goes to Luis.
     - Control: `att_yaw_t_cross` one f32 step below the corner maximum fails the rule.
-  - The SIM-7 table, recomputed, gives the emitted `att_loop_ratio`.
+  - `att_loop_ratio` = 1, the parent-rate rule.
   - Controls: k × 1.1 fails the margin check, and so does one added tick of delay in the lifted model.
 - **T3 step** (`t3/`, C++, the 0005 pattern).
   - **Setup.** The float firmware path (angle mode, then the attitude law, then `execute_bypass`, each at its period)
@@ -635,26 +676,59 @@ Inputs per attitude execution: the sticks s = (s_r, s_p, s_ψ) and the measured 
     `t3/reference/attitude_t3_inputs.txt` (the product values on the day). The tolerance is derived from the float
     law, as a first-order rounding bound, as in 0005.
   - **CI.** Reproduces the golden byte for byte, with a perturbed-input control.
-  - **Controls.** Attitude gain × 1.1 and one tick of added delay must each leave the tolerance.
+  - **Controls.** Attitude gain × 1.1, rate gains × 1.1 and one tick of added delay must each leave the tolerance.
   - **Kinematics.** Integrated with sub-steps halved until the trajectory changes by less than the tolerance
     (core §7.5).
+  - **Result at N = 1 (regenerated after decision 21).**
+    - **Tolerances.** θ 1.78e-5 rad and ω 6.78e-5 rad/s on roll and pitch; 2.80e-4 rad and 1.27e-3 rad/s on yaw. The
+      derivation of the yaw bound was tightened with per-execution ρ weighting.
+    - **Controls.** On roll and pitch, attitude gain × 1.1 leaves the tolerance by ×3946, rate gains × 1.1 by ×3338
+      and one added tick by ×46.4. On yaw: ×192, ×492 and ×8.2.
+    - **Size.** The reference files (golden plus envelope) are 8.6 MB.
+    - **Reviewer caveat.** The frozen-gain first-order rounding bound relies on about 100× of observed slack.
 - **T3 envelopes** (recorded, used at T4).
   - For each step script, the yaw-release script and each recovery scenario: the box envelope (17×17 grid, halving)
     of the design model, driven by the exact script from the exact initial state and never re-seeded (Luis's L4 rule).
   - **Property.** Each envelope's end value (tilt, heading relative to release, yaw rate) is below the T4 tolerance,
     so a trace inside the envelope has settled. Otherwise the duration doubles (core §7.5).
-- **Tolerance terms at T4.** As at L4:
+- **Tolerance terms at T4.** As at L4, plus Q (owner decision 19):
   - E is from 0003 item 9 (m = 1 against m = 2);
-  - F = the T3 tolerance + the envelope's last-halving change + the kinematics halving change.
+  - F = the T3 tolerance + the envelope's last-halving change + the kinematics halving change;
+  - Q = the maximum over the box of |quantised − unquantised| design-model trajectory for the same script. It is
+    quantised by the firmware's `thrust_to_dshot` and the card's ESC map, computed on the fixture
+    `attitude_t3_q_inputs.txt`, and is a grid maximum, because the corners do not bound it.
+
+    | Script | Q |
+    | --- | --- |
+    | `step_roll` | θ 8.28e-3 rad |
+    | `step_pitch` | θ 7.40e-3 rad |
+    | `yaw_release` | ω 5.83e-3 rad/s |
+    | `yaw_fallback` | ω 4.95e-3 rad/s |
+
+  - The T3 envelope itself is unchanged. Every T4 predicate below uses envelope ± (E + F + Q). Owner decision 24:
+    fix a harness or setup limitation before adding a derived term, and after any new term re-confirm that the fine
+    negative controls still fail.
 - **T4 angle-mode steps** (gz).
   - **Script.** Full-stick roll and pitch segments, and their release.
   - **Predicate.** At every attitude execution, the tilt components and the heading relative to the lock lie inside
-    the envelope ± (E + F).
+    the envelope ± (E + F + Q) (owner decision 19).
   - **Other checks.** A clean run and every DShot within [idle, 2047].
   - **Altitude.** Drift is allowed (0005 decision 9). The generated world has no ground plane (`gen_world.py:32`), so
     there is no contact.
   - **Controls.** `att_kp` = 0 through a SIL override (the §7.2 metric control); the step moved one attitude execution
     off its stamp.
+  - **Result.**
+    - Roll is 6.52e-3 rad outside the envelope, against F + Q = 1.127e-2; pitch is 5.94e-3 rad outside, against
+      1.038e-2.
+    - **Cause.** DShot quantisation at hover, measured by bit-exact replay and a counterfactual
+      (`tests/regression/quad/L05/results/step_cause/`).
+  - **Fine controls against the widened predicate** (owner decision 19; `results/step_controls/`).
+    - `att_kp` = 0 and `att_kp` × 1.1 fail in gz: slack +3.07e-2 / +3.21e-2 (roll / pitch).
+    - Rate gains × 1.1 pass: that plant is inside the box.
+    - One added tick passes at T4, with counterfactual slack −4.77e-3 / −4.45e-3; its design shift, 3.69e-4, is below
+      F.
+    - **Recorded as decision 19 asks.** T4 angle steps now catch gross failures and attitude-gain errors only. The
+      delay metric is enforced at T3 (×46.4 on roll and pitch, ×8.2 on yaw).
 - **T4 yaw release (owner decisions 14 and 17; gz).**
   - **Script.** Level tilt, full yaw stick held for a sustained segment, then s_ψ = 0 at a stamped release execution
     n_r.
@@ -667,22 +741,28 @@ Inputs per attitude execution: the sticks s = (s_r, s_p, s_ψ) and the measured 
     the exact script from the exact initial state and never re-seeded. Each member's headings are taken relative to its
     own release and its own lock.
   - **Predicate.**
-    - (i) During the sustained segment, the yaw rate lies inside its envelope ± (E + F). This is the angle-mode yaw
+    - (i) During the sustained segment, the yaw rate lies inside its envelope ± (E + F + Q). This is the angle-mode yaw
       step.
     - (ii) **The yaw rate reaches zero with no reversal beyond the band envelope.** After release, σ_r·ψ̇_m lies inside
-      its envelope ± (E + F) at every attitude execution. This includes the envelope's most negative value, which is
+      its envelope ± (E + F + Q) at every attitude execution. This includes the envelope's most negative value, which is
       the reversal bound.
-    - (iii) **The heading holds after the lock.** For n ≥ n_l, ψ_m(n) − ψ_m(n_l) lies inside its envelope ± (E + F).
+    - (iii) **The heading holds after the lock.** For n ≥ n_l, ψ_m(n) − ψ_m(n_l) lies inside its envelope ± (E + F + Q).
       Also, n_l lies within the envelope's range of lock executions.
-    - (iv) After release, the heading relative to the release lies inside its envelope ± (E + F).
-    - (v) At the end, the yaw rate and the heading relative to the lock are within E + F of zero. By the T3 property,
-      the envelope has closed there.
+    - (iv) After release, the heading relative to the release lies inside its envelope ± (E + F + Q).
+    - (v) At the end, the yaw rate and the heading relative to the lock are within E + F + Q of zero. By the T3
+      property, the envelope has closed there.
   - **Other checks.** A clean run and the DShot range.
   - **Controls.**
     - A planted trace whose heading goes back to the heading where the yaw input started (the catch-up behaviour
       decision 14 excludes) must fail.
     - `att_kp` = 0 through a SIL override (no pull-back to the lock) must fail.
     - The release moved one attitude execution off its stamp must fail.
+  - **Result.**
+    - The crossing set the lock at execution 21346. That is inside the design range [21087, 21552] and before the
+      fallback at 21553.
+    - Every channel is within 7.7e-6 to 5.8e-4 of the envelope, against E + F + Q.
+    - All the controls fail as required.
+    - The lock execution is recomputed from the TRUTH records with D's rule, in f32.
 - **T4 yaw-lock fallback (owner decision 18; gz).** It exercises guard (b) directly.
   - **Injection.** A constant yaw torque d is added to the rate loop's torque output before `allocate()`. This is the
     L4 chirp's injection point (`l4_rate_scripted.cpp:151`), and the anti-windup sees the request including d, as at
@@ -702,43 +782,93 @@ Inputs per attitude execution: the sticks s = (s_r, s_p, s_ψ) and the measured 
       Δt ≥ t_cross and Δt·α_min ≥ ω_r. n_fb is recomputed from the log with the emitted parameters and the logged
       ω_r.
     - (ii) **The fallback locks, and the heading holds against d.** For n ≥ n_fb, ψ_m(n) − ψ_m(n_fb) and ψ̇_m lie
-      inside the envelope ± (E + F). The envelope is the design model with the same script, d and lock logic, never
-      re-seeded. At the end both are within E + F of zero: the lock held, and the integrator rejected d.
+      inside the envelope ± (E + F + Q). The envelope is the design model with the same script, d and lock logic, never
+      re-seeded. At the end both are within E + F + Q of zero: the lock held, and the integrator rejected d.
     - (iii) A clean run and the DShot range.
   - **Controls.**
     - `att_yaw_t_cross` overridden through the SIL to the run duration (a value taken from the scenario, not a new
       number), so the fallback cannot fire within the run: the heading is never pulled back to ψ_m(n_fb), and (ii)
       must fail.
     - A planted trace that crosses zero before n_fb must fail (i).
-- **T4 attitude chirp (owner decision 16; gz).** QF-3 and owner decision 10's U both need it.
-  - **Injection.** At the attitude output, added to the rate setpoint before `execute_bypass`, one axis at a time
-    (roll, pitch and yaw, all at k).
+  - **Result.**
+    - No crossing: the minimum of σ_r·ψ̇ is 1.406 rad/s.
+    - The lock came at n_fb = 21553.
+    - The worst excesses are 7.4e-4 rad/s (yaw rate from the fallback on, allowance 0.092) and 6.2e-4 rad (heading
+      relative to the lock, allowance 4.4e-3).
+    - All the controls fail as required.
+- **T4 attitude chirp (owner decisions 16 and 20; gz).** QF-3 needs it.
+  - **Injection.** At the attitude output, in rad/s, added to the rate setpoint before `execute_bypass`, one axis at a
+    time (roll, pitch and yaw, all at k).
+  - **Scenarios.** Derived by the committed `tools/sim/gen_l5_chirp.py` from the live design; a test compares them
+    byte for byte.
   - **Band.** [min corner ω_c/a, a·max corner ω_c] (0005).
-  - **Amplitude.** The largest A for which the design model's peak torque request, over the band and the box, stays
-    inside the collective-held envelope τ_held. This is 0005's rule, moved to this injection point.
+  - **Amplitude (owner decision 20).** A sweep of A_env/2^k, k = 1..5.
+    - The measured margin is the minimum over the amplitudes that produce a crossover; U_A is the spread of that
+      plateau.
+    - A_env is the amplitude of this record's first rule (the torque envelope τ_held). At full size it made the vehicle
+      tumble, so that rule is superseded.
+    - Decision 20 names roll and pitch. Yaw keeps this record's first rule (lead): at A_env (1.467 rad/s) the yaw
+      excursion stays small (peak error 0.44 rad), and U_A = |PM(A) − PM(A/2)| as in 0005.
   - **Duration.** Doubled until |ΔPM| < E_H + U_A.
   - **Estimator and reconstruction.** The DTFT ratio. L_a = C_a·G_m/(1 − C_a·G_m), with the implemented f32 gain.
-  - **Terms.** E_H, U_A and U_d as in 0005.
-  - **Pass.** PM − U ≥ PM_min, and PM inside the design range. The test also asserts the SIM-7 fixed point (E).
-  - **Control.** Attitude gain × c must fail, with c the smallest power of two whose design PM_nom is below
-    PM_min − U.
-- **T4 large-angle recovery (owner decision 15; gz)**, with labelled scenario test values.
-  - **R1: inverted at rest.** q0 = [0, 1, 0, 0], exactly on C's singular set, with zero rates. The setpoint is level,
-    locked at D's initial heading. It must pass normally: a single axis, no coupling.
-  - **R2: inverted and tumbling.** Body rates (`rate_max_roll`, `rate_max_pitch`, `rate_max_yaw`): the acro limit, and
-    the regime of the L4 known failing item.
-  - **Predicate.** A clean run, the DShot range, and tilt, heading error and body rates inside the design-model
-    envelope from the exact initial state ± (E + F).
-    - The design model omits ω×Jω, as at L4, so a coupling limit shows up as an envelope exit.
-  - **If R2 fails.**
-    1. Run an L4-style bit-exact replay (`tests/regression/quad/L05/replay/`) and write a cause file under `results/`.
-    2. If the cause is gyroscopic coupling (no L3 flag, s = t = 1, gyroscopic torque comparable to the rate loop's),
-       R2's check becomes a strict xfail (`raises=AssertionError`, an unexpected pass fails). Its condition is the L4
-       item's: "`tests/regression/quad/L06/` does not exist". It therefore blocks L6 and must pass before L8. The
-       known failing item is extended in this record and in the handoff, and Luis is told. There is no tuning (owner
-       decision 5).
-    3. Any other cause is an L5 defect.
-  - **Controls.** A planted trace held at the initial attitude fails; `att_kp` = 0 fails.
+  - **Pass.** PM − U ≥ PM_min, with U = E_H + U_A + U_d per axis (0005's terms). This contains decision 20's
+    min − U_A ≥ PM_min. It no longer checks a SIM-7 fixed point (decision 21).
+  - **Control.** Gains × 2 on every axis must fail.
+  - **Result at N = 1.**
+
+    | Axis | PM | U | Slack | Gains × 2 control |
+    | --- | --- | --- | --- | --- |
+    | Roll | 68.904° | 2.80° | 21.11° | 33.6°, fails |
+    | Pitch | 68.896° | 2.25° | 21.65° | 33.6°, fails |
+    | Yaw | 69.397° | 0.085° | 24.31° | 33.4°, fails |
+
+- **T4 large-angle recovery (owner decisions 15, 22, 23 and 24; gz)**, with labelled scenario test values.
+  - **Setup (owner decision 23; 0007).**
+    - Every recovery scenario starts with the rotors at the card's hover speed, 1100.58 rad/s
+      (`run_l5.hover_rotor_speeds`: ω_i = √(M[i,thrust]·m·g/k)).
+    - This fixes the harness limitation of rotors starting at rest.
+    - The earlier rest-rotor measurements are superseded; they are in commit `7028cf8`.
+  - **Predicate.** A clean run, the DShot range, and every channel inside the design-model envelope ± (E + F + Q),
+    where the envelope comes from the exact initial state and is never re-seeded. The design model omits ω×Jω, as at
+    L4, so a coupling limit shows up as an envelope exit.
+  - **R1: near-inverted at rest** (`recover_inverted.yaml`; owner decision 22).
+    - **Start.** Roll π − δ, with δ = 0.01 rad, a labelled scenario test value.
+    - **Why δ.** The plant's rounding noise in (w, z) is about 4e-17, against w = 5e-3 at that start. So the design
+      model and Gazebo take the same tilt/yaw split branch.
+    - **Result.** 0 violations of envelope ± (E + F + Q) on six channels (err_x, err_y, err_z; ω_x, ω_y, ω_z).
+      - The worst is ω_x: 6.4e-3 outside the envelope, slack −0.101.
+      - err_x is 5.21e-3 outside, slack −8.86e-3.
+  - **Exact-180° α side check** (`recover_inverted_exact.yaml`; owner decision 22).
+    - **What it checks.** The tilt angle α against an axis-invariant design envelope over the 17×17 box, from exactly
+      180°.
+    - **Result.** 4.5e-4 outside the envelope against E = 9.6e-4, slack −4.77e-2.
+    - **Why a full check from exactly 180° is not generic.** On the singular set, the plant's rounding noise picks the
+      split branch.
+    - **The law stays within C's bound.** The measured bend is 6.447° = −wψ/2, against wπ/2 = 12.893°.
+  - **R2: inverted and tumbling** (`recover_tumble.yaml`). Rates at `rate_max` on all three axes, and rotors at hover.
+    - **Status.** A strict xfail (`raises=AssertionError`, `strict=True`) on "`tests/regression/quad/L06/` does not
+      exist". It extends the L4 known failing item: it blocks L6 and must pass before L8 (owner decision 15).
+    - **Cause, measured.** Evidence is in `tests/regression/quad/L05/results/recovery_cause/`, from a bit-exact replay
+      of 20747 executions.
+      - No L3 flag is set; s = t = 1 throughout.
+      - At execution 1, |ω×Jω| is (0.302, 0.245, 0.055) N·m. That is 41/44/33 % of τ_held, and above the largest
+        roll and pitch torques requested (0.136, 0.213).
+      - Counterfactual distance to Gazebo: the design model 7.96; with ω×Jω added, 1.46e-2; with DShot too, 7.9e-3.
+    - **Behaviour.** The vehicle does recover.
+      - α < 90° at 0.259 s, against 0.124 s for the design model; final α is 8.1e-4 rad.
+      - The test leaves the envelope from execution 3, by up to 0.80 rad and 5.3 rad/s.
+  - **Harness facts.**
+    - **Rate channels at execution 0.** The plugin applies the initial rates after host step 0 (0003 item 11), so the
+      rate channels skip execution 0 only. This is not a tolerance term, and the attitude channels stay checked.
+    - **Separatrix field.** The runner fills the L2 separatrix-margin field with the state's own value, because the
+      analytic separatrix check does not apply to a recovery scenario (lead decision, H).
+    - **F's rounding term.** The T3 rounding term in the recovery envelope is borrowed from the step envelopes and
+      tagged INFERRED. It is immaterial: about 1e-5, against a halving term of 4.1e-2.
+  - **Controls.**
+    - A planted trace held at the initial state fails R1, R2 and the side check.
+    - `att_kp` = 0 fails: 23286 violations on R1, 68062 on R2.
+    - `att_kp` × 1.1 still fails R1 (worst slack +0.217, on ω_x). So the fine control holds with no new term (owner
+      decision 24).
 - **T4 truth plumbing.** The TRUTH record equals the float cast of the step's body state. Without the element, the log
   is byte-identical to an L4 run.
 - **"The L4 suite still green."** No new check is added.
@@ -769,11 +899,11 @@ Inputs per attitude execution: the sticks s = (s_r, s_p, s_ψ) and the measured 
   PARAMS marv_params_l5_attitude_scripted TRUTH_STATE)`.
 - **Gazebo.** `sim/gz/adapter` gains `truth_attitude` (target `marv_gz_truth_attitude`); the plugin gains the element
   and record type 5. `tools/sim/lockstep_log.py` and `tools/card/gen_world.py` gain the record and the element.
-- **Generators and registers.** `tools/card/attitude.py`, `tools/card/flatten.py`, `design/scenario_values.yaml`
-  (`angle_tilt_max`, `yaw_deadband`) and `design/measured/sim7_u/`.
+- **Generators and registers.** `tools/card/attitude.py`, `tools/card/flatten.py` and `design/scenario_values.yaml`
+  (`angle_tilt_max`, `yaw_deadband`). `tools/sim/gen_l5_chirp.py` generates the chirp scenarios.
 - **Runner and scenarios.** `tools/sim/l5_scenario.py` and `tools/sim/run_l5.py`. `scenarios/quad/L05/`: `step_roll`,
-  `step_pitch`, `yaw_release`, `yaw_fallback`, `chirp_roll`, `chirp_pitch`, `chirp_yaw`, `recover_inverted` and
-  `recover_tumble`.
+  `step_pitch`, `yaw_release`, `yaw_fallback`, `chirp_roll`, `chirp_pitch`, `chirp_yaw`, `recover_inverted`,
+  `recover_inverted_exact` and `recover_tumble`.
 - **Preset.** `CMakePresets.json` gains `host-gz-l5` (MARV_GZ_SIL = `marv_sil_l5_attitude_scripted`, MARV_GZ_PARAMS =
   `marv_params_l5_attitude_scripted`, build dir `build/host-gz-l5`).
 - **Frozen suite.** `tests/regression/quad/L05/` holds:
@@ -782,7 +912,8 @@ Inputs per attitude execution: the sticks s = (s_r, s_p, s_ψ) and the measured 
   - `unit/{rate_bypass, truth_state, attitude, angle, composition}`;
   - `t3/` (with `reference/`);
   - `tools/`, `gz/` and `controls/`;
-  - `replay/` and `results/`, only if R2 needs them.
+  - `results/step_cause/` and `results/step_controls/` (decision 19's evidence);
+  - `results/recovery_cause/` (R2's cause, with its bit-exact replay).
 - **G3.** `cmake/flight_targets.cmake` and `tools/ci/check_g3.py`, as in B.
 - **`ci/run_ci.sh`.**
   - Add `tests/regression/quad/L05/tools` to the pytest list (`:458-459`).
@@ -797,10 +928,30 @@ Inputs per attitude execution: the sticks s = (s_r, s_p, s_ψ) and the measured 
   - the L01 manifest rule takes `L05/param_ids`.
   The regression-change check will say so if this is wrong.
 
+### H. Lead decisions made during the build
+
+- **Scope of the core rule (`b194ea3`).** Core §7.5's flight-rate-group rule applies to groups "whose rate no product
+  requirement sets by its own rule". QF-8 and 0005 owner decision 1 (the rate loop at 3.2 kHz) therefore stand.
+- **Tilt-limit check.** The attitude configuration check adds 0 < `angle_tilt_max` ≤ π.
+- **Truth quaternion sign.** The truth adapter canonicalises q to w ≥ 0 (core §3).
+- **Chirp units.** The attitude chirp is in rad/s at the attitude output.
+- **Composition controls.** Controls that need `att_loop_ratio` above 1 run only in the composition tests.
+- **Q fixture.** Q is computed on the fixture `attitude_t3_q_inputs.txt`.
+- **Step alignment.** The step test compares against the plan's exact stamps (312.5 µs period).
+- **Recovery δ.** R1's δ = 0.01 rad, a labelled scenario test value (owner decision 22). The reason is in F.
+- **Separatrix field.** The recovery runner fills the L2 separatrix-margin field with the state's own value. The
+  analytic separatrix check does not apply to a recovery scenario.
+- **Rate channels at execution 0.** The recovery's rate channels skip execution 0, where the plugin has not yet
+  applied the initial rates (0003 item 11). This is not a tolerance term.
+- **Recovery F.** The recovery envelope borrows the step envelopes' T3 rounding term, tagged INFERRED. It is about
+  1e-5, against a halving term of 4.1e-2.
+
 ## Spec gaps logged
 
-- Quad §4 L5's pass bar lists no T4 chirp. QF-3 requires verification by chirp, and owner decision 10's U is a chirp
-  uncertainty. Owner decision 16 adds the T4 attitude chirp.
+- Quad §4 L5's pass bar lists no T4 chirp. QF-3 requires verification by chirp. Owner decision 16 adds the T4 attitude
+  chirp to the pass bar.
+- This record's first chirp amplitude rule (the torque envelope τ_held at the attitude output) made the vehicle tumble.
+  Owner decision 20's sweep supersedes it.
 - The L5 opening gains a feed-forward input (a world angular velocity: the angle-mode yaw-rate command) and a fault
   output. The setpoint is still a quaternion.
 - The L4 opening gains `execute_bypass`, which is additive.
@@ -808,9 +959,8 @@ Inputs per attitude execution: the sticks s = (s_r, s_p, s_ψ) and the measured 
   - The attitude law does not use them: the rate loop takes its rates from L4, and from L6 once it exists.
   - Angle mode uses their world-down component for the heading lock (owner decision 17).
   - From L7, the lock's crossing depends on the estimator's rate. Guard (a) bounds the effect of noise.
-- Core §7.5 ("halve until the change is below U") gives no direction for a rate chosen downward from a reference rate.
-  Here SIM-7's U also depends on the rate chosen. 0006 defines the direction and closes the circularity by a fixed
-  point.
+- Core §7.5 applied SIM-7 minimisation to every rate group, even where the rate has no material cost. Owner decision
+  21 adds the flight-rate-group rule, applied in `b194ea3`: a group runs at its parent's rate unless EMB-3 fails.
 - In angle mode the yaw stick is a rate command (owner decision 14) that goes through the L4 bypass (owner
   decision 8). QF-2's first-order reference model therefore does not shape the angle-mode yaw response. QF-2 is
   verified in acro, at L4.
@@ -821,18 +971,27 @@ Inputs per attitude execution: the sticks s = (s_r, s_p, s_ψ) and the measured 
   the two.
 - t_cross is defined from a unit-rate steady state. After a short yaw input the rate loop is not at steady state, and
   its crossing can come later; the fallback then locks first, and the envelope covers it.
+- T4 angle steps no longer enforce the one-tick delay control. DShot quantisation at hover (Q) exceeds the delay's
+  design shift, so the delay metric is enforced at T3 (owner decision 19).
 - QF-3 in SIL checks the attitude loop at the nominal plant only. The box is checked at T3 only, as it was for QF-3 at
   L4.
 - Quad §4 L5 names a large-angle recovery scenario but gives no pass rule. 0006 defines one: the envelope from the
-  exact initial state.
+  exact initial state (R1 from π − δ), plus an α-only side check at exactly π (owner decision 22).
+- The L2 scenario had no initial rotor speed, so a recovery started from rotors at rest. Owner decision 23 adds the
+  field, with 0007 as its record.
 
 ## Carried forward
 
 - **L8.** The G3 guard that only test compositions may carry `TRUTH_STATE` (lead, Q6). Until then, a product SIL
   library is simply one built without the flag.
 - **L8.** `yaw_deadband` (0, Betaflight's default) needs revisiting with real sticks.
-- **L6.** If R2 is an xfail, it joins the L4 known failing item: it blocks L6 and must pass before L8 (owner
-  decision 15).
+- **L6.** Evaluate DShot error diffusion, carrying the rounding residual to the next tick, in the actuator-chain work
+  (owner decision 19). It would remove the hover limit cycle without noise dither. It changes L3's output, so it needs
+  its own decision record.
+- **L9.** Re-check EMB-3 for the attitude loop at 3.2 kHz with measured WCET (owner decision 21).
+- **L6 and L8.** The L4 T4 acro recovery and the L5 R2 recovery must both pass before L8, and each blocks L6.
+- **L6.** Evaluate ω×Jω feed-forward together with the D term, then re-run both known failing items.
+- **0007.** `run_l4` passes the rotor speed through, but `l4_scenario` does not accept it yet.
 
 ## Why
 
@@ -844,38 +1003,66 @@ The L4 handoff (`docs/handoff.md`, 2026-09-30) listed these as the owner's calls
 - yaw in angle mode;
 - the tilt limit.
 
-Luis answered them in decisions 1–12. The drafts of this record raised six more, which he answered in
-decisions 13–18:
+Luis answered them in decisions 1–12. The drafts of this record and the build raised thirteen more, which he answered
+in decisions 13–25:
 - the yaw-gain compensation;
 - the heading hold;
 - the recovery scenarios;
 - the attitude chirp;
 - when the heading locks after release;
-- the lock's fallback time.
+- the lock's fallback time;
+- DShot quantisation in the T4 step tolerance;
+- the chirp amplitude;
+- the attitude loop's rate;
+- R1's start near the singular set;
+- the rotor spin-up in recovery scenarios;
+- the T4 tolerance policy;
+- the frozen L01 edit.
 
-The lead decided the SIM-7 seed (Q4) and the SIL classification (Q6).
+The lead decided the SIM-7 seed (Q4, now moot under decision 21), the SIL classification (Q6) and the build details
+in H.
 
 This record turns those answers into interfaces, a gain rule, a rate rule and tests that assert rules rather than
 snapshots (decision 7), so that L6's rate-loop change regenerates L5 without editing a frozen test.
 
-Two findings drove the extra questions:
+Four findings drove the extra questions:
 - **A stick-integrated heading runs away and reverses the yaw.** Decision 14 replaces it with a lock on release.
   Decision 17 moves the lock to the end of the braking, so the heading is not pulled back through the stopping
   distance. Decision 18 makes its fallback the latest linear-regime stop.
-- **The SIM-7 uncertainty is circular.** It depends on the rate it chooses, so it is closed by a fixed point with a
-  committed seed.
+- **SIM-7 minimisation had nothing material to save.** It also needed a rate-dependent uncertainty closed by a fixed
+  point. Decision 21 runs the loop at its parent's rate unless EMB-3 fails.
+- **DShot quantisation at hover sets the T4 step floor.** Decision 19 adds Q to the tolerance and moves the fine
+  delay metric to T3.
+- **The recovery exposed two harness limits and the known coupling.** The two limits were rotors starting at rest, and
+  an exact-180° start whose branch the plant's rounding picks. Decisions 22 and 23 fix the harness rather than adding
+  a term (decision 24). R2's remaining exit is gyroscopic coupling, so it joins the L4 item.
 
 ## Evidence
 
+- **Design.** The generator report, `marv_params_attitude_report.txt` (generated at build), gives the live values in E.
+- **T3.** `tests/regression/quad/L05/t3/` holds the golden, the envelope and the Q table with their fixtures. CI
+  reproduces them. The results are in F.
+- **T4 steps.** `tests/regression/quad/L05/results/step_cause/` (the cause: DShot quantisation at hover, by bit-exact
+  replay and counterfactual) and `results/step_controls/` (the fine controls against the widened predicate).
+- **T4 chirp, yaw release and fallback.** The results are in F; the scenarios are in `scenarios/quad/L05/`.
+- **Spec amendment.** Commit `b194ea3` (owner decision 21).
+- **Recovery.**
+  - `tests/regression/quad/L05/results/recovery_cause/` holds R2's cause, from a bit-exact replay of 20747 executions.
+  - The scenarios are `scenarios/quad/L05/recover_inverted.yaml`, `recover_inverted_exact.yaml` and
+    `recover_tumble.yaml`.
+  - The superseded rest-rotor measurements are in commit `7028cf8`.
+- **L2 initial rotor speed.** 0007, including the bit-identity proof of owner decision 23.
+
 PENDING:
-- the generator report (w, k, the effective yaw gain, the SIM-7 table, N*);
-- the committed U measurements (the seed and U_att) and the fixed-point iterations;
 - the acro bit-identity golden and its command;
-- the T3 golden, tolerance, controls and envelopes;
-- the T4 steps, yaw release, chirp, recovery and truth-plumbing results;
-- R2's cause file, if R2 fails;
+- the truth-plumbing results;
 - the independent review;
-- full CI in both images on a clean copy.
+- Full CI both images, run by the lead on clean copies of `quad-l5` at f56c0fb (2026-09-30), with
+  `MARV_CI_BASE_REF=master`:
+  - `ci/run_ci.sh` in `marv-ci`: exit 0, 49 steps, ALL STEPS PASSED; ctest host-debug and host-release 454/454, frozen
+    453/453; regression change check: 1 frozen file changed, covered by 2 decision records (0006, 0007).
+  - `ci/run_ci_gz.sh` in `marv-ci-gz`: exit 0, 10 steps; L02 gz and tools green; `gz_l4` 40 passed, 1 xfailed;
+    `gz_l5` 63 passed, 1 xfailed (R2); 0 skipped.
 
 ## Approval
 
