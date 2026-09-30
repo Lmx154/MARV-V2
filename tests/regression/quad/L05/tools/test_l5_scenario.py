@@ -231,3 +231,33 @@ def test_world_edit_refuses_a_world_without_the_l2_dshot_overrides():
         run_l5.world_edit({})(WORLD.replace('param="ol_dshot_m1"', 'param="other"'))
     with pytest.raises(scn.ScenarioError):
         l5s.load(SCEN / "missing.yaml")
+
+
+# ---- the recovery scenarios (R1, R2: decision 0006 F "T4 large-angle recovery") -------------------------------------------
+
+RECOVERY = ("recover_inverted", "recover_tumble")
+PARAMS = {"tick_period_num_us": 625, "tick_period_den": 4, "rate_loop_divisor": 2, "att_loop_ratio": 1}
+
+
+@pytest.mark.parametrize("name", RECOVERY)
+def test_committed_recovery_scenarios_are_valid_and_have_no_segments(name):
+    v = l5s.values(l5s.load(SCEN / f"{name}.yaml"))
+    assert v["script"]["segments"] == [] and v["initial_state"]["attitude_q_wxyz"] == [0.0, 1.0, 0.0, 0.0]
+    assert any(x != 0 for x in v["initial_state"]["body_rates_frd_rad_s"]) == (name == "recover_tumble")
+
+
+def test_l2_world_input_of_a_tumble_carries_the_initial_state_s_own_separatrix_mu():
+    doc = l5s.load(SCEN / "recover_tumble.yaml")
+    p = run_l5.plan(doc, PARAMS, CARD)
+    out = run_l5.l2_scenario_doc(doc, p, "recover_tumble_truth_fed_perfect_model", "recover_tumble.yaml", CARD)
+    inertia = [float(x) for x in schema.load_yaml(CARD)["inertia_diag"]["value"]]
+    assert scn.validate(out, "recover_tumble_truth_fed_perfect_model.yaml", inertia) == []
+    assert 0 < out["separatrix_margin_min"]["value"] <= 1
+
+
+def test_control_a_recovery_at_rest_has_no_separatrix_entry_and_a_tumble_without_a_card_is_refused():
+    rest = l5s.load(SCEN / "recover_inverted.yaml")
+    assert "separatrix_margin_min" not in run_l5.l2_scenario_doc(rest, run_l5.plan(rest, PARAMS, CARD), "s", "s.yaml", CARD)
+    tumble = l5s.load(SCEN / "recover_tumble.yaml")
+    with pytest.raises(run_l5.PlanError):
+        run_l5.l2_scenario_doc(tumble, run_l5.plan(tumble, PARAMS, CARD), "s", "s.yaml")

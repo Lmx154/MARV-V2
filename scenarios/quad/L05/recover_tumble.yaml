@@ -1,0 +1,77 @@
+# Quad L5 scenario 'recover_tumble' (docs/spec/10-quad-flight-software.md section 4 L5, T4; docs/decisions/0006 F "T4 large-angle recovery", owner decision 15).
+# R2, inverted and tumbling at rate_max on every axis: the acro limit, the regime of the L4 known failing item (gyroscopic coupling w x Jw at full-stick rates, docs/handoff.md; owner decision 15). The setpoint is level, locked at angle mode's initial heading (sticks 0 throughout: no segments), flown by the l5_attitude_scripted
+# composition (angle mode, the attitude law, the rate loop in bypass) on truth gyro and truth attitude: a truth-fed, perfect-model run, not a
+# validation run (core section 6). The initial state is a labelled scenario test value (decision 0006 F). The run starts at the initial state:
+# settle_s is one attitude period, so the origin execution is only the first execution that keeps the stamp phase (tools/sim/run_l5.py plan) and
+# the test compares attitude execution n of the run with the design model's execution n from execution 0. Schema and checks: tools/sim/l5_scenario.py.
+# Nonzero initial rates need no separatrix margin in this schema: the runner writes the initial state's own mu into its L2 world input
+# (tools/sim/run_l5.py l2_scenario_doc). R2: the L4 item (strict xfail if it hits the coupling limit). Every number is a labelled scenario value or a derived value. Frames NED / FRD, SI.
+scenario: recover_tumble
+site_latitude_rad:
+  value: 0.82
+  unit: rad
+  label: scenario
+  rationale: "the L2 hover site (scenarios/quad/L02/hover.yaml): mid-latitude, so the latitude term of g is exercised"
+site_height_m:
+  value: 500.0
+  unit: m
+  label: scenario
+  rationale: "the L2 hover site height (scenarios/quad/L02/hover.yaml); a plausible flying site height, not vehicle data"
+seed:
+  value: 1
+  unit: "1"
+  label: scenario
+  rationale: "RESERVED at v0: marv_plant v0 and the composition draw no random numbers, so the value has no effect; it completes the run identity (firmware, card, scenario, seed)"
+tick_period_num_us:
+  value: 625
+  unit: us
+  label: derived
+  rule: "design/scenario_values.yaml tick_period_num_us; the rate loop checks each execution's spacing against the period built from it, so the runner refuses a world tick that differs from the build's"
+tick_period_den:
+  value: 4
+  unit: "1"
+  label: derived
+  rule: "design/scenario_values.yaml tick_period_den, as tick_period_num_us"
+m_sequence:
+  value: [2, 1]
+  unit: "1"
+  label: derived
+  rule: "decision 0005 'T4 envelope widening' as at L4: E = |y(m=1) - y(m=2)|; both divide the attitude divisor (decision 0006 B, Runner), so every attitude sample is fresh"
+initial_state:
+  position_ned_m:
+    value: [0.0, 0.0, 0.0]
+    unit: m
+    label: scenario
+    rationale: "the NED origin, the site itself; the generated world has no ground and no contact"
+  attitude_q_wxyz:
+    value: [0.0, 1.0, 0.0, 0.0]
+    unit: "1"
+    label: scenario
+    rationale: "inverted: a 180 degree roll from level, the quaternion [0, 1, 0, 0] (canonical sign w >= 0), exactly on the singular set of the attitude law's tilt-yaw split (w_e = z_e = 0, decision 0006 C): the shortest rotation back is a single roll at the largest error 2 k sin(pi/2) = 2 k, below rate_max_roll"
+  velocity_ned_m_s:
+    value: [1.0, 0.0, 0.0]
+    unit: m/s
+    label: scenario
+    rationale: "every host step (at least one tick, 156.25 us) moves the link 1.5625e-4 m north, 156 times the 1e-6 pose change below which gz-sim 8 leaves a read stale (docs/decisions/0003 item 11), so every read is fresh (INFERRED; fresh_steps / stale_report show it per run and the test fails on a stale read in the window); marv_plant v0 has no drag or position-dependent torque and g depends on height only, so the translation does not act on the rotation"
+  body_rates_frd_rad_s:
+    value: [11.693705558776855, 11.693705558776855, 11.693705558776855]
+    unit: rad/s
+    label: derived
+    rule: "float32 rate_max_roll, rate_max_pitch, rate_max_yaw of the build (design/scenario_values.yaml): full rates on all three axes, the acro limit of decision 0006 F R2; the value is the float32 exactly"
+thrust:
+  value: hover
+  unit: "1"
+  label: derived
+  rule: "the collective request is the float32 of m g(phi, h0), the card's mass and tools/sim/hover.py normal_gravity (tools/sim/run_l4.py hover_thrust), as at L4"
+script:
+  settle_s:
+    value: 0.0003125
+    unit: s
+    label: derived
+    rule: "one attitude period T_a = rate_loop_divisor * att_loop_ratio * tick = 312.5 us: the recovery starts at the initial state, so nothing settles; the origin execution a0 = 2 is only the first execution that keeps the T3 stamp phase (tools/sim/run_l5.py plan)"
+  segments: []
+  end_attitude_execution:
+    value: 20744
+    unit: "1"
+    label: derived
+    rule: "executions 0 .. 20744 of the recovery design model (tests/regression/quad/L05/gz/test_t4_recovery.py: the box envelope of the 3-axis design model from this initial state, horizon ten attitude time constants 1/att_kp = 10372 executions doubled once, the T3 settle rule of core 7.5: every envelope end value, tilt, heading error and rate, is below F)"

@@ -222,14 +222,29 @@ def plan(doc, params, card, root=ROOT):
 
 # ---- the world ------------------------------------------------------------------------------------------------------
 
-def l2_scenario_doc(doc, p, stem, source):
-    """The L2-schema scenario gen_world reads (run_l4.l2_scenario_doc's content for an L5 document)."""
+def l2_scenario_doc(doc, p, stem, source, card=None):
+    """The L2-schema scenario gen_world reads (run_l4.l2_scenario_doc's content for an L5 document). Nonzero initial body
+    rates need the L2 schema's separatrix_margin_min (tools/sim/scenario.py): the L5 schema has no such field, because the
+    check is about a torque-free rotation and an L5 run is not torque-free (the composition commands the motors). The runner
+    therefore writes the initial state's own distance mu to the separatrix (card inertia) as the margin, derived, so the L2
+    check passes by construction and the world input records mu."""
     vals = l5s.values(doc)
 
     def entry(value, unit, key):
         return {"value": value, "unit": unit, "label": "derived", "rule": f"{key} of {source} (tools/sim/run_l5.py)"}
 
     st = vals["initial_state"]
+    rates = st["body_rates_frd_rad_s"]
+    margin = {}
+    if any(x != 0 for x in rates):
+        if card is None:
+            raise PlanError(["nonzero initial body rates: the card is needed for the L2 separatrix entry"])
+        inertia = [float(x) for x in schema.load_yaml(card)["inertia_diag"]["value"]]
+        margin = {"separatrix_margin_min": {
+            "value": scn.separatrix_mu(inertia, rates), "unit": "1", "label": "derived",
+            "rule": "the initial body rates' own distance mu to the torque-free separatrix of the card inertia "
+                    "(tools/sim/scenario.py separatrix_mu): an L5 run is not torque-free, so the L2 margin is not a "
+                    "property of it (tools/sim/run_l5.py l2_scenario_doc)"}}
     return {
         "scenario": stem,
         "site_latitude_rad": entry(vals["site_latitude_rad"], "rad", "site_latitude_rad"),
@@ -242,6 +257,7 @@ def l2_scenario_doc(doc, p, stem, source):
                            "rule": "the plan's duration_ticks (tools/sim/run_l5.py plan)"},
         "initial_state": {k: entry(st[k], doc["initial_state"][k]["unit"], f"initial_state.{k}")
                           for k in scn.STATE_FIELDS},
+        **margin,
         "command": {"dshot": {"value": l4.L2_PLACEHOLDER_DSHOT, "unit": "1", "label": "scenario",
                               "rationale": "placeholder: world_edit removes the L2 ol_dshot_m* overrides; the "
                                            "l5_attitude_scripted composition commands the motors"}},
@@ -320,7 +336,7 @@ def run_step(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, overr
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = f"{doc['scenario']}_{NAME_LABEL}"
     l2_path = out_dir / f"{stem}.yaml"
-    l2_path.write_text(yaml.safe_dump(l2_scenario_doc(doc, p, stem, Path(scenario).name), sort_keys=False),
+    l2_path.write_text(yaml.safe_dump(l2_scenario_doc(doc, p, stem, Path(scenario).name, card), sort_keys=False),
                        encoding="utf-8")
     r = run_scenario._run(card, l2_path, seed, m, "test", None, out_dir, plugin_dir,
                           world_edit(applied, extra_edit, gyro_source=gyro_source, attitude_source=attitude_source),
