@@ -32,7 +32,9 @@ T_a = D_a t. The attitude group runs at ticks D_a a (tick 0 included) and the SI
 from __future__ import annotations
 
 import argparse
+import cmath
 import dataclasses
+import functools
 import math
 import re
 import sys
@@ -45,10 +47,12 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "card"))
+import attitude  # noqa: E402
 import l5_scenario as l5s  # noqa: E402
 import run_l4 as l4  # noqa: E402
 import run_scenario  # noqa: E402
 import scenario as scn  # noqa: E402
+import schema  # noqa: E402
 
 DEFAULT_PLUGIN_DIR = ROOT / "build" / "host-gz-l5" / "sim" / "gz" / "plugin"
 COMPOSITION_PARAMS = "marv_params_l5_attitude_scripted"
@@ -293,11 +297,14 @@ def executions(log, p, m):
 
 
 def run_step(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, overrides=None, extra_edit=None, seed=None,
-             root=ROOT, timeout_s=run_scenario.TIMEOUT_S, gyro_source=True, attitude_source=True):
+             root=ROOT, timeout_s=run_scenario.TIMEOUT_S, gyro_source=True, attitude_source=True, doc_edit=None):
     """One gz process of an L5 scenario at m ticks per host step; writes the world, the log and the run report into
     out_dir. `overrides` are harness sil_overrides, name -> (type, text). The two source flags leave the plugin element
-    out of the world (the controls)."""
+    out of the world (the controls). `doc_edit`, when given, is called on the loaded scenario document before the plan
+    (the chirp runs' amplitude and duration variants)."""
     doc = l5s.load(scenario)
+    if doc_edit is not None:
+        doc_edit(doc)
     _, defaults = build_parameters(plugin_dir)
     params = l4.read_param_defaults(defaults)
     p = plan(doc, params, card, root)
@@ -375,6 +382,250 @@ def write_report(runs, evaluation=None, path=None):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(text, encoding="utf-8", newline="\n")
     return text
+
+
+# ---- T4 attitude chirp (decision 0006 F "T4 attitude chirp"; decision 0005 "T4 chirp margins") --------------------------
+#
+# Design quantities (chirp_design), from tools/card/attitude.py design() on the card, the budget, the scenario register and
+# the committed SIM-7 uncertainty file SIM7_U; the build's att_kp, att_yaw_weight and att_loop_ratio must equal the design's
+# (else the build is stale and refused):
+#   band [w_lo, w_hi]   [min over the box loops of w_c / a, a max over the box loops of w_c]: w_c = theta / T_a the design
+#                       crossover of the nominal loop and the four tau x J corners, on every axis; a = rate.design()["a"].
+#   tau_held,a          as run_l4's: the largest single-axis torque the mixer delivers at the hover thrust request with the
+#                       collective held (run_l4.tau_held).
+#   G_tau(w)            max over the box loops and the rate executions i of the attitude period of |torque request| per unit
+#                       of a steady sinusoid d of 1 rad/s added to the rate setpoint at every rate execution, in closed
+#                       loop with the attitude law (gain k, held for N rate executions), in N m (steady_torque_peak).
+#   A_a                 tau_held,a / max over the band of G_tau: the largest amplitude for which the design model's peak
+#                       torque request over the band and the box stays inside the held-collective envelope.
+# Plan: run_step's (origin execution a0, the chirp start and duration from the scenario, the window of executions
+# a0 .. a0 + end).
+#
+# Identification (chirp_margin), from the log alone, as run_l4's (indirect closed-loop identification): y is the attitude
+# error variable the law multiplies by its gain, recomputed in binary64 from the TRUTH quaternion of each attitude
+# execution (attitude_error: -2 imag of the law's recomposed error quaternion, yaw over f32(w), so that u = -C y with C the
+# law's linear gain k: f32(k) on roll and pitch, f32(f32(k)/f32(w)) f32(w) on yaw), d the chirp recomputed in binary64 at
+# the execution's stamp. The loop is at T_a: G_m = Y/D, L = C G_m / (1 - C G_m), crossover |L| = 1 inside the band
+# (run_l4.identify with kp = C, ki = 0 and the period T_a), PM = pi + arg L. The chirp is added at every rate execution
+# while the sample is taken at the attitude executions; the half rate period this leaves between the two is common to the
+# runs of one axis, so it cancels in E_H and U_A and is part of the reported measured - design nominal difference.
+
+SIM7_U = ROOT / "design" / "measured" / "sim7_u" / "u.yaml"
+CHIRP_NEED = ("att_kp", "att_yaw_weight", "att_loop_ratio", *l4.CHIRP_NEED)
+MIXER_COLUMNS = l4.MIXER_COLUMNS
+PEAK_GRID_POINTS = l4.rate.GRID_POINTS  # the log grid of the peak torque search (a method constant: rate.py's grid)
+
+
+@functools.lru_cache(maxsize=None)
+def attitude_design(card, root=str(ROOT), u_path=None):
+    """attitude.design() on the card with the SIM-7 uncertainty file `u_path` (default SIM7_U)."""
+    card_doc = schema.load_yaml(card)
+    budget = schema.load_yaml(Path(root) / "design" / "budget.yaml")
+    register = schema.load_yaml(Path(root) / "design" / "scenario_values.yaml")
+    u = attitude.read_u(str(u_path or SIM7_U))
+    return attitude.design(card_doc, budget, register, str(card), u)
+
+
+def steady_torque_peak(rm, axis, jt, tau, k, n, omega):
+    """max over the n rate executions of one attitude period of |J_a u_i| (N m) per unit steady sinusoid d at omega
+    (rad/s) for the loop of `axis` at the corner (jt, tau) with the attitude gain k (section comment)."""
+    T = rm["T"]
+    kp, ki = attitude.axis_gains(rm, axis)
+    j_a = rm["axes"][axis]["J"]
+    a, b = attitude.rate_model(kp, ki, T, tau, jt)
+    p, bs = attitude.lift(a, b, n)
+    zt = cmath.exp(1j * omega * T)
+    size = attitude.STATE_N
+    v = [0j] * size
+    for i in range(n):
+        v = [sum(a[r][c] * v[c] for c in range(size)) + b[r] * zt ** i for r in range(size)]
+    za = cmath.exp(1j * omega * T * n)
+    m = [[(za if r == c else 0) - p[r][c] + (k * bs[r] if c == attitude.THETA else 0) for c in range(size)]
+         for r in range(size)]
+    x = attitude.csolve(m, v)
+    r_hold = -k * x[attitude.THETA]
+    best = 0.0
+    for i in range(n):
+        r_i = r_hold + zt ** i
+        best = max(best, abs(j_a * (kp * (r_i - x[1]) + x[3] + ki * T * x[4])))
+        x = [sum(a[r][c] * x[c] for c in range(size)) + b[r] * r_i for r in range(size)]
+    return best
+
+
+def peak_torque_gain(rm, axis, k, n, band, loops):
+    """(max over the band and the box of steady_torque_peak, at omega, loop name): a log grid of PEAK_GRID_POINTS over the
+    band, then a golden-section refinement around the largest grid point (run_l4.max_sensitivity's search)."""
+    lo, hi = band
+    grid = [lo * (hi / lo) ** (i / (PEAK_GRID_POINTS - 1)) for i in range(PEAK_GRID_POINTS)]
+    best = (-math.inf, None, None)
+    for name, jt, tau in loops:
+        def f(w):
+            return steady_torque_peak(rm, axis, jt, tau, k, n, w)
+        vals = [f(w) for w in grid]
+        i = max(range(PEAK_GRID_POINTS), key=vals.__getitem__)
+        a_, b_ = grid[max(i - 1, 0)], grid[min(i + 1, PEAK_GRID_POINTS - 1)]
+        c, d = b_ - l4.GOLDEN * (b_ - a_), a_ + l4.GOLDEN * (b_ - a_)
+        fc, fd = f(c), f(d)
+        for _ in range(l4.REFINE_ITERATIONS):
+            if not a_ < c < d < b_:
+                break
+            if fc >= fd:
+                b_, d, fd = d, c, fc
+                c = b_ - l4.GOLDEN * (b_ - a_)
+                fc = f(c)
+            else:
+                a_, c, fc = c, d, fd
+                d = a_ + l4.GOLDEN * (b_ - a_)
+                fd = f(d)
+        for v, w in ((vals[i], grid[i]), (fc, c), (fd, d)):
+            if v > best[0]:
+                best = (v, w, name)
+    return best
+
+
+def chirp_design(card, params, thrust_n, root=ROOT, u_path=None):
+    """The design quantities of the section comment, per axis, as a dict. Raises PlanError on a stale build."""
+    res = attitude_design(str(card), str(root), u_path)
+    if (params.get("att_kp"), params.get("att_yaw_weight"), params.get("att_loop_ratio")) != (
+            res["k32"], res["w32"], res["N"]):
+        raise PlanError([f"the build's att_kp, att_yaw_weight, att_loop_ratio {params.get('att_kp')!r}, "
+                         f"{params.get('att_yaw_weight')!r}, {params.get('att_loop_ratio')!r} are not the design's "
+                         f"{res['k32']!r}, {res['w32']!r}, {res['N']!r} (tools/card/attitude.py on {card}, "
+                         f"{u_path or SIM7_U}): the build is stale"])
+    rm = res["rate"]
+    t_a, n = res["T_a"], res["N"]
+    inputs = rm["inputs"]
+    loops = l4.rate.corner_list(inputs["tau"], inputs["b_tau"], inputs["b_J"])
+    crossover = {a: {} for a in l5s.AXES}
+    design_pm = {a: {} for a in l5s.AXES}
+    for axis, name, pm, theta, _, _ in res["final"]["detail"]:
+        crossover[axis][name], design_pm[axis][name] = theta / t_a, pm
+    every = [w for c in crossover.values() for w in c.values()]
+    band = (min(every) / rm["a"], rm["a"] * max(every))
+    f_min = params["rotor_thrust_coeff"] * params["idle_speed"] ** 2
+    f_max = params["rotor_thrust_coeff"] * params["rotor_speed_max"] ** 2
+    rows = l4._mixer_rows(params)
+    axes = {}
+    for axis in l5s.AXES:
+        kk = attitude.axis_k(axis, params["att_kp"], params["att_yaw_weight"])
+        g, g_at, g_loop = peak_torque_gain(rm, axis, kk, n, band, loops)
+        held = l4.tau_held(rows, MIXER_COLUMNS.index(axis), thrust_n, f_min, f_max)
+        if held is None or not held > 0:
+            raise PlanError([f"the hover thrust {thrust_n!r} N leaves no held-collective torque on {axis}"])
+        axes[axis] = {"k": kk, "peak_torque_per_rad_s": g, "peak_at_rad_s": g_at, "peak_loop": g_loop,
+                      "tau_held_nm": held, "amplitude_rad_s": held / g}
+    return {"T_a": t_a, "N": n, "a": rm["a"], "band": band, "design_pm": design_pm, "design_crossover": crossover,
+            "pm_min": inputs["PM_min"], "loops": loops, "axes": axes, "result": res}
+
+
+def canonical(q):
+    return tuple(-x for x in q) if q[0] < 0 else tuple(q)
+
+
+def attitude_error(q, w32):
+    """(y_roll, y_pitch, y_yaw) of a TRUTH quaternion q [w, x, y, z] against the level setpoint q_sp = [1, 0, 0, 0]: minus
+    the vector the attitude law (fw/attitude/include/marv/attitude/attitude_law.hpp) multiplies by its gain, in binary64:
+    -2 imag(q_c) on roll and pitch, -2 imag(q_c).z / w32 on yaw, q_c the tilt-prioritised, yaw-weighted error quaternion."""
+    n = math.sqrt(sum(x * x for x in q))
+    w, x, y, z = canonical((q[0] / n, -q[1] / n, -q[2] / n, -q[3] / n))
+    rho = math.hypot(w, z)
+    if rho > 0:
+        a, b = (w * x - y * z) / rho, (w * y + x * z) / rho
+        qz = canonical((w / rho, 0.0, 0.0, z / rho))
+        half = w32 * 2 * math.atan2(qz[3], qz[0]) / 2
+        c, s = math.cos(half), math.sin(half)
+        w, x, y, z = canonical((rho * c, c * a + s * b, c * b - s * a, rho * s))
+    return -2 * x, -2 * y, -2 * z / w32
+
+
+@dataclasses.dataclass
+class ChirpRun:
+    step: StepRun
+    axis: str
+    axis_index: int
+    amp: float  # l5_chirp_amp_rad_s as flown (float32), rad/s
+    w_lo: float
+    w_hi: float
+    t0_us: int
+    dur_us: int
+    k: float  # the loop gain C flown: the axis's effective linear gain
+    design: dict
+    stamps: list  # window attitude executions' stamps, us
+    y: list  # the axis's attitude error variable at those executions
+    d: list  # the chirp recomputed at those stamps, rad/s
+    dshot_end_executions: int  # window attitude executions with some motor at the idle bound or kDshotThrottleMax
+
+    @property
+    def period_s(self):
+        return float(self.step.plan.period_s)
+
+    @property
+    def window_stale(self):
+        return self.step.window_stale
+
+
+def flown_gain(params, overrides, axis):
+    """The effective linear gain of `axis` the run flew: att_kp (or its harness override) on roll and pitch; on yaw the
+    float law's f32(f32(k)/f32(w)) f32(w)."""
+    k = float(overrides["att_kp"][1]) if "att_kp" in overrides else params["att_kp"]
+    return attitude.axis_k(axis, k, params["att_yaw_weight"])
+
+
+def run_chirp(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, amp_scale=1.0, halved=False, overrides=None,
+              extra_edit=None, seed=None, root=ROOT, timeout_s=run_scenario.TIMEOUT_S):
+    """One gz process of an L5 chirp scenario at m ticks per host step (run_step), with the amplitude scaled by amp_scale in
+    (0, 1] and the duration halved when `halved`; extracts the window's y and d. `overrides` are harness sil_overrides."""
+    if not 0 < amp_scale <= 1:
+        raise PlanError([f"amp_scale {amp_scale!r} is not in (0, 1]"])
+    c = l5s.values(l5s.load(scenario))["script"]["chirp"]
+    doc_edit = None
+    if amp_scale != 1 or halved:
+        def doc_edit(doc):
+            ch = doc["script"]["chirp"]
+            ch["amp_rad_s"]["value"] = l4.r32(l4.r32(c["amp_rad_s"]) * amp_scale)
+            ch["duration_s"]["value"] = c["duration_s"] / 2 if halved else c["duration_s"]
+    s = run_step(card, scenario, m, out_dir, plugin_dir, overrides=overrides, extra_edit=extra_edit, seed=seed, root=root,
+                 timeout_s=timeout_s, doc_edit=doc_edit)
+    p = s.plan
+    params = l4.read_param_defaults(s.params_path)
+    idx = l5s.AXES.index(c["axis"])
+    ch = p.chirp
+    amp, w_lo, w_hi = (l4.r32(ch[key]) for key in ("amp_rad_s", "w_lo_rad_s", "w_hi_rad_s"))
+    lo, hi = l4.dshot_idle_bound(params)
+    stamps, y, ends = [], [], 0
+    for a in p.window:
+        e = s.executions[a]
+        if e["truth"] is None:
+            raise run_scenario.RunError(f"no TRUTH record at attitude execution {a}")
+        stamps.append(e["t_us"])
+        y.append(attitude_error(e["truth"]["q_wxyz"], params["att_yaw_weight"])[idx])
+        ends += any(x in (lo, hi) for x in s.run.log["ticks"][e["tick"]]["dshot"])
+    d = [l4.chirp_value(t, amp, w_lo, w_hi, ch["t0_us"], ch["dur_us"]) for t in stamps]
+    return ChirpRun(step=s, axis=c["axis"], axis_index=idx, amp=amp, w_lo=w_lo, w_hi=w_hi, t0_us=ch["t0_us"],
+                    dur_us=ch["dur_us"], k=flown_gain(params, s.overrides, c["axis"]),
+                    design=chirp_design(card, params, p.thrust_n, root), stamps=stamps, y=y, d=d,
+                    dshot_end_executions=ends)
+
+
+def chirp_margin(s):
+    """run_l4.identify on one chirp run: C = the flown gain, the period T_a, the swept float32 band."""
+    return l4.identify(s.y, s.d, s.period_s, s.k, 0.0, (s.w_lo, s.w_hi))
+
+
+def float_input_term(s, margin):
+    """U_d of a chirp run (run_l4's section "the chirp's float32 input term", on the attitude period): the PM error of
+    recomputing d in binary64 while the composition computes it in float32, at the crossover of `margin`."""
+    w = margin["crossover"]
+    delta = [l4.chirp_value_f32(t, s.amp, s.w_lo, s.w_hi, s.t0_us, s.dur_us) - d for t, d in zip(s.stamps, s.d)]
+    _, dm = l4.dtft_pair(s.y, s.d, w, s.period_s)
+    rho = sum(abs(x) for x in delta) / abs(dm)
+    e = rho * abs(1 + margin["L"])
+    h = w * 2.0 ** l4.DIFF_LOG2_STEP
+    up = l4.measured_loop(s.y, s.d, w + h, s.period_s, s.k, 0.0)
+    down = l4.measured_loop(s.y, s.d, w - h, s.period_s, s.k, 0.0)
+    kappa = abs(cmath.phase(up / down)) / abs(math.log(abs(up) / abs(down)))
+    return {"U_d": math.asin(min(e, 1.0)) + e * kappa, "max |delta| / A": max(abs(x) for x in delta) / s.amp,
+            "rho": rho, "e": e, "kappa": kappa}
 
 
 def main(argv=None):

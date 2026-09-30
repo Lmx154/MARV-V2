@@ -1,0 +1,106 @@
+# Quad L5 scenario 'chirp_pitch' (docs/spec/10-quad-flight-software.md section 4 L5, T4; docs/decisions/0006 F "T4 attitude chirp").
+# A rate-setpoint chirp on the pitch axis, added at the attitude output before the rate loop, at hover collective with the
+# sticks at 0 and the heading locked at the initial heading, flown by the l5_attitude_scripted composition on truth gyro and
+# truth attitude: a truth-fed, perfect-model run, not a validation run (core section 6). Schema: tools/sim/l5_scenario.py; the
+# runner (tools/sim/run_l5.py) derives the stamps and the origin. Every number is a labelled scenario value or a derived value.
+# Frames NED / FRD, SI units.
+scenario: chirp_pitch
+site_latitude_rad:
+  value: 0.82
+  unit: rad
+  label: scenario
+  rationale: "the L2 hover site (scenarios/quad/L02/hover.yaml): mid-latitude, so the latitude term of g is exercised"
+site_height_m:
+  value: 500.0
+  unit: m
+  label: scenario
+  rationale: "the L2 hover site height (scenarios/quad/L02/hover.yaml); a plausible flying site height, not vehicle data"
+seed:
+  value: 1
+  unit: "1"
+  label: scenario
+  rationale: "RESERVED at v0: marv_plant v0 and the composition draw no random numbers, so the value has no effect; it completes the run identity (firmware, card, scenario, seed)"
+tick_period_num_us:
+  value: 625
+  unit: us
+  label: derived
+  rule: "design/scenario_values.yaml tick_period_num_us; the rate loop checks each execution's spacing against the period built from it, so the runner refuses a world tick that differs from the build's"
+tick_period_den:
+  value: 4
+  unit: "1"
+  label: derived
+  rule: "design/scenario_values.yaml tick_period_den, as tick_period_num_us"
+m_sequence:
+  value: [2, 1]
+  unit: "1"
+  label: derived
+  rule: "decision 0005 'T4 chirp margins' as at L4: E_H = |PM(m = 1) - PM(m = 2)|; both divide the attitude divisor (decision 0006 B, Runner), so every attitude sample is fresh"
+initial_state:
+  position_ned_m:
+    value: [0.0, 0.0, 0.0]
+    unit: m
+    label: scenario
+    rationale: "the NED origin, the site itself; the generated world has no ground and no contact"
+  attitude_q_wxyz:
+    value: [1.0, 0.0, 0.0, 0.0]
+    unit: "1"
+    label: scenario
+    rationale: "level, the identity quaternion (canonical sign w >= 0)"
+  velocity_ned_m_s:
+    value: [1.0, 0.0, 0.0]
+    unit: m/s
+    label: scenario
+    rationale: "every host step (at least one tick, 156.25 us) moves the link 1.5625e-4 m north, 156 times the 1e-6 pose change below which gz-sim 8 leaves a read stale (docs/decisions/0003 item 11), so every read is fresh (INFERRED; fresh_steps / stale_report show it per run and the test fails on a stale read in the window); marv_plant v0 has no drag or position-dependent torque and g depends on height only, so the translation does not act on the rotation"
+  body_rates_frd_rad_s:
+    value: [0.0, 0.0, 0.0]
+    unit: rad/s
+    label: scenario
+    rationale: "starts at rest and level: the attitude error is exactly 0 before the chirp, so the loop is u = -C y (tools/sim/run_l5.py identification)"
+thrust:
+  value: hover
+  unit: "1"
+  label: derived
+  rule: "the collective request is the float32 of m g(phi, h0), the card's mass and tools/sim/hover.py normal_gravity (tools/sim/run_l4.py hover_thrust), as at L4"
+script:
+  settle_s:
+    value: 1.0
+    unit: s
+    label: scenario
+    rationale: "as L4 chirp_pitch: the motors spin up from rest and the chirp must start at the design model's operating point; 1 s is 30.3 motor time constants of the card's tau = 0.033 s"
+  segments: []
+  end_attitude_execution:
+    value: 36800
+    unit: "1"
+    label: derived
+    rule: "the chirp's last execution plus the tail: (duration_s + tail_s) / T_a = (8 s + 15 s) / 0.000625 s, with tail_s = 15 s a scenario value (the identification window runs past the chirp's end until the response has decayed: the slowest closed-loop pole of the lifted design model has spectral radius 0.99924 per T_a (Jury radius, tools/card/attitude.py, J+ tau+), a time constant of 0.82 s, so 15 s leaves e^-18.3 of it, below the float32 resolution 2^-24 = 6e-8 of the TRUTH quaternion)"
+  chirp:
+    axis:
+      value: pitch
+      unit: "1"
+      label: scenario
+      rationale: "one axis per scenario: quad spec 4 L5 T4, the margins are measured per axis"
+    amp_rad_s:
+      value: 10.235715267902163
+      unit: rad/s
+      label: derived
+      rule: "decision 0006 F 'T4 attitude chirp': A = tau_held,pitch / max over the band and the tau x J box of G_tau, G_tau the design model's peak torque request per rad/s of a steady sinusoid added to the rate setpoint, in closed loop with the attitude law at the build's gain and N (tools/sim/run_l5.py chirp_design, steady_torque_peak): tau_held,pitch = 0.5572463470515946 N m, max G_tau = 0.054441368528396324 N m per rad/s at 6.077958377059487 rad/s (J+,tau+); the test re-derives it from the live build"
+    w_lo_rad_s:
+      value: 1.4393843256287513
+      unit: rad/s
+      label: derived
+      rule: "min over the box loops of the design crossover / a, the crossover |L| = 1 of the nominal loop and the four tau x J corners of every axis (tools/card/attitude.py, 3.475 rad/s at J-, tau-), a = 2.414213562373095 (rate.py, the loop-shaping spacing of PM_min); the test re-derives it from the live build"
+    w_hi_rad_s:
+      value: 11.123489020532052
+      unit: rad/s
+      label: derived
+      rule: "a x max over the box loops of the design crossover (4.6075 rad/s at J+, tau+), a = 2.414213562373095; the test re-derives it from the live build"
+    start_attitude_execution:
+      value: 0
+      unit: "1"
+      label: derived
+      rule: "the origin execution itself: the first attitude execution at or after settle_s that keeps the stamp phase (tools/sim/run_l5.py plan)"
+    duration_s:
+      value: 8
+      unit: s
+      label: derived
+      rule: "core 7.5 convergence from D_0 = 8 s, a starting value above one period 2 pi / w_lo = 4.37 s of the band's lowest frequency; doubled until |PM(D) - PM(D/2)| < E_H + U_A, both at D (tests/regression/quad/L05/gz/test_t4_chirp.py re-checks the last doubling on every run)"
