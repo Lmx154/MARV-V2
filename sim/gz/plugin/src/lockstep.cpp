@@ -53,6 +53,10 @@
 #include "marv/gz/truth_gyro.hpp"
 #include "marv_plant.h"
 #include "marv_sil.h"
+#include "marv_truth.h"
+#ifdef MARV_GZ_TRUTH_STATE
+#include "marv/gz/truth_attitude.hpp"
+#endif
 
 namespace gzs = ::gz::sim;
 namespace gzm = ::gz::math;
@@ -108,6 +112,7 @@ struct Parsed {
   std::optional<Vec3> w_frd;
   std::optional<std::string> log_path;
   bool truth_gyro = false;
+  bool truth_attitude = false;
 };
 
 std::string text_of(const sdf::ElementPtr& e) { return e->Get<std::string>(); }
@@ -280,6 +285,12 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
         refuse("<gyro_source> is '" + trim(text_of(e)) + "', not 'truth'");
       }
       p.truth_gyro = true;
+    } else if (name == "attitude_source") {
+      once(name);
+      if (trim(text_of(e)) != "truth") {
+        refuse("<attitude_source> is '" + trim(text_of(e)) + "', not 'truth'");
+      }
+      p.truth_attitude = true;
     } else if (name == "log_path") {
       once(name);
       const std::string t = trim(text_of(e));
@@ -316,32 +327,72 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
 
 // A command source that keeps the SIL's stamp and the IMU sample of every tick of the current host step. The sample is
 // the one passed to the SIL: SilCommandSource passes a zeroed one; the truth-gyro source (optional <gyro_source>) its own.
+// With the optional <attitude_source> (which needs the truth gyro and a SIL library built with TRUTH_STATE) the truth-
+// attitude source wraps the truth-gyro one, and the marv_truth_state passed for every tick is kept as well.
 class RecordingSource final : public CommandSource {
  public:
   bool dshot(std::uint64_t tick, Dshot& out) override {
-    const bool ok = use_truth_ ? truth_.dshot(tick, out) : inner_.dshot(tick, out);
+    bool ok = false;
+#ifdef MARV_GZ_TRUTH_STATE
+    if (use_attitude_) {
+      ok = attitude_.dshot(tick, out);
+      if (ok) {
+        truths_.push_back(attitude_.state());
+      }
+    } else
+#endif
+    {
+      ok = use_truth_ ? truth_.dshot(tick, out) : inner_.dshot(tick, out);
+    }
     if (ok) {
       stamps_.push_back(use_truth_ ? truth_.last_stamp_us() : inner_.last_stamp_us());
       imus_.push_back(use_truth_ ? truth_.imu() : marv_imu_meas{});
     }
     return ok;
   }
-  std::int32_t last_status() const { return use_truth_ ? truth_.last_status() : inner_.last_status(); }
+  // The failed call of the last dshot(), as a message.
+  std::string failure() const {
+#ifdef MARV_GZ_TRUTH_STATE
+    if (use_attitude_ && attitude_.truth_status() != MARV_SIL_OK) {
+      return std::string("marv_truth_state_set: ") +
+             marv_sil_status_str(static_cast<marv_sil_status>(attitude_.truth_status()));
+    }
+#endif
+    return std::string("marv_sil_tick: ") +
+           marv_sil_status_str(static_cast<marv_sil_status>(use_truth_ ? truth_.last_status() : inner_.last_status()));
+  }
   void use_truth_gyro() { use_truth_ = true; }
-  void set_body(const marv_plant_body& body) { truth_.set_body(body); }
+  void use_truth_attitude() {
+#ifdef MARV_GZ_TRUTH_STATE
+    use_attitude_ = true;
+#endif
+  }
+  void set_body(const marv_plant_body& body) {
+    truth_.set_body(body);
+#ifdef MARV_GZ_TRUTH_STATE
+    attitude_.set_body(body);
+#endif
+  }
   void begin_step() {
     stamps_.clear();
     imus_.clear();
+    truths_.clear();
   }
   const std::vector<std::uint64_t>& stamps() const { return stamps_; }
   const std::vector<marv_imu_meas>& imus() const { return imus_; }
+  const std::vector<marv_truth_state>& truths() const { return truths_; }
 
  private:
   SilCommandSource inner_;
   truth::TruthGyroSilCommandSource truth_;
+#ifdef MARV_GZ_TRUTH_STATE
+  truth::TruthAttitude attitude_{truth_};
+  bool use_attitude_ = false;
+#endif
   bool use_truth_ = false;
   std::vector<std::uint64_t> stamps_;
   std::vector<marv_imu_meas> imus_;
+  std::vector<marv_truth_state> truths_;
 };
 
 std::atomic<bool> g_configured{false};
@@ -374,6 +425,15 @@ class Lockstep final : public gzs::System,
       refuse("a second marv::gz::Lockstep instance in this process (one SIL init per process)");
     }
     const Parsed p = parse_plugin(sdf->Clone());
+    if (p.truth_attitude && !p.truth_gyro) {
+      refuse("<attitude_source> needs <gyro_source>truth</gyro_source>");
+    }
+#ifndef MARV_GZ_TRUTH_STATE
+    if (p.truth_attitude) {
+      refuse("<attitude_source> needs a SIL library with marv_truth_state_set (built with TRUTH_STATE, target property "
+             "MARV_SIL_TRUTH_STATE); the linked one has none");
+    }
+#endif
     m_ = p.m;
     if (m_ < 1) {
       refuse("ticks_per_step is 0");
@@ -454,6 +514,10 @@ class Lockstep final : public gzs::System,
 
     if (p.truth_gyro) {
       source_.use_truth_gyro();
+    }
+    if (p.truth_attitude) {
+      source_.use_truth_attitude();
+      log_truth_ = true;
     }
 
     log_path_ = p.log_path;
@@ -548,6 +612,11 @@ class Lockstep final : public gzs::System,
       }
       put3(b, t.wrench_enu.force);
       put3(b, t.wrench_enu.torque);
+      if (log_truth_) {
+        b.u8(static_cast<std::uint8_t>(LogRecord::kTruth));
+        b.u64(t.tick);
+        b.bytes(&source_.truths()[j], sizeof(marv_truth_state));  // the state passed before this tick's marv_sil_tick
+      }
     }
     if (r.status == Status::kOk) {
       b.u8(static_cast<std::uint8_t>(LogRecord::kApplied));
@@ -561,7 +630,7 @@ class Lockstep final : public gzs::System,
     if (r.status != Status::kOk) {
       switch (r.status) {
         case Status::kCommandSource:
-          refuse(std::string("marv_sil_tick: ") + marv_sil_status_str(source_.last_status()));
+          refuse(source_.failure());
         case Status::kPlant:
           refuse(std::string("marv_plant_step: ") + marv_plant_status_str(r.plant_status));
         default:
@@ -683,6 +752,7 @@ class Lockstep final : public gzs::System,
   bool started_ = false;
   bool vel_cmd_pending_ = false;
   bool keep_vel_cmd_ = false;
+  bool log_truth_ = false;
   std::optional<std::string> log_path_;
   struct LogParams {
     std::uint32_t m, num_us, den;

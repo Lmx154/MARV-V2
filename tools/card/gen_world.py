@@ -2,7 +2,7 @@
 """Gazebo world generator for the quad L2 lockstep plugin (docs/decisions/0003 items 4, 5, 7, 9, 10).
 
   gen_world.py --card <vehicle>.yaml --scenario <scenario>.yaml --mode pilot|test --m <int>
-               [--hover lo|hi] [--log-path <path>] --out-dir <dir> [--root <repo root>]
+               [--hover lo|hi] [--log-path <path>] [--attitude-source] --out-dir <dir> [--root <repo root>]
 
 Writes <dir>/<vehicle>_<scenario>_<mode>_m<m>.sdf (build directory only, never committed) from the linted card
 (gen_sdf.py, imported and reused, not copied) and a validated scenario (tools/sim/scenario.py). For a hover scenario
@@ -62,6 +62,10 @@ Card children come from gen_plant_config.plugin_element() unchanged; scenario ch
                                                           the first tick
   initial_velocity_ned_m_s      3 floats, m/s  scenario   OPTIONAL, present iff nonzero; default 0 0 0
   initial_body_rates_frd        3 floats, rad/s scenario  OPTIONAL, present iff nonzero; default 0 0 0 (rotation only)
+  attitude_source               text "truth"   --attitude-source OPTIONAL, present iff given (quad L5, decision 0006
+                                                          section B); the plugin refuses it without <gyro_source>truth
+                                                          </gyro_source> (which this generator does not write) and with
+                                                          a SIL library that has no marv_truth_state_set
   log_path                      text           --log-path OPTIONAL, present iff given; where the plugin writes its
                                                           binary log; no log if absent. Never written into the log.
 
@@ -98,6 +102,7 @@ ZERO_GRAVITY = "0 0 0"
 POSE_FORMAT = "quat_xyzw"
 DSHOT_PARAM = "ol_dshot_m{}"
 DSHOT_TYPE = "i32"
+ATTITUDE_SOURCE_TRUTH = "truth"
 S = math.sqrt(0.5)
 
 
@@ -129,7 +134,7 @@ def _world_stem(vehicle, name, mode, m):
     return f"{vehicle}_{name}_{mode}_m{m}"
 
 
-def world_element(card, cfg, units, doc, mode, m, dshot, name, log_path):
+def world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitude_source=False):
     vals = scn.values(doc)
     tick = scn.tick_period_s(doc)
     stem = _world_stem(card["vehicle"], name, mode, m)
@@ -168,12 +173,15 @@ def world_element(card, cfg, units, doc, mode, m, dshot, name, log_path):
         gpc.text_element(plugin, "initial_velocity_ned_m_s", _fmt3(st["velocity_ned_m_s"]), "m/s")
     if any(c != 0 for c in st["body_rates_frd_rad_s"]):
         gpc.text_element(plugin, "initial_body_rates_frd", _fmt3(st["body_rates_frd_rad_s"]), "rad/s")
+    if attitude_source:
+        gpc.text_element(plugin, "attitude_source", ATTITUDE_SOURCE_TRUTH)
     if log_path is not None:
         gpc.text_element(plugin, "log_path", log_path)
     return sdf
 
 
-def generate(card_path, scenario_path, mode, m, hover_member=None, log_path=None, root=gpc.ROOT):
+def generate(card_path, scenario_path, mode, m, hover_member=None, log_path=None, root=gpc.ROOT,
+             attitude_source=False):
     """Return (file name, text). Raises gpc.GenError, scn.ScenarioError or hover.HoverError."""
     if mode not in MODES:
         raise gpc.GenError([f"mode {mode!r} is not one of {MODES}"])
@@ -202,7 +210,7 @@ def generate(card_path, scenario_path, mode, m, hover_member=None, log_path=None
         d = d_lo if hover_member == "lo" else d_hi
         dshot = [d] * scn.MOTORS
         name = f"{name}_{hover_member}"
-    sdf = world_element(card, cfg, units, doc, mode, m, dshot, name, log_path)
+    sdf = world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitude_source)
     text = '<?xml version="1.0"?>\n' + gpc.to_text(sdf)
     return f"{_world_stem(card['vehicle'], name, mode, m)}.sdf", text
 
@@ -215,11 +223,14 @@ def main(argv=None):
     ap.add_argument("--m", required=True, type=int, help="ticks per host step")
     ap.add_argument("--hover", choices=scn.HOVER_MEMBERS)
     ap.add_argument("--log-path", metavar="PATH", help="written into the plugin's <log_path>; omitted if not given")
+    ap.add_argument("--attitude-source", action="store_true",
+                    help="write <attitude_source>truth</attitude_source> into the plugin element; omitted if not given")
     ap.add_argument("--out-dir", required=True, metavar="DIR")
     ap.add_argument("--root", default=str(gpc.ROOT), help="repository root for resolving sensor_profile")
     args = ap.parse_args(argv)
     try:
-        name, text = generate(args.card, args.scenario, args.mode, args.m, args.hover, args.log_path, args.root)
+        name, text = generate(args.card, args.scenario, args.mode, args.m, args.hover, args.log_path, args.root,
+                              args.attitude_source)
     except (gpc.GenError, scn.ScenarioError) as e:
         for line in e.lines:
             print(line, file=sys.stderr)
