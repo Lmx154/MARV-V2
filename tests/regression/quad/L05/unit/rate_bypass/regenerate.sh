@@ -23,7 +23,10 @@ done
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
-git -C "$(git -C "${here}" rev-parse --show-toplevel)" archive "${ref}" fw | tar -x -C "${tmp}"
+# The repository root is six levels up (tests/regression/quad/L05/unit/rate_bypass). safe.directory on the command line
+# lets git read a checkout owned by another user, as when the CI container runs as root (GitHub Actions).
+root="$(cd "${here}/../../../../../.." && pwd)"
+git -c safe.directory="${root}" -C "${root}" archive "${ref}" fw | tar -x -C "${tmp}"
 "${CXX:-g++}" -std=c++20 -O2 -ffp-contract=off -fno-exceptions -fno-rtti -Wall -Wextra -Werror \
   -I"${tmp}/fw/prim/include" -I"${tmp}/fw/types/include" -I"${tmp}/fw/mixer/include" -I"${tmp}/fw/rate/include" \
   -I"${here}" "${here}/golden_gen.cpp" -o "${tmp}/golden_gen"
