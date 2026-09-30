@@ -457,6 +457,7 @@ TEST(L5T3Reference, SegmentLengthFollowsTheRuleAndTheScriptsShareIt) {
     bool found = false;
     for (int i = 0; i <= kMaxDoublings; ++i) {
       const double q = kHorizonTaus * std::pow(2.0, i) / (static_cast<double>(prod.att.kp) * prod.att_period_s);
+      // Method constant: 1e-12 relative slack absorbs double rounding of q; it is far below one execution of H.
       found = found || (static_cast<double>(h) >= q * (1 - 1e-12) && static_cast<double>(h) < q + 1);
     }
     EXPECT_TRUE(found) << kScenario[s] << ": H = " << h << " is not the rule's for any doubling";
@@ -474,6 +475,7 @@ TEST(L5T3Reference, ToleranceIsTheSumOfTheNodeErrorBounds) {
         sum += g.numbers.at(std::string("err_") + ch + "_" + node);
         EXPECT_GT(g.numbers.at(std::string("rho_") + node), 0.0) << kScenario[s] << " " << node;
       }
+      // Method constant: 1e-12 relative covers double summation rounding and the golden's printed digits.
       EXPECT_NEAR(sum, g.numbers.at(std::string("tolerance_") + ch), 1e-12 * sum) << kScenario[s] << " " << ch;
     }
   }

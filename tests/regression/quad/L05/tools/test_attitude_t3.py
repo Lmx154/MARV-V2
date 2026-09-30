@@ -145,7 +145,7 @@ def test_control_a_planted_gain_and_a_planted_pm_entry_each_fail_the_grid_check(
     planted = pm_grid[GAIN_CONTROL]
     assert not grid_ok(real, planted), "k x 1.1 must leave the 17x17 margin rule"
     fine, _ = grid_min(planted)
-    assert fine < i["PM_min"] - 1e-3
+    assert fine < i["PM_min"] - f["delta_num"]
     table = dict(pm_grid[1.0])
     key = next(iter(table))
     table[key] = i["PM_min"] - 2 * f["delta_num"] - TOL
