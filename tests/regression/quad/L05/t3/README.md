@@ -34,7 +34,7 @@ Regenerate the inputs from a built product parameter table (only when a product 
     uv run python tests/regression/quad/L05/t3/reference/attitude_t3_oracle.py --refresh-inputs \
         build/<preset>/generated/marv_params/marv/params/param_defaults.cpp
 
-The fixture equals the product parameter values of 2026-09-30 and does not follow later changes (decision 0006, owner
+The fixture equals the product parameter values of the commit that regenerated it (att_loop_ratio = 1, 3.2 kHz, owner decision 21; earlier 2026-09-30 at N = 2) and does not follow later changes (decision 0006, owner
 decision 7: goldens only on fixed inputs the test owns; rule properties on the live parameters, in `../tools/`). The test
 builds its `AttitudeConfig` and `RateConfig` from the fixture, not from the live parameters. Goldens are regenerated only
 inside the CI image (CLAUDE.md), and a change under `tests/regression/` needs a decision record (core 7.3). CI regenerates
@@ -61,8 +61,8 @@ All start level and at rest. Attitude execution `a = 0` is the seed (sticks 0). 
   release execution on.
 
 Segment length: `H = ceil(DUR / T_a)`, `DUR = 10 / k` seconds (ten attitude time constants), doubled (core 7.5) until every
-envelope's end value is below `F`. The start value did not settle (3.24 s): the first doubling gives `DUR = 6.48 s`,
-`H = 10372` executions, 20745 executions per script. `F = T3 tolerance + the envelope's last-halving change + the kinematics
+envelope's end value is below `F`. The start value did not settle (3.24 s): the first doubling gives `DUR = 6.478 s`,
+`H = 20731` executions (T_a = 312.5 us), 41463 executions per script. `F = T3 tolerance + the envelope's last-halving change + the kinematics
 halving change` of the script; `F` is a term of the T4 tolerance `E + F` with `E >= 0`, so an envelope that ends below `F`
 has settled below the T4 tolerance (for yaw: the yaw rate and the heading relative to the lock; the heading relative to the
 release is then constant). The test asserts this on the committed files, and an envelope cut at the release fails it.
@@ -101,19 +101,19 @@ one-tick-delay control cleared the yaw tolerance by x1.1; the localised bound is
 
 Assumptions not covered by the bound: the feedback gain is frozen per `c` (it varies slowly against the loop's time
 constants); the lock happens at the same execution in the float and double runs (the lock's decision margin, the yaw rate on
-both sides of the crossing, is 1.15e-2 rad/s against a rate tolerance of 1.27e-3 rad/s plus the cast bound, asserted by
+both sides of the crossing, is 2.31e-3 rad/s (the side before the crossing; 1.15e-2 after) against a rate tolerance of 1.27e-3 rad/s plus the cast bound, asserted by
 `YawLockIsAtTheGoldenExecution...`). Off-axis rate setpoints have a zero bound (the oracle refuses otherwise).
 
 | Script | tolerance theta (rad) | tolerance omega (rad/s) | observed max theta | observed max omega |
 | --- | --- | --- | --- | --- |
-| `step_roll` | 1.82e-5 | 7.08e-5 | 1.47e-7 (0.81 %) | 6.5e-7 (0.92 %) |
-| `step_pitch` | 1.82e-5 | 7.08e-5 | 8.4e-8 (0.46 %) | 3.8e-7 (0.54 %) |
-| `yaw_release` | 2.86e-4 | 1.27e-3 | 2.3e-6 (0.79 %) | 3.4e-6 (0.26 %) |
+| `step_roll` | 1.78e-5 | 6.78e-5 | 1.04e-7 (0.58 %) | 4.2e-7 (0.62 %) |
+| `step_pitch` | 1.78e-5 | 6.78e-5 | 7.8e-8 (0.44 %) | 3.0e-7 (0.44 %) |
+| `yaw_release` | 2.80e-4 | 1.27e-3 | 2.5e-6 (0.90 %) | 2.7e-6 (0.22 %) |
 
 ## Kinematics (core 7.5)
 
 The golden uses 1 sub-step per tick; the oracle and the test also run 2 and require the trajectory change below the
-tolerance: the largest change is 1.7e-13 rad (tilt) and 1.7e-11 rad (yaw). The scripts are single-axis, so the increments
+tolerance: the largest change is 3.4e-12 rad (tilt) and 1.6e-11 rad (yaw). The scripts are single-axis, so the increments
 commute and the change is rounding only; the check stays for scripts that are not.
 
 ## Negative controls (quad spec 4 L5 pass bar)
@@ -122,9 +122,9 @@ Each must leave the tolerance (largest of `max|diff| / tolerance` over the two c
 
 | Control | `step_roll` | `step_pitch` | `yaw_release` |
 | --- | --- | --- | --- |
-| attitude gain `k` x 1.1 | x3782 | x3782 | x188 |
-| rate gains x 1.1 (extra) | x3199 | x3199 | x490 |
-| one tick of delay between the controller output and the plant | x44.4 | x44.4 | x8.2 |
+| attitude gain `k` x 1.1 | x3946 | x3946 | x192 |
+| rate gains x 1.1 (extra) | x3338 | x3338 | x492 |
+| one tick of delay between the controller output and the plant | x46.4 | x46.4 | x8.2 |
 
 The perturbed-input control in CI changes `att_kp` by one f32 ulp in a copy of the fixture: the golden must differ.
 
@@ -141,22 +141,22 @@ envelope point from the 9 x 9 grid to the 17 x 17 grid, the envelope's last-halv
 
 | Channel | halving max change |
 | --- | --- |
-| `step_roll` / `step_pitch` tilt angle | 2.91e-3 rad |
-| `yaw_release` yaw rate | 0.127 rad/s |
-| `yaw_release` heading relative to the release / to the lock | 6.7e-3 / 8.9e-3 rad |
+| `step_roll` / `step_pitch` tilt angle | 2.97e-3 rad |
+| `yaw_release` yaw rate | 0.129 rad/s |
+| `yaw_release` heading relative to the release / to the lock | 6.7e-3 / 9.0e-3 rad |
 | `yaw_fallback` yaw rate | 0.0857 rad/s |
 | `yaw_fallback` heading relative to the release / to the lock | 4.4e-3 / 3.3e-3 rad |
 
-The locks of `yaw_release` fall in executions 10551..10783 (the crossing), before the fallback at 10784; in `yaw_fallback`
-every member locks at the fallback execution 10784.
+The locks of `yaw_release` fall in executions 21087..21552 (the crossing), before the fallback at 21553; in `yaw_fallback`
+every member locks at the fallback execution 21553.
 
 ## The fallback property (T3, decision 0006 F)
 
 With the same script and `d = sigma_r tau_held,yaw` (0.1635 N m, the collective-held yaw torque envelope of 0005's chirp
 rule), every box member keeps `sigma_r w > 0` from the release up to its fallback execution. If some member crossed, the held
 stick would halve (core 7.5) until none does; the recorded `stick_scale` is 1 (full stick suffices), and the smallest
-`sigma_r w` over the members is +0.0975 rad/s. The test asserts it on the committed envelope, with the release script (no
-disturbance, smallest `sigma_r w` = -3.58 rad/s, it crosses) as the control. The same property on the live parameters is
+`sigma_r w` over the members is +0.0989 rad/s. The test asserts it on the committed envelope, with the release script (no
+disturbance, smallest `sigma_r w` = -3.577 rad/s, it crosses) as the control. The same property on the live parameters is
 checked in `../tools/`.
 
 ## The quantisation term Q (owner decision 19, for T4)
@@ -184,19 +184,19 @@ them against `cause.txt`). Off-axis torque of the rounding is not carried (the d
 
 Evaluation: at the four corners of the box plus the nominal (`q_corners`), then over the 9 x 9 grid that contains them
 (`q_grid`). `q` is `q_grid` where the grid exceeds the corners (`rule grid`), else `q_corners`. The rounding is not monotone in
-the parameters, so the corners do not bound it: in every channel the grid maximum exceeds the corner maximum (by 6 % to 50 %), and
+the parameters, so the corners do not bound it: in every channel the grid maximum exceeds the corner maximum (by 3 % to 55 %), and
 `q` is the grid maximum. The recorded `saturated_executions` counts member x rate executions in which the allocation scaled the
 request or moved the collective (none in the tilt scripts); for the yaw scripts `q_allocation_only` is the same comparison with the
 DShot rounding left out (about 3e-7): the allocation's effect is negligible against the rounding.
 
 | Script | theta (rad) | omega (rad/s) | heading to the release (rad) | heading to the lock (rad) |
 | --- | --- | --- | --- | --- |
-| `step_roll` | 8.29e-3 | 4.77e-2 | - | - |
-| `step_pitch` | 7.41e-3 | 4.23e-2 | - | - |
-| `yaw_release` | - | 5.82e-3 | 1.50e-3 | 1.03e-3 |
-| `yaw_fallback` | - | 4.95e-3 | 1.46e-3 | 7.65e-4 |
+| `step_roll` | 8.28e-3 | 4.76e-2 | - | - |
+| `step_pitch` | 7.40e-3 | 4.24e-2 | - | - |
+| `yaw_release` | - | 5.83e-3 | 1.52e-3 | 1.03e-3 |
+| `yaw_fallback` | - | 4.95e-3 | 1.46e-3 | 7.71e-4 |
 
 Checks: `t3_test.cpp` `L5T3Quantisation` (Q recorded, finite and positive for every script and channel); the control in
 `../tools/test_attitude_t3_q.py` (the quantiser disabled, the identity map, gives Q = 0 exactly; enabled it gives Q > 0). Compared
 with the measured gz excursions of the step cause diagnosis (roll +6.52e-3 and pitch +5.94e-3 rad outside the envelope): Q theta
-is 8.29e-3 and 7.41e-3, which covers them with a margin of 1.27 and 1.25 (and F, 2.93e-3, is not needed for that).
+is 8.28e-3 and 7.40e-3, which covers them with a margin of 1.27 and 1.25 (and F, 2.98e-3, is not needed for that); the flown N = 1 steps give the same excursions (6.52e-3, 5.94e-3).

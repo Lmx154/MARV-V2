@@ -68,9 +68,9 @@ def test_step_script_equals_the_recorded_t3_envelope_script(name, axis):
 
 
 def test_control_a_moved_release_differs_from_the_recorded_envelope():
-    doc = mutated(lambda d: d["script"]["segments"][1]["start_attitude_execution"].update(value=10374))
+    doc = mutated(lambda d: d["script"]["segments"][1]["start_attitude_execution"].update(value=20733))
     assert findings(doc) == []  # schema-valid ...
-    assert l5s.values(doc)["script"]["segments"][1]["start_attitude_execution"] != 10373  # ... but not the recorded one
+    assert l5s.values(doc)["script"]["segments"][1]["start_attitude_execution"] != 20732  # ... but not the recorded one
 
 
 # ---- schema refusals, each against the valid document ---------------------------------------------------------------
@@ -98,7 +98,7 @@ CASES = {
     "segment starts at 0": (lambda d: d["script"]["segments"][0]["start_attitude_execution"].update(value=0), "must be an integer >= 1"),
     "segments not increasing": (lambda d: d["script"]["segments"][1]["start_attitude_execution"].update(value=1), "not after the previous"),
     "stick above 1": (lambda d: d["script"]["segments"][0]["stick"].update(value=[1.5, 0.0, 0.0]), "outside [-1, 1]"),
-    "end not after the last start": (lambda d: d["script"]["end_attitude_execution"].update(value=10373), "not after the last segment"),
+    "end not after the last start": (lambda d: d["script"]["end_attitude_execution"].update(value=20732), "not after the last segment"),
     "more than eight segments": (lambda d: d["script"].update(segments=d["script"]["segments"] * 5), "at most 8"),
     "settle not positive": (lambda d: d["script"]["settle_s"].update(value=0.0), "must be a finite number > 0"),
     "chirp band inverted": (lambda d: d["script"].update(chirp={
@@ -158,7 +158,7 @@ def test_plan_origin_stamps_and_duration():
     p = plan_of()
     assert p.att_divisor == 4 and p.origin == 1600 and p.tick_of(p.origin) == 6400
     assert (p.att_divisor * p.origin * p.num_us) % p.den == 0, "the stamp phase of the oracle"
-    assert p.segments[0][1] == p.stamp_us(p.origin + 1) and p.segments[1][1] == p.stamp_us(p.origin + 10373)
+    assert p.segments[0][1] == p.stamp_us(p.origin + 1) and p.segments[1][1] == p.stamp_us(p.origin + 20732)
     assert p.stamp_us(p.origin + 1) - p.stamp_us(p.origin) == 625
     assert p.duration_ticks % 2 == 0 and p.duration_ticks > p.tick_of(p.origin + p.end)
     assert p.duration_ticks - 2 <= p.tick_of(p.origin + p.end) + 2

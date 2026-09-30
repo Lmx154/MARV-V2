@@ -80,17 +80,17 @@ script:
         label: scenario
         rationale: "full roll stick, the T3 step_roll script; positive s_roll rolls right side down (l5_script.hpp); the other sticks are 0 (one axis per scenario)"
     - start_attitude_execution:
-        value: 10373
+        value: 20732
         unit: "1"
         label: derived
-        rule: "release_execution of step_roll in tests/regression/quad/L05/t3/reference/attitude_t3_envelope.txt: a_r = 1 + H, H = 10372 attitude executions (segment_seconds 6.482014255070564 s, ten attitude time constants 1/att_kp doubled once until every envelope end value is below F)"
+        rule: "release_execution of step_roll in tests/regression/quad/L05/t3/reference/attitude_t3_envelope.txt: a_r = 1 + H, H = 20731 attitude executions (segment_seconds 6.478177814791293 s, ten attitude time constants 1/att_kp doubled once until every envelope end value is below F)"
       stick:
         value: [0.0, 0.0, 0.0]
         unit: "1"
         label: scenario
         rationale: "the release: all sticks 0, angle mode returns the tilt to level"
   end_attitude_execution:
-    value: 20744
+    value: 41462
     unit: "1"
     label: derived
-    rule: "1 + 2 H of the recorded envelope (attitude_t3_envelope.txt channel theta, count 20745 executions 0..20744): the run ends with the envelope"
+    rule: "1 + 2 H of the recorded envelope (attitude_t3_envelope.txt channel theta, count 41463 executions 0..41462): the run ends with the envelope"

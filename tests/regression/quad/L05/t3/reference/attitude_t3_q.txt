@@ -7,7 +7,7 @@
 # (rule grid), else q_corners (rule corners). Written by attitude_t3_oracle.py from attitude_t3_q_inputs.txt; see
 # README.md. Rule: fw/mixer/include/marv/mixer/mixer.hpp allocate and thrust_to_dshot, sim/plant/src/plant_model.hpp
 # Model::omega_cmd. Units rad (theta, headings) and rad/s (omega). at = the member (s, t) and attitude execution.
-# segment_executions 10372  yaw_fallback stick_scale 1.0
+# segment_executions 20731  yaw_fallback stick_scale 1.0
 hover_dshot_real 765.0598474348699
 hover_dshot_rounded 765
 zero_request_torque_nm_roll 0.0
@@ -15,27 +15,27 @@ zero_request_torque_nm_pitch 0.0
 zero_request_torque_nm_yaw 0.0
 scenario step_roll
 saturated_executions 0
-channel theta q 0.00829178977898361 rule grid q_corners 0.0078089307098715465 q_grid 0.00829178977898361 at_s 1.0 at_t -0.25 at_execution 15884
-channel omega q 0.04774031402258346 rule grid q_corners 0.04033140595862157 q_grid 0.04774031402258346 at_s -0.5 at_t -1.0 at_execution 2262
+channel theta q 0.008281610182680815 rule grid q_corners 0.007777562470197982 q_grid 0.008281610182680815 at_s 1.0 at_t -0.25 at_execution 31749
+channel omega q 0.04764715413963017 rule grid q_corners 0.04024346206319321 q_grid 0.04764715413963017 at_s -0.5 at_t -1.0 at_execution 4519
 scenario step_pitch
 saturated_executions 0
-channel theta q 0.007409024425589994 rule grid q_corners 0.0067215546140475535 q_grid 0.007409024425589994 at_s 1.0 at_t 0.75 at_execution 7197
-channel omega q 0.04228719764413838 rule grid q_corners 0.031118884319204287 q_grid 0.04228719764413838 at_s -0.5 at_t -1.0 at_execution 2218
+channel theta q 0.007400528173976406 rule grid q_corners 0.006702299640556575 q_grid 0.007400528173976406 at_s 1.0 at_t 0.75 at_execution 14389
+channel omega q 0.04241513210525363 rule grid q_corners 0.02741911982168599 q_grid 0.04241513210525363 at_s -0.5 at_t -1.0 at_execution 4438
 scenario yaw_release
 saturated_executions 90576
-channel omega q 0.005817830302498663 rule grid q_corners 0.005222033449941661 q_grid 0.005817830302498663 at_s 0.0 at_t -0.75 at_execution 15391
-channel heading_release q 0.0014982811765662518 rule grid q_corners 0.0012677090650896616 q_grid 0.0014982811765662518 at_s 1.0 at_t -0.5 at_execution 18809
-channel heading_lock q 0.001030181736084046 rule grid q_corners 0.000946840462447085 q_grid 0.001030181736084046 at_s 1.0 at_t 0.0 at_execution 19562
+channel omega q 0.005830924999169448 rule grid q_corners 0.005254277003334071 q_grid 0.005830924999169448 at_s 0.0 at_t -0.75 at_execution 30774
+channel heading_release q 0.0015191124947619983 rule grid q_corners 0.0012588590943920508 q_grid 0.0015191124947619983 at_s 1.0 at_t -0.5 at_execution 37608
+channel heading_lock q 0.001028547960103765 rule grid q_corners 0.0009438383894746494 q_grid 0.001028547960103765 at_s 1.0 at_t 0.0 at_execution 39107
 # the allocation scales or clamps requests in this script (saturated_executions counts member x rate executions); q_allocation_only is the same comparison without the DShot rounding (the allocation's own effect, which q includes)
-channel omega q_allocation_only 2.667339831230464e-07 rule corners
-channel heading_release q_allocation_only 6.905064253714954e-08 rule corners
-channel heading_lock q_allocation_only 5.4899032875255216e-08 rule corners
+channel omega q_allocation_only 2.6658977581028864e-07 rule corners
+channel heading_release q_allocation_only 6.900876314830384e-08 rule corners
+channel heading_lock q_allocation_only 5.4866717391632847e-08 rule corners
 scenario yaw_fallback
-saturated_executions 1379304
-channel omega q 0.004946689429484508 rule grid q_corners 0.004651603488611045 q_grid 0.004946689429484508 at_s -1.0 at_t 0.75 at_execution 10617
-channel heading_release q 0.001463721177088928 rule grid q_corners 0.0013886781667054038 q_grid 0.001463721177088928 at_s -1.0 at_t 0.25 at_execution 12252
-channel heading_lock q 0.000765350166460621 rule grid q_corners 0.0007570364012110531 q_grid 0.000765350166460621 at_s 0.5 at_t -1.0 at_execution 16382
+saturated_executions 1378451
+channel omega q 0.00494675938775524 rule grid q_corners 0.004651603488625478 q_grid 0.00494675938775524 at_s -1.0 at_t 0.75 at_execution 21221
+channel heading_release q 0.0014574608549224877 rule grid q_corners 0.0013848478750304594 q_grid 0.0014574608549224877 at_s -1.0 at_t 0.25 at_execution 24482
+channel heading_lock q 0.00077063226864027 rule grid q_corners 0.0007513808441927949 q_grid 0.00077063226864027 at_s 0.5 at_t -1.0 at_execution 32753
 # the allocation scales or clamps requests in this script (saturated_executions counts member x rate executions); q_allocation_only is the same comparison without the DShot rounding (the allocation's own effect, which q includes)
-channel omega q_allocation_only 2.8014894137839974e-07 rule corners
-channel heading_release q_allocation_only 7.715715355516295e-08 rule corners
-channel heading_lock q_allocation_only 4.529708519385167e-08 rule corners
+channel omega q_allocation_only 2.8015058317620856e-07 rule corners
+channel heading_release q_allocation_only 7.712365857059922e-08 rule corners
+channel heading_lock q_allocation_only 4.529759678462142e-08 rule corners
