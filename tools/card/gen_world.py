@@ -62,6 +62,9 @@ Card children come from gen_plant_config.plugin_element() unchanged; scenario ch
                                                           the first tick
   initial_velocity_ned_m_s      3 floats, m/s  scenario   OPTIONAL, present iff nonzero; default 0 0 0
   initial_body_rates_frd        3 floats, rad/s scenario  OPTIONAL, present iff nonzero; default 0 0 0 (rotation only)
+  initial_rotor_speed_rad_s     4 floats, rad/s scenario  OPTIONAL, present iff the scenario has initial_state.
+                                                          rotor_speed_rad_s (decision 0007); logical motor order;
+                                                          marv_plant_config.initial_omega_rad_s; default all 0
   attitude_source               text "truth"   --attitude-source OPTIONAL, present iff given (quad L5, decision 0006
                                                           section B); the plugin refuses it without <gyro_source>truth
                                                           </gyro_source> (which this generator does not write) and with
@@ -173,6 +176,9 @@ def world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitud
         gpc.text_element(plugin, "initial_velocity_ned_m_s", _fmt3(st["velocity_ned_m_s"]), "m/s")
     if any(c != 0 for c in st["body_rates_frd_rad_s"]):
         gpc.text_element(plugin, "initial_body_rates_frd", _fmt3(st["body_rates_frd_rad_s"]), "rad/s")
+    if "rotor_speed_rad_s" in st:
+        gpc.text_element(plugin, "initial_rotor_speed_rad_s", " ".join(repr(float(c)) for c in st["rotor_speed_rad_s"]),
+                         "rad/s")
     if attitude_source:
         gpc.text_element(plugin, "attitude_source", ATTITUDE_SOURCE_TRUTH)
     if log_path is not None:

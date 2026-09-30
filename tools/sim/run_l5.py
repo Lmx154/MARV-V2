@@ -27,6 +27,10 @@ T_a = D_a t. The attitude group runs at ticks D_a a (tick 0 included) and the SI
   end                   attitude execution a0 + end_attitude_execution, the last of the window.
   duration_ticks        the smallest multiple of every m of m_sequence above D_a (a0 + end), the last window tick.
   l5_thrust_n           float32 of m g(phi, h0), as run_l4.hover_thrust.
+  rotor_speed_rad_s     optional (decision 0007), marv_plant_config.initial_omega_rad_s: the scenario's 4 numbers, or for the
+                        text "hover" the card's hover rotor speed per motor (hover_rotor_speeds): omega_i = sqrt(T_i / k),
+                        T_i = M[i, thrust] m g(phi, h0), the firmware mixer's allocation at the hover collective and zero
+                        torque (tools/card/mixer.py), k the card's thrust coefficient.
 """
 
 from __future__ import annotations
@@ -48,8 +52,10 @@ ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "card"))
 import attitude  # noqa: E402
+import gen_plant_config as gpc  # noqa: E402
 import l5_scenario as l5s  # noqa: E402
 import run_l4 as l4  # noqa: E402
+import mixer  # noqa: E402
 import run_scenario  # noqa: E402
 import scenario as scn  # noqa: E402
 import schema  # noqa: E402
@@ -104,6 +110,7 @@ class Plan:
     m_sequence: tuple
     thrust_n: float
     thrust_n_double: float
+    rotor_speed_rad_s: tuple | None = None  # initial rotor speed per motor (logical order); None = at rest
 
     @property
     def att_divisor(self):
@@ -152,7 +159,24 @@ class Plan:
             "window attitude executions": f"{self.window.start}..{self.window.stop - 1}",
             "duration_ticks": self.duration_ticks, "m_sequence": list(self.m_sequence),
             "l5_thrust_n (float32)": self.thrust_n, "m g(phi, h0) (double)": self.thrust_n_double,
+            **({"initial rotor speed (rad/s)": list(self.rotor_speed_rad_s)} if self.rotor_speed_rad_s else {}),
         }
+
+
+def hover_rotor_speeds(card, vals, root=ROOT):
+    """The card's hover rotor speed per motor, rad/s, logical order: omega_i = sqrt(T_i / k), T_i = M[i, thrust] m g(phi, h0)
+    (run_l4.hover_thrust times the mixer's thrust column: the allocation at the hover collective and zero torque), k the
+    card's thrust coefficient. Raises PlanError if some omega_i lies outside the card's speed range."""
+    card_doc, profile = gpc.load_linted(card, root)
+    cfg, _ = gpc.config_from(card_doc, profile, card, root)
+    m, _, _ = mixer.mixer_matrix(card_doc, card)
+    thrust = l4.hover_thrust(card, vals, root)
+    speeds = tuple(math.sqrt(m[i][0] * thrust / cfg["thrust_coeff"]) for i in range(scn.MOTORS))
+    lo, hi = cfg["omega_min_rad_s"], cfg["omega_max_rad_s"]
+    bad = [i + 1 for i, w in enumerate(speeds) if not lo <= w <= hi]
+    if bad:
+        raise PlanError([f"the hover rotor speed of motors {bad} is outside the card's speed range [{lo!r}, {hi!r}] rad/s"])
+    return speeds
 
 
 def plan(doc, params, card, root=ROOT):
@@ -214,10 +238,14 @@ def plan(doc, params, card, root=ROOT):
     last_tick = att_div * (a0 + end)
     duration = (last_tick // lcm + 1) * lcm
     thrust = l4.hover_thrust(card, vals, root)
+    rotor = vals["initial_state"].get("rotor_speed_rad_s")
+    if rotor == l5s.ROTOR_SPEED_HOVER:
+        rotor = hover_rotor_speeds(card, vals, root)
     return Plan(num_us=num, den=den, divisor=divisor, ratio=ratio, tick_s=tick, period_s=period,
                 settle_s=script["settle_s"], origin=a0, end=end, segments=segments, chirp=chirp,
                 disturbance=disturbance, duration_ticks=duration, m_sequence=tuple(vals["m_sequence"]),
-                thrust_n=l4.r32(thrust), thrust_n_double=thrust)
+                thrust_n=l4.r32(thrust), thrust_n_double=thrust,
+                rotor_speed_rad_s=None if rotor is None else tuple(rotor))
 
 
 # ---- the world ------------------------------------------------------------------------------------------------------
@@ -255,8 +283,10 @@ def l2_scenario_doc(doc, p, stem, source, card=None):
         "m_sequence": entry(list(p.m_sequence), "1", "m_sequence"),
         "duration_ticks": {"value": p.duration_ticks, "unit": "1", "label": "derived",
                            "rule": "the plan's duration_ticks (tools/sim/run_l5.py plan)"},
-        "initial_state": {k: entry(st[k], doc["initial_state"][k]["unit"], f"initial_state.{k}")
-                          for k in scn.STATE_FIELDS},
+        "initial_state": {**{k: entry(st[k], doc["initial_state"][k]["unit"], f"initial_state.{k}")
+                             for k in scn.STATE_FIELDS},
+                          **({"rotor_speed_rad_s": entry(list(p.rotor_speed_rad_s), "rad/s", "rotor_speed_rad_s")}
+                             if getattr(p, "rotor_speed_rad_s", None) is not None else {})},
         **margin,
         "command": {"dshot": {"value": l4.L2_PLACEHOLDER_DSHOT, "unit": "1", "label": "scenario",
                               "rationale": "placeholder: world_edit removes the L2 ol_dshot_m* overrides; the "

@@ -54,6 +54,12 @@ typedef struct marv_plant_config {
   double site_height_m;                               /* geodetic height of the NED origin above the WGS 84
                                                          ellipsoid (scenario value) */
   uint64_t rng_seed;                                  /* reserved, unused at v0 */
+  double initial_omega_rad_s[MARV_PLANT_N_MOTORS];    /* rotor speed at the first step, index = logical motor - 1;
+                                                         each finite and in [0, omega_max_rad_s], else
+                                                         MARV_PLANT_E_CONFIG. All 0 = the rotors at rest. Appended
+                                                         last: struct_size (== sizeof, checked exactly) grows with it,
+                                                         so a caller built against the older header gets
+                                                         MARV_PLANT_E_ABI, never a read past its struct. */
 } marv_plant_config;
 
 typedef struct marv_plant_body {

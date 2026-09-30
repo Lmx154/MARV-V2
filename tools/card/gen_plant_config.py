@@ -43,6 +43,9 @@ VEHICLE_ID = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 PLUGIN_FILENAME = "marv_gz_lockstep"
 PLUGIN_NAME = "marv::gz::Lockstep"
 SCENARIO_FIELDS = ("site_lat_rad", "site_height_m", "motor_substep_s", "rng_seed")
+# The header comment also names the optional initial rotor speed (decision 0007; 0 = at rest). The plugin element's
+# comment keeps SCENARIO_FIELDS so that every generated world stays byte-identical.
+HEADER_SCENARIO_FIELDS = (*SCENARIO_FIELDS, "initial_omega_rad_s")
 SCALAR_FIELDS = ("mass_kg", "thrust_coeff", "torque_ratio_m", "omega_min_rad_s", "omega_max_rad_s", "motor_tau_s")
 
 
@@ -139,7 +142,7 @@ def render_header(cfg, card, card_path):
         " * Build directory only, never committed. Edit the card, not this file.",
         " *",
         f" * marv_plant_card_{v}_fill sets every VEHICLE field of marv_plant_config (and struct_size). The caller",
-        " * must set the scenario fields, which are not vehicle data: " + ", ".join(SCENARIO_FIELDS) + ".",
+        " * must set the scenario fields, which are not vehicle data: " + ", ".join(HEADER_SCENARIO_FIELDS) + ".",
         " * Floating values are C hexadecimal floating literals (exact); the decimal repr is in the trailing comment. */",
         f"#ifndef {guard}",
         f"#define {guard}",

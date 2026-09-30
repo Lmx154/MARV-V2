@@ -261,8 +261,9 @@ def l2_scenario_doc(doc, p, stem, source):
         "m_sequence": entry(list(p.m_sequence), "1", "m_sequence"),
         "duration_ticks": {"value": p.duration_ticks, "unit": "1", "label": "derived",
                            "rule": "the plan's duration_ticks (tools/sim/run_l4.py plan)"},
-        "initial_state": {k: entry(st[k], doc["initial_state"][k]["unit"], f"initial_state.{k}")
-                          for k in scn.STATE_FIELDS},
+        "initial_state": {k: entry(st[k] if k in st else doc["initial_state"][k]["value"],
+                                   doc["initial_state"][k]["unit"], f"initial_state.{k}")
+                          for k in scn.STATE_FIELDS + tuple(k for k in scn.OPTIONAL_STATE if k in doc["initial_state"])},
         "command": {"dshot": {"value": L2_PLACEHOLDER_DSHOT, "unit": "1", "label": "scenario",
                               "rationale": "placeholder: world_edit removes the L2 ol_dshot_m* overrides; the "
                                            "l4_rate_scripted composition commands the motors"}},
