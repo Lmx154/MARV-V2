@@ -1,12 +1,12 @@
-# Quad L5 scenario 'recover_tumble' (docs/spec/10-quad-flight-software.md section 4 L5, T4; docs/decisions/0006 F "T4 large-angle recovery", owner decision 15).
-# R2, inverted and tumbling at rate_max on every axis: the acro limit, the regime of the L4 known failing item (gyroscopic coupling w x Jw at full-stick rates, docs/handoff.md; owner decision 15). The setpoint is level, locked at angle mode's initial heading (sticks 0 throughout: no segments), flown by the l5_attitude_scripted
+# Quad L5 scenario 'recover_inverted_exact' (owner decision 22: exactly 180 degrees, used only by the tilt-angle side check of test_t4_recovery.py) (docs/spec/10-quad-flight-software.md section 4 L5, T4; docs/decisions/0006 F "T4 large-angle recovery", owner decision 15).
+# R1, inverted at rest: the single-axis case, no coupling (owner decision 15: R1 must pass). The setpoint is level, locked at angle mode's initial heading (sticks 0 throughout: no segments), flown by the l5_attitude_scripted
 # composition (angle mode, the attitude law, the rate loop in bypass) on truth gyro and truth attitude: a truth-fed, perfect-model run, not a
 # validation run (core section 6). The initial state is a labelled scenario test value (decision 0006 F). The run starts at the initial state:
 # settle_s is one attitude period, so the origin execution is only the first execution that keeps the stamp phase (tools/sim/run_l5.py plan) and
 # the test compares attitude execution n of the run with the design model's execution n from execution 0. Schema and checks: tools/sim/l5_scenario.py.
 # Nonzero initial rates need no separatrix margin in this schema: the runner writes the initial state's own mu into its L2 world input
-# (tools/sim/run_l5.py l2_scenario_doc). R2: the L4 item (strict xfail if it hits the coupling limit). Every number is a labelled scenario value or a derived value. Frames NED / FRD, SI.
-scenario: recover_tumble
+# (tools/sim/run_l5.py l2_scenario_doc). R1 must pass. Every number is a labelled scenario value or a derived value. Frames NED / FRD, SI.
+scenario: recover_inverted_exact
 site_latitude_rad:
   value: 0.82
   unit: rad
@@ -54,10 +54,10 @@ initial_state:
     label: scenario
     rationale: "every host step (at least one tick, 156.25 us) moves the link 1.5625e-4 m north, 156 times the 1e-6 pose change below which gz-sim 8 leaves a read stale (docs/decisions/0003 item 11), so every read is fresh (INFERRED; fresh_steps / stale_report show it per run and the test fails on a stale read in the window); marv_plant v0 has no drag or position-dependent torque and g depends on height only, so the translation does not act on the rotation"
   body_rates_frd_rad_s:
-    value: [11.693705558776855, 11.693705558776855, 11.693705558776855]
+    value: [0.0, 0.0, 0.0]
     unit: rad/s
-    label: derived
-    rule: "float32 rate_max_roll, rate_max_pitch, rate_max_yaw of the build (design/scenario_values.yaml): full rates on all three axes, the acro limit of decision 0006 F R2; the value is the float32 exactly"
+    label: scenario
+    rationale: "at rest: a single-axis 180 degree roll recovery, where the design model (no w x Jw) is exact; with the rates zero the L2 schema asks for no separatrix margin"
   rotor_speed_rad_s:
     value: hover
     unit: rad/s

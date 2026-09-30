@@ -300,14 +300,16 @@ def test_world_edit_refuses_a_world_without_the_l2_dshot_overrides():
 
 # ---- the recovery scenarios (R1, R2: decision 0006 F "T4 large-angle recovery") -------------------------------------------
 
-RECOVERY = ("recover_inverted", "recover_tumble")
+RECOVERY = ("recover_inverted", "recover_inverted_exact", "recover_tumble")
 PARAMS = {"tick_period_num_us": 625, "tick_period_den": 4, "rate_loop_divisor": 2, "att_loop_ratio": 1}
 
 
 @pytest.mark.parametrize("name", RECOVERY)
 def test_committed_recovery_scenarios_are_valid_and_have_no_segments(name):
     v = l5s.values(l5s.load(SCEN / f"{name}.yaml"))
-    assert v["script"]["segments"] == [] and v["initial_state"]["attitude_q_wxyz"] == [0.0, 1.0, 0.0, 0.0]
+    q = v["initial_state"]["attitude_q_wxyz"]
+    assert v["script"]["segments"] == [] and v["initial_state"]["rotor_speed_rad_s"] == "hover"
+    assert (q == [0.0, 1.0, 0.0, 0.0]) == (name != "recover_inverted") and q[0] >= 0
     assert any(x != 0 for x in v["initial_state"]["body_rates_frd_rad_s"]) == (name == "recover_tumble")
 
 

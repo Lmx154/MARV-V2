@@ -122,7 +122,7 @@ class Quant3:
         return out
 
 
-def member_run(su, s, t, q0, w0, n_exec, quant=None, m_sub=1):
+def member_run(su, s, t, q0, w0, n_exec, quant=None, m_sub=1, fn=None):
     """Channels per attitude execution 0 .. n_exec - 1 of one band member (module docstring), and the quantiser's saturated
     count."""
     p, cfg = su.p, su.cfg
@@ -144,7 +144,7 @@ def member_run(su, s, t, q0, w0, n_exec, quant=None, m_sub=1):
     for j in range(n_exec * n_ticks):
         if j % n_ticks == 0:
             a = j // n_ticks
-            out.append(channels(q, [pl.w for pl in plants]))
+            out.append((fn or channels)(q, [pl.w for pl in plants]))
             r_hold = law(cfg, q, q_sp)
             if a == 0:
                 u = [0.0] * 3
@@ -173,25 +173,25 @@ _CTX = {}
 
 def _job(args):
     index, s, t, coarse, with_q = args
-    su, q0, w0, n, qfix = (_CTX[k] for k in ("su", "q0", "w0", "n", "qfix"))
-    base, _ = member_run(su, s, t, q0, w0, n)
+    su, q0, w0, n, qfix, fn = (_CTX[k] for k in ("su", "q0", "w0", "n", "qfix", "fn"))
+    base, _ = member_run(su, s, t, q0, w0, n, fn=fn)
     quantised = saturated = None
     if with_q:
-        qr, saturated = member_run(su, s, t, q0, w0, n, Quant3(qfix))
+        qr, saturated = member_run(su, s, t, q0, w0, n, Quant3(qfix), fn=fn)
         quantised = [max(abs(a - b) for a, b in zip(x, y)) for x, y in zip(zip(*base), zip(*qr))]
         quantised = [max(abs(a - b) for a, b in zip(x, y)) for x, y in zip(zip(*base), zip(*qr))]
     kin = None
     if (abs(s) == 1.0 and abs(t) == 1.0) or (s == 0.0 and t == 0.0):
-        fine, _ = member_run(su, s, t, q0, w0, n, m_sub=2)
-        kin = [max(abs(a[c] - b[c]) for a, b in zip(base, fine)) for c in range(len(CHANNELS))]
+        fine, _ = member_run(su, s, t, q0, w0, n, m_sub=2, fn=fn)
+        kin = [max(abs(a[c] - b[c]) for a, b in zip(base, fine)) for c in range(len(base[0]))]
     return index, s, t, coarse, base, quantised, saturated, kin
 
 
-def envelope(su, qfix, q0, w0, n_exec, procs=None):
+def envelope(su, qfix, q0, w0, n_exec, procs=None, fn=None):
     """{"lo", "hi": per channel lists per execution; "halving": per channel; "kin": per channel; "q": per channel dict; "nominal":
     the nominal member's channels per execution; "saturated": count} for the scenario (initial attitude q0, rates w0) over
     n_exec attitude executions."""
-    _CTX.update(su=su, q0=tuple(q0), w0=tuple(w0), n=n_exec, qfix=qfix)
+    _CTX.update(su=su, q0=tuple(q0), w0=tuple(w0), n=n_exec, qfix=qfix, fn=fn)
     members = oracle.grid_members()
     jobs = []
     for i, s, t, coarse in members:
@@ -200,7 +200,7 @@ def envelope(su, qfix, q0, w0, n_exec, procs=None):
     procs = procs or os.cpu_count() or 1
     with multiprocessing.get_context("fork").Pool(procs) as pool:
         results = pool.map(_job, jobs, chunksize=1)
-    nch = len(CHANNELS)
+    nch = len((fn or channels)(q0, w0))
     envs = [oracle.Envelope(n_exec) for _ in range(nch)]
     q_best = [0.0] * nch
     q_corner = [0.0] * nch
@@ -225,6 +225,16 @@ def envelope(su, qfix, q0, w0, n_exec, procs=None):
             "kin": kin, "q": q_best, "q_corners": q_corner, "nominal": nominal, "saturated": saturated}
 
 
+def alpha_channel(q, w):
+    """(alpha,): the tilt angle, the angle between body z and NED down, of the level error (axis-invariant)."""
+    v = rotation_vector(level_error(q))
+    th = math.sqrt(sum(c * c for c in v))
+    if th == 0:
+        return (0.0,)
+    k = math.sin(th / 2) / th
+    return (2.0 * math.asin(min(1.0, math.hypot(v[0] * k, v[1] * k))),)
+
+
 def settle_ok(env, f_term):
     """The T3 property at the last execution: every channel's envelope end value is below its F."""
-    return [max(abs(env["lo"][c][-1]), abs(env["hi"][c][-1])) < f_term[c] for c in range(len(CHANNELS))]
+    return [max(abs(env["lo"][c][-1]), abs(env["hi"][c][-1])) < f_term[c] for c in range(len(env["lo"]))]

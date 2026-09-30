@@ -4,8 +4,10 @@
 Skipped only as tests/regression/quad/L05/gz/conftest.py says; the gz CI step fails on a skip. Every run is truth-fed,
 perfect-model (tools/sim/run_l5.py): not a validation run.
 
-Runs. scenarios/quad/L05/recover_inverted.yaml (R1: inverted, at rest) and recover_tumble.yaml (R2: inverted, body rates
-(rate_max_roll, rate_max_pitch, rate_max_yaw)), one gz process per m of [2, 1] (tools/sim/run_l5.py run_sequence). The setpoint is
+Runs. scenarios/quad/L05/recover_inverted.yaml (R1: a roll of pi - delta from level, at rest, delta = 0.01 rad, owner decision 22:
+far above the rounding noise in (w, z) of the plant's first step, so the model and gz take the same branch of the tilt-yaw split) and
+recover_tumble.yaml (R2: inverted, body rates (rate_max_roll, rate_max_pitch, rate_max_yaw)), both with the rotors at the card's hover
+speed (owner decision 23; rotor_speed_rad_s: hover), one gz process per m of [2, 1] (tools/sim/run_l5.py run_sequence). The setpoint is
 level, locked at angle mode's initial heading; no sticks. The run starts at the scenario's initial state (settle_s is one attitude
 period): the firmware's attitude execution n is the design model's execution n.
 
@@ -15,6 +17,16 @@ execution: the body-frame rotation vector of the attitude error q_e = canonical(
 err_z the heading error) and the body rates (w_x, w_y, w_z). The recorded T3 envelope file has no recovery script (t3/ is not this
 packet's to extend), so the envelope is computed here for the live parameters, which must equal the recorded fixture
 attitude_t3_inputs.txt (as the step test requires).
+
+Rate origin (harness fact, 0003 item 11; tests/regression/quad/L05/results/recovery_cause/README.md finding 1). The plugin reads the
+body state and runs the SIL for host step 0 before it sets the scenario's initial rates, so the TRUTH record and the gyro of execution
+0 read omega = 0 while the body moves from its initial rates. The rate channels (w_x, w_y, w_z) are therefore not compared at
+execution 0; the attitude channels at execution 0 are. This is the plugin's documented timing, not a tolerance term.
+
+Side check (owner decision 22). recover_inverted_exact.yaml starts at exactly [0, 1, 0, 0]: there the tilt axis is chosen by rounding
+noise, so only the tilt angle alpha (the angle between body z and NED down, axis-invariant) is checked, against the design model's
+alpha envelope over the same box from exactly 180 degrees, with the same E + F + Q rule (E, F, Q of the alpha channel, same
+construction).
 
 Predicate (decision 0006 F; owner decision 19). From the TRUTH record of each attitude execution n = 0 .. end (the float cast of the
 body state the firmware read): y_c(n) = the six channels of (q, omega), E_c(n) = |y_c,m=1(n) - y_c,m=2(n)|, Q_c the quantisation
@@ -29,12 +41,14 @@ tick within [idle, 2047]) and at every execution and channel
 The T3 property is asserted too: every envelope end value is below its F_c at the scenario's last execution.
 
 R1 must pass. R2's envelope test is a strict xfail (raises=AssertionError) while tests/regression/quad/L06/ does not exist, exactly as
-the L4 acro recovery (docs/handoff.md, known failing item), ONLY if its cause is the gyroscopic coupling: it blocks L6 and must pass
-before L8. The cause file is tests/regression/quad/L05/results/recovery_cause/.
+the L4 acro recovery (docs/handoff.md, known failing item): its cause is the gyroscopic coupling (no L3 flag, s = t = 1, |w x Jw| 33-44 %
+of tau_held; tests/regression/quad/L05/results/recovery_cause/). It extends the L4 item: blocks L6, must pass before L8.
+Helper module: recovery_model.py, next to this file (the cause script imports it too).
 
 Negative controls, harness only (0003 item 9), each passes only if the check fails:
   (a) a planted trace held at the initial attitude and rates for the whole run;
-  (b) att_kp = 0 through sil_override (the metric control of core 7.2), with no stale read.
+  (b) att_kp = 0 through sil_override (the metric control of core 7.2), with no stale read;
+  (c) att_kp x 1.1 (f32(att_kp f32(1.1)), as the step test), R1 only: the fine gain control.
 """
 
 import dataclasses
@@ -59,12 +73,14 @@ SCEN = ROOT / "scenarios" / "quad" / "L05"
 PLUGIN_DIR = run_l5.DEFAULT_PLUGIN_DIR
 T3_REFERENCE = ROOT / "tests" / "regression" / "quad" / "L05" / "t3" / "reference"
 L06 = ROOT / "tests" / "regression" / "quad" / "L06"
-R1, R2 = "recover_inverted", "recover_tumble"
+R1, R1X, R2 = "recover_inverted", "recover_inverted_exact", "recover_tumble"
+GAIN_SCALE = 1.1  # scenario test value: the spec's fine gain control (t3_test.cpp kGainScale)
 ALL = [R1, R2]
 RECOVERY_KNOWN_FAILING = (
-    "known failing item (decision 0006 F, owner decision 15; decision 0005 owner decision 12): the R2 recovery leaves the design-model "
-    "envelope; cause in tests/regression/quad/L05/results/recovery_cause/. It blocks L6 (this becomes a normal test when "
-    "tests/regression/quad/L06/ exists) and must pass before L8."
+    "known failing item (decision 0006 F, owner decision 15; extends the L4 acro item, decision 0005 owner decision 12, docs/handoff.md): "
+    "the R2 recovery leaves the design-model envelope by the gyroscopic coupling w x Jw (no L3 flag, s = t = 1; cause in "
+    "tests/regression/quad/L05/results/recovery_cause/cause.txt). Blocks L6 (a normal test once tests/regression/quad/L06/ exists); "
+    "must pass before L8."
 )
 CH = rm.CHANNELS
 
@@ -120,51 +136,60 @@ def name(request):
     return request.param
 
 
-@pytest.fixture(scope="module")
-def design(name, live_params):
+_DESIGNS = {}
+
+
+def make_design(name, live_params, fn=None, label=None):
+    """The design envelope of scenario `name` (cached per (name, channel set)): six channels, or `fn`'s (the alpha side check)."""
+    key = (name, label)
+    if key in _DESIGNS:
+        return _DESIGNS[key]
     recorded = recorded_inputs()
-    for key, want in recorded.items():
-        if key in live_params:
-            assert live_params[key] == want, f"{key}: build {live_params[key]!r} differs from the recorded {want!r}"
+    for k, want in recorded.items():
+        if k in live_params:
+            assert live_params[k] == want, f"{k}: build {live_params[k]!r} differs from the recorded {want!r}"
     su = rm.oracle.Setup(recorded)
     vals = l5s.values(l5s.load(SCEN / f"{name}.yaml"))
     st = vals["initial_state"]
     count = vals["script"]["end_attitude_execution"] + 1
     env = rm.envelope(su, rm.oracle.read_q_inputs(T3_REFERENCE / "attitude_t3_q_inputs.txt"), st["attitude_q_wxyz"],
-                      st["body_rates_frd_rad_s"], count)
+                      st["body_rates_frd_rad_s"], count, fn=fn)
     terms = recorded_t3_terms()
-    F = [(terms["angle"] if c < 3 else terms["rate"]) + env["halving"][c] + env["kin"][c] for c in range(len(CH))]
-    return Design(name, count, env["lo"], env["hi"], F, env["q"], env["halving"], env["kin"], env["saturated"],
-                  rm.settle_ok(env, F))
+    n = len(env["lo"])
+    F = [(terms["angle"] if (fn is not None or c < 3) else terms["rate"]) + env["halving"][c] + env["kin"][c] for c in range(n)]
+    _DESIGNS[key] = Design(name, count, env["lo"], env["hi"], F, env["q"], env["halving"], env["kin"], env["saturated"],
+                           rm.settle_ok(env, F))
+    return _DESIGNS[key]
+
+
+@pytest.fixture(scope="module")
+def design(name, live_params):
+    return make_design(name, live_params)
 
 
 # ---- quantities and predicate ---------------------------------------------------------------------------------------------
 
-def series(s, n_exec, reflect=False):
-    """Per attitude execution n = 0 .. n_exec - 1 (the run's execution n) the six channels of the TRUTH record. `reflect`
-    (R1 only) negates the roll channels err_x and w_x when the recovery went the other way round the roll axis: R1 starts exactly
-    on the singular set (error pi about +x or -x: the same rotation), so which shortest rotation the law takes is decided by the
-    sign of the rounding noise of the plant's first step, and the single-axis design model is symmetric under x -> -x (the
-    other four channels are 0 in the model). The direction is the sign of err_x at execution 1."""
+def series(s, n_exec):
+    """Per attitude execution n = 0 .. n_exec - 1 (the run's execution n) the six channels of the TRUTH record."""
     out = []
     for n in range(n_exec):
         t = s.executions[n]["truth"]
         assert t is not None, f"no TRUTH record at attitude execution {n}"
         out.append(rm.channels(t["q_wxyz"], t["omega_frd"]))
-    if reflect and out[1][0] < 0:
-        out = out[:1] + [(-a, b, c, -d, e, f) for a, b, c, d, e, f in out[1:]]
     return out
 
 
-def evaluate(runs, d, y1=None, y2=None):
+def evaluate(runs, d, y1=None, y2=None, chs=CH, ser=None):
     """The predicate of the module docstring on a [m = 2, m = 1] sequence; `y1` replaces the m = 1 series (the planted trace)."""
     by_m = {s.run.m: s for s in runs}
-    reflect = d.name == R1
-    y1 = series(by_m[1], d.count, reflect) if y1 is None else y1
-    y2 = series(by_m[2], d.count, reflect) if y2 is None else y2
-    stats = {c: {"max_out": -math.inf, "max_E": 0.0, "violations": 0, "first": None, "worst": None} for c in CH}
+    ser = ser or series
+    y1 = ser(by_m[1], d.count) if y1 is None else y1
+    y2 = ser(by_m[2], d.count) if y2 is None else y2
+    stats = {c: {"max_out": -math.inf, "max_E": 0.0, "violations": 0, "first": None, "worst": None} for c in chs}
     for n in range(d.count):
-        for ci, c in enumerate(CH):
+        for ci, c in enumerate(chs):
+            if n == 0 and c.startswith("w_"):
+                continue  # rate origin (module docstring): the plugin's execution-0 gyro is 0
             y = y1[n][ci]
             e = abs(y - y2[n][ci])
             out = max(d.lo[ci][n] - y, y - d.hi[ci][n])
@@ -184,7 +209,7 @@ def evaluate(runs, d, y1=None, y2=None):
 
 
 def verdict_line(name, label, ev, wall):
-    parts = "; ".join(f"{c} out {st['max_out']:+.4e} E {st['max_E']:.2e} viol {st['violations']}"
+    parts = "; ".join(f"{c} out {st['max_out']:+.4e} E {st['max_E']:.2e} slack(out-(E+F+Q)) {st['worst']['slack']:+.3e} viol {st['violations']}"
                       + (f" first n {st['first']}" if st["first"] is not None else "")
                       for c, st in ev["components"].items())
     worst = max(ev["components"].values(), key=lambda st: st["worst"]["slack"])["worst"]
@@ -207,10 +232,15 @@ class Sequence:
     evaluation: dict
 
 
-def fly(tmp_path_factory, label, name, d, overrides=None):
+def alpha_series(s, n_exec):
+    """Per attitude execution the tilt angle alpha (one channel) of the TRUTH record."""
+    return [rm.alpha_channel(s.executions[n]["truth"]["q_wxyz"], None) for n in range(n_exec)]
+
+
+def fly(tmp_path_factory, label, name, d, overrides=None, **kw):
     runs, path = run_l5.run_sequence(CARD, SCEN / f"{name}.yaml", tmp_path_factory.mktemp(f"{name}_{label}"), PLUGIN_DIR,
                                      overrides=overrides)
-    ev = evaluate(runs, d)
+    ev = evaluate(runs, d, **kw)
     wall = sum(s.run.wall_s for s in runs)
     run_l5.write_report(runs, dict(ev, gz_wall_s=wall), path)
     return Sequence(runs, path, wall, ev)
@@ -237,7 +267,15 @@ def test_design_envelope_has_settled(design, name, capsys):
 
 def test_scenario_initial_state_is_the_labelled_test_value(name, live_params):
     st = l5s.values(l5s.load(SCEN / f"{name}.yaml"))["initial_state"]
-    assert st["attitude_q_wxyz"] == [0.0, 1.0, 0.0, 0.0]
+    exact = l5s.values(l5s.load(SCEN / f"{R1X}.yaml"))["initial_state"]
+    assert exact["attitude_q_wxyz"] == [0.0, 1.0, 0.0, 0.0] and exact["rotor_speed_rad_s"] == "hover"
+    assert st["rotor_speed_rad_s"] == "hover"
+    if name == R1:
+        w, x = st["attitude_q_wxyz"][:2]
+        assert st["attitude_q_wxyz"][2:] == [0.0, 0.0] and abs(w * w + x * x - 1.0) < 1e-15
+        assert abs(2 * math.atan2(x, w) - (math.pi - 2 * math.asin(w))) < 1e-15 and w > 1e-9  # delta far above the ~1e-16 noise
+    else:
+        assert st["attitude_q_wxyz"] == [0.0, 1.0, 0.0, 0.0]
     rates = [live_params["rate_max_roll"], live_params["rate_max_pitch"], live_params["rate_max_yaw"]]
     assert st["body_rates_frd_rad_s"] == ([0.0, 0.0, 0.0] if name == R1 else rates)
 
@@ -283,4 +321,60 @@ def test_control_att_kp_zero_fails_the_predicate(kp_zero, name, capsys):
         assert '<sil_override param="att_kp" type="f32">0.0</sil_override>' in Path(s.run.world_path).read_text()
         assert run_scenario.complete_trailer(s.run.log, s.run.iterations, s.run.m)
         assert s.window_stale == [], "the control must fail on the envelope, not on a stale read"
+    assert not ev["passed"] and ev["violations"] > 0, ev["components"]
+
+
+@pytest.fixture(scope="module")
+def r1_design(live_params):
+    return make_design(R1, live_params)
+
+
+@pytest.fixture(scope="module")
+def att_gain_up(tmp_path_factory, r1_design, live_params):
+    k = run_l5.l4.r32(live_params["att_kp"] * run_l5.l4.r32(GAIN_SCALE))
+    assert k != live_params["att_kp"]
+    return fly(tmp_path_factory, "att_gain_up", R1, r1_design, {"att_kp": (run_l5.F32, repr(k))})
+
+
+def test_control_att_kp_times_1_1_fails_r1(att_gain_up, live_params, capsys):
+    ev = att_gain_up.evaluation
+    _say(capsys, verdict_line(R1, "control kp*1.1", ev, att_gain_up.wall_s))
+    k = run_l5.l4.r32(live_params["att_kp"] * run_l5.l4.r32(GAIN_SCALE))
+    for s in att_gain_up.runs:
+        assert s.harness_overrides == {"att_kp": ("f32", repr(k))}
+        assert run_scenario.complete_trailer(s.run.log, s.run.iterations, s.run.m)
+        assert s.window_stale == [], "the control must fail on the envelope, not on a stale read"
+    assert not ev["passed"] and ev["violations"] > 0, ev["components"]
+
+
+# ---- the exact-180 degree side check (owner decision 22) ---------------------------------------------------------------------
+
+@pytest.fixture(scope="module")
+def exact_design(live_params):
+    return make_design(R1X, live_params, fn=rm.alpha_channel, label="alpha")
+
+
+@pytest.fixture(scope="module")
+def exact(tmp_path_factory, exact_design):
+    return fly(tmp_path_factory, "exact", R1X, exact_design, chs=("alpha",), ser=alpha_series)
+
+
+def test_exact_180_design_alpha_envelope_has_settled(exact_design, capsys):
+    _say(capsys, f"{R1X}: alpha envelope N {exact_design.count}, Q {exact_design.Q}, F {exact_design.F}, halving {exact_design.halving}, "
+                 f"kin {exact_design.kin}")
+    assert all(exact_design.end_ok)
+
+
+def test_exact_180_tilt_angle_is_inside_the_alpha_envelope(exact, exact_design, capsys):
+    ev = exact.evaluation
+    _say(capsys, verdict_line(R1X, "alpha", ev, exact.wall_s), f"    report: {exact.report_path}")
+    for s in exact.runs:
+        assert run_scenario.complete_trailer(s.run.log, s.run.iterations, s.run.m)
+        assert s.window_stale == []
+    assert ev["passed"], ev["components"]
+
+
+def test_control_exact_180_alpha_planted_at_the_initial_angle_fails(exact, exact_design):
+    planted = [(math.pi,)] * exact_design.count
+    ev = evaluate(exact.runs, exact_design, y1=planted, y2=planted, chs=("alpha",), ser=alpha_series)
     assert not ev["passed"] and ev["violations"] > 0, ev["components"]

@@ -1,4 +1,4 @@
-# Quad L5 scenario 'recover_inverted' (docs/spec/10-quad-flight-software.md section 4 L5, T4; docs/decisions/0006 F "T4 large-angle recovery", owner decision 15).
+# Quad L5 scenario 'recover_inverted' (R1 from pi - delta about roll, owner decision 22) (docs/spec/10-quad-flight-software.md section 4 L5, T4; docs/decisions/0006 F "T4 large-angle recovery", owner decision 15).
 # R1, inverted at rest: the single-axis case, no coupling (owner decision 15: R1 must pass). The setpoint is level, locked at angle mode's initial heading (sticks 0 throughout: no segments), flown by the l5_attitude_scripted
 # composition (angle mode, the attitude law, the rate loop in bypass) on truth gyro and truth attitude: a truth-fed, perfect-model run, not a
 # validation run (core section 6). The initial state is a labelled scenario test value (decision 0006 F). The run starts at the initial state:
@@ -44,10 +44,10 @@ initial_state:
     label: scenario
     rationale: "the NED origin, the site itself; the generated world has no ground and no contact"
   attitude_q_wxyz:
-    value: [0.0, 1.0, 0.0, 0.0]
+    value: [0.004999979166692708, 0.9999875000260416, 0.0, 0.0]
     unit: "1"
     label: scenario
-    rationale: "inverted: a 180 degree roll from level, the quaternion [0, 1, 0, 0] (canonical sign w >= 0), exactly on the singular set of the attitude law's tilt-yaw split (w_e = z_e = 0, decision 0006 C): the shortest rotation back is a single roll at the largest error 2 k sin(pi/2) = 2 k, below rate_max_roll"
+    rationale: "owner decision 22: a roll of pi - delta from level, delta = 0.01 rad (0.57 degrees), the quaternion [sin(delta/2), cos(delta/2), 0, 0] (canonical sign w >= 0). delta is a labelled scenario test value: far above the plant's rounding noise in (w, z) at execution 1 (about 4e-17, against w = sin(delta/2) = 5e-3, a ratio of 1e-14), so the design model and gz take the same branch of the tilt-yaw split (decision 0006 C) and the recovery is the model's single roll; small enough that the start is effectively inverted (the initial error is pi - delta = 3.1316 rad of pi). The exact 180 degree start is recover_inverted_exact.yaml"
   velocity_ned_m_s:
     value: [1.0, 0.0, 0.0]
     unit: m/s
@@ -58,6 +58,11 @@ initial_state:
     unit: rad/s
     label: scenario
     rationale: "at rest: a single-axis 180 degree roll recovery, where the design model (no w x Jw) is exact; with the rates zero the L2 schema asks for no separatrix margin"
+  rotor_speed_rad_s:
+    value: hover
+    unit: rad/s
+    label: derived
+    rule: "owner decision 23: the recovery starts at the card's hover rotor speed per motor, sqrt(T_i / k) with T_i the firmware mixer allocation at the hover collective and zero torque (tools/sim/run_l5.py hover_rotor_speeds); the design model's rate loop assumes spun rotors"
 thrust:
   value: hover
   unit: "1"
