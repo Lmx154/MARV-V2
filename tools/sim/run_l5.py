@@ -432,8 +432,8 @@ def write_report(runs, evaluation=None, path=None):
 
 # ---- T4 attitude chirp (decision 0006 F "T4 attitude chirp"; decision 0005 "T4 chirp margins") --------------------------
 #
-# Design quantities (chirp_design), from tools/card/attitude.py design() on the card, the budget, the scenario register and
-# the scenario register; the build's att_kp, att_yaw_weight and att_loop_ratio must equal the design's
+# Design quantities (chirp_design), from tools/card/attitude.py design() on the card, the budget and the scenario
+# register; the build's att_kp, att_yaw_weight and att_loop_ratio must equal the design's
 # (else the build is stale and refused):
 #   band [w_lo, w_hi]   [min over the box loops of w_c / a, a max over the box loops of w_c]: w_c = theta / T_a the design
 #                       crossover of the nominal loop and the four tau x J corners, on every axis; a = rate.design()["a"].

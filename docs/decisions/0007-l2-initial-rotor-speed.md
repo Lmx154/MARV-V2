@@ -50,8 +50,12 @@ interface change." Recovery scenarios (L5) would otherwise spend the start in th
 
 The no-change claim is proved by the L00–L04 suites (host-debug, host-release, L02 and L04 gz suites, the Python tool
 tests), the golden reproduce steps of `ci/run_ci.sh`, a byte-compare of generated L2, L4 and L5 worlds before and after,
-and an empty `git diff --stat master... -- tests/regression/quad/L0[0-4]`. Commands and results are in the hand-off of
-the change that adds this record.
+and an empty `git diff --stat master... -- tests/regression/quad/L0[0-4]` apart from the one approved file. Independent
+review, 2026-09-30, re-run on the change: host-debug and host-release ctest 454/454; m33 build clean; tool tests (L00,
+L01, L03, L04, L05) 861 passed; L02 gz and tools 267 passed, no skips; L04 gz 40 passed, 1 xfailed, no skips; the golden
+reproduce steps `plant_ref_reproduces`, `t3_reference_reproduces`, `att_t3_reference_reproduces`,
+`rate_bypass_fixture_reproduces` and `rate_bypass_golden_reproduces` all reproduce; removing `initial_omega_rad_s` from
+`SCENARIO_FIELDS` fails both the classification test and its new control. Full CI in both images: see 0006 Evidence.
 
 ## Approval
 
