@@ -1,7 +1,9 @@
 # G3 target manifest (core section 7.4, row G3).
 #
 # marv_write_g3_manifest(<file> [FLIGHT <target>...] [SIL <target>...])
-#   Writes <file> at generate time. JSON: {"flight_targets": [...], "sil_libraries": [{"name", "file"}]}.
+#   Writes <file> at generate time. JSON: {"flight_targets": [...], "sil_libraries": [{"name", "file", "truth_state"}]}.
+#   "truth_state" is true iff the target property MARV_SIL_TRUTH_STATE (marv_add_sil_library TRUTH_STATE) is set when
+#   the manifest is written; it selects the export rule of tools/ci/check_g3.py.
 #   A flight entry always has "name" and "type" (the CMake TYPE property); by type it also has
 #     STATIC/SHARED/MODULE_LIBRARY, EXECUTABLE  "file" (linked file), "objects"
 #     OBJECT_LIBRARY                            "objects"
@@ -17,8 +19,9 @@
 #
 # marv_collect_sil_libraries(<out-var>)
 #   Every SHARED or MODULE library defined in the project (all of them are SIL entry libraries), except the negative
-#   controls under tests/regression/quad/L00/controls and the Gazebo lockstep plugin sim/gz/plugin (a host plugin, not
-#   a SIL entry: it links a SIL library and exports gz plugin symbols; it is not under fw/, so it is no flight target).
+#   controls under tests/regression/<product>/Lnn/controls and the Gazebo lockstep plugin sim/gz/plugin (a host plugin,
+#   not a SIL entry: it links a SIL library and exports gz plugin symbols; it is not under fw/, so it is no flight
+#   target).
 
 function(marv_all_project_targets out)
   set(dirs "${PROJECT_SOURCE_DIR}")
@@ -53,7 +56,6 @@ endfunction()
 
 function(marv_collect_sil_libraries out)
   marv_all_project_targets(all_targets)
-  set(controls_dir "${PROJECT_SOURCE_DIR}/tests/regression/quad/L00/controls")
   set(gz_plugin_dir "${PROJECT_SOURCE_DIR}/sim/gz/plugin")
   set(sil "")
   foreach(tgt IN LISTS all_targets)
@@ -62,7 +64,12 @@ function(marv_collect_sil_libraries out)
       continue()
     endif()
     get_target_property(src_dir ${tgt} SOURCE_DIR)
-    cmake_path(IS_PREFIX controls_dir "${src_dir}" NORMALIZE in_controls)
+    cmake_path(RELATIVE_PATH src_dir BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" OUTPUT_VARIABLE rel_src_dir)
+    if(rel_src_dir MATCHES "^tests/regression/[^/]+/L[0-9][0-9]/controls(/|$)")
+      set(in_controls TRUE)
+    else()
+      set(in_controls FALSE)
+    endif()
     cmake_path(IS_PREFIX gz_plugin_dir "${src_dir}" NORMALIZE in_gz_plugin)
     if(NOT in_controls AND NOT in_gz_plugin)
       list(APPEND sil ${tgt})
@@ -92,7 +99,14 @@ function(marv_write_g3_manifest file)
   endforeach()
   set(sil_entries "")
   foreach(tgt IN LISTS ARG_SIL)
-    list(APPEND sil_entries "    {\"name\": \"${tgt}\", \"file\": \"$<TARGET_FILE:${tgt}>\"}")
+    get_target_property(truth_state ${tgt} MARV_SIL_TRUTH_STATE)
+    if(truth_state)
+      set(truth_json "true")
+    else()
+      set(truth_json "false")
+    endif()
+    list(APPEND sil_entries
+      "    {\"name\": \"${tgt}\", \"file\": \"$<TARGET_FILE:${tgt}>\", \"truth_state\": ${truth_json}}")
   endforeach()
   list(JOIN flight_entries ",\n" flight_json)
   list(JOIN sil_entries ",\n" sil_json)

@@ -1,0 +1,40 @@
+U: 0.0009649100851040886
+unit: rad
+U_deg: 0.055285275486073364
+method: measured
+minimum_over_axes_at: pitch
+rule: 'U = min over axes of (E_H + U_A + U_d), in rad (decision 0006 section E, the chirp rule of decision 0005 ''T4 chirp
+  margins''). Per axis: E_H = |PM(m = 1) - PM(m = 2)|, U_A = |PM(A) - PM(A/2)|, U_d = the float32 input term run_l4.float_input_term
+  of the (m = 1, A) run. The minimum, because a smaller U gives the higher, safer rate.'
+source:
+  script: design/measured/sim7_u/measure_u.py
+  raw: design/measured/sim7_u/raw.json
+  inputs: design/measured/sim7_u/inputs.json
+per_axis:
+  roll:
+    E_H_rad: 6.794564910705958e-14
+    U_A_rad: 0.0009453708342004319
+    U_d_rad: 2.220948038811605e-05
+    U_rad: 0.0009675803146564936
+    E_H_deg: 3.892998930111344e-12
+    U_A_deg: 0.05416575887444665
+    U_d_deg: 0.0012725094914176232
+    U_deg: 0.05543826836975727
+  pitch:
+    E_H_rad: 8.881784197001252e-15
+    U_A_rad: 0.0009426996125161402
+    U_d_rad: 2.221047257906667e-05
+    U_rad: 0.0009649100851040886
+    E_H_deg: 5.088887490341627e-13
+    U_A_deg: 0.05401270914579291
+    U_d_deg: 0.001272566339771565
+    U_deg: 0.055285275486073364
+  yaw:
+    E_H_rad: 2.220446049250313e-15
+    U_A_rad: 0.0009470063582601718
+    U_d_rad: 2.221056862783367e-05
+    U_rad: 0.0009692169268902259
+    E_H_deg: 1.2722218725854067e-13
+    U_A_deg: 0.05425946750036185
+    U_d_deg: 0.0012725718429605413
+    U_deg: 0.055532039343449614

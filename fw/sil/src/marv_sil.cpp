@@ -15,6 +15,7 @@
 #include <marv/types/imu_sample.hpp>
 
 #include "param_override.hpp"
+#include "sil_session.hpp"
 
 namespace marv::sil {
 namespace {
@@ -111,6 +112,11 @@ Session g_session;
 [[nodiscard]] bool present(const void* p, std::size_t count) noexcept { return count == 0 || p != nullptr; }
 
 }  // namespace
+
+SessionView session_view() noexcept {
+  return SessionView{g_session.state == Lifecycle::Ready, g_session.ticks_run, g_session.period};
+}
+
 }  // namespace marv::sil
 
 extern "C" {
