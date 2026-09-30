@@ -142,8 +142,9 @@ T integer_of(const sdf::ElementPtr& e) {
   return v;
 }
 
-Vec3 vec3_of(const sdf::ElementPtr& e) {
-  Vec3 v{};
+template <std::size_t N>
+std::array<double, N> vector_of(const sdf::ElementPtr& e) {
+  std::array<double, N> v{};
   const std::string t = trim(text_of(e));
   std::size_t pos = 0;
   for (double& c : v) {
@@ -163,6 +164,8 @@ Vec3 vec3_of(const sdf::ElementPtr& e) {
   }
   return v;
 }
+
+Vec3 vec3_of(const sdf::ElementPtr& e) { return vector_of<3>(e); }
 
 Parsed parse_plugin(const sdf::ElementPtr& root) {
   Parsed p;
@@ -279,6 +282,12 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
     } else if (name == "initial_body_rates_frd") {
       once(name);
       p.w_frd = vec3_of(e);
+    } else if (name == "initial_rotor_speed_rad_s") {
+      once(name);
+      const std::array<double, kMotors> w = vector_of<kMotors>(e);
+      for (std::size_t i = 0; i < kMotors; ++i) {
+        p.plant.initial_omega_rad_s[i] = w[i];
+      }
     } else if (name == "gyro_source") {
       once(name);
       if (trim(text_of(e)) != "truth") {

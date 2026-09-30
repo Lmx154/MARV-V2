@@ -21,6 +21,9 @@ Required fields (no others are allowed):
     attitude_q_wxyz        4 numbers, Hamilton, body FRD -> NED, w >= 0, | |q|^2 - 1 | <= 4 eps_float (the ABI bound)
     velocity_ned_m_s       3 numbers
     body_rates_frd_rad_s   3 numbers; nonzero only in rotation.yaml, then off the separatrix (see below)
+  and optionally in initial_state (decision 0007)
+    rotor_speed_rad_s      4 finite numbers >= 0, logical motor order (index = motor - 1): marv_plant_config.
+                           initial_omega_rad_s; absent = the rotors at rest (gen_world then writes no element)
   separatrix_margin_min    required iff body_rates_frd_rad_s is nonzero, else refused
   command                  exactly one of
     dshot                  4 integers, each 0 (stop) or kDshotThrottleMin..kDshotThrottleMax of constants.hpp
@@ -57,6 +60,8 @@ TOP_FIELDS = (
 )
 OPTIONAL_TOP = ("separatrix_margin_min",)
 STATE_FIELDS = ("position_ned_m", "attitude_q_wxyz", "velocity_ned_m_s", "body_rates_frd_rad_s")
+OPTIONAL_STATE = ("rotor_speed_rad_s",)
+OPTIONAL_STATE_LENGTH = {"rotor_speed_rad_s": 4}
 STATE_LENGTH = {"position_ned_m": 3, "attitude_q_wxyz": 4, "velocity_ned_m_s": 3, "body_rates_frd_rad_s": 3}
 HOVER_MEMBERS = ("lo", "hi")
 MOTORS = 4
@@ -212,7 +217,7 @@ def validate(doc, name, inertia_diag=None):
             fails.append("initial_state: not a mapping")
         else:
             for k in state:
-                if k not in STATE_FIELDS:
+                if k not in STATE_FIELDS and k not in OPTIONAL_STATE:
                     fails.append(f"initial_state.{k}: unknown field")
             for k in STATE_FIELDS:
                 if k not in state:
@@ -232,6 +237,12 @@ def validate(doc, name, inertia_diag=None):
                         fails.append(f"initial_state.{k}: | |q|^2 - 1 | = {abs(n2 - 1.0)!r} exceeds {QUAT_NORM_TOL!r}")
                 if k == "body_rates_frd_rad_s":
                     rates = v
+            if "rotor_speed_rad_s" in state:
+                e = _entry(state, "rotor_speed_rad_s", "initial_state.rotor_speed_rad_s", fails)
+                v = (_vector(e, "initial_state.rotor_speed_rad_s", OPTIONAL_STATE_LENGTH["rotor_speed_rad_s"], fails)
+                     if e is not None else None)
+                if v is not None and any(x < 0 for x in v):
+                    fails.append(f"initial_state.rotor_speed_rad_s: {v!r} has a negative entry")
 
     nonzero_rates = rates is not None and any(x != 0 for x in rates)
     if "separatrix_margin_min" in doc:
@@ -311,6 +322,9 @@ def values(doc):
     v = {k: doc[k]["value"] for k in plain}
     v["scenario"] = doc["scenario"]
     v["initial_state"] = {k: doc["initial_state"][k]["value"] for k in STATE_FIELDS}
+    for k in OPTIONAL_STATE:
+        if k in doc["initial_state"]:
+            v["initial_state"][k] = doc["initial_state"][k]["value"]
     cmd = doc["command"]
     v["command"] = {k: cmd[k]["value"] for k in cmd}
     return v

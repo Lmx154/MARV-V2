@@ -30,6 +30,7 @@ struct Params {
   T substep = T(0);
   T site_lat = T(0);
   T site_height = T(0);
+  std::array<T, kMotors> omega0{};                    // rotor speed at the first step, rad/s
 };
 
 template <class T>
@@ -41,7 +42,7 @@ struct Wrench {
 template <class T>
 class Model {
  public:
-  explicit Model(const Params<T>& p) : p_(p) {}
+  explicit Model(const Params<T>& p) : p_(p), omega_(p.omega0) {}
 
   // ESC map, linear in omega: DShot 0 -> 0; kDshotThrottleMin..kDshotThrottleMax -> omega_min..omega_max.
   T omega_cmd(std::uint16_t dshot) const {

@@ -18,6 +18,11 @@ Required fields (no others are allowed):
   m_sequence               exactly [2, 1], label derived (decision 0005 "T4 envelope widening": E = |y(m=1) - y(m=2)|)
   initial_state            the four L2 state fields; attitude_q_wxyz is any canonical unit quaternion (w >= 0,
                            | |q|^2 - 1 | <= 4 eps_float), so a non-level start is allowed; body rates are any numbers
+  initial_state            optionally also rotor_speed_rad_s (decision 0007): 4 numbers >= 0, logical motor order
+                           (marv_plant_config.initial_omega_rad_s), or the text "hover" with label derived: the runner
+                           resolves it to the card's hover rotor speed per motor, sqrt(T_i / k), T_i the firmware mixer
+                           allocation M[i, thrust] m g(phi, h0) at zero torque (tools/sim/run_l5.py hover_rotor_speeds).
+                           Absent = the rotors start at rest, as before.
   thrust                   value "hover", label derived: the collective request is the float32 of m g(phi, h0)
                            (tools/sim/run_l4.py hover_thrust)
   script
@@ -62,6 +67,7 @@ AXES = l4s.AXES
 M_SEQUENCE = l4s.M_SEQUENCE
 SEGMENT_CAPACITY = 8  # the l5_attitude_scripted register's l5_seg1..8 entries
 THRUST_HOVER = "hover"
+ROTOR_SPEED_HOVER = "hover"
 
 
 def _scalar(parent, key, path, check, why, fails):
@@ -133,7 +139,7 @@ def validate(doc, name, register):
         if not isinstance(state, dict):
             fails.append("initial_state: not a mapping")
         else:
-            _fields(state, "initial_state", scn.STATE_FIELDS, fails)
+            _fields(state, "initial_state", scn.STATE_FIELDS, fails, scn.OPTIONAL_STATE)
             for k in scn.STATE_FIELDS:
                 if k not in state:
                     continue
@@ -146,6 +152,15 @@ def validate(doc, name, register):
                     n2 = sum(x * x for x in v)
                     if abs(n2 - 1.0) > scn.QUAT_NORM_TOL:
                         fails.append(f"{path}: | |q|^2 - 1 | = {abs(n2 - 1.0)!r} exceeds {scn.QUAT_NORM_TOL!r}")
+            if "rotor_speed_rad_s" in state:
+                path = "initial_state.rotor_speed_rad_s"
+                e = scn._entry(state, "rotor_speed_rad_s", path, fails)
+                if e is not None and e["value"] == ROTOR_SPEED_HOVER:
+                    l4s._need_derived(e, "rotor_speed_rad_s", fails)
+                elif e is not None:
+                    v = scn._vector(e, path, scn.OPTIONAL_STATE_LENGTH["rotor_speed_rad_s"], fails)
+                    if v is not None and any(x < 0 for x in v):
+                        fails.append(f"{path}: {v!r} has a negative entry")
 
     script = doc.get("script")
     if "script" in doc:
@@ -235,6 +250,9 @@ def values(doc):
     v = {k: doc[k]["value"] for k in TOP_FIELDS if k not in ("scenario", "initial_state", "script")}
     v["scenario"] = doc["scenario"]
     v["initial_state"] = {k: doc["initial_state"][k]["value"] for k in scn.STATE_FIELDS}
+    for k in scn.OPTIONAL_STATE:
+        if k in doc["initial_state"]:
+            v["initial_state"][k] = doc["initial_state"][k]["value"]
     s = doc["script"]
     out = {"settle_s": s["settle_s"]["value"], "end_attitude_execution": s["end_attitude_execution"]["value"],
            "segments": [_plain(seg, SEGMENT_FIELDS) for seg in s["segments"]]}

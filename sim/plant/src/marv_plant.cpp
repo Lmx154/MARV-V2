@@ -52,6 +52,12 @@ bool config_valid(const marv_plant_config& c) {
       return false;
     }
   }
+  for (std::size_t i = 0; i < kMotors; ++i) {
+    if (!finite(c.initial_omega_rad_s[i]) || c.initial_omega_rad_s[i] < 0.0 ||
+        c.initial_omega_rad_s[i] > c.omega_max_rad_s) {
+      return false;
+    }
+  }
   return positive(c.mass_kg) && positive(c.thrust_coeff) && positive(c.torque_ratio_m) &&
          positive(c.omega_min_rad_s) && positive(c.omega_max_rad_s) && c.omega_min_rad_s < c.omega_max_rad_s &&
          positive(c.motor_tau_s) && positive(c.motor_substep_s) && finite(c.site_lat_rad) &&
@@ -83,6 +89,9 @@ Params<double> to_params(const marv_plant_config& c) {
   p.substep = c.motor_substep_s;
   p.site_lat = c.site_lat_rad;
   p.site_height = c.site_height_m;
+  for (std::size_t i = 0; i < kMotors; ++i) {
+    p.omega0[i] = c.initial_omega_rad_s[i];
+  }
   return p;
 }
 
