@@ -152,6 +152,50 @@ class RateLoop {
   // more than kPeriodToleranceUs. A failed check (gyro not valid or not finite, setpoint or torque not finite)
   // resets the loop state, returns zero torque and sets fault_active for this execution.
   [[nodiscard]] RateOutput<T> execute(const ImuSample& imu, const prim::Vec3<T>& setpoint) noexcept {
+    return step<true>(imu, setpoint);
+  }
+
+  // The same execution with the reference-model prefilter bypassed: r_n = reference, so the PID law runs on the
+  // given reference directly (angle mode feeds it the attitude loop's rate request). Seeding, the dt check, the
+  // fault handling and the allocation record are those of execute. After a bypassed execution r_ holds the applied
+  // reference, so a following execute continues its prefilter from it.
+  [[nodiscard]] RateOutput<T> execute_bypass(const ImuSample& imu, const prim::Vec3<T>& reference) noexcept {
+    return step<false>(imu, reference);
+  }
+
+  // Records the freeze that gates the next execution's integrator increment. `requested` is the torque passed to
+  // the mixer, `al` the mixer's allocation of it. For each axis
+  //   freeze = flag  and  |req - ach| > b  and  e_n (req - ach) > 0,
+  //   b = (gamma_n + eps) (|B-hat| |M-hat| |v|)_axis, v = [achieved_thrust, achieved_torque], n = kMotors, eps = the
+  //   scalar epsilon (the rounding bound of decision 0004 item 2), so a flag set with achieved == requested
+  //   (rounding in the allocation) does not freeze.
+  void record_allocation(const prim::Vec3<T>& requested, const mixer::Allocation<T>& al) noexcept {
+    using std::abs;
+    const std::array<T, kAxes> v{al.achieved_thrust, al.achieved_torque[0], al.achieved_torque[1],
+                                 al.achieved_torque[2]};
+    const std::array<bool, kTorqueAxes> flag{al.flags.roll, al.flags.pitch, al.flags.yaw};
+    const T eps = std::numeric_limits<T>::epsilon();
+    const T n_eps = static_cast<T>(kMotors) * eps;
+    const T gamma = n_eps / (T(1) - n_eps);
+    for (std::size_t a = 0; a < kTorqueAxes; ++a) {
+      T sum = T(0);
+      for (std::size_t k = 0; k < kAxes; ++k) {
+        sum += abs_bm_(mixer::kRoll + a, k) * abs(v[k]);
+      }
+      const T bound = (gamma + eps) * sum;
+      const T diff = requested[a] - al.achieved_torque[a];
+      const bool same_sign = (e_[a] > T(0) && diff > T(0)) || (e_[a] < T(0) && diff < T(0));
+      freeze_[a] = flag[a] && abs(diff) > bound && same_sign;
+    }
+  }
+
+  [[nodiscard]] const prim::Vec3<T>& integrator() const noexcept { return integral_; }
+  [[nodiscard]] bool fault_latched() const noexcept { return latched_; }
+  [[nodiscard]] std::uint32_t fault_count() const noexcept { return count_; }
+
+ private:
+  template <bool kPrefilter>
+  [[nodiscard]] RateOutput<T> step(const ImuSample& imu, const prim::Vec3<T>& setpoint) noexcept {
     using std::exp;
     using std::isfinite;
     std::uint64_t dt_us = 0;
@@ -187,8 +231,12 @@ class RateLoop {
     } else {
       const T dt = static_cast<T>(dt_us) / static_cast<T>(prim::kMicrosecondsPerSecond);
       for (std::size_t a = 0; a < kTorqueAxes; ++a) {
-        const T alpha = T(1) - exp(-dt / cfg_.tau_ref[a]);
-        r_[a] = r_[a] + alpha * (setpoint[a] - r_[a]);
+        if constexpr (kPrefilter) {
+          const T alpha = T(1) - exp(-dt / cfg_.tau_ref[a]);
+          r_[a] = r_[a] + alpha * (setpoint[a] - r_[a]);
+        } else {
+          r_[a] = setpoint[a];
+        }
         const T e = r_[a] - y[a];
         if (!freeze_[a]) {
           integral_[a] = integral_[a] + cfg_.ki[a] * e_[a] * dt;
@@ -208,37 +256,6 @@ class RateLoop {
     return RateOutput<T>{u, false, latched_, count_};
   }
 
-  // Records the freeze that gates the next execution's integrator increment. `requested` is the torque passed to
-  // the mixer, `al` the mixer's allocation of it. For each axis
-  //   freeze = flag  and  |req - ach| > b  and  e_n (req - ach) > 0,
-  //   b = (gamma_n + eps) (|B-hat| |M-hat| |v|)_axis, v = [achieved_thrust, achieved_torque], n = kMotors, eps = the
-  //   scalar epsilon (the rounding bound of decision 0004 item 2), so a flag set with achieved == requested
-  //   (rounding in the allocation) does not freeze.
-  void record_allocation(const prim::Vec3<T>& requested, const mixer::Allocation<T>& al) noexcept {
-    using std::abs;
-    const std::array<T, kAxes> v{al.achieved_thrust, al.achieved_torque[0], al.achieved_torque[1],
-                                 al.achieved_torque[2]};
-    const std::array<bool, kTorqueAxes> flag{al.flags.roll, al.flags.pitch, al.flags.yaw};
-    const T eps = std::numeric_limits<T>::epsilon();
-    const T n_eps = static_cast<T>(kMotors) * eps;
-    const T gamma = n_eps / (T(1) - n_eps);
-    for (std::size_t a = 0; a < kTorqueAxes; ++a) {
-      T sum = T(0);
-      for (std::size_t k = 0; k < kAxes; ++k) {
-        sum += abs_bm_(mixer::kRoll + a, k) * abs(v[k]);
-      }
-      const T bound = (gamma + eps) * sum;
-      const T diff = requested[a] - al.achieved_torque[a];
-      const bool same_sign = (e_[a] > T(0) && diff > T(0)) || (e_[a] < T(0) && diff < T(0));
-      freeze_[a] = flag[a] && abs(diff) > bound && same_sign;
-    }
-  }
-
-  [[nodiscard]] const prim::Vec3<T>& integrator() const noexcept { return integral_; }
-  [[nodiscard]] bool fault_latched() const noexcept { return latched_; }
-  [[nodiscard]] std::uint32_t fault_count() const noexcept { return count_; }
-
- private:
   void reset_state() noexcept {
     r_ = prim::Vec3<T>();
     e_ = prim::Vec3<T>();
