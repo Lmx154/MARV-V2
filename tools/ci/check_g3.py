@@ -16,7 +16,10 @@ never be skipped silently.
             (-include, -imacros) may lie inside fw/sil, fw/hal/sim, sim/ or tests/; the INTERFACE_INCLUDE_DIRECTORIES
             and INTERFACE_SYSTEM_INCLUDE_DIRECTORIES of every INTERFACE library are held to the same rule, consumed
             or not
-  exports   nm -D --defined-only over every SIL shared library: only marv_sil_* symbols
+  exports   nm -D --defined-only over every SIL shared library. A library whose manifest entry has "truth_state" absent
+            or false (every product library) exports only marv_sil_* symbols. A library with "truth_state": true (built
+            with marv_add_sil_library TRUTH_STATE, test only) exports marv_sil_* symbols and exactly marv_truth_state_set,
+            and must export marv_truth_state_set: a flag without the export is a G3-ERROR
 
 Exit status: 0 clean, 1 violations, 2 vacuous run (nothing to check) or tool failure. Diagnostics start with
 G3-SYMBOL, G3-INCLUDE or G3-EXPORT; a vacuous or failed run prints G3-VACUOUS or G3-ERROR.
@@ -44,6 +47,7 @@ LINKED_TYPES = ("STATIC_LIBRARY", "SHARED_LIBRARY", "MODULE_LIBRARY", "EXECUTABL
 OBJECT_TYPE = "OBJECT_LIBRARY"
 INTERFACE_TYPE = "INTERFACE_LIBRARY"
 SIL_EXPORT = re.compile(r"^marv_sil_[A-Za-z0-9_]+$")
+TRUTH_EXPORT = "marv_truth_state_set"
 
 _NM_SYMBOL = re.compile(r"^(?:[0-9A-Fa-f]+|\s*)\s([A-Za-z?-])\s(.+)$")
 _NM_MEMBER = re.compile(r"^(.+):$")
@@ -95,6 +99,11 @@ def find_forbidden_symbols(symbols: list[tuple[str, str, str]]) -> list[tuple[st
 
 def non_sil_exports(symbols: list[tuple[str, str, str]]) -> list[str]:
     return [name for _, _, name in symbols if not SIL_EXPORT.match(name)]
+
+
+def non_truth_exports(symbols: list[tuple[str, str, str]]) -> list[str]:
+    """Exports of a truth_state library that are neither marv_sil_* nor marv_truth_state_set."""
+    return [name for _, _, name in symbols if not SIL_EXPORT.match(name) and name != TRUTH_EXPORT]
 
 
 def _option_values(args: list[str], options: tuple[str, ...]) -> list[str]:
@@ -309,9 +318,21 @@ def check_exports(manifest: dict, nm: str) -> int:
         symbols = run_nm(nm, ["-D", "--defined-only"], lib["file"])
         if not symbols:
             raise G3Vacuous(f"{lib['file']} exports no symbols: the export check would be vacuous")
-        for name in non_sil_exports(symbols):
-            violations += 1
-            print(f"G3-EXPORT {lib['name']} ({lib['file']}): exports '{name}', which is not marv_sil_*")
+        truth_state = lib.get("truth_state", False)
+        if not isinstance(truth_state, bool):
+            raise G3Error(f"SIL library {lib['name']}: 'truth_state' is {truth_state!r}, not a boolean")
+        if truth_state:
+            if TRUTH_EXPORT not in [name for _, _, name in symbols]:
+                raise G3Error(f"SIL library {lib['name']} ({lib['file']}) is flagged truth_state but does not export "
+                              f"{TRUTH_EXPORT}")
+            for name in non_truth_exports(symbols):
+                violations += 1
+                print(f"G3-EXPORT {lib['name']} ({lib['file']}): exports '{name}', which is neither marv_sil_* "
+                      f"nor {TRUTH_EXPORT}")
+        else:
+            for name in non_sil_exports(symbols):
+                violations += 1
+                print(f"G3-EXPORT {lib['name']} ({lib['file']}): exports '{name}', which is not marv_sil_*")
         print(f"G3 exports: {lib['name']} exports {len(symbols)} symbols")
     print(f"G3 exports: {len(libraries)} SIL libraries, {violations} violations")
     return 1 if violations else 0
