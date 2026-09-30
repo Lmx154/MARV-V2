@@ -83,7 +83,7 @@ script:
       value: 11.4640005670909
       unit: rad/s
       label: derived
-      rule: "decision 0006 F 'T4 attitude chirp': A = tau_held,roll / max over the band and the tau x J box of G_tau, G_tau the design model's peak torque request per rad/s of a steady sinusoid added to the rate setpoint, in closed loop with the attitude law at the build's gain and N (tools/sim/run_l5.py chirp_design, steady_torque_peak): tau_held,roll = 0.7429951116877419 N m, max G_tau = 0.06481115447783722 N m per rad/s at 6.077957762793079 rad/s (J+,tau+); the test re-derives it from the live build"
+      rule: "decision 0006 F 'T4 attitude chirp': A = tau_held,roll / max over the band and the tau x J box of G_tau, G_tau the design model's peak torque request per rad/s of a steady sinusoid added to the rate setpoint, in closed loop with the attitude law at the build's gain and N (tools/sim/run_l5.py chirp_design, steady_torque_peak): tau_held,roll = 0.7429951116877419 N m, max G_tau = 0.06481115447783722 N m per rad/s at 6.077957762793079 rad/s (J+,tau+); this is A_env, the torque-envelope amplitude: at A_env the vehicle tumbles (peak attitude error 2, no crossover), so owner decision 20 has the test run A_env/2^k, k = 1..5, and take the margin as the minimum PM over those that give a unique crossover and U_A as their spread (run_l5.u_terms); the test re-derives A_env from the live build"
     w_lo_rad_s:
       value: 1.4393843256287513
       unit: rad/s

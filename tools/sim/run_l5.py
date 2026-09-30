@@ -307,10 +307,12 @@ def run_step(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, overr
         doc_edit(doc)
     _, defaults = build_parameters(plugin_dir)
     params = l4.read_param_defaults(defaults)
+    harness = dict(overrides or {})
+    if "att_loop_ratio" in harness:
+        params["att_loop_ratio"] = int(harness["att_loop_ratio"][1])
     p = plan(doc, params, card, root)
     if m not in p.m_sequence:
         raise PlanError([f"m = {m} is not in the scenario's m_sequence {list(p.m_sequence)}"])
-    harness = dict(overrides or {})
     applied = p.overrides()
     twice = sorted(set(applied) & set(harness))
     if twice:
@@ -572,22 +574,44 @@ def flown_gain(params, overrides, axis):
 
 
 def run_chirp(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, amp_scale=1.0, halved=False, overrides=None,
-              extra_edit=None, seed=None, root=ROOT, timeout_s=run_scenario.TIMEOUT_S):
+              extra_edit=None, seed=None, root=ROOT, timeout_s=run_scenario.TIMEOUT_S, design_u=None):
     """One gz process of an L5 chirp scenario at m ticks per host step (run_step), with the amplitude scaled by amp_scale in
-    (0, 1] and the duration halved when `halved`; extracts the window's y and d. `overrides` are harness sil_overrides."""
+    (0, 1] and the duration halved when `halved`; extracts the window's y and d. `overrides` are harness sil_overrides.
+
+    `design_u`, a SIM-7 uncertainty file (attitude.read_u), runs the chirp at the loop rate that file gives WITHOUT regenerating
+    the product: attitude.design() on that U gives N and k (f32); the run flies att_loop_ratio = N and att_kp = k through
+    sil_override, and the chirp's amplitude, band and window are the design's at that N (chirp_design; the window is the
+    scenario's (duration + tail) in seconds, re-counted in attitude periods)."""
     if not 0 < amp_scale <= 1:
         raise PlanError([f"amp_scale {amp_scale!r} is not in (0, 1]"])
-    c = l5s.values(l5s.load(scenario))["script"]["chirp"]
+    vals = l5s.values(l5s.load(scenario))
+    c = vals["script"]["chirp"]
+    _, defaults = build_parameters(plugin_dir)
+    params = l4.read_param_defaults(defaults)
+    eff, harness, amp0, band, end = dict(params), dict(overrides or {}), c["amp_rad_s"], None, None
+    if design_u is not None:
+        res = attitude_design(str(card), str(root), str(design_u))
+        eff.update(att_loop_ratio=res["N"], att_kp=res["k32"])
+        harness.update({"att_loop_ratio": (I32, str(res["N"])), "att_kp": (F32, repr(res["k32"]))})
+        design = chirp_design(card, eff, l4.r32(l4.hover_thrust(card, vals, root)), root, str(design_u))
+        amp0, band = design["axes"][c["axis"]]["amplitude_rad_s"], design["band"]
+        old = params["att_loop_ratio"] * vals["script"]["end_attitude_execution"]
+        if old % res["N"]:
+            raise PlanError([f"the scenario's window of {old} rate-period units is not a whole number of attitude "
+                             f"periods at N = {res['N']}"])
+        end = old // res["N"]
     doc_edit = None
-    if amp_scale != 1 or halved:
+    if amp_scale != 1 or halved or design_u is not None:
         def doc_edit(doc):
             ch = doc["script"]["chirp"]
-            ch["amp_rad_s"]["value"] = l4.r32(l4.r32(c["amp_rad_s"]) * amp_scale)
+            ch["amp_rad_s"]["value"] = l4.r32(l4.r32(amp0) * amp_scale)
             ch["duration_s"]["value"] = c["duration_s"] / 2 if halved else c["duration_s"]
-    s = run_step(card, scenario, m, out_dir, plugin_dir, overrides=overrides, extra_edit=extra_edit, seed=seed, root=root,
+            if band:
+                ch["w_lo_rad_s"]["value"], ch["w_hi_rad_s"]["value"] = band
+                doc["script"]["end_attitude_execution"]["value"] = end
+    s = run_step(card, scenario, m, out_dir, plugin_dir, overrides=harness, extra_edit=extra_edit, seed=seed, root=root,
                  timeout_s=timeout_s, doc_edit=doc_edit)
     p = s.plan
-    params = l4.read_param_defaults(s.params_path)
     idx = l5s.AXES.index(c["axis"])
     ch = p.chirp
     amp, w_lo, w_hi = (l4.r32(ch[key]) for key in ("amp_rad_s", "w_lo_rad_s", "w_hi_rad_s"))
@@ -603,8 +627,37 @@ def run_chirp(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, amp_
     d = [l4.chirp_value(t, amp, w_lo, w_hi, ch["t0_us"], ch["dur_us"]) for t in stamps]
     return ChirpRun(step=s, axis=c["axis"], axis_index=idx, amp=amp, w_lo=w_lo, w_hi=w_hi, t0_us=ch["t0_us"],
                     dur_us=ch["dur_us"], k=flown_gain(params, s.overrides, c["axis"]),
-                    design=chirp_design(card, params, p.thrust_n, root), stamps=stamps, y=y, d=d,
-                    dshot_end_executions=ends)
+                    design=chirp_design(card, eff, p.thrust_n, root, str(design_u) if design_u is not None else None),
+                    stamps=stamps, y=y, d=d, dshot_end_executions=ends)
+
+
+# ---- the margin and U of a chirp axis (owner decision 20) --------------------------------------------------------------
+#
+# Yaw (and the L4 rule): PM is the (m = 1, A) run's, E_H = |PM(m = 1) - PM(m = 2)|, U_A = |PM(A) - PM(A/2)|.
+# Roll and pitch (owner decision 20: the torque-envelope amplitude A_env leaves the linear regime, peak attitude error 2 at
+# A_env): runs k = 1..5 at m = 1 and amplitude A_env / 2^k; PM = the minimum over the k that give a unique crossover, U_A =
+# max - min of the PM over those k (the plateau's spread), E_H = |PM - PM(m = 2)| of the run at the minimum's k and amplitude,
+# U_d that of that run. U = E_H + U_A + U_d on every axis.
+PLATEAU_K = tuple(range(1, 6))
+ROLL_PITCH = ("roll", "pitch")
+
+
+def plateau_name(k):
+    return f"k{k}"
+
+
+def u_terms(axis, pm):
+    """{"margin_run", "pm", "E_H", "U_A"} (rad) from `pm`, run name -> PM (rad) or None (no unique crossover): yaw's runs are
+    m1, m2, half_amplitude; roll and pitch's are k1 .. k5 (m = 1) and m2 (m = 2, at the minimum's amplitude)."""
+    if axis not in ROLL_PITCH:
+        return {"margin_run": "m1", "pm": pm["m1"], "E_H": abs(pm["m1"] - pm["m2"]),
+                "U_A": abs(pm["m1"] - pm["half_amplitude"])}
+    plateau = {plateau_name(k): pm[plateau_name(k)] for k in PLATEAU_K if pm.get(plateau_name(k)) is not None}
+    if len(plateau) < 2:
+        raise PlanError([f"{axis}: {len(plateau)} of the amplitudes A_env/2^k give a unique crossover, the plateau needs two"])
+    low = min(plateau, key=plateau.get)
+    return {"margin_run": low, "pm": plateau[low], "E_H": abs(plateau[low] - pm["m2"]),
+            "U_A": max(plateau.values()) - plateau[low]}
 
 
 def chirp_margin(s):
