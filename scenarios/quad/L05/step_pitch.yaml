@@ -1,0 +1,96 @@
+# Quad L5 scenario 'step_pitch' (docs/spec/10-quad-flight-software.md section 4 L5, T4; docs/decisions/0006 F "T4 angle-mode steps").
+# A full-stick pitch segment from level and its release, flown by the l5_attitude_scripted composition (angle mode, the
+# attitude law, the rate loop in bypass) on truth gyro and truth attitude: a truth-fed, perfect-model run, not a
+# validation run (core section 6). The stick segments are in attitude executions counted from the origin execution
+# (the T3 oracle's seed execution a = 0, tests/regression/quad/L05/t3/reference/attitude_t3_oracle.py); the origin itself
+# is the first attitude execution at or after settle_s that keeps the stamp phase (tools/sim/run_l5.py). Schema and
+# checks: tools/sim/l5_scenario.py. Every number is a labelled scenario value or a derived value. Frames NED / FRD, SI.
+scenario: step_pitch
+site_latitude_rad:
+  value: 0.82
+  unit: rad
+  label: scenario
+  rationale: "the L2 hover site (scenarios/quad/L02/hover.yaml): mid-latitude, so the latitude term of g is exercised"
+site_height_m:
+  value: 500.0
+  unit: m
+  label: scenario
+  rationale: "the L2 hover site height (scenarios/quad/L02/hover.yaml); a plausible flying site height, not vehicle data"
+seed:
+  value: 1
+  unit: "1"
+  label: scenario
+  rationale: "RESERVED at v0: marv_plant v0 and the composition draw no random numbers, so the value has no effect; it completes the run identity (firmware, card, scenario, seed)"
+tick_period_num_us:
+  value: 625
+  unit: us
+  label: derived
+  rule: "design/scenario_values.yaml tick_period_num_us; the rate loop checks each execution's spacing against the period built from it, so the runner refuses a world tick that differs from the build's"
+tick_period_den:
+  value: 4
+  unit: "1"
+  label: derived
+  rule: "design/scenario_values.yaml tick_period_den, as tick_period_num_us"
+m_sequence:
+  value: [2, 1]
+  unit: "1"
+  label: derived
+  rule: "decision 0005 'T4 envelope widening' as at L4: E = |y(m=1) - y(m=2)|; both divide the attitude divisor (decision 0006 B, Runner), so every attitude sample is fresh"
+initial_state:
+  position_ned_m:
+    value: [0.0, 0.0, 0.0]
+    unit: m
+    label: scenario
+    rationale: "the NED origin, the site itself; the generated world has no ground and no contact"
+  attitude_q_wxyz:
+    value: [1.0, 0.0, 0.0, 0.0]
+    unit: "1"
+    label: scenario
+    rationale: "level, the identity quaternion (canonical sign w >= 0)"
+  velocity_ned_m_s:
+    value: [1.0, 0.0, 0.0]
+    unit: m/s
+    label: scenario
+    rationale: "every host step (at least one tick, 156.25 us) moves the link 1.5625e-4 m north, 156 times the 1e-6 pose change below which gz-sim 8 leaves a read stale (docs/decisions/0003 item 11), so every read is fresh (INFERRED; fresh_steps / stale_report show it per run and the test fails on a stale read in the window); marv_plant v0 has no drag or position-dependent torque and g depends on height only, so the translation does not act on the rotation"
+  body_rates_frd_rad_s:
+    value: [0.0, 0.0, 0.0]
+    unit: rad/s
+    label: scenario
+    rationale: "starts at rest: the T3 envelope is the design-model response from level and at rest"
+thrust:
+  value: hover
+  unit: "1"
+  label: derived
+  rule: "the collective request is the float32 of m g(phi, h0), the card's mass and tools/sim/hover.py normal_gravity (tools/sim/run_l4.py hover_thrust), as at L4"
+script:
+  settle_s:
+    value: 1.0
+    unit: s
+    label: scenario
+    rationale: "as L4 step_roll: the motors spin up from rest and the step must start at the design model's operating point; 1 s is 30.3 motor time constants of the card's tau = 0.033 s, a rotor speed deficit of 7e-14 of hover speed"
+  segments:
+    - start_attitude_execution:
+        value: 1
+        unit: "1"
+        label: derived
+        rule: "the T3 oracle's a_s = 1: the stick is 1 from attitude execution 1, execution 0 (the origin) is its seed execution with sticks 0 (attitude_t3_oracle.py docstring)"
+      stick:
+        value: [0.0, 1.0, 0.0]
+        unit: "1"
+        label: scenario
+        rationale: "full pitch stick, the T3 step_pitch script; positive s_pitch pitches nose up (l5_script.hpp); the other sticks are 0 (one axis per scenario)"
+    - start_attitude_execution:
+        value: 10373
+        unit: "1"
+        label: derived
+        rule: "release_execution of step_pitch in tests/regression/quad/L05/t3/reference/attitude_t3_envelope.txt: a_r = 1 + H, H = 10372 attitude executions (segment_seconds 6.482014255070564 s, ten attitude time constants 1/att_kp doubled once until every envelope end value is below F)"
+      stick:
+        value: [0.0, 0.0, 0.0]
+        unit: "1"
+        label: scenario
+        rationale: "the release: all sticks 0, angle mode returns the tilt to level"
+  end_attitude_execution:
+    value: 20744
+    unit: "1"
+    label: derived
+    rule: "1 + 2 H of the recorded envelope (attitude_t3_envelope.txt channel theta, count 20745 executions 0..20744): the run ends with the envelope"
