@@ -69,7 +69,11 @@ AXES = rate.AXES
 STATE_N = 5
 THETA = 2
 OTHER = (0, 1, 3, 4)
+# Method constant of the SIM-7 scan (decision 0006 E): the largest exponent i tried for N = 2^i before the scan is
+# refused. It sets termination only, not the result.
 MAX_I = 30
+# Method constant of the phase-branch check (rad): the coarse and doubled grids must agree to this. A branch error is a
+# multiple of 2*pi and double rounding of the phase is ~1e-15, so any value far between the two gives the same verdict.
 PHASE_AGREE = 1e-9
 # Method constant of the release-braking scan (decision 0006 owner decision 18): the most attitude executions stepped
 # before a corner is declared to have no zero crossing. It sets termination only, not the result.
