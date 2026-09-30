@@ -20,18 +20,24 @@ relative to the lock is psi(n) - psi(0), psi = atan2(2 (w z + x y), 1 - 2 (y^2 +
 the seed execution, where the sticks are 0). The stepped axis's component is compared with the envelope; the other tilt
 component and the heading relative to the lock have the envelope 0 (a pure single-axis script).
 
-Predicate (decision 0006 F). E_c(n) = |y_c,1(n) - y_c,2(n)| (m = 1 against m = 2), F the recorded T3 tolerance term of the
-script's header line (T3 tolerance + the envelope's last-halving change + the kinematics halving change). PASS iff every run
-is clean (complete trailer, a TRUTH record for every tick, no stale host step in the window) and every DShot of every tick
-lies within [idle, 2047], and at every attitude execution n = 0 .. 2 H and for each of the three components c:
-    lo_c(n) - (E_c(n) + F) <= y_c,1(n) <= hi_c(n) + (E_c(n) + F).
+Predicate (decision 0006 F; owner decision 19). E_c(n) = |y_c,1(n) - y_c,2(n)| (m = 1 against m = 2), F the recorded T3
+tolerance term of the script's header line (T3 tolerance + the envelope's last-halving change + the kinematics halving
+change), Q_c the recorded DShot quantisation term of the script's `theta` channel (tests/regression/quad/L05/t3/reference/
+attitude_t3_q.txt, rule in t3/README.md "The quantisation term Q") for the stepped component and 0 for the other two (the
+quantised design model is single-axis: it carries no off-axis torque of the rounding, so it gives no Q for them). PASS iff
+every run is clean (complete trailer, a TRUTH record for every tick, no stale host step in the window) and every DShot of
+every tick lies within [idle, 2047], and at every attitude execution n = 0 .. 2 H and for each of the three components c:
+    lo_c(n) - (E_c(n) + F + Q_c) <= y_c,1(n) <= hi_c(n) + (E_c(n) + F + Q_c).
 Altitude drift is allowed (0005 decision 9; the world has no ground plane).
 
 Negative controls, harness only (0003 item 9). Each passes only if the check fails:
   (a) att_kp = 0 through sil_override: the metric control of core 7.2; the predicate fails, with no stale read;
   (b) alignment: the exact alignment check with the origin execution one earlier or later fails (the segment stamps lie
       outside the allowed interval). With F about the size of one attitude execution's change of theta at its steepest, the
-      predicate alone does not detect a one-execution shift; the exact check does, as at L4.
+      predicate alone does not detect a one-execution shift; the exact check does, as at L4;
+  (c) att_kp x 1.1 through sil_override (f32(att_kp f32(1.1)), as t3_test.cpp scales it): the spec's fine gain control,
+      which fails the predicate widened by Q (owner decision 19; measured in tests/regression/quad/L05/results/
+      step_controls/). The fine delay control does not fail it and is enforced at T3 only (same record).
 """
 
 import dataclasses
@@ -53,6 +59,7 @@ SCEN = ROOT / "scenarios" / "quad" / "L05"
 PLUGIN_DIR = run_l5.DEFAULT_PLUGIN_DIR
 T3_REFERENCE = ROOT / "tests" / "regression" / "quad" / "L05" / "t3" / "reference"
 AXES = ("roll", "pitch")
+GAIN_SCALE = 1.1  # scenario test value: control (c), the spec's fine gain control (t3_test.cpp kGainScale)
 AXIS_INDEX = {"roll": 0, "pitch": 1}
 SHIFTS = (-1, 1)
 GYRO_VALID_BIT = 6  # marv_sil.h MARV_IMU_GYRO_VALID: the enum position of GyroValid
@@ -70,6 +77,7 @@ class Envelope:
     hi: list
     F: float  # T3 tolerance + last-halving change + kinematics halving change (the header's settle line)
     halving: float
+    Q: float  # the DShot quantisation term of the script's theta channel (attitude_t3_q.txt)
 
 
 def parse_envelope(path, scenario):
@@ -84,7 +92,19 @@ def parse_envelope(path, scenario):
     assert text[i + 1] == "min_max"
     rows = [tuple(map(float, ln.split())) for ln in text[i + 2:i + 2 + count]]
     assert len(rows) == count and all(len(r) == 2 for r in rows)
-    return Envelope(scenario, first, count, [r[0] for r in rows], [r[1] for r in rows], F, halving)
+    return Envelope(scenario, first, count, [r[0] for r in rows], [r[1] for r in rows], F, halving,
+                    parse_q(T3_REFERENCE / "attitude_t3_q.txt", scenario, "theta"))
+
+
+def parse_q(path, scenario, channel):
+    """q of `channel` of `scenario` in the recorded quantisation term file (its `channel <name> q <value> ...` line)."""
+    text = Path(path).read_text(encoding="utf-8").splitlines()
+    start = text.index(f"scenario {scenario}")
+    block = next((text[start + 1:start + 1 + k] for k, ln in enumerate(text[start + 1:]) if ln.startswith("scenario ")),
+                 text[start + 1:])
+    found = [float(ln.split()[3]) for ln in block if ln.startswith(f"channel {channel} q ")]
+    assert len(found) == 1, f"{path}: {len(found)} q lines for {scenario} {channel}"
+    return found[0]
 
 
 def recorded_inputs():
@@ -148,7 +168,7 @@ def evaluate(runs, env, axis, shift=0):
             y = y1[n][ci]
             e = abs(y - y2[n][ci])
             out = max(lo - y, y - hi)
-            slack = out - (e + env.F)
+            slack = out - (e + env.F + (env.Q if ci == k else 0.0))
             st = stats[c]
             st["violations"] += slack > 0
             st["max_out"], st["max_E"] = max(st["max_out"], out), max(st["max_E"], e)
@@ -157,7 +177,8 @@ def evaluate(runs, env, axis, shift=0):
     violations = sum(st["violations"] for st in stats.values())
     stale = {f"m{s.run.m}": len(s.window_stale) for s in runs}
     return {"passed": violations == 0 and not any(stale.values()), "shift": shift, "violations": violations,
-            "stale_reads_in_window": stale, "F": env.F, "halving": env.halving, "N": env.count, "components": stats,
+            "stale_reads_in_window": stale, "F": env.F, "Q": env.Q, "halving": env.halving, "N": env.count,
+            "components": stats,
             "worst": worst}
 
 
@@ -194,6 +215,7 @@ def verdict_line(axis, label, ev, wall):
                       for k in COMPONENTS)
     w = ev["worst"][axis]
     return (f"{axis:<5} {label:<14} {'PASS' if ev['passed'] else 'FAIL'}  F {ev['F']:.6e} (halving {ev['halving']:.6e}), "
+            f"Q {ev['Q']:.6e}, "
             f"{parts}; worst {axis} n {w['n']} (outside {w['outside']:+.3e}, E {w['E']:.3e}, slack {w['slack']:+.6e}), "
             f"violations {ev['violations']}, stale {ev['stale_reads_in_window']}, N {ev['N']}, gz wall {wall:.2f} s")
 
@@ -242,6 +264,12 @@ def step(tmp_path_factory, axis, envelope):
 @pytest.fixture(scope="module")
 def kp_zero(tmp_path_factory, axis, envelope):
     return fly(tmp_path_factory, f"step_{axis}_kp_zero", axis, envelope, {"att_kp": (run_l5.F32, "0.0")})
+
+
+@pytest.fixture(scope="module")
+def att_gain_up(tmp_path_factory, axis, envelope, live_params):
+    k = run_l5.l4.r32(live_params["att_kp"] * run_l5.l4.r32(GAIN_SCALE))
+    return fly(tmp_path_factory, f"step_{axis}_att_gain_up", axis, envelope, {"att_kp": (run_l5.F32, repr(k))})
 
 
 # ---- the pass bar ---------------------------------------------------------------------------------------------------
@@ -302,6 +330,19 @@ def test_control_att_kp_zero_fails_the_predicate(kp_zero, axis, capsys):
     for s in kp_zero.runs:
         assert s.harness_overrides == {"att_kp": ("f32", "0.0")}
         assert '<sil_override param="att_kp" type="f32">0.0</sil_override>' in Path(s.run.world_path).read_text()
+        assert run_scenario.complete_trailer(s.run.log, s.run.iterations, s.run.m)
+        assert s.window_stale == [], "the control must fail on the envelope, not on a stale read"
+    assert not ev["passed"] and ev["violations"] > 0, ev
+
+
+def test_control_att_kp_times_1_1_fails_the_predicate(att_gain_up, axis, live_params, capsys):
+    ev = att_gain_up.evaluation
+    _say(capsys, verdict_line(axis, "control kp x1.1", ev, att_gain_up.wall_s))
+    k = run_l5.l4.r32(live_params["att_kp"] * run_l5.l4.r32(GAIN_SCALE))
+    assert k != live_params["att_kp"]
+    for s in att_gain_up.runs:
+        assert s.harness_overrides == {"att_kp": ("f32", repr(k))}
+        assert f'<sil_override param="att_kp" type="f32">{k!r}</sil_override>' in Path(s.run.world_path).read_text()
         assert run_scenario.complete_trailer(s.run.log, s.run.iterations, s.run.m)
         assert s.window_stale == [], "the control must fail on the envelope, not on a stale read"
     assert not ev["passed"] and ev["violations"] > 0, ev
