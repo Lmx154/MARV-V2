@@ -39,7 +39,8 @@ So the first L6 actions, in order: bring Luis the T3-reference storage proposal 
 
 Both are the same cause class and have the same gating. **L6 cannot pass until both pass, and both must pass before L8
 (pilot in the loop).** Each is a strict pytest xfail (`raises=AssertionError`, strict) whose condition is
-"`tests/regression/quad/L06/` does not exist": once any L06 directory exists it becomes a normal test and must pass;
+"`tests/regression/quad/L06/XFAIL_GATE_CLOSED` does not exist" (decision 0009; L6 stage (e) creates it): from then
+on it is a normal test and must pass;
 an unexpected pass fails CI. Do not re-seed envelopes from wound-up state and do not tune bounds (0005 decision 12,
 0006 decisions 5 and 15).
 

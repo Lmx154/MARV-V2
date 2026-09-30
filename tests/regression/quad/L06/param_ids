@@ -1,0 +1,9 @@
+# Product-set parameter ids added by quad L6 (decision 0004 manifest rule; decision 0009).
+# Design-budget entries (design/budget.yaml), flattened by flatten.py like every numeric register entry.
+Ms_max
+d_path_noise_budget
+t4_pass_probability_tracking
+t4_confidence_tracking
+t4_pass_probability_safety
+t4_confidence_safety
+allan_check_confidence

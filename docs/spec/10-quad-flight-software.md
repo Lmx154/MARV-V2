@@ -238,20 +238,67 @@ of freezing: core §7.2–7.3.
   still green.
 - **Freezes:** the new tests.
 
-### L6 — Sensor models and the gyro chain
+### L6 — Sensor models, the gyro chain and the D term
 
-- **Builds:** `marv_plant`'s generic IMU class model driven by the profile (white noise, bias random walk,
-  quantization, saturation, rate, latency, ODR error); the firmware's gyro chain (low-pass, eRPM-tracking notches,
-  QF-7).
-- **Opening:** the IMU sample struct, now noisy; filtered rates to L4.
+- **Builds:**
+  - `marv_plant`'s generic IMU class model driven by the profile (white noise, bias random walk, quantization,
+    saturation, rate, latency, ODR error), drawing from seeded streams, one per sensor (core §5). Profile entries the
+    datasheet does not give are labelled scenario values until Luis's still-bench dataset replaces them (decision
+    0009).
+  - `marv_plant`'s rotor vibration at 1×, 2× and 3× each rotor's frequency (§6.3.1). No published log resolves the
+    harmonics yet, so the amplitude is swept as a robustness dimension and flagged unsourced.
+  - The plant's eRPM to the firmware through `hal_sim`.
+  - The firmware's gyro chain: low-pass, and eRPM-tracking notches at the harmonics the vibration model includes
+    (QF-7).
+  - The rate loop's D term: derivative of the measurement, taken on the chain's output through a first-order D
+    low-pass. Gains come from the loop-shaping rule extended to PI × lead. The lead ratio is bounded by
+    `d_path_noise_budget` and the sensitivity peak by `Ms_max`. The attitude gains regenerate on the new closed rate
+    loop.
+  - ω×Jω feed-forward, from the filtered measured rate and the card's J, evaluated on the design model. It is built if
+    the evaluation shows the L4 acro and L5 R2 checks need it.
+  - DShot error diffusion in L3's thrust → DShot conversion, with its own decision record.
+- **Opening:** the IMU sample struct, now noisy; eRPM to the gyro chain; filtered rates to L4.
+- **Stages.** Built and closed in order. Each stage has its own decision round and freezes its lines of the pass bar
+  when it closes:
+  - (a) sensor noise model;
+  - (b) gyro chain;
+  - (c) D term and ω×Jω;
+  - (d) DShot error diffusion;
+  - (e) close.
+
+  The L4 acro and L5 R2 known failing items stay strict xfails until stage (e) creates
+  `tests/regression/quad/L06/XFAIL_GATE_CLOSED` (decision 0009).
 - **Pass bar:**
-  - T1: the simulated IMU's Allan variance matches the profile's noise density and bias instability within the
-    statistical bound for the record length.
-  - T1: each filter's frequency response matches its design formula.
-  - T3: the chain's group delay at crossover is added to the loop delay, and QF-3 still holds.
-  - T4: L4 and L5 scenarios rerun with noise and filters; they still meet QF-2 and QF-3.
-- **Freezes:** all of the above. **This is where "sluggish" gets explained instead of guessed at:** every source of
-  phase lag is now measured.
+  - (a) T1: the simulated IMU's Allan deviation matches the profile's noise density and bias instability.
+    - The bound is the Allan-deviation confidence interval for the record length (chi-square with the overlapping
+      Allan variance's equivalent degrees of freedom: NIST SP 1065, §5.3.2 eq. 45 and §5.4.1 Table 5) at
+      `allan_check_confidence`.
+    - The record length is the shortest at which noise density × 1.1 and bias instability × 1.1 each fall outside
+      the bound. Those two perturbations are the negative controls.
+  - (a) T1: SIM-2 with noise. The same seed gives a bit-identical run; distinct streams are independent. The
+    adapter's sensor bytes equal a direct `marv_plant` call.
+  - (b) T1: each filter's frequency response matches its design formula, and the notches track eRPM across the
+    vibration sweep.
+  - (b, c) T3: the chain's group delay at crossover and the D low-pass are in the design model's loop delay. QF-3
+    (`PM_min` and `Ms_max`) holds over the band box.
+  - (c) T3: at hover, with the profile's noise, the D path's RMS contribution to each motor's command is at most
+    `d_path_noise_budget` × the hover DShot step's thrust.
+  - (c) T3: the L4 and L5 T3 goldens regenerate with the D term; their controls (gains × 1.1, one tick of added
+    delay) still break them.
+  - (c) T3: the ω×Jω evaluation, run on the design model with ω×Jω in the plant, with the result recorded.
+  - (d) T1: the diffusion's carried error stays within one DShot step; the mean applied command over a window matches
+    the request within the stated bound; the L03 suite stays green.
+  - (e) T3, Monte Carlo over noise seeds: each L4 and L5 scenario meets its predicate for every seed.
+    - The seed count is N = ⌈ln(1 − c)/ln p⌉ (Wilks 1941), with p the scenario class's `t4_pass_probability_*` and
+      c its `t4_confidence_*`. Recoveries and acro coupling are the safety class; steps, chirps and the other
+      scenarios are the tracking class. The seeds are 1…N, committed.
+    - Envelopes carry a noise term, derived by propagating the noise model through the design model at quantile p.
+  - (e) T4: the L4 and L5 scenarios rerun with noise and filters and still meet QF-2 and QF-3.
+    - Per push: every scenario at its committed seed.
+    - Nightly and before the tag: the confirmation seeds.
+    - Both known failing items pass.
+- **Freezes:** each stage's lines when that stage closes. **This is where "sluggish" gets explained instead of
+  guessed at:** every source of phase lag is now measured.
 
 ### L7 — Attitude estimator: shadow, then authority
 
@@ -433,11 +480,11 @@ card, the sensor profile and the budget register, and prints the derivation besi
 | --- | --- | --- |
 | QF-1 | Stick → body-rate setpoint through a rates curve (centre sensitivity, maximum rate, expo). | Pilot preference (scenario value), bounded by QF-2. |
 | QF-2 | The response to a full-stick step follows a reference model (first order, τ_ref per axis). | τ_ref ≥ the achievable closed-loop time constant for the identified motor lag and loop delay, and ≥ ω_max / α_max, with α_max = τ_max/J (roll/pitch: thrust margin × arm; yaw: rotor torque). |
-| QF-3 | Stability margins ≥ design margins. | Phase margin ≥ `PM_min` (register); verified by chirp injection in SIL, then on the vehicle. |
+| QF-3 | Stability margins ≥ design margins. | Phase margin ≥ `PM_min` and sensitivity peak M_s ≤ `Ms_max` (register); verified by chirp injection in SIL, then on the vehicle. |
 | QF-4 | Stick-to-motor latency is budgeted and measured. | Sum of the input path (spine: joystick bridge; later: radio USB report period, GCS forwarding, link, IF-8 period, parsing), loop period, filter group delay at crossover, DShot frame (26.7 µs at DShot600) and ESC update. Its phase at crossover, ω_c·τ_d, counts against QF-3. |
 | QF-5 | The same stick gives the same response across battery voltage and throttle. | Thrust linearization from the identified thrust curve and measured voltage (plus rotor-speed feedback). Verified by comparing full- and empty-battery responses in SIL; the allowed difference is the identification uncertainty. Needs the battery model (B1). |
 | QF-6 | Authority at zero throttle (air mode). | The mixer keeps each motor at or above the measured minimum stable rotor speed. |
-| QF-7 | Gyro filtering removes rotor harmonics without eating the phase budget. | Notches follow eRPM at the harmonics seen in the measured vibration spectrum; the chain's group delay at crossover is part of QF-4. |
+| QF-7 | Gyro filtering removes rotor harmonics without eating the phase budget. | Notches follow eRPM at the harmonics seen in the measured vibration spectrum; until one is measured, at the harmonics the B1 vibration model includes (1×, 2×, 3×). The chain's group delay at crossover is part of QF-4. |
 | QF-8 | Rate-loop period. | By convergence: the lowest loop rate (among the IMU's ODRs) at which doubling the rate improves the achievable crossover by less than the uncertainty of the identified motor lag. |
 
 **Mission, common (QM): branch B2.**

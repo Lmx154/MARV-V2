@@ -40,7 +40,7 @@ tick within [idle, 2047]) and at every execution and channel
     lo_c(n) - (E_c(n) + F_c + Q_c) <= y_c,1(n) <= hi_c(n) + (E_c(n) + F_c + Q_c).
 The T3 property is asserted too: every envelope end value is below its F_c at the scenario's last execution.
 
-R1 must pass. R2's envelope test is a strict xfail (raises=AssertionError) while tests/regression/quad/L06/ does not exist, exactly as
+R1 must pass. R2's envelope test is a strict xfail (raises=AssertionError) while tests/regression/quad/L06/XFAIL_GATE_CLOSED does not exist (decision 0009), exactly as
 the L4 acro recovery (docs/handoff.md, known failing item): its cause is the gyroscopic coupling (no L3 flag, s = t = 1, |w x Jw| 33-44 %
 of tau_held; tests/regression/quad/L05/results/recovery_cause/). It extends the L4 item: blocks L6, must pass before L8.
 Helper module: recovery_model.py, next to this file (the cause script imports it too).
@@ -72,14 +72,14 @@ CARD = ROOT / "vehicles" / "uzh_neurobem_5in.yaml"
 SCEN = ROOT / "scenarios" / "quad" / "L05"
 PLUGIN_DIR = run_l5.DEFAULT_PLUGIN_DIR
 T3_REFERENCE = ROOT / "tests" / "regression" / "quad" / "L05" / "t3" / "reference"
-L06 = ROOT / "tests" / "regression" / "quad" / "L06"
+XFAIL_GATE = ROOT / "tests" / "regression" / "quad" / "L06" / "XFAIL_GATE_CLOSED"  # created by L6 stage (e), decision 0009
 R1, R1X, R2 = "recover_inverted", "recover_inverted_exact", "recover_tumble"
 GAIN_SCALE = 1.1  # scenario test value: the spec's fine gain control (t3_test.cpp kGainScale)
 ALL = [R1, R2]
 RECOVERY_KNOWN_FAILING = (
     "known failing item (decision 0006 F, owner decision 15; extends the L4 acro item, decision 0005 owner decision 12, docs/handoff.md): "
     "the R2 recovery leaves the design-model envelope by the gyroscopic coupling w x Jw (no L3 flag, s = t = 1; cause in "
-    "tests/regression/quad/L05/results/recovery_cause/cause.txt). Blocks L6 (a normal test once tests/regression/quad/L06/ exists); "
+    "tests/regression/quad/L05/results/recovery_cause/cause.txt). Blocks L6 (a normal test once tests/regression/quad/L06/XFAIL_GATE_CLOSED exists, decision 0009); "
     "must pass before L8."
 )
 CH = rm.CHANNELS
@@ -299,7 +299,7 @@ def test_recovery_meets_the_design_envelope(recovery, design, name, request, cap
     ev = recovery.evaluation
     _say(capsys, verdict_line(name, "recovery", ev, recovery.wall_s), f"    report: {recovery.report_path}")
     if name == R2:
-        request.applymarker(pytest.mark.xfail(condition=not L06.exists(), reason=RECOVERY_KNOWN_FAILING, strict=True,
+        request.applymarker(pytest.mark.xfail(condition=not XFAIL_GATE.exists(), reason=RECOVERY_KNOWN_FAILING, strict=True,
                                               raises=AssertionError))
     assert ev["passed"], ev["components"]
 

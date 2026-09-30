@@ -40,7 +40,7 @@ Predicate. PASS iff
         |achieved| < |requested|, and |requested| - |achieved| > b_a, the decision 0005 anti-windup bound, has the flag
         set), and s = t = 1 at every execution (nan only where the requests it divides are exactly zero): no saturation
         is a checked fact of the run, not an assumption.
-Recovery, its own test, a known failing item (strict xfail until tests/regression/quad/L06 exists; decision 0005):
+Recovery, its own test, a known failing item (strict xfail until tests/regression/quad/L06/XFAIL_GATE_CLOSED exists; decisions 0005, 0009):
   no stale read in the evaluation window, and |w_a(n)| <= Z_a(n) + F_a + E_a(n) at every fresh execution n of the
   recovery window, Z_a(n) the largest |w_a(n)| over
   the same 17 x 17 grid of the same script response from rest (run_l4.rest_bound). A vehicle at rest passes; the model
@@ -86,7 +86,7 @@ AXES = ("roll", "pitch", "yaw")
 HALVED = 2 * (oracle.GRID - 1) + 1  # the oracle's halved grid, 17 x 17, as the step test
 PHASES = (2, 3)  # the oracle's two dt phases of an injection (its main()), as the step test
 CONTROL_RATE_FACTOR = 2  # the control's first-segment roll setpoint, in rate_max_roll
-L06 = ROOT / "tests" / "regression" / "quad" / "L06"
+XFAIL_GATE = ROOT / "tests" / "regression" / "quad" / "L06" / "XFAIL_GATE_CLOSED"  # created by L6 stage (e), decision 0009
 RECOVERY_KNOWN_FAILING = (
     "decision 0005, known failing: the PI baseline's bandwidth (crossover 8.3 rad/s) cannot reject the gyroscopic "
     "coupling of the combined full-stick segment; the roll integrator absorbs it and then releases it, an uncommanded "
@@ -337,7 +337,7 @@ def test_acro_replay_reproduces_the_run(acro, capsys):
 
 
 @needs_gz
-@pytest.mark.xfail(condition=not L06.exists(), reason=RECOVERY_KNOWN_FAILING, strict=True, raises=AssertionError)
+@pytest.mark.xfail(condition=not XFAIL_GATE.exists(), reason=RECOVERY_KNOWN_FAILING, strict=True, raises=AssertionError)
 def test_acro_recovers_after_the_combined_segment(acro, capsys):
     rec = acro.evaluation["recovery (known failing, decision 0005)"]
     p = acro.runs[1].plan

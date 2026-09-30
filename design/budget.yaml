@@ -110,3 +110,80 @@ inertia_robustness_band:
     Luis's choice (2026-09-30, decision 0005): the card's inertia sigma is UNKNOWN, and published Crazyflie inertias
     differ by up to about 47 %. B1 replay narrows the band later.
   used_by: [QF-2, QF-3, rate-loop gain design]
+
+Ms_max:
+  value: 2.0
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    Largest allowed sensitivity peak M_s = max over omega of |1/(1 + L(j omega))|. Luis's choice (2026-09-30, decision
+    0009): Åström & Murray, Feedback Systems, M_s <= 2 guarantees a gain margin of at least 2 (6 dB) and a phase
+    margin of at least 2 arcsin(1/(2 M_s)) = 29 degrees. PM_min is stricter on phase; M_s covers gain, which a phase
+    margin alone does not once the rate loop has a D term (quad L6).
+  used_by: [QF-3, rate-loop gain design]
+
+d_path_noise_budget:
+  value: 0.5
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    Largest allowed RMS contribution of the rate loop's D path to each motor's command at hover, with the sensor
+    profile's noise, as a fraction of the thrust of one DShot step at hover (about 2.28 mN at 0.5 on the current card;
+    the step itself is derived from the card and the DShot map). Luis's choice (2026-09-30, decision 0009): noise below
+    the actuator's resolution. Revisit with bench motor-temperature data.
+  used_by: [rate-loop gain design]
+
+t4_pass_probability_tracking:
+  value: 0.90
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    Required probability, over sensor-noise realisations, that a tracking scenario (steps, chirps and every scenario
+    not in the safety class) meets its predicate. Luis's choice (2026-09-30, decision 0009). With
+    t4_confidence_tracking, Wilks' zero-failure count N = ceil(ln(1 - c)/ln p) gives 22 seeds (Wilks 1941, Ann. Math.
+    Statist. 12:91-96).
+  used_by: [quad L6 statistical passes (T3 Monte Carlo, T4 confirmation)]
+
+t4_confidence_tracking:
+  value: 0.90
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    Confidence at which t4_pass_probability_tracking is demonstrated. Luis's choice (2026-09-30, decision 0009).
+  used_by: [quad L6 statistical passes (T3 Monte Carlo, T4 confirmation)]
+
+t4_pass_probability_safety:
+  value: 0.95
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    Required probability, over sensor-noise realisations, that a safety scenario (acro coupling, recoveries) meets its
+    predicate. Luis's choice (2026-09-30, decision 0009). With t4_confidence_safety, Wilks' zero-failure count
+    N = ceil(ln(1 - c)/ln p) gives 59 seeds (Wilks 1941, Ann. Math. Statist. 12:91-96).
+  used_by: [quad L6 statistical passes (T3 Monte Carlo, T4 confirmation)]
+
+t4_confidence_safety:
+  value: 0.95
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    Confidence at which t4_pass_probability_safety is demonstrated. Luis's choice (2026-09-30, decision 0009).
+  used_by: [quad L6 statistical passes (T3 Monte Carlo, T4 confirmation)]
+
+allan_check_confidence:
+  value: 0.99
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    Two-sided confidence of the Allan-deviation interval used by the quad L6 stage (a) T1 check (chi-square with the
+    overlapping Allan variance's equivalent degrees of freedom, NIST SP 1065 (Riley 2008) §5.3.2 eq. 45 and §5.4.1
+    Table 5). It sets the width of the bound, and so the record length at which the x 1.1 noise-density and
+    bias-instability negative controls fall outside it. Luis's choice (2026-09-30, decision 0009).
+  used_by: [quad L6 Allan check]
