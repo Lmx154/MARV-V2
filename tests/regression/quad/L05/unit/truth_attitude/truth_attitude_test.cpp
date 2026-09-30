@@ -108,6 +108,24 @@ TEST(L5TruthAttitude, QAndOmegaAreTheFloatCastsOfTheBodyBitwiseAndTheValidBitIsS
   }
 }
 
+TEST(L5TruthAttitude, QIsCanonicalWNotBelowZeroAfterTheFloatCast) {
+  // w < 0: all four components negated (signed zeros included); w == 0 exactly (either sign): unchanged.
+  const Body negative = {{-0.9238795325112867, 0.0, -0.3826834323650898, -0.0}, {0.1, 0.2, 0.3}};
+  const Body zero_w = {{0.0, -0.5, 0.5, -0.7071067811865476}, {0.1, 0.2, 0.3}};
+  const Body neg_zero_w = {{-0.0, -0.5, 0.5, -0.7071067811865476}, {0.1, 0.2, 0.3}};
+  CountingSource inner;
+  marv::truth::TruthAttitude src(inner);
+  src.set_body(plant_body(negative));
+  for (std::size_t i = 0; i < negative.q.size(); ++i) {
+    EXPECT_EQ(bits(src.state().q_wxyz[i]), bits(-static_cast<float>(negative.q[i]))) << "component " << i;
+  }
+  EXPECT_GE(src.state().q_wxyz[MARV_TRUTH_Q_W], 0.0f);
+  for (const Body& b : {zero_w, neg_zero_w}) {
+    src.set_body(plant_body(b));
+    EXPECT_TRUE(fill_is_cast_of(src.state(), b));
+  }
+}
+
 TEST(L5TruthAttitude, ThePaddingOfTheStateIsZeroSoTheLoggedBytesAreDeterministic) {
   for (const Body& b : kBodies) {
     CountingSource inner;

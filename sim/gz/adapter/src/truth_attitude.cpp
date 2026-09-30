@@ -13,6 +13,12 @@ void TruthAttitude::set_body(const marv_plant_body& body) {
   for (std::size_t i = 0; i < MARV_TRUTH_Q_COUNT; ++i) {
     state_.q_wxyz[i] = static_cast<float>(body.q_wxyz[i]);
   }
+  // Canonical sign, w >= 0 (core section 3), applied to the float cast: the plant's q is not canonical.
+  if (state_.q_wxyz[MARV_TRUTH_Q_W] < 0) {
+    for (std::size_t i = 0; i < MARV_TRUTH_Q_COUNT; ++i) {
+      state_.q_wxyz[i] = -state_.q_wxyz[i];
+    }
+  }
   state_.omega_frd_rad_s.x = static_cast<float>(body.omega_frd_rad_s[0]);
   state_.omega_frd_rad_s.y = static_cast<float>(body.omega_frd_rad_s[1]);
   state_.omega_frd_rad_s.z = static_cast<float>(body.omega_frd_rad_s[2]);

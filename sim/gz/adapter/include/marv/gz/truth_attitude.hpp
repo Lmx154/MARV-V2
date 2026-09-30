@@ -22,7 +22,8 @@ namespace marv::truth {
 class TruthAttitude final : public marv::gz::CommandSource {
  public:
   explicit TruthAttitude(marv::gz::CommandSource& inner) : inner_(inner) {}
-  // q_wxyz and omega_frd_rad_s are the float casts of the body's; flags = the valid bit only.
+  // q_wxyz is the float cast of the body's, negated as a whole if w < 0 (canonical sign, core section 3); omega_frd_rad_s
+  // is the float cast of the body's; flags = the valid bit only.
   void set_body(const marv_plant_body& body);
   // False if marv_truth_state_set was not OK (the inner source is then not called; truth_status() is the status) or if
   // the inner source failed (truth_status() is OK).
