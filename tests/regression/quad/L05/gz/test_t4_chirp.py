@@ -284,3 +284,13 @@ def test_control_gain_times_c_fails_the_predicate(control, chirp, axis, capsys):
     assert run_scenario.complete_trailer(s.step.run.log, s.step.run.iterations, s.step.run.m)
     assert s.window_stale == [], "the control must fail on the margin, not on a stale read"
     assert not ev["passed"], ev
+
+
+def test_scenarios_are_the_live_derivation(axis):
+    """The committed scenario equals the derivation from the live build (owner decision 7: it regenerates when the rate loop
+    changes), byte for byte; the duration is the committed, converged one."""
+    import gen_l5_chirp
+    path = SCEN / f"chirp_{axis}.yaml"
+    duration = l5s.values(l5s.load(path))["script"]["chirp"]["duration_s"]
+    derived = gen_l5_chirp.render(axis, gen_l5_chirp.live_design(PLUGIN_DIR), duration_s=duration)
+    assert path.read_text(encoding="utf-8") == derived, f"{path.name} is stale: regenerate with `{gen_l5_chirp.COMMAND}`"

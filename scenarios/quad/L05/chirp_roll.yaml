@@ -72,7 +72,7 @@ script:
     value: 73600
     unit: "1"
     label: derived
-    rule: "the chirp's last execution plus the tail: (duration_s + tail_s) / T_a = (8 s + 15 s) / 0.0003125 s, with tail_s = 15 s a scenario value (the identification window runs past the chirp's end until the response has decayed: the slowest closed-loop pole of the lifted design model at N = 1 has spectral radius 0.999618 per T_a (Jury radius, tools/card/attitude.py, axis yaw corner J+,tau+), a time constant of 0.819 s, so 15 s leaves e^-18.3 of it, below the float32 resolution 2^-24 = 6e-8 of the TRUTH quaternion)"
+    rule: "the chirp's last execution plus the tail: (duration_s + tail_s) / T_a = (8 s + 15 s) / 0.0003125 s, with tail_s = 15 s a scenario value (the identification window runs past the chirp's end until the response has decayed: the slowest closed-loop pole of the lifted design model at N = 1 has spectral radius 0.999618 per T_a (Jury radius, tools/card/attitude.py, axis yaw corner J+,tau+), a time constant of 0.819 s, so 15 s leaves e^-18.3 of it, below the float32 resolution 2^-24 = 6e-8 of the TRUTH quaternion); regenerate with `uv run python tools/sim/gen_l5_chirp.py`"
   chirp:
     axis:
       value: roll
@@ -83,17 +83,17 @@ script:
       value: 11.471016938818691
       unit: rad/s
       label: derived
-      rule: "decision 0006 F 'T4 attitude chirp': A = tau_held,roll / max over the band and the tau x J box of G_tau, G_tau the design model's peak torque request per rad/s of a steady sinusoid added to the rate setpoint, in closed loop with the attitude law at the build's gain and N (tools/sim/run_l5.py chirp_design, steady_torque_peak): tau_held,roll = 0.7429951116877419 N m, max G_tau = 0.06477151203337488 N m per rad/s at 6.080046917103525 rad/s (J+,tau+); this is A_env, the torque-envelope amplitude: at A_env the vehicle tumbles (peak attitude error 2, no crossover), so owner decision 20 has the test run A_env/2^k, k = 1..5, and take the margin as the minimum PM over those that give a unique crossover and U_A as their spread (run_l5.u_terms); the test re-derives it from the live build"
+      rule: "decision 0006 F 'T4 attitude chirp': A = tau_held,roll / max over the band and the tau x J box of G_tau, G_tau the design model's peak torque request per rad/s of a steady sinusoid added to the rate setpoint, in closed loop with the attitude law at the build's gain and N (tools/sim/run_l5.py chirp_design, steady_torque_peak): tau_held,roll = 0.7429951116877419 N m, max G_tau = 0.06477151203337488 N m per rad/s at 6.080046917103525 rad/s (J+,tau+); this is A_env, the torque-envelope amplitude: at A_env the vehicle tumbles (peak attitude error 2, no crossover), so owner decision 20 has the test run A_env/2^k, k = 1..5, and take the margin as the minimum PM over those that give a unique crossover and U_A as their spread (run_l5.u_terms); the test re-derives it from the live build; regenerate with `uv run python tools/sim/gen_l5_chirp.py`"
     w_lo_rad_s:
       value: 1.4403586885287003
       unit: rad/s
       label: derived
-      rule: "min over the box loops of the design crossover / a, the crossover |L| = 1 of the nominal loop and the four tau x J corners of every axis (tools/card/attitude.py, 3.477 rad/s at J-,tau- on yaw), a = 2.414213562373095 (rate.py, the loop-shaping spacing of PM_min); the test re-derives it from the live build"
+      rule: "min over the box loops of the design crossover / a, the crossover |L| = 1 of the nominal loop and the four tau x J corners of every axis (tools/card/attitude.py, 3.477 rad/s at J-,tau- on yaw), a = 2.414213562373095 (rate.py, the loop-shaping spacing of PM_min); the test re-derives it from the live build; regenerate with `uv run python tools/sim/gen_l5_chirp.py`"
     w_hi_rad_s:
       value: 11.128863417774427
       unit: rad/s
       label: derived
-      rule: "a x max over the box loops of the design crossover (4.6097 rad/s at J+,tau+ on roll), a = 2.414213562373095; the test re-derives it from the live build"
+      rule: "a x max over the box loops of the design crossover (4.6097 rad/s at J+,tau+ on roll), a = 2.414213562373095; the test re-derives it from the live build; regenerate with `uv run python tools/sim/gen_l5_chirp.py`"
     start_attitude_execution:
       value: 0
       unit: "1"
