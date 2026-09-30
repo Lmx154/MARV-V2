@@ -14,9 +14,9 @@ specs remain the only planning documents (core §0 rule 5). Replace this file at
 3. `docs/spec/10-quad-flight-software.md` (ACTIVE): §4, the spine (L0–L10), and §6.2. **§4 "L6 — Sensor models and
    the gyro chain" is your next step.**
 4. `docs/spec/20-ground-segment.md` and `30-rocket.md` are PARKED: read them for context, never implement from them.
-5. `docs/decisions/0001`–`0007`. **Decision 0006 holds every L5 choice** (25 owner decisions verbatim, lead decisions
+5. `docs/decisions/0001`–`0008`. **Decision 0006 holds every L5 choice** (25 owner decisions verbatim, lead decisions
    A–H, results, spec gaps, carried-forward items). 0007 is the additive L2 change (plant initial rotor speed) and the
-   one approved frozen edit. 0005 holds the L4 choices. Read 0005 and 0006 whole before touching the rate loop, the
+   one approved frozen edit. 0008 is the post-merge `safe.directory` fix to the L5 rate-bypass regenerate script. 0005 holds the L4 choices. Read 0005 and 0006 whole before touching the rate loop, the
    attitude loop, their gains or any L04/L05 test.
 
 Luis (the owner) makes the final calls. Numbers you cannot source are tagged `UNKNOWN` and you stop to ask.
@@ -60,8 +60,10 @@ Luis: at L6, evaluate ω×Jω feed-forward together with the D-term design, then
 - **Branch and tag.** `master` holds the L5 work, pushed to `github.com:Lmx154/MARV-V2`. Luis's condition: tag
   `quad-L5-pass` only once GitHub Actions is green on the pushed head. Actions failed on `e9bfaae` (run 36785715345):
   the new `rate_bypass/regenerate.sh` ran `git archive` as root on a checkout owned by another user, and git refused it
-  for dubious ownership. Local CI had used `-u` and hidden this. `d7a044c` passes `safe.directory`, and the tag goes on
-  that head once its run (36788978797) is green. **Reproduce GitHub's conditions before pushing: run the CI images
+  for dubious ownership. Local CI had used `-u` and hidden this. `d7a044c` passes `safe.directory`. Its run
+  (36788978797) then failed the regression-change check: L5 was frozen from `e9bfaae`, and that push carried no
+  record. Decision 0008 records the change, with Luis's approval. The tag goes on the head that carries 0008 and this
+  handoff, once Actions is green there. **Reproduce GitHub's conditions before pushing: run the CI images
   as root (no `-u`) with `MARV_CI_BASE_REF` set to the push range base.**
   Earlier tags: `quad-L4-pass` on `daac5d9`, `quad-L3-pass` on `dcaf2fb`, `quad-L2-pass` on `320cf18`, `quad-L1-pass`
   on `b8ed690`, `quad-L0-pass` on `6cca7ec`.
