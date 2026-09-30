@@ -19,6 +19,11 @@
 //              the float cast of the step's body omega FRD and flags is GyroValid only); u16 dshot[4] (motor 1..4); u32 erpm_valid; u32 0; then doubles: plant
 //              force NED [3], torque NED [3], rotor speed [4], erpm [4], and the per-tick wrench in ENU, force [3],
 //              torque [3].
+//   5 TRUTH    only with the plugin's <attitude_source>truth</attitude_source>, directly after that tick's TICK record:
+//              u64 tick; then the sizeof(marv_truth_state) bytes (fw/sil/include/marv_truth.h; 48 on the host, the last
+//              4 being padding, zero) of the state passed to marv_truth_state_set before that tick's marv_sil_tick. The
+//              trailer's counts do not include it. A log of a run without the element has no type 5 record and is the
+//              log it was before the element existed.
 //   3 APPLIED  doubles: the wrench applied to gz, W_bar in ENU, force [3], torque [3].
 //
 //   4 TRAILER  written when the plugin is destroyed: u64 step records, u64 tick records, u64 applied records. A file
@@ -35,7 +40,7 @@
 
 namespace marv::gz {
 
-enum class LogRecord : std::uint8_t { kStep = 1, kTick, kApplied, kTrailer };
+enum class LogRecord : std::uint8_t { kStep = 1, kTick, kApplied, kTrailer, kTruth };
 
 class LogBuffer {
  public:

@@ -11,11 +11,17 @@ set(MARV_GZ_PARAMS "marv_params_l2_open_loop" CACHE STRING "Parameter set of MAR
 
 find_package(gz-sim8 REQUIRED)
 find_package(gz-plugin2 REQUIRED COMPONENTS register)
-foreach(_tgt IN ITEMS "${MARV_GZ_SIL}" "${MARV_GZ_PARAMS}_generated")
-  if(NOT TARGET "${_tgt}")
-    message(FATAL_ERROR "MARV_GZ: target '${_tgt}' does not exist (MARV_GZ_SIL='${MARV_GZ_SIL}', MARV_GZ_PARAMS='${MARV_GZ_PARAMS}')")
+if(NOT TARGET "${MARV_GZ_PARAMS}_generated")
+  message(FATAL_ERROR "MARV_GZ: target '${MARV_GZ_PARAMS}_generated' does not exist (MARV_GZ_PARAMS='${MARV_GZ_PARAMS}')")
+endif()
+# MARV_GZ_SIL may be defined after this directory is processed (a test SIL library under tests/regression), so its
+# existence is checked at the end of the top-level directory, and its properties are read by generator expressions.
+function(marv_gz_check_sil_target sil)
+  if(NOT TARGET "${sil}")
+    message(FATAL_ERROR "MARV_GZ: target '${sil}' does not exist (MARV_GZ_SIL='${sil}')")
   endif()
-endforeach()
+endfunction()
+cmake_language(DEFER DIRECTORY "${PROJECT_SOURCE_DIR}" CALL marv_gz_check_sil_target "${MARV_GZ_SIL}")
 
 add_library(marv_gz_lockstep SHARED
   src/lockstep.cpp
@@ -32,3 +38,10 @@ set_target_properties(marv_gz_lockstep PROPERTIES
   POSITION_INDEPENDENT_CODE ON
   BUILD_RPATH "\$ORIGIN;$<TARGET_FILE_DIR:${MARV_GZ_SIL}>")
 marv_apply_flags(marv_gz_lockstep)
+
+# The truth-attitude source (quad L5, decision 0006 section B) is linked only when the SIL library has marv_truth_state_set,
+# i.e. the target property MARV_SIL_TRUTH_STATE (marv_add_sil_library TRUTH_STATE), read at generate time. Without it the
+# plugin refuses the <attitude_source> element at run time and still builds against a library without the entry.
+set(marv_gz_sil_truth_state "$<BOOL:$<TARGET_PROPERTY:${MARV_GZ_SIL},MARV_SIL_TRUTH_STATE>>")
+target_link_libraries(marv_gz_lockstep PRIVATE "$<${marv_gz_sil_truth_state}:marv_gz_truth_attitude>")
+target_compile_definitions(marv_gz_lockstep PRIVATE "$<${marv_gz_sil_truth_state}:MARV_GZ_TRUTH_STATE=1>")
