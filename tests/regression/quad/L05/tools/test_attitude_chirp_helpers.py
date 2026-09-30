@@ -29,6 +29,7 @@ AXES = l5s.AXES
 REL_TOL = 1e-5  # scenario test value: the residual of the synthetic loop after the settling time below (e^-14 of its slowest pole)
 SETTLE_S = 12.0  # scenario test value: 15 time constants of the slowest design pole (0.82 s, tools/card/attitude.py Jury radius)
 TWO = 2
+TOL = 2.0 ** -30  # the numerical tolerance of test_attitude_design.py: DTFT and crossover bisection rounding, rad
 
 
 @functools.lru_cache(maxsize=None)
@@ -146,7 +147,8 @@ def test_identification_recovers_the_design_margin_on_the_synthetic_loop():
     m = l4.identify(theta, d, t_a, k, 0.0, band)
     nominal = next(pm for a, name, pm, *_ in res["final"]["detail"] if a == "roll" and name == "nominal")
     omega_c = next(th for a, name, _, th, *_ in res["final"]["detail"] if a == "roll" and name == "nominal") / t_a
-    bound = omega_c * rm["T"] * (res["N"] - 1)  # twice the half rate period between the chirp's and the sample's instants
+    # twice the half rate period between the chirp's and the sample's instants (0 at N = 1), plus the numerical tolerance
+    bound = omega_c * rm["T"] * (res["N"] - 1) + TOL
     assert m["pm"] is not None, m["reason"]
     assert abs(m["pm"] - nominal) <= bound, (math.degrees(m["pm"]), math.degrees(nominal), bound)
     assert m["crossover"] == pytest.approx(omega_c, rel=1e-2)
@@ -157,7 +159,7 @@ def test_identification_control_a_wrong_gain_is_detected():
     nominal = next(pm for a, name, pm, *_ in res["final"]["detail"] if a == "roll" and name == "nominal")
     m = l4.identify(theta, d, res["T_a"], k * TWO, 0.0, band)
     omega_c = next(th for a, name, _, th, *_ in res["final"]["detail"] if a == "roll" and name == "nominal") / res["T_a"]
-    assert m["pm"] is None or abs(m["pm"] - nominal) > omega_c * rm["T"] * (res["N"] - 1)
+    assert m["pm"] is None or abs(m["pm"] - nominal) > omega_c * rm["T"] * (res["N"] - 1) + TOL
 
 
 # ---- scenarios ------------------------------------------------------------------------------------------------------
