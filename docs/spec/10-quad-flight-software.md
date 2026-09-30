@@ -112,7 +112,7 @@ factor (generated variants of one template, or the `set_physics` service at star
 | SIM-4 | Validated against flight logs. | Branch B1. |
 | SIM-5 | Provenance. | Core §2; the run report lists every `UNVERIFIED` entry. |
 | SIM-6 | Scenario coverage. | Grows with the branches: wind and turbulence; battery sag; ground effect; GNSS denial and multipath; sensor dropout, spike, stuck value, saturation and temperature ramp; CV false positives and misses; GCS link loss. Each failsafe requirement has at least one scenario that trips it. |
-| SIM-7 | Step sizes by convergence. | Core §7.5, applied to Gazebo's physics step, `marv_plant`'s motor sub-step and each rate group. |
+| SIM-7 | Step sizes by convergence. | Core §7.5, applied to Gazebo's physics step, `marv_plant`'s motor sub-step and each flight rate group that fails EMB-3 at its parent group's rate (core §7.5, flight rate groups). |
 
 SIM-1 (cross-engine parity) is retired: the quad has one host.
 
@@ -231,7 +231,8 @@ of freezing: core §7.2–7.3.
 ### L5 — Attitude loop on truth attitude
 
 - **Builds:** attitude controller (quaternion error → rate setpoint), designed on the exact closed rate loop at the
-  same phase margin; its rate chosen by SIM-7. Angle mode (self-levelling).
+  same phase margin; it runs at the rate loop's rate unless that fails EMB-3 (core §7.5; §5.4 estimates until L9), and
+  only then at a rate chosen by SIM-7. Angle mode (self-levelling).
 - **Opening:** in: attitude setpoint (quaternion, body → NED); out: rate setpoint to L4.
 - **Pass bar:** T3 step response and margins; T4 angle-mode steps and a large-angle recovery scenario; the L4 suite
   still green.
@@ -324,8 +325,8 @@ real silicon.
 | Rate controller (PID; INDI after B3) | rate error → torque request | QF-8 | 1 |
 | Allocation + thrust linearization | wrench → rotor-speed targets → DShot values (battery-compensated) | rate loop | 1 |
 | DShot + eRPM (PIO) | DShot frames ⇄ eRPM | rate loop | 1 (PIO) |
-| Attitude / angle loop | attitude error → rate setpoint | designed on the closed rate loop at the same phase margin; rate by SIM-7 | 1 |
-| Attitude estimator (spine) / navigation EKF (B2) | IMU (+ baro, GNSS, mag, ranges, CV in B2) → state, covariance | spine: every rate-loop tick or a SIM-7 division; B2: prediction at the IMU down-sample where coning error (ω·Δt)² stays below one step's process noise | 1 (spine), 0 (B2) |
+| Attitude / angle loop | attitude error → rate setpoint | designed on the closed rate loop at the same phase margin; the rate loop's rate unless that fails EMB-3, then SIM-7 (core §7.5) | 1 |
+| Attitude estimator (spine) / navigation EKF (B2) | IMU (+ baro, GNSS, mag, ranges, CV in B2) → state, covariance | spine: every rate-loop tick unless that fails EMB-3, then a SIM-7 division (core §7.5); B2: prediction at the IMU down-sample where coning error (ω·Δt)² stays below one step's process noise | 1 (spine), 0 (B2) |
 | Position / velocity control, trajectory generation (B2) | mission task → attitude and thrust setpoints | outer-loop rule | 0 |
 | Avoidance (B5) | ranges + state → velocity limits | each sensor update | 0 |
 | Mission manager, failsafes | events → modes | each event's latency budget | 0 |

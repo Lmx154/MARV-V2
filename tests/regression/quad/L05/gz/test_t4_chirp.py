@@ -1,5 +1,5 @@
 """T4 attitude-loop chirp in Gazebo on truth gyro and truth attitude (quad spec 4 L5 pass bar, T4; QF-3: phase margin >=
-PM_min; decision 0006 F "T4 attitude chirp" and E "U and the circularity", "Frozen check"; owner decision 20; decision 0005
+PM_min; decision 0006 F "T4 attitude chirp"; owner decisions 20 and 21; decision 0005
 "T4 chirp margins").
 
 Skipped only as conftest.py says; the gz CI step fails on a skip. Every run is truth-fed, perfect-model
@@ -32,13 +32,6 @@ Negative control (the metric control of core 7.2), on every axis. att_kp x c thr
 for which the design-model PM at nominal tau and J (attitude.Loop.margin on the axis's effective gain) is below PM_min - U of the
 axis's own margin. Its measured PM (C with the control's gain, the margin run's amplitude) must fail the predicate with that U.
 
-SIM-7 fixed point (decision 0006 E, "Frozen check"). U_att = min over axes of U on these runs; the SIM-7 halving rule of
-tools/card/attitude.py design() with U_att gives N1. If N1 is the live att_loop_ratio the fixed point closes. Otherwise the
-chirps are re-measured at N1 WITHOUT regenerating the product (run_l5.run_chirp design_u: att_loop_ratio and att_kp flown through
-sil_override from attitude.design() on U_att) and U_att(N1) gives N2; a two-cycle (N2 is the live ratio and the live ratio is
-the higher rate, the smaller N) takes the higher rate and closes; N2 = N1 means the product must be regenerated (fails).
-Control: a planted U moves N*, and the same rule must fail on it.
-
 Cross-check (reported, not asserted): the measured nominal PM against the design nominal PM.
 """
 
@@ -48,7 +41,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import yaml
 
 ROOT = Path(__file__).resolve().parents[5]
 sys.path.insert(0, str(ROOT / "tools" / "card"))
@@ -109,27 +101,6 @@ def control_c(result, axis, limit):
         c *= 2
 
 
-def sim7_n(u_value, result):
-    """N* of the SIM-7 halving rule of attitude.design() with uncertainty u_value (rad), on the live card."""
-    card, budget = schema.load_yaml(CARD), schema.load_yaml(ROOT / "design" / "budget.yaml")
-    register = schema.load_yaml(ROOT / "design" / "scenario_values.yaml")
-    u = {"value": u_value, "method": "measured", "source": "this run", "rule": "min over axes of E_H + U_A + U_d"}
-    return attitude.design(card, budget, register, str(CARD), u, rate_result=result["rate"])["N"]
-
-
-def fixed_point_closes(live, n1, n2):
-    """The recorded rule (decision 0006 E step 3): N1 = SIM-7(U_att at the live N) equals the live N, or N2 =
-    SIM-7(U_att at N1) is the live N and the live N is the higher rate (a two-cycle takes the higher rate)."""
-    return n1 == live or (n2 == live and live < n1)
-
-
-def write_u(path, value):
-    path.write_text(yaml.safe_dump({"U": value, "unit": "rad", "method": "measured", "source": "this run",
-                                    "rule": "min over axes of E_H + U_A + U_d of the run (test_t4_chirp.py)"}),
-                    encoding="utf-8")
-    return path
-
-
 # ---- fixtures -------------------------------------------------------------------------------------------------------
 
 @dataclasses.dataclass
@@ -169,10 +140,9 @@ class Chirp:
 _CACHE = {}
 
 
-def measure(tmp_path_factory, axis, design_u=None):
-    """The runs of one axis and their margins (cached: the fixed-point test needs every axis). `design_u` runs at the N of
-    that SIM-7 uncertainty file without regenerating the product (run_l5.run_chirp)."""
-    key = (axis, str(design_u))
+def measure(tmp_path_factory, axis):
+    """The runs of one axis and their margins."""
+    key = axis
     if key in _CACHE:
         return _CACHE[key]
     out = tmp_path_factory.mktemp(f"chirp_{axis}")
@@ -180,7 +150,7 @@ def measure(tmp_path_factory, axis, design_u=None):
     runs, scales, margins = {}, {}, {}
 
     def go(name, m, scale, halved=False):
-        runs[name] = run_l5.run_chirp(CARD, scenario, m, out, PLUGIN_DIR, amp_scale=scale, halved=halved, design_u=design_u)
+        runs[name] = run_l5.run_chirp(CARD, scenario, m, out, PLUGIN_DIR, amp_scale=scale, halved=halved)
         scales[name] = scale
         margins[name] = run_l5.chirp_margin(runs[name])
 
@@ -257,20 +227,6 @@ def control(tmp_path_factory, axis, chirp):
     return {"run": s, "margin": r, "evaluation": ev, "c": c, "gain": gain}
 
 
-@pytest.fixture(scope="module")
-def u_att(tmp_path_factory):
-    """U_att = min over axes of U on these runs at the live N, with the axis it is at."""
-    per_axis = {a: measure(tmp_path_factory, a).u for a in AXES}
-    a = min(per_axis, key=per_axis.get)
-    return per_axis[a], a, per_axis
-
-
-@pytest.fixture(scope="module")
-def design_result(tmp_path_factory):
-    """attitude.design() on the committed SIM-7 file at the live build (the seed table and the rate result)."""
-    return run_l5.attitude_design(str(CARD), str(ROOT))
-
-
 # ---- the pass bar ---------------------------------------------------------------------------------------------------
 
 def test_chirp_margin_meets_qf3(chirp, axis, capsys):
@@ -328,38 +284,3 @@ def test_control_gain_times_c_fails_the_predicate(control, chirp, axis, capsys):
     assert run_scenario.complete_trailer(s.step.run.log, s.step.run.iterations, s.step.run.m)
     assert s.window_stale == [], "the control must fail on the margin, not on a stale read"
     assert not ev["passed"], ev
-
-
-# ---- the SIM-7 fixed point ------------------------------------------------------------------------------------------
-
-def test_sim7_fixed_point(u_att, design_result, live_params, tmp_path_factory, capsys):
-    u1, at, per_axis = u_att
-    result = design_result
-    live = live_params["att_loop_ratio"]
-    n1 = sim7_n(u1, result)
-    lines = [f"SIM-7 fixed point: U_att(N = {live}) {u1:.9e} rad ({deg(u1):.6f} deg) at {at}, per axis {per_axis}; "
-             f"N1 = SIM-7(U_att) = {n1}, live att_loop_ratio = {live}; seed U^0 = {result['U']['value']:.9e} rad",
-             f"    halving table at the seed: {result['table']}"]
-    n2 = None
-    if n1 != live:
-        u_file = write_u(tmp_path_factory.mktemp("sim7") / "u_n1.yaml", u1)
-        at_n1 = {a: measure(tmp_path_factory, a, design_u=u_file).u for a in AXES}
-        u2 = min(at_n1.values())
-        n2 = sim7_n(u2, result)
-        lines.append(f"    re-measured at N = {n1} (overrides, product not regenerated): U_att {u2:.9e} rad per axis {at_n1}; "
-                     f"N2 = SIM-7(U_att) = {n2}; two-cycle: {n2 == live and live < n1}")
-    _say(capsys, *lines)
-    assert fixed_point_closes(live, n1, n2), (u1, n1, n2, live)
-
-
-def test_sim7_fixed_point_control_planted_u_moves_n_star(design_result, live_params):
-    result = design_result
-    live = live_params["att_loop_ratio"]
-    first = next(row for row in result["table"] if row["delta"] is not None)
-    planted = first["delta"] * HALF
-    n1 = sim7_n(planted, result)
-    assert n1 != live, "the planted U does not move N*"
-    assert not fixed_point_closes(live, n1, None)
-    assert not fixed_point_closes(live, n1, n1), "N2 = N1 must not close: the product would have to be regenerated"
-    assert fixed_point_closes(live, live, None) and fixed_point_closes(live, 2 * live, live)
-    assert not fixed_point_closes(2 * live, live, 2 * live), "a two-cycle whose live rate is the lower one must not close"

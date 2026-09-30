@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""L5 attitude-loop parameters from a vehicle card, the design budget, the scenario register and the SIM-7 uncertainty U
-(quad spec L5, QF-3, SIM-7, decision 0006 section E, decision 0005 "Gain rule").
+"""L5 attitude-loop parameters from a vehicle card, the design budget and the scenario register
+(quad spec L5, QF-3, core 7.5, decision 0006 section E, decision 0005 "Gain rule").
 
-Used by flatten.py (--out-attitude, which needs --scenario and --sim7-u). Plain Python double (math, cmath), no numpy, like
-rate.py. It is a pure function of (card, budget, scenario, U) and yields the params_gen entries att_kp, att_yaw_weight,
-att_loop_ratio, att_yaw_alpha_min and att_yaw_t_cross, and a derivation report that holds the SIM-7 halving table (core 7.5).
+Used by flatten.py (--out-attitude, which needs --scenario). Plain Python double (math, cmath), no numpy, like
+rate.py. It is a pure function of (card, budget, scenario) and yields the params_gen entries att_kp, att_yaw_weight,
+att_loop_ratio, att_yaw_alpha_min and att_yaw_t_cross, and a derivation report.
 
 Model (0006 E)
 
@@ -42,10 +42,10 @@ Model (0006 E)
      candidate: the card is refused.
   8. Yaw weight: w = min(1, alpha_yaw / min(alpha_roll, alpha_pitch)), alpha_a = tau_max,a / (J_a (1 + b_J)) from rate.py;
      w <= 0 or non-finite is refused. w does not enter the linear loop.
-  9. SIM-7: k_ref is the rule at N = 1; q(N) = PM_worst(f32(k_ref), N) for N = 2^i; Delta_i = |q(2^i) - q(2^(i-1))|; N* =
-     2^i* with i* the largest i for which Delta_j < U for every j <= i (N* = 1 if Delta_1 >= U). The scan stops at the first
-     failure, or where k_ref has no unique crossover or is unstable. The final gains are the rule at T_a = N* T.
-     U is the file given by flatten.py --sim7-u (U in rad, unit rad, method measured, source, rule).
+  9. Loop rate (owner decision 21, core 7.5 "Flight rate groups"): the attitude loop runs at its parent (rate) loop's rate,
+     att_loop_ratio = 1, unless that fails EMB-3 schedulability; the EMB-3 check is met at the parent rate per quad 5.4's CPU
+     estimates and is re-checked at L9 with measured WCETs (recorded in decision 0006, not computed here). The gains are
+     designed at N = 1 by the rule above, so there is no U input and no SIM-7 halving.
  10. att_yaw_alpha_min = the largest f32 <= alpha_max,yaw = tau_max,yaw / (J_yaw (1 + b_J)) (owner decision 17's fallback).
  11. att_yaw_t_cross (owner decision 18): the latest over the yaw axis's nominal and four corners of the time k T_a of the
      first attitude execution k >= 1 with omega_k <= 0 of the lifted closed rate loop released from a steady 1 rad/s with
@@ -57,7 +57,6 @@ The generator refuses (GenError) an input for which a step is undefined or infea
 from __future__ import annotations
 
 import cmath
-import json
 import math
 import struct
 
@@ -69,9 +68,6 @@ AXES = rate.AXES
 STATE_N = 5
 THETA = 2
 OTHER = (0, 1, 3, 4)
-# Method constant of the SIM-7 scan (decision 0006 E): the largest exponent i tried for N = 2^i before the scan is
-# refused. It sets termination only, not the result.
-MAX_I = 30
 # Method constant of the phase-branch check (rad): the coarse and doubled grids must agree to this. A branch error is a
 # multiple of 2*pi and double rounding of the phase is ~1e-15, so any value far between the two gives the same verdict.
 PHASE_AGREE = 1e-9
@@ -100,10 +96,14 @@ T_CROSS_METHOD = ("derived(t_cross = the latest, over nominal and the four tau x
                   "first attitude execution k >= 1 at which the design-model yaw rate is <= 0 after a release: closed rate "
                   "loop in bypass lifted to T_a = att_loop_ratio x the rate-loop period, steady yaw rate 1 rad/s, attitude "
                   "command held at zero yaw rate, no attitude feedback on yaw; rounded up to f32; tools/card/attitude.py)")
-T_CROSS_SOURCE = ("the yaw rate gains and corners of the rate derivation (decision 0005), att_loop_ratio (SIM-7); "
+T_CROSS_SOURCE = ("the yaw rate gains and corners of the rate derivation (decision 0005), att_loop_ratio (parent-rate rule); "
                   "owner decision 18 of decision 0006")
-N_METHOD = ("derived(SIM-7 halving rule of decision 0006 E: N* = 2^i*, i* the largest i with |q(2^j) - q(2^(j-1))| < U "
-            "for all j <= i, q(N) the worst-corner attitude PM of the gains designed at N = 1; tools/card/attitude.py)")
+N_METHOD = ("derived(parent-rate rule of core contracts 7.5 'Flight rate groups': the attitude loop runs at its parent (rate) "
+            "loop's rate, att_loop_ratio = 1, because EMB-3 schedulability is met at the parent rate per quad spec 5.4's CPU "
+            "estimates, re-checked at L9 with measured WCETs; owner decision 21 of decision 0006; tools/card/attitude.py)")
+N_SOURCE = ("core contracts 7.5 'Flight rate groups'; quad spec 5.4 CPU estimates (EMB-3); owner decision 21 of decision "
+            "0006")
+LOOP_RATIO = 1
 
 
 def r32(x):
@@ -459,35 +459,8 @@ def yaw_release_crossing(loops, t_a, refuse):
     return rate.r32_up(max(t for _, _, t in out)), out
 
 
-def read_u(path, allow_scenario=False):
-    """The SIM-7 uncertainty file: a mapping with U (a number of rad above 0), unit (rad), method (measured), source and
-    rule. Raises gpc.GenError. Returns {value, method, source, rule}, source as compact text. `allow_scenario` is for
-    tests only (a fixture with method scenario); flatten.py never passes it, so the product path accepts measured only."""
-    try:
-        doc = schema.load_yaml(path)
-    except Exception as e:  # noqa: BLE001 (a read or parse failure of any kind is a refusal)
-        raise gpc.GenError([f"{path}: cannot read the SIM-7 uncertainty file: {e}"]) from e
-    if not isinstance(doc, dict):
-        raise gpc.GenError([f"{path}: the SIM-7 uncertainty file is not a mapping"])
-    bad = [k for k in ("U", "unit", "method", "source", "rule") if k not in doc]
-    if bad:
-        raise gpc.GenError([f"{path}: the SIM-7 uncertainty file lacks {', '.join(bad)}"])
-    if not (schema.is_number(doc["U"]) and doc["U"] > 0):
-        raise gpc.GenError([f"{path}: U must be a finite number of rad above 0, got {doc['U']!r}"])
-    if doc["unit"] != "rad":
-        raise gpc.GenError([f"{path}: unit must be rad, got {doc['unit']!r}"])
-    if doc["method"] != "measured" and not (allow_scenario and doc["method"] == "scenario"):
-        raise gpc.GenError([f"{path}: method must be measured (a committed measurement, core 2), got {doc['method']!r}"])
-    if not (isinstance(doc["rule"], str) and doc["rule"].strip()):
-        raise gpc.GenError([f"{path}: rule must be non-empty text"])
-    if not doc["source"]:
-        raise gpc.GenError([f"{path}: source must not be empty"])
-    source = doc["source"] if isinstance(doc["source"], str) else json.dumps(doc["source"], ensure_ascii=True)
-    return {"value": float(doc["U"]), "method": doc["method"], "source": source, "rule": " ".join(doc["rule"].split())}
-
-
-def design(card, budget, scenario, card_path, u, u_where="the SIM-7 uncertainty file", rate_result=None):
-    """The whole rule: a dict of results (raises gpc.GenError when the card is refused). `u` is read_u's mapping."""
+def design(card, budget, scenario, card_path, rate_result=None):
+    """The whole rule: a dict of results (raises gpc.GenError when the card is refused)."""
     def refuse(reason):
         gpc.refuse(card_path, "attitude", f"{reason} (decision 0006)")
 
@@ -497,8 +470,6 @@ def design(card, budget, scenario, card_path, u, u_where="the SIM-7 uncertainty 
     rate._value(scenario, "angle_tilt_max", "scenario entry", card_path)
     if not 0 <= deadband < 1:
         refuse(f"yaw_deadband {deadband!r} is outside [0, 1)")
-    if not (schema.is_number(u["value"]) and u["value"] > 0):
-        refuse("U must be a finite number of rad above 0")
     alpha = {a: rr["axes"][a]["alpha_max"] for a in AXES}
     w = min(1.0, alpha["yaw"] / min(alpha["roll"], alpha["pitch"]))
     if not (math.isfinite(w) and w > 0):
@@ -519,59 +490,29 @@ def design(card, budget, scenario, card_path, u, u_where="the SIM-7 uncertainty 
                     refuse(f"N = {n}, {axis} {name}: the unwrapped phase changes under one grid doubling")
         return cache[n]
 
-    ref = sup_rule(loops_at(1), t, pm_min, w32, refuse)
-    table, n_star, stop = [], 1, None
-    prev = None
-    for i in range(MAX_I + 1):
-        n = 2 ** i
-        q, detail = pm_worst(loops_at(n), ref["k32"], w32)
-        row = {"N": n, "f_hz": 1 / (n * t), "q": q if q != -math.inf else None, "delta": None, "verdict": ""}
-        if q == -math.inf:
-            row["verdict"] = "stop: k_ref has no unique crossover or is unstable"
-            table.append(row)
-            stop = row["verdict"]
-            break
-        if prev is None:
-            row["verdict"] = "reference"
-        else:
-            row["delta"] = abs(q - prev)
-            if row["delta"] < u["value"]:
-                row["verdict"] = "accepted (Delta < U)"
-                n_star = n
-            else:
-                row["verdict"] = "stop: Delta >= U"
-                table.append(row)
-                stop = row["verdict"]
-                break
-        table.append(row)
-        prev = q
-    else:
-        refuse(f"the SIM-7 scan reaches N = 2^{MAX_I} without a stop")
-    final = ref if n_star == 1 else sup_rule(loops_at(n_star), n_star * t, pm_min, w32, refuse)
-    if not all(jury(loop.closed_poly(axis_k(axis, final["k32"], w32))) for axis, _, loop in loops_at(n_star)):
+    n = LOOP_RATIO
+    final = sup_rule(loops_at(n), n * t, pm_min, w32, refuse)
+    if not all(jury(loop.closed_poly(axis_k(axis, final["k32"], w32))) for axis, _, loop in loops_at(n)):
         refuse("the final gains are unstable at a corner (Jury test)")
-    at_one = pm_worst(loops_at(1), ref["k32"], w32)
     alpha_min = r32_down(alpha["yaw"])
     if not (math.isfinite(alpha_min) and alpha_min > 0):
         refuse(f"att_yaw_alpha_min {alpha_min!r} is not a positive finite f32")
-    t_cross, crossings = yaw_release_crossing(loops_at(n_star), n_star * t, refuse)
-    return {"T": t, "rate": rr, "inputs": dict(rr["inputs"]), "U": u, "U_where": u_where, "alpha": alpha,
+    t_cross, crossings = yaw_release_crossing(loops_at(n), n * t, refuse)
+    return {"T": t, "rate": rr, "inputs": dict(rr["inputs"]), "alpha": alpha,
             "w_raw": alpha["yaw"] / min(alpha["roll"], alpha["pitch"]), "w": w, "w32": w32,
-            "yaw_deadband": deadband, "ref": ref, "table": table, "stop": stop, "N": n_star, "T_a": n_star * t,
+            "yaw_deadband": deadband, "N": n, "T_a": n * t,
             "alpha_min": alpha_min, "t_cross": t_cross, "crossings": crossings,
             "final": final, "k": final["k"], "k32": final["k32"], "k_yaw_effective": yaw_effective(final["k32"], w32),
-            "at_one": {"pm_worst": at_one[0], "detail": at_one[1]}, "pm_worst": final["pm_worst"]}
+            "pm_worst": final["pm_worst"]}
 
 
-def entries_from(result, u_where):
-    n_source = (f"SIM-7 uncertainty U = {result['U']['value']!r} rad from {u_where} (method {result['U']['method']}; "
-                f"{result['U']['source']}); the gain rule's inputs (decision 0006 E)")
+def entries_from(result):
     return [("att_kp", {"type": "f32", "value": result["k32"], "unit": "1/s", "method": K_METHOD, "source": K_SOURCE,
                         "sigma": schema.UNKNOWN}),
             ("att_yaw_weight", {"type": "f32", "value": result["w32"], "unit": "1", "method": W_METHOD,
                                 "source": W_SOURCE, "sigma": schema.UNKNOWN}),
             ("att_loop_ratio", {"type": "i32", "value": result["N"], "unit": "1", "method": N_METHOD,
-                                "source": n_source, "sigma": 0}),
+                                "source": N_SOURCE, "sigma": 0}),
             ("att_yaw_alpha_min", {"type": "f32", "value": result["alpha_min"], "unit": "rad/s^2",
                                    "method": ALPHA_METHOD, "source": ALPHA_SOURCE, "sigma": schema.UNKNOWN}),
             ("att_yaw_t_cross", {"type": "f32", "value": result["t_cross"], "unit": "s", "method": T_CROSS_METHOD,
@@ -590,7 +531,7 @@ def _detail_lines(detail, t_a):
 
 def report_text(result, where):
     r, i, deg = result, result["inputs"], math.degrees
-    rr, u, f, ref = r["rate"], r["U"], r["final"], r["ref"]
+    rr, f = r["rate"], r["final"]
     lines = [
         "MARV L5 attitude-loop derivation (tools/card/attitude.py, decision 0006 E)",
         f"card                     {where}",
@@ -612,22 +553,10 @@ def report_text(result, where):
         f"  alpha_max (rad/s^2)    roll {r['alpha']['roll']!r}  pitch {r['alpha']['pitch']!r}  yaw {r['alpha']['yaw']!r}",
         f"  w (double, f32)        {r['w']!r}  {r['w32']!r}   (unclamped ratio {r['w_raw']!r})",
         "",
-        f"SIM-7: U = {u['value']!r} rad = {deg(u['value']):.6f} deg  (source file {r['U_where']})",
-        f"  U method               {u['method']}",
-        f"  U source               {u['source']}",
-        f"  U rule                 {u['rule']}",
-        f"  k_ref (N = 1)          {ref['k']!r}  f32 {ref['k32']!r}",
-        "  N     rate Hz      q(N) = PM_worst(k_ref) deg   Delta deg        verdict",
-    ]
-    for row in r["table"]:
-        q = "n/a" if row["q"] is None else f"{deg(row['q']):.6f}"
-        d = "" if row["delta"] is None else f"{deg(row['delta']):.6f}"
-        lines.append(f"  {row['N']:<5} {row['f_hz']:<12.6g} {q:<28} {d:<16} {row['verdict']}")
-    lines += [
-        f"  N* = {r['N']}  (T_a = {r['T_a']!r} s, {1 / r['T_a']:.6g} Hz); scan stopped: {r['stop']}",
-        "",
-        f"N = 1 (k_ref, f32 {ref['k32']!r}): PM_worst {deg(r['at_one']['pm_worst']):.6f} deg",
-        *_detail_lines(r["at_one"]["detail"], r["T"]),
+        f"loop rate: att_loop_ratio = {r['N']} (T_a = {r['T_a']!r} s, {1 / r['T_a']:.6g} Hz): the attitude loop runs at its",
+        "  parent (rate) loop's rate (core 7.5 'Flight rate groups', owner decision 21); EMB-3 schedulability is met at the parent",
+        "  rate per quad 5.4's CPU estimates and is re-checked at L9 with measured WCETs (recorded in decision 0006). The gains",
+        "  are designed at this rate by the sup rule; there is no SIM-7 halving.",
         "",
         "att_yaw_alpha_min (owner decision 17's fallback): tau_max,yaw / (J_yaw (1 + b_J)), rounded down to f32",
         f"  tau_max,yaw (N m)      {rr['axes']['yaw']['tau_max']!r}",
@@ -654,7 +583,7 @@ def report_text(result, where):
     return lines
 
 
-def attitude_entries(card, budget, scenario, card_path, u, u_where, where=None, rate_result=None):
+def attitude_entries(card, budget, scenario, card_path, where=None, rate_result=None):
     """(ordered (name, params_gen entry) list, report lines, result dict); raises gpc.GenError on refusal."""
-    result = design(card, budget, scenario, card_path, u, u_where, rate_result)
-    return entries_from(result, u_where), report_text(result, where or card_path), result
+    result = design(card, budget, scenario, card_path, rate_result)
+    return entries_from(result), report_text(result, where or card_path), result

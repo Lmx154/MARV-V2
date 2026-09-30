@@ -1,4 +1,4 @@
-"""L5 attitude-loop parameters from the vehicle card (tools/card/attitude.py, flatten.py --out-attitude --sim7-u; decision
+"""L5 attitude-loop parameters from the vehicle card (tools/card/attitude.py, flatten.py --out-attitude; decision
 0006 E and owner decisions 7, 12, 17, 18): rule-property tests on the LIVE generated parameters. No gain value is pinned
 (owner decision 7); every check asserts a rule, and each has a negative control that plants a violation of it.
 
@@ -13,10 +13,6 @@ The yaw release is stepped rate execution by rate execution, not by the lifted m
 Numeric tolerance TOL = 2^-30 rad (9.3e-10): both evaluators bisect the crossover to adjacent doubles (error of the PM
 |dPM/dw| w 2^-52, below 1e-14 rad) and the solve's rounding is below 1e-12 rad (cond(zI - P) below 1e5 at w = 1e-2 rad/s,
 1e-16 x 1e5 x 1e-2); TOL leaves three decades of slack and stays below the generator's delta_num (about 1e-7 rad).
-
-The SIM-7 uncertainty file of these tests is fixtures/u.yaml, a labelled scenario test value with method scenario (see the
-file). The product path refuses it (attitude.read_u accepts method scenario only with the test-only allow_scenario flag,
-which flatten.py never passes); the tests call attitude.attitude_entries in process with the flag.
 """
 
 import cmath
@@ -41,7 +37,6 @@ FLATTEN = ROOT / "tools" / "card" / "flatten.py"
 CARD = ROOT / "vehicles" / "uzh_neurobem_5in.yaml"
 BUDGET = ROOT / "design" / "budget.yaml"
 SCENARIO = ROOT / "design" / "scenario_values.yaml"
-FIXTURE_U = Path(__file__).resolve().parent / "fixtures" / "u.yaml"
 L05 = ROOT / "tests" / "regression" / "quad" / "L05"
 
 AXES = ("roll", "pitch", "yaw")
@@ -205,13 +200,10 @@ def real(tmp_path_factory):
             "--out-scenario", tmp / "scenario.yaml", "--out-rate", tmp / "rate.yaml")
     assert r.returncode == 0, r.stderr
     card, budget, scenario = (schema.load_yaml(p) for p in (CARD, BUDGET, SCENARIO))
-    # The product path (flatten.py) refuses the scenario-method fixture, so the attitude generator is called in process
-    # with the test-only flag; flatten.py runs the same attitude_entries on the committed measured file.
-    u = attitude.read_u(FIXTURE_U, allow_scenario=True)
-    entries, report, res = attitude.attitude_entries(card, budget, scenario, CARD, u, "fixtures/u.yaml")
+    entries, report, res = attitude.attitude_entries(card, budget, scenario, CARD)
     (tmp / "attitude_report.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
     return {"res": res, "flat": dict(entries), "rate_flat": schema.load_yaml(tmp / "rate.yaml"),
-            "dir": tmp, "card": card, "budget": budget, "u": u["value"], "oracle": {}, "q": {}}
+            "dir": tmp, "card": card, "budget": budget, "oracle": {}, "q": {}}
 
 
 def report_text(real):
@@ -504,105 +496,30 @@ def test_control_a_smaller_planted_t_cross_fails(real):
     assert nominal < t and not t_cross_ok(real, nominal, pts), "nominal alone is not the latest corner"
 
 
-# ---- SIM-7 -----------------------------------------------------------------------------------------------------------
+# ---- the loop rate: the parent-rate rule ----------------------------------------------------------------------------
 
 
-def q_of(real, n):
-    """q(N) = PM_worst(f32(k_ref), N) by the oracle, or None; k_ref is the generator's N = 1 rule (its f32 value)."""
-    if n not in real["q"]:
-        k = real["res"]["ref"]["k32"]
-        worst, _ = oracle_worst(real, n, k, k_yaw_effective(k, w32_of(real)))
-        real["q"][n] = None if worst == -math.inf else worst
-    return real["q"][n]
+def ratio_ok(real, ratio):
+    """Owner decision 21 (core 7.5 'Flight rate groups'): the attitude loop runs at its parent (rate) loop's rate, so the ratio is 1."""
+    return ratio == 1
 
 
-def sim7_ratio(qs, u):
-    """N* from the rule: qs is [(N, q or None)] for N = 1, 2, 4, ...; Delta_i = |q_i - q_(i-1)|, i* the largest i with
-    Delta_j < U for every j <= i, the scan stopping at the first failure or a None."""
-    n_star = 1
-    for (_, q0), (n, q1) in zip(qs, qs[1:]):
-        if q0 is None or q1 is None or abs(q1 - q0) >= u:
-            break
-        n_star = n
-    return n_star
+def test_the_emitted_att_loop_ratio_is_one_by_the_parent_rate_rule_and_its_method_cites_the_rule(real):
+    e = real["flat"]["att_loop_ratio"]
+    assert ratio_ok(real, e["value"]) and e["type"] == "i32" and e["sigma"] == 0
+    for token in ("7.5", "Flight rate groups", "EMB-3", "5.4", "L9"):
+        assert token in e["method"], token
+    assert real["res"]["T_a"] == real["res"]["T"]
 
 
-def oracle_ratio(real, u):
-    qs, i = [(1, q_of(real, 1))], 0
-    while True:
-        i += 1
-        qs.append((2 ** i, q_of(real, 2 ** i)))
-        if qs[-1][1] is None or abs(qs[-1][1] - qs[-2][1]) >= u:
-            return sim7_ratio(qs, u)
+def test_control_a_planted_ratio_of_two_fails_the_rule(real):
+    assert not ratio_ok(real, 2)
+    assert not ratio_ok(real, 2 * live(real, "att_loop_ratio"))
 
 
-def table_obeys_rule(table, u, n_star):
-    """The generator's table: Delta_i = |q_i - q_(i-1)|, each accepted row has Delta < U, the scan ends at the first row with
-    Delta >= U (or without a q), and N* is the last accepted N."""
-    accepted = 1
-    for prev, row in zip(table, table[1:]):
-        if row["q"] is None:
-            return row is table[-1] and accepted == n_star
-        if abs(row["delta"] - abs(row["q"] - prev["q"])) > 1e-15:
-            return False
-        if row["delta"] < u:
-            accepted = row["N"]
-            if row is table[-1]:
-                return False
-        else:
-            return row is table[-1] and accepted == n_star
-    return accepted == n_star
-
-
-def test_the_sim7_table_satisfies_its_own_rule_and_the_oracles_q_reproduce_it(real):
-    table, u, n = real["res"]["table"], real["u"], live(real, "att_loop_ratio")
-    assert table_obeys_rule(table, u, n)
-    assert [row["N"] for row in table] == [2 ** i for i in range(len(table))]
-    for row in table:
-        assert row["q"] is not None and abs(q_of(real, row["N"]) - row["q"]) <= TOL, row["N"]
+def test_the_report_states_the_rule_and_the_inputs_and_has_no_sim7_table(real):
     text = report_text(real)
-    for row in table:
-        assert re.search(rf"^  {row['N']} +\S+ +{math.degrees(row['q']):.6f}", text, flags=re.M), row
-    assert "N* = " in text and str(n) in text
-
-
-def test_the_sim7_ratio_recomputed_by_the_oracle_is_the_emitted_att_loop_ratio(real):
-    assert oracle_ratio(real, real["u"]) == live(real, "att_loop_ratio")
-
-
-def test_control_planted_uncertainties_and_tables_move_the_ratio_or_break_the_rule(real):
-    n = live(real, "att_loop_ratio")
-    assert oracle_ratio(real, real["u"] / 4) != n, "a smaller U lowers the rate"
-    assert oracle_ratio(real, real["u"] * 4) != n, "a larger U raises it"
-    table = [dict(row) for row in real["res"]["table"]]
-    table[1]["q"] += real["u"]
-    assert not table_obeys_rule(table, real["u"], n)
-    assert not table_obeys_rule(real["res"]["table"], real["u"], 2 * n)
-    assert table_obeys_rule(real["res"]["table"], real["u"], n)
-
-
-def test_the_report_prints_the_sim7_halving_table_with_u_its_source_and_the_final_n(real):
-    text = report_text(real)
-    for token in ("SIM-7", "q(N) = PM_worst(k_ref)", "Delta deg", "verdict", "source file", "U rule", "N* ",
-                  "att_yaw_alpha_min", "att_yaw_t_cross", "delta_num", "stepped down", "Jury radius", "yaw effective gain"):
+    for token in ("parent", "EMB-3", "att_yaw_alpha_min", "att_yaw_t_cross", "delta_num", "stepped down", "Jury radius",
+                  "yaw effective gain", "f32 rate gains used"):
         assert token in text, token
-    assert repr(real["u"]) in text
-
-
-# ---- the product path refuses a scenario-method U ------------------------------------------------------------------------
-
-
-def test_control_read_u_without_the_test_flag_and_flatten_refuse_a_scenario_method_u_file(tmp_path):
-    with pytest.raises(attitude.gpc.GenError, match="method must be measured"):
-        attitude.read_u(FIXTURE_U)
-    assert attitude.read_u(FIXTURE_U, allow_scenario=True)["value"] == 0.001
-    r = run(FLATTEN, "--card", CARD, "--budget", BUDGET, "--out-card", tmp_path / "card.yaml", "--out-register",
-            tmp_path / "register.yaml", "--root", ROOT, "--scenario", SCENARIO, "--out-scenario",
-            tmp_path / "scenario.yaml", "--out-attitude", tmp_path / "attitude.yaml", "--sim7-u", FIXTURE_U)
-    assert r.returncode == 1 and "method must be measured" in r.stderr, r.stdout + r.stderr
-    assert not (tmp_path / "attitude.yaml").exists() and not (tmp_path / "card.yaml").exists()
-
-
-def test_the_committed_measured_u_file_is_accepted_by_the_product_path():
-    u = attitude.read_u(ROOT / "design" / "measured" / "sim7_u" / "u.yaml")
-    assert u["method"] == "measured" and u["value"] > 0
+    assert "q(N)" not in text and "Delta deg" not in text

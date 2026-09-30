@@ -436,6 +436,11 @@ Every integration step, sub-step, simulator step and rate group is chosen the sa
 being verified (a margin, a tracking error, an apogee) changes by less than its stated uncertainty. The result, and the
 halving sequence that produced it, go in the run report. No step or rate is picked by feel.
 
+**Flight rate groups.** A flight rate group whose rate no product requirement sets by its own rule runs at its parent
+group's rate (the group it takes its input from), unless that fails EMB-3 schedulability. Only then does the
+convergence rule above choose a lower rate, with the halving sequence in the run report. Until L9 measures worst-case
+execution times, the check uses the product spec's CPU estimates; L9 re-checks it with the measured values.
+
 ---
 
 ## 8. The functional interface
