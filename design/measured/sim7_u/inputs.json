@@ -1,0 +1,28 @@
+{
+  "command": "see README.md",
+  "git_commit": "ca9ebcb056499d4eb9bb7a7da1498db4ddf48ba5",
+  "script_sha256": "729ec6530d1098434dc9bc4e81d06d1e1c5849c2fab9e911450cd7618ed4c3c4",
+  "test_module": "tests/regression/quad/L04/gz/test_t4_chirp.py",
+  "test_module_sha256": "d2a4073df17594070c72fd836b4b3bf0c152b4dda61d17a021cc6d1215de2383",
+  "card": "vehicles/uzh_neurobem_5in.yaml",
+  "card_sha256": "62d5d522f19cf7022c87d5e9a0a9ab4e4d3a31d7759a5166c43cda959e23f11f",
+  "plugin_dir": "build/host-gz-l4/sim/gz/plugin",
+  "plugin_sha256": {
+    "libmarv_gz_lockstep.so": "e19f254c108cf4de35d2bf48e634b8493fe72eacc6d4f6c42b6ebc6bdc3cb710"
+  },
+  "run_l4_sha256": "144eca7acbb9400c1d13b1e22ea304f32c482d89ad36f3c0b50f60de93bdbf9f",
+  "scenarios": {
+    "roll": {
+      "path": "scenarios/quad/L04/chirp_roll.yaml",
+      "sha256": "c3a5e784cc8bae5f6dd9e75cf324e7c69b30b9f100deae296e75f3970afbed6c"
+    },
+    "pitch": {
+      "path": "scenarios/quad/L04/chirp_pitch.yaml",
+      "sha256": "bedf7e22f584e880949ff5fce3290e3a856a24e0c54f3577009a5250573f6a48"
+    },
+    "yaw": {
+      "path": "scenarios/quad/L04/chirp_yaw.yaml",
+      "sha256": "fd098c145ba049c36f4f4b036a65160e39d89cb4d8d15b2b64018dca95d222c6"
+    }
+  }
+}
