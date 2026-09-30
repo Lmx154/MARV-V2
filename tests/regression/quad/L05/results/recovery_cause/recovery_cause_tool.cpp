@@ -2,9 +2,10 @@
 // recovery (decision 0006 F "T4 large-angle recovery"). Additions to the sim use, each an input record:
 //   init <qw> <qx> <qy> <qz> <wx> <wy> <wz>   the initial attitude (body -> NED) and body rates (FRD), binary64; default
 //                                            level at rest
-//   rotors <rest|hover>                      the motors' initial speed: rest (0, as marv_plant starts) or the speed of
-//                                            the hover command (thrust_to_dshot of the zero-torque allocation at
-//                                            l5_thrust_n, through the plant's ESC map); default rest
+//   rotors <rest|hover|w1 w2 w3 w4>          the motors' initial speed: rest (0), the speed of the hover command
+//                                            (thrust_to_dshot of the zero-torque allocation at l5_thrust_n, through the
+//                                            plant's ESC map), or four explicit speeds (rad/s, logical order: the world's
+//                                            initial_rotor_speed_rad_s, marv_plant_config.initial_omega_rad_s); default rest
 //   first_read_zero <n>                      ticks 0 .. n - 1 give the firmware a body rate of 0 (gyro and attitude
 //                                            state) while the plant moves from the initial state: the gz step-0 read
 //                                            (lockstep.cpp sets the initial rates after that read); default 0
@@ -272,6 +273,8 @@ struct Input {
   std::array<double, 4> q0{1, 0, 0, 0};
   std::array<double, 3> w0{};
   bool rotors_hover = false;
+  bool rotors_given = false;
+  std::array<double, 4> rotor0{};
   std::uint64_t first_read_zero = 0;
   std::uint64_t set_tick = 0;
   bool set_state = false;
@@ -325,6 +328,11 @@ bool read_input(const char* path, Input& in, std::string& err) {
       std::string m;
       w >> m;
       in.rotors_hover = m == "hover";
+      if (m != "hover" && m != "rest") {
+        in.rotors_given = true;
+        in.rotor0[0] = std::stod(m);
+        w >> in.rotor0[1] >> in.rotor0[2] >> in.rotor0[3];
+      }
     } else if (kind == "set_state") {
       w >> in.set_tick;
       for (double& v : in.set_value) w >> v;
@@ -440,6 +448,9 @@ int sim(const Input& in, const std::string& mode, unsigned substeps, const char*
   if (in.rotors_hover) {
     const auto hover = mixer::thrust_to_dshot(c.mix, mixer::allocate(c.mix, mixer::Request<float>{c.thrust, Vec3f()}).f);
     for (std::size_t i = 0; i < kM; ++i) wm[i] = omega_cmd(p, hover[i].raw());
+  }
+  if (in.rotors_given) {
+    for (std::size_t i = 0; i < kM; ++i) wm[i] = in.rotor0[i];
   }
   std::array<double, 3> u{};
   std::ofstream out(out_path);

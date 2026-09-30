@@ -1,78 +1,56 @@
-MARV quad L5 T4 large-angle recovery: cause of the envelope failures (decision 0006 C, F; owner decisions 5, 15)
+MARV quad L5 T4 large-angle recovery: cause file on the final scenarios (decision 0006 C, F; owner decisions 5, 15, 23)
 command: uv run python tests/regression/quad/L05/results/recovery_cause/recovery_cause.py --work <dir> --out <file>
 label: truth-fed, perfect-model: not a validation run
 card: vehicles/uzh_neurobem_5in.yaml sha256 62d5d522f19cf7022c87d5e9a0a9ab4e4d3a31d7759a5166c43cda959e23f11f
 parameter table (build): build/host-gz-l5/generated/marv_params_l5_attitude_scripted/marv/params/param_defaults.cpp sha256 cce480e211b29a83a19b0cca3dba6280d9d8ae0aae0278c36c517702e9e83f4d
-scenarios: recover_inverted sha256 3aff47ac7c2ddc574b2a9a39fbe5be221ba6a1e429d27b4efef73574cc719e75, recover_tumble sha256 9665652c30b669086c8d8e1c468466cd75ddb4049a3c5cfb7fe2254dc8dda835
-tool: recovery_cause_tool.cpp sha256 99adfa40872e114bec9377a75dab3203b2c4590d1e8873de533a45f16746497e; design model: recovery_model.py sha256 4a2349c01e802c47b35e677673ecd2fc87b26683513031465398a468e972f1de
+scenarios: recover_inverted sha256 9715dd8de71af79eb4cc58870a1cc596912a2ea6d5c28dc7043435dfc7893cc8, recover_tumble sha256 2195cea03e4911570a1af332878689d8f1b40b7556209dbe11f80548d382419e
+tool: recovery_cause_tool.cpp sha256 36fabff2c0fb041bc39152abea9d7e932f98817cb8e40b41e1c9f049d9a3b19d; design model: recovery_model.py sha256 40450f1f19fd330e3d7d155dd773bcaae61112db0668c35d362361280a8f475c; test: test_t4_recovery.py sha256 0790d3e1454eada5ea3bb336cc497679c4d1eb0df88322bc401fb60c792d89d2
 
 attitude period T_a 0.0003125 s (2 ticks); rate period 0.0003125 s
-== 1. R2 initial-rate timing (scenario q0 [0.0, 1.0, 0.0, 0.0], w0 [11.693705558776855, 11.693705558776855, 11.693705558776855])
+== 1. R2 initial state in gz (scenario q0 [0.0, 1.0, 0.0, 0.0], w0 [11.693705558776855, 11.693705558776855, 11.693705558776855]; world initial_rotor_speed_rad_s 1100.5796047212257 1100.5796047212257 1100.5796047212257 1100.5796047212257)
 m = 2:
   host step 0 (ticks 0..1) read: body_q [-0, 1, 0, 0], body_omega [0, 0, 0]
   host step 1 (ticks 2..3) read: body_q [0.0018213, -0.99999, 0.0018278, -0.0018329], body_omega [11.656, 11.73, 11.698]
-  host step 2 (ticks 4..5) read: body_q [0.0036366, -0.99998, 0.0036561, -0.0036714], body_omega [11.618, 11.767, 11.702]
-  tick 0: gyro to SIL [0, 0, 0], DShot (765, 765, 765, 765), rotor speed [5.1984, 5.1984, 5.1984, 5.1984], plant torque NED [0, 0, 0]
-  tick 1: gyro to SIL [0, 0, 0], DShot (765, 765, 765, 765), rotor speed [10.372, 10.372, 10.372, 10.372], plant torque NED [0, 0, 0]
-  tick 2: gyro to SIL [11.656, 11.73, 11.698], DShot (48, 227, 1690, 1845), rotor speed [11.032, 12.153, 21.314, 22.285], plant torque NED [-2.6083e-06, 7.9286e-06, 2.3446e-05]
-  tick 3: gyro to SIL [11.656, 11.73, 11.698], DShot (48, 227, 1690, 1845), rotor speed [11.688, 13.925, 32.204, 34.141], plant torque NED [-1.1282e-05, 2.1576e-05, 6.4394e-05]
-  tick 4: gyro to SIL [11.618, 11.767, 11.702], DShot (48, 232, 1691, 1846), rotor speed [12.342, 15.72, 43.049, 45.947], plant torque NED [-2.6089e-05, 4.0631e-05, 0.00012265]
-  host step 1 read vs the torque-free rigid body from (q0, w0) at t = 0 over 2 tick(s): |dq| 8.225e-06 rad, max |dw| 6.524e-05 rad/s (the rates reached [11.656, 11.73, 11.698], not w0)
+  tick 0: gyro to SIL [0, 0, 0], DShot (765, 765, 765, 765), rotor speed [1100.6, 1100.6, 1100.6, 1100.6]
+  tick 1: gyro to SIL [0, 0, 0], DShot (765, 765, 765, 765), rotor speed [1100.6, 1100.6, 1100.6, 1100.6]
+  tick 2: gyro to SIL [11.656, 11.73, 11.698], DShot (48, 227, 1690, 1845), rotor speed [1096.1, 1097.2, 1106.4, 1107.3]
+  host step 1 read vs the torque-free rigid body from (q0, w0) at t = 0 over 2 tick(s): |dq| 8.225e-06 rad, max |dw| 6.524e-05 rad/s
 m = 1:
   host step 0 (ticks 0..0) read: body_q [-0, 1, 0, 0], body_omega [0, 0, 0]
   host step 1 (ticks 1..1) read: body_q [0.0009121, -1, 0.00091373, -0.000915], body_omega [11.675, 11.712, 11.696]
-  host step 2 (ticks 2..2) read: body_q [0.0018227, -0.99999, 0.0018276, -0.0018314], body_omega [11.656, 11.73, 11.698]
-  tick 0: gyro to SIL [0, 0, 0], DShot (765, 765, 765, 765), rotor speed [5.1984, 5.1984, 5.1984, 5.1984], plant torque NED [0, 0, 0]
-  tick 1: gyro to SIL [11.675, 11.712, 11.696], DShot (765, 765, 765, 765), rotor speed [10.372, 10.372, 10.372, 10.372], plant torque NED [0, 0, 0]
-  tick 2: gyro to SIL [11.656, 11.73, 11.698], DShot (48, 227, 1690, 1845), rotor speed [11.032, 12.153, 21.314, 22.285], plant torque NED [-2.6083e-06, 7.9285e-06, 2.3446e-05]
-  host step 1 read vs the torque-free rigid body from (q0, w0) at t = 0 over 1 tick(s): |dq| 2.056e-06 rad, max |dw| 1.632e-05 rad/s (the rates reached [11.675, 11.712, 11.696], not w0)
+  tick 0: gyro to SIL [0, 0, 0], DShot (765, 765, 765, 765), rotor speed [1100.6, 1100.6, 1100.6, 1100.6]
+  tick 1: gyro to SIL [11.675, 11.712, 11.696], DShot (765, 765, 765, 765), rotor speed [1100.6, 1100.6, 1100.6, 1100.6]
+  host step 1 read vs the torque-free rigid body from (q0, w0) at t = 0 over 1 tick(s): |dq| 2.056e-06 rad, max |dw| 1.632e-05 rad/s
 
-== 2. R2 cause (m = 1 replay, bit-exact)
+== 2. R2 cause (m = 1 replay)
 collective-held torque envelope tau_held (run_l4.tau_held at l5_thrust_n 7.570578098297119 N): [0.743, 0.55725, 0.16346] N m (roll, pitch, yaw)
 replay fidelity: DShot bit-exact at all 20747 rate executions
 flag_x: set at 0 executions
 flag_y: set at 0 executions
 flag_z: set at 0 executions
 s or t < 1: 0 executions
-|w x Jw| max per axis over the run: [0.36652, 0.24543, 0.054692] N m; at execution 1: [0.30188, -0.24543, -0.054692] N m; ratio to tau_held at execution 1: [0.4063, 0.44043, 0.33459]
-max |achieved torque| per axis: [0.15792, 0.22866, 0.40324] N m; max |request| per axis: [0.15792, 0.22866, 0.40324] N m
-integrator (req - kp (sp - gyro)) max |I| per axis: [0.12311, 0.09267, 0.10671] N m; at k = 100, 400, 1600, 8000: [[-0.0099854, -0.017029, -0.040449], [0.012792, -0.07212, -0.10425], [-0.00080145, -0.055195, -0.020041], [-0.00041705, -0.00052354, -0.00090579]]
-gz m = 1 recovery: {alpha<90deg at exec: 932, (s): 0.29125, alpha<0.1pi at exec: 1496, (s) : 0.4675, alpha max after exec 1: 3.1364, final alpha: 0.00086902, final heading err (err_z): 0.00012685, final |w|: 0.00056996, max |w|: 20.284}; final q [1, 0.00033606, -0.00027544, -6.3427e-05], final w [-0.00037359, 0.00039446, -0.00017229]
+|w x Jw| max per axis over the run: [0.34311, 0.24543, 0.054692] N m; at execution 1: [0.30188, -0.24543, -0.054692] N m; ratio to tau_held at execution 1: [0.4063, 0.44043, 0.33459]
+max |achieved torque| per axis: [0.13614, 0.21254, 0.40168] N m; max |request| per axis: [0.13614, 0.21254, 0.40168] N m
+integrator (req - kp (sp - gyro)) max |I| per axis: [0.12311, 0.088908, 0.098554] N m; at k = 100, 400, 1600, 8000: [[-0.010153, -0.016724, -0.039796], [0.0050551, -0.06806, -0.097218], [-0.0078435, -0.053627, -0.020967], [-0.00058609, -0.00042822, -0.00079232]]
+gz m = 1 recovery: {alpha<90deg at exec: 828, (s): 0.25875, alpha<0.1pi at exec: 1506, (s) : 0.47063, alpha max after exec 1: 3.1364, final alpha: 0.00081413, final heading err (err_z): 0.00016316, final |w|: 0.00050993, max |w|: 20.263}; final q [1, -0.00031617, 0.00025639, -8.1581e-05], final w [0.00033682, -0.00034404, -0.00016797]
   exec 1 (t 0.0003 s): alpha 3.1364, err [3.1379, -0.0057349, 0.0057469], w [11.656, 11.73, 11.698], |w x Jw| [0.30188, -0.24543, -0.054692]
-  exec 8 (t 0.0025 s): alpha 3.1003, err [3.1121, -0.04557, 0.046097], w [11.389, 11.983, 11.725], |w x Jw| [0.30911, -0.24036, -0.05459]
-  exec 16 (t 0.0050 s): alpha 3.0590, err [3.082, -0.090469, 0.092443], w [11.075, 12.264, 11.754], |w x Jw| [0.31714, -0.23431, -0.054328]
-  exec 40 (t 0.0125 s): alpha 2.9358, err [2.9887, -0.22158, 0.23243], w [10.07, 13.038, 11.809], |w x Jw| [0.33874, -0.21406, -0.052519]
-  exec 80 (t 0.0250 s): alpha 2.7357, err [2.8244, -0.43001, 0.46524], w [8.2074, 14.022, 11.735], |w x Jw| [0.36198, -0.17336, -0.046032]
-  exec 160 (t 0.0500 s): alpha 2.3776, err [2.4766, -0.8175, 0.90162], w [4.2225, 14.57, 10.903], |w x Jw| [0.3495, -0.082871, -0.024609]
-  exec 400 (t 0.1250 s): alpha 1.8614, err [1.4928, -1.7599, 1.6655], w [-2.0733, 8.5051, 6.4177], |w x Jw| [0.12008, 0.023951, 0.0070535]
-  exec 800 (t 0.2500 s): alpha 1.7397, err [0.62822, -2.0799, 1.7696], w [3.0351, -1.1602, 2.9739], |w x Jw| [-0.0075906, -0.016247, 0.0014085]
-  exec 1600 (t 0.5000 s): alpha 0.1084, err [0.090042, -0.080085, 1.5757], w [5.3827, -3.3319, 3.566], |w x Jw| [-0.026139, -0.03455, 0.0071739]
-counterfactual ladder (float firmware path, m = 1-like: tick 0 reads w = 0 as gz; rotors from rest unless 'hover'); distance to the gz m = 1 trace and to the nominal design member of recovery_model.py (no w x Jw, no saturation):
-  design     rotors rest : max channel |sim - gz| 9.5693e+00, |sim - design nominal| 2.9312e-06, saturated rate executions 0; {alpha<90deg at exec: 396, (s): 0.12375, alpha<0.1pi at exec: 3120, (s) : 0.975, alpha max after exec 1: 3.1364, final alpha: 1.8992e-06, final heading err (err_z): 1.61e-06, final |w|: 5.3979e-06, max |w|: 20.254}
-  cont       rotors rest : max channel |sim - gz| 1.0130e+01, |sim - design nominal| 1.0192e+00, saturated rate executions 0; {alpha<90deg at exec: 374, (s): 0.11688, alpha<0.1pi at exec: 3177, (s) : 0.99281, alpha max after exec 1: 3.1364, final alpha: 1.9956e-06, final heading err (err_z): 1.8299e-06, final |w|: 5.8578e-06, max |w|: 20.254}
-  cont_gyro  rotors rest : max channel |sim - gz| 1.6728e-02, |sim - design nominal| 9.5667e+00, saturated rate executions 0; {alpha<90deg at exec: 932, (s): 0.29125, alpha<0.1pi at exec: 1495, (s) : 0.46719, alpha max after exec 1: 3.1364, final alpha: 2.4734e-06, final heading err (err_z): 3.2995e-06, final |w|: 8.6944e-06, max |w|: 20.283}
-  quant      rotors rest : max channel |sim - gz| 1.0129e+01, |sim - design nominal| 1.0192e+00, saturated rate executions 0; {alpha<90deg at exec: 374, (s): 0.11688, alpha<0.1pi at exec: 3177, (s) : 0.99281, alpha max after exec 1: 3.1364, final alpha: 0.00033527, final heading err (err_z): 2.0341e-06, final |w|: 0.00020788, max |w|: 20.254}
-  quant_gyro rotors rest : max channel |sim - gz| 7.5750e-03, |sim - design nominal| 9.5666e+00, saturated rate executions 0; {alpha<90deg at exec: 932, (s): 0.29125, alpha<0.1pi at exec: 1495, (s) : 0.46719, alpha max after exec 1: 3.1364, final alpha: 0.00078137, final heading err (err_z): 0.0001532, final |w|: 0.0005728, max |w|: 20.283}
-  quant_gyro rotors hover: max channel |sim - gz| 1.6347e+00, |sim - design nominal| 7.9558e+00, saturated rate executions 0; {alpha<90deg at exec: 828, (s): 0.25875, alpha<0.1pi at exec: 1505, (s) : 0.47031, alpha max after exec 1: 3.1364, final alpha: 0.0010562, final heading err (err_z): 0.00011434, final |w|: 0.00046867, max |w|: 20.263}
-  gz m = 1 against the design nominal (executions >= 1): max channel distance 9.5693e+00; design nominal {alpha<90deg at exec: 396, (s): 0.12375, alpha<0.1pi at exec: 3120, (s) : 0.975, alpha max after exec 1: 3.1364, final alpha: 1.8992e-06, final heading err (err_z): 1.61e-06, final |w|: 5.3979e-06, max |w|: 20.254}
+  exec 16 (t 0.0050 s): alpha 3.0590, err [3.082, -0.090408, 0.092398], w [11.078, 12.247, 11.732], |w x Jw| [0.31609, -0.23393, -0.054266]
+  exec 80 (t 0.0250 s): alpha 2.7371, err [2.8245, -0.42458, 0.46102], w [8.3825, 13.682, 11.399], |w x Jw| [0.34311, -0.17199, -0.045877]
+  exec 160 (t 0.0500 s): alpha 2.3821, err [2.4795, -0.78831, 0.88131], w [4.9306, 13.793, 10.224], |w x Jw| [0.31024, -0.090741, -0.027202]
+  exec 400 (t 0.1250 s): alpha 1.8216, err [1.5377, -1.5904, 1.6262], w [-0.46236, 8.0862, 5.8202], |w x Jw| [0.10354, 0.0048439, 0.0014955]
+  exec 800 (t 0.2500 s): alpha 1.5988, err [0.71538, -1.8225, 1.7832], w [3.085, -0.90831, 2.9509], |w x Jw| [-0.0058968, -0.016387, 0.0011209]
+  exec 1600 (t 0.5000 s): alpha 0.1554, err [0.12965, -0.10851, 1.408], w [4.5917, -3.3144, 3.4515], |w x Jw| [-0.025167, -0.028527, 0.0060875]
+counterfactual ladder (float firmware path; tick 0 reads w = 0 as gz; rotors at the world's initial speeds): the largest channel distance to the gz m = 1 trace and to the nominal design member of recovery_model.py (no w x Jw, no saturation), executions >= 1:
+  design    : |sim - gz| 7.9594e+00, |sim - design nominal| 2.9312e-06, saturated rate executions 0; {alpha<90deg at exec: 396, (s): 0.12375, alpha<0.1pi at exec: 3120, (s) : 0.975, alpha max after exec 1: 3.1364, final alpha: 1.8992e-06, final heading err (err_z): 1.61e-06, final |w|: 5.3979e-06, max |w|: 20.254}
+  cont      : |sim - gz| 8.6583e+00, |sim - design nominal| 7.4162e-01, saturated rate executions 0; {alpha<90deg at exec: 376, (s): 0.1175, alpha<0.1pi at exec: 3165, (s) : 0.98906, alpha max after exec 1: 3.1364, final alpha: 1.9929e-06, final heading err (err_z): 1.66e-06, final |w|: 5.6442e-06, max |w|: 20.254}
+  cont_gyro : |sim - gz| 1.4572e-02, |sim - design nominal| 7.9563e+00, saturated rate executions 0; {alpha<90deg at exec: 828, (s): 0.25875, alpha<0.1pi at exec: 1505, (s) : 0.47031, alpha max after exec 1: 3.1364, final alpha: 2.3472e-06, final heading err (err_z): 2.9731e-06, final |w|: 7.9793e-06, max |w|: 20.263}
+  quant     : |sim - gz| 8.6596e+00, |sim - design nominal| 7.4241e-01, saturated rate executions 0; {alpha<90deg at exec: 376, (s): 0.1175, alpha<0.1pi at exec: 3166, (s) : 0.98938, alpha max after exec 1: 3.1364, final alpha: 0.0018697, final heading err (err_z): 0.00037527, final |w|: 0.002134, max |w|: 20.254}
+  quant_gyro: |sim - gz| 7.9331e-03, |sim - design nominal| 7.9556e+00, saturated rate executions 0; {alpha<90deg at exec: 828, (s): 0.25875, alpha<0.1pi at exec: 1505, (s) : 0.47031, alpha max after exec 1: 3.1364, final alpha: 0.00099095, final heading err (err_z): 9.6083e-05, final |w|: 0.00049732, max |w|: 20.263}
+  gz m = 1 against the design nominal: 7.9594e+00; design nominal {alpha<90deg at exec: 396, (s): 0.12375, alpha<0.1pi at exec: 3120, (s) : 0.975, alpha max after exec 1: 3.1364, final alpha: 1.8992e-06, final heading err (err_z): 1.61e-06, final |w|: 5.3979e-06, max |w|: 20.254}
 
-== 3. rotors at t = 0: marv_plant_config (sim/plant/include/marv_plant.h) has no initial rotor speed field and Model::omega_ is zero-initialised (sim/plant/src/plant_model.hpp); the scenario schema has none either
-recover_inverted: first 32 executions (10.0 ms): max |alpha rest - alpha hover| 1.6659e-04 rad, max |w rest - w hover| 4.9808e-02 rad/s
-recover_inverted: first 64 executions (20.0 ms): max |alpha rest - alpha hover| 1.1964e-03 rad, max |w rest - w hover| 1.6105e-01 rad/s
-recover_inverted: first 160 executions (50.0 ms): max |alpha rest - alpha hover| 1.1137e-02 rad, max |w rest - w hover| 4.7369e-01 rad/s
-recover_inverted: rotor speed of motor 1..4 at (0.01, 0.02, 0.05) s (gz m = 1; hover command speed 1100.50 rad/s at DShot 765): [322.74, 256.54, 282.68, 300.14]; [557.83, 441.52, 485.16, 520.33]; [953.82, 753.13, 823.73, 895.22]
-recover_tumble: first 32 executions (10.0 ms): max |alpha rest - alpha hover| 1.1546e-04 rad, max |w rest - w hover| 7.5349e-02 rad/s
-recover_tumble: first 64 executions (20.0 ms): max |alpha rest - alpha hover| 7.7942e-04 rad, max |w rest - w hover| 2.3995e-01 rad/s
-recover_tumble: first 160 executions (50.0 ms): max |alpha rest - alpha hover| 4.4817e-03 rad, max |w rest - w hover| 7.7246e-01 rad/s
-recover_tumble: rotor speed of motor 1..4 at (0.01, 0.02, 0.05) s (gz m = 1; hover command speed 1100.50 rad/s at DShot 765): [46.385, 132.76, 611.13, 664.82]; [73.472, 265.93, 1067.1, 1162.1]; [119.17, 632.95, 1816.7, 1978.3]
-
-== 4. R1 (m = 1 replay bit-exact at all 20747 rate executions)
-exec 0: truth q [-0, 1, 0, 0], rate setpoint [6.1746, 0, 0], rho 0.000e+00
-exec 1: truth q [4.3298e-17, 1, 7.8505e-17, 4.3298e-17], rate setpoint [-4.8287, 3.8483, -2.9632e-16], rho 6.123e-17, split tilt axis (a, b) (-0.7071, 0.7071) at 135.000 deg, psi -1.5708 rad, command direction 141.447 deg: bend +6.447 deg (predicted -w psi / 2 = +6.447 deg; bound w pi / 2 = 12.893 deg); angle from the rho = 0 branch's axis (+-x) 38.553 deg; |r_xy| 6.1746 (2k sqrt(1 - rho^2) = 6.1746)
-exec 2: truth q [1.4728e-10, 1, 5.9255e-13, 1.1671e-10], rate setpoint [-5.1846, 3.3533, -7.7634e-10], rho 1.879e-10, split tilt axis (a, b) (-0.7838, 0.6211) at 141.606 deg, psi -1.3402 rad, command direction 147.106 deg: bend +5.500 deg (predicted -w psi / 2 = +5.500 deg; bound w pi / 2 = 12.893 deg); angle from the rho = 0 branch's axis (+-x) 32.894 deg; |r_xy| 6.1746 (2k sqrt(1 - rho^2) = 6.1746)
-gz m = 1 recovery: {alpha<90deg at exec: 1095, (s): 0.34219, alpha<0.1pi at exec: 2037, (s) : 0.63656, alpha max after exec 1: 3.1416, final alpha: 0.0007779, final heading err (err_z): -0.00016438, final |w|: 0.00055699, max |w|: 7.5022}; final q [1, 0.00025225, 0.00029606, 8.2191e-05]
-counterfactual from exactly q0 with the plant state set at execution 1 (tick 2) to gz's logged state there, q [4.3298e-17, 1, 7.8505e-17, 4.3298e-17], w [3.0093e-36, -9.1711e-34, 0] (gz's rounding noise off the singular set; the exact model is still exactly at q0 there)
-axis-invariant envelope (17 x 17 grid, from exactly [0, 1, 0, 0] at rest), gz m = 1 (max channel |trace - gz m1| 0.000e+00; {alpha<90deg at exec: 1095, (s): 0.34219, alpha<0.1pi at exec: 2037, (s) : 0.63656, alpha max after exec 1: 3.1416, final alpha: 0.0007779, final heading err (err_z): -0.00016438, final |w|: 0.00055699, max |w|: 7.5022}): alpha max outside +1.4609e-03 at exec 141, executions outside 2998, gz E (m1 vs m2) 1.685e-03, halving 4.112e-02; |w_xy| max outside +7.6133e-01 at exec 2529, executions outside 592, gz E (m1 vs m2) 8.422e-03, halving 1.064e-01; w_z max outside +2.0182e+00 at exec 1728, executions outside 20745, gz E (m1 vs m2) 1.158e-02, halving 0.000e+00
-axis-invariant envelope (17 x 17 grid, from exactly [0, 1, 0, 0] at rest), quant_gyro rotors rest (max channel |trace - gz m1| 1.443e+01; {alpha<90deg at exec: 1094, (s): 0.34187, alpha<0.1pi at exec: 1839, (s) : 0.57469, alpha max after exec 1: 3.1416, final alpha: 0.0025902, final heading err (err_z): 1.1774e-16, final |w|: 0.0069072, max |w|: 7.4707}): alpha max outside +4.0765e-03 at exec 17247, executions outside 5241, gz E (m1 vs m2) 1.685e-03, halving 4.112e-02; |w_xy| max outside +5.8645e-02 at exec 85, executions outside 3267, gz E (m1 vs m2) 8.422e-03, halving 1.064e-01; w_z max outside +2.9596e-17 at exec 16658, executions outside 20745, gz E (m1 vs m2) 1.158e-02, halving 0.000e+00
-axis-invariant envelope (17 x 17 grid, from exactly [0, 1, 0, 0] at rest), quant_gyro rotors rest, gz exec-1 state injected (max channel |trace - gz m1| 2.758e-02; {alpha<90deg at exec: 1096, (s): 0.3425, alpha<0.1pi at exec: 2041, (s) : 0.63781, alpha max after exec 1: 3.1416, final alpha: 0.00049709, final heading err (err_z): -0.00010555, final |w|: 0.00059952, max |w|: 7.5064}): alpha max outside +1.5521e-03 at exec 144, executions outside 2062, gz E (m1 vs m2) 1.685e-03, halving 4.112e-02; |w_xy| max outside +7.7742e-01 at exec 2529, executions outside 613, gz E (m1 vs m2) 8.422e-03, halving 1.064e-01; w_z max outside +2.0397e+00 at exec 1729, executions outside 20745, gz E (m1 vs m2) 1.158e-02, halving 0.000e+00
-axis-invariant envelope (17 x 17 grid, from exactly [0, 1, 0, 0] at rest), quant_gyro rotors hover (max channel |trace - gz m1| 1.423e+01; {alpha<90deg at exec: 1068, (s): 0.33375, alpha<0.1pi at exec: 1857, (s) : 0.58031, alpha max after exec 1: 3.1416, final alpha: 0.0018824, final heading err (err_z): 7.4309e-17, final |w|: 0.0066718, max |w|: 7.2666}): alpha max outside +4.4197e-03 at exec 17334, executions outside 4949, gz E (m1 vs m2) 1.685e-03, halving 4.112e-02; |w_xy| max outside +8.8003e-03 at exec 6165, executions outside 3111, gz E (m1 vs m2) 8.422e-03, halving 1.064e-01; w_z max outside +3.8001e-17 at exec 19356, executions outside 20744, gz E (m1 vs m2) 1.158e-02, halving 0.000e+00
+== 3. R1 (replay: DShot bit-exact at all 20747 rate executions of the m = 1 run)
+exec 0: truth q [0.005, 0.99999, -0, -0], rho 5.0000e-03, split tilt axis (-1.0000, 0.0000), rate setpoint [-6.1745, 0, 0]
+exec 1: truth q [0.005, 0.99999, 7.8505e-17, -2.993e-16], rho 5.0000e-03, split tilt axis (-1.0000, -0.0000), rate setpoint [-6.1745, -3.1714e-13, 1.848e-15]
+gz m = 1 recovery: {alpha<90deg at exec: 1063, (s): 0.33219, alpha<0.1pi at exec: 1852, (s) : 0.57875, alpha max after exec 1: 3.1316, final alpha: 0.0018792, final heading err (err_z): 1.2305e-12, final |w|: 0.0066717, max |w|: 7.2538}; final q [1, -0.00093962, 5.2946e-15, -6.1524e-13]
+test predicate on gz (test_t4_recovery.evaluate): passed True, violations 0; F [0.0059416, 0.00028012, 0.00028012, 0.065301, 0.0012662, 0.0012662]; Q [0.0081137, 2.0587e-16, 7.2665e-15, 0.042123, 0, 1.291e-15]
+counterfactual quant_gyro (rotors at the world's initial speeds) against gz m = 1, within E + F + Q per channel (slack <= 0 inside): err_x max |sim - gz| 8.116e-04, worst slack -1.363e-02 at exec 1768; err_y max |sim - gz| 1.993e-14, worst slack -2.801e-04 at exec 891; err_z max |sim - gz| 1.230e-12, worst slack -2.801e-04 at exec 20743; w_x max |sim - gz| 3.862e-03, worst slack -1.040e-01 at exec 16848; w_y max |sim - gz| 4.567e-15, worst slack -1.266e-03 at exec 451; w_z max |sim - gz| 3.471e-15, worst slack -1.266e-03 at exec 1036
