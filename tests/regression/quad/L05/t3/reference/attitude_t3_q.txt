@@ -1,0 +1,41 @@
+# T3 quantisation term Q of the L5 T4 tolerance (owner decision 19): per script and channel the maximum over the
+# time of |quantised - unquantised| of the design-model trajectory, where the quantised model inserts the actuator
+# (mixer allocation at the scenario collective l5_thrust_n, thrust_to_dshot rounding as the firmware does it,
+# marv_plant's ESC map DShot -> omega -> k omega^2, rotor geometry back to torque) between the rate loop's torque
+# request and the torque lag of the design plant. Evaluated at the corners of the tau x J box plus the nominal
+# (q_corners), and over the 9 x 9 grid that contains them (q_grid); q is q_grid where the grid exceeds the corners
+# (rule grid), else q_corners (rule corners). Written by attitude_t3_oracle.py from attitude_t3_q_inputs.txt; see
+# README.md. Rule: fw/mixer/include/marv/mixer/mixer.hpp allocate and thrust_to_dshot, sim/plant/src/plant_model.hpp
+# Model::omega_cmd. Units rad (theta, headings) and rad/s (omega). at = the member (s, t) and attitude execution.
+# segment_executions 10372  yaw_fallback stick_scale 1.0
+hover_dshot_real 765.0598474348699
+hover_dshot_rounded 765
+zero_request_torque_nm_roll 0.0
+zero_request_torque_nm_pitch 0.0
+zero_request_torque_nm_yaw 0.0
+scenario step_roll
+saturated_executions 0
+channel theta q 0.00829178977898361 rule grid q_corners 0.0078089307098715465 q_grid 0.00829178977898361 at_s 1.0 at_t -0.25 at_execution 15884
+channel omega q 0.04774031402258346 rule grid q_corners 0.04033140595862157 q_grid 0.04774031402258346 at_s -0.5 at_t -1.0 at_execution 2262
+scenario step_pitch
+saturated_executions 0
+channel theta q 0.007409024425589994 rule grid q_corners 0.0067215546140475535 q_grid 0.007409024425589994 at_s 1.0 at_t 0.75 at_execution 7197
+channel omega q 0.04228719764413838 rule grid q_corners 0.031118884319204287 q_grid 0.04228719764413838 at_s -0.5 at_t -1.0 at_execution 2218
+scenario yaw_release
+saturated_executions 90576
+channel omega q 0.005817830302498663 rule grid q_corners 0.005222033449941661 q_grid 0.005817830302498663 at_s 0.0 at_t -0.75 at_execution 15391
+channel heading_release q 0.0014982811765662518 rule grid q_corners 0.0012677090650896616 q_grid 0.0014982811765662518 at_s 1.0 at_t -0.5 at_execution 18809
+channel heading_lock q 0.001030181736084046 rule grid q_corners 0.000946840462447085 q_grid 0.001030181736084046 at_s 1.0 at_t 0.0 at_execution 19562
+# the allocation scales or clamps requests in this script (saturated_executions counts member x rate executions); q_allocation_only is the same comparison without the DShot rounding (the allocation's own effect, which q includes)
+channel omega q_allocation_only 2.667339831230464e-07 rule corners
+channel heading_release q_allocation_only 6.905064253714954e-08 rule corners
+channel heading_lock q_allocation_only 5.4899032875255216e-08 rule corners
+scenario yaw_fallback
+saturated_executions 1379304
+channel omega q 0.004946689429484508 rule grid q_corners 0.004651603488611045 q_grid 0.004946689429484508 at_s -1.0 at_t 0.75 at_execution 10617
+channel heading_release q 0.001463721177088928 rule grid q_corners 0.0013886781667054038 q_grid 0.001463721177088928 at_s -1.0 at_t 0.25 at_execution 12252
+channel heading_lock q 0.000765350166460621 rule grid q_corners 0.0007570364012110531 q_grid 0.000765350166460621 at_s 0.5 at_t -1.0 at_execution 16382
+# the allocation scales or clamps requests in this script (saturated_executions counts member x rate executions); q_allocation_only is the same comparison without the DShot rounding (the allocation's own effect, which q includes)
+channel omega q_allocation_only 2.8014894137839974e-07 rule corners
+channel heading_release q_allocation_only 7.715715355516295e-08 rule corners
+channel heading_lock q_allocation_only 4.529708519385167e-08 rule corners

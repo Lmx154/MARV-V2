@@ -14,9 +14,19 @@ trajectories are compared with an independent double oracle within a derived rou
 | `reference/attitude_t3_golden.txt` | Per script: the trajectory (angle, rate) per attitude execution, the node error bounds, the tolerances. |
 | `reference/attitude_t3_envelope.txt` | The band envelopes of the design model (for T4) and the fallback property. |
 
-Regenerate the golden and the envelope (about 1 min on the host; byte-identical on the host and in `marv-ci`):
+| `reference/attitude_t3_q_inputs.txt` | The quantiser fixture (hex floats): the firmware mixer's f32 values, the scenario collective `l5_thrust_n`, the card's plant side in double. |
+| `reference/attitude_t3_q.txt` | The DShot quantisation term Q per script and channel (for T4). |
 
-    uv run python tests/regression/quad/L05/t3/reference/attitude_t3_oracle.py
+Regenerate the golden, the envelope and Q (about 1 min on the host; byte-identical on the host and in `marv-ci`, and
+independent of `--procs`, which only spreads the Q runs over worker processes):
+
+    uv run python tests/regression/quad/L05/t3/reference/attitude_t3_oracle.py --procs 8
+
+Regenerate the quantiser fixture (when the card or a product mixer parameter changes, or at L6; it reads
+`vehicles/uzh_neurobem_5in.yaml`, the `l5_thrust_n` rule of `tools/sim/run_l5.py` and the build's parameter table) and then Q:
+
+    uv run python tests/regression/quad/L05/t3/reference/attitude_t3_oracle.py --refresh-q-inputs \
+        build/<preset>/generated/marv_params/marv/params/param_defaults.cpp
 
 Regenerate the inputs from a built product parameter table (only when a product parameter changes; it imports
 `tools/sim/run_l4.py` for `tau_held_yaw_nm`):
@@ -148,3 +158,45 @@ stick would halve (core 7.5) until none does; the recorded `stick_scale` is 1 (f
 `sigma_r w` over the members is +0.0975 rad/s. The test asserts it on the committed envelope, with the release script (no
 disturbance, smallest `sigma_r w` = -3.58 rad/s, it crosses) as the control. The same property on the live parameters is
 checked in `../tools/`.
+
+## The quantisation term Q (owner decision 19, for T4)
+
+The design model has a continuous torque input; the flown loop rounds the thrust of each motor to a DShot step. T4 checks gz
+within `envelope +- (E + F + Q)`; the T3 envelope and its F are unchanged. `Q` is computed by rule, not fitted to Gazebo, and
+regenerates with the card (or L6):
+
+`Q = max over the time and over the tau x J box of |quantised - unquantised|` of the design-model trajectory for the same script,
+per channel the T4 predicates use (tilt scripts: angle and rate; yaw scripts: the rate and the headings relative to the release
+and to the lock, each member against its own release and lock). The unquantised model is the envelope's. The quantised model
+(`Quantiser` in the oracle, binary64) puts between the rate loop's torque request and the design plant's torque lag:
+
+1. `mixer::allocate` at the scenario collective `l5_thrust_n` (`fw/mixer/include/marv/mixer/mixer.hpp:145`), the request on the
+   script's axis and the other two axes 0;
+2. `mixer::thrust_to_dshot` (`fw/mixer/include/marv/mixer/mixer.hpp:246`): `omega = sqrt(f / k)`, DShot = the linear-in-omega ESC
+   map inverted and rounded to nearest (halves away from zero, `std::round`), clamped to `[ceil(D(omega_idle)), 2047]`;
+3. marv_plant's ESC map (`sim/plant/src/plant_model.hpp:47`, `Model::omega_cmd`: DShot 0 gives 0, 48..2047 map linearly to the
+   card's `speed_range`), thrust `k_card omega^2`, the card's rotor geometry and yaw reaction, projected on the script's axis.
+
+It is the same actuator rule as the cause diagnosis (`../results/step_cause/`, `step_cause_tool.cpp` `omega_cmd` and
+`body_torque`), in the design model instead of the float path: hover DShot 765.06 gives 765, the request dead bands are 8.03e-4
+(roll), 6.02e-4 (pitch) and 1.77e-4 (yaw) N m, one DShot step at hover is 4.562e-3 N (`../tools/test_attitude_t3_q.py` checks
+them against `cause.txt`). Off-axis torque of the rounding is not carried (the design model is single-axis).
+
+Evaluation: at the four corners of the box plus the nominal (`q_corners`), then over the 9 x 9 grid that contains them
+(`q_grid`). `q` is `q_grid` where the grid exceeds the corners (`rule grid`), else `q_corners`. The rounding is not monotone in
+the parameters, so the corners do not bound it: in every channel the grid maximum exceeds the corner maximum (by 6 % to 50 %), and
+`q` is the grid maximum. The recorded `saturated_executions` counts member x rate executions in which the allocation scaled the
+request or moved the collective (none in the tilt scripts); for the yaw scripts `q_allocation_only` is the same comparison with the
+DShot rounding left out (about 3e-7): the allocation's effect is negligible against the rounding.
+
+| Script | theta (rad) | omega (rad/s) | heading to the release (rad) | heading to the lock (rad) |
+| --- | --- | --- | --- | --- |
+| `step_roll` | 8.29e-3 | 4.77e-2 | - | - |
+| `step_pitch` | 7.41e-3 | 4.23e-2 | - | - |
+| `yaw_release` | - | 5.82e-3 | 1.50e-3 | 1.03e-3 |
+| `yaw_fallback` | - | 4.95e-3 | 1.46e-3 | 7.65e-4 |
+
+Checks: `t3_test.cpp` `L5T3Quantisation` (Q recorded, finite and positive for every script and channel); the control in
+`../tools/test_attitude_t3_q.py` (the quantiser disabled, the identity map, gives Q = 0 exactly; enabled it gives Q > 0). Compared
+with the measured gz excursions of the step cause diagnosis (roll +6.52e-3 and pitch +5.94e-3 rad outside the envelope): Q theta
+is 8.29e-3 and 7.41e-3, which covers them with a margin of 1.27 and 1.25 (and F, 2.93e-3, is not needed for that).

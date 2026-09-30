@@ -816,21 +816,25 @@ class Member:
         self.g = tt - self.tau * self.em
         self.q = tt * tt / 2 - self.tau * self.g
 
-    def attitude_step(self, st, r, d):
-        """One attitude period of N rate executions with the held reference r and a torque disturbance d."""
+    def attitude_step(self, st, r, d, quant=None):
+        """One attitude period of N rate executions with the held reference r and a torque disturbance d; `quant` (the T4
+        quantisation term Q, below) maps the torque request of the rate loop to the torque the DShot commands give."""
         m, w, th, i_int, ep = st
         kp, ki, tau, j, e_, em, g, q2, t = self.kp, self.ki, self.tau, self.j, self.e, self.em, self.g, self.q, self.t
         for _ in range(self.su.ratio):
             i_int += ki * t * ep
             e = r - w
-            u = kp * e + i_int + d
+            u = kp * e + i_int
+            if quant is not None:
+                u = quant(u)
+            u = u + d
             th, w, m = th + t * w + (tau * g * m + q2 * u) / j, w + (tau * em * m + g * u) / j, e_ * m + em * u
             ep = e
         return (m, w, th, i_int, ep)
 
 
-def tilt_member_run(su, axis, s, t, h_seg):
-    """theta per attitude execution of the tilt script on one member."""
+def tilt_member_run(su, axis, s, t, h_seg, quant=None, om=None):
+    """theta per attitude execution of the tilt script on one member (om: a list that receives the rate)."""
     cfg = su.cfg
     mem = Member(su, axis, s, t)
     a_r = 1 + h_seg
@@ -842,15 +846,17 @@ def tilt_member_run(su, axis, s, t, h_seg):
     tilt = cfg.tilt_max
     for a in range(su.attitude_executions(h_seg)):
         out.append(st[2])
+        if om is not None:
+            om.append(st[1])
         sp = tilt if 1 <= a < a_r else 0.0
         r = k2 * sin((sp - st[2]) / 2)
         if abs(r) > bound:
             sys.exit(f"the design-model rate setpoint {r!r} reaches the clamp {bound!r}")
-        st = mem.attitude_step(st, r, 0.0)
+        st = mem.attitude_step(st, r, 0.0, quant)
     return out
 
 
-def yaw_member_run(su, s, t, h_seg, stick, d_amp):
+def yaw_member_run(su, s, t, h_seg, stick, d_amp, quant=None):
     """The yaw release script on one member: dict(om, th per attitude execution; a_l the lock execution, a_fb the first
     execution with the fallback condition, min_sigma the smallest sigma_r w from the release up to and including a_fb
     (or to the end when there is none), lock_by)."""
@@ -894,7 +900,7 @@ def yaw_member_run(su, s, t, h_seg, stick, d_amp):
                     a_l = a
                     lock_by = "crossing" if sigma * w_a <= 0 else "fallback"
             r = 0.0 if phase == "braking" else kw * (2 * math.sin(cfg.w * wrap(psi_l - th_a) / 2))
-        st = mem.attitude_step(st, r, d)
+        st = mem.attitude_step(st, r, d, quant)
     return {"om": om, "th": th, "a_l": a_l, "a_fb": a_fb, "min_sigma": min_sig, "lock_by": lock_by, "a_r": a_r}
 
 
@@ -1174,14 +1180,295 @@ def write_envelope(su, res, path):
         f.write("\n".join(lines) + "\n")
 
 
+# ---- the DShot quantisation term Q of the T4 tolerance (owner decision 19) ---------------------------------------------------
+
+DSHOT_THROTTLE_MIN = 48      # fw/prim/include/marv/prim/constants.hpp kDshotThrottleMin (core 4)
+DSHOT_THROTTLE_MAX = 2047    # kDshotThrottleMax
+MIXER_COLUMNS = ("thrust", "roll", "pitch", "yaw")
+Q_FW_KEYS = ("rotor_thrust_coeff", "idle_speed", "rotor_speed_min", "rotor_speed_max", "l5_thrust_n") + tuple(
+    f"mixer_m{i}_{c}" for i in range(1, 5) for c in MIXER_COLUMNS)
+Q_PLANT_KEYS = ("plant_thrust_coeff", "plant_omega_min", "plant_omega_max", "plant_torque_ratio") + tuple(
+    f"plant_rotor{i}_{c}" for i in range(1, 5) for c in ("x", "y", "yaw_sign"))
+Q_KEYS = Q_FW_KEYS + Q_PLANT_KEYS
+Q_CHANNELS = {"step_roll": ("theta", "omega"), "step_pitch": ("theta", "omega"),
+              "yaw_release": ("omega", "heading_release", "heading_lock"),
+              "yaw_fallback": ("omega", "heading_release", "heading_lock")}
+Q_SCRIPTS = tuple(Q_CHANNELS)
+
+
+def read_q_inputs(path):
+    values = {}
+    with open(path) as f:
+        for line in f:
+            line = line.split("#")[0].split()
+            if line:
+                values[line[0]] = float.fromhex(line[1])
+    missing = [k for k in Q_KEYS if k not in values]
+    if missing:
+        sys.exit(f"{path}: missing {missing}")
+    return values
+
+
+def refresh_q_inputs(defaults_cpp, path):
+    """The quantiser fixture: the firmware's mixer configuration (the build's parameter table, f32), the scenario collective
+    thrust (l5_thrust_n, as tools/sim/run_l5.py derives it) and the card's plant side (double): the ESC map, the thrust
+    coefficient, the rotor geometry and the torque ratio. Regenerate it when the card or the product mixer parameters change."""
+    sys.path.insert(0, os.path.join(ROOT, "tools", "sim"))
+    sys.path.insert(0, os.path.join(ROOT, "tools", "card"))
+    import gen_plant_config as gpc  # noqa: PLC0415
+    import run_l4  # noqa: PLC0415
+
+    import yaml  # noqa: PLC0415
+
+    table = run_l4.read_param_defaults(defaults_cpp)
+    card_path = os.path.join(ROOT, "vehicles", "uzh_neurobem_5in.yaml")
+    cfg = gpc.plant_config(card_path, ROOT)
+    site = yaml.safe_load(open(os.path.join(ROOT, "scenarios", "quad", "L05", "step_roll.yaml")))
+    vals = {k: site[k]["value"] for k in ("site_latitude_rad", "site_height_m")}
+    out = {k: table[k] for k in Q_FW_KEYS if k != "l5_thrust_n"}
+    out["l5_thrust_n"] = r32(run_l4.hover_thrust(card_path, vals))
+    out["plant_thrust_coeff"] = cfg["thrust_coeff"]
+    out["plant_omega_min"] = cfg["omega_min_rad_s"]
+    out["plant_omega_max"] = cfg["omega_max_rad_s"]
+    out["plant_torque_ratio"] = cfg["torque_ratio_m"]
+    for i in range(4):
+        out[f"plant_rotor{i + 1}_x"] = cfg["rotor_position_frd_m"][i][0]
+        out[f"plant_rotor{i + 1}_y"] = cfg["rotor_position_frd_m"][i][1]
+        out[f"plant_rotor{i + 1}_yaw_sign"] = float(cfg["yaw_sign"][i])
+    with open(path, "w") as f:
+        f.write("# The L5 T3 quantiser fixture (attitude_t3_oracle.py --refresh-q-inputs from the build's param_defaults.cpp and\n")
+        f.write("# vehicles/uzh_neurobem_5in.yaml): the firmware mixer's f32 values (rotor_thrust_coeff, idle_speed, rotor_speed_min/max,\n")
+        f.write("# mixer_m<i>_<axis>), the scenario collective l5_thrust_n (f32 of m g(phi, h0), as tools/sim/run_l5.py) and the card's\n")
+        f.write("# plant side in double (thrust coefficient, ESC-map speed range, torque ratio, rotor FRD positions, yaw signs). Hex floats.\n")
+        for key in Q_KEYS:
+            f.write(f"{key} {float(out[key]).hex()}  # {out[key]:.9g}\n")
+
+
+def round_half_away(x):
+    """std::round: to nearest, halves away from zero."""
+    return math.floor(x + 0.5) if x >= 0 else -math.floor(-x + 0.5)
+
+
+class Quantiser:
+    """The actuator between the torque request and the plant, in binary64, for a single-axis request (the other two axes 0):
+    mixer::allocate at the scenario collective (fw/mixer/include/marv/mixer/mixer.hpp allocate), mixer::thrust_to_dshot (the
+    same file: omega = sqrt(f / k), DShot = round(the linear-in-omega ESC map inverted), clamped to [ceil(D(omega_idle)),
+    kDshotThrottleMax]), then marv_plant's ESC map (sim/plant/src/plant_model.hpp Model::omega_cmd: linear in omega over
+    DShot 48..2047), thrust k omega^2 and the rotor geometry (torque r x (0, 0, -f), yaw reaction s_i c_q f), projected on
+    the script's axis. The off-axis torques of the rounding are not carried by the single-axis design model. `identity` is
+    the control: the request passes unchanged. `saturated` counts the executions in which the allocation scaled the request
+    or a thrust or a DShot value hit a bound (none is expected; the count is recorded)."""
+
+    def __init__(self, q, axis, identity=False, rounding=True):
+        self.axis, self.identity, self.rounding, self.saturated = axis, identity, rounding, 0
+        self.k, self.c = q["rotor_thrust_coeff"], q["l5_thrust_n"]
+        self.w_min, self.w_max = q["rotor_speed_min"], q["rotor_speed_max"]
+        self.lo = self.k * (q["idle_speed"] * q["idle_speed"])
+        self.hi = self.k * (self.w_max * self.w_max)
+        self.m = [[q[f"mixer_m{i}_{c}"] for c in MIXER_COLUMNS] for i in range(1, 5)]
+        self.d_min, self.d_max = float(DSHOT_THROTTLE_MIN), float(DSHOT_THROTTLE_MAX)
+        self.w_span, self.d_span = self.w_max - self.w_min, self.d_max - self.d_min
+        self.d_lo = math.ceil(self.d_min + (q["idle_speed"] - self.w_min) / self.w_span * self.d_span)
+        self.kp, self.p_min, self.p_max = q["plant_thrust_coeff"], q["plant_omega_min"], q["plant_omega_max"]
+        self.geo = []
+        for i in range(1, 5):
+            x, y = q[f"plant_rotor{i}_x"], q[f"plant_rotor{i}_y"]
+            self.geo.append((-y, x, q[f"plant_rotor{i}_yaw_sign"] * q["plant_torque_ratio"]))
+
+    def allocate(self, tx, ty, tz):
+        lo, hi, m = self.lo, self.hi, self.m
+        a = [r[1] * tx + r[2] * ty for r in m]
+        y = [r[3] * tz for r in m]
+        mt = [r[0] for r in m]
+        s = 1.0
+        for i in range(4):
+            for j in range(4):
+                if i != j:
+                    pair = a[j] * mt[i] - a[i] * mt[j]
+                    if pair > 0.0:
+                        s = min(s, (hi * mt[i] - lo * mt[j]) / pair)
+        t = 0.0
+        if s >= 1.0:
+            t = 1.0
+            for i in range(4):
+                for j in range(4):
+                    if i != j:
+                        pair = y[j] * mt[i] - y[i] * mt[j]
+                        if pair > 0.0:
+                            room = max((hi * mt[i] - lo * mt[j]) - (a[j] * mt[i] - a[i] * mt[j]), 0.0)
+                            t = min(t, room / pair)
+        p = [s * a[i] + t * y[i] for i in range(4)]
+        c_lo = max((lo - p[i]) / mt[i] for i in range(4))
+        c_hi = min((hi - p[i]) / mt[i] for i in range(4))
+        c = min(max(self.c, c_lo), c_hi)
+        raw = [p[i] + c * mt[i] for i in range(4)]
+        f = [min(max(v, lo), hi) for v in raw]
+        scaled = s < 1.0 or (t < 1.0 and tz != 0.0) or c != self.c or any(v < lo or v > hi for v in raw)
+        return f, scaled
+
+    def dshot(self, f):
+        out = []
+        for fi in f:
+            omega = math.sqrt(fi / self.k)
+            d = round_half_away(self.d_min + (omega - self.w_min) / self.w_span * self.d_span)
+            if not d >= self.d_lo:
+                d = self.d_lo
+            elif d > self.d_max:
+                d = self.d_max
+            out.append(int(d))
+        return out
+
+    def torque(self, dshot):
+        t = 0.0
+        span = float(DSHOT_THROTTLE_MAX - DSHOT_THROTTLE_MIN)
+        for d, g in zip(dshot, self.geo):
+            omega = 0.0 if d == 0 else self.p_min + (self.p_max - self.p_min) * (float(d - DSHOT_THROTTLE_MIN) / span)
+            t += g[self.axis] * (self.kp * omega * omega)
+        return t
+
+    def __call__(self, u):
+        if self.identity:
+            return u
+        req = [0.0, 0.0, 0.0]
+        req[self.axis] = u
+        f, scaled = self.allocate(*req)
+        if scaled:
+            self.saturated += 1
+        if not self.rounding:
+            return sum(g[self.axis] * fi for fi, g in zip(f, self.geo))
+        return self.torque(self.dshot(f))
+
+
+_Q_CONTEXT = {}
+
+
+def _q_member(job):
+    """Worker: (max |quantised - unquantised| per channel with its execution, saturated count) of one grid member."""
+    index, s, t = job
+    su, q, name, h_seg, stick, identity, rounding = (
+        _Q_CONTEXT[k] for k in ("su", "q", "name", "h", "stick", "identity", "rounding"))
+    axis = scenario_axis(name) if name != "yaw_fallback" else 2
+    quant = Quantiser(q, axis, identity, rounding)
+    if name in ("step_roll", "step_pitch"):
+        om_u, om_q = [], []
+        th_u = tilt_member_run(su, axis, s, t, h_seg, None, om_u)
+        th_q = tilt_member_run(su, axis, s, t, h_seg, quant, om_q)
+        series = {"theta": (th_u, th_q), "omega": (om_u, om_q)}
+    else:
+        d = su.p["tau_held_yaw_nm"] if name == "yaw_fallback" else 0.0
+        ru = yaw_member_run(su, s, t, h_seg, stick, d)
+        rq = yaw_member_run(su, s, t, h_seg, stick, d, quant)
+        a_r = ru["a_r"]
+
+        def rel(r):
+            return [None] * a_r + [r["th"][a] - r["th"][a_r] for a in range(a_r, len(r["th"]))]
+
+        def lock(r):
+            return [None] * r["a_l"] + [r["th"][a] - r["th"][r["a_l"]] for a in range(r["a_l"], len(r["th"]))]
+
+        series = {"omega": (ru["om"], rq["om"]), "heading_release": (rel(ru), rel(rq)),
+                  "heading_lock": (lock(ru), lock(rq))}
+    out = {}
+    for ch, (u, v) in series.items():
+        best, at = 0.0, 0
+        for i, (x, y) in enumerate(zip(u, v)):
+            if x is None or y is None:
+                continue
+            if abs(y - x) > best:
+                best, at = abs(y - x), i
+        out[ch] = (best, at)
+    return index, s, t, out, quant.saturated
+
+
+def q_script(su, q, name, h_seg, stick=1.0, identity=False, procs=1, rounding=True):
+    """Q of one script per channel: the maximum over the time of |quantised - unquantised| of the design-model trajectory, at
+    the corners of the tau x J box and its nominal, and over the 9 x 9 grid that contains them. Returns {channel: dict}."""
+    jobs = [(i, s, t) for i, s, t, coarse in grid_members() if coarse]
+    _Q_CONTEXT.update(su=su, q=q, name=name, h=h_seg, stick=stick, identity=identity, rounding=rounding)
+    if procs > 1:
+        import multiprocessing  # noqa: PLC0415
+
+        with multiprocessing.get_context("fork").Pool(procs) as pool:
+            results = pool.map(_q_member, jobs, chunksize=1)
+    else:
+        results = [_q_member(j) for j in jobs]
+    out = {}
+    for ch in Q_CHANNELS[name]:
+        best_c = best_g = (0.0, None)
+        for _, s, t, per, _ in results:
+            v = per[ch][0]
+            if v > best_g[0] or best_g[1] is None:
+                best_g = (v, (s, t, per[ch][1]))
+            if ((abs(s) == 1.0 and abs(t) == 1.0) or (s == 0.0 and t == 0.0)) and (v > best_c[0] or best_c[1] is None):
+                best_c = (v, (s, t, per[ch][1]))
+        grid_bound = best_g[0] > best_c[0]
+        out[ch] = {"corners": best_c, "grid": best_g, "used": best_g if grid_bound else best_c,
+                   "rule": "grid" if grid_bound else "corners"}
+    out["saturated"] = sum(r[4] for r in results)
+    return out
+
+
+def q_hover_facts(q):
+    """The quantum at the scenario collective, for the file header."""
+    qz = Quantiser(q, 0)
+    f = qz.allocate(0.0, 0.0, 0.0)[0]
+    dreal = [qz.d_min + (math.sqrt(fi / qz.k) - qz.w_min) / qz.w_span * qz.d_span for fi in f]
+    return {"hover_dshot_real": dreal[0], "hover_dshot_rounded": qz.dshot(f)[0],
+            "zero_request_torque": [Quantiser(q, a)(0.0) for a in range(3)]}
+
+
+def write_q(su, q, res, stick, path, procs):
+    lines = [
+        "# T3 quantisation term Q of the L5 T4 tolerance (owner decision 19): per script and channel the maximum over the",
+        "# time of |quantised - unquantised| of the design-model trajectory, where the quantised model inserts the actuator",
+        "# (mixer allocation at the scenario collective l5_thrust_n, thrust_to_dshot rounding as the firmware does it,",
+        "# marv_plant's ESC map DShot -> omega -> k omega^2, rotor geometry back to torque) between the rate loop's torque",
+        "# request and the torque lag of the design plant. Evaluated at the corners of the tau x J box plus the nominal",
+        "# (q_corners), and over the 9 x 9 grid that contains them (q_grid); q is q_grid where the grid exceeds the corners",
+        "# (rule grid), else q_corners (rule corners). Written by attitude_t3_oracle.py from attitude_t3_q_inputs.txt; see",
+        "# README.md. Rule: fw/mixer/include/marv/mixer/mixer.hpp allocate and thrust_to_dshot, sim/plant/src/plant_model.hpp",
+        "# Model::omega_cmd. Units rad (theta, headings) and rad/s (omega). at = the member (s, t) and attitude execution.",
+        f"# segment_executions {res['h']}  yaw_fallback stick_scale {stick!r}",
+    ]
+    facts = q_hover_facts(q)
+    lines.append(f"hover_dshot_real {facts['hover_dshot_real']!r}")
+    lines.append(f"hover_dshot_rounded {facts['hover_dshot_rounded']}")
+    for axis_name, v in zip(AXES, facts["zero_request_torque"]):
+        lines.append(f"zero_request_torque_nm_{axis_name} {v!r}")
+    for name in Q_SCRIPTS:
+        r = q_script(su, q, name, res["h"], stick if name == "yaw_fallback" else 1.0, False, procs)
+        lines.append(f"scenario {name}")
+        lines.append(f"saturated_executions {r['saturated']}")
+        for ch in Q_CHANNELS[name]:
+            c = r[ch]
+            lines.append(f"channel {ch} q {c['used'][0]!r} rule {c['rule']} q_corners {c['corners'][0]!r} q_grid {c['grid'][0]!r} "
+                         f"at_s {c['used'][1][0]!r} at_t {c['used'][1][1]!r} at_execution {c['used'][1][2]}")
+        if r["saturated"]:
+            lines.append("# the allocation scales or clamps requests in this script (saturated_executions counts member x rate "
+                         "executions); q_allocation_only is the same comparison without the DShot rounding (the allocation's "
+                         "own effect, which q includes)")
+            ro = q_script(su, q, name, res["h"], stick if name == "yaw_fallback" else 1.0, False, procs, rounding=False)
+            for ch in Q_CHANNELS[name]:
+                c = ro[ch]
+                lines.append(f"channel {ch} q_allocation_only {c['used'][0]!r} rule {c['rule']}")
+    with open(path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default=HERE, help="directory of attitude_t3_inputs.txt and of the outputs")
     ap.add_argument("--refresh-inputs", metavar="PARAM_DEFAULTS_CPP")
+    ap.add_argument("--refresh-q-inputs", metavar="PARAM_DEFAULTS_CPP")
+    ap.add_argument("--procs", type=int, default=1, help="worker processes of the Q runs (the output does not depend on it)")
     args = ap.parse_args()
     inputs_path = os.path.join(args.dir, "attitude_t3_inputs.txt")
+    q_path = os.path.join(args.dir, "attitude_t3_q_inputs.txt")
     if args.refresh_inputs:
         refresh_inputs(args.refresh_inputs, inputs_path)
+        return
+    if args.refresh_q_inputs:
+        refresh_q_inputs(args.refresh_q_inputs, q_path)
         return
     p = read_inputs(inputs_path)
     for axis in AXES:
@@ -1191,6 +1478,8 @@ def main():
     res = settle(su)
     write_golden(su, res, os.path.join(args.dir, "attitude_t3_golden.txt"))
     write_envelope(su, res, os.path.join(args.dir, "attitude_t3_envelope.txt"))
+    write_q(su, read_q_inputs(q_path), res, res["envelope"]["yaw_fallback"]["stick"], os.path.join(args.dir, "attitude_t3_q.txt"),
+            args.procs)
 
 
 if __name__ == "__main__":

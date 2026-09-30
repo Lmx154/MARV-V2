@@ -672,4 +672,53 @@ TEST(L5T3Envelope, FallbackScriptKeepsTheYawRateSignUpToTheFallbackForEveryBoxMe
   EXPECT_LT(rel.numbers.at("lock_execution_max"), rel.numbers.at("fallback_execution_min"));
 }
 
+// The DShot quantisation term Q of the T4 tolerance (owner decision 19), recorded by the oracle in attitude_t3_q.txt: one q per
+// script and channel, finite, positive (the actuator quantiser has an effect) and at least the corner value and the grid value
+// it is the larger of. The oracle's own control (identity quantiser gives Q = 0) is in tests/regression/quad/L05/tools.
+TEST(L5T3Quantisation, QIsRecordedAndFiniteForEveryScriptAndChannel) {
+  const std::map<std::string, std::vector<std::string>> expected{{"step_roll", {"theta", "omega"}},
+                                                                 {"step_pitch", {"theta", "omega"}},
+                                                                 {"yaw_release", {"omega", "heading_release", "heading_lock"}},
+                                                                 {"yaw_fallback", {"omega", "heading_release", "heading_lock"}}};
+  std::istringstream lines(read_all("attitude_t3_q.txt"));
+  std::map<std::string, std::map<std::string, double>> q;
+  std::string line;
+  std::string scenario;
+  while (std::getline(lines, line)) {
+    if (line.empty() || line[0] == '#') {
+      continue;
+    }
+    std::istringstream words(line);
+    std::vector<std::string> w;
+    for (std::string s; words >> s;) {
+      w.push_back(s);
+    }
+    if (w[0] == "scenario" && w.size() == 2) {
+      scenario = w[1];
+    } else if (w[0] == "channel" && w.size() >= 12 && w[2] == "q") {
+      ASSERT_FALSE(scenario.empty());
+      ASSERT_EQ(w[4], "rule");
+      ASSERT_EQ(w[6], "q_corners");
+      ASSERT_EQ(w[8], "q_grid");
+      const double used = parse(w[3]);
+      const double corners = parse(w[7]);
+      const double grid = parse(w[9]);
+      EXPECT_EQ(used, std::max(corners, grid)) << scenario << ' ' << w[1];
+      EXPECT_EQ(w[5], grid > corners ? "grid" : "corners") << scenario << ' ' << w[1];
+      q[scenario][w[1]] = used;
+    }
+  }
+  ASSERT_EQ(q.size(), expected.size()) << "reading attitude_t3_q.txt";
+  for (const auto& [name, channels] : expected) {
+    ASSERT_EQ(q.count(name), 1U) << name;
+    ASSERT_EQ(q.at(name).size(), channels.size()) << name;
+    for (const std::string& ch : channels) {
+      ASSERT_EQ(q.at(name).count(ch), 1U) << name << ' ' << ch;
+      const double v = q.at(name).at(ch);
+      EXPECT_TRUE(std::isfinite(v)) << name << ' ' << ch;
+      EXPECT_GT(v, 0.0) << name << ' ' << ch;
+    }
+  }
+}
+
 }  // namespace
