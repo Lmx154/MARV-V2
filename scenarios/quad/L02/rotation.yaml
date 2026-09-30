@@ -1,0 +1,72 @@
+# Quad L2 scenario 'rotation' (docs/spec/10-quad-flight-software.md section 4 L2, docs/decisions/0003).
+# Torque-free rotation with motors off: |L| and the kinetic energy are conserved. omega0 is off the separatrix.
+# Schema and checks: tools/sim/scenario.py. Every number is a labelled scenario value or a derived value.
+# Frames NED / FRD, SI units. The tick period is the exact rational num_us / den.
+scenario: rotation
+site_latitude_rad:
+  value: 0.82
+  unit: rad
+  label: scenario
+  rationale: "mid-latitude site off the equator and the poles, so the latitude term of g is exercised; the same value as the L1 fixture (tests/regression/quad/L01/unit/plant_card/hover_card_test.cpp, kScenarioLat)"
+site_height_m:
+  value: 500.0
+  unit: m
+  label: scenario
+  rationale: "the same height as the L1 fixture (hover_card_test.cpp, kScenarioHeight); a plausible flying site height, not vehicle data"
+seed:
+  value: 1
+  unit: "1"
+  label: scenario
+  rationale: "RESERVED at v0: marv_plant v0 and the composition draw no random numbers (rng_seed is unused, marv_plant.h), so the value has no effect; it is carried so the run identity (firmware, card, scenario, seed) is complete"
+tick_period_num_us:
+  value: 625
+  unit: us
+  label: scenario
+  rationale: "L0 labelled scenario value, a 6.4 kHz IMU tick of 156.25 us (sim/null_plant/src/main.cpp:47, kScenarioPeriodNumUs)"
+tick_period_den:
+  value: 4
+  unit: "1"
+  label: scenario
+  rationale: "L0 labelled scenario value, the denominator of the tick period (sim/null_plant/src/main.cpp:48, kScenarioPeriodDen)"
+m_sequence:
+  value: [4, 2, 1]
+  unit: "1"
+  label: derived
+  rule: "H_k = 2^(K-k) t_tick for k = 0..K with K = 2 (docs/decisions/0003 item 9), so m = 2^(K-k) = 4, 2, 1"
+duration_ticks:
+  value: 12800
+  unit: "1"
+  label: scenario
+  rationale: "2 s: 12800 ticks of 156.25 us is exactly 2 s and a multiple of 4; about 1.4 nutation periods for this omega0 and the card inertia, Omega = w_z sqrt((I_z - I_x)(I_z - I_y) / (I_x I_y)) = 4.3 rad/s"
+separatrix_margin_min:
+  value: 0.5
+  unit: "1"
+  label: scenario
+  rationale: "halfway from the separatrix (mu = 0) to a pure spin about the extreme axis (mu = 1); the check is in tools/sim/scenario.py with the card's inertia"
+initial_state:
+  position_ned_m:
+    value: [0.0, 0.0, 0.0]
+    unit: m
+    label: scenario
+    rationale: "the NED origin, the site itself; there is no ground at L2"
+  attitude_q_wxyz:
+    value: [1.0, 0.0, 0.0, 0.0]
+    unit: "1"
+    label: scenario
+    rationale: "level, the identity quaternion (canonical sign w >= 0), so body and NED axes coincide at t = 0"
+  velocity_ned_m_s:
+    value: [0.0, 0.0, 0.0]
+    unit: m/s
+    label: scenario
+    rationale: "released from rest"
+  body_rates_frd_rad_s:
+    value: [2.0, 3.0, 5.0]
+    unit: rad/s
+    label: scenario
+    rationale: "distinct nonzero components so an axis mix-up changes the result; with the card inertia diag(0.0025, 0.0021, 0.0043) kg m^2 the distance to the separatrix is mu = 0.757 >= 0.5, the axis of rotation nearest the maximum-inertia axis"
+command:
+  dshot:
+    value: [0, 0, 0, 0]
+    unit: "1"
+    label: scenario
+    rationale: "motors off, the stop command DShot 0, so the body is torque-free"

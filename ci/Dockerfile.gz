@@ -1,0 +1,39 @@
+# Second pinned image for the quad L2 T4 steps (headless Gazebo). docs/decisions/0003-l2-gazebo-host-choices.md item 1.
+# Build marv-ci first: `docker build -t marv-ci -f ci/Dockerfile .`, then
+# `docker build -t marv-ci-gz -f ci/Dockerfile.gz .`. FROM marv-ci makes the Ubuntu base pin transitive.
+FROM marv-ci
+
+# OSRF apt repository key. The OSRF install docs (https://gazebosim.org/docs/harmonic/install_ubuntu/) give the key URL
+# and the sources line but publish no fingerprint, so the pin is the SHA256 of the keyring file served at that URL,
+# taken 2026-09-29 (it holds keys D2486D2DD83DB69272AFE98867170598AF249743 and
+# 8856B7EEB6F479799BFEE7FA4149BA44D1BA6112). A changed key fails the build.
+ARG OSRF_KEY_URL=https://packages.osrfoundation.org/gazebo.gpg
+ARG OSRF_KEY_SHA256=15d0300460e0c9c0efb21fa9770c0bf228988a07d71c4fac985c2161954a25a4
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# DART is pinned to the version the dartsim plugin links (docs/decisions/0003 item 10). Checked 2026-09-29 with
+# `ldd /usr/lib/x86_64-linux-gnu/gz-physics-7/engine-plugins/libgz-physics7-dartsim-plugin.so`: libdart.so.6.13 and the
+# collision and ODE-solver libraries of the 6.13 series, all owned by libdart-core+collisions+odelcpsolver6.13
+# (`dpkg -S` on libdart.so.6.13.2), version 6.13.2+ds1-1~osrf2~noble.
+# The OSRF repository keeps only recent versions. If a pinned version below disappears, this build fails loudly.
+# That is intended: re-pin deliberately, do not float.
+# cppzmq-dev: the gz-sim8 CMake config requires the CPPZMQ::CPPZMQ target, and libzmq3-dev (already present) does not
+# ship it. Version 4.10.0-1build1 is what `apt-cache policy cppzmq-dev` offers, on the host and in marv-ci-gz (checked
+# 2026-09-29, Ubuntu noble universe).
+# No GUI package is requested. The dependencies of libgz-sim8-dev bring in the rendering and Qt libraries; nothing is
+# launched with a display.
+RUN curl -fsSL -o /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg "${OSRF_KEY_URL}" \
+    && echo "${OSRF_KEY_SHA256}  /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg" | sha256sum -c - \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] https://packages.osrfoundation.org/gazebo/ubuntu-stable noble main" \
+        > /etc/apt/sources.list.d/gazebo-stable.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gz-tools2=2.0.4-1~noble \
+        gz-sim8-cli=8.15.0-1~noble \
+        libgz-sim8-dev=8.15.0-1~noble \
+        libgz-physics7-dartsim=7.8.0-1~noble \
+        libdart-core+collisions+odelcpsolver6.13=6.13.2+ds1-1~osrf2~noble \
+        libsdformat14-dev=14.9.0-1~noble \
+        cppzmq-dev=4.10.0-1build1 \
+    && rm -rf /var/lib/apt/lists/*

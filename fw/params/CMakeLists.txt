@@ -154,3 +154,7 @@ marv_add_param_set(marv_params_l0
 marv_add_param_set(marv_params_l1_fixture
   CARD "${PROJECT_SOURCE_DIR}/tests/regression/quad/L01/fixtures/l1_card.yaml"
   REGISTER "${PROJECT_SOURCE_DIR}/tests/regression/quad/L01/fixtures/l1_register.yaml")
+
+# The L2 open-loop composition's parameter set: the four per-motor DShot commands, default 0 (stop).
+marv_add_param_set(marv_params_l2_open_loop
+  REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/l2_open_loop/params/l2_open_loop_register.yaml")

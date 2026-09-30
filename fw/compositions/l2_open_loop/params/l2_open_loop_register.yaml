@@ -1,0 +1,11 @@
+# L2 open-loop composition (fw/compositions/l2_open_loop) parameters: the per-motor DShot command, logical motor 1..4.
+# The default 0 is the stop command, a labelled scenario default (core 2.1 method scenario, sigma choice): it is not a
+# vehicle number. The scenario sets the values through the SIL override (core 4) before the run starts.
+ol_dshot_m1:
+  {type: i32, value: 0, unit: "1", method: scenario, source: "L2 open-loop default: DShot 0 (stop), a scenario default; the scenario overrides it (fw/compositions/l2_open_loop/params/l2_open_loop_register.yaml)", sigma: choice}
+ol_dshot_m2:
+  {type: i32, value: 0, unit: "1", method: scenario, source: "L2 open-loop default: DShot 0 (stop), a scenario default; the scenario overrides it (fw/compositions/l2_open_loop/params/l2_open_loop_register.yaml)", sigma: choice}
+ol_dshot_m3:
+  {type: i32, value: 0, unit: "1", method: scenario, source: "L2 open-loop default: DShot 0 (stop), a scenario default; the scenario overrides it (fw/compositions/l2_open_loop/params/l2_open_loop_register.yaml)", sigma: choice}
+ol_dshot_m4:
+  {type: i32, value: 0, unit: "1", method: scenario, source: "L2 open-loop default: DShot 0 (stop), a scenario default; the scenario overrides it (fw/compositions/l2_open_loop/params/l2_open_loop_register.yaml)", sigma: choice}

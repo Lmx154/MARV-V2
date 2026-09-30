@@ -17,7 +17,8 @@
 #
 # marv_collect_sil_libraries(<out-var>)
 #   Every SHARED or MODULE library defined in the project (all of them are SIL entry libraries), except the negative
-#   controls under tests/regression/quad/L00/controls.
+#   controls under tests/regression/quad/L00/controls and the Gazebo lockstep plugin sim/gz/plugin (a host plugin, not
+#   a SIL entry: it links a SIL library and exports gz plugin symbols; it is not under fw/, so it is no flight target).
 
 function(marv_all_project_targets out)
   set(dirs "${PROJECT_SOURCE_DIR}")
@@ -53,6 +54,7 @@ endfunction()
 function(marv_collect_sil_libraries out)
   marv_all_project_targets(all_targets)
   set(controls_dir "${PROJECT_SOURCE_DIR}/tests/regression/quad/L00/controls")
+  set(gz_plugin_dir "${PROJECT_SOURCE_DIR}/sim/gz/plugin")
   set(sil "")
   foreach(tgt IN LISTS all_targets)
     get_target_property(type ${tgt} TYPE)
@@ -61,7 +63,8 @@ function(marv_collect_sil_libraries out)
     endif()
     get_target_property(src_dir ${tgt} SOURCE_DIR)
     cmake_path(IS_PREFIX controls_dir "${src_dir}" NORMALIZE in_controls)
-    if(NOT in_controls)
+    cmake_path(IS_PREFIX gz_plugin_dir "${src_dir}" NORMALIZE in_gz_plugin)
+    if(NOT in_controls AND NOT in_gz_plugin)
       list(APPEND sil ${tgt})
     endif()
   endforeach()

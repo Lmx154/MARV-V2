@@ -1,0 +1,67 @@
+# Quad L2 scenario 'determinism' (docs/spec/10-quad-flight-software.md section 4 L2, docs/decisions/0003).
+# SIM-2 determinism: 6-DOF motion from a distinct DShot per motor, run twice; the plugin logs are compared byte for byte.
+# Schema and checks: tools/sim/scenario.py. Every number is a labelled scenario value or a derived value.
+# Frames NED / FRD, SI units. The tick period is the exact rational num_us / den.
+scenario: determinism
+site_latitude_rad:
+  value: 0.82
+  unit: rad
+  label: scenario
+  rationale: "mid-latitude site off the equator and the poles, so the latitude term of g is exercised; the same value as the L1 fixture (tests/regression/quad/L01/unit/plant_card/hover_card_test.cpp, kScenarioLat)"
+site_height_m:
+  value: 500.0
+  unit: m
+  label: scenario
+  rationale: "the same height as the L1 fixture (hover_card_test.cpp, kScenarioHeight); a plausible flying site height, not vehicle data"
+seed:
+  value: 1
+  unit: "1"
+  label: scenario
+  rationale: "RESERVED at v0: marv_plant v0 and the composition draw no random numbers (rng_seed is unused, marv_plant.h), so the value has no effect; it is carried so the run identity (firmware, card, scenario, seed) is complete"
+tick_period_num_us:
+  value: 625
+  unit: us
+  label: scenario
+  rationale: "L0 labelled scenario value, a 6.4 kHz IMU tick of 156.25 us (sim/null_plant/src/main.cpp:47, kScenarioPeriodNumUs)"
+tick_period_den:
+  value: 4
+  unit: "1"
+  label: scenario
+  rationale: "L0 labelled scenario value, the denominator of the tick period (sim/null_plant/src/main.cpp:48, kScenarioPeriodDen)"
+m_sequence:
+  value: [1]
+  unit: "1"
+  label: scenario
+  rationale: "SIM-2 compares two runs at one m; m = 1, one tick per host step, is the lockstep floor (docs/decisions/0003 items 5 and 10)"
+duration_ticks:
+  value: 6400
+  unit: "1"
+  label: scenario
+  rationale: "1 s: 6400 ticks of 156.25 us is exactly 1 s; long enough for every state field to have moved"
+initial_state:
+  position_ned_m:
+    value: [1.5, -2.5, -3.5]
+    unit: m
+    label: scenario
+    rationale: "distinct nonzero components so an axis swap changes the log; dyadic values, exact in binary"
+  attitude_q_wxyz:
+    value: [0.6666666666666666, 0.5555555555555556, -0.4444444444444444, 0.2222222222222222]
+    unit: "1"
+    label: derived
+    rule: "the unit quaternion (6, 5, -4, 2) / 9, since 36 + 25 + 16 + 4 = 81 = 9^2, each component rounded to binary64; distinct magnitudes, w >= 0"
+  velocity_ned_m_s:
+    value: [0.5, -1.0, 0.25]
+    unit: m/s
+    label: scenario
+    rationale: "distinct nonzero components so an axis swap changes the log; dyadic values, exact in binary"
+  body_rates_frd_rad_s:
+    value: [0.0, 0.0, 0.0]
+    unit: rad/s
+    label: scenario
+    rationale: "no initial rotation; only rotation.yaml has nonzero body rates (the DShot torque spins the body up)"
+command:
+  dshot:
+    value: [1100, 700, 900, 800]
+    unit: "1"
+    label: scenario
+    rationale: "a distinct value per motor, within 48..2047, chosen so that with the committed card the net thrust and the roll, pitch and yaw torques are all nonzero (checked in tests/regression/quad/L02/tools/test_scenario.py)"

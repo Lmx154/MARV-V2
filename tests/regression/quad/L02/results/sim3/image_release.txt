@@ -1,0 +1,18 @@
+command: measure_sim3.py --scenario free_fall.yaml --m 1 --iterations 6400 --plugin-dir build/host-gz-release/sim/gz/plugin
+simulated duration: 1.0 s (a labelled scenario value: 6400 host steps of m = 1 ticks; the scenario's own T is 6400 ticks)
+host: Linux-7.0.0-34-generic-x86_64-with-glibc2.39, x86_64, python 3.12.3
+nproc: 16 online, 16 in this process's affinity
+build type: Release (CMAKE_BUILD_TYPE of the plugin build)
+SIM-3 throughput (0003 item 2)
+  scenario free_fall, m = 1, seed 1, test world, one gz process, plugin build type Release
+  assumption: one process = one core; backed by the child CPU time, resource.getrusage(RUSAGE_CHILDREN)
+  full run: 6400 host steps, simulated 1.000000 s, wall 2.193 s, CPU 0.265 s
+  startup run: 10 host steps, simulated 0.001563 s, wall 2.084 s, CPU 0.188 s
+  startup overhead (wall of the 10-iteration run): 2.084 s
+  RTF, simulated / wall, startup included: 0.456
+  RTF per core, marginal (extra simulated / extra wall of the full run over the startup run, 0.109 s): 9.183
+  CPU time / wall time of the full run: 0.121 (<= 1: consistent with one core)
+  CPU / wall of the extra work (full run minus startup run): 0.706
+  cores available to this process: 16
+  required: UNKNOWN (design/budget.yaml batch_plan)
+  comparison: UNKNOWN, SIM-3 open

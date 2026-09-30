@@ -18,12 +18,30 @@
       }
     },
     {
+      "name": "host-gz",
+      "inherits": "host-debug",
+      "displayName": "Host, Debug, with the gz-sim 8 lockstep plugin (MARV_GZ)",
+      "binaryDir": "${sourceDir}/build/host-gz",
+      "cacheVariables": {
+        "MARV_GZ": "ON"
+      }
+    },
+    {
       "name": "host-release",
       "inherits": "base",
       "displayName": "Host, Release",
       "cacheVariables": {
         "MARV_TARGET": "host",
         "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "host-gz-release",
+      "inherits": "host-release",
+      "displayName": "Host, Release, with the gz-sim 8 lockstep plugin (MARV_GZ), for SIM-3",
+      "binaryDir": "${sourceDir}/build/host-gz-release",
+      "cacheVariables": {
+        "MARV_GZ": "ON"
       }
     },
     {
@@ -40,6 +58,8 @@
   "buildPresets": [
     { "name": "host-debug", "configurePreset": "host-debug" },
     { "name": "host-release", "configurePreset": "host-release" },
+    { "name": "host-gz", "configurePreset": "host-gz" },
+    { "name": "host-gz-release", "configurePreset": "host-gz-release" },
     { "name": "m33", "configurePreset": "m33" }
   ],
   "testPresets": [
@@ -51,6 +71,16 @@
     {
       "name": "host-release",
       "configurePreset": "host-release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "host-gz",
+      "configurePreset": "host-gz",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "host-gz-release",
+      "configurePreset": "host-gz-release",
       "output": { "outputOnFailure": true }
     }
   ]

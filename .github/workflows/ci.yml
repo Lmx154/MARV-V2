@@ -21,3 +21,7 @@ jobs:
           # push), except when the push creates the branch (before is all zeros).
           MARV_CI_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before || '') }}
         run: docker run --rm -e MARV_CI_BASE_REF -v "$PWD":/src -w /src marv-ci ci/run_ci.sh
+      - name: Build Gazebo CI image
+        run: docker build -t marv-ci-gz -f ci/Dockerfile.gz .
+      - name: Run Gazebo CI
+        run: docker run --rm -v "$PWD":/src -w /src marv-ci-gz ci/run_ci_gz.sh
