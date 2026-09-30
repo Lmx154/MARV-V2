@@ -468,10 +468,12 @@ att_t3_reference_reproduces() {
   local dir status=0
   dir="$(mktemp -d)"
   cp "${att_t3_reference_dir}/attitude_t3_inputs.txt" "${dir}/attitude_t3_inputs.txt"
+  cp "${att_t3_reference_dir}/attitude_t3_q_inputs.txt" "${dir}/attitude_t3_q_inputs.txt"
   att_t3_oracle_run "${dir}" || status=$?
   if [[ ${status} -eq 0 ]]; then
     cmp "${att_t3_reference_dir}/attitude_t3_golden.txt" "${dir}/attitude_t3_golden.txt" || status=$?
     cmp "${att_t3_reference_dir}/attitude_t3_envelope.txt" "${dir}/attitude_t3_envelope.txt" || status=$?
+    cmp "${att_t3_reference_dir}/attitude_t3_q.txt" "${dir}/attitude_t3_q.txt" || status=$?
   fi
   rm -rf "${dir}"
   return "${status}"
@@ -481,6 +483,7 @@ att_t3_reference_reproduces() {
 att_t3_reference_control() {
   local dir
   dir="$(mktemp -d)"
+  cp "${att_t3_reference_dir}/attitude_t3_q_inputs.txt" "${dir}/attitude_t3_q_inputs.txt"
   uv run python - "${att_t3_reference_dir}/attitude_t3_inputs.txt" "${dir}/attitude_t3_inputs.txt" <<'PY'
 import struct
 import sys
@@ -581,7 +584,7 @@ step "G8: CLAUDE.md keeps the ACTIVE-spec, number, UNKNOWN and CI-gate sections"
 step "L1: the committed vehicle card, its sensor profile and the design budget lint clean (sigma policy)" l1_card_lint
 step "L1: plant known-answer reference reproduces plant_ref_expected.txt from plant_ref_inputs.txt" plant_ref_reproduces
 step "L4: T3 oracle reproduces rate_t3_golden.txt and rate_t3_envelope.txt from rate_t3_inputs.txt" t3_reference_reproduces
-step "L5: T3 oracle reproduces attitude_t3_golden.txt and attitude_t3_envelope.txt from attitude_t3_inputs.txt" att_t3_reference_reproduces
+step "L5: T3 oracle reproduces attitude_t3_golden.txt, attitude_t3_envelope.txt and attitude_t3_q.txt from their inputs" att_t3_reference_reproduces
 step "L5: rate-bypass fixture reproduces from gen_fixture.py" rate_bypass_fixture_reproduces
 step "L5: acro identity golden reproduces from fw/ at quad-L4-pass" rate_bypass_golden_reproduces
 if [[ -n "${MARV_CI_BASE_REF:-}" ]]; then
