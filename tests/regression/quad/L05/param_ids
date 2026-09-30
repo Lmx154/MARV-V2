@@ -1,0 +1,9 @@
+# Parameter ids the product set marv_params gains at L5. One id per line.
+# The built set must equal the union of every tests/regression/quad/L*/param_ids (decision 0004).
+att_kp
+att_yaw_weight
+att_loop_ratio
+angle_tilt_max
+yaw_deadband
+att_yaw_alpha_min
+att_yaw_t_cross

@@ -1,0 +1,16 @@
+# Test fixture for the SIM-7 uncertainty file: the same keys as design/measured/sim7_u/u.yaml.
+#
+# LABEL: scenario test value. NOT a measurement. `method: measured` only satisfies the generator's format check
+# (attitude.read_u refuses any other method); it does not claim a measurement.
+# REASON: 1.0e-3 rad lies between the two first halving differences of the nominal table, so the rule has a non-trivial
+# result with both neighbours: Delta_1 = 7.2e-4 rad < U <= Delta_2 = 1.44e-3 rad gives N* = 2 today. The tests assert
+# rule properties on whatever the generator produces from it; they do not pin N*. The committed measurement
+# (design/measured/sim7_u/u.yaml) is exercised by the build, not by these tests.
+U: 0.001
+unit: rad
+method: measured
+label: scenario test value
+reason: a round value between Delta_1 and Delta_2 of the nominal SIM-7 table, so that the halving rule is exercised on both sides
+rule: scenario test value for the tests of tools/card/attitude.py, not derived
+source:
+  fixture: tests/regression/quad/L05/tools/fixtures/u.yaml

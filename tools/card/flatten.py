@@ -2,7 +2,8 @@
 """Flatten a vehicle card and the design-budget register into params_gen input (core contracts 2.1, 2.2, 4).
 
   flatten.py --card <card> --budget <budget> --out-card <file> --out-register <file> [--out-mixer <file>]
-             [--scenario <file> --out-scenario <file>] [--out-rate <file>] [--root <repo>]
+             [--scenario <file> --out-scenario <file>] [--out-rate <file>] [--out-attitude <file> --sim7-u <file>]
+             [--root <repo>]
 
 The card and the budget are linted first (lint.py's checks, which use schema.py); on any finding nothing is written
 and the exit status is 1. Otherwise two params_gen source files are written, deterministically and byte-stable:
@@ -43,6 +44,14 @@ changes: the other outputs are written by the same code from the same inputs.
 rate_{kp,ki,kd,tau_ref}_{roll,pitch,yaw} (rate.py, decision 0005), and next to it the derivation report
 <file stem>_report.txt. When rate.py refuses the card, budget or scenario register nothing is written and the exit
 status is 1. Without the flag the other outputs are byte-identical.
+
+--out-attitude <file> (optional, needs --scenario and --sim7-u) adds a sixth params_gen --card file: att_kp, att_yaw_weight,
+att_loop_ratio, att_yaw_alpha_min and att_yaw_t_cross (attitude.py, decision 0006 E), and next to it the derivation report
+with the SIM-7 halving table, <file stem>_report.txt. --sim7-u is the SIM-7 uncertainty file (a mapping with U in rad,
+unit rad, method measured, source and rule). The rate loop is designed in memory for it (rate.py), so --out-rate is not
+needed. When attitude.py or rate.py
+refuses, or the uncertainty file is unusable, nothing is written and the exit status is 1. Without the flag the other
+outputs are byte-identical.
 """
 
 from __future__ import annotations
@@ -52,6 +61,7 @@ import json
 import sys
 from pathlib import Path
 
+import attitude
 import gen_plant_config as gpc
 import lint
 import mixer
@@ -173,6 +183,8 @@ def main(argv=None):
     ap.add_argument("--scenario")
     ap.add_argument("--out-scenario")
     ap.add_argument("--out-rate")
+    ap.add_argument("--out-attitude")
+    ap.add_argument("--sim7-u")
     ap.add_argument("--root", default=str(lint.ROOT), help="repository root (resolves sensor_profile)")
     args = ap.parse_args(argv)
 
@@ -180,6 +192,10 @@ def main(argv=None):
         ap.error("--scenario and --out-scenario are given together")
     if args.out_rate and not args.scenario:
         ap.error("--out-rate needs --scenario (the rate loop period and maximum rates are scenario values)")
+    if args.out_attitude and not (args.scenario and args.sim7_u):
+        ap.error("--out-attitude needs --scenario and --sim7-u (the loop period is a scenario value, SIM-7 needs U)")
+    if args.sim7_u and not args.out_attitude:
+        ap.error("--sim7-u is given with --out-attitude")
 
     findings = lint_all(args.card, args.budget, args.root, args.scenario)
     if findings:
@@ -203,10 +219,23 @@ def main(argv=None):
             return 1
 
     rate_entries = None
+    rate_result = None
     if args.out_rate:
         try:
-            rate_entries, rate_report, _ = rate.rate_entries(card, budget, schema.load_yaml(args.scenario), args.card,
-                                                             _rel(args.card, args.root))
+            rate_entries, rate_report, rate_result = rate.rate_entries(card, budget, schema.load_yaml(args.scenario),
+                                                                       args.card, _rel(args.card, args.root))
+        except gpc.GenError as e:
+            for line in e.lines:
+                print(line, file=sys.stderr)
+            return 1
+
+    attitude_entries = None
+    if args.out_attitude:
+        u_where = _rel(args.sim7_u, args.root)
+        try:
+            attitude_entries, attitude_report, _ = attitude.attitude_entries(
+                card, budget, schema.load_yaml(args.scenario), args.card, attitude.read_u(args.sim7_u), u_where,
+                _rel(args.card, args.root), rate_result)
         except gpc.GenError as e:
             for line in e.lines:
                 print(line, file=sys.stderr)
@@ -259,6 +288,19 @@ def main(argv=None):
         outputs.append((args.out_rate, render(rate_header, rate_entries)))
         report_path = Path(args.out_rate).with_name(Path(args.out_rate).stem + "_report.txt")
         outputs.append((str(report_path), "\n".join(rate_report) + "\n"))
+    if attitude_entries is not None:
+        attitude_header = [
+            f"params_gen input for the L5 attitude loop, computed from vehicle card {_rel(args.card, args.root)}, the "
+            "design budget, the scenario register and the SIM-7 uncertainty file "
+            f"{_rel(args.sim7_u, args.root)} by tools/card/attitude.py through tools/card/flatten.py. Generated; do not "
+            "edit.",
+            "att_kp, att_yaw_weight, att_loop_ratio, att_yaw_alpha_min and att_yaw_t_cross (decision 0006 E); the derivation and "
+            "the SIM-7 table are in the "
+            "report next to this file.",
+        ]
+        outputs.append((args.out_attitude, render(attitude_header, attitude_entries)))
+        attitude_report_path = Path(args.out_attitude).with_name(Path(args.out_attitude).stem + "_report.txt")
+        outputs.append((str(attitude_report_path), "\n".join(attitude_report) + "\n"))
     for path, text in outputs:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_text(text, encoding="utf-8", newline="\n")

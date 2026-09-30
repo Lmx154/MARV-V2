@@ -7,6 +7,8 @@ set(MARV_DESIGN_BUDGET "design/budget.yaml" CACHE STRING
     "Design-budget register of the product parameter set (repository-relative or absolute)")
 set(MARV_SCENARIO_VALUES "design/scenario_values.yaml" CACHE STRING
     "Scenario-values register of the product parameter set (repository-relative or absolute)")
+set(MARV_SIM7_U "design/measured/sim7_u/u.yaml" CACHE STRING
+    "SIM-7 uncertainty file of the attitude-loop rate rule (repository-relative or absolute): value in rad, method, source, rule")
 set(MARV_PYTHON "${PROJECT_SOURCE_DIR}/.venv/bin/python" CACHE FILEPATH
     "Python of the uv environment (created by `uv sync --frozen`) that runs tools/gen/params_gen.py")
 
@@ -95,8 +97,11 @@ endfunction()
 # register plus the L3 mixer parameters (idle_speed, mixer_m<i>_*; tools/card/mixer.py). With SCENARIO the
 # scenario-values register is linted and flattened too (--scenario/--out-scenario) and joins the CARD files, and the
 # L4 rate-loop parameters (rate_{kp,ki,kd,tau_ref}_<axis>; tools/card/rate.py, --out-rate) and their derivation report
-# are generated from it. The command depends on
-# the card, the sensor profile the card names, the budget, the scenario register and tools/card/*.py.
+# are generated from it, and so are the L5 attitude-loop parameters (att_kp, att_yaw_weight, att_loop_ratio;
+# tools/card/attitude.py, --out-attitude) with their report (<name>_attitude_report.txt, the SIM-7 table) from the
+# SIM-7 uncertainty file MARV_SIM7_U (design/measured/sim7_u/u.yaml). The command depends on
+# the card, the sensor profile the card names, the budget, the scenario register, the uncertainty file and
+# tools/card/*.py.
 # EXTRA_REGISTER appends one more register file after the budget register, so every id of the set without it keeps its
 # value and the extra entries follow (a composition's own scenario parameters); without it the outputs are unchanged.
 function(marv_add_card_param_set name)
@@ -109,6 +114,9 @@ function(marv_add_card_param_set name)
   set(scenario_depends)
   set(rate_args)
   set(rate_outputs)
+  set(attitude_args)
+  set(attitude_outputs)
+  set(attitude_depends)
   if(ARG_SCENARIO)
     cmake_path(ABSOLUTE_PATH ARG_SCENARIO BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
     set(flat_scenario "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_scenario.yaml")
@@ -119,6 +127,17 @@ function(marv_add_card_param_set name)
     set(flat_rate_report "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_rate_report.txt")
     set(rate_args --out-rate "${flat_rate}")
     set(rate_outputs "${flat_rate}" "${flat_rate_report}")
+    cmake_path(ABSOLUTE_PATH MARV_SIM7_U BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE OUTPUT_VARIABLE sim7_u)
+    if(NOT EXISTS "${sim7_u}")
+      message(FATAL_ERROR "marv_add_card_param_set(${name}): the SIM-7 uncertainty file MARV_SIM7_U='${sim7_u}' does not "
+                          "exist (design/measured/sim7_u/u.yaml holds the committed measurement, decision 0006 E)")
+    endif()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${sim7_u}")
+    set(flat_attitude "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_attitude.yaml")
+    set(flat_attitude_report "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_attitude_report.txt")
+    set(attitude_args --out-attitude "${flat_attitude}" --sim7-u "${sim7_u}")
+    set(attitude_outputs "${flat_attitude}" "${flat_attitude_report}")
+    set(attitude_depends "${sim7_u}")
   endif()
 
   marv_card_profile_file(profile_file ${name} "${ARG_CARD}")
@@ -130,17 +149,17 @@ function(marv_add_card_param_set name)
   file(GLOB marv_card_tools CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/tools/card/*.py")
 
   add_custom_command(
-    OUTPUT "${flat_card}" "${flat_register}" "${flat_mixer}" ${scenario_outputs} ${rate_outputs}
+    OUTPUT "${flat_card}" "${flat_register}" "${flat_mixer}" ${scenario_outputs} ${rate_outputs} ${attitude_outputs}
     COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/card/flatten.py"
             --card "${ARG_CARD}" --budget "${ARG_BUDGET}"
             --out-card "${flat_card}" --out-register "${flat_register}" --out-mixer "${flat_mixer}"
-            ${scenario_args} ${rate_args}
+            ${scenario_args} ${rate_args} ${attitude_args}
             --root "${PROJECT_SOURCE_DIR}"
-    DEPENDS "${ARG_CARD}" "${profile_file}" "${ARG_BUDGET}" ${scenario_depends} ${marv_card_tools}
+    DEPENDS "${ARG_CARD}" "${profile_file}" "${ARG_BUDGET}" ${scenario_depends} ${attitude_depends} ${marv_card_tools}
     COMMENT "Linting and flattening the vehicle card and design budget (${name})"
     VERBATIM)
 
-  marv_add_param_set(${name} CARD "${flat_card}" "${flat_mixer}" ${scenario_outputs} ${flat_rate} REGISTER "${flat_register}" ${ARG_EXTRA_REGISTER})
+  marv_add_param_set(${name} CARD "${flat_card}" "${flat_mixer}" ${scenario_outputs} ${flat_rate} ${flat_attitude} REGISTER "${flat_register}" ${ARG_EXTRA_REGISTER})
 endfunction()
 
 # marv_add_card_report(<name> CARD <card.yaml> BUDGET <budget.yaml>)

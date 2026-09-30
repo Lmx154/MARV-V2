@@ -76,3 +76,32 @@ rate_max_yaw:
     applyActualRates gives rates x 10 = 670 deg/s at full stick with zero expo; the rate_limit cap of 1998 deg/s
     (src/main/fc/rc_controls.h:80, applied at rc.c:663) does not bind.
   used_by: [QF-1, QF-2]
+
+angle_tilt_max:
+  value: 1.0471975511965976
+  unit: rad
+  method: scenario
+  sigma: choice
+  rationale: >-
+    Angle-mode maximum tilt, pilot preference: 60 deg x pi/180 = 1.0471975511965976 rad (degrees appear only in
+    user-facing text, core 3). Luis, 2026-09-30 (decision 0006, owner decision 6): a scenario value cited from
+    Betaflight at a pinned commit. Betaflight 4.5.2, commit 024f8e13d4e642eb6a380308685b9ea3aa3ef1a2:
+    src/main/flight/pid.c:138 `.angle_limit = 60` (the default, in degrees); src/main/cli/settings.c:1169
+    (configurable from 10 to 85). The geometry differs from Betaflight's, which limits each Euler angle (pid.c:395):
+    MARV bounds the total tilt (decision 0006 D).
+  used_by: [angle mode]
+
+yaw_deadband:
+  value: 0.0
+  unit: "1"
+  method: scenario
+  sigma: choice
+  rationale: >-
+    Angle-mode yaw-stick deadband as a fraction of full stick: 0/500 = 0. It is written 0.0 so that it is an f32
+    parameter (an integer value is an i32 parameter). Luis, 2026-09-30 (decision 0006, owner decision 14): a scenario
+    value cited from Betaflight at a pinned commit. Betaflight 4.5.2, commit 024f8e13d4e642eb6a380308685b9ea3aa3ef1a2:
+    src/main/fc/rc_controls.c:79 `.yaw_deadband = 0` (the default, in rc units of the 500-unit half range);
+    src/main/cli/settings.c:1084 (range 0 to 100); applied at src/main/fc/rc.c:700-701 (subtracted) and rc.c:778
+    (divider 500 - yaw_deadband). The heading lock engages only at exactly zero stick; with real sticks at L8 this
+    value needs revisiting. The attitude generator refuses a value outside [0, 1).
+  used_by: [angle mode, attitude generator input check]
