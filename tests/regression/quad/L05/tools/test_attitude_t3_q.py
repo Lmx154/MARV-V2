@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 REFERENCE = Path(__file__).resolve().parents[1] / "t3" / "reference"
-SHORT_SEGMENT = 600  # attitude executions of the hold and of the release segment: long enough for every yaw member to lock (about 400 after the release)
+SHORT_SEGMENT = 1200  # attitude executions of the hold and of the release segment: long enough for every yaw member to lock (att_yaw_t_cross / T_a = 820 after the release at N = 1; 410 at N = 2)
 DEAD_BAND_REL_TOL = 1e-3  # scenario test value: the two derivations agree to this relative difference (cause.txt prints 4 digits)
 BISECTIONS = 80  # scenario test value: the dead-band search halves an interval of 1e-2 N m this many times
 

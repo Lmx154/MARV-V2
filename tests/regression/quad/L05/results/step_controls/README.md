@@ -21,13 +21,13 @@ The gz logs and simulated traces go to `--work`; a rerun regenerates them (decis
 
 Result (measured, `controls.txt`):
 - **Baseline.** The flown roll and pitch steps pass the widened predicate. The largest stepped-axis excursion outside the
-  envelope is 6.52e-3 rad (roll) and 5.94e-3 rad (pitch), against F + Q = 1.12e-2 and 1.03e-2.
-- **(a) att_kp x 1.1, flown in gz.** It fails: 461 (roll) and 470 (pitch) violations, largest slack +3.08e-2 and
-  +3.21e-2 rad. The quant counterfactual of the same case agrees (+3.13e-2, +3.27e-2). It is a gz negative control in
+  envelope is 6.52e-3 rad (roll) and 5.94e-3 rad (pitch), against F + Q = 1.127e-2 and 1.038e-2 (N = 1, 3.2 kHz).
+- **(a) att_kp x 1.1, flown in gz.** It fails: 919 (roll) and 941 (pitch) violations, largest slack +3.07e-2 and
+  +3.21e-2 rad. The quant counterfactual of the same case agrees (+3.10e-2, +3.28e-2). It is a gz negative control in
   `test_t4_steps.py`.
 - **(a') rate kp and ki x 1.1 on all axes, flown in gz.** It does not fail: 0 violations, stepped axis at most 1.46e-3 and
-  1.26e-3 rad outside the envelope, inside F alone. The J x tau box of the envelope covers a 10 % rate-gain change.
-- **(b) One tick of added delay, quant counterfactual.** It does not fail: 0 violations. The stepped-axis slack is -4.71e-3
-  (roll) and -4.40e-3 (pitch) rad, inside the widened band. In the unquantised design model the delay moves theta by at
-  most 3.69e-4 rad, which is below F (2.92e-3) alone. The T4 angle steps therefore cannot see it, with or without Q. The
+  1.24e-3 rad outside the envelope, inside F alone. The J x tau box of the envelope covers a 10 % rate-gain change.
+- **(b) One tick of added delay, quant counterfactual.** It does not fail: 0 violations. The stepped-axis slack is -4.77e-3
+  (roll) and -4.45e-3 (pitch) rad, inside the widened band. In the unquantised design model the delay moves theta by at
+  most 3.69e-4 rad, which is below F (2.98e-3) alone. The T4 angle steps therefore cannot see it, with or without Q. The
   fine delay control is enforced at T3 only.

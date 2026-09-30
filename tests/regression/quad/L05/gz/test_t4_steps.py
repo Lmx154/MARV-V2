@@ -196,7 +196,7 @@ def alignment_findings(s, origin):
         out.append(f"the window's last execution {origin + p.end} is beyond the run's {len(ex) - 1}")
     want = int(p.period_s * 10 ** 6)
     bad = [n for n in range(1, min(p.end, len(ex) - origin - 1) + 1)
-           if ex[origin + n]["t_us"] - ex[origin + n - 1]["t_us"] != want]
+           if ex[origin + n]["t_us"] - ex[origin + n - 1]["t_us"] != p.stamp_us(origin + n) - p.stamp_us(origin + n - 1)]
     if bad:
         out.append(f"{len(bad)} window dt differ from the oracle's {want} us (first at n = {bad[0]})")
     if any(x["tick"] != p.tick_of(x["a"]) for x in ex):
