@@ -1,6 +1,6 @@
-# Handoff: quad L1 passed, next is quad L2
+# Handoff: quad L2 passed, next is quad L3
 
-2026-09-29. Written for the next agent working in this repository. This file records state; it adds no scope. The
+2026-09-30. Written for the next agent working in this repository. This file records state; it adds no scope. The
 specs remain the only planning documents (core §0 rule 5). Replace this file at the next handoff.
 
 ## Read first, in this order
@@ -9,65 +9,81 @@ specs remain the only planning documents (core §0 rule 5). Replace this file at
    conventions.
 2. `docs/spec/00-core-contracts.md` (ACTIVE): shared contracts. The sections that matter most here:
    - §2 numbers and provenance;
-   - §3 conventions (host frames convert once, in the adapter);
-   - §4 firmware boundary;
-   - §6 physics ownership and hosts;
+   - §3 conventions (logical motor numbers, spin directions in the card);
+   - §4 firmware boundary (actuator values: DShot 0 or 48–2047);
    - §7 testing, freezing and the §7.5 convergence rule.
-3. `docs/spec/10-quad-flight-software.md` (ACTIVE): §3 (Gazebo only: the lockstep plugin, the two modes, the SIM
-   requirements) and §4, the build order (the spine, L0–L10). **§4 "L2 — Gazebo host" is your next step.** Q-D4
-   (§7) is decided at L2.
-4. `docs/spec/20-ground-segment.md` and `30-rocket.md` are PARKED: read for context, never implement from them.
-5. `docs/decisions/0001-*.md` and `0002-*.md`: the two L1 decision records.
+3. `docs/spec/10-quad-flight-software.md` (ACTIVE): §4, the build order (the spine, L0–L10), and §6.2 (QF-2, QF-3,
+   QF-6). **§4 "L3 — Mixer / allocation" is your next step.**
+4. `docs/spec/20-ground-segment.md` and `30-rocket.md` are PARKED: read them for context, never implement from them.
+5. `docs/decisions/0001`–`0003`. Decision 0003 holds every L2 choice: Luis's (items 1–7), the lead's (items 8–11),
+   and the gz-sim 8 behaviour found while building L2.
 
 Luis (the owner) makes the final calls. Numbers you cannot source are tagged `UNKNOWN` and you stop to ask.
 
 ## Current state
 
-- **Branch and tag.** `master` holds the L1 work plus this handoff; the L1 work is pushed to
-  `github.com:Lmx154/MARV-V2`. The tag `quad-L1-pass` is on `b8ed690`, where GitHub Actions run 36609144674 is green
-  and the full Docker CI passes 40/40. The tag `quad-L0-pass` is on `6cca7ec`.
-- **Branches and worktrees.** Only `master` exists. There are no local worktrees or `worktree-agent-*` branches.
-  `.serena/` is git-ignored.
-- **Decision records** (both approved by Luis on 2026-09-29, with conditions that are met):
-  - **0001:** `SigmaKind` on the parameter record. The kind/σ rule (I1) is enforced at build time (generator refusal,
-    and a `static_assert` over the generated table) and at firmware startup.
-  - **0002:** the frozen G1 tools test no longer pins the full literal list of `constants.hpp`. In the same change,
-    `tools/ci/check_constants.py` now requires a citation and a math, physics or standard kind on every constant.
-- **Owner decisions after the specs were written** (recorded in the card, budget and decision records):
-  - **σ policy.** Published, measured, identified and datasheet entries need σ > 0 derived by a recorded rule, or
-    σ `UNKNOWN`. Design-budget and scenario entries use `sigma: choice`. `sigma: exact` is allowed only for integer
-    counts. Every run report lists the σ-`UNKNOWN` entries.
-  - **Mass.** 0.772 kg, `UNVERIFIED`, with 0.752 kg recorded as the conflict (paper and agile_flight). B1's log
-    replay settles it. σ is 0.010 kg, half the spread.
-  - **Spin directions.** m1 and m2 ccw, m3 and m4 cw. Read from NeuroBEM Fig. 3, and they agree with the PX4/ArduPilot
-    quad-X directions. Tagged `INFERRED`; B1 replay checks the yaw-torque sign.
-  - **ESC map.** A labelled scenario value, linear in ω: DShot 48 → ω_min, 2047 → ω_max, 0 = stop. The pole count is
-    14 (Hobbywing XRotor 2306 Race Pro, variant `INFERRED`).
-  - **Plant precision.** `marv_plant` runs in double.
-  - **RK4 and table interpolation** join the primitives with their first user, not at L1.
-  - **Budget values.** Budget-register values are filled only when a layer that tests against them is specified.
-- **Draft 0 and earlier projects.** Draft 0 is archived at `~/Documents/Notes/marv-archive/`; it is not a source, so
-  don't read it. Earlier projects (`~/Projects/Rust/MARV-FC`, `~/Projects/MARV-Gazebo-HIL`) are off-limits (core §1).
+- **Branch and tag.** `master` holds the L2 work (`320cf18`) plus this handoff, pushed to `github.com:Lmx154/MARV-V2`.
+  The tag `quad-L2-pass` is on `320cf18`, where GitHub Actions run 36674899399 is green. Both CI scripts also pass
+  locally: `ci/run_ci.sh` in `marv-ci` (38 steps; the 39th, the regression-change check, runs only with
+  `MARV_CI_BASE_REF`) and `ci/run_ci_gz.sh` in `marv-ci-gz` (6 steps). Earlier tags: `quad-L1-pass` on `b8ed690`,
+  `quad-L0-pass` on `6cca7ec`.
+- **Branches and worktrees.** Only `master` exists. There are no local worktrees.
+- **Decision 0003** (approved by Luis on 2026-09-30 with the push):
+  - **CI.** A second pinned image, `marv-ci-gz` (`ci/Dockerfile.gz`, `FROM marv-ci`). It holds gz-sim 8.15, the
+    dartsim physics plugin 7.8, DART 6.13.2, sdformat 14.9 and cppzmq, and runs only the Gazebo steps.
+  - **SIM-3** is measured and recorded. Its required value is `UNKNOWN` (`design/budget.yaml` `batch_plan`), so SIM-3
+    stays open.
+  - **Adapter test scope.** The adapter test compares every `marv_plant` v0 output. Sensor bytes join at L6, by a new
+    decision record.
+  - **Q-D4.** It is decided as generated world variants: pilot at real-time factor 1, test at 0.
+  - **L2 command source.** The `l2_open_loop` composition (DShot per motor from parameters set by the SIL override).
+    The plugin always steps firmware in-process.
+  - **"Exact" means** bit-exact for vectors and every plant output. The attitude quaternion is held to a derived
+    rounding bound.
+  - **Hover** is checked as a DShot bracket. It passes if the hover command lies between D_lo and D_hi, and each
+    passes against a tick-held reference (end-of-tick thrust, which the L1 plant ABI defines).
+  - **Per tick:** one SIL tick, then one plant call. The mean wrench is applied per host step.
+  - **The T4 rule.** Halving over m = 4, 2, 1 ticks per host step, with Aitken/Richardson extrapolation and a roundoff
+    floor. Each quantity is read at the last fresh step.
+  - **Determinism.** Byte-identical plugin logs. The control is the SDF's ixx set one ulp higher.
+  - **gz-sim 8 behaviour, and the fixes:**
+    - Link velocity commands are reset to zero and kept, so the plugin removes them after step 0.
+    - State updates are skipped below a 1e-6 pose change, so reads can be stale.
+- **Owner decisions carried from L1** (card, budget, decisions 0001/0002): the σ policy, mass 0.772 kg `UNVERIFIED`
+  (0.752 kg conflict), spin directions m1/m2 ccw and m3/m4 cw `INFERRED`, the ESC map linear in ω (a labelled scenario
+  value), and `marv_plant` in double.
+- **Draft 0 and earlier projects** are off limits (core §1).
 
-## What L1 built (quad spec §4 L1, all pass-bar items met)
+## What L2 built (quad spec §4 L2)
 
 | Area | Where | Notes |
 | --- | --- | --- |
-| Card / profile / budget schema + linter | `tools/card/schema.py`, `tools/card/lint.py` | The one implementation of the entry schema and the σ policy. It rejects the core §2.1 example card, a card without spin directions, a single σ on a vector entry, and rotor positions outside the core §3 quadrants. |
-| Data | `vehicles/uzh_neurobem_5in.yaml`, `sensors/profiles/marv_v2_board_default.yaml`, `design/budget.yaml` | Every number carries its source. The profile keeps datasheet units and is not flattened into firmware until L6. The budget restates the rationales for PM_min (45°, stored in rad) and the χ² quantile (0.999); every other budget entry is `value: UNKNOWN`. |
-| Parameter record | `fw/params/include/marv/params/param_types.hpp`, `fw/params/src/param.cpp` | `SigmaKind {Known, Exact, Unknown, Choice}` sits after `locked`; sizeof is unchanged (40 host / 28 M33). One `constexpr sigma_consistent` is shared by `params_init` and the generated `static_assert`. |
-| Generator | `tools/gen/params_gen.py` | σ tokens (`UNKNOWN`, `choice`, `exact`), `lock {by, on, via: manual}`, and vector `shape` (frd3, diag3, range, motors) expanded to scalar ids. It checks each record against the kind/σ rule before writing and emits `params_provenance.json`. The L0 `param_ids.hpp` and manifest are byte-identical. |
-| Product parameter set | `tools/card/flatten.py`, `marv_add_card_param_set` in `fw/params/CMakeLists.txt` | card → lint → flatten → params_gen, 27 ids including `rotor_yaw_sign_m1..m4` = +1, +1, −1, −1. The cache vars are `MARV_VEHICLE_CARD` and `MARV_DESIGN_BUDGET`. `marv_params_l0` and `marv_params_l1_fixture` are independent test sets. |
-| Run report | `tools/card/report.py`, target `marv_params_report` (defined outside `fw/`) | Written to `build/<preset>/generated/marv_params/l1_report.txt`. Contents: the card hash (card plus profile, `8d34b3e8…`), the budget hash, the commit, and the UNVERIFIED / INFERRED / σ UNKNOWN / value UNKNOWN / design-budget / locked lists. It is labelled perfect-model. |
-| Gravity | `fw/prim/include/marv/prim/gravity.hpp` | WGS 84, NIMA TR8350.2 3rd ed. Amdt 1, eq. (4-1) and (4-3), with the constants in `constants.hpp`. Golden vectors come from the toolbox's `gravity.ts` (`tools/golden/gravity_vectors.mjs`). |
-| `marv_plant` v0 | `sim/plant/` (`marv_plant.h`) | C ABI, opaque handle, validate-before-act. DShot → ω map; exact zero-order-hold first-order motor over fixed sub-steps plus one partial step. Returns the NED wrench about the CM with gravity included, plus rotor speeds and eRPM. The wrench is evaluated from the end-of-step motor state. Double precision, host only. |
-| Generators | `tools/card/gen_plant_config.py`, `tools/card/gen_sdf.py`, `cmake/marv_card_gen.cmake` | Write the plant-config C header (hex floats), the plugin `<plugin>` XML and SDFormat 1.11 (sdformat14 = gz-sim 8), into `build/<preset>/generated/plant_card/`. Link origin at the CM. The consumer supplies the scenario fields (site latitude and height, sub-step h, seed). |
-| Frozen suite | `tests/regression/quad/L01/` | ctest: `unit/prim` (gravity), `unit/params`, `unit/plant` (motor, wrench, ABI, KAT), `unit/plant_card` (hover against the card). pytest: `tools/`. Plus `fixtures/`, `controls/`, and the plant known-answer reference `unit/plant/reference/plant_ref.py` with its committed inputs and outputs. |
-| CI | `ci/run_ci.sh`, `tools/ci/check_constants.py`, `tools/ci/check_g3.py` | New steps: L01 pytest, the card lint, the product build from the card, the constants citation check, G3 plant patterns (`marv_plant_`, `marv::plant::`), plant-reference reproduction, and printing the report. Each has a negative control that must fail: the §2.1 card, a σ = 0 card, a Python without PyYAML, a mismatched record table (`static_assert`), an uncited constant, a vehicle number in `constants.hpp`, a planted plant symbol, and perturbed reference inputs. |
+| Open-loop composition | `fw/compositions/l2_open_loop/`, `sim/l2_open_loop/` (SIL library `marv_sil_l2_open_loop`) | Parameters `ol_dshot_m1..m4` (method `scenario`, σ `choice`, default 0), validated at init. An illegal value calls `hal_panic`. |
+| Adapter (host-free) | `sim/gz/adapter/` (`frames.hpp`, `adapter.hpp`, cited constants) | ENU↔NED and FLU↔FRD maps, the attitude map q_nb = ŝ·(−(w+z), −(x+y), y−x, z−w), and ω_frd = R(q)ᵀ·perm(ω_world). The per-tick loop: `SilCommandSource` or `ScriptedCommandSource`, then `marv_plant_step`, then W̄ summed from W_0 and divided once. Static and PIC. |
+| Lockstep plugin | `sim/gz/plugin/` (`marv_gz_lockstep` / `marv::gz::Lockstep`), built only with `MARV_GZ=ON` (presets `host-gz`, `host-gz-release`) | The SIL and parameter set are chosen by the cache variables `MARV_GZ_SIL` / `MARV_GZ_PARAMS`, so a composition swap needs no code change. Configure-time refusals are `std::abort` with `marv_gz_lockstep: REFUSED: <reason>`. It checks dt and simTime every step, and removes the velocity commands after step 0. The binary log is little-endian, one flush per host step, with a trailer and no wall-clock or path bytes (`lockstep_log.hpp`, `tools/sim/lockstep_log.py`). The env var `MARV_GZ_TEST_KEEP_VEL_CMD` exists only for a negative control. |
+| Worlds | `tools/card/gen_world.py` | (card, scenario, mode, m) → SDFormat 1.11 world: dartsim named, gravity 0, max_step_size = m·tick, the plugin element schema in its docstring, and the initial pose in ENU/FLU. No ground plane or geometry: no L2 scenario needs contact, and a GUI shows nothing yet (Q-D1). |
+| Scenarios | `scenarios/quad/L02/{free_fall,rotation,hover,determinism}.yaml`, schema `tools/sim/scenario.py` | Every number is labelled or derived. Tick 625/4 µs (the L0 scenario value), site φ = 0.82 rad, h0 = 500 m, m sequence [4,2,1], durations in ticks. The hover bracket is D_lo = 765 and D_hi = 766 (`tools/sim/hover.py`). |
+| Runner | `tools/sim/run_scenario.py` (CLI and module) | `run`, `run_sequence`, `measure_rtf`, run reports: build_report, commit, card and scenario hashes, versions (gz-sim, gz-physics, DART, sdformat), stale-step count, halving section. One gz process per run (one SIL per process), with a unique `GZ_PARTITION`. |
+| T4 rule and references | `tools/sim/t4_rule.py`, `tools/sim/reference.py` | The item 9 rule and roundoff floors. Free-fall ODE with the g(h) gradient; continuous and tick-held hover references; rotation invariants. Each reference's F_ref is shown ≤ F by halving. |
+| Frozen suites | `tests/regression/quad/L02/` | ctest (label frozen): `unit/composition`, `unit/adapter`. pytest: `tools/` (223 tests), `gz/test_plugin_smoke.py` (17), `gz/test_determinism.py` (3), `gz/test_analytic.py` (24). The pytest suites run only in `ci/run_ci_gz.sh`, which fails on any skip. |
+| SIM-3 | `tools/sim/measure_sim3.py`, `tests/regression/quad/L02/results/sim3/` | Release build, free fall, m = 1, 1 s. The marginal RTF per core is about 9–15 (±25%: a 1 s run measures little beyond the ≈ 2.1 s startup), on one core. Required: `UNKNOWN`. |
+| CI | `ci/Dockerfile.gz`, `ci/run_ci_gz.sh`, `.github/workflows/ci.yml` | Steps: gz_toolchain, gz_build, gz_plugin_smoke, gz_determinism, gz_runner_tools, gz_analytic. `cmake/flight_targets.cmake` excludes the plugin from the G3 SIL export list (0003 item 11). |
 
-The L0 and L1 interface decisions are frozen: the declarations in the headers above are the contract. Changing one
-needs a decision record in `docs/decisions/` (template `0000-template.md`, next number 0003). So does modifying or
-deleting anything under `tests/regression/`, including `L01/`.
+L2 results, for reference:
+
+| Check | Result |
+| --- | --- |
+| Free fall, p_D | Branch (ii), observed order ≈ 1.0 |
+| Free fall, v_D | Branch (i) |
+| Rotation, \|L\| and KE | Branch (ii), observed order ≈ 1.0 |
+| Hover, p_D | Branch (ii), both D |
+| Hover, v_D and a_D | Branch (i), both D |
+| Hover logged thrust against the tick-held reference, per tick | 0 violations, worst tick at 0.28 of the floor |
+| Determinism | Log SHA-256 `6b124cb9…075a`, the same on host and image |
+
+The L0, L1 and L2 interface decisions are frozen: the declarations in the headers above are the contract. Changing
+one needs a decision record in `docs/decisions/` (template `0000-template.md`, next number 0004). So does modifying or
+deleting anything under `tests/regression/`, including `L02/`.
 
 ## How to verify
 
@@ -75,89 +91,92 @@ deleting anything under `tests/regression/`, including `L01/`.
 uv sync --frozen
 cmake --preset host-debug && cmake --build --preset host-debug && ctest --preset host-debug
 cmake --preset m33 && cmake --build --preset m33
-docker build -t marv-ci -f ci/Dockerfile .
-docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/src -w /src marv-ci ci/run_ci.sh   # the definition of verified
+cmake --preset host-gz && cmake --build --preset host-gz && uv run pytest tests/regression/quad/L02 -q -rs
+docker build -t marv-ci -f ci/Dockerfile . && docker build -t marv-ci-gz -f ci/Dockerfile.gz .
+docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/src -w /src marv-ci ci/run_ci.sh      # verified, part 1
+docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/src -w /src marv-ci-gz ci/run_ci_gz.sh  # verified, part 2
 ```
 
-Run the Docker command on a clean copy if a host `build/` exists, and always with `-u` (otherwise it leaves root-owned
-files). Set `-e MARV_CI_BASE_REF=origin/master` to check a branch's range. clang-tidy exists only in the image. After
-CMake changes to parameter sets, use a fresh `build/`. Today the full run is 40 steps, about 10 minutes.
+Run the Docker commands on clean copies if a host `build/` exists. Use
+`rsync -a --exclude build --exclude .venv --exclude __pycache__ ./ <dir>/`, one fresh copy per image, and always
+with `-u`. `marv-ci-gz` is built `FROM marv-ci`, so build that first.
 
-## Next step: quad L2
+This host has gz-sim 8 and 10 and libdart 6.13 and 6.16 side by side. Always use `gz sim --force-version 8`; the
+runner does. gz prints hundreds of libprotobuf "already exists in database" lines on every start. They are noise.
 
-Execute quad spec §4 **L2 — Gazebo host**. Its Builds, Opening, Pass bar and Freezes are the scope. Check these open
-items before building, and ask Luis where the spec leaves a choice:
+## Next step: quad L3
 
-- **Gazebo version and CI.**
-  - Pin gz-sim 8 (Harmonic, the spec's host). gz-sim 8 and 10 are both installed, `gz sim` may pick 10, and `gz sdf`
-    on this host is sdformat16.
-  - The CI image has no Gazebo. L2's T4 tests need it headless in CI, which is a change to `ci/Dockerfile`. That is a
-    toolchain decision: take it to Luis.
-- **Plugin.**
-  - The lockstep plugin reads the generated `<plugin>` element. Its `filename` / `name` (`marv_gz_lockstep` /
-    `marv::gz::Lockstep`) are provisional, so rename them in `tools/card/gen_plant_config.py` if needed.
-  - World gravity is zero (the plant applies it).
-  - Wrench application: `AddWorldWrench` acts at the link origin, and the generated models put that origin at the CM
-    (quad §3.1).
-- **Frames.** `marv_plant` returns the wrench in NED. The adapter converts ENU/FLU ↔ NED/FRD once, and the adapter
-  test checks it against a direct `marv_plant` call.
-- **Sensor bytes.** The L2 adapter test mentions "every sensor byte", but `marv_plant` v0 has no sensor models (they
-  arrive with L6). Settle what the test compares at L2 before building it.
-- **Step sizes.** Gazebo's step, `marv_plant`'s motor sub-step and firmware ticks per host step are all chosen by the
-  §7.5 convergence rule (SIM-7), with the halving sequence recorded. `marv_plant` holds each command over one step
-  call, so one plant call per firmware tick keeps the zero-order hold exact. Nothing bounds dt/h yet.
-- **SIM-3 throughput.** It needs the budget register's `batch_plan`, which is `value: UNKNOWN`. That is an UNKNOWN to
-  raise with Luis, not to guess.
-- **Q-D4.** How each mode sets its real-time factor (generated world variants, or `set_physics`) is decided at L2.
-- **Firmware state.** One SIL init per process, so a Gazebo GUI reset needs a gz restart.
-- **Scenario runner.** The runner (card, scenario, seed) → logged run should call `tools/card/report.py`'s
-  `build_report`. Truth is not dispersed yet (core §6), so every closed-loop result is labelled perfect-model.
+Execute quad spec §4 **L3 — Mixer / allocation**. Its Builds, Opening, Pass bar and Freezes are the scope. All of its
+pass bar is T1. Check these open items before building, and ask Luis where the spec leaves a choice:
 
-## Carried forward (not L2 unless the spec says so)
+- **The idle floor.**
+  - L3 says "idle floor at the card's minimum stable rotor speed", and QF-6 says "the measured minimum stable rotor
+    speed". The card has only `speed_range` [150, 2800] rad/s (published, blackbird `motor_omega_min`, σ `UNKNOWN`).
+    Under the ESC scenario map, that is also the speed at DShot 48.
+  - Whether the idle floor is that entry, or a separate measured value (none exists yet, so `UNKNOWN`), is Luis's
+    call.
+- **"Within float tolerance".** The identity check (mixer ∘ effectiveness) needs a derived bound with its rule, as the
+  L2 adapter bounds have. The same gap is open for L10.
+- **Output path.** Wrench → rotor-speed request → DShot needs the inverse of the ESC map. That map is a labelled
+  scenario value, linear in ω, and L2's `tools/sim/hover.py` already inverts it in Python. The firmware version must
+  take k and the map from parameters: no literals under `fw/` (G1).
+- **Sign contract.** +yaw raises the ccw motors, per the card: m1 and m2, `INFERRED`, with B1 replay checking the
+  sign. The card's `rotor_yaw_sign_m1..m4` parameters are +1, +1, −1, −1.
+- **Desaturation.** The priority (roll and pitch over yaw) and the air-mode behaviour (QF-6) must be documented before
+  the tests are written.
+- **L3 has no T4 item.** Flying the mixer in Gazebo means a new composition plus `MARV_GZ_SIL` / `MARV_GZ_PARAMS`. The
+  plugin code does not change.
 
-- **L9.**
-  - On the M33, the scheduler's 64-bit `%` calls `__aeabi_uldivmod`, and `init` calls `memcpy`. Both come from
-    libgcc/newlib and are flash-resident by default.
-  - Core 1 must run from SRAM (EMB-1), and so must `hal_panic`.
-  - What the motors do on a target `hal_panic` is an open flight-safety decision.
-- **B1.**
-  - Mass conflict (0.772 vs 0.752 kg).
-  - Spin directions and yaw-torque sign.
-  - The thrust_map reading (`INFERRED`).
-  - blackbird.yaml's `thrust_max` of 8.5 N per motor vs k·2800² = 12.25 N. The card uses only the speed range.
-  - σ for every card entry is `UNKNOWN` except mass. A layer whose pass bar consumes an `UNKNOWN` σ fails until the σ
-    is sourced.
-- **Spec gaps outside L2, not yet fixed** (for Luis):
-  - L7's attitude-error budget "derived from QF-3" has no rule.
+## Carried forward (not L3 unless the spec says so)
+
+- **SIM-3.** Open until Luis sets `batch_plan` (core C-6). The measurement exists only for a Debug and a Release 1 s
+  free-fall run. A 10 s run of the determinism scenario trips a DART assertion (`Skeleton::computeForwardDynamics`,
+  probably constant torque spinning the body up without bound); the committed runs are 1–2 s.
+- **CI pinning.** `marv-ci-gz` pins only the gz top-level packages, DART and cppzmq. About 300 dependencies they pull
+  in float within noble, and the OSRF repository keeps only recent versions: a pinned version that disappears fails
+  the image build loudly. So the determinism promise ("pinned tool versions") holds only partly.
+- **gz-sim 8 stale reads** (0003 item 11). Any later T4 test that reads state must use the fresh-read rule. The
+  plant's own input can also be stale by up to 1e-6. That is harmless at L2, but a layer whose scenario torque depends
+  on attitude must bound it.
+- **The pass rule's slack.** Rule (ii)'s bound includes E, so a reference offset of about 0.5·E can pass. The negative
+  controls are far outside that.
+- **L6.** Sensor bytes join the adapter test (a new decision record). Sensor evaluation before the motor advance
+  needs a `marv_plant` ABI change (decision record).
+- **QF-4.** The plant has zero actuator latency: the command of tick j acts on tick j. DShot frame and ESC delay
+  belong inside `marv_plant`.
+- **L9.** As before:
+  - `__aeabi_uldivmod` and `memcpy` are flash-resident on the M33.
+  - Core 1 and `hal_panic` must run from SRAM (EMB-1).
+  - The motor behaviour on a target `hal_panic` is an open flight-safety decision.
+- **B1.** As before:
+  - the mass conflict;
+  - the spin directions and yaw-torque sign;
+  - the `thrust_map` reading;
+  - blackbird's `thrust_max` of 8.5 N against k·2800²;
+  - σ `UNKNOWN` for every card entry except mass.
+- **Spec gaps, not yet fixed (for Luis):**
+  - L7's attitude-error budget has no rule.
   - Q-D6's criterion does not match the L6 Allan check.
   - L10's "within float tolerance" needs a horizon and a metric.
-  - Core §2.1's example card uses field shapes the schema rejects (`tau_s`, string `conflict` and `status`).
-  - Core §9 lists RK4 and interpolation at L1, although they join with their first user.
-  - Core §3's "double only for the shadow" rule does not mention simulator code (the plant runs double by owner
-    decision).
-- **Known, accepted gate limits.**
-  - G1 covers `fw/` only; `sim/plant` has structural literals such as array sizes and the quaternion index.
-  - G1 does not flag character literals or files with unusual suffixes.
-  - G3 does not parse `-Wp,-include` or `@file` response files, and its plant control is host-only.
-  - G8 checks section presence, not substance.
-  - `check_constants.py`'s vehicle-number guard is a keyword rule (card, profile, budget, datasheet), so review of
-    `constants.hpp` changes stays the last line of defence.
-- **Goldens.**
-  - `plant_ref_expected.txt` reproduces inside the CI image.
-  - `gravity_golden.csv` is reference data from the external toolbox, compared within a tolerance. The image has no
-    node, so it cannot regenerate it.
+  - Core §2.1's example card uses rejected field shapes.
+  - Core §9 lists RK4 and interpolation at L1.
+  - Core §3's double rule does not mention simulator code.
+  - New: quad §4 L2 says the adapter compares "every sensor byte", which v0 cannot do (0003 item 3); and "ENU↔NED
+    round-trips are exact" holds only for vectors (0003 item 6).
+- **Known, accepted gate limits.** As before, plus:
+  - G1 and G3 do not cover `sim/gz` (outside `fw/`). The number rule there is kept by review.
+  - `sim/gz/CMakeLists.txt` sets PIC on `marv_prim` and `marv_types` when `MARV_GZ=ON`.
+  - The `run_ci.sh` frozen step does not run the L02 pytest suites; only `run_ci_gz.sh` runs them.
 
 ## Working notes
 
-- **Numeric literals.** Every numeric literal under `fw/` other than 0, 1, 2 and ½ fails CI; don't dodge the lint with
-  arithmetic (`2 + 1`). Cited constants go in `constants.hpp`. Each paragraph there needs a `Citation:` and one
-  `Kind: math|physics|standard`. Vehicle and part numbers go in the card or a sensor profile, never there.
-- **Card YAML.** Consumers must load card YAML through `tools/card/schema.py`: plain `yaml.safe_load` reads
-  `1.562522e-6` as a string. The generators require the card file to be named `<vehicle>.yaml`.
-- **Custom targets.** Custom CMake targets must not be defined under `fw/`: G3 treats every target there as a flight
-  target, and it refuses the UTILITY type.
-- **Goldens.** Goldens are regenerated only inside the `marv-ci` image, with the explicit command recorded next to
-  them (see `tests/regression/quad/L00/replay/CMakeLists.txt`); CI never regenerates.
-- **Parallel workers.** Worktrees created for parallel workers start from `master`, not from the current branch, so
-  fast-forward them to the working branch first.
-- **Scope.** Keep changes scoped to the layer being executed; report anything noticed but not changed.
+- **Numeric literals.** As before: every literal under `fw/` other than 0, 1, 2 and ½ fails CI. Cited constants go in
+  `constants.hpp`, with a `Citation:` and a `Kind:`. Vehicle numbers go in the card.
+- **Card YAML.** Load it only through `tools/card/schema.py`.
+- **Custom targets.** Custom CMake targets must not be defined under `fw/`.
+- **Goldens.** Regenerated only inside the image, with the command recorded next to them.
+- **Gazebo tests.** Run each scenario in its own gz process: one SIL init per process. Use the runner's
+  `run_gz_process`, which sets `GZ_PARTITION`, `GZ_IP=127.0.0.1` and the plugin path. A skipped pytest in the gz
+  image is a failure.
+- **Parallel workers.** Worktrees start from `master`. Fast-forward them to the working branch first.
+- **Scope.** Keep changes to the layer being executed. Report anything noticed but not changed.
