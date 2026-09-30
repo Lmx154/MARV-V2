@@ -500,12 +500,21 @@ void expect_matches_reference(std::int32_t divisor, std::int32_t ratio) {
     Variant chirp;
     chirp.chirp_as_torque = true;
     EXPECT_LT(first_difference(got, reference(r, sc, tr, kRun, chirp)), kRun) << "chirp as a torque";
-    Variant hold;
-    hold.setpoint_not_held = true;
-    EXPECT_LT(first_difference(got, reference(r, sc, tr, kRun, hold)), kRun) << "setpoint not held";
-    Variant wrong_divisor;
-    wrong_divisor.attitude_divisor = r.divisor;  // the rate divisor alone: the attitude ratio ignored
-    EXPECT_LT(first_difference(got, reference(r, sc, tr, kRun, wrong_divisor)), kRun) << "divisor without the ratio";
+    // These two controls differ from the composition only when the attitude group runs less often than the rate group
+    // (att_loop_ratio > 1): with a ratio of 1 a setpoint is never held over a rate tick and the divisor without the ratio
+    // is the divisor. They are therefore asserted whenever the ratio exceeds 1, and every overridden-divisor test must
+    // have a ratio above 1, so they always run and must differ in this suite.
+    if (ratio > 0) {
+      ASSERT_GT(r.ratio, 1U) << "an overridden-divisor test must have att_loop_ratio > 1";
+    }
+    if (r.ratio > 1) {
+      Variant hold;
+      hold.setpoint_not_held = true;
+      EXPECT_LT(first_difference(got, reference(r, sc, tr, kRun, hold)), kRun) << "setpoint not held";
+      Variant wrong_divisor;
+      wrong_divisor.attitude_divisor = r.divisor;  // the rate divisor alone: the attitude ratio ignored
+      EXPECT_LT(first_difference(got, reference(r, sc, tr, kRun, wrong_divisor)), kRun) << "divisor without the ratio";
+    }
     Variant other_divisor;
     other_divisor.attitude_divisor = r.divisor * r.ratio + r.divisor;
     EXPECT_LT(first_difference(got, reference(r, sc, tr, kRun, other_divisor)), kRun) << "one rate period too long";
