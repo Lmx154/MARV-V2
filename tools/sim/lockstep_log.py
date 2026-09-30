@@ -14,10 +14,14 @@ record, m TICK records, one APPLIED record. A TRAILER record is the last record 
            20 doubles (force_ned 3, torque_ned 3, rotor_speed 4, erpm 4, wrench force_enu 3, wrench torque_enu 3)
   APPLIED 3 6 doubles: applied wrench W_bar in ENU (force 3, torque 3)
   TRAILER 4 u64 step records, u64 tick records, u64 applied records
+  TRUTH 5   only when the plugin has <attitude_source>truth</attitude_source>, directly after that tick's TICK record:
+            u64 tick; the 48 bytes of marv_truth_state (u32 struct_size, u32 flags, u64 tick, 4 x f32 q wxyz, 3 x f32
+            omega_frd, 4 bytes of padding); the trailer's counts do not include it
 
-read() returns {"header": dict, "steps": [dict], "ticks": [dict], "applied": [dict], "trailer": dict or None,
-"raw_records": bytes (everything after the header, for byte comparison)}. A file that is cut inside a record, has an
-unknown record type or a record after the trailer raises LogError. Doubles are Python floats (exact binary64); no
+read() returns {"header": dict, "steps": [dict], "ticks": [dict], "applied": [dict], "truths": [dict],
+"trailer": dict or None, "raw_records": bytes (everything after the header, for byte comparison)}. A file that is cut inside a record, has an
+unknown record type, a record after the trailer or a TRUTH record that does not directly follow the TICK record of
+its tick raises LogError. Doubles are Python floats (exact binary64); no
 numpy.
 """
 
@@ -28,12 +32,13 @@ import sys
 
 MAGIC = b"MARVLOCK"
 VERSION = 1
-STEP, TICK, APPLIED, TRAILER = 1, 2, 3, 4
+STEP, TICK, APPLIED, TRAILER, TRUTH = 1, 2, 3, 4, 5
 _STEP = struct.Struct("<QQ26d")
 _TICK = struct.Struct("<QQ32s4HII20d")
 _APPLIED = struct.Struct("<6d")
 _TRAILER = struct.Struct("<QQQ")
-_SIZES = {STEP: _STEP.size, TICK: _TICK.size, APPLIED: _APPLIED.size, TRAILER: _TRAILER.size}
+_TRUTH = struct.Struct("<QIIQ4f3f4x")
+_SIZES = {STEP: _STEP.size, TICK: _TICK.size, APPLIED: _APPLIED.size, TRAILER: _TRAILER.size, TRUTH: _TRUTH.size}
 
 
 class LogError(Exception):
@@ -62,7 +67,8 @@ def read(path):
         data = f.read()
     header = _header(data)
     pos = header["header_size"]
-    steps, ticks, applied, trailer = [], [], [], None
+    steps, ticks, applied, truths, trailer = [], [], [], [], None
+    last_kind = None
     while pos < len(data):
         if trailer is not None:
             raise LogError("record after the trailer")
@@ -82,14 +88,21 @@ def read(path):
             ticks.append({"tick": v[0], "sil_t_us": v[1], "imu": v[2], "dshot": v[3:7], "erpm_valid": v[7],
                           "force_ned": v[9:12], "torque_ned": v[12:15], "rotor_speed": v[15:19], "erpm": v[19:23],
                           "wrench_force_enu": v[23:26], "wrench_torque_enu": v[26:29]})
+        elif kind == TRUTH:
+            v = _TRUTH.unpack_from(data, pos + 1)
+            if last_kind != TICK or v[0] != ticks[-1]["tick"]:
+                raise LogError(f"TRUTH record of tick {v[0]} at byte {pos} does not follow that tick's TICK record")
+            truths.append({"tick": v[0], "struct_size": v[1], "flags": v[2], "state_tick": v[3], "q_wxyz": v[4:8],
+                           "omega_frd": v[8:11], "raw": data[pos + 9:pos + 1 + size]})
         elif kind == APPLIED:
             v = _APPLIED.unpack_from(data, pos + 1)
             applied.append({"force_enu": v[0:3], "torque_enu": v[3:6]})
         else:
             v = _TRAILER.unpack_from(data, pos + 1)
             trailer = {"steps": v[0], "ticks": v[1], "applied": v[2]}
+        last_kind = kind
         pos += 1 + size
-    return {"header": header, "steps": steps, "ticks": ticks, "applied": applied, "trailer": trailer,
+    return {"header": header, "steps": steps, "ticks": ticks, "applied": applied, "truths": truths, "trailer": trailer,
             "raw_records": data[header["header_size"]:]}
 
 

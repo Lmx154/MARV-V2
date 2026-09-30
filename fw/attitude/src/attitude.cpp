@@ -1,4 +1,6 @@
 #include <marv/hal/hal.hpp>
+#include <marv/params/param.hpp>
+#include <marv/prim/constants.hpp>
 
 #include "marv/attitude/angle_mode.hpp"
 #include "marv/attitude/attitude_law.hpp"
@@ -48,11 +50,37 @@ void panic_period() noexcept {
 
 }  // namespace detail
 
+AttitudeConfig<float> from_params() noexcept {
+  AttitudeConfig<float> c;
+  c.kp = param_value<ParamId::att_kp>();
+  c.yaw_weight = param_value<ParamId::att_yaw_weight>();
+  c.tilt_max = param_value<ParamId::angle_tilt_max>();
+  c.yaw_deadband = param_value<ParamId::yaw_deadband>();
+  c.yaw_alpha_min = param_value<ParamId::att_yaw_alpha_min>();
+  c.yaw_t_cross = param_value<ParamId::att_yaw_t_cross>();
+  c.rate_max = prim::Vec3<float>(param_value<ParamId::rate_max_roll>(), param_value<ParamId::rate_max_pitch>(),
+                                 param_value<ParamId::rate_max_yaw>());
+  // The attitude period in microseconds is an integer product over an integer, so one float quotient (the rate loop's
+  // rule), and the conversion to seconds is one division.
+  const float ticks = static_cast<float>(param_value<ParamId::att_loop_ratio>()) *
+                      static_cast<float>(param_value<ParamId::rate_loop_divisor>());
+  const float period_us = ticks * static_cast<float>(param_value<ParamId::tick_period_num_us>()) /
+                          static_cast<float>(param_value<ParamId::tick_period_den>());
+  c.period = period_us / static_cast<float>(prim::kMicrosecondsPerSecond);
+  return c;
+}
+
 void require_valid(const AttitudeConfig<float>& c) noexcept {
   const ConfigError e = validate(c);
   if (e != ConfigError::None) {
     hal_panic(message(e));
   }
+}
+
+AttitudeConfig<float> load_config() noexcept {
+  const AttitudeConfig<float> c = from_params();
+  require_valid(c);
+  return c;
 }
 
 }  // namespace marv::attitude
