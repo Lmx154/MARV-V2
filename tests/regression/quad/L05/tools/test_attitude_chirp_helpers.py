@@ -1,6 +1,6 @@
 """Pure-Python tests of the L5 attitude-chirp identification helpers of tools/sim/run_l5.py (decision 0006 F "T4 attitude chirp",
-E "U and the circularity"; no Gazebo): attitude_error, steady_torque_peak, the identification on a synthetic closed loop at
-tick resolution, the scenario files and the SIM-7 halving rule with a planted U. Each has a control that plants a violation.
+no Gazebo): attitude_error, steady_torque_peak, the identification on a synthetic closed loop at
+tick resolution, and the scenario files. Each has a control that plants a violation.
 
 Synthetic loop. The design model of tools/card/attitude.py (rate_model: the exact ZOH step of the closed rate loop and the
 angle) stepped one rate execution at a time, the attitude gain k applied to the angle at every N-th execution and held, the
@@ -28,7 +28,6 @@ SCEN = ROOT / "scenarios" / "quad" / "L05"
 AXES = l5s.AXES
 REL_TOL = 1e-5  # scenario test value: the residual of the synthetic loop after the settling time below (e^-14 of its slowest pole)
 SETTLE_S = 12.0  # scenario test value: 15 time constants of the slowest design pole (0.82 s, tools/card/attitude.py Jury radius)
-HALF = 0.5
 TWO = 2
 
 
@@ -179,22 +178,3 @@ def test_scenario_control_a_chirp_without_its_band_is_refused(tmp_path):
     path.write_text(text, encoding="utf-8")
     with pytest.raises(Exception):
         l5s.load(path)
-
-
-# ---- SIM-7 with a planted U ------------------------------------------------------------------------------------------
-
-def sim7_n(u_value):
-    rm = design()["rate"]
-    import schema
-    u = {"value": u_value, "method": "measured", "source": "test", "rule": "test"}
-    return attitude.design(schema.load_yaml(CARD), schema.load_yaml(ROOT / "design" / "budget.yaml"),
-                           schema.load_yaml(ROOT / "design" / "scenario_values.yaml"), str(CARD), u, rate_result=rm)["N"]
-
-
-def test_sim7_n_star_follows_u_and_a_planted_u_moves_it():
-    res = design()
-    rows = [r for r in res["table"] if r["delta"] is not None]
-    live = sim7_n(res["U"]["value"])
-    assert live == res["N"]
-    assert sim7_n(rows[0]["delta"] * HALF) == 1, "U below the first halving difference gives N* = 1"
-    assert sim7_n(rows[1]["delta"] * TWO) > live, "U above the second halving difference raises N*"

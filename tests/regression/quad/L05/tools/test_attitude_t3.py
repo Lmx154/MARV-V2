@@ -1,7 +1,7 @@
 """L5 T3 rule properties of the attitude loop on the LIVE generated parameters (decision 0006 F, "T3 margins"; owner
 decision 7: rules, never pinned gain values; every metric check has a planted-violation negative control, core 7.2).
 
-Covered here, on the product path (flatten.py with the committed measured SIM-7 U, design/measured/sim7_u/u.yaml; the
+Covered here, on the product path (flatten.py; the
 attitude design is also evaluated in process and must equal flatten's emitted values):
   1. the 17 x 17 tau x J box grid (corners included), PM_worst >= PM_min - delta_num at the live f32 gains and N*, with the
      9 x 9 -> 17 x 17 halving change recorded (core 7.5);
@@ -11,7 +11,7 @@ attitude design is also evaluated in process and must equal flatten's emitted va
   4. one added tick of delay in the lifted design model fails the margin check.
 Already covered by test_attitude_design.py (not repeated): PM_worst at nominal and the four corners on all three axes, the
 yaw compensation, tightness (next f32 k above the rule), the Jury/spectral radius of the live loops, w, att_yaw_alpha_min,
-att_yaw_t_cross as the corner rule and a 5 x 5 grid, the SIM-7 table and att_loop_ratio, k x 1.1 at the corners.
+att_yaw_t_cross as the corner rule and a 5 x 5 grid, k x 1.1 at the corners.
 Not in P7b (T3 envelopes, T3 step, T4): not written here.
 
 Helpers imported from test_attitude_design.py: the independent oracle (sampled plant by matrix exponential, closed-rate-loop
@@ -39,7 +39,6 @@ import attitude  # noqa: E402
 import run_l4  # noqa: E402
 import schema  # noqa: E402
 
-MEASURED_U = ROOT / "design" / "measured" / "sim7_u" / "u.yaml"
 HOVER_SCENARIO = ROOT / "scenarios" / "quad" / "L04" / "chirp_yaw.yaml"  # the L4 chirp's site (hover thrust m g(phi, h0))
 FINE, COARSE = 17, 9  # grid points per side; the last halving is 9 -> 17 (core 7.5)
 MAX_STICK_HALVINGS = 64  # method constant: termination of F's held-stick halving only
@@ -58,16 +57,15 @@ def real(tmp_path_factory):
     r = run(FLATTEN, "--card", CARD, "--budget", BUDGET, "--out-card", tmp / "card.yaml", "--out-register",
             tmp / "register.yaml", "--out-mixer", tmp / "mixer.yaml", "--root", ROOT, "--scenario", SCENARIO,
             "--out-scenario", tmp / "scenario.yaml", "--out-rate", tmp / "rate.yaml", "--out-attitude",
-            tmp / "attitude.yaml", "--sim7-u", MEASURED_U)
+            tmp / "attitude.yaml")
     assert r.returncode == 0, r.stderr
     card, budget, scenario = (schema.load_yaml(p) for p in (CARD, BUDGET, SCENARIO))
-    u = attitude.read_u(MEASURED_U)
-    entries, _, res = attitude.attitude_entries(card, budget, scenario, CARD, u, "design/measured/sim7_u/u.yaml")
+    entries, _, res = attitude.attitude_entries(card, budget, scenario, CARD)
     emitted = schema.load_yaml(tmp / "attitude.yaml")
     for name, entry in entries:
         assert emitted[name]["value"] == entry["value"], f"{name}: the in-process design is not flatten's live value"
     return {"res": res, "flat": dict(entries), "rate_flat": schema.load_yaml(tmp / "rate.yaml"), "dir": tmp,
-            "card": card, "budget": budget, "u": u["value"], "oracle": {}, "q": {},
+            "card": card, "budget": budget, "oracle": {}, "q": {},
             "scenario": schema.load_yaml(tmp / "scenario.yaml"), "mixer": schema.load_yaml(tmp / "mixer.yaml"),
             "cardyaml": schema.load_yaml(tmp / "card.yaml")}
 
