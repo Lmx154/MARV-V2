@@ -96,6 +96,18 @@ gz_l4() {
   pytest_no_skips tests/regression/quad/L04/gz
 }
 
+# The L5 plugin: the same plugin source on the l5_attitude_scripted composition (MARV_GZ_SIL =
+# marv_sil_l5_attitude_scripted, a TRUTH_STATE library), decision 0006 G.
+gz_build_l5() {
+  uv sync --frozen || return 1
+  cmake --preset host-gz-l5 && cmake --build --preset host-gz-l5
+}
+
+# The L5 T4 suite (angle steps, truth plumbing, chirp, yaw release and fallback, recovery) on the host-gz-l5 build.
+gz_l5() {
+  pytest_no_skips tests/regression/quad/L05/gz
+}
+
 step gz_toolchain gz_toolchain
 step gz_build gz_build
 step gz_plugin_smoke gz_plugin_smoke
@@ -104,3 +116,5 @@ step gz_runner_tools gz_runner_tools
 step gz_analytic gz_analytic
 step gz_build_l4 gz_build_l4
 step gz_l4 gz_l4
+step gz_build_l5 gz_build_l5
+step gz_l5 gz_l5
