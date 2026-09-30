@@ -2,8 +2,22 @@
 
 ## What changed
 
-**Frozen files changed.** None. `tests/regression/quad/L0[0-4]/` is untouched; the new tests are under
-`tests/regression/quad/L05/` (`unit/plant_initial_rate/`, `tools/test_initial_rotor_speed.py`).
+**Frozen files changed.** One.
+- **`tests/regression/quad/L01/tools/test_gen_sdf_plant_config.py`**, `test_plugin_and_header_carry_exactly_the_vehicle_fields_of_the_plant_config`.
+  The test requires every `marv_plant_config` field other than `struct_size` to be a card-emitted vehicle field or in
+  its `SCENARIO_FIELDS`. The new field is a scenario field, so the one-line change adds `initial_omega_rad_s` to
+  `SCENARIO_FIELDS` (line 26). The assertion is unchanged.
+- New negative control in the same file, `test_control_an_unclassified_struct_field_fails_the_classification_rule`: a
+  field planted in the header's struct, in neither set, makes the same rule fail (the unmodified header passes it).
+- This test is kept as a pinned set deliberately (Luis's note below): it forces a vehicle-vs-scenario classification
+  for every new plant field, and plant-config changes already need a decision record. It is not one of the snapshot
+  tests to generalise (contrast 0005).
+
+`tools/card/gen_plant_config.py` (not frozen) names `initial_omega_rad_s` in the generated header's scenario-field comment
+(`HEADER_SCENARIO_FIELDS`), which the frozen test requires of every `SCENARIO_FIELDS` member. The plugin element's comment
+keeps the old list so every generated world stays byte-identical.
+
+The new tests are under `tests/regression/quad/L05/` (`unit/plant_initial_rate/`, `tools/test_initial_rotor_speed.py`).
 
 **Interfaces changed (all additive, default 0 = behaviour as before).**
 - `marv_plant_config` (`sim/plant/include/marv_plant.h`) gains `double initial_omega_rad_s[MARV_PLANT_N_MOTORS]`, the
@@ -40,5 +54,10 @@ and an empty `git diff --stat master... -- tests/regression/quad/L0[0-4]`. Comma
 the change that adds this record.
 
 ## Approval
+
+Luis, 2026-09-30, on the frozen L01 edit: "Option 1, approved, recorded in 0007. Add the negative control (an
+unclassified planted field fails). Note in 0007 that this test is kept as a pinned set deliberately: it forces a
+vehicle-vs-scenario classification for every new plant field, and plant-config changes already need a decision record.
+It is not one of the snapshot tests to generalise."
 
 Luis's owner decision above; approval of the pull request, linked.

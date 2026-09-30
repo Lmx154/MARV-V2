@@ -23,7 +23,7 @@ CARD = ROOT / "vehicles" / "uzh_neurobem_5in.yaml"
 PROFILE = ROOT / "sensors" / "profiles" / "marv_v2_board_default.yaml"
 PLANT_HEADER = ROOT / "sim" / "plant" / "include" / "marv_plant.h"
 VEHICLE = "uzh_neurobem_5in"
-SCENARIO_FIELDS = {"site_lat_rad", "site_height_m", "motor_substep_s", "rng_seed"}
+SCENARIO_FIELDS = {"site_lat_rad", "site_height_m", "motor_substep_s", "rng_seed", "initial_omega_rad_s"}
 MOTORS = ("m1", "m2", "m3", "m4")
 
 sys.path.insert(0, str(ROOT / "tools" / "card"))
@@ -207,6 +207,33 @@ def test_plugin_and_header_carry_exactly_the_vehicle_fields_of_the_plant_config(
     for scenario in SCENARIO_FIELDS:
         assert scenario in (generated / f"marv_plant_card_{VEHICLE}.h").read_text(encoding="utf-8")  # named in the comment
         assert scenario not in assigned
+
+
+def _struct_fields(header_text):
+    body = re.search(r"typedef struct marv_plant_config \{(.*?)\} marv_plant_config;", header_text, re.DOTALL).group(1)
+    fields = set()
+    for line in re.sub(r"/\*.*?\*/", "", body, flags=re.DOTALL).split(";"):
+        line = line.strip()
+        if line:
+            fields.add(re.search(r"([A-Za-z_]+)(?:\[[^\]]*\])*$", line).group(1))
+    return fields
+
+
+def test_control_an_unclassified_struct_field_fails_the_classification_rule(generated):
+    """Decision 0007: the field set is pinned on purpose; a new plant field must be classified as a vehicle field (emitted
+    by the card generator) or a scenario field (SCENARIO_FIELDS). A planted field that is neither breaks the rule."""
+    text = PLANT_HEADER.read_text(encoding="utf-8")
+    plugin = plugin_of(generated / f"{VEHICLE}.sdf")
+    plugin_fields = {c.tag for c in plugin if c.tag != "rotor"} | {"rotor_position_frd_m", "yaw_sign"}
+
+    def rule_holds(header_text):
+        fields = _struct_fields(header_text)
+        return SCENARIO_FIELDS <= fields and plugin_fields == fields - {"struct_size"} - SCENARIO_FIELDS
+
+    assert rule_holds(text)  # control of the control: the committed header satisfies the rule
+    planted = text.replace("} marv_plant_config;", "  double planted_unclassified_field;\n} marv_plant_config;", 1)
+    assert planted != text and "planted_unclassified_field" in _struct_fields(planted)
+    assert not rule_holds(planted)
 
 
 def test_header_states_the_decimal_repr_beside_each_hex_literal(generated):
