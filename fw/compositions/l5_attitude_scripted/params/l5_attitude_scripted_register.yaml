@@ -1,0 +1,92 @@
+# L5 attitude-scripted composition (fw/compositions/l5_attitude_scripted) scenario parameters: the collective thrust
+# request, a piecewise-constant stick script (capacity 8 segments, fixed by the entries below; each segment is a stamp and
+# the shaped sticks s_r, s_p, s_psi in [-1, 1], decision 0006 D), one rate-setpoint chirp (decision 0006 F: added to the
+# attitude output before the rate loop; amplitude in rad/s) and a constant yaw torque disturbance switched on at a stamp
+# (decision 0006 F, the yaw-lock fallback case; it is added to the rate loop's torque before the mixer).
+# Every entry is method scenario, sigma choice (core 2.1): set per run by the scenario through sil_override; the
+# default is the neutral value (no thrust, no segments, no chirp, no disturbance). None is a vehicle number.
+
+l5_thrust_n:
+  {type: f32, value: 0.0, unit: "N", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg_count:
+  {type: i32, value: 0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg1_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg1_roll:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg1_pitch:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg1_yaw:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg2_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg2_roll:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg2_pitch:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg2_yaw:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg3_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg3_roll:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg3_pitch:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg3_yaw:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg4_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg4_roll:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg4_pitch:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg4_yaw:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg5_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg5_roll:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg5_pitch:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg5_yaw:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg6_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg6_roll:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg6_pitch:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg6_yaw:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg7_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg7_roll:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg7_pitch:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg7_yaw:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg8_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg8_roll:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg8_pitch:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_seg8_yaw:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_chirp_axis:
+  {type: i32, value: 0, unit: "1", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_chirp_amp_rad_s:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_chirp_w_lo:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_chirp_w_hi:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_chirp_t0_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_chirp_dur_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_dist_yaw_nm:
+  {type: f32, value: 0.0, unit: "N*m", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}
+l5_dist_t0_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l5_attitude_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml)", sigma: choice}

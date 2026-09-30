@@ -1,8 +1,8 @@
 #pragma once
 
 // Configuration of the L5 attitude law and angle mode (decision 0006 C and D). A plain struct with validate.
-// The parameter-reading pair (from_params, load_config) is not here: the parameter ids arrive with the generator, and
-// the firmware-facing init will be require_valid(from_params()). The config is taken by value in init().
+// from_params and load_config read the product parameters; the firmware-facing init is load_config() (from_params, then
+// require_valid). The config is taken by value in init().
 
 #include <cmath>
 #include <cstddef>
@@ -87,6 +87,14 @@ template <class T>
 
 // hal_panic naming the violated rule unless validate(c) == None.
 void require_valid(const AttitudeConfig<float>& c) noexcept;
+
+// The configuration from the product parameters: att_kp, att_yaw_weight, angle_tilt_max, yaw_deadband, att_yaw_alpha_min,
+// att_yaw_t_cross and rate_max_{roll,pitch,yaw} as read, and the period T_a = att_loop_ratio * rate_loop_divisor *
+// tick_period_num_us / tick_period_den microseconds, in seconds. Not validated.
+[[nodiscard]] AttitudeConfig<float> from_params() noexcept;
+
+// from_params, then require_valid: the firmware-facing init.
+[[nodiscard]] AttitudeConfig<float> load_config() noexcept;
 
 extern template ConfigError validate<float>(const AttitudeConfig<float>&) noexcept;
 

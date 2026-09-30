@@ -213,3 +213,10 @@ marv_add_param_set(marv_params_l2_open_loop
 marv_add_card_param_set(marv_params_l4_rate_scripted CARD "${MARV_VEHICLE_CARD}" BUDGET "${MARV_DESIGN_BUDGET}"
   SCENARIO "${MARV_SCENARIO_VALUES}"
   EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml")
+
+# The L5 attitude-scripted composition's parameter set: the product set (card, budget, mixer, rate, attitude, scenario
+# values) followed by the composition's own register (thrust, stick script, chirp, yaw disturbance; neutral defaults).
+# marv_attitude, marv_rate and marv_mixer read the product ids, which this set keeps.
+marv_add_card_param_set(marv_params_l5_attitude_scripted CARD "${MARV_VEHICLE_CARD}" BUDGET "${MARV_DESIGN_BUDGET}"
+  SCENARIO "${MARV_SCENARIO_VALUES}"
+  EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml")
