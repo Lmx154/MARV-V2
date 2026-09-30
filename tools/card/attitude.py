@@ -428,7 +428,8 @@ def sup_rule(loops, t_a, pm_min, w32, refuse):
     cand, k32, worst, detail = chosen
     return {"k": cand, "k32": k32, "pm_worst": worst, "detail": detail, "bracket": (lo, hi), "bracket_width": width,
             "scan_bracket": scan_bracket, "bisections": bisections, "slope": slope, "delta_num": delta_num,
-            "stepped_down": history.index(cand) != len(history) - 1}
+            "stepped_down": history.index(cand) != len(history) - 1, "history": history,
+            "steps_back": len(history) - 1 - history.index(cand)}
 
 
 def yaw_release_crossing(loops, t_a, refuse):
@@ -454,9 +455,10 @@ def yaw_release_crossing(loops, t_a, refuse):
     return rate.r32_up(max(t for _, _, t in out)), out
 
 
-def read_u(path):
+def read_u(path, allow_scenario=False):
     """The SIM-7 uncertainty file: a mapping with U (a number of rad above 0), unit (rad), method (measured), source and
-    rule. Raises gpc.GenError. Returns {value, method, source, rule}, source as compact text."""
+    rule. Raises gpc.GenError. Returns {value, method, source, rule}, source as compact text. `allow_scenario` is for
+    tests only (a fixture with method scenario); flatten.py never passes it, so the product path accepts measured only."""
     try:
         doc = schema.load_yaml(path)
     except Exception as e:  # noqa: BLE001 (a read or parse failure of any kind is a refusal)
@@ -470,7 +472,7 @@ def read_u(path):
         raise gpc.GenError([f"{path}: U must be a finite number of rad above 0, got {doc['U']!r}"])
     if doc["unit"] != "rad":
         raise gpc.GenError([f"{path}: unit must be rad, got {doc['unit']!r}"])
-    if doc["method"] != "measured":
+    if doc["method"] != "measured" and not (allow_scenario and doc["method"] == "scenario"):
         raise gpc.GenError([f"{path}: method must be measured (a committed measurement, core 2), got {doc['method']!r}"])
     if not (isinstance(doc["rule"], str) and doc["rule"].strip()):
         raise gpc.GenError([f"{path}: rule must be non-empty text"])
@@ -639,6 +641,7 @@ def report_text(result, where):
         f"  bisections             {f['bisections']}  final bracket {f['bracket'][0]!r} .. {f['bracket'][1]!r}, width "
         f"{f['bracket_width']!r}",
         f"  stepped down by guard  {f['stepped_down']}",
+        f"  guard step-backs       {f['steps_back']}",
         f"  max |dPM/dk|           {f['slope']!r} rad per 1/s",
         f"  delta_num (rad)        {f['delta_num']!r}",
         f"  PM_worst on f32 gains  {f['pm_worst']!r}  {deg(f['pm_worst']):.6f} deg  (guard: >= PM_min + delta_num)",

@@ -14,7 +14,9 @@ Numeric tolerance TOL = 2^-30 rad (9.3e-10): both evaluators bisect the crossove
 |dPM/dw| w 2^-52, below 1e-14 rad) and the solve's rounding is below 1e-12 rad (cond(zI - P) below 1e5 at w = 1e-2 rad/s,
 1e-16 x 1e5 x 1e-2); TOL leaves three decades of slack and stays below the generator's delta_num (about 1e-7 rad).
 
-The SIM-7 uncertainty file of these tests is fixtures/u.yaml, a labelled scenario test value (see the file).
+The SIM-7 uncertainty file of these tests is fixtures/u.yaml, a labelled scenario test value with method scenario (see the
+file). The product path refuses it (attitude.read_u accepts method scenario only with the test-only allow_scenario flag,
+which flatten.py never passes); the tests call attitude.attitude_entries in process with the flag.
 """
 
 import cmath
@@ -200,13 +202,15 @@ def real(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("attitude")
     r = run(FLATTEN, "--card", CARD, "--budget", BUDGET, "--out-card", tmp / "card.yaml", "--out-register",
             tmp / "register.yaml", "--out-mixer", tmp / "mixer.yaml", "--root", ROOT, "--scenario", SCENARIO,
-            "--out-scenario", tmp / "scenario.yaml", "--out-rate", tmp / "rate.yaml", "--out-attitude",
-            tmp / "attitude.yaml", "--sim7-u", FIXTURE_U)
+            "--out-scenario", tmp / "scenario.yaml", "--out-rate", tmp / "rate.yaml")
     assert r.returncode == 0, r.stderr
     card, budget, scenario = (schema.load_yaml(p) for p in (CARD, BUDGET, SCENARIO))
-    u = attitude.read_u(FIXTURE_U)
-    res = attitude.design(card, budget, scenario, CARD, u, "fixtures/u.yaml")
-    return {"res": res, "flat": schema.load_yaml(tmp / "attitude.yaml"), "rate_flat": schema.load_yaml(tmp / "rate.yaml"),
+    # The product path (flatten.py) refuses the scenario-method fixture, so the attitude generator is called in process
+    # with the test-only flag; flatten.py runs the same attitude_entries on the committed measured file.
+    u = attitude.read_u(FIXTURE_U, allow_scenario=True)
+    entries, report, res = attitude.attitude_entries(card, budget, scenario, CARD, u, "fixtures/u.yaml")
+    (tmp / "attitude_report.txt").write_text("\n".join(report) + "\n", encoding="utf-8")
+    return {"res": res, "flat": dict(entries), "rate_flat": schema.load_yaml(tmp / "rate.yaml"),
             "dir": tmp, "card": card, "budget": budget, "u": u["value"], "oracle": {}, "q": {}}
 
 
@@ -338,27 +342,45 @@ def test_control_an_uncompensated_yaw_gain_fails_the_compensation_check(real):
 # ---- tightness --------------------------------------------------------------------------------------------------------
 
 
-def bracket_step(real):
-    """Relative step from the final bracket: four bracket widths (the bracket itself, the guard's step-back and the f32
-    rounding of the emitted k, each of at most one or two widths), as a fraction of the emitted k."""
+def feasible_pair_end(real, k):
+    """The generator's own feasibility test of a bracket end, by the oracle: all 15 loops at the double gain k (yaw too) have
+    a unique crossover, are stable and have PM >= PM_min."""
+    worst, _ = oracle_worst(real, live(real, "att_loop_ratio"), k, k)
+    return worst >= real["res"]["inputs"]["PM_min"]
+
+
+def tight(real, hi_scale=1.0):
+    """The emitted k is tight against the generator's recorded final (feasible lo, infeasible hi) pair: hi, the next step
+    above the feasible end, is infeasible by the oracle, and so is k (1 + (hi - k)/k) = hi."""
+    lo, hi = real["res"]["final"]["bracket"]
+    k = live(real, "att_kp")
+    return feasible_pair_end(real, lo) and not feasible_pair_end(real, k * (1 + (hi * hi_scale - k) / k))
+
+
+def test_k_times_one_plus_the_gap_to_the_recorded_infeasible_end_is_infeasible_and_the_pair_is_tight(real):
     f = real["res"]["final"]
-    return 4 * f["bracket_width"] / live(real, "att_kp")
-
-
-def tight(real, k_scale=1.0):
-    k = live(real, "att_kp") * k_scale * (1 + bracket_step(real))
-    worst, _ = oracle_worst(real, live(real, "att_loop_ratio"), k, k_yaw_effective(k, w32_of(real)))
-    return worst < real["res"]["inputs"]["PM_min"]
-
-
-def test_k_times_one_plus_a_step_from_the_bracket_is_infeasible(real):
-    f = real["res"]["final"]
-    assert f["bracket"][1] - live(real, "att_kp") < 4 * f["bracket_width"], "the guard stepped back more than the step"
+    lo, hi = f["bracket"]
+    k = live(real, "att_kp")
     assert tight(real)
+    assert hi - lo == f["bracket_width"] and hi - lo <= 2 * (f32_up(k) - k), "the pair is resolved to about one f32 step"
 
 
-def test_control_a_k_one_tenth_below_the_rule_is_not_tight(real):
-    assert not tight(real, k_scale=0.9)
+def test_every_history_point_above_the_emitted_k_fails_the_guard_so_k_is_the_largest_passing_point(real):
+    """The step-back is exactly the guard's: the emitted k is history[-1 - steps_back] and each later point of the history
+    has PM_worst(f32 gains) < PM_min + delta_num (by the oracle), so nothing larger passed."""
+    f = real["res"]["final"]
+    steps = f["steps_back"]
+    assert f["stepped_down"] == (steps > 0)
+    assert r32(f["history"][len(f["history"]) - 1 - steps]) == live(real, "att_kp")
+    n = live(real, "att_loop_ratio")
+    for h in f["history"][len(f["history"]) - steps:]:
+        k32 = r32(h)
+        worst, _ = oracle_worst(real, n, k32, k_yaw_effective(k32, w32_of(real)))
+        assert worst < real["res"]["inputs"]["PM_min"] + f["delta_num"] + TOL, h
+
+
+def test_control_a_pair_end_moved_below_the_rule_is_not_tight(real):
+    assert not tight(real, hi_scale=0.9)
 
 
 # ---- the yaw weight ---------------------------------------------------------------------------------------------------
@@ -565,3 +587,22 @@ def test_the_report_prints_the_sim7_halving_table_with_u_its_source_and_the_fina
                   "att_yaw_alpha_min", "att_yaw_t_cross", "delta_num", "stepped down", "Jury radius", "yaw effective gain"):
         assert token in text, token
     assert repr(real["u"]) in text
+
+
+# ---- the product path refuses a scenario-method U ------------------------------------------------------------------------
+
+
+def test_control_read_u_without_the_test_flag_and_flatten_refuse_a_scenario_method_u_file(tmp_path):
+    with pytest.raises(attitude.gpc.GenError, match="method must be measured"):
+        attitude.read_u(FIXTURE_U)
+    assert attitude.read_u(FIXTURE_U, allow_scenario=True)["value"] == 0.001
+    r = run(FLATTEN, "--card", CARD, "--budget", BUDGET, "--out-card", tmp_path / "card.yaml", "--out-register",
+            tmp_path / "register.yaml", "--root", ROOT, "--scenario", SCENARIO, "--out-scenario",
+            tmp_path / "scenario.yaml", "--out-attitude", tmp_path / "attitude.yaml", "--sim7-u", FIXTURE_U)
+    assert r.returncode == 1 and "method must be measured" in r.stderr, r.stdout + r.stderr
+    assert not (tmp_path / "attitude.yaml").exists() and not (tmp_path / "card.yaml").exists()
+
+
+def test_the_committed_measured_u_file_is_accepted_by_the_product_path():
+    u = attitude.read_u(ROOT / "design" / "measured" / "sim7_u" / "u.yaml")
+    assert u["method"] == "measured" and u["value"] > 0
