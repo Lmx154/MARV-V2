@@ -106,13 +106,23 @@ def card_spins():
     return spins
 
 
-EXPECTED_IDS = (
-    ["mass", "inertia_xx", "inertia_yy", "inertia_zz", "rotor_thrust_coeff", "rotor_torque_ratio",
-     "rotor_speed_min", "rotor_speed_max", "motor_tau"]
-    + [f"rotor_position_m{n}_{a}" for n in MOTORS for a in "xyz"]
-    + [f"rotor_yaw_sign_m{n}" for n in MOTORS]
-    + ["PM_min", "chi2_gate_quantile"]
-)
+def read_param_ids(path):
+    """One id per line; blank lines and '#' comments ignored."""
+    lines = (ln.split("#", 1)[0].strip() for ln in path.read_text(encoding="utf-8").splitlines())
+    return [ln for ln in lines if ln]
+
+
+# Each layer that adds product-set parameters commits its own manifest, tests/regression/quad/Lnn/param_ids
+# (decision 0004). EXPECTED_IDS is L1's: the card and budget ids that flatten.py writes by default.
+EXPECTED_IDS = read_param_ids(ROOT / "tests" / "regression" / "quad" / "L01" / "param_ids")
+
+
+def product_set_ids():
+    """The union of every layer's manifest; the manifests must be disjoint."""
+    ids = [i for p in sorted((ROOT / "tests" / "regression" / "quad").glob("L[0-9][0-9]/param_ids"))
+           for i in read_param_ids(p)]
+    assert len(ids) == len(set(ids)), "a parameter id is listed in more than one layer manifest"
+    return ids
 
 
 def test_generated_ids_are_the_card_and_budget_ids(real):
@@ -481,7 +491,7 @@ def test_cmake_product_set_comes_from_the_card_and_writes_the_report(tmp_path):
     assert r.returncode == 0, r.stderr + r.stdout
     header = (build / "generated" / "marv_params" / "marv" / "params" / "param_ids.hpp").read_text()
     ids = re.findall(r"^  (\w+) = \d+,$", header, flags=re.M)
-    assert sorted(ids) == sorted(EXPECTED_IDS)
+    assert sorted(ids) == sorted(product_set_ids())
     text = (build / "generated" / "marv_params" / "l1_report.txt").read_text(encoding="utf-8")
     assert header_value(text, "card hash") == framed([CARD, PROFILE], ROOT)
 

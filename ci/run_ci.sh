@@ -403,8 +403,8 @@ g3_plant_control() {
 }
 
 step "uv sync --frozen" uv sync --frozen
-step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools)" \
-  uv run pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools -q
+step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools)" \
+  uv run pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools -q
 step "G8: CLAUDE.md keeps the ACTIVE-spec, number, UNKNOWN and CI-gate sections" g8_check
 step "L1: the committed vehicle card, its sensor profile and the design budget lint clean (sigma policy)" l1_card_lint
 step "L1: plant known-answer reference reproduces plant_ref_expected.txt from plant_ref_inputs.txt" plant_ref_reproduces

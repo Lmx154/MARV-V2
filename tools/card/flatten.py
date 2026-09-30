@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Flatten a vehicle card and the design-budget register into params_gen input (core contracts 2.1, 2.2, 4).
 
-  flatten.py --card <card> --budget <budget> --out-card <file> --out-register <file> [--root <repo>]
+  flatten.py --card <card> --budget <budget> --out-card <file> --out-register <file> [--out-mixer <file>]
+             [--root <repo>]
 
 The card and the budget are linted first (lint.py's checks, which use schema.py); on any finding nothing is written
 and the exit status is 1. Otherwise two params_gen source files are written, deterministically and byte-stable:
@@ -25,6 +26,10 @@ note are dropped (params_gen has no field for them). A card entry whose value is
 are the model entries (rotors.esc_map, rotors.motor_lag.model); the header comment of --out-card lists them. Sensor
 profile entries are not flattened at L1; they join the firmware with L6.
 
+--out-mixer (optional) adds a third params_gen --card file: idle_speed and the 16 L3 mixer parameters
+mixer_m<i>_{thrust,roll,pitch,yaw} (mixer.py, decision 0004). When mixer.py refuses the card nothing is written and the
+exit status is 1.
+
 Every budget entry with a numeric value becomes a register entry (sigma choice, method design-budget, unit carried).
 A budget entry whose value is UNKNOWN is not emitted, so a consumer of it fails to compile.
 """
@@ -36,7 +41,9 @@ import json
 import sys
 from pathlib import Path
 
+import gen_plant_config as gpc
 import lint
+import mixer
 import schema
 
 FORWARD = ("unit", "method", "source", "sigma", "lock", "shape", "status", "conflict", "check")
@@ -134,6 +141,7 @@ def main(argv=None):
     ap.add_argument("--budget", required=True)
     ap.add_argument("--out-card", required=True)
     ap.add_argument("--out-register", required=True)
+    ap.add_argument("--out-mixer")
     ap.add_argument("--root", default=str(lint.ROOT), help="repository root (resolves sensor_profile)")
     args = ap.parse_args(argv)
 
@@ -148,6 +156,15 @@ def main(argv=None):
     card_skipped, budget_skipped = [], []
     card_entries = flatten_card(card, card_skipped)
     register_entries = flatten_budget(budget, args.root, args.budget, budget_skipped)
+
+    mixer_entries = None
+    if args.out_mixer:
+        try:
+            mixer_entries = mixer.mixer_entries(card, args.card)
+        except gpc.GenError as e:
+            for line in e.lines:
+                print(line, file=sys.stderr)
+            return 1
 
     card_header = [
         f"params_gen input flattened from vehicle card {_rel(args.card, args.root)} by tools/card/flatten.py. "
@@ -166,7 +183,15 @@ def main(argv=None):
     ]
     card_text = render(card_header, card_entries)
     register_text = render(register_header, register_entries)
-    for path, text in ((args.out_card, card_text), (args.out_register, register_text)):
+    outputs = [(args.out_card, card_text), (args.out_register, register_text)]
+    if mixer_entries is not None:
+        mixer_header = [
+            f"params_gen input for the L3 mixer, computed from vehicle card {_rel(args.card, args.root)} by "
+            "tools/card/mixer.py through tools/card/flatten.py. Generated; do not edit.",
+            "idle_speed and the mixer M = B^-1 (row i of M is motor i); see mixer.py for B and the refusals.",
+        ]
+        outputs.append((args.out_mixer, render(mixer_header, mixer_entries)))
+    for path, text in outputs:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_text(text, encoding="utf-8", newline="\n")
     return 0

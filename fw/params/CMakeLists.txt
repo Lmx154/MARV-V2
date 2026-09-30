@@ -88,7 +88,8 @@ endfunction()
 #
 # A parameter set (marv_add_param_set) whose sources are a vehicle card and the design-budget register: a build-time
 # custom command runs tools/card/flatten.py (lints first; a lint finding fails the build) into
-# ${CMAKE_BINARY_DIR}/generated/<name>/flatten/ and marv_add_param_set consumes its two outputs. The command depends on
+# ${CMAKE_BINARY_DIR}/generated/<name>/flatten/ and marv_add_param_set consumes its outputs: the flattened card and
+# register plus the L3 mixer parameters (idle_speed, mixer_m<i>_*; tools/card/mixer.py). The command depends on
 # the card, the sensor profile the card names, the budget and tools/card/*.py.
 function(marv_add_card_param_set name)
   cmake_parse_arguments(ARG "" "CARD;BUDGET" "" ${ARGN})
@@ -101,18 +102,20 @@ function(marv_add_card_param_set name)
   set(flat_dir "${CMAKE_BINARY_DIR}/generated/${name}/flatten")
   set(flat_card "${flat_dir}/${name}_card.yaml")
   set(flat_register "${flat_dir}/${name}_register.yaml")
+  set(flat_mixer "${flat_dir}/${name}_mixer.yaml")
   file(GLOB marv_card_tools CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/tools/card/*.py")
 
   add_custom_command(
-    OUTPUT "${flat_card}" "${flat_register}"
+    OUTPUT "${flat_card}" "${flat_register}" "${flat_mixer}"
     COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/card/flatten.py"
             --card "${ARG_CARD}" --budget "${ARG_BUDGET}"
-            --out-card "${flat_card}" --out-register "${flat_register}" --root "${PROJECT_SOURCE_DIR}"
+            --out-card "${flat_card}" --out-register "${flat_register}" --out-mixer "${flat_mixer}"
+            --root "${PROJECT_SOURCE_DIR}"
     DEPENDS "${ARG_CARD}" "${profile_file}" "${ARG_BUDGET}" ${marv_card_tools}
     COMMENT "Linting and flattening the vehicle card and design budget (${name})"
     VERBATIM)
 
-  marv_add_param_set(${name} CARD "${flat_card}" REGISTER "${flat_register}")
+  marv_add_param_set(${name} CARD "${flat_card}" "${flat_mixer}" REGISTER "${flat_register}")
 endfunction()
 
 # marv_add_card_report(<name> CARD <card.yaml> BUDGET <budget.yaml>)

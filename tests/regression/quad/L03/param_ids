@@ -1,0 +1,18 @@
+# Parameter ids the product set marv_params gains at L3 (mixer, decision 0004). One id per line.
+idle_speed
+mixer_m1_thrust
+mixer_m1_roll
+mixer_m1_pitch
+mixer_m1_yaw
+mixer_m2_thrust
+mixer_m2_roll
+mixer_m2_pitch
+mixer_m2_yaw
+mixer_m3_thrust
+mixer_m3_roll
+mixer_m3_pitch
+mixer_m3_yaw
+mixer_m4_thrust
+mixer_m4_roll
+mixer_m4_pitch
+mixer_m4_yaw
