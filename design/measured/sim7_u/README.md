@@ -48,3 +48,17 @@ uv run python design/measured/sim7_u/measure_u.py post
 ```
 
 `--out-dir DIR` reads `raw.json` from and writes `u.yaml` to `DIR`.
+
+## L5 attitude-chirp measurement (U_att), decision 0006 E step 2
+
+`measure_u_att.py` is the L5 counterpart of `measure_u.py`: the same rule on the L5 attitude-loop chirp
+(`tests/regression/quad/L05/gz/test_t4_chirp.py`, `tools/sim/run_l5.py` `run_chirp`, `chirp_margin`, `float_input_term`),
+raw output `raw_att.json`, inputs `inputs_att.json`, and `post` writes `u.yaml`. Status: NOT yet committed as the measurement.
+`u.yaml` is still the seed U^0 (from `raw.json`); `measure_u_att.py post` would overwrite it. See the P8c report: the
+roll and pitch chirps at 0006 F's amplitude rule leave the linear regime (peak attitude error 2, a tumble) and give no
+crossover, and the yaw-only U_att moves N* from 2 to 4.
+
+```
+MARV_COMMIT="$COMMIT" uv run python design/measured/sim7_u/measure_u_att.py measure [--axes yaw] [--out-dir DIR]
+uv run python design/measured/sim7_u/measure_u_att.py post [--out-dir DIR]
+```
