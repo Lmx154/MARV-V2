@@ -307,10 +307,10 @@ def run_step(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, overr
         doc_edit(doc)
     _, defaults = build_parameters(plugin_dir)
     params = l4.read_param_defaults(defaults)
+    harness = dict(overrides or {})
     p = plan(doc, params, card, root)
     if m not in p.m_sequence:
         raise PlanError([f"m = {m} is not in the scenario's m_sequence {list(p.m_sequence)}"])
-    harness = dict(overrides or {})
     applied = p.overrides()
     twice = sorted(set(applied) & set(harness))
     if twice:
@@ -387,7 +387,7 @@ def write_report(runs, evaluation=None, path=None):
 # ---- T4 attitude chirp (decision 0006 F "T4 attitude chirp"; decision 0005 "T4 chirp margins") --------------------------
 #
 # Design quantities (chirp_design), from tools/card/attitude.py design() on the card, the budget, the scenario register and
-# the committed SIM-7 uncertainty file SIM7_U; the build's att_kp, att_yaw_weight and att_loop_ratio must equal the design's
+# the scenario register; the build's att_kp, att_yaw_weight and att_loop_ratio must equal the design's
 # (else the build is stale and refused):
 #   band [w_lo, w_hi]   [min over the box loops of w_c / a, a max over the box loops of w_c]: w_c = theta / T_a the design
 #                       crossover of the nominal loop and the four tau x J corners, on every axis; a = rate.design()["a"].
@@ -410,20 +410,18 @@ def write_report(runs, evaluation=None, path=None):
 # while the sample is taken at the attitude executions; the half rate period this leaves between the two is common to the
 # runs of one axis, so it cancels in E_H and U_A and is part of the reported measured - design nominal difference.
 
-SIM7_U = ROOT / "design" / "measured" / "sim7_u" / "u.yaml"
 CHIRP_NEED = ("att_kp", "att_yaw_weight", "att_loop_ratio", *l4.CHIRP_NEED)
 MIXER_COLUMNS = l4.MIXER_COLUMNS
 PEAK_GRID_POINTS = l4.rate.GRID_POINTS  # the log grid of the peak torque search (a method constant: rate.py's grid)
 
 
 @functools.lru_cache(maxsize=None)
-def attitude_design(card, root=str(ROOT), u_path=None):
-    """attitude.design() on the card with the SIM-7 uncertainty file `u_path` (default SIM7_U)."""
+def attitude_design(card, root=str(ROOT)):
+    """attitude.design() on the card (owner decision 21: the attitude loop runs at the rate loop's rate, no U)."""
     card_doc = schema.load_yaml(card)
     budget = schema.load_yaml(Path(root) / "design" / "budget.yaml")
     register = schema.load_yaml(Path(root) / "design" / "scenario_values.yaml")
-    u = attitude.read_u(str(u_path or SIM7_U))
-    return attitude.design(card_doc, budget, register, str(card), u)
+    return attitude.design(card_doc, budget, register, str(card))
 
 
 def steady_torque_peak(rm, axis, jt, tau, k, n, omega):
@@ -483,15 +481,15 @@ def peak_torque_gain(rm, axis, k, n, band, loops):
     return best
 
 
-def chirp_design(card, params, thrust_n, root=ROOT, u_path=None):
+def chirp_design(card, params, thrust_n, root=ROOT):
     """The design quantities of the section comment, per axis, as a dict. Raises PlanError on a stale build."""
-    res = attitude_design(str(card), str(root), u_path)
+    res = attitude_design(str(card), str(root))
     if (params.get("att_kp"), params.get("att_yaw_weight"), params.get("att_loop_ratio")) != (
             res["k32"], res["w32"], res["N"]):
         raise PlanError([f"the build's att_kp, att_yaw_weight, att_loop_ratio {params.get('att_kp')!r}, "
                          f"{params.get('att_yaw_weight')!r}, {params.get('att_loop_ratio')!r} are not the design's "
-                         f"{res['k32']!r}, {res['w32']!r}, {res['N']!r} (tools/card/attitude.py on {card}, "
-                         f"{u_path or SIM7_U}): the build is stale"])
+                         f"{res['k32']!r}, {res['w32']!r}, {res['N']!r} (tools/card/attitude.py on {card}): "
+                         "the build is stale"])
     rm = res["rate"]
     t_a, n = res["T_a"], res["N"]
     inputs = rm["inputs"]
@@ -578,16 +576,18 @@ def run_chirp(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, amp_
     if not 0 < amp_scale <= 1:
         raise PlanError([f"amp_scale {amp_scale!r} is not in (0, 1]"])
     c = l5s.values(l5s.load(scenario))["script"]["chirp"]
+    _, defaults = build_parameters(plugin_dir)
+    params = l4.read_param_defaults(defaults)
+    harness = dict(overrides or {})
     doc_edit = None
     if amp_scale != 1 or halved:
         def doc_edit(doc):
             ch = doc["script"]["chirp"]
             ch["amp_rad_s"]["value"] = l4.r32(l4.r32(c["amp_rad_s"]) * amp_scale)
             ch["duration_s"]["value"] = c["duration_s"] / 2 if halved else c["duration_s"]
-    s = run_step(card, scenario, m, out_dir, plugin_dir, overrides=overrides, extra_edit=extra_edit, seed=seed, root=root,
+    s = run_step(card, scenario, m, out_dir, plugin_dir, overrides=harness, extra_edit=extra_edit, seed=seed, root=root,
                  timeout_s=timeout_s, doc_edit=doc_edit)
     p = s.plan
-    params = l4.read_param_defaults(s.params_path)
     idx = l5s.AXES.index(c["axis"])
     ch = p.chirp
     amp, w_lo, w_hi = (l4.r32(ch[key]) for key in ("amp_rad_s", "w_lo_rad_s", "w_hi_rad_s"))
@@ -603,8 +603,37 @@ def run_chirp(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, amp_
     d = [l4.chirp_value(t, amp, w_lo, w_hi, ch["t0_us"], ch["dur_us"]) for t in stamps]
     return ChirpRun(step=s, axis=c["axis"], axis_index=idx, amp=amp, w_lo=w_lo, w_hi=w_hi, t0_us=ch["t0_us"],
                     dur_us=ch["dur_us"], k=flown_gain(params, s.overrides, c["axis"]),
-                    design=chirp_design(card, params, p.thrust_n, root), stamps=stamps, y=y, d=d,
-                    dshot_end_executions=ends)
+                    design=chirp_design(card, params, p.thrust_n, root),
+                    stamps=stamps, y=y, d=d, dshot_end_executions=ends)
+
+
+# ---- the margin and U of a chirp axis (owner decision 20) --------------------------------------------------------------
+#
+# Yaw (and the L4 rule): PM is the (m = 1, A) run's, E_H = |PM(m = 1) - PM(m = 2)|, U_A = |PM(A) - PM(A/2)|.
+# Roll and pitch (owner decision 20: the torque-envelope amplitude A_env leaves the linear regime, peak attitude error 2 at
+# A_env): runs k = 1..5 at m = 1 and amplitude A_env / 2^k; PM = the minimum over the k that give a unique crossover, U_A =
+# max - min of the PM over those k (the plateau's spread), E_H = |PM - PM(m = 2)| of the run at the minimum's k and amplitude,
+# U_d that of that run. U = E_H + U_A + U_d on every axis.
+PLATEAU_K = tuple(range(1, 6))
+ROLL_PITCH = ("roll", "pitch")
+
+
+def plateau_name(k):
+    return f"k{k}"
+
+
+def u_terms(axis, pm):
+    """{"margin_run", "pm", "E_H", "U_A"} (rad) from `pm`, run name -> PM (rad) or None (no unique crossover): yaw's runs are
+    m1, m2, half_amplitude; roll and pitch's are k1 .. k5 (m = 1) and m2 (m = 2, at the minimum's amplitude)."""
+    if axis not in ROLL_PITCH:
+        return {"margin_run": "m1", "pm": pm["m1"], "E_H": abs(pm["m1"] - pm["m2"]),
+                "U_A": abs(pm["m1"] - pm["half_amplitude"])}
+    plateau = {plateau_name(k): pm[plateau_name(k)] for k in PLATEAU_K if pm.get(plateau_name(k)) is not None}
+    if len(plateau) < 2:
+        raise PlanError([f"{axis}: {len(plateau)} of the amplitudes A_env/2^k give a unique crossover, the plateau needs two"])
+    low = min(plateau, key=plateau.get)
+    return {"margin_run": low, "pm": plateau[low], "E_H": abs(plateau[low] - pm["m2"]),
+            "U_A": max(plateau.values()) - plateau[low]}
 
 
 def chirp_margin(s):
