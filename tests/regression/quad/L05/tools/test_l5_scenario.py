@@ -73,6 +73,71 @@ def test_control_a_moved_release_differs_from_the_recorded_envelope():
     assert l5s.values(doc)["script"]["segments"][1]["start_attitude_execution"] != 20732  # ... but not the recorded one
 
 
+YAW = ("yaw_release", "yaw_fallback")
+INPUTS = ENVELOPE.parent / "attitude_t3_inputs.txt"
+
+
+def yaw_block(name):
+    """The header of the recorded envelope's `name` block: key -> text of its lines before the first channel, and the
+    `omega` channel's count."""
+    text = ENVELOPE.read_text(encoding="utf-8").splitlines()
+    i = text.index(f"scenario {name}")
+    head = {}
+    for line in text[i + 1:]:
+        if line.startswith("channel "):
+            break
+        k, v = line.split(" ", 1)
+        head[k] = v
+    count = int(re.match(r"channel omega first 0 count (\d+) ", next(ln for ln in text[i:] if ln.startswith("channel omega "))).group(1))
+    return head, count
+
+
+@pytest.mark.parametrize("name", YAW)
+def test_committed_yaw_scenarios_are_valid(name):
+    assert findings(base(name), f"{name}.yaml") == []
+    v = l5s.values(l5s.load(SCEN / f"{name}.yaml"))
+    assert v["thrust"] == "hover" and v["m_sequence"] == [2, 1]
+
+
+@pytest.mark.parametrize("name", YAW)
+def test_yaw_script_equals_the_recorded_t3_envelope_script(name):
+    """Release, end, the stick segments, the stick scale and the disturbance are the recorded envelope's values."""
+    head, count = yaw_block(name)
+    release = int(head["release_execution"])
+    s = l5s.values(l5s.load(SCEN / f"{name}.yaml"))["script"]
+    first, second = s["segments"]
+    scale = float(head.get("stick_scale", "1.0"))
+    assert (first["start_attitude_execution"], second["start_attitude_execution"]) == (1, release)
+    assert s["end_attitude_execution"] == count - 1 and len(s["segments"]) == 2
+    assert first["stick"] == [0.0, 0.0, scale] and second["stick"] == [0.0, 0.0, 0.0]
+    if name == "yaw_release":
+        assert "disturbance" not in s and "disturbance_nm" not in head
+    else:
+        assert s["disturbance"] == {"yaw_nm": float(head["disturbance_nm"]), "start_attitude_execution": release}
+        tau_held = next(float.fromhex(ln.split()[1]) for ln in INPUTS.read_text().splitlines()
+                        if ln.startswith("tau_held_yaw_nm "))
+        assert run_l5.l4.r32(s["disturbance"]["yaw_nm"]) == tau_held == float(head["disturbance_nm"])
+
+
+def test_control_a_moved_yaw_release_or_disturbance_differs_from_the_recorded_envelope():
+    head, _ = yaw_block("yaw_fallback")
+    doc = mutated(lambda d: (d["script"]["segments"][1]["start_attitude_execution"].update(value=20733),
+                             d["script"]["disturbance"]["yaw_nm"].update(value=0.17)), "yaw_fallback")
+    assert findings(doc, "yaw_fallback.yaml") == []  # schema-valid ...
+    s = l5s.values(doc)["script"]  # ... but not the recorded script
+    assert s["segments"][1]["start_attitude_execution"] != int(head["release_execution"])
+    assert s["disturbance"]["yaw_nm"] != float(head["disturbance_nm"])
+
+
+def test_yaw_fallback_plan_switches_the_disturbance_on_at_the_release_stamp():
+    p = plan_of(name="yaw_fallback")
+    o = p.overrides()
+    assert o["l5_dist_t0_us"] == o["l5_seg2_t_us"] == (run_l5.I32, str(p.stamp_us(p.origin + 20732)))
+    assert o["l5_dist_yaw_nm"] == (run_l5.F32, repr(run_l5.l4.r32(0.1634589284658432)))
+    assert o["l5_seg1_yaw"] == (run_l5.F32, "1.0") and o["l5_seg1_roll"] == (run_l5.F32, "0.0")
+    assert "l5_dist_t0_us" not in plan_of(name="yaw_release").overrides()  # control: no disturbance without the entry
+
+
 # ---- schema refusals, each against the valid document ---------------------------------------------------------------
 
 def _set(path, value):
