@@ -156,12 +156,12 @@ def series(s, n_exec, reflect=False):
     return out
 
 
-def evaluate(runs, d, y1=None):
+def evaluate(runs, d, y1=None, y2=None):
     """The predicate of the module docstring on a [m = 2, m = 1] sequence; `y1` replaces the m = 1 series (the planted trace)."""
     by_m = {s.run.m: s for s in runs}
     reflect = d.name == R1
     y1 = series(by_m[1], d.count, reflect) if y1 is None else y1
-    y2 = series(by_m[2], d.count, reflect)
+    y2 = series(by_m[2], d.count, reflect) if y2 is None else y2
     stats = {c: {"max_out": -math.inf, "max_E": 0.0, "violations": 0, "first": None, "worst": None} for c in CH}
     for n in range(d.count):
         for ci, c in enumerate(CH):
@@ -271,7 +271,7 @@ def test_recovery_meets_the_design_envelope(recovery, design, name, request, cap
 def test_control_planted_trace_held_at_the_initial_state_fails(recovery, design, name):
     first = series(recovery.runs[1], 1)[0]
     planted = [first] * design.count
-    ev = evaluate(recovery.runs, design, y1=planted)
+    ev = evaluate(recovery.runs, design, y1=planted, y2=planted)
     assert not ev["passed"] and ev["violations"] > 0, ev["components"]
 
 
