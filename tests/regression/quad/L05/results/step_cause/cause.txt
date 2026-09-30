@@ -1,0 +1,91 @@
+MARV quad L5 T4 angle-mode steps: cause of the envelope excursions (decision 0006 F)
+command: uv run python tests/regression/quad/L05/results/step_cause/step_cause.py --work <dir> --out <file>
+label: truth-fed, perfect-model (truth gyro, truth attitude, one card for truth and firmware): not a validation run
+card: vehicles/uzh_neurobem_5in.yaml sha256 62d5d522f19cf7022c87d5e9a0a9ab4e4d3a31d7759a5166c43cda959e23f11f
+parameter table (build): build/host-gz-l5/generated/marv_params_l5_attitude_scripted/marv/params/param_defaults.cpp sha256 29b8ed16d9ac4fb6a33c503bb799efab94ac215f843779cc52d326e5c297f518
+envelope: tests/regression/quad/L05/t3/reference/attitude_t3_envelope.txt sha256 b318f8e7eae007d55a8b3f2df3e1f669504e910615f25078125127b593073c04
+tool: step_cause_tool.cpp sha256 91ce088dbdea4e1d27a6164702c4fafbea48111789c42f4f85ecc70d4fc8cc09 (built by build_tool.sh on the host-gz-l5 libraries)
+neutral injections (build table defaults, not overridden by the runs): l5_chirp_axis 0, l5_chirp_amp_rad_s 0.0, l5_dist_yaw_nm 0.0
+
+== step_roll: scenario scenarios/quad/L05/step_roll.yaml sha256 6efd4689d368523adf9ccc3718a30e0abf74dcc230241804dd4b87fbaea0caa3
+plan: origin a0 1600, segments [[1, 1000625, (1.0, 0.0, 0.0)], [10373, 7483125, (0.0, 0.0, 0.0)]], end 20744; envelope count 20745, release_execution 10373 (H = 10372); F 0.0029308555784847445
+alignment findings (test's exact check): m1 [], m2 []
+gz predicate (test's evaluate): passed False, violations 4095, worst {n: 5415, slack: 0.00358525, outside: 0.0065161, E: 0, y: 1.05385, lo: 1.03644, hi: 1.04733}
+gz max E over the window: [0.000389015, 7.65098e-13, 6.25278e-13] (roll, pitch, heading)
+replay fidelity: DShot bit-exact at all 44689 rate executions of the m = 1 run; faults 0.0, saturation flags set 0.0
+replay hold tail (executions 5187..10372): 10372 rate executions, DShot changes 32, DShot values [(765, 765, 765, 765), (765, 766, 766, 765), (766, 765, 765, 766)]
+  req_x range [-8.3012e-04, 8.1680e-04] N m; quantised (static map) torque qt_x values [-0.00091237, 0.0, 0.00091237]; executions with all four DShot equal: 10030, their max |req_x| 8.0292e-04 N m; max |qt_x - req_x| 8.0292e-04 N m
+replay release tail (executions 15559..20744): 10371 rate executions, DShot changes 36, DShot values [(765, 765, 765, 765), (765, 766, 766, 765), (766, 765, 765, 766)]
+  req_x range [-8.1682e-04, 8.3090e-04] N m; quantised (static map) torque qt_x values [-0.00091237, 0.0, 0.00091237]; executions with all four DShot equal: 10027, their max |req_x| 8.0292e-04 N m; max |qt_x - req_x| 8.0292e-04 N m
+gz m1 hold tail (sp 1.0471975803375244): {theta-sp min: -0.00636773, theta-sp max: 0.0066695, theta-sp mean: -0.000335332, envelope lo-sp min: -0.0107696, envelope hi-sp max: 0.00509942, w min: -0.00802517, w max: 0.0152307, theta-sp end: 0.00302825}
+gz m1 release tail (sp 0.0): {theta-sp min: -0.00667049, theta-sp max: 0.00637042, theta-sp mean: 0.000338158, envelope lo-sp min: -0.00509776, envelope hi-sp max: 0.0107667, w min: -0.0154157, w max: 0.00806813, theta-sp end: -0.00306436}
+gz m1 largest |w x Jw| component over the window: 6.4175e-17 N m; largest off-axis tilt 1.3483e-12 rad, heading 1.1884e-12 rad
+sim design: predicate violations 0, worst slack -2.9309e-03 at n 0 component roll (outside +0.0000e+00); sub-step halving change 5.821e-11; max |theta_sim - theta_gz| 6.9526e-03 (n 15803), over n < 2000 1.0355e-03
+  design control: max |theta_sim - T3 golden| 1.960e-07 (T3 tolerance_theta 2.572e-05)
+  DShot changes in the window 312
+  hold tail: {theta-sp min: -0.000438655, theta-sp max: -4.42521e-07, theta-sp mean: -6.25298e-05, envelope lo-sp min: -0.0107696, envelope hi-sp max: 0.00509942, w min: 8.23459e-07, w max: 0.00141639, theta-sp end: -4.42521e-07}
+  release tail: {theta-sp min: 4.138e-07, theta-sp max: 0.000438613, theta-sp mean: 6.25187e-05, envelope lo-sp min: -0.00509776, envelope hi-sp max: 0.0107667, w min: -0.00141639, w max: -8.45425e-07, theta-sp end: 4.138e-07}
+sim cont: predicate violations 0, worst slack -2.9309e-03 at n 2297 component pitch (outside +6.8975e-18); sub-step halving change 1.112e-07; max |theta_sim - theta_gz| 6.9527e-03 (n 15803), over n < 2000 1.0359e-03
+  DShot changes in the window 306
+  hold tail: {theta-sp min: -0.000438655, theta-sp max: -3.90902e-07, theta-sp mean: -6.25236e-05, envelope lo-sp min: -0.0107696, envelope hi-sp max: 0.00509942, w min: 8.66027e-07, w max: 0.00141634, theta-sp end: -3.90902e-07}
+  release tail: {theta-sp min: 3.31456e-07, theta-sp max: 0.00043863, theta-sp mean: 6.25105e-05, envelope lo-sp min: -0.00509776, envelope hi-sp max: 0.0107667, w min: -0.00141635, w max: -8.82855e-07, theta-sp end: 3.31456e-07}
+sim quant: predicate violations 4070, worst slack +3.5780e-03 at n 15795 component roll (outside +6.5204e-03); sub-step halving change 1.111e-07; max |theta_sim - theta_gz| 4.9178e-04 (n 12933), over n < 2000 4.1971e-04
+  DShot changes in the window 395
+  hold tail: {theta-sp min: -0.00636207, theta-sp max: 0.00666406, theta-sp mean: -0.000347599, envelope lo-sp min: -0.0107696, envelope hi-sp max: 0.00509942, w min: -0.00803102, w max: 0.0152249, theta-sp end: 0.00294295}
+  release tail: {theta-sp min: -0.00666594, theta-sp max: 0.00637076, theta-sp mean: 0.000357338, envelope lo-sp min: -0.00509776, envelope hi-sp max: 0.0107667, w min: -0.0153821, w max: 0.00810178, theta-sp end: -0.00297279}
+sim quant_gyro: predicate violations 4070, worst slack +3.5780e-03 at n 15795 component roll (outside +6.5204e-03); sub-step halving change 1.111e-07; max |theta_sim - theta_gz| 4.9178e-04 (n 12933), over n < 2000 4.1971e-04
+  DShot changes in the window 395
+  hold tail: {theta-sp min: -0.00636207, theta-sp max: 0.00666406, theta-sp mean: -0.000347599, envelope lo-sp min: -0.0107696, envelope hi-sp max: 0.00509942, w min: -0.00803102, w max: 0.0152249, theta-sp end: 0.00294295}
+  release tail: {theta-sp min: -0.00666594, theta-sp max: 0.00637076, theta-sp mean: 0.000357338, envelope lo-sp min: -0.00509776, envelope hi-sp max: 0.0107667, w min: -0.0153821, w max: 0.00810178, theta-sp end: -0.00297279}
+
+== step_pitch: scenario scenarios/quad/L05/step_pitch.yaml sha256 ad8a56ee33c8df5050644c5fb2d773abfc9bb870b1291e931e183ec3cbda2a66
+plan: origin a0 1600, segments [[1, 1000625, (0.0, 1.0, 0.0)], [10373, 7483125, (0.0, 0.0, 0.0)]], end 20744; envelope count 20745, release_execution 10373 (H = 10372); F 0.002930853654500858
+alignment findings (test's exact check): m1 [], m2 []
+gz predicate (test's evaluate): passed False, violations 3672, worst {n: 5288, slack: 0.00300462, outside: 0.0059421, E: 6.62443e-06, y: 1.05305, lo: 1.03785, hi: 1.04711}
+gz max E over the window: [7.92168e-13, 0.000468187, 6.5592e-13] (roll, pitch, heading)
+replay fidelity: DShot bit-exact at all 44689 rate executions of the m = 1 run; faults 0.0, saturation flags set 0.0
+replay hold tail (executions 5187..10372): 10372 rate executions, DShot changes 34, DShot values [(765, 765, 765, 765), (765, 766, 765, 766), (766, 765, 766, 765)]
+  req_y range [-6.0515e-04, 6.1258e-04] N m; quantised (static map) torque qt_y values [-0.000684277, 0.0, 0.000684277]; executions with all four DShot equal: 10147, their max |req_y| 6.0219e-04 N m; max |qt_y - req_y| 6.0219e-04 N m
+replay release tail (executions 15559..20744): 10371 rate executions, DShot changes 36, DShot values [(765, 765, 765, 765), (765, 766, 765, 766), (766, 765, 766, 765)]
+  req_y range [-6.1281e-04, 6.0532e-04] N m; quantised (static map) torque qt_y values [-0.000684277, 0.0, 0.000684277]; executions with all four DShot equal: 10149, their max |req_y| 6.0219e-04 N m; max |qt_y - req_y| 6.0219e-04 N m
+gz m1 hold tail (sp 1.0471975803375244): {theta-sp min: -0.00567616, theta-sp max: 0.00588169, theta-sp mean: -0.000357303, envelope lo-sp min: -0.0107696, envelope hi-sp max: 0.00509942, w min: -0.00714205, w max: 0.0069036, theta-sp end: 0.00326561}
+gz m1 release tail (sp 0.0): {theta-sp min: -0.00588897, theta-sp max: 0.00567594, theta-sp mean: 0.000374575, envelope lo-sp min: -0.00509776, envelope hi-sp max: 0.0107667, w min: -0.00686689, w max: 0.00707699, theta-sp end: -0.00310786}
+gz m1 largest |w x Jw| component over the window: 4.0706e-18 N m; largest off-axis tilt 5.2231e-13 rad, heading 5.2536e-13 rad
+sim design: predicate violations 0, worst slack -2.9309e-03 at n 0 component roll (outside +0.0000e+00); sub-step halving change 9.095e-13; max |theta_sim - theta_gz| 6.2279e-03 (n 15686), over n < 2000 5.5324e-04
+  design control: max |theta_sim - T3 golden| 1.502e-07 (T3 tolerance_theta 2.572e-05)
+  DShot changes in the window 346
+  hold tail: {theta-sp min: -0.000438655, theta-sp max: -4.42521e-07, theta-sp mean: -6.25299e-05, envelope lo-sp min: -0.0107696, envelope hi-sp max: 0.00509942, w min: 8.23459e-07, w max: 0.00141639, theta-sp end: -4.42521e-07}
+  release tail: {theta-sp min: 4.13799e-07, theta-sp max: 0.000438614, theta-sp mean: 6.25188e-05, envelope lo-sp min: -0.00509776, envelope hi-sp max: 0.0107667, w min: -0.00141639, w max: -8.45423e-07, theta-sp end: 4.13799e-07}
+sim cont: predicate violations 0, worst slack -2.9309e-03 at n 20410 component heading (outside +8.8818e-16); sub-step halving change 1.108e-07; max |theta_sim - theta_gz| 6.2280e-03 (n 15686), over n < 2000 5.5345e-04
+  DShot changes in the window 342
+  hold tail: {theta-sp min: -0.000438655, theta-sp max: -3.90902e-07, theta-sp mean: -6.25264e-05, envelope lo-sp min: -0.0107696, envelope hi-sp max: 0.00509942, w min: 9.30101e-07, w max: 0.00141634, theta-sp end: -3.90902e-07}
+  release tail: {theta-sp min: 3.41642e-07, theta-sp max: 0.000438638, theta-sp mean: 6.25137e-05, envelope lo-sp min: -0.00509776, envelope hi-sp max: 0.0107667, w min: -0.00141636, w max: -9.0515e-07, theta-sp end: 3.41642e-07}
+sim quant: predicate violations 3623, worst slack +3.0002e-03 at n 5288 component pitch (outside +5.9377e-03); sub-step halving change 9.663e-05; max |theta_sim - theta_gz| 2.9611e-04 (n 10769), over n < 2000 2.8219e-04
+  DShot changes in the window 430
+  hold tail: {theta-sp min: -0.00566826, theta-sp max: 0.00588831, theta-sp mean: -0.000383481, envelope lo-sp min: -0.0107696, envelope hi-sp max: 0.00509942, w min: -0.00704757, w max: 0.00679454, theta-sp end: 0.00302477}
+  release tail: {theta-sp min: -0.00585469, theta-sp max: 0.00566129, theta-sp mean: 0.000405182, envelope lo-sp min: -0.00509776, envelope hi-sp max: 0.0107667, w min: -0.00687154, w max: 0.00697054, theta-sp end: -0.00314561}
+sim quant_gyro: predicate violations 3623, worst slack +3.0002e-03 at n 5288 component pitch (outside +5.9377e-03); sub-step halving change 9.663e-05; max |theta_sim - theta_gz| 2.9611e-04 (n 10769), over n < 2000 2.8219e-04
+  DShot changes in the window 430
+  hold tail: {theta-sp min: -0.00566826, theta-sp max: 0.00588831, theta-sp mean: -0.000383481, envelope lo-sp min: -0.0107696, envelope hi-sp max: 0.00509942, w min: -0.00704757, w max: 0.00679454, theta-sp end: 0.00302477}
+  release tail: {theta-sp min: -0.00585469, theta-sp max: 0.00566129, theta-sp mean: 0.000405182, envelope lo-sp min: -0.00509776, envelope hi-sp max: 0.0107667, w min: -0.00687154, w max: 0.00697054, theta-sp end: -0.00314561}
+
+== quantum at hover (derived; rule: marv_plant ESC map linear in omega over DShot 48..2047, thrust k w^2, torque r x f and c_q f; the mixer's thrust column at the runs' l5_thrust_n 7.570578098297119 N)
+dw per DShot step (rad/s): 1.32566
+hover per-motor thrust f_h (N): [1.89264, 1.89264, 1.89264, 1.89264]
+hover omega (rad/s): [1100.58, 1100.58, 1100.58, 1100.58]
+hover DShot (real, before rounding): [765.06, 765.06, 765.06, 765.06]
+hover DShot (rounded): [765, 765, 765, 765]
+thrust per DShot step at hover dT = k((w+dw)^2 - w^2) (N): [0.00456185, 0.00456185, 0.00456185, 0.00456185]
+roll torque of one motor step |r_y| dT (N m): [0.000456185, 0.000456185, 0.000456185, 0.000456185]
+pitch torque of one motor step |r_x| dT (N m): [0.000342139, 0.000342139, 0.000342139, 0.000342139]
+yaw torque of one motor step c_q dT (N m): [0.000100361, 0.000100361, 0.000100361, 0.000100361]
+roll request dead band, sign +1 (N m, first-order): 0.000802731
+roll request dead band, sign -1 (N m, first-order): -0.000802731
+pitch request dead band, sign +1 (N m, first-order): 0.000602048
+pitch request dead band, sign -1 (N m, first-order): -0.000602048
+yaw request dead band, sign +1 (N m, first-order): 0.000176601
+yaw request dead band, sign -1 (N m, first-order): -0.000176601
+roll: angle error at which the proportional path alone reaches the larger dead band, |tau_db| / (rate_kp att_kp) = 1.3049e-02 rad (rate_kp 0.019937872886657715, att_kp 3.085460662841797)
+pitch: angle error at which the proportional path alone reaches the larger dead band, |tau_db| / (rate_kp att_kp) = 1.1651e-02 rad (rate_kp 0.016747813671827316, att_kp 3.085460662841797)
+L4 comparison: gz m1 largest |w| of the stepped axis in the settled tails (the quantisation's rate ripple): roll 1.5416e-02 rad/s = 0.377 of the L4 per-axis step F 0.0409 rad/s (decision 0005)
+L4 comparison: gz m1 largest |w| of the stepped axis in the settled tails (the quantisation's rate ripple): pitch 7.1421e-03 rad/s = 0.175 of the L4 per-axis step F 0.0409 rad/s (decision 0005)
