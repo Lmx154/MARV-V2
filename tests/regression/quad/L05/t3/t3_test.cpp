@@ -73,7 +73,7 @@ constexpr unsigned kKinSubsteps = 1;
 struct Golden {
   std::string axis;
   std::size_t executions = 0;
-  std::map<std::string, double> numbers;  // l1_*, rho_*, tolerance_*, kinematics_*, lock_*, release_execution
+  std::map<std::string, double> numbers;  // err_*, rho_*, tolerance_*, kinematics_*, lock_*, release_execution
   std::vector<double> theta;
   std::vector<double> omega;
 };
@@ -464,14 +464,15 @@ TEST(L5T3Reference, SegmentLengthFollowsTheRuleAndTheScriptsShareIt) {
   }
 }
 
-TEST(L5T3Reference, ToleranceIsTheSumOfL1TimesRho) {
+TEST(L5T3Reference, ToleranceIsTheSumOfTheNodeErrorBounds) {
   REQUIRE_PRODUCT();
   for (std::size_t s = 0; s < kScenario.size(); ++s) {
     const Golden& g = golden().at(kScenario[s]);
     for (const char* ch : {"theta", "omega"}) {
       double sum = 0;
       for (const char* node : kNode) {
-        sum += g.numbers.at(std::string("l1_") + ch + "_" + node) * g.numbers.at(std::string("rho_") + node);
+        sum += g.numbers.at(std::string("err_") + ch + "_" + node);
+        EXPECT_GT(g.numbers.at(std::string("rho_") + node), 0.0) << kScenario[s] << " " << node;
       }
       EXPECT_NEAR(sum, g.numbers.at(std::string("tolerance_") + ch), 1e-12 * sum) << kScenario[s] << " " << ch;
     }

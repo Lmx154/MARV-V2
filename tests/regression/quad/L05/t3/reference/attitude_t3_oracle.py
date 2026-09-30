@@ -28,26 +28,29 @@ Golden channels, per attitude execution (before that execution's torque acts): t
 body rate. The yaw script also gives the execution of the lock and its decision margin.
 
 Segment length (scenario test value, core 7.5 by doubling): H = ceil(DUR / T_a) attitude executions, DUR = HORIZON_TAUS / k
-seconds (ten attitude time constants), doubled until every envelope's end value is below the T3 tolerance of its script (the T3
-tolerance is a term of the T4 tolerance, so an envelope that ends below it has settled below the T4 tolerance).
+seconds (ten attitude time constants), doubled until every envelope's end value (tilt, yaw rate, heading relative to the lock;
+the heading relative to the release is then constant) is below F = the T3 tolerance + the envelope's last-halving change + the
+kinematics halving change of its script. F is a term of the T4 tolerance E + F with E >= 0, so an envelope that ends below F has
+settled below the T4 tolerance.
 
 Rounding tolerance (README, first order). Every float operation returns (1 + d) x exact, |d| <= u = 2^-24, and every library
 call (sin, cos, atan2, hypot, sqrt) is within one unit in the last place of its result. The float path is mirrored step for
 step in this script by a number type E (value, first-order absolute error bound): the value is the double computation, the
 bound propagates the operation errors and the error of the inputs (the plant's double q and w cast to float32: u |x|). The
-attitude group (measurement cast, angle mode, law) therefore yields one injection bound RHO_ref on the rate setpoint of each
+attitude group (measurement cast, angle mode, law) therefore yields one injection bound rho_ref(a) on the rate setpoint of each
 attitude execution; the bypass loop has the nodes e (gyro cast and fl(r - y)), I and u of decision 0005 (kd = 0; the
-prefilter node of L4 does not exist in bypass). An injection at node p of execution k moves the channels by g_p(m, k) times
-its size; the linearised closed loop (per-execution ZOH rate loop with the stamp dt of the integrator, attitude feedback gain
-g_fb = k c frozen at each c of C_POINTS values of [c_min, 1], c_min from the trajectory) has impulse responses whose
-sums give the tolerance
-      TOL_channel = sum over p in (ref, e, I, u) of  l1_p(channel) max(RHO_p)
-with l1_p the largest over the observation executions of sum_k |g_p(m, k)| (every injection execution k, every phase of the
-rate executions within an attitude period, the elementwise maximum over phases). Before the yaw lock the attitude loop is
-open on yaw (the heading setpoint tracks the heading); at the lock the regime changes: the responses are composed through the
-componentwise bound of the error state at the lock, and the lock heading is an added state (the lock copies the measured
-heading). The decision margin of the lock (the sign of the yaw rate at the two executions around the crossing) is recorded
-and must exceed the rate tolerance plus the cast bound, so the float and double runs lock at the same execution.
+prefilter node of L4 does not exist in bypass), with the bound rho_p(k) of each rate execution k. An injection at node p of
+execution k moves a channel at execution m by g_p(m, k) times its size, so the error of a channel is at most
+      sum over p, k of |g_p(m, k)| rho_p(k)      (rho_p(k) in blocks of BLOCK injections, each block at its maximum)
+and the tolerance of a channel is the sum over the nodes of the largest of this over the observation executions m. g is the
+response of the linearised closed loop: the per-execution ZOH rate loop of the nominal plant with the stamp dt of the
+integrator and the attitude feedback gain g_fb = k c frozen at each of C_POINTS values of c in [c_min, 1] (c_min from the
+trajectory's largest error; the largest bound over the c is kept); the responses are summed over every injection execution
+and every phase of the rate executions within an attitude period. Before the yaw lock the attitude loop is open on yaw (the
+heading setpoint tracks the heading); at the lock the regime changes: the responses are composed through the componentwise
+bound of the error state at the lock, weighted by rho_p(k), and the lock heading is an added state (the lock copies the
+measured heading). The decision margin of the lock (the sign of the yaw rate at the two executions around the crossing) is
+recorded and must exceed the rate tolerance plus the cast bound, so the float and double runs lock at the same execution.
 
 Kinematics (core 7.5): the golden is integrated with KIN_SUBSTEPS sub-steps per tick and again with twice as many; the largest
 change of a channel between the two is recorded and must be below the tolerance.
@@ -65,7 +68,6 @@ sigma_r w > 0 up to its fallback execution) halves the held stick until it holds
 import argparse
 import math
 import os
-import re
 import struct
 import sys
 
@@ -260,11 +262,6 @@ def e_hypot(a, b):
         return E(abs(b.v), b.e)
     v = math.hypot(a.v, b.v)
     return E(v, (abs(a.v) * a.e + abs(b.v) * b.e) / v + ulp32(v))
-
-
-def e_abs(a):
-    a = E.of(a)
-    return E(abs(a.v), a.e)
 
 
 # ---- quaternions (w, x, y, z), the operation order of fw/prim/quat.hpp --------------------------------------------------
@@ -538,6 +535,7 @@ def simulate(su, name, h_seg, m_sub=KIN_SUBSTEPS):
     e_prev = [0.0] * 3
     u = [0.0] * 3
     rho = dict.fromkeys(NODES, 0.0)
+    rho_seq = {node: [0.0] * (n_att * su.ratio if node != "ref" else n_att) for node in NODES}
     cross_axes = 0.0
     th_out, om_out = [], []
     err_max = 0.0
@@ -555,6 +553,7 @@ def simulate(su, name, h_seg, m_sub=KIN_SUBSTEPS):
             r = attitude_law(cfg, qe, q_sp, cmd)
             r_hold = tuple(c.v for c in r)
             rho["ref"] = max(rho["ref"], r[axis].e)
+            rho_seq["ref"][a] = r[axis].e
             cross_axes = max(cross_axes, *(r[i].e for i in range(3) if i != axis))
             th_out.append(plants[axis].th)
             om_out.append(plants[axis].w)
@@ -577,9 +576,12 @@ def simulate(su, name, h_seg, m_sub=KIN_SUBSTEPS):
                 integral_new = integral[a] + inc
                 e_a = r_hold[a] - y[a]
                 u_a = kp[a] * e_a + integral_new
-                rho["e"] = max(rho["e"], UNIT_ROUNDOFF * (abs(y[a]) + abs(e_a)))
-                rho["I"] = max(rho["I"], 3 * UNIT_ROUNDOFF * abs(inc) + UNIT_ROUNDOFF * abs(integral_new))
-                rho["u"] = max(rho["u"], UNIT_ROUNDOFF * abs(kp[a] * e_a) + UNIT_ROUNDOFF * abs(u_a))
+                step_rho = {"e": UNIT_ROUNDOFF * (abs(y[a]) + abs(e_a)),
+                            "I": 3 * UNIT_ROUNDOFF * abs(inc) + UNIT_ROUNDOFF * abs(integral_new),
+                            "u": UNIT_ROUNDOFF * abs(kp[a] * e_a) + UNIT_ROUNDOFF * abs(u_a)}
+                for node, v in step_rho.items():
+                    rho[node] = max(rho[node], v)
+                    rho_seq[node][n] = v
                 for i in range(3):
                     integral[i] = integral[i] + ki[i] * e_prev[i] * dt
                     e_i = r_hold[i] - y[i]
@@ -590,7 +592,7 @@ def simulate(su, name, h_seg, m_sub=KIN_SUBSTEPS):
             q = qmul(q, quat_exp(d))
         nq = math.sqrt(sum(c * c for c in q))
         q = tuple(c / nq for c in q)
-    return {"th": th_out, "om": om_out, "rho": rho, "cross_axes": cross_axes, "err_max": err_max, "lock_a": lock_a,
+    return {"th": th_out, "om": om_out, "rho": rho, "rho_seq": rho_seq, "cross_axes": cross_axes, "err_max": err_max, "lock_a": lock_a,
             "lock_info": lock_info, "a_r": a_r, "n_att": n_att, "angle_phase": angle.phase}
 
 
@@ -677,39 +679,73 @@ def node_sums(su, lin, fb, n_att, b_first):
     return out
 
 
-def region_l1(sums, m_lo, m_hi, shift=0, extra=None):
-    """Per node the largest over the observation executions m_lo <= m < m_hi of sum over phases of C_p[m - shift - c_p]
-    (+ extra[node](m), the composition through the lock state), as (l1_theta, l1_omega)."""
+BLOCK = 512  # injections per phase that share the maximum of their rounding injection bound (a rigorous coarsening)
+
+
+def cum_at(c, x):
+    return 0.0 if x < 0 else c[min(x, len(c) - 1)]
+
+
+def phase_blocks(rho):
+    """[(q_lo, q_hi, max rho)] over blocks of BLOCK injections."""
+    out = []
+    for lo in range(0, len(rho), BLOCK):
+        hi = min(lo + BLOCK, len(rho)) - 1
+        out.append((lo, hi, max(rho[lo:hi + 1])))
+    return out
+
+
+def injection_rho(run, node, base_b, p, su):
+    """The rounding injection bounds of the injections of phase p that start at attitude boundary base_b: rate executions
+    k = base_b N + p + L q (every attitude execution base_b + q for the node ref)."""
+    if node == "ref":
+        return run["rho_seq"]["ref"][base_b:]
+    L, _ = phases(su)
+    return run["rho_seq"][node][base_b * su.ratio + p::L]
+
+
+def region_bound(su, run, sums, base_b, m_lo, m_hi, extra=None):
+    """Per node the largest over the observation executions m_lo <= m < m_hi of the first-order error bound
+    sum over injections k of |g(m, k)| rho_k, with rho_k the bound of the injection at its own execution (blocks of BLOCK
+    injections take their maximum), as (theta, omega); extra(node, m) adds the contribution through the lock state. The
+    injections are those at and after the boundary base_b."""
     res = {}
-    for node, (rows, _) in sums.items():
-        lt = lw = 0.0
+    for node, (rows, s) in sums.items():
+        pre = []
+        for p, (c_p, ct, cw, _) in enumerate(rows):
+            pre.append((c_p, ct, cw, phase_blocks(injection_rho(run, node, base_b, p, su))))
+        bt = bw = 0.0
         for m in range(m_lo, m_hi):
             st = sw = 0.0
-            for c_p, ct, cw, _ in rows:
-                idx = m - shift - c_p
-                if 0 <= idx < len(ct):
-                    st += ct[idx]
-                    sw += cw[idx]
+            for c_p, ct, cw, blocks in pre:
+                mp = m - base_b - c_p
+                if mp < 0:
+                    continue
+                for q_lo, q_hi, rho in blocks:
+                    if s * q_lo > mp:
+                        break
+                    st += rho * (cum_at(ct, mp - s * q_lo) - cum_at(ct, mp - s * (q_hi + 1)))
+                    sw += rho * (cum_at(cw, mp - s * q_lo) - cum_at(cw, mp - s * (q_hi + 1)))
             if extra is not None:
                 et, ew = extra(node, m)
                 st, sw = st + et, sw + ew
-            lt, lw = max(lt, st), max(lw, sw)
-        res[node] = (lt, lw)
+            bt, bw = max(bt, st), max(bw, sw)
+        res[node] = (bt, bw)
     return res
 
 
-def state_sums(rows, s, b):
-    """The componentwise bound X_i of sum over the injections of the absolute error state at attitude boundary b: per node
-    sum over phases of the strided cumulative of |state_i| at index b - c_p."""
+def state_sums(su, run, node, rows, s, b, base_b=0):
+    """The componentwise bound X_i of sum over the injections before the attitude boundary b of rho_k |error state_i at b|."""
     x = [0.0] * 5
-    for c_p, _, _, sts in rows:
-        for i in range(5):
-            acc, idx = 0.0, b - c_p
-            while idx >= 0:
-                if idx < len(sts):
-                    acc += abs(sts[idx][i])
-                idx -= s
-            x[i] += acc
+    for p, (c_p, _, _, sts) in enumerate(rows):
+        rho = injection_rho(run, node, base_b, p, su)
+        for q, r in enumerate(rho):
+            idx = b - base_b - c_p - s * q
+            if idx < 0:
+                break
+            if idx < len(sts):
+                for i in range(5):
+                    x[i] += r * abs(sts[idx][i])
     return x
 
 
@@ -718,24 +754,25 @@ def max_pair(a, b):
 
 
 def tolerance(su, name, run):
-    """(l1, tol): l1 {node: (l1_theta, l1_omega)} and the per-channel tolerances (theta, omega)."""
+    """(bound, tol): bound {node: (theta, omega)} the largest first-order error bound contributed by each node, and the
+    per-channel tolerances (theta, omega) = the sums over the nodes."""
     cfg = su.cfg
     axis = scenario_axis(name)
     n_att = run["n_att"]
     lin = Lin(su, axis)
     if name != "yaw_release":
         c_min = math.cos(run["err_max"] / 2)
-        l1 = None
+        bound = None
         for i in range(C_POINTS):
             c = c_min + (1 - c_min) * i / (C_POINTS - 1)
-            sums = node_sums(su, lin, cfg.kp * c, n_att, 2)
-            cur = region_l1(sums, 0, n_att)
-            l1 = cur if l1 is None else max_pair(l1, cur)
+            sums = node_sums(su, lin, cfg.kp * c, n_att, 0)
+            cur = region_bound(su, run, sums, 0, 0, n_att)
+            bound = cur if bound is None else max_pair(bound, cur)
     else:
         a_l = run["lock_a"]
-        sums_pre = node_sums(su, lin, 0.0, n_att, 2)
-        l1 = region_l1(sums_pre, 0, a_l)
-        xs = {node: state_sums(rows, s, a_l) for node, (rows, s) in sums_pre.items()}
+        sums_pre = node_sums(su, lin, 0.0, n_att, 0)
+        bound = region_bound(su, run, sums_pre, 0, 0, a_l)
+        xs = {node: state_sums(su, run, node, rows, s, a_l) for node, (rows, s) in sums_pre.items()}
         c_min = math.cos(cfg.w * run["err_max"] / 2)
         for i in range(C_POINTS):
             c = c_min + (1 - c_min) * i / (C_POINTS - 1)
@@ -752,18 +789,13 @@ def tolerance(su, name, run):
                 d = m - a_l
                 return (sum(x[k] * abs(g[k][d][0]) for k in range(6)), sum(x[k] * abs(g[k][d][1]) for k in range(6)))
 
-            cur = region_l1(sums_post, a_l, n_att, shift=a_l, extra=extra)
-            l1 = max_pair(l1, cur)
-    rho = run["rho"]
-    tol = (sum(l1[n][0] * rho[n] for n in NODES), sum(l1[n][1] * rho[n] for n in NODES))
-    return l1, tol
+            cur = region_bound(su, run, sums_post, a_l, a_l, n_att, extra)
+            bound = max_pair(bound, cur)
+    tol = (sum(bound[n][0] for n in NODES), sum(bound[n][1] for n in NODES))
+    return bound, tol
 
 
 # ---- the envelope: the design model over the band box -------------------------------------------------------------------
-
-
-def box_points(points):
-    return [(-1.0 + 2.0 * i / (points - 1), -1.0 + 2.0 * j / (points - 1)) for i in range(points) for j in range(points)]
 
 
 class Member:
@@ -1057,9 +1089,10 @@ def write_golden(su, res, path):
         f"# period_us {su.period_s / MICROSECOND!r}  attitude_period_us {su.t_a / MICROSECOND!r}  tick_us {su.tick_s / MICROSECOND!r}  unit_roundoff 2^-24",
         f"# segment_seconds {res['dur_s']!r}  segment_executions {res['h']}  doublings {res['doublings']}  kinematic_substeps {KIN_SUBSTEPS}",
         "# per script: the unwrapped angle (rad) and body rate (rad/s) of the stepped axis at each attitude execution (before that",
-        "# execution's torque acts), the l1 norms of the impulse responses from the four rounding nodes (ref: the attitude",
-        "# group's rate setpoint; e, I, u: the bypass rate loop) to each channel, the largest rounding injection per node, and the",
-        "# tolerance of each channel, sum(l1 * rho). The yaw script adds the lock execution and its decision margin.",
+        "# execution's torque acts); per channel and rounding node (ref: the attitude group's rate setpoint; e, I, u: the bypass",
+        "# rate loop) err_<channel>_<node>, the largest over the executions of sum_k |g(m, k)| rho_k; the largest rounding",
+        "# injection rho_<node> (information); and the tolerance of each channel, the sum of err over the nodes. The yaw script",
+        "# adds the lock execution and its decision margin.",
     ]
     for name in SCENARIOS:
         d = res["golden"][name]
@@ -1073,7 +1106,7 @@ def write_golden(su, res, path):
         lines.append(f"kinematics_change_omega {d['kin'][1]!r}")
         for ch, idx in (("theta", 0), ("omega", 1)):
             for node in NODES:
-                lines.append(f"l1_{ch}_{node} {d['l1'][node][idx]!r}")
+                lines.append(f"err_{ch}_{node} {d['l1'][node][idx]!r}")
         for node in NODES:
             lines.append(f"rho_{node} {run['rho'][node]!r}")
         lines.append(f"tolerance_theta {d['tol'][0]!r}")

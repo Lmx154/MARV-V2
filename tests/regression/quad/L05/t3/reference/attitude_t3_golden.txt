@@ -2,9 +2,10 @@
 # period_us 312.5  attitude_period_us 625.0  tick_us 156.25  unit_roundoff 2^-24
 # segment_seconds 6.482014255070564  segment_executions 10372  doublings 1  kinematic_substeps 1
 # per script: the unwrapped angle (rad) and body rate (rad/s) of the stepped axis at each attitude execution (before that
-# execution's torque acts), the l1 norms of the impulse responses from the four rounding nodes (ref: the attitude
-# group's rate setpoint; e, I, u: the bypass rate loop) to each channel, the largest rounding injection per node, and the
-# tolerance of each channel, sum(l1 * rho). The yaw script adds the lock execution and its decision margin.
+# execution's torque acts); per channel and rounding node (ref: the attitude group's rate setpoint; e, I, u: the bypass
+# rate loop) err_<channel>_<node>, the largest over the executions of sum_k |g(m, k)| rho_k; the largest rounding
+# injection rho_<node> (information); and the tolerance of each channel, the sum of err over the nodes. The yaw script
+# adds the lock execution and its decision margin.
 scenario step_roll
 axis roll
 executions 20745
@@ -12,20 +13,20 @@ step_execution 1
 release_execution 10373
 kinematics_change_theta 5.694056337546272e-14
 kinematics_change_omega 1.1832312973313638e-13
-l1_theta_ref 0.4078319538368516
-l1_theta_e 0.4078324666786187
-l1_theta_I 17428.313984076754
-l1_theta_u 17.179912817244457
-l1_omega_ref 2.4262480920129468
-l1_omega_e 2.426255291718416
-l1_omega_I 54975.73669082074
-l1_omega_u 115.78450892803902
+err_theta_ref 4.57330357565256e-06
+err_theta_e 9.415644512745017e-08
+err_theta_I 1.3431524977551589e-05
+err_theta_u 6.728912763763257e-08
+err_omega_ref 2.5662486851033086e-05
+err_omega_e 5.441116963652527e-07
+err_omega_I 4.4080386649222864e-05
+err_omega_u 4.998723170712081e-07
 rho_ref 1.4602494701149054e-05
 rho_e 2.6932589114608636e-07
 rho_I 1.1207492014168388e-09
 rho_u 7.38121275455287e-09
-tolerance_theta 2.5724781358693116e-05
-tolerance_omega 9.855137136350107e-05
+tolerance_theta 1.816627412596923e-05
+tolerance_omega 7.078685751369241e-05
 theta
 0
 0
@@ -41525,20 +41526,20 @@ step_execution 1
 release_execution 10373
 kinematics_change_theta 8.97025509427607e-14
 kinematics_change_omega 1.280495900082162e-13
-l1_theta_ref 0.407831943944254
-l1_theta_e 0.40783245678603475
-l1_theta_I 20747.99257036678
-l1_theta_u 20.452276516150512
-l1_omega_ref 2.4262480336200998
-l1_omega_e 2.426255233236917
-l1_omega_I 65447.30351337833
-l1_omega_u 137.83869514697196
+err_theta_ref 4.573303521009231e-06
+err_theta_e 9.415644292831951e-08
+err_theta_I 1.3431524290631164e-05
+err_theta_u 6.728912563554247e-08
+err_omega_ref 2.5662486714125897e-05
+err_omega_e 5.441116905324324e-07
+err_omega_I 4.408038365521421e-05
+err_omega_u 4.998723170557625e-07
 rho_ref 1.4602494701149044e-05
 rho_e 2.693258899092828e-07
 rho_I 9.414293192885128e-10
 rho_u 6.200218876475615e-09
-tolerance_theta 2.5724780752808924e-05
-tolerance_omega 9.855136787987686e-05
+tolerance_theta 1.8166273380204256e-05
+tolerance_omega 7.07868543769283e-05
 theta
 0
 0
@@ -83038,20 +83039,20 @@ step_execution 1
 release_execution 10373
 kinematics_change_theta 9.85664883046411e-11
 kinematics_change_omega 1.4980184610537085e-11
-l1_theta_ref 7.230996423415869
-l1_theta_e 7.230996942362581
-l1_theta_I 184667.78883123846
-l1_theta_u 21.76923267299714
-l1_omega_ref 42.64392443764487
-l1_omega_e 42.64393360977119
-l1_omega_I 1088435.619515338
-l1_omega_u 120.4702499745338
+err_theta_ref 0.0001366319601443963
+err_theta_e 5.067503340746802e-06
+err_theta_I 0.00014397264557653897
+err_theta_u 2.9847502779740203e-07
+err_omega_ref 0.0005572071252738601
+err_omega_e 3.0387059822997324e-05
+err_omega_I 0.0006814713762266047
+err_omega_u 1.3439075046733606e-06
 rho_ref 2.0495932896765117e-05
 rho_e 1.3939983318778053e-06
 rho_I 8.041882391817376e-09
 rho_u 4.8117933462704396e-08
-tolerance_theta 0.0016444101449736266
-tolerance_omega 0.009692340608725163
+tolerance_theta 0.00028597058408947945
+tolerance_omega 0.0012704094688281355
 lock_execution 10677
 lock_margin_before 0.016122873054574483
 lock_margin_at -0.011462911800860015

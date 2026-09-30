@@ -5,12 +5,12 @@
 # from the 9 x 9 grid to the 17 x 17 grid. A channel lists 'lo hi' for the executions first .. first + count - 1.
 # segment_seconds 6.482014255070564  segment_executions 10372  doublings 1
 # settle check (the segment length doubles until every end value is below F = T3 tolerance + halving + kinematics):
-#   step_roll theta: end 0.00010033489518563175 < F 0.0029308555784847445
-#   step_pitch theta: end 0.0001003348596919903 < F 0.002930853654500858
-#   yaw_release omega: end 0.003118664530436776 < F 0.1370349079516103
-#   yaw_release heading_lock: end 0.00022173085081078625 < F 0.010547403070387481
-#   yaw_fallback omega: end 0.0014430945935015125 < F 0.09543989439434138
-#   yaw_fallback heading_lock: end 0.00032887820286475744 < F 0.0049556216351164225
+#   step_roll theta: end 0.00010033489518563175 < F 0.002923297071252021
+#   step_pitch theta: end 0.0001003348596919903 < F 0.002923295147128254
+#   yaw_release omega: end 0.003118664530436776 < F 0.12861297681171327
+#   yaw_release heading_lock: end 0.00022173085081078625 < F 0.009188963509503335
+#   yaw_fallback omega: end 0.0014430945935015125 < F 0.08701796325444434
+#   yaw_fallback heading_lock: end 0.00032887820286475744 < F 0.0035971820742322753
 scenario step_roll
 axis roll
 release_execution 10373
