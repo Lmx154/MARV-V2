@@ -57,8 +57,12 @@ Luis: at L6, evaluate ω×Jω feed-forward together with the D-term design, then
 
 ## Current state
 
-- **Branch and tag.** `master` holds the L5 work, pushed to `github.com:Lmx154/MARV-V2` at `e9bfaae`. The tag
-  `quad-L5-pass` goes on `e9bfaae` only after GitHub Actions is green there (Luis's condition); check that it exists.
+- **Branch and tag.** `master` holds the L5 work, pushed to `github.com:Lmx154/MARV-V2`. Luis's condition: tag
+  `quad-L5-pass` only once GitHub Actions is green on the pushed head. Actions failed on `e9bfaae` (run 36785715345):
+  the new `rate_bypass/regenerate.sh` ran `git archive` as root on a checkout owned by another user, and git refused it
+  for dubious ownership. Local CI had used `-u` and hidden this. `d7a044c` passes `safe.directory`, and the tag goes on
+  that head once its run (36788978797) is green. **Reproduce GitHub's conditions before pushing: run the CI images
+  as root (no `-u`) with `MARV_CI_BASE_REF` set to the push range base.**
   Earlier tags: `quad-L4-pass` on `daac5d9`, `quad-L3-pass` on `dcaf2fb`, `quad-L2-pass` on `320cf18`, `quad-L1-pass`
   on `b8ed690`, `quad-L0-pass` on `6cca7ec`.
 - **Verified.** Full CI on clean copies of `quad-l5` at `f56c0fb` (the final commit `e9bfaae` changes only 0006 text),
@@ -101,7 +105,8 @@ docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/src -w /src marv-ci
 ```
 
 Run the Docker commands on clean copies (`rsync -a --exclude build --exclude .venv --exclude __pycache__ --exclude
-.claude ./ <dir>/`, one per image, always with `-u`). To exercise the regression-change check, commit in the copy on a
+.claude ./ <dir>/`, one per image), once with `-u` and once as root without it, as GitHub Actions runs them (a
+root-owned copy needs a container to delete it). To exercise the regression-change check, commit in the copy on a
 new branch and pass `-e MARV_CI_BASE_REF=master`. `test_truth_gyro.py` (L04 gz) needs `build/host-gz` as well as
 `build/host-gz-l4`, or it skips. Expected: L04 gz 40 passed, 1 xfailed; L05 gz 63 passed, 1 xfailed; 0 skipped.
 
