@@ -1,0 +1,84 @@
+# Quad L4 scenario 'chirp_pitch' (docs/spec/10-quad-flight-software.md section 4 L4, T4: "chirp injection measures
+# margins that meet QF-3"; docs/decisions/0005 "T4"). A torque chirp on the pitch axis, added to the rate loop's torque
+# request before allocate(), at hover collective with a zero setpoint, flown by the l4_rate_scripted composition on truth
+# gyro: a truth-fed, perfect-model run, not a validation run (core section 6). Schema: tools/sim/l4_scenario.py
+# (validate_chirp); the runner (tools/sim/run_l4.py plan_chirp) derives the band, the amplitude, the stamps and the
+# hover thrust from the build. Every number is a labelled scenario value or a derived value. Frames NED / FRD, SI units.
+scenario: chirp_pitch
+site_latitude_rad:
+  value: 0.82
+  unit: rad
+  label: scenario
+  rationale: "the L2 hover site (scenarios/quad/L02/hover.yaml): mid-latitude, so the latitude term of g is exercised"
+site_height_m:
+  value: 500.0
+  unit: m
+  label: scenario
+  rationale: "the L2 hover site height (scenarios/quad/L02/hover.yaml); a plausible flying site height, not vehicle data"
+seed:
+  value: 1
+  unit: "1"
+  label: scenario
+  rationale: "RESERVED at v0: marv_plant v0 and the composition draw no random numbers, so the value has no effect; it completes the run identity (firmware, card, scenario, seed)"
+tick_period_num_us:
+  value: 625
+  unit: us
+  label: derived
+  rule: "design/scenario_values.yaml tick_period_num_us; the rate loop checks each execution's spacing against the period built from it, so the runner refuses a world tick that differs from the build's"
+tick_period_den:
+  value: 4
+  unit: "1"
+  label: derived
+  rule: "design/scenario_values.yaml tick_period_den, as tick_period_num_us"
+m_sequence:
+  value: [2, 1]
+  unit: "1"
+  label: derived
+  rule: "decision 0005 'T4 envelope widening': E_i = |y(m=1) - y(m=2)|, the last halving of docs/decisions/0003 item 9; both divide rate_loop_divisor, so every execution reads the state at its own tick"
+initial_state:
+  position_ned_m:
+    value: [0.0, 0.0, 0.0]
+    unit: m
+    label: scenario
+    rationale: "the NED origin, the site itself; the generated world has no ground and no contact"
+  attitude_q_wxyz:
+    value: [1.0, 0.0, 0.0, 0.0]
+    unit: "1"
+    label: scenario
+    rationale: "level, the identity quaternion (canonical sign w >= 0)"
+  velocity_ned_m_s:
+    value: [1.0, 0.0, 0.0]
+    unit: m/s
+    label: scenario
+    rationale: "every host step (at least one tick, 156.25 us) moves the link 1.5625e-4 m north, 156 times the 1e-6 pose change below which gz-sim 8 leaves a read stale (docs/decisions/0003 item 11), so every read is fresh (INFERRED; fresh_steps / stale_report show it per run and the test fails on a stale read in the window); marv_plant v0 has no drag or position-dependent torque and g depends on height only, so the translation does not act on the rotation"
+  body_rates_frd_rad_s:
+    value: [0.0, 0.0, 0.0]
+    unit: rad/s
+    label: scenario
+    rationale: "starts at rest: the rate loop seeds its prefilter from this first gyro sample, so with a zero setpoint the reference stays exactly 0 and the loop is u = -C y (tools/sim/run_l4.py identification)"
+chirp:
+  axis:
+    value: pitch
+    unit: "1"
+    label: scenario
+    rationale: "one axis per scenario: quad spec 4 L4 T4, the margins are measured per axis"
+  settle_s:
+    value: 1.0
+    unit: s
+    label: scenario
+    rationale: "as the step scenarios (step_pitch.yaml): the motors spin up from rest and the chirp must start at the design model's operating point; 1 s is 30.3 motor time constants of the card's tau = 0.033 s"
+  duration_start_s:
+    value: 4.0
+    unit: s
+    label: scenario
+    rationale: "D_0 of the duration convergence (core 7.5), a starting value that the doubling replaces: it exceeds one period 2 pi / w_lo = 2.55 s of the band's lowest frequency at the 2026-09-30 design (w_lo = 2.465 rad/s)"
+  duration_s:
+    value: 8.0
+    unit: s
+    label: derived
+    rule: "core 7.5 convergence from duration_start_s: D doubles until |PM(D) - PM(D/2)| < E_H + U_A, both at D (tests/regression/quad/L04/gz/test_t4_chirp.py re-checks it on every run); sequence of 2026-09-30: D = 8 s against D/2 = 4 s, |PM(D) - PM(D/2)| = 0.0404 deg < E_H + U_A = 0.0540 deg, converged at the first doubling"
+  tail_s:
+    value: 5.0
+    unit: s
+    label: scenario
+    rationale: "the identification window runs past the chirp's end until the response has decayed: the slowest closed-loop mode of the discrete design model has time constant 0.204 s at the nominal gains and 0.27 s at gains x 4 to 6 (the negative control), so 5 s leaves e^-24.5 and e^-18.5 of it, below the float32 resolution 2^-24 = 6e-8 of the gyro sample"

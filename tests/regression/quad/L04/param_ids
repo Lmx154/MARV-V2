@@ -1,0 +1,22 @@
+# Parameter ids the product set marv_params gains at L4. One id per line.
+# The built set must equal the union of every tests/regression/quad/L*/param_ids (decision 0004).
+tau_robustness_band
+inertia_robustness_band
+tick_period_num_us
+tick_period_den
+rate_loop_divisor
+rate_max_roll
+rate_max_pitch
+rate_max_yaw
+rate_kp_roll
+rate_kp_pitch
+rate_kp_yaw
+rate_ki_roll
+rate_ki_pitch
+rate_ki_yaw
+rate_kd_roll
+rate_kd_pitch
+rate_kd_yaw
+rate_tau_ref_roll
+rate_tau_ref_pitch
+rate_tau_ref_yaw

@@ -125,10 +125,57 @@ def product_set_ids():
     return ids
 
 
+def later_manifests(root=ROOT / "tests" / "regression" / "quad"):
+    """The param_ids manifests of every layer other than L01."""
+    return sorted(p for p in root.glob("L[0-9][0-9]/param_ids") if p.parent.name != "L01")
+
+
+def expected_generated_ids(budget_path=BUDGET, manifests=None):
+    """What flatten.py's default input (card and budget only) yields: L1's manifest plus each numeric budget entry
+    that a later layer's manifest lists. Later layers add their own numeric budget entries (decision 0004)."""
+    listed = {i for p in (later_manifests() if manifests is None else manifests) for i in read_param_ids(p)}
+    reg = schema.load_yaml(budget_path)
+    return sorted(EXPECTED_IDS + [n for n, e in reg.items() if e["value"] != "UNKNOWN" and n in listed
+                                  and n not in EXPECTED_IDS])
+
+
 def test_generated_ids_are_the_card_and_budget_ids(real):
     ids = re.findall(r"^  (\w+) = \d+,$", real["ids"], flags=re.M)
-    assert sorted(ids) == sorted(EXPECTED_IDS)
+    assert sorted(ids) == expected_generated_ids()
     assert len(ids) == len(set(ids))
+
+
+def plant_manifests(tmp_path, drop=(), extra=()):
+    out = []
+    for p in later_manifests():
+        q = tmp_path / p.parent.name / "param_ids"
+        q.parent.mkdir()
+        q.write_text("".join(f"{i}\n" for i in read_param_ids(p) if i not in drop), encoding="utf-8")
+        out.append(q)
+    if extra:
+        q = tmp_path / "L99" / "param_ids"
+        q.parent.mkdir()
+        q.write_text("".join(f"{i}\n" for i in extra), encoding="utf-8")
+        out.append(q)
+    return out
+
+
+def generated_ids(real):
+    return sorted(re.findall(r"^  (\w+) = \d+,$", real["ids"], flags=re.M))
+
+
+def test_generated_ids_control_band_ids_dropped_from_the_manifests_fail(real, tmp_path):
+    manifests = plant_manifests(tmp_path, drop=("tau_robustness_band", "inertia_robustness_band"))
+    assert generated_ids(real) != expected_generated_ids(manifests=manifests)
+
+
+def test_generated_ids_control_numeric_budget_entry_not_produced_fails(real, tmp_path):
+    reg = schema.load_yaml(BUDGET)
+    reg["planted_band"] = dict(reg["PM_min"])
+    planted = tmp_path / "budget.yaml"
+    planted.write_text(yaml.safe_dump(reg, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    manifests = plant_manifests(tmp_path, extra=("planted_band",))
+    assert generated_ids(real) != expected_generated_ids(budget_path=planted, manifests=manifests)
 
 
 def test_value_unknown_budget_entries_are_absent(real):

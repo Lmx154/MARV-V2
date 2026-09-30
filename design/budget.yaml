@@ -86,3 +86,27 @@ batch_plan:
   sigma: choice
   rationale: "The batch: vehicles x scenarios x draws x flight length, and the time window. A composite of several quantities, so its final form will be several entries; no value yet, set when the layer that tests SIM-3 is specified."
   used_by: [SIM-3]
+
+tau_robustness_band:
+  value: 0.3
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    Relative half-width of the band over which the rate loop must meet QF-3: motor time constant tau in
+    [(1 - 0.3), (1 + 0.3)] x the card's tau. Luis's choice (2026-09-30, decision 0005): the card's tau sigma is
+    UNKNOWN, and Blaha 2024 reports, for the same vehicle, 20 ms on the bench against 26 ms in flight. B1 replay
+    narrows the band later.
+  used_by: [QF-3, rate-loop gain design]
+
+inertia_robustness_band:
+  value: 0.5
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    Relative half-width of the band over which the rate loop must meet QF-3: each principal inertia in
+    [(1 - 0.5), (1 + 0.5)] x the card's value. QF-2's alpha_max uses J at the top of this band (conservative tau_ref).
+    Luis's choice (2026-09-30, decision 0005): the card's inertia sigma is UNKNOWN, and published Crazyflie inertias
+    differ by up to about 47 %. B1 replay narrows the band later.
+  used_by: [QF-2, QF-3, rate-loop gain design]

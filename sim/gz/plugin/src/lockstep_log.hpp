@@ -15,7 +15,8 @@
 //              ENU [3], quaternion FLU->ENU [w x y z], world linear velocity ENU [3], world angular velocity ENU [3];
 //              the marv_plant_body passed, position NED [3], velocity NED [3], q [w x y z], omega FRD [3].
 //   2 TICK     (m of them) u64 tick; u64 sil_t_us (the SIL's stamp of that tick); the 32 bytes of the marv_imu_meas
-//              passed (zeroed, no valid bit set); u16 dshot[4] (motor 1..4); u32 erpm_valid; u32 0; then doubles: plant
+//              passed (zeroed, no valid bit set, unless the plugin has <gyro_source>truth</gyro_source>: then the gyro is
+//              the float cast of the step's body omega FRD and flags is GyroValid only); u16 dshot[4] (motor 1..4); u32 erpm_valid; u32 0; then doubles: plant
 //              force NED [3], torque NED [3], rotor speed [4], erpm [4], and the per-tick wrench in ENU, force [3],
 //              torque [3].
 //   3 APPLIED  doubles: the wrench applied to gz, W_bar in ENU, force [3], torque [3].

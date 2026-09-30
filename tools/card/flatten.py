@@ -2,7 +2,7 @@
 """Flatten a vehicle card and the design-budget register into params_gen input (core contracts 2.1, 2.2, 4).
 
   flatten.py --card <card> --budget <budget> --out-card <file> --out-register <file> [--out-mixer <file>]
-             [--root <repo>]
+             [--scenario <file> --out-scenario <file>] [--out-rate <file>] [--root <repo>]
 
 The card and the budget are linted first (lint.py's checks, which use schema.py); on any finding nothing is written
 and the exit status is 1. Otherwise two params_gen source files are written, deterministically and byte-stable:
@@ -32,6 +32,17 @@ exit status is 1.
 
 Every budget entry with a numeric value becomes a register entry (sigma choice, method design-budget, unit carried).
 A budget entry whose value is UNKNOWN is not emitted, so a consumer of it fails to compile.
+
+--scenario <register> with --out-scenario <file> (optional, given together) lints the scenario register
+(design/scenario_values.yaml, lint.py --scenario) with the rest and writes a fourth params_gen --card file: every entry
+with a numeric value becomes a parameter of the same name (method scenario, sigma choice, unit carried); a Python
+integer value is type i32, any other number f32 (so 625 is i32 and 625.0 is f32). Without the flags nothing else
+changes: the other outputs are written by the same code from the same inputs.
+
+--out-rate <file> (optional, needs --scenario) adds a fifth params_gen --card file: the 12 L4 rate-loop parameters
+rate_{kp,ki,kd,tau_ref}_{roll,pitch,yaw} (rate.py, decision 0005), and next to it the derivation report
+<file stem>_report.txt. When rate.py refuses the card, budget or scenario register nothing is written and the exit
+status is 1. Without the flag the other outputs are byte-identical.
 """
 
 from __future__ import annotations
@@ -44,6 +55,7 @@ from pathlib import Path
 import gen_plant_config as gpc
 import lint
 import mixer
+import rate
 import schema
 
 FORWARD = ("unit", "method", "source", "sigma", "lock", "shape", "status", "conflict", "check")
@@ -121,6 +133,20 @@ def flatten_budget(doc, root, budget_path, skipped):
     return out
 
 
+def flatten_scenario(doc, root, scenario_path, skipped):
+    out = []
+    where = _rel(scenario_path, root)
+    for name, entry in doc.items():
+        if not schema.is_number(entry["value"]):
+            skipped.append(f"{name}: value UNKNOWN")
+            continue
+        ptype = "i32" if isinstance(entry["value"], int) else "f32"
+        out.append((name, {"type": ptype, "value": entry["value"], "unit": entry["unit"], "method": entry["method"],
+                           "source": f"scenario-values register {where}, entry {name} (rationale there)",
+                           "sigma": entry["sigma"]}))
+    return out
+
+
 def render(header, entries):
     lines = [f"# {h}" if h else "#" for h in header]
     for name, entry in entries:
@@ -128,10 +154,12 @@ def render(header, entries):
     return "\n".join(lines) + "\n"
 
 
-def lint_all(card, budget, root):
+def lint_all(card, budget, root, scenario=None):
     out = schema.Findings()
     lint.lint_card(card, out, root=root)
     lint.lint_budget(budget, out)
+    if scenario:
+        lint.lint_scenario(scenario, out)
     return out
 
 
@@ -142,10 +170,18 @@ def main(argv=None):
     ap.add_argument("--out-card", required=True)
     ap.add_argument("--out-register", required=True)
     ap.add_argument("--out-mixer")
+    ap.add_argument("--scenario")
+    ap.add_argument("--out-scenario")
+    ap.add_argument("--out-rate")
     ap.add_argument("--root", default=str(lint.ROOT), help="repository root (resolves sensor_profile)")
     args = ap.parse_args(argv)
 
-    findings = lint_all(args.card, args.budget, args.root)
+    if bool(args.scenario) != bool(args.out_scenario):
+        ap.error("--scenario and --out-scenario are given together")
+    if args.out_rate and not args.scenario:
+        ap.error("--out-rate needs --scenario (the rate loop period and maximum rates are scenario values)")
+
+    findings = lint_all(args.card, args.budget, args.root, args.scenario)
     if findings:
         for line in findings.lines():
             print(line, file=sys.stderr)
@@ -161,6 +197,16 @@ def main(argv=None):
     if args.out_mixer:
         try:
             mixer_entries = mixer.mixer_entries(card, args.card)
+        except gpc.GenError as e:
+            for line in e.lines:
+                print(line, file=sys.stderr)
+            return 1
+
+    rate_entries = None
+    if args.out_rate:
+        try:
+            rate_entries, rate_report, _ = rate.rate_entries(card, budget, schema.load_yaml(args.scenario), args.card,
+                                                             _rel(args.card, args.root))
         except gpc.GenError as e:
             for line in e.lines:
                 print(line, file=sys.stderr)
@@ -191,6 +237,28 @@ def main(argv=None):
             "idle_speed and the mixer M = B^-1 (row i of M is motor i); see mixer.py for B and the refusals.",
         ]
         outputs.append((args.out_mixer, render(mixer_header, mixer_entries)))
+    if args.scenario:
+        scenario_skipped = []
+        scenario_entries = flatten_scenario(schema.load_yaml(args.scenario), args.root, args.scenario,
+                                            scenario_skipped)
+        scenario_header = [
+            f"params_gen input flattened from scenario-values register {_rel(args.scenario, args.root)} by "
+            "tools/card/flatten.py. Generated; do not edit.",
+            "Not emitted (a consumer of these does not compile until the value is set):",
+            *[f"  {s}" for s in scenario_skipped],
+        ]
+        outputs.append((args.out_scenario, render(scenario_header, scenario_entries)))
+    if rate_entries is not None:
+        rate_header = [
+            f"params_gen input for the L4 rate loop, computed from vehicle card {_rel(args.card, args.root)}, the "
+            "design budget and the scenario register by tools/card/rate.py through tools/card/flatten.py. Generated; "
+            "do not edit.",
+            "rate_kp, rate_ki, rate_kd (= 0) and rate_tau_ref per axis (decision 0005); the derivation is in the "
+            "report next to this file.",
+        ]
+        outputs.append((args.out_rate, render(rate_header, rate_entries)))
+        report_path = Path(args.out_rate).with_name(Path(args.out_rate).stem + "_report.txt")
+        outputs.append((str(report_path), "\n".join(rate_report) + "\n"))
     for path, text in outputs:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_text(text, encoding="utf-8", newline="\n")

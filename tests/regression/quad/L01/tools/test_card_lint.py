@@ -441,7 +441,73 @@ def test_budget_holds_the_two_recorded_values():
     assert reg["chi2_gate_quantile"]["value"] == 0.999 and reg["chi2_gate_quantile"]["unit"] == "1"
     for name in ("PM_min", "chi2_gate_quantile"):
         assert ".ts:" in reg[name]["rationale"]
-    assert all(e["value"] == "UNKNOWN" for n, e in reg.items() if n not in ("PM_min", "chi2_gate_quantile"))
+    assert budget_manifest_violations(reg, later_manifests()) == []
+
+
+RECORDED_AT_L1 = ("PM_min", "chi2_gate_quantile")
+
+
+def read_param_ids(path):
+    """One id per line; blank lines and '#' comments ignored (as in test_flatten_report.py)."""
+    lines = (ln.split("#", 1)[0].strip() for ln in path.read_text(encoding="utf-8").splitlines())
+    return [ln for ln in lines if ln]
+
+
+def later_manifests(root=ROOT / "tests" / "regression" / "quad"):
+    """The param_ids manifests of every layer other than L01 (decision 0004)."""
+    return sorted(p for p in root.glob("L[0-9][0-9]/param_ids") if p.parent.name != "L01")
+
+
+def budget_manifest_violations(reg, manifests):
+    """Budget entries other than the two L1 records whose value is not UNKNOWN must each be listed in exactly one
+    later-layer manifest; every other entry must be UNKNOWN. Returns the list of violations."""
+    listed = [i for p in manifests for i in read_param_ids(p)]
+    bad = []
+    for name, e in reg.items():
+        if name in RECORDED_AT_L1 or e["value"] == "UNKNOWN":
+            continue
+        if listed.count(name) != 1:
+            bad.append(f"{name}: listed in {listed.count(name)} later manifests, expected 1")
+    return bad
+
+
+def planted_manifests(tmp_path, drop=(), extra=()):
+    """Copies of the real later manifests in tmp_path; `drop` ids removed everywhere, `extra` ids added to a new one."""
+    out = []
+    for p in later_manifests():
+        q = tmp_path / p.parent.name / "param_ids"
+        q.parent.mkdir()
+        q.write_text("".join(f"{i}\n" for i in read_param_ids(p) if i not in drop), encoding="utf-8")
+        out.append(q)
+    if extra:
+        q = tmp_path / "L99" / "param_ids"
+        q.parent.mkdir()
+        q.write_text("".join(f"{i}\n" for i in extra), encoding="utf-8")
+        out.append(q)
+    return out
+
+
+def test_budget_manifest_rule_holds_on_the_committed_files_and_finds_the_bands(tmp_path):
+    reg = schema.load_yaml(BUDGET)
+    numeric = {n for n, e in reg.items() if e["value"] != "UNKNOWN"} - set(RECORDED_AT_L1)
+    assert {"tau_robustness_band", "inertia_robustness_band"} <= numeric
+    assert budget_manifest_violations(reg, planted_manifests(tmp_path)) == []
+
+
+def test_budget_manifest_rule_rejects_a_numeric_entry_absent_from_every_later_manifest(tmp_path):
+    reg = schema.load_yaml(BUDGET)
+    assert budget_manifest_violations(reg, planted_manifests(tmp_path, drop=("tau_robustness_band",))) != []
+
+
+def test_budget_manifest_rule_rejects_a_numeric_entry_listed_in_two_later_manifests(tmp_path):
+    reg = schema.load_yaml(BUDGET)
+    assert budget_manifest_violations(reg, planted_manifests(tmp_path, extra=("inertia_robustness_band",))) != []
+
+
+def test_budget_manifest_rule_rejects_a_planted_numeric_entry(tmp_path):
+    reg = schema.load_yaml(BUDGET)
+    reg["planted_entry"] = dict(reg["PM_min"])
+    assert budget_manifest_violations(reg, planted_manifests(tmp_path)) != []
 
 
 # Profile.

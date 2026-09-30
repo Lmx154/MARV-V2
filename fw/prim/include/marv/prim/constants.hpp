@@ -30,6 +30,11 @@ inline constexpr double kPi = 3.14159265358979323846;
 // Kind: standard.
 inline constexpr double kSecondsPerMinute = 60.0;
 
+// Microseconds per second. Citation: SI definition (the prefix micro is exactly 10^-6, so one second is exactly
+// 10^6 microseconds).
+// Kind: standard.
+inline constexpr double kMicrosecondsPerSecond = 1000000.0;
+
 // WGS 84 normal-gravity constants. Citation for every entry below: NIMA TR8350.2, "Department of Defense World
 // Geodetic System 1984", 3rd ed., 4 July 1997, incl. Amendment 1 (3 January 2000) ("NIMA TR8350.2 3rd ed. Amdt 1
 // (2000)").

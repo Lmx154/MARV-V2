@@ -2,9 +2,9 @@
 # loop over marv_plant and a command source, with no Gazebo header. The Gazebo plugin (a shared object) links it, so it
 # and marv_plant are built position independent. marv_sil_tick is resolved by whatever links the adapter (a SIL
 # library); only its header is used here. -ffp-contract=off comes from marv_apply_flags on host.
-add_library(marv_gz_adapter STATIC adapter/src/adapter.cpp)
+add_library(marv_gz_adapter STATIC adapter/src/adapter.cpp adapter/src/truth_gyro.cpp)
 target_include_directories(marv_gz_adapter PUBLIC adapter/include)
-target_include_directories(marv_gz_adapter PRIVATE "${PROJECT_SOURCE_DIR}/fw/sil/include")
+target_include_directories(marv_gz_adapter PUBLIC "${PROJECT_SOURCE_DIR}/fw/sil/include")
 target_link_libraries(marv_gz_adapter PUBLIC marv_plant)
 set_target_properties(marv_gz_adapter marv_plant PROPERTIES POSITION_INDEPENDENT_CODE ON)
 marv_apply_flags(marv_gz_adapter)

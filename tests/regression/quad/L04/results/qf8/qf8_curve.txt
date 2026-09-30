@@ -1,0 +1,32 @@
+MARV QF-8 crossover-vs-loop-rate curve (tools/card/rate_qf8.py, decision 0005, quad spec section 6.2 QF-8)
+inputs the rule consumes (value [source file: entry]); rate_loop_divisor is overridden to 2^n per row:
+  J_roll, J_pitch, J_yaw (kg m^2) = (0.0025, 0.0021, 0.0043)   [vehicles/uzh_neurobem_5in.yaml: inertia_diag]
+  motor tau (s) = 0.033   [vehicles/uzh_neurobem_5in.yaml: rotors.motor_lag.tau]
+  PM_min (rad) = 0.7853981633974483   [design/budget.yaml: PM_min]
+  tau_robustness_band (1) = 0.3   [design/budget.yaml: tau_robustness_band]
+  inertia_robustness_band (1) = 0.5   [design/budget.yaml: inertia_robustness_band]
+  tick_period_num_us (us) = 625   [design/scenario_values.yaml: tick_period_num_us]
+  tick_period_den (1) = 4   [design/scenario_values.yaml: tick_period_den]
+  IMU ODR range [min, max] (Hz) = (12.5, 6400)   [sensors/profiles/marv_v2_board_default.yaml: classes.imu.entries.odr]
+command: uv run python tools/card/rate_qf8.py --card vehicles/uzh_neurobem_5in.yaml --budget design/budget.yaml --scenario design/scenario_values.yaml --output <file>
+QF-8 verdict: UNKNOWN - needs the motor tau sigma (card sigma UNKNOWN); the convergence threshold is that uncertainty (quad section 6.2 QF-8)
+Spec gap: QF-8 ignores gyro filtering and aliasing; revisit at L6 (decision 0005)
+The listed rates are integer divisions of the 6.4 kHz tick; that each is an available ODR of the IMU is INFERRED (the profile records only the range)
+
+Each row is the L4 gain rule (rate.py design(), PM_min and the tau x J band box from the budget) with rate_loop_divisor = 2^n.
+rate_Hz = 1/T; w_c_nom, w_c_min, w_c_max in rad/s (w_c_nom the nominal crossover of the rule, w_c_min and w_c_max the smallest and largest
+crossover over the four box corners J in {1 -+ b_J} x tau in {(1 -+ b_tau) tau}); PM in degrees (PM_worst = minimum over nominal and corners); kappa_p, kappa_i for J = 1;
+tau_cl_s = t63 worst over the box; condition = w_c^2 T tau_lo (rate.py step 7, must be < 1/2); dw_c_rel = (w_c_nom - w_c_nom of the next-faster rate) / (w_c_nom of the next-faster rate).
+Floats are printed with 9 significant digits (%.9g).
+
+n  rate_Hz  T_s  w_c_nom  w_c_min  w_c_max  PM_nom_deg  PM_worst_deg  kappa_p  kappa_i  tau_cl_s  condition  dw_c_rel
+0  6400  0.00015625  8.3437139  5.96745119  15.434738  52.0626868  45.0000022  7.99730001  27.6393043  0.160625  0.000859865508  -
+1  3200  0.0003125  8.32033501  5.95074487  15.3927031  52.0612105  45.0000009  7.97514929  27.4855194  0.1609375  0.00171037676  -0.00280197649
+2  1600  0.000625  8.27406087  5.91768002  15.3094626  52.0581747  45.0000004  7.93132555  27.1824628  0.161875  0.0033838561  -0.00556157178
+3  800  0.00125  8.18339573  5.85290422  15.1462135  52.0517821  45.0000044  7.84553532  26.5938031  0.16375  0.0066241497  -0.0109577556
+4  400  0.0025  8.00921353  5.72848978  14.8320102  52.0377967  45.0000016  7.68098454  25.4818572  0.1675  0.0127043374  -0.0212848319
+5  200  0.005  7.68662456  5.49817166  14.2481179  52.005773  45.0000009  7.37709477  23.4879626  0.175  0.0234475237  -0.0402772339
+6  100  0.01  7.1266561  5.09864984  13.2286026  51.9299552  45.0000027  6.85189025  20.2264896  0.19  0.0404240593  -0.072849722
+7  50  0.02  6.25101823  4.47445938  11.6202671  51.7536556  45.0000037  6.03487757  15.6258462  0.22  0.0623841405  -0.122867984
+8  25  0.04  5.0703835  3.63334099  9.43044223  51.3831238  45.0000006  4.93632335  10.367373  0.24  0.0821743143  -0.188870787
+9  12.5  0.08  3.74181588  2.68593924  6.9579364  50.7350862  45.0000015  3.69282447  5.72354883  0.32  0.0894670002  -0.262025076

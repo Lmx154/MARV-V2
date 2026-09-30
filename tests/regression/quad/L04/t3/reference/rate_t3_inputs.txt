@@ -1,0 +1,27 @@
+# The T3 fixture: the f32 values the oracle and the T3 test use (hex floats are exact). Equal to the product
+# parameters of 2026-09-30 (rate_t3_oracle.py --refresh-inputs from param_defaults.cpp);
+# the T3 test reads this file, not the live parameters, so it does not follow later parameter changes.
+rate_loop_divisor 2
+tick_period_num_us 625
+tick_period_den 4
+inertia_xx 0x1.47ae140000000p-9  # 0.00249999994
+inertia_yy 0x1.13404e0000000p-9  # 0.00209999993
+inertia_zz 0x1.19ce080000000p-8  # 0.00430000015
+motor_tau 0x1.0e56040000000p-5  # 0.0329999998
+rate_max_roll 0x1.7632d60000000p+3  # 11.6937056
+rate_max_pitch 0x1.7632d60000000p+3  # 11.6937056
+rate_max_yaw 0x1.7632d60000000p+3  # 11.6937056
+rate_kp_roll 0x1.46a9800000000p-6  # 0.0199378729
+rate_kp_pitch 0x1.12656c0000000p-6  # 0.0167478137
+rate_kp_yaw 0x1.18edee0000000p-5  # 0.0342931412
+rate_ki_roll 0x1.1973a40000000p-4  # 0.0687137991
+rate_ki_pitch 0x1.d8d6c20000000p-5  # 0.057719592
+rate_ki_yaw 0x1.e418d20000000p-4  # 0.118187733
+rate_kd_roll 0x0.0p+0  # 0
+rate_kd_pitch 0x0.0p+0  # 0
+rate_kd_yaw 0x0.0p+0  # 0
+rate_tau_ref_roll 0x1.49999a0000000p-3  # 0.160937503
+rate_tau_ref_pitch 0x1.49999a0000000p-3  # 0.160937503
+rate_tau_ref_yaw 0x1.49999a0000000p-3  # 0.160937503
+tau_robustness_band 0x1.3333340000000p-2  # 0.300000012
+inertia_robustness_band 0x1.0000000000000p-1  # 0.5

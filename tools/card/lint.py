@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Linter for vehicle cards, sensor profiles and the design-budget register (core contracts 2.1, 2.2, 5).
 
-  lint.py --card <file> | --profile <file> | --budget <file>   (each may be repeated; --root sets the repository
-                                                                root used to resolve a card's sensor_profile)
+  lint.py --card <file> | --profile <file> | --budget <file> | --scenario <file>
+                                    (each may be repeated; --root sets the repository root used to resolve a
+                                    card's sensor_profile)
 
 Exit 0 when every file is clean. Exit 1 otherwise, with one line per finding on stderr:
 
@@ -23,6 +24,7 @@ Profile structure: profile (the id, equal to the file name without .yaml) and cl
 to {part, entries: {name: entry}}. imu, high_g_accel, barometer and rotor_speed are required.
 
 Budget structure: a mapping from entry name to a register entry (schema.py).
+Scenario register structure (design/scenario_values.yaml): the same, with method: scenario.
 """
 
 from __future__ import annotations
@@ -237,15 +239,27 @@ def lint_budget(path, out):
         schema.check_entry(entry, name, out, path, budget=True)
 
 
+def lint_scenario(path, out):
+    doc = load(path, out)
+    if doc is None:
+        return
+    for name, entry in doc.items():
+        if not (isinstance(name, str) and NAME.fullmatch(name)):
+            out.add(path, str(name), "entry name is not an identifier")
+            continue
+        schema.check_entry(entry, name, out, path, budget=True, budget_method="scenario")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--card", action="append", default=[], metavar="FILE")
     ap.add_argument("--profile", action="append", default=[], metavar="FILE")
     ap.add_argument("--budget", action="append", default=[], metavar="FILE")
+    ap.add_argument("--scenario", action="append", default=[], metavar="FILE")
     ap.add_argument("--root", default=str(ROOT), help="repository root for resolving sensor_profile")
     args = ap.parse_args(argv)
-    if not (args.card or args.profile or args.budget):
-        ap.error("give at least one of --card, --profile, --budget")
+    if not (args.card or args.profile or args.budget or args.scenario):
+        ap.error("give at least one of --card, --profile, --budget, --scenario")
     out = schema.Findings()
     for f in args.card:
         lint_card(f, out, root=args.root)
@@ -253,6 +267,8 @@ def main(argv=None):
         lint_profile(f, out)
     for f in args.budget:
         lint_budget(f, out)
+    for f in args.scenario:
+        lint_scenario(f, out)
     if out:
         for line in out.lines():
             print(line, file=sys.stderr)

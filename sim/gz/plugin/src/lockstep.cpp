@@ -50,6 +50,7 @@
 #include "lockstep_log.hpp"
 #include "marv/gz/adapter.hpp"
 #include "marv/gz/frames.hpp"
+#include "marv/gz/truth_gyro.hpp"
 #include "marv_plant.h"
 #include "marv_sil.h"
 
@@ -106,6 +107,7 @@ struct Parsed {
   std::optional<Vec3> v_ned;
   std::optional<Vec3> w_frd;
   std::optional<std::string> log_path;
+  bool truth_gyro = false;
 };
 
 std::string text_of(const sdf::ElementPtr& e) { return e->Get<std::string>(); }
@@ -272,6 +274,12 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
     } else if (name == "initial_body_rates_frd") {
       once(name);
       p.w_frd = vec3_of(e);
+    } else if (name == "gyro_source") {
+      once(name);
+      if (trim(text_of(e)) != "truth") {
+        refuse("<gyro_source> is '" + trim(text_of(e)) + "', not 'truth'");
+      }
+      p.truth_gyro = true;
     } else if (name == "log_path") {
       once(name);
       const std::string t = trim(text_of(e));
@@ -306,23 +314,34 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
   return p;
 }
 
-// A command source that keeps the SIL's stamp of every tick of the current host step.
+// A command source that keeps the SIL's stamp and the IMU sample of every tick of the current host step. The sample is
+// the one passed to the SIL: SilCommandSource passes a zeroed one; the truth-gyro source (optional <gyro_source>) its own.
 class RecordingSource final : public CommandSource {
  public:
   bool dshot(std::uint64_t tick, Dshot& out) override {
-    const bool ok = inner_.dshot(tick, out);
+    const bool ok = use_truth_ ? truth_.dshot(tick, out) : inner_.dshot(tick, out);
     if (ok) {
-      stamps_.push_back(inner_.last_stamp_us());
+      stamps_.push_back(use_truth_ ? truth_.last_stamp_us() : inner_.last_stamp_us());
+      imus_.push_back(use_truth_ ? truth_.imu() : marv_imu_meas{});
     }
     return ok;
   }
-  std::int32_t last_status() const { return inner_.last_status(); }
-  void begin_step() { stamps_.clear(); }
+  std::int32_t last_status() const { return use_truth_ ? truth_.last_status() : inner_.last_status(); }
+  void use_truth_gyro() { use_truth_ = true; }
+  void set_body(const marv_plant_body& body) { truth_.set_body(body); }
+  void begin_step() {
+    stamps_.clear();
+    imus_.clear();
+  }
   const std::vector<std::uint64_t>& stamps() const { return stamps_; }
+  const std::vector<marv_imu_meas>& imus() const { return imus_; }
 
  private:
   SilCommandSource inner_;
+  truth::TruthGyroSilCommandSource truth_;
+  bool use_truth_ = false;
   std::vector<std::uint64_t> stamps_;
+  std::vector<marv_imu_meas> imus_;
 };
 
 std::atomic<bool> g_configured{false};
@@ -433,6 +452,10 @@ class Lockstep final : public gzs::System,
     v_ned_ = p.v_ned;
     w_frd_ = p.w_frd;
 
+    if (p.truth_gyro) {
+      source_.use_truth_gyro();
+    }
+
     log_path_ = p.log_path;
     log_params_ = {m_, p.num_us, p.den, p.seed};
   }
@@ -485,6 +508,7 @@ class Lockstep final : public gzs::System,
 
     const std::uint64_t first_tick = steps_ * m_;
     source_.begin_step();
+    source_.set_body(body);
     const StepResult r = adapter_->step(body, first_tick, m_);
 
     LogBuffer b;
@@ -508,8 +532,7 @@ class Lockstep final : public gzs::System,
       b.u8(static_cast<std::uint8_t>(LogRecord::kTick));
       b.u64(t.tick);
       b.u64(source_.stamps()[j]);
-      const marv_imu_meas imu{};  // the sample SilCommandSource passes: zeroed, every valid bit clear
-      b.bytes(&imu, sizeof(imu));
+      b.bytes(&source_.imus()[j], sizeof(marv_imu_meas));  // the sample passed to the SIL for this tick
       for (const std::uint16_t d : t.dshot) {
         b.u16(d);
       }

@@ -1,0 +1,136 @@
+# Quad L4 scenario 'acro' (docs/spec/10-quad-flight-software.md section 4 L4, T4: "acro with a scripted stick sequence
+# completes without saturation beyond the mixer's documented behaviour"; docs/decisions/0005 "T4", owner decision 9).
+# A scripted full-stick sequence at hover collective, flown by the l4_rate_scripted composition on truth gyro: a
+# truth-fed, perfect-model run, not a validation run (core section 6). Schema: tools/sim/l4_scenario.py (validate_acro);
+# the runner (tools/sim/run_l4.py plan_acro) turns each stick into float32(stick x rate_max_<axis>) of the build and each
+# start into the stamp of the first rate-loop execution at or after it. Every number is a labelled scenario value or a
+# derived value. Frames NED / FRD, SI units. Saturation during the transients is expected (air mode, owner decision 9).
+scenario: acro
+site_latitude_rad:
+  value: 0.82
+  unit: rad
+  label: scenario
+  rationale: "the L2 hover site (scenarios/quad/L02/hover.yaml): mid-latitude, so the latitude term of g is exercised"
+site_height_m:
+  value: 500.0
+  unit: m
+  label: scenario
+  rationale: "the L2 hover site height (scenarios/quad/L02/hover.yaml); a plausible flying site height, not vehicle data"
+seed:
+  value: 1
+  unit: "1"
+  label: scenario
+  rationale: "RESERVED at v0: marv_plant v0 and the composition draw no random numbers, so the value has no effect; it completes the run identity (firmware, card, scenario, seed)"
+tick_period_num_us:
+  value: 625
+  unit: us
+  label: derived
+  rule: "design/scenario_values.yaml tick_period_num_us; the rate loop checks each execution's spacing against the period built from it, so the runner refuses a world tick that differs from the build's"
+tick_period_den:
+  value: 4
+  unit: "1"
+  label: derived
+  rule: "design/scenario_values.yaml tick_period_den, as tick_period_num_us"
+m_sequence:
+  value: [2, 1]
+  unit: "1"
+  label: derived
+  rule: "decision 0005 'T4 envelope widening': E_i = |y(m=1) - y(m=2)|, the last halving of docs/decisions/0003 item 9; both divide rate_loop_divisor, so every execution reads the state at its own tick"
+initial_state:
+  position_ned_m:
+    value: [0.0, 0.0, 0.0]
+    unit: m
+    label: scenario
+    rationale: "the NED origin, the site itself; the generated world has no ground and no contact"
+  attitude_q_wxyz:
+    value: [1.0, 0.0, 0.0, 0.0]
+    unit: "1"
+    label: scenario
+    rationale: "level, the identity quaternion (canonical sign w >= 0)"
+  velocity_ned_m_s:
+    value: [1.0, 0.0, 0.0]
+    unit: m/s
+    label: scenario
+    rationale: "every host step (at least one tick, 156.25 us) moves the link 1.5625e-4 m north, 156 times the 1e-6 pose change below which gz-sim 8 leaves a read stale (docs/decisions/0003 item 11), so every read is fresh (INFERRED; fresh_steps / stale_report show it per run and the test fails on a stale read in the window); marv_plant v0 has no drag or position-dependent torque and g depends on height only, so the translation does not act on the rotation"
+  body_rates_frd_rad_s:
+    value: [0.0, 0.0, 0.0]
+    unit: rad/s
+    label: scenario
+    rationale: "starts at rest: the first stick step starts from the zero state, as the design-model step response does"
+acro:
+  segments:
+    - start_s:
+        value: 1.0
+        unit: s
+        label: scenario
+        rationale: "the step scenarios' 1 s settle (30.3 motor time constants of tau = 0.033 s), then one segment every 0.5 s: about 3.1 tau_ref (0.161 s, decision 0005 QF-2), so the reference reaches 1 - e^-3.1 = 95.5 % of each stick target, and seven segments keep the run 5 s long"
+      stick:
+        value: [1, 0, 0]
+        unit: "1"
+        label: scenario
+        rationale: "full roll stick from rest: a single-axis full-stick step"
+    - start_s:
+        value: 1.5
+        unit: s
+        label: scenario
+        rationale: "the step scenarios' 1 s settle (30.3 motor time constants of tau = 0.033 s), then one segment every 0.5 s: about 3.1 tau_ref (0.161 s, decision 0005 QF-2), so the reference reaches 1 - e^-3.1 = 95.5 % of each stick target, and seven segments keep the run 5 s long"
+      stick:
+        value: [-1, 0, 0]
+        unit: "1"
+        label: scenario
+        rationale: "the reversal, roll +rate_max to -rate_max"
+    - start_s:
+        value: 2.0
+        unit: s
+        label: scenario
+        rationale: "the step scenarios' 1 s settle (30.3 motor time constants of tau = 0.033 s), then one segment every 0.5 s: about 3.1 tau_ref (0.161 s, decision 0005 QF-2), so the reference reaches 1 - e^-3.1 = 95.5 % of each stick target, and seven segments keep the run 5 s long"
+      stick:
+        value: [0, 1, 0]
+        unit: "1"
+        label: scenario
+        rationale: "full pitch stick, a single-axis full-stick step, while roll returns to zero"
+    - start_s:
+        value: 2.5
+        unit: s
+        label: scenario
+        rationale: "the step scenarios' 1 s settle (30.3 motor time constants of tau = 0.033 s), then one segment every 0.5 s: about 3.1 tau_ref (0.161 s, decision 0005 QF-2), so the reference reaches 1 - e^-3.1 = 95.5 % of each stick target, and seven segments keep the run 5 s long"
+      stick:
+        value: [0, 0, 1]
+        unit: "1"
+        label: scenario
+        rationale: "full yaw stick, a single-axis full-stick step, while pitch returns to zero"
+    - start_s:
+        value: 3.0
+        unit: s
+        label: scenario
+        rationale: "the step scenarios' 1 s settle (30.3 motor time constants of tau = 0.033 s), then one segment every 0.5 s: about 3.1 tau_ref (0.161 s, decision 0005 QF-2), so the reference reaches 1 - e^-3.1 = 95.5 % of each stick target, and seven segments keep the run 5 s long"
+      stick:
+        value: [0, 0, 0]
+        unit: "1"
+        label: scenario
+        rationale: "sticks centred, so that the combined segment starts near rest"
+    - start_s:
+        value: 3.5
+        unit: s
+        label: scenario
+        rationale: "the step scenarios' 1 s settle (30.3 motor time constants of tau = 0.033 s), then one segment every 0.5 s: about 3.1 tau_ref (0.161 s, decision 0005 QF-2), so the reference reaches 1 - e^-3.1 = 95.5 % of each stick target, and seven segments keep the run 5 s long"
+      stick:
+        value: [1, 1, 1]
+        unit: "1"
+        label: scenario
+        rationale: "full roll, pitch and yaw stick together: the combined segment (air-mode priority roll/pitch over yaw, decision 0004 item 3)"
+    - start_s:
+        value: 4.0
+        unit: s
+        label: scenario
+        rationale: "the step scenarios' 1 s settle (30.3 motor time constants of tau = 0.033 s), then one segment every 0.5 s: about 3.1 tau_ref (0.161 s, decision 0005 QF-2), so the reference reaches 1 - e^-3.1 = 95.5 % of each stick target, and seven segments keep the run 5 s long"
+      stick:
+        value: [0, 0, 0]
+        unit: "1"
+        label: scenario
+        rationale: "the return to zero"
+  end_s:
+    value: 5.0
+    unit: s
+    label: scenario
+    rationale: "1 s after the return to zero, about 6 tau_ref: the last transient decays inside the run; the whole run is 5 s"

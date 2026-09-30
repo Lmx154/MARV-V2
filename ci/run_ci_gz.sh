@@ -85,9 +85,22 @@ gz_analytic() {
   pytest_no_skips tests/regression/quad/L02/gz/test_analytic.py
 }
 
+# The L4 plugin: the same plugin source on the l4_rate_scripted composition (MARV_GZ_SIL = marv_sil_l4_rate_scripted).
+gz_build_l4() {
+  uv sync --frozen || return 1
+  cmake --preset host-gz-l4 && cmake --build --preset host-gz-l4
+}
+
+# test_truth_gyro.py runs on the host-gz build (the L2 rotation world); test_t4_steps.py on the host-gz-l4 build.
+gz_l4() {
+  pytest_no_skips tests/regression/quad/L04/gz
+}
+
 step gz_toolchain gz_toolchain
 step gz_build gz_build
 step gz_plugin_smoke gz_plugin_smoke
 step gz_determinism gz_determinism
 step gz_runner_tools gz_runner_tools
 step gz_analytic gz_analytic
+step gz_build_l4 gz_build_l4
+step gz_l4 gz_l4

@@ -5,6 +5,8 @@ set(MARV_VEHICLE_CARD "vehicles/uzh_neurobem_5in.yaml" CACHE STRING
     "Vehicle card of the product parameter set (repository-relative or absolute); linted and flattened by tools/card/flatten.py")
 set(MARV_DESIGN_BUDGET "design/budget.yaml" CACHE STRING
     "Design-budget register of the product parameter set (repository-relative or absolute)")
+set(MARV_SCENARIO_VALUES "design/scenario_values.yaml" CACHE STRING
+    "Scenario-values register of the product parameter set (repository-relative or absolute)")
 set(MARV_PYTHON "${PROJECT_SOURCE_DIR}/.venv/bin/python" CACHE FILEPATH
     "Python of the uv environment (created by `uv sync --frozen`) that runs tools/gen/params_gen.py")
 
@@ -84,18 +86,40 @@ function(marv_card_profile_file out name card)
   set(${out} "${PROJECT_SOURCE_DIR}/sensors/profiles/${_profile}.yaml" PARENT_SCOPE)
 endfunction()
 
-# marv_add_card_param_set(<name> CARD <card.yaml> BUDGET <budget.yaml>)
+# marv_add_card_param_set(<name> CARD <card.yaml> BUDGET <budget.yaml> [SCENARIO <scenario_values.yaml>]
+#                         [EXTRA_REGISTER <register.yaml>])
 #
 # A parameter set (marv_add_param_set) whose sources are a vehicle card and the design-budget register: a build-time
 # custom command runs tools/card/flatten.py (lints first; a lint finding fails the build) into
 # ${CMAKE_BINARY_DIR}/generated/<name>/flatten/ and marv_add_param_set consumes its outputs: the flattened card and
-# register plus the L3 mixer parameters (idle_speed, mixer_m<i>_*; tools/card/mixer.py). The command depends on
-# the card, the sensor profile the card names, the budget and tools/card/*.py.
+# register plus the L3 mixer parameters (idle_speed, mixer_m<i>_*; tools/card/mixer.py). With SCENARIO the
+# scenario-values register is linted and flattened too (--scenario/--out-scenario) and joins the CARD files, and the
+# L4 rate-loop parameters (rate_{kp,ki,kd,tau_ref}_<axis>; tools/card/rate.py, --out-rate) and their derivation report
+# are generated from it. The command depends on
+# the card, the sensor profile the card names, the budget, the scenario register and tools/card/*.py.
+# EXTRA_REGISTER appends one more register file after the budget register, so every id of the set without it keeps its
+# value and the extra entries follow (a composition's own scenario parameters); without it the outputs are unchanged.
 function(marv_add_card_param_set name)
-  cmake_parse_arguments(ARG "" "CARD;BUDGET" "" ${ARGN})
+  cmake_parse_arguments(ARG "" "CARD;BUDGET;SCENARIO;EXTRA_REGISTER" "" ${ARGN})
   cmake_path(ABSOLUTE_PATH ARG_CARD BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
   cmake_path(ABSOLUTE_PATH ARG_BUDGET BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ARG_CARD}")
+  set(scenario_args)
+  set(scenario_outputs)
+  set(scenario_depends)
+  set(rate_args)
+  set(rate_outputs)
+  if(ARG_SCENARIO)
+    cmake_path(ABSOLUTE_PATH ARG_SCENARIO BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
+    set(flat_scenario "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_scenario.yaml")
+    set(scenario_args --scenario "${ARG_SCENARIO}" --out-scenario "${flat_scenario}")
+    set(scenario_outputs "${flat_scenario}")
+    set(scenario_depends "${ARG_SCENARIO}")
+    set(flat_rate "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_rate.yaml")
+    set(flat_rate_report "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_rate_report.txt")
+    set(rate_args --out-rate "${flat_rate}")
+    set(rate_outputs "${flat_rate}" "${flat_rate_report}")
+  endif()
 
   marv_card_profile_file(profile_file ${name} "${ARG_CARD}")
 
@@ -106,16 +130,17 @@ function(marv_add_card_param_set name)
   file(GLOB marv_card_tools CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/tools/card/*.py")
 
   add_custom_command(
-    OUTPUT "${flat_card}" "${flat_register}" "${flat_mixer}"
+    OUTPUT "${flat_card}" "${flat_register}" "${flat_mixer}" ${scenario_outputs} ${rate_outputs}
     COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/card/flatten.py"
             --card "${ARG_CARD}" --budget "${ARG_BUDGET}"
             --out-card "${flat_card}" --out-register "${flat_register}" --out-mixer "${flat_mixer}"
+            ${scenario_args} ${rate_args}
             --root "${PROJECT_SOURCE_DIR}"
-    DEPENDS "${ARG_CARD}" "${profile_file}" "${ARG_BUDGET}" ${marv_card_tools}
+    DEPENDS "${ARG_CARD}" "${profile_file}" "${ARG_BUDGET}" ${scenario_depends} ${marv_card_tools}
     COMMENT "Linting and flattening the vehicle card and design budget (${name})"
     VERBATIM)
 
-  marv_add_param_set(${name} CARD "${flat_card}" "${flat_mixer}" REGISTER "${flat_register}")
+  marv_add_param_set(${name} CARD "${flat_card}" "${flat_mixer}" ${scenario_outputs} ${flat_rate} REGISTER "${flat_register}" ${ARG_EXTRA_REGISTER})
 endfunction()
 
 # marv_add_card_report(<name> CARD <card.yaml> BUDGET <budget.yaml>)
@@ -141,10 +166,11 @@ function(marv_add_card_report name)
     VERBATIM)
 endfunction()
 
-# The product parameter set: the vehicle card and the design-budget register. (The INTERFACE library `marv_params`
-# above is the include root that every set's <name>_generated links; this set's targets are marv_params_generated and
-# marv_params_runtime.)
-marv_add_card_param_set(marv_params CARD "${MARV_VEHICLE_CARD}" BUDGET "${MARV_DESIGN_BUDGET}")
+# The product parameter set: the vehicle card, the design-budget register and the scenario-values register. (The
+# INTERFACE library `marv_params` above is the include root that every set's <name>_generated links; this set's
+# targets are marv_params_generated and marv_params_runtime.)
+marv_add_card_param_set(marv_params CARD "${MARV_VEHICLE_CARD}" BUDGET "${MARV_DESIGN_BUDGET}"
+  SCENARIO "${MARV_SCENARIO_VALUES}")
 
 # The L0 parameter set: built from the frozen L0 fixtures, whatever MARV_PARAM_*_FILES name. The L0 composition, the
 # null plant, the SIL test library and the L0 tests link it, so later layers can change the product's parameter
@@ -161,3 +187,10 @@ marv_add_param_set(marv_params_l1_fixture
 # The L2 open-loop composition's parameter set: the four per-motor DShot commands, default 0 (stop).
 marv_add_param_set(marv_params_l2_open_loop
   REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/l2_open_loop/params/l2_open_loop_register.yaml")
+
+# The L4 rate-scripted composition's parameter set: the product set (card, budget, mixer, rate, scenario values) followed
+# by the composition's own register (thrust, setpoint script, chirp; neutral defaults). marv_rate and marv_mixer read
+# the product ids, which this set keeps.
+marv_add_card_param_set(marv_params_l4_rate_scripted CARD "${MARV_VEHICLE_CARD}" BUDGET "${MARV_DESIGN_BUDGET}"
+  SCENARIO "${MARV_SCENARIO_VALUES}"
+  EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml")

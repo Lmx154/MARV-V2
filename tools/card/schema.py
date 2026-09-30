@@ -50,6 +50,8 @@ from above); `cw` = clockwise viewed from above.
 Budget entries (design/budget.yaml): value (number or UNKNOWN), unit, method: design-budget, sigma: choice,
 rationale (non-empty, required even when value is UNKNOWN: state what will set it), used_by (non-empty list of
 requirement names); optional status, check, note.
+
+Scenario register entries (design/scenario_values.yaml) follow the same schema with method: scenario.
 """
 
 from __future__ import annotations
@@ -343,12 +345,14 @@ def _check_lock(entry, path, out, file, kind):
         out.add(file, path, f"lock.on: must be a valid date YYYY-MM-DD, got {lock.get('on')!r}")
 
 
-def check_entry(entry, path, out, file, *, categories=None, models=None, motors=MOTOR_COUNT, budget=False):
+def check_entry(entry, path, out, file, *, categories=None, models=None, motors=MOTOR_COUNT, budget=False,
+                budget_method="design-budget"):
     """Validate one entry. Findings are added to `out`.
 
     categories  allowed value strings for a categorical entry (no unit, sigma, sigma_rule or shape)
     models      allowed model names for a model entry (`model` in place of value, unit and shape; sigma policy applies)
-    budget      validate as a design-budget register entry
+    budget      validate as a register entry (design-budget register, or scenario register with
+                budget_method="scenario")
     """
     if not isinstance(entry, dict):
         out.add(file, path, "must be a mapping of entry fields")
@@ -380,8 +384,8 @@ def check_entry(entry, path, out, file, *, categories=None, models=None, motors=
     kind, err = parse_method(entry["method"])
     if err:
         out.add(file, path, err)
-    if budget and kind != "design-budget" and err is None:
-        out.add(file, path, f"method: a register entry is design-budget, not {entry['method']!r}")
+    if budget and kind != budget_method and err is None:
+        out.add(file, path, f"method: a register entry is {budget_method}, not {entry['method']!r}")
     if "unit" in entry and not is_text(entry["unit"]):
         out.add(file, path, 'unit: must be non-empty text ("1" if dimensionless)')
     if "source" in entry and not is_text(entry["source"]):

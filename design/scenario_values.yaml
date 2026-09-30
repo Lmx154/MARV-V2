@@ -1,0 +1,78 @@
+# Scenario-values register (core contracts 2.1, method scenario). Each entry: value, unit, method: scenario,
+# sigma: choice (a choice has no uncertainty), rationale, used_by. Same schema as design/budget.yaml (tools/card/
+# schema.py, lint.py --scenario); flattened into the product parameter set marv_params by tools/card/flatten.py
+# --scenario. An integer value is an i32 parameter, any other number f32.
+# Betaflight citations are to tag 4.5.2, commit 024f8e13d4e642eb6a380308685b9ea3aa3ef1a2.
+
+tick_period_num_us:
+  value: 625
+  unit: us
+  method: scenario
+  sigma: choice
+  rationale: >-
+    Numerator of the tick period. The tick is one primary-IMU sample at 6.4 kHz, so the period is 625/4 us =
+    156.25 us (quad spec section 4, L0 pass bar). The same rational is passed to the SIL as
+    marv_sil_config.tick_period_num_us / tick_period_den (fw/sil/include/marv_sil.h) and used in the scenario files
+    (scenarios/quad/L02/*.yaml, for example rotation.yaml:21-30).
+  used_by: [rate-loop gain design, rate-loop period check]
+
+tick_period_den:
+  value: 4
+  unit: "1"
+  method: scenario
+  sigma: choice
+  rationale: >-
+    Denominator of the tick period. The tick is one primary-IMU sample at 6.4 kHz, so the period is 625/4 us =
+    156.25 us (quad spec section 4, L0 pass bar). The same rational is passed to the SIL as
+    marv_sil_config.tick_period_num_us / tick_period_den (fw/sil/include/marv_sil.h) and used in the scenario files
+    (scenarios/quad/L02/*.yaml, for example rotation.yaml:21-30).
+  used_by: [rate-loop gain design, rate-loop period check]
+
+rate_loop_divisor:
+  value: 2
+  unit: "1"
+  method: scenario
+  sigma: choice
+  rationale: >-
+    Integer division of the tick that gives the rate-loop rate: 6.4 kHz / 2 = 3.2 kHz. Luis, 2026-09-30 (decision
+    0005): "Rate loop 3.2 kHz (integer division of the tick) as a labelled scenario value." QF-8 stays open.
+  used_by: [QF-8, rate-loop gain design, rate group]
+
+rate_max_roll:
+  value: 11.693705988362009
+  unit: rad/s
+  method: scenario
+  sigma: choice
+  rationale: >-
+    QF-1 maximum roll rate, pilot preference: 670 deg/s x pi/180 = 11.693705988362009 rad/s (degrees appear only in
+    user-facing text, core 3). Luis, 2026-09-30 (decision 0005): Betaflight's default. Betaflight src/main/fc/
+    controlrate_profile.c:48-57 (RATES_TYPE_ACTUAL, rcRates 7, rcExpo 0, rates 67 per axis); src/main/fc/rc.c:209-219
+    applyActualRates gives rates x 10 = 670 deg/s at full stick with zero expo; the rate_limit cap of 1998 deg/s
+    (src/main/fc/rc_controls.h:80, applied at rc.c:663) does not bind.
+  used_by: [QF-1, QF-2]
+
+rate_max_pitch:
+  value: 11.693705988362009
+  unit: rad/s
+  method: scenario
+  sigma: choice
+  rationale: >-
+    QF-1 maximum pitch rate, pilot preference: 670 deg/s x pi/180 = 11.693705988362009 rad/s (degrees appear only in
+    user-facing text, core 3). Luis, 2026-09-30 (decision 0005): Betaflight's default. Betaflight src/main/fc/
+    controlrate_profile.c:48-57 (RATES_TYPE_ACTUAL, rcRates 7, rcExpo 0, rates 67 per axis); src/main/fc/rc.c:209-219
+    applyActualRates gives rates x 10 = 670 deg/s at full stick with zero expo; the rate_limit cap of 1998 deg/s
+    (src/main/fc/rc_controls.h:80, applied at rc.c:663) does not bind.
+  used_by: [QF-1, QF-2]
+
+rate_max_yaw:
+  value: 11.693705988362009
+  unit: rad/s
+  method: scenario
+  sigma: choice
+  rationale: >-
+    QF-1 maximum yaw rate, pilot preference: 670 deg/s x pi/180 = 11.693705988362009 rad/s (degrees appear only in
+    user-facing text, core 3). Luis, 2026-09-30 (decision 0005): Betaflight's default. Betaflight src/main/fc/
+    controlrate_profile.c:48-57 (RATES_TYPE_ACTUAL, rcRates 7, rcExpo 0, rates 67 per axis); src/main/fc/rc.c:209-219
+    applyActualRates gives rates x 10 = 670 deg/s at full stick with zero expo; the rate_limit cap of 1998 deg/s
+    (src/main/fc/rc_controls.h:80, applied at rc.c:663) does not bind.
+  used_by: [QF-1, QF-2]

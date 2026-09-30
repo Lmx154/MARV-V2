@@ -1,0 +1,85 @@
+# L4 rate-scripted composition (fw/compositions/l4_rate_scripted) scenario parameters: the collective thrust request, a
+# piecewise-constant body-rate setpoint script (capacity 8 segments, fixed by the entries below) and one torque chirp.
+# Every entry is method scenario, sigma choice (core 2.1): set per run by the scenario through sil_override; the
+# default is the neutral value (no thrust, no segments, no chirp). None is a vehicle number.
+
+l4_thrust_n:
+  {type: f32, value: 0.0, unit: "N", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg_count:
+  {type: i32, value: 0, unit: "1", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg1_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg1_roll:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg1_pitch:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg1_yaw:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg2_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg2_roll:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg2_pitch:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg2_yaw:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg3_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg3_roll:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg3_pitch:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg3_yaw:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg4_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg4_roll:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg4_pitch:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg4_yaw:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg5_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg5_roll:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg5_pitch:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg5_yaw:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg6_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg6_roll:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg6_pitch:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg6_yaw:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg7_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg7_roll:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg7_pitch:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg7_yaw:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg8_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg8_roll:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg8_pitch:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_seg8_yaw:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_chirp_axis:
+  {type: i32, value: 0, unit: "1", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_chirp_amp_nm:
+  {type: f32, value: 0.0, unit: "N*m", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_chirp_w_lo:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_chirp_w_hi:
+  {type: f32, value: 0.0, unit: "rad/s", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_chirp_t0_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}
+l4_chirp_dur_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l4_rate_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml)", sigma: choice}

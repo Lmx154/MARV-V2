@@ -290,6 +290,58 @@ plant_ref_control() {
   rm -rf "${dir}"
 }
 
+# rate_t3_oracle.py reads rate_t3_inputs.txt and writes rate_t3_golden.txt and rate_t3_envelope.txt into --dir.
+t3_reference_dir=tests/regression/quad/L04/t3/reference
+
+t3_oracle_run() {
+  local dir="$1"
+  uv run python "${t3_reference_dir}/rate_t3_oracle.py" --dir "${dir}"
+}
+
+t3_reference_reproduces() {
+  local dir status=0
+  dir="$(mktemp -d)"
+  cp "${t3_reference_dir}/rate_t3_inputs.txt" "${dir}/rate_t3_inputs.txt"
+  t3_oracle_run "${dir}" || status=$?
+  if [[ ${status} -eq 0 ]]; then
+    cmp "${t3_reference_dir}/rate_t3_golden.txt" "${dir}/rate_t3_golden.txt" || status=$?
+    cmp "${t3_reference_dir}/rate_t3_envelope.txt" "${dir}/rate_t3_envelope.txt" || status=$?
+  fi
+  rm -rf "${dir}"
+  return "${status}"
+}
+
+# The same run with rate_kp_roll one float32 ulp up must differ from the committed golden.
+t3_reference_control() {
+  local dir
+  dir="$(mktemp -d)"
+  uv run python - "${t3_reference_dir}/rate_t3_inputs.txt" "${dir}/rate_t3_inputs.txt" <<'PY'
+import struct
+import sys
+
+out = []
+for line in open(sys.argv[1]):
+    if line.startswith("rate_kp_roll "):
+        x = float.fromhex(line.split()[1])
+        bits = struct.unpack("<I", struct.pack("<f", x))[0] + 1
+        line = f"rate_kp_roll {struct.unpack('<f', struct.pack('<I', bits))[0].hex()}\n"
+    out.append(line)
+open(sys.argv[2], "w").write("".join(out))
+PY
+  if cmp -s "${t3_reference_dir}/rate_t3_inputs.txt" "${dir}/rate_t3_inputs.txt"; then
+    echo "control setup failed: the perturbation did not change the inputs"
+    rm -rf "${dir}"
+    return 1
+  fi
+  t3_oracle_run "${dir}" || { rm -rf "${dir}"; return 1; }
+  if cmp -s "${t3_reference_dir}/rate_t3_golden.txt" "${dir}/rate_t3_golden.txt"; then
+    echo "control produced the committed golden from a perturbed input: the reproduction check cannot fail"
+    rm -rf "${dir}"
+    return 1
+  fi
+  rm -rf "${dir}"
+}
+
 g3_check() {
   uv run python tools/ci/check_g3.py "$@"
 }
@@ -403,11 +455,12 @@ g3_plant_control() {
 }
 
 step "uv sync --frozen" uv sync --frozen
-step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools)" \
-  uv run pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools -q
+step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools)" \
+  uv run pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools -q
 step "G8: CLAUDE.md keeps the ACTIVE-spec, number, UNKNOWN and CI-gate sections" g8_check
 step "L1: the committed vehicle card, its sensor profile and the design budget lint clean (sigma policy)" l1_card_lint
 step "L1: plant known-answer reference reproduces plant_ref_expected.txt from plant_ref_inputs.txt" plant_ref_reproduces
+step "L4: T3 oracle reproduces rate_t3_golden.txt and rate_t3_envelope.txt from rate_t3_inputs.txt" t3_reference_reproduces
 if [[ -n "${MARV_CI_BASE_REF:-}" ]]; then
   step "regression change check against ${MARV_CI_BASE_REF}" regression_change_check
 fi
@@ -444,5 +497,6 @@ step "L1 negative control (the core 2.1 example card without sigma must fail the
 step "L1 negative control (a card with sigma = 0 on a published entry must fail the parameter set build)" l1_flatten_control
 step "L1 negative control (a Python without PyYAML must fail the configure)" l1_pyyaml_control
 step "L1 negative control (perturbed plant reference inputs must not reproduce the committed expected file)" plant_ref_control
+step "L4 negative control (a perturbed T3 input, kp one ulp up, must not reproduce the committed golden)" t3_reference_control
 
 echo "ALL STEPS PASSED"

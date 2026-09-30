@@ -27,6 +27,16 @@
       }
     },
     {
+      "name": "host-gz-l4",
+      "inherits": "host-gz",
+      "displayName": "Host, Debug, gz-sim 8 plugin on the l4_rate_scripted composition",
+      "binaryDir": "${sourceDir}/build/host-gz-l4",
+      "cacheVariables": {
+        "MARV_GZ_SIL": "marv_sil_l4_rate_scripted",
+        "MARV_GZ_PARAMS": "marv_params_l4_rate_scripted"
+      }
+    },
+    {
       "name": "host-release",
       "inherits": "base",
       "displayName": "Host, Release",
@@ -59,6 +69,7 @@
     { "name": "host-debug", "configurePreset": "host-debug" },
     { "name": "host-release", "configurePreset": "host-release" },
     { "name": "host-gz", "configurePreset": "host-gz" },
+    { "name": "host-gz-l4", "configurePreset": "host-gz-l4" },
     { "name": "host-gz-release", "configurePreset": "host-gz-release" },
     { "name": "m33", "configurePreset": "m33" }
   ],
