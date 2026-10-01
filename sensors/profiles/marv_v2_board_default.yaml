@@ -11,68 +11,134 @@ classes:
         value: 4000
         unit: deg/s
         method: datasheet
-        source: "DS-000489 rev 1.1, tables 1–2"
+        source: "DS-000577 rev 1.0, §3.1 Table 1"
         sigma: UNKNOWN
         status: [UNVERIFIED]
-        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'gyro FSR up to ±4000 °/s'; the value is the largest full-scale range, ±."
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'gyro FSR up to ±4000 °/s'; the value is the largest full-scale range, ±. Quantisation: the step assumes the 20-byte high-resolution FIFO packet (DS-000577 rev 1.0 §6.1), which is always scaled to ±4000 °/s (131.1 LSB/(°/s)) whatever the user full scale; if the L9 driver reads another format, the step changes."
       gyro_noise_density:
         value: 3.8
         unit: mdeg/s/sqrt(Hz)
         method: datasheet
-        source: "DS-000489 rev 1.1, tables 1–2"
+        source: "DS-000577 rev 1.0, §3.1 Table 1"
         sigma: UNKNOWN
         status: [UNVERIFIED]
         note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: '3.8 m°/s/√Hz'."
       gyro_zero_rate_offset:
         value: 0.4
         unit: deg/s
-        method: datasheet
-        source: "DS-000489 rev 1.1, tables 1–2"
-        sigma: UNKNOWN
+        method: scenario
+        source: "board figure ±0.4 °/s from the earlier spec table (core §5); its cited document (DS-000489 rev 1.1) was not located"
+        sigma: choice
         status: [UNVERIFIED]
-        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'zero-rate offset ±0.4 °/s (board)'; the value is the ± tolerance, not a sigma."
+        conflict:
+          - value: 0.3
+            unit: deg/s
+            source: "DS-000577 rev 1.0, §3.1 Table 1, initial ZRO ±0.3 °/s, component level, 25 °C"
+            state: open
+        note: "Two figures: ±0.4 °/s (board, flown, `value`) and ±0.3 °/s (component, 25 °C, DS-000577 rev 1.0 §3.1 Table 1; the `conflict` entry). The board figure comes from the earlier spec, and its cited document (DS-000489 rev 1.1) was not located. Flown as a labelled scenario value (owner decision, 2026-10-01; decision record 0012): the board figure is the larger of the two, and a soldered part sees mounting stress that the 25 °C component figure leaves out. The owner's still-bench dataset replaces it later. The value is the ± bound, not a sigma."
       gyro_offset_tempco:
         value: 0.005
         unit: deg/s/degC
         method: datasheet
-        source: "DS-000489 rev 1.1, tables 1–2"
+        source: "DS-000577 rev 1.0, §3.1 Table 1"
         sigma: UNKNOWN
         status: [UNVERIFIED]
-        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: '±0.005 °/s/°C'; the value is the ± tolerance, not a sigma."
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: '±0.005 °/s/°C'; the value is the ± tolerance, not a sigma. DS-000577 gives this figure as board-level."
       accel_fsr:
         value: 32
         unit: g
         method: datasheet
-        source: "DS-000489 rev 1.1, tables 1–2"
+        source: "DS-000577 rev 1.0, §3.2 Table 2"
         sigma: UNKNOWN
         status: [UNVERIFIED]
-        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'accel FSR up to ±32 g'; the value is the largest full-scale range, ±."
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'accel FSR up to ±32 g'; the value is the largest full-scale range, ±. Quantisation: the step assumes the 20-byte high-resolution FIFO packet (DS-000577 rev 1.0 §6.1), which is always scaled to ±32 g (16384 LSB/g) whatever the user full scale; if the L9 driver reads another format, the step changes."
       accel_noise_density:
         value: [70, 80, 110]
         shape: set
         unit: ug/sqrt(Hz)
         method: datasheet
-        source: "DS-000489 rev 1.1, tables 1–2"
+        source: "DS-000577 rev 1.0, §3.2 Table 2"
         sigma: UNKNOWN
         status: [UNVERIFIED]
         note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Keyed by full-scale range: 70 / 80 / 110 µg/√Hz at ≤ 8 / 16 / 32 g respectively."
       accel_offset:
         value: 20
         unit: mg
-        method: datasheet
-        source: "DS-000489 rev 1.1, tables 1–2"
-        sigma: UNKNOWN
+        method: scenario
+        source: "board figure ±20 mg from the earlier spec table (core §5); its cited document (DS-000489 rev 1.1) was not located"
+        sigma: choice
         status: [UNVERIFIED]
-        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'offset ±20 mg (board)'; the value is the ± tolerance, not a sigma."
+        conflict:
+          - value: 10
+            unit: mg
+            source: "DS-000577 rev 1.0, §3.2 Table 2, zero-g initial tolerance ±10 mg, component level, 25 °C"
+            state: open
+        note: "Two figures: ±20 mg (board, flown, `value`) and ±10 mg (component, 25 °C, DS-000577 rev 1.0 §3.2 Table 2; the `conflict` entry). The board figure comes from the earlier spec, and its cited document (DS-000489 rev 1.1) was not located. Flown as a labelled scenario value (owner decision, 2026-10-01; decision record 0012): the board figure is the larger of the two, and a soldered part sees mounting stress that the 25 °C component figure leaves out. The owner's still-bench dataset replaces it later. The value is the ± bound, not a sigma."
       odr:
         value: [12.5, 6400]
         shape: range
         unit: Hz
         method: datasheet
-        source: "DS-000489 rev 1.1, tables 1–2"
+        source: "DS-000577 rev 1.0, §3.1 Table 1"
         sigma: UNKNOWN
         status: [UNVERIFIED]
-        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'ODR 12.5–6400 Hz'; [min, max]."
+        note: "board parts not yet confirmed against the KiCad schematic (core §2.3). Table: 'ODR 12.5–6400 Hz'; [min, max]. DS-000577 gives this range for low-noise mode."
+      gyro_bias_instability:
+        value: 3.8e-3
+        unit: deg/s
+        method: scenario
+        source: "labelled scenario value (owner decision A, 2026-10-01; decision record 0012). DS-000577 rev 1.0 gives no bias-instability figure"
+        sigma: choice
+        status: [UNVERIFIED]
+        note: "Rule: B = N × 1 √Hz, with N = gyro_noise_density (3.8 m°/s/√Hz, DS-000577 rev 1.0 §3.1 Table 1), so B = 3.8 m°/s = 13.68 °/h. B is the Allan minimum. Under the model's white-noise plus bias-random-walk rule this places the minimum at τ* = (N/B)² = 1 s, where the two terms are equal, so B is √2 × the white-noise Allan deviation at τ*. Rationale (owner): pessimistic at short times, the conservative side for control; keeps the derived Allan record short. The owner's still-bench dataset replaces it later. The value is a choice, not a sigma."
+      accel_bias_instability:
+        value: 110
+        unit: ug
+        method: scenario
+        source: "labelled scenario value (owner decision A, 2026-10-01; decision record 0012). DS-000577 rev 1.0 gives no bias-instability figure"
+        sigma: choice
+        status: [UNVERIFIED]
+        note: "Rule: B = N × 1 √Hz, with N = the accel noise density at the ±32 g configured range (110 µg/√Hz, DS-000577 rev 1.0 §3.2 Table 2; the largest of the three), so B = 110 µg. Same Allan reading as gyro_bias_instability (τ* = 1 s) and same rationale: pessimistic at short times, the conservative side for control; keeps the derived Allan record short; the owner's still-bench dataset replaces it later. The profile assumes the ±32 g configured accel range for the noise density. The density follows the configured range (70 / 80 / 110 µg/√Hz at ≤ 8 / 16 / 32 g, `accel_noise_density`), not the high-resolution FIFO's fixed ±32 g scaling, which sets only the quantisation step. The value is a choice, not a sigma."
+      odr_error:
+        value: 65
+        unit: ppm
+        method: derived(worst-case linear sum of the crystal's ±30 ppm tolerance at +25 °C, ±30 ppm stability over -40 to +85 °C and ±5 ppm first-year aging; not RSS)
+        source: "Abracon ABM8-272-T3 specification, Drawing #456603, rev IR, issued 2023-11-16 (the Pico 2 test setup's crystal; Raspberry Pi Pico 2 datasheet RP-008299-DS release 5 names it)"
+        sigma: UNKNOWN
+        status: [UNVERIFIED, INFERRED]
+        note: "Unit: ppm (the dimensionless fraction is 65e-6). Non-CLKIN case, kept for reference and not flown (owner, 2026-10-01): the internal oscillator, DS-000577 rev 1.0 §3.3.2, is ±1.25 % initial (12500 ppm), ±1 % over temperature with the gyro active (10000 ppm) and ±3 % with the gyro inactive (30000 ppm). These describe a different clock source, not a rival value for this entry. ±65 ppm is the ODR error relative to the plant clock, a bound, not a sigma: the datasheet limits are bounds, not σ, and no source says the terms are independent, so they are summed linearly, not by RSS. The aging term covers the first year only. These are the Pico 2 test setup's crystal values (Abracon ABM8-272-T3) until the MARV V2 BOM crystal is known; replace this entry then. It applies with the IMU clocked from the MCU via CLKIN (S4), shared with hal_time_us, against the plant clock only: one error e per run, flown at the corners -65, 0 and +65 ppm (owner decision 3, 2026-10-01). 'The ODR follows CLKIN exactly' is INFERRED: DS-000577 rev 1.0 §5's interpolator text is consistent with it but gives no number. The `conflict` entries are the IMU's internal-oscillator figures (DS-000577 rev 1.0 §3.3.2: ±1.25 % initial, ±1 % over temperature with the gyro active, ±3 % with the gyro inactive), the non-CLKIN case, explicitly not flown; they are alternatives, not rival values for the CLKIN case."
+      latency_samples:
+        value: 1
+        unit: "1"
+        method: scenario
+        source: "labelled scenario value (Luis, 2026-10-01, decision 0012, owner decision D)"
+        sigma: choice
+        status: [UNVERIFIED]
+        note: "A count of IMU samples (one sample = one tick, 156.25 us at 6.4 kHz). Not derivable from DS-000577 rev 1.0: it gives the UI LPF cut-off choices (bypass, ODR/4 ... ODR/128, register GYRO_UI_LPFBW_SEL / ACCEL_UI_LPFBW_SEL) and calls the AAF an FIR with fixed coefficients, but no filter order, tap count or group delay, and it refers to AN-000365 (ICM-456xx User Guide) for the AAF + UI LPF bandwidth. Rationale (owner): 0 is the one value a real sensor chain cannot have, and 1 sample is the smallest nonzero delay the tick model can represent. Not a proven upper bound: if a filter delay derived later (e.g. from AN-000365) is longer than 1 sample, the derived value wins. Luis's bench measurement replaces it. Stages (b) and (c) carry this latency in the design model's loop delay, so the D-term design and the stage (c) regeneration of L4 and L5 include it."
+      gyro_fifo_sensitivity:
+        value: 131.1
+        unit: LSB/(deg/s)
+        method: datasheet
+        source: "DS-000577 rev 1.0, §6.1"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "The 20-bit high-resolution FIFO format is always scaled to ±4000 °/s, whatever the user full scale. The step changes if the L9 driver reads another format (see the quantisation note on gyro_fsr and accel_fsr)."
+      accel_fifo_sensitivity:
+        value: 16384
+        unit: LSB/g
+        method: datasheet
+        source: "DS-000577 rev 1.0, §6.1"
+        sigma: UNKNOWN
+        status: [UNVERIFIED, INFERRED]
+        note: "The 20-bit high-resolution FIFO format is always scaled to ±32 g, whatever the user full scale; the accel word has 19 actual bits (LSB 0). 'g' read as standard gravity is INFERRED. The step changes if the L9 driver reads another format (see the quantisation note on gyro_fsr and accel_fsr)."
+      fifo_word_bits:
+        value: 20
+        unit: "1"
+        method: datasheet
+        source: "DS-000577 rev 1.0, §6.1"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        note: "Bits per axis word in the 20-byte high-resolution FIFO packet (the unit '1' is a bit count); the accel word has 19 actual bits (LSB 0). The word size changes if the L9 driver reads another format."
   high_g_accel:
     part: "ADI ADXL375"
     entries:

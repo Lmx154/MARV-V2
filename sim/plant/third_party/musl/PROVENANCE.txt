@@ -1,0 +1,43 @@
+Vendored from musl libc 1.2.5 (VERSION file of the tarball: 1.2.5), the official release tarball
+https://musl.libc.org/releases/musl-1.2.5.tar.gz, downloaded 2026-10-01, SHA-256 of the tarball
+a9a118bbe84d8764da0ea0d28b3ab3fae8477fc7e4085d90102b8596fc7c75e4 (computed on the download; not compared with a
+published value). musl is not a git submodule here; the tag is v1.2.5 of git://git.musl-libc.org/musl.
+
+Licence: musl is MIT ("musl as a whole is licensed under the following standard MIT license", COPYRIGHT, copied
+verbatim from the tarball root into this directory). Per-file notices are kept unmodified in every source file:
+  log.c, log_data.c     Copyright (c) 2018, Arm Limited, SPDX-License-Identifier: MIT (ARM Optimized Routines).
+  sin.c, cos.c, __sin.c, __cos.c, __rem_pio2.c, __rem_pio2_large.c
+                        Copyright (C) 1993 by Sun Microsystems, Inc. (FreeBSD msun, fdlibm): "Permission to use,
+                        copy, modify, and distribute this software is freely granted, provided that this notice is
+                        preserved" (BSD-style permissive; core C-4 allows BSD / MIT / Apache).
+  all other files       original musl files under the MIT licence above.
+
+Purpose: the plant's seeded noise path (sim/plant/src/noise) must give bit-identical normals on every host, so its
+log, sin and cos cannot be the platform's libm. These are the only maths routines that path calls, plus IEEE sqrt.
+
+Every file below is UNMODIFIED; its path in the tarball is the path under this directory (log_data.h, libm.h,
+fp_arch.h included as in the tarball; fp_arch.h is the tarball's arch/generic one, which is empty). The files are
+the transitive closure of log, sin and cos, so no call leaves this set:
+  log.c -> log_data.c, __math_divzero.c, __math_invalid.c
+  sin.c, cos.c -> __sin.c, __cos.c, __rem_pio2.c -> __rem_pio2_large.c -> floor.c, scalbn.c
+The build (sim/plant/src/noise/CMakeLists.txt) renames the five public symbols with -D (log, sin, cos, floor, scalbn
+become marv_musl_*), compiles as C with -ffp-contract=off and -U__FP_FAST_FMA (so log.c takes its portable
+non-fused branch on every target), without -ffast-math.
+
+SHA-256 of each file as copied (equal to the tarball's):
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  arch/generic/fp_arch.h
+f9bc4423732350eb0b3f7ed7e91d530298476f8fec0c6c427a1c04ade22655af  COPYRIGHT
+d5a11757541471030d8f4bf7a39a29de35732ecbb291b2f45bf03296be4f25a2  src/internal/libm.h
+3f0f774aab60a18d7ef935ffdf121bcda17cbadabff14096c614da22e31a42c1  src/math/__cos.c
+3a74e054057d636fa494bdd76a53a40db5cee618264f6ab31cb0538ba63c6bda  src/math/cos.c
+b9ccb9363719a84be218d60c56717f4fb0234e170c305e36ce21c30e1f42f8e1  src/math/floor.c
+a0694d8587a0d145d0f8ae87cbffba014d7988bc2ebcbfad94cea73b394c9ecc  src/math/log.c
+e96bcd99d88fc57e0f3686299014f4b949a6212603ce237f39e16cedc155617a  src/math/log_data.c
+a8dced6f0821f30cad040ba326b03e419fbe0a750ed8f3b0d7145992bee4bccc  src/math/log_data.h
+84aa910bdc5e7ccfed42098c37c44e278aa942d46e5a51d5ee8273336c79e719  src/math/__math_divzero.c
+b56440ed59fa1e1aaaf6bf8b672c8bb71eaf844457906f7773da1d67d7ef013b  src/math/__math_invalid.c
+938329e0939cd83ee2185a52154b41242f618d4a6df1b08395f344da33d4f1e6  src/math/__rem_pio2.c
+b97f19fb5951c83a0c10506fab35646caefde13bd03100ad2af55ef00af0b9fb  src/math/__rem_pio2_large.c
+a2e766283ed30c2b30c71e01dbdabef58faf92cc9aa84a01c1ce1069b6625696  src/math/scalbn.c
+f3a37ef9bcfb8a2f9c809d8c7f1aa2c17c8c3319ad7fb2fe7c0a6284ea8859d2  src/math/__sin.c
+24e53a9d85f196f66919cc19247be5480bb607ef38844b1a24bc47c4fe4974ef  src/math/sin.c

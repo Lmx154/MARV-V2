@@ -10,14 +10,18 @@
 #include "marv/prim/constants.hpp"
 #include "marv/prim/quat.hpp"
 #include "marv/types/actuator.hpp"
+#include "imu_model.hpp"
 #include "plant_model.hpp"
 
 static_assert(MARV_PLANT_N_MOTORS == marv::kQuadXMotors);
 
 struct marv_plant {
-  explicit marv_plant(const marv::plant::Params<double>& p, std::uint32_t poles) : model(p), pole_count(poles) {}
+  explicit marv_plant(const marv::plant::Params<double>& p, std::uint32_t poles, std::uint64_t seed_in)
+      : model(p), pole_count(poles), seed(seed_in) {}
   marv::plant::Model<double> model;
   std::uint32_t pole_count;
+  std::uint64_t seed;
+  marv::plant::ImuModel imu;
 };
 
 namespace marv::plant {
@@ -73,6 +77,18 @@ bool body_valid(const marv_plant_body& b) {
   return std::fabs(q.norm2() - 1.0) <= kQuatNormTol;
 }
 
+bool imu_axis_valid(const marv_plant_imu_axis_config& a) {
+  return finite(a.noise_density) && a.noise_density >= 0.0 && finite(a.bias_instability) && a.bias_instability >= 0.0 &&
+         positive(a.lsb) && positive(a.full_scale) &&
+         a.full_scale <= static_cast<double>(std::numeric_limits<float>::max()) * 0.5 && all_finite(a.turn_on_bias) &&
+         finite(imu_detail::rw_gain(ImuAxisParams{a.noise_density, a.bias_instability, a.lsb, a.full_scale, {}}));
+}
+
+ImuAxisParams to_imu_axis(const marv_plant_imu_axis_config& a) {
+  return ImuAxisParams{a.noise_density, a.bias_instability, a.lsb, a.full_scale,
+                       {a.turn_on_bias[0], a.turn_on_bias[1], a.turn_on_bias[2]}};
+}
+
 Params<double> to_params(const marv_plant_config& c) {
   Params<double> p;
   p.mass = c.mass_kg;
@@ -114,7 +130,7 @@ marv_plant_status marv_plant_create(const marv_plant_config* cfg, marv_plant** o
   if (!marv::plant::config_valid(*cfg)) {
     return MARV_PLANT_E_CONFIG;
   }
-  marv_plant* plant = new (std::nothrow) marv_plant(marv::plant::to_params(*cfg), cfg->pole_count);
+  marv_plant* plant = new (std::nothrow) marv_plant(marv::plant::to_params(*cfg), cfg->pole_count, cfg->rng_seed);
   if (plant == nullptr) {
     return MARV_PLANT_E_ALLOC;
   }
@@ -167,6 +183,63 @@ marv_plant_status marv_plant_step(marv_plant* plant, const marv_plant_body* body
   return MARV_PLANT_OK;
 }
 
+marv_plant_status marv_plant_imu_attach(marv_plant* plant, const marv_plant_imu_config* cfg) {
+  using namespace marv::plant;
+  if (plant == nullptr || cfg == nullptr) {
+    return MARV_PLANT_E_NULL;
+  }
+  if (cfg->struct_size != sizeof(marv_plant_imu_config)) {
+    return MARV_PLANT_E_ABI;
+  }
+  if (cfg->latency_samples > kImuMaxLatency || !imu_axis_valid(cfg->gyro) || !imu_axis_valid(cfg->accel)) {
+    return MARV_PLANT_E_CONFIG;
+  }
+  if (plant->imu.attached()) {
+    return MARV_PLANT_E_STATE;
+  }
+  ImuParams p;
+  p.gyro = to_imu_axis(cfg->gyro);
+  p.accel = to_imu_axis(cfg->accel);
+  p.latency = cfg->latency_samples;
+  plant->imu.attach(p, plant->seed);
+  return MARV_PLANT_OK;
+}
+
+marv_plant_status marv_plant_imu_sample(marv_plant* plant, const marv_plant_body* body, double dt_s,
+                                        marv_plant_imu_out* out) {
+  using namespace marv::plant;
+  if (plant == nullptr || body == nullptr || out == nullptr) {
+    return MARV_PLANT_E_NULL;
+  }
+  if (body->struct_size != sizeof(marv_plant_body)) {
+    return MARV_PLANT_E_ABI;
+  }
+  if (!body_valid(*body)) {
+    return MARV_PLANT_E_BODY;
+  }
+  if (!(std::isfinite(dt_s) && dt_s > 0.0)) {
+    return MARV_PLANT_E_DT;
+  }
+  if (!plant->imu.attached()) {
+    return MARV_PLANT_E_STATE;
+  }
+  // Specific force: the rotor thrust after the last step over the mass, along -z_FRD (no gravity, no drag at v0).
+  const Params<double>& mp = plant->model.params();
+  double thrust = 0.0;
+  for (std::size_t i = 0; i < kMotors; ++i) {
+    const double omega = plant->model.omega()[i];
+    thrust += mp.thrust_coeff * omega * omega;
+  }
+  const std::array<double, 6> truth = {body->omega_frd_rad_s[0], body->omega_frd_rad_s[1], body->omega_frd_rad_s[2],
+                                       0.0, 0.0, -(thrust / mp.mass)};
+  const ImuOut m = plant->imu.sample(truth, dt_s);
+  out->gyro_rad_s = {m.gyro[0], m.gyro[1], m.gyro[2]};
+  out->accel_m_s2 = {m.accel[0], m.accel[1], m.accel[2]};
+  out->temp_k = 0.0F;
+  out->flags = m.flags;
+  return MARV_PLANT_OK;
+}
+
 const char* marv_plant_status_str(marv_plant_status s) {
   switch (s) {
     case MARV_PLANT_OK: return "ok";
@@ -177,6 +250,7 @@ const char* marv_plant_status_str(marv_plant_status s) {
     case MARV_PLANT_E_CMD: return "invalid DShot command";
     case MARV_PLANT_E_DT: return "invalid dt";
     case MARV_PLANT_E_ALLOC: return "allocation failed";
+    case MARV_PLANT_E_STATE: return "IMU entry out of order";
     default: return "unknown status";
   }
 }

@@ -529,8 +529,8 @@ def test_profile_sigma_zero_rejected(tmp_path):
 
 
 def test_profile_plus_minus_figure_must_not_become_sigma_without_rule(tmp_path):
-    p = profile(tmp_path, lambda d: d["classes"]["imu"]["entries"]["gyro_zero_rate_offset"].update(sigma=0.4))
-    reject("--profile", p, "gyro_zero_rate_offset: sigma_rule: required when sigma is numeric")
+    p = profile(tmp_path, lambda d: d["classes"]["imu"]["entries"]["gyro_offset_tempco"].update(sigma=0.005))
+    reject("--profile", p, "gyro_offset_tempco: sigma_rule: required when sigma is numeric")
 
 
 def test_profile_id_must_match_file_name(tmp_path):

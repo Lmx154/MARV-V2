@@ -7,3 +7,6 @@ t4_confidence_tracking
 t4_pass_probability_safety
 t4_confidence_safety
 allan_check_confidence
+stream_independence_confidence
+normal_moments_confidence
+per_push_check_time_max

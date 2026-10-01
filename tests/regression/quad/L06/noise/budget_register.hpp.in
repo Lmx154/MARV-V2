@@ -1,0 +1,12 @@
+// Generated at configure time from @MARV_NOISE_BUDGET_FILE@ (the design-budget register); do not edit.
+#pragma once
+
+namespace marv::l06 {
+
+// Budget entry normal_moments_confidence (family-wise confidence of the L6 normal-moments check).
+inline constexpr double kNormalMomentsConfidence = @MARV_NOISE_NORMAL_MOMENTS_CONFIDENCE@;
+
+// Budget entry stream_independence_confidence (family-wise confidence of the L6 stream-independence check).
+inline constexpr double kStreamIndependenceConfidence = @MARV_NOISE_STREAM_INDEPENDENCE_CONFIDENCE@;
+
+}  // namespace marv::l06

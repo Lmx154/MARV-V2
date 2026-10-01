@@ -305,7 +305,7 @@ part's profile is fitted from it, with the datasheet kept alongside as the compa
 
 | Part | Profile figures | Source |
 | --- | --- | --- |
-| TDK ICM-45686 IMU | gyro FSR up to ±4000 °/s; 3.8 m°/s/√Hz; zero-rate offset ±0.4 °/s (board), ±0.005 °/s/°C. Accel FSR up to ±32 g; 70 / 80 / 110 µg/√Hz at ≤ 8 / 16 / 32 g; offset ±20 mg (board). ODR 12.5–6400 Hz | DS-000489 rev 1.1, tables 1–2 |
+| TDK ICM-45686 IMU | gyro FSR up to ±4000 °/s; 3.8 m°/s/√Hz; zero-rate offset ±0.4 °/s (board) / ±0.3 °/s (component, 25 °C, DS-000577 §3.1), UNVERIFIED; the board figure comes from the earlier spec, and its cited document (DS-000489 rev 1.1) was not located; ±0.005 °/s/°C. Accel FSR up to ±32 g; 70 / 80 / 110 µg/√Hz at ≤ 8 / 16 / 32 g; offset ±20 mg (board) / ±10 mg (component, 25 °C, DS-000577 §3.2), UNVERIFIED; the board figure comes from the earlier spec, and its cited document (DS-000489 rev 1.1) was not located. ODR 12.5–6400 Hz (low-noise mode) | DS-000577 rev 1.0, §3.1–3.2, tables 1–2 |
 | ADI ADXL375 high-g accel | ±200 g; 49 mg/LSB; 5 mg/√Hz; bandwidth = ODR/2, ODR up to 3200 Hz; offset ±400 mg typical | ADXL375 Rev. B, table 1 |
 | Bosch BMP581 barometer | noise 0.78 Pa (OSR ×1) to 0.21 Pa (×16); ODR ≤ 240 Hz; relative accuracy ±6 Pa; TCO ±0.5 Pa/K | BST-BMP581-DS004-13, tables 1, 7, 9 |
 

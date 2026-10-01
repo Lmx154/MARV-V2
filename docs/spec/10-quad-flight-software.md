@@ -438,8 +438,8 @@ and its worst case is measured at L9.
 
 **EMB-6 worked example with today's IMU** (the rule applies to any part):
 
-- A high-resolution ICM-45686 FIFO packet is 20 bytes (DS-000489 §5). At 6.4 kHz that is 128 kB/s for the IMU alone.
-- The FIFO holds 2 KB by default, 8 KB with APEX off: 16 ms (64 ms) of samples at 6.4 kHz. That is the hard deadline
+- A high-resolution ICM-45686 FIFO packet is 20 bytes (DS-000577 rev 1.0 §6.1: header, accel, gyro, 2-byte temperature, timestamp, 3 extension bytes). At 6.4 kHz that is 128 kB/s for the IMU alone.
+- The FIFO holds 2 KB by default, 8 KB with APEX off (DS-000577 rev 1.0 §6): 16 ms (64 ms) of samples at 6.4 kHz. That is the hard deadline
   for a FIFO read on core 1.
 
 ---

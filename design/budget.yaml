@@ -187,3 +187,43 @@ allan_check_confidence:
     Table 5). It sets the width of the bound, and so the record length at which the x 1.1 noise-density and
     bias-instability negative controls fall outside it. Luis's choice (2026-09-30, decision 0009).
   used_by: [quad L6 Allan check]
+
+stream_independence_confidence:
+  value: 0.99
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    Family-wise confidence of the quad L6 stage (a) T1 stream-independence check (quad spec §4 L6 pass bar (a),
+    "distinct streams are independent"). The check holds at this confidence over its whole family of stream pairs and
+    lags together, with the per-test level from Bonferroni's correction, alpha = (1 - c)/m (Dunn 1961, J. Am. Stat.
+    Assoc. 56:52-64), which holds under any dependence between the tests (decision 0012, owner decision B). It has
+    its own entry because each register entry has one purpose, as with the class split in decision 0009; it is not
+    allan_check_confidence. Luis's choice (2026-10-01, decision 0012).
+  used_by: [quad L6 stream-independence check]
+
+normal_moments_confidence:
+  value: 0.99
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    Family-wise confidence of the quad L6 stage (a) T1 check that the plant's standard normals have the moments of
+    N(0, 1) (mean, variance, skewness, excess kurtosis). The four statistics come from one sample, so they are one
+    family, with the per-test level from Bonferroni's correction, alpha = (1 - c)/m (Dunn 1961, J. Am. Stat. Assoc.
+    56:52-64). It has its own entry because each register entry has one purpose; it is neither allan_check_confidence
+    nor stream_independence_confidence. Luis's choice (2026-10-01, decision 0012).
+  used_by: [quad L6 normal-moments check]
+
+per_push_check_time_max:
+  value: 60
+  unit: s
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    A labelled convenience value, not a derived or sourced one (kind: design-budget, the closest to a convenience
+    choice in the register; the scenario kind is for scenario values, which live in design/scenario_values.yaml). Longest
+    measured run time of a check that still runs on every push. A check whose measured run time exceeds it runs nightly
+    (MARV_CI_MODE=full) instead of per push, and its spec line says so (decision 0009, owner's second message, item 4).
+    Luis's words (2026-09-30, S9): "60 s is fine as the per-push threshold; record it as a labelled convenience value".
+  used_by: [quad L6 stage (a) T1 checks (per-push or nightly placement)]

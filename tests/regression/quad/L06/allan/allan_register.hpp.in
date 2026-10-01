@@ -1,0 +1,21 @@
+// Generated at configure time from @MARV_ALLAN_BUDGET_FILE@ (the design-budget register) and @MARV_ALLAN_SCENARIO_FILE@
+// (the scenario values); do not edit.
+#pragma once
+
+#include <cstdint>
+
+namespace marv::l06 {
+
+// Budget entry allan_check_confidence (two-sided confidence of the L6 stage (a) T1 Allan check, before the family-wise
+// split).
+inline constexpr double kAllanCheckConfidence = @MARV_ALLAN_CHECK_CONFIDENCE@;
+
+// Budget entry per_push_check_time_max, seconds (the S9 labelled convenience value): a check that runs longer in
+// host-release runs nightly (ctest label allan_long).
+inline constexpr double kPerPushCheckTimeMaxS = @MARV_ALLAN_PER_PUSH_CHECK_TIME_MAX@;
+
+// Scenario values tick_period_num_us and tick_period_den: the tick period is num / den microseconds.
+inline constexpr std::uint32_t kTickPeriodNumUs = @MARV_ALLAN_TICK_PERIOD_NUM_US@;
+inline constexpr std::uint32_t kTickPeriodDen = @MARV_ALLAN_TICK_PERIOD_DEN@;
+
+}  // namespace marv::l06

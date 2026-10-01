@@ -1,7 +1,7 @@
 # marv_plant v0 (host only): rotor thrust and torque, motor/ESC lag, gravity. C ABI in include/marv_plant.h.
 add_library(marv_plant STATIC src/marv_plant.cpp)
 target_include_directories(marv_plant PUBLIC include)
-target_link_libraries(marv_plant PRIVATE marv_prim marv_types)
+target_link_libraries(marv_plant PRIVATE marv_prim marv_types marv_plant_noise)
 marv_apply_flags(marv_plant)
 
 # The plant configuration header, the plugin configuration and the SDF come from the product card of the parameter set
@@ -9,3 +9,6 @@ marv_apply_flags(marv_plant)
 include(${PROJECT_SOURCE_DIR}/cmake/marv_card_gen.cmake)
 marv_add_plant_card_config(marv_plant_card CARD "${MARV_VEHICLE_CARD}")
 marv_add_plant_card_sdf(marv_plant_card_sdf CARD "${MARV_VEHICLE_CARD}")
+# The generic IMU's configuration header, from the IMU class of the sensor profile (L6 stage (a), decision 0012).
+marv_add_imu_profile_config(marv_imu_profile_config PROFILE "${PROJECT_SOURCE_DIR}/sensors/profiles/marv_v2_board_default.yaml")
+add_subdirectory(src/noise)

@@ -10,6 +10,19 @@
 //
 // The motor sub-step of the plant is h = t_tick (exact zero-order hold). That is the caller's configuration
 // (marv_plant_config::motor_substep_s = t_tick); the adapter does not check it.
+//
+// Clock error e (decision 0012, owner decisions 2 and 3) enters in exactly one place: the sim-side true tick time
+// t_true = t_nom / (1 + e), computed by true_tick_period_s and stored as the adapter's tick time. That value is the dt
+// of marv_plant_step and of marv_plant_imu_sample. e never reaches the SIL: its tick period stays the nominal rational
+// and its stamps are unchanged. e = corner * odr_error, corner in {-1, 0, +1}; corner 0 gives t_true = t_nom bitwise.
+//
+// Opt-in IMU path (AdapterConfig::imu non-null; the default leaves every output as without it). The adapter attaches
+// the plant's IMU once at construction. For each tick j, in this order: (1) marv_plant_imu_sample(body, t_true) gives the
+// sample of tick j; (2) the command source takes it and gives dshot_j; (3) marv_plant_step(body, dshot_j, t_true).
+// The sample of tick j therefore measures the body held over the host step and the rotor state after step j - 1 (the
+// initial rotor state at the first tick): what the SIL's tick j can have seen before it issues dshot_j, so dshot_j
+// cannot reach its own sample. The truth-gyro path has the same freshness (truth_gyro.hpp: the body at the host step's
+// start, taken before the tick's step).
 
 #include <array>
 #include <cstdint>
@@ -19,6 +32,7 @@
 
 #include "marv/gz/frames.hpp"
 #include "marv_plant.h"
+#include "marv_sil.h"
 
 namespace marv::gz {
 
@@ -27,11 +41,22 @@ using Dshot = std::array<std::uint16_t, MARV_PLANT_N_MOTORS>;
 // t_tick in seconds from the SIL period rational num_us / den microseconds, one rounding: num_us / (den * 1e6).
 double tick_period_s(std::uint32_t num_us, std::uint32_t den);
 
+// The fractional clock error e = corner * odr_error. corner must be -1, 0 or +1 and odr_error finite with
+// |odr_error| < 1, else NaN (which marv_plant_step refuses as MARV_PLANT_E_DT).
+double clock_error(int corner, double odr_error);
+
+// The sim-side true tick time t_nom_s / (1 + e): the only place e is applied. NaN if e is non-finite or 1 + e <= 0
+// (t_nom_s is not checked: marv_plant_step validates dt). e = 0 returns t_nom_s bitwise (division by exactly 1).
+double true_tick_period_s(double t_nom_s, double e);
+
 class CommandSource {
  public:
   virtual ~CommandSource() = default;
   // The DShot values of tick `tick`, logical motors 1..4 at index 0..3. False on failure.
   virtual bool dshot(std::uint64_t tick, Dshot& out) = 0;
+  // The same, given the IMU sample of the tick (never null when called by an Adapter with the IMU path enabled). The
+  // default ignores the sample and calls the method above.
+  virtual bool dshot(std::uint64_t tick, const marv_imu_meas* imu, Dshot& out);
 };
 
 // A function of the tick number, for tests.
@@ -57,9 +82,25 @@ class SilCommandSource final : public CommandSource {
   std::uint64_t stamp_us_ = 0;
 };
 
+// The non-truth IMU source: marv_sil_tick(tick, 1, imu, out) with the plant's IMU bytes verbatim (marv_plant_imu_out
+// and marv_imu_meas have the same layout, static_asserted in adapter.cpp). Without a sample (the two-argument call or a
+// null pointer) it passes a zeroed one, as SilCommandSource. The caller has run marv_sil_init. No truth symbol.
+class ImuSilCommandSource final : public CommandSource {
+ public:
+  bool dshot(std::uint64_t tick, Dshot& out) override;
+  bool dshot(std::uint64_t tick, const marv_imu_meas* imu, Dshot& out) override;
+  std::int32_t last_status() const { return status_; }        // marv_sil_status of the last call
+  std::uint64_t last_stamp_us() const { return stamp_us_; }   // the SIL's t_us of the last tick
+
+ private:
+  std::int32_t status_ = 0;
+  std::uint64_t stamp_us_ = 0;
+};
+
 struct TickOutput {
   std::uint64_t tick = 0;
   Dshot dshot{};
+  marv_plant_imu_out imu{};  // the sample of this tick; zero unless the IMU path is enabled
   marv_plant_out out{};  // as marv_plant_step returned it, NED
   Wrench wrench_enu{};   // W_j
 };
@@ -73,24 +114,37 @@ struct StepResult {
   std::vector<TickOutput> ticks;              // the ticks completed, in order
 };
 
+struct AdapterConfig {
+  double t_tick_nominal_s = 0.0;                // t_nom, from tick_period_s
+  int clock_corner = 0;                         // -1, 0, +1
+  double odr_error = 0.0;                       // magnitude of the fractional clock error, from the caller
+  const marv_plant_imu_config* imu = nullptr;   // non-null enables the IMU path (read during construction only)
+};
+
 class Adapter {
  public:
-  // Takes ownership of `plant` (destroyed with the adapter). `source` must outlive the adapter.
+  // Takes ownership of `plant` (destroyed with the adapter). `source` must outlive the adapter. The three-argument
+  // form is the config with t_tick_nominal_s = t_tick_s, corner 0 and no IMU.
   Adapter(marv_plant* plant, CommandSource& source, double t_tick_s);
+  Adapter(marv_plant* plant, CommandSource& source, const AdapterConfig& cfg);
   ~Adapter();
   Adapter(const Adapter&) = delete;
   Adapter& operator=(const Adapter&) = delete;
 
-  double t_tick_s() const { return t_tick_s_; }
+  double t_tick_s() const { return t_tick_s_; }  // t_true
+  bool imu_enabled() const { return imu_enabled_; }
+  marv_plant_status imu_attach_status() const { return imu_attach_status_; }  // MARV_PLANT_OK when the IMU is off
 
-  // m >= 1 else kZeroTicks with nothing done. On a failure part-way the plant has already advanced by the completed
-  // ticks and `ticks` holds them.
+  // m >= 1 else kZeroTicks with nothing done. A failed IMU attach is kPlant with that status, nothing done. On a
+  // failure part-way the plant has already advanced by the completed ticks and `ticks` holds them.
   StepResult step(const marv_plant_body& body, std::uint64_t first_tick, std::uint32_t m);
 
  private:
   marv_plant* plant_;
   CommandSource& source_;
   double t_tick_s_;
+  bool imu_enabled_ = false;
+  marv_plant_status imu_attach_status_ = MARV_PLANT_OK;
 };
 
 }  // namespace marv::gz

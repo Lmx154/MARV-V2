@@ -1,4 +1,4 @@
-# Handoff: quad L6 stage (a) is next; the T3 storage migration is on master (decision 0011)
+# Handoff: quad L6 stage (a) closed (decision 0012); next is stage (b)
 
 2026-10-01. Written for the next agent working in this repository. This file records state; it adds no scope. The
 specs remain the only planning documents (core §0 rule 5).
@@ -17,7 +17,7 @@ layer end." Rewrite this file in the same change as every decision record and ev
    term"** is the current layer: Builds, stages (a)–(e) and the pass bar, all approved by Luis (0009). §6.2 QF-3 now
    includes `Ms_max`; QF-7 names the notch harmonics.
 4. `docs/spec/20-ground-segment.md` and `30-rocket.md` are PARKED: read them for context, never implement from them.
-5. `docs/decisions/0001`–`0011`. **0011** moves the T3 references to generator + inputs + `SHA256SUMS`. **0009 opens L6**: Luis's L6 decisions verbatim, D1–D7 (D term), F1–F3 (ω×Jω), the
+5. `docs/decisions/0001`–`0012`. **0012** is L6 stage (a): every owner ruling of 2026-10-01 verbatim (datasheet, crystal, clock model, offsets, A–D, licence, Bonferroni), the build P1–P7 and its evidence. **0011** moves the T3 references to generator + inputs + `SHA256SUMS`. **0009 opens L6**: Luis's L6 decisions verbatim, D1–D7 (D term), F1–F3 (ω×Jω), the
    new register entries and the gate file. 0010 is the L5 chirp-cache memory fix (frozen edit, approved). 0005 and
    0006 hold the L4 and L5 choices: read them whole before touching the rate loop, the attitude loop, their gains or
    any L04/L05 test.
@@ -70,21 +70,35 @@ Sources for stage (a):
 
 ## Next steps, in Luis's order
 
-1. **Stage (a) prerequisites to bring Luis:** the two-line DS-000577 spec fix (core §5, quad §5.5) for approval, and
-   the one-word questions stage (a) is blocked on.
-2. **Stage (a), sensor noise model** (quad §4 L6, pass bar lines (a)):
-   - The generic IMU model driven by the profile, with seeded per-sensor streams.
-   - The Allan check, with its two negative controls.
-   - SIM-2 with noise.
-   - The adapter's sensor bytes equal a direct `marv_plant` call.
-   - ODR/clock error e at the corners −65, 0 and +65 ppm, against the plant clock.
-
-   Stage (a)'s decision record logs the DS-000489 → DS-000577 spec gap. Its reference sets go in
-   `tools/refdata/refdata.py`'s registry, never committed (0011).
+1. **Stage (b), first item (Luis, 2026-10-01):** close the gap "nothing enforces the 60 s limit". Set CTest's TIMEOUT
+   on the per-push checks from `per_push_check_time_max`, so an overrun fails CI instead of relying on a measurement.
+   Stage (a) is closed and on `master` (approved by Luis, 2026-10-01, untagged). Its tests under
+   `tests/regression/quad/L06/{noise,imu,adapter,sim2,allan,tools}` are frozen; any edit to them needs a decision
+   record.
+2. **Stage (b), the gyro chain** (quad §4 L6, pass bar (b)): the low-pass and the eRPM-tracking notches at 1×/2×/3×
+   rotor frequency (QF-7), the eRPM path through `hal_sim`, and the rotor vibration model with its amplitude swept and
+   flagged unsourced (0009 owner decision 4).
+   - Stages (b) and (c) carry `latency_samples` = 1 in the design model's loop delay (0012, owner decision D).
+   - Owner question E (clock corners on Gazebo's integer-nanosecond host step: round outward, 70.4 ppm at m = 1 and
+     67.2 ppm at m = 2, or nearest, 64.0 ppm; lead recommends outward) goes to Luis with the stage (b) choices if stage
+     (b) needs it, otherwise before stage (e)'s T4.
 3. Still owed to Luis from 0009: the final CI split with measured times, and the T4 confirmation seed count with its
-   cost.
-4. **Stage (c), carried:** re-run `L05/results/step_cause/step_cause.py` at N = 1 when D7 regenerates L5, under stage
-   (c)'s record (Luis, 2026-10-01). Today's `cause.txt` describes att_loop_ratio 2 (H = 10372) from before `0533044`.
+   cost. Add to it the T4 turn-on-corner count (nominal plus each scenario's worst T3 corner) and its cost (0012).
+4. **Stage (c), carried:**
+   - Re-run `L05/results/step_cause/step_cause.py` at N = 1 when D7 regenerates L5, under stage (c)'s record (Luis,
+     2026-10-01). Today's `cause.txt` describes att_loop_ratio 2 (H = 10372) from before `0533044`.
+   - The per-sample noise convention σ_d = N·√(f_s/2) (0012) feeds the D-path noise budget.
+
+## L6 stage (a) in one paragraph (decision 0012)
+
+The profile drives an opt-in IMU model in `marv_plant`. Each sample is the truth delayed by L samples, plus a bias
+random walk from the turn-on corner, plus white noise, quantised to the 20-bit FIFO step and saturated with a flag per
+axis. The noise comes from counter-mode SplitMix64 streams with Box–Muller normals; `log`, `sin` and `cos` are vendored
+from musl 1.2.5 (MIT, Arm MIT, Sun fdlibm notices; `THIRD_PARTY_NOTICES.md`).
+- The clock error e enters once, as the adapter's true tick t_nom/(1 + e). `fw/` never sees it.
+- `tools/card/gen_imu_config.py` generates the config from the profile, refusing UNKNOWN.
+- The Allan check derives its own record (13.2 M samples) and runs per push in about 4 s.
+- There is no generated reference data for stage (a), so nothing went into `refdata`.
 
 ## T3 reference storage (decision 0011, approved 2026-10-01)
 
@@ -125,14 +139,16 @@ Stage (c) evaluates ω×Jω feed-forward (F1–F3) with the D term (D1–D7), th
   - `7d5a663`: the L6 spec section, the register entries (`Ms_max` 2.0, `d_path_noise_budget` 0.5,
     `t4_pass_probability_{tracking,safety}` 0.90/0.95, `t4_confidence_{tracking,safety}` 0.90/0.95,
     `allan_check_confidence` 0.99), the `L06/param_ids` manifest and the gate-file condition (0009).
+  - `3cf3e98` (pushed 2026-10-01, no tag): the T3 reference storage migration (0011) and the handoff. Its gz-l5 job
+    generated the L5 reference set itself on a fresh clone and passed.
+  - The next commit on `master`: L6 stage (a) (0012) and the two spec fixes it carries.
   - `3158fb9`: `local_ci.sh` limits from the measured runner (4 CPUs, 16765378560 B RAM, 1025118208 B headroom, no
     swap locally), sampler and docker-start guards.
-- **L6 progress.** Opened: spec, register and gate (0009). Nothing built: `tests/regression/quad/L06/` holds only
-  `param_ids`. Stages (a)–(e) are all open.
+- **L6 progress.** Opened: spec, register and gate (0009). Stage (a) is closed (0012). Stages (b)–(e) are open.
 - **Measured wall-clock** (marv-ci-gz, before the split): L02 gz about 1.7 min, `gz_l4` 2 min 21 s, `gz_l5` about
   9 min (548 s before 0010, 539 s after); the L05 T3 oracle about 50 s on the host, 2 min 20 s in marv-ci.
-- **Expected results.** ctest 454/454 (debug and release), frozen 453/453; L04 gz 40 passed, 1 xfailed; L05 gz 63
-  passed, 1 xfailed; 0 skipped.
+- **Expected results with stage (a).** ctest 535/535 (debug and release), frozen 534; core tools tests 921 passed,
+  1 skipped (pre-existing); L04 gz 40 passed, 1 xfailed; L05 gz 63 passed, 1 xfailed.
 - **Local leftovers.** Branches `quad-l5`, `quad-l5-p9b`, `worktree-agent-*` are merged into `master`; worktrees under
   `.claude/worktrees/` can be removed.
 

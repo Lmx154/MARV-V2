@@ -61,3 +61,29 @@ function(marv_add_plant_card_sdf target)
   add_custom_target(${target} ALL DEPENDS "${sdf}")
   set_target_properties(${target} PROPERTIES MARV_SDF "${sdf}")
 endfunction()
+
+# marv_add_imu_profile_config(<target> PROFILE <profile>)
+#
+# Runs tools/card/gen_imu_config.py at build time and exposes the generated header marv/sim/imu_profile_config.hpp
+# (marv::sim::imu_profile_config(), imu_corner_config(), kImuOdrError, the turn-on bias bounds) through the INTERFACE
+# target <target> (include directory, build ordering, and a link to marv_plant for the config struct). PROFILE is
+# repository-relative or absolute; it, the generator and its linter and schema are the dependencies.
+function(marv_add_imu_profile_config target)
+  cmake_parse_arguments(ARG "" "PROFILE" "" ${ARGN})
+  cmake_path(ABSOLUTE_PATH ARG_PROFILE BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE OUTPUT_VARIABLE profile)
+  set(gen_dir "${CMAKE_BINARY_DIR}/generated/imu_profile")
+  set(header "${gen_dir}/marv/sim/imu_profile_config.hpp")
+  add_custom_command(
+    OUTPUT "${header}"
+    COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/card/gen_imu_config.py"
+            --profile "${profile}" --out "${header}"
+    DEPENDS "${profile}" "${PROJECT_SOURCE_DIR}/tools/card/gen_imu_config.py"
+            "${PROJECT_SOURCE_DIR}/tools/card/schema.py" "${PROJECT_SOURCE_DIR}/tools/card/lint.py"
+    COMMENT "Generating the IMU configuration header from the sensor profile"
+    VERBATIM)
+  add_custom_target(${target}_gen DEPENDS "${header}")
+  add_library(${target} INTERFACE)
+  add_dependencies(${target} ${target}_gen)
+  target_include_directories(${target} INTERFACE "${gen_dir}")
+  target_link_libraries(${target} INTERFACE marv_plant)
+endfunction()
