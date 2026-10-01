@@ -236,6 +236,64 @@ l1_flatten_control() {
   rm -rf "${dir}" "${log}"
 }
 
+# The per-push time limit (design/budget.yaml, per_push_check_time_max) is the CTest TIMEOUT of every per-push check
+# (cmake/marv_test_timeout.cmake). Positive check: in the host-debug build every test carries TIMEOUT equal to the
+# register value, read here independently with PyYAML, except the two reference-set generation steps (decision 0011),
+# which carry none.
+per_push_timeout_applied() {
+  ctest --preset host-debug --show-only=json-v1 | uv run python -c '
+import json, sys, yaml
+limit = yaml.safe_load(open("design/budget.yaml"))["per_push_check_time_max"]["value"]
+tests = json.load(sys.stdin)["tests"]
+bad, without = [], []
+for t in tests:
+    got = [p["value"] for p in t["properties"] if p["name"] == "TIMEOUT"]
+    if not got:
+        without.append(t["name"])
+    elif got != [limit]:
+        bad.append((t["name"], got))
+print(f"tests: {len(tests)}, with TIMEOUT = {limit}: {len(tests) - len(without) - len(bad)}, without TIMEOUT: {sorted(without)}")
+if bad or sorted(without) != ["marv_reference_quad_L04_t3_ensure", "marv_reference_quad_L05_t3_ensure"]:
+    print("TIMEOUT differs from the register value:", bad[:5], "unexpectedly without:", without)
+    sys.exit(1)
+'
+}
+
+# Negative control for the per-push timeout: a planted test (tests/regression/quad/L06/controls) sleeps three times the
+# limit. The control build replaces the register value with 1 s through MARV_PER_PUSH_CHECK_TIME_MAX_OVERRIDE (used only
+# here) so it takes seconds; ctest must report the planted test as a timeout failure, and its TIMEOUT must be the override.
+per_push_timeout_control() {
+  local dir log status=0
+  dir="$(mktemp -d)"
+  log="$(mktemp)"
+  if ! cmake -S . -B "${dir}" -G Ninja -DMARV_TARGET=host -DCMAKE_BUILD_TYPE=Debug -DMARV_PER_PUSH_CHECK_TIME_MAX_OVERRIDE=1 \
+       -DFETCHCONTENT_SOURCE_DIR_GOOGLETEST="${PWD}/build/host-debug/_deps/googletest-src" >"${log}" 2>&1; then
+    cat "${log}"
+    echo "control configure failed"
+    rm -rf "${dir}" "${log}"
+    return 1
+  fi
+  if ! ctest --test-dir "${dir}" -R '^per_push_timeout_planted$' --show-only=json-v1 \
+       | uv run python -c 'import json,sys; t=json.load(sys.stdin)["tests"]; sys.exit(0 if len(t)==1 and [p["value"] for p in t[0]["properties"] if p["name"]=="TIMEOUT"]==[1.0] else 1)'; then
+    echo "control setup failed: the planted test is missing or its TIMEOUT is not the override"
+    rm -rf "${dir}" "${log}"
+    return 1
+  fi
+  ctest --test-dir "${dir}" -R '^per_push_timeout_planted$' >"${log}" 2>&1 || status=$?
+  cat "${log}"
+  if [[ ${status} -eq 0 ]]; then
+    echo "control passed: a test that overruns the limit does not fail ctest"
+    rm -rf "${dir}" "${log}"
+    return 1
+  fi
+  if ! grep -q 'per_push_timeout_planted.*Timeout' "${log}"; then
+    echo "control failed, but not as a timeout"
+    rm -rf "${dir}" "${log}"
+    return 1
+  fi
+  rm -rf "${dir}" "${log}"
+}
+
 # Configuring with a Python that cannot import PyYAML must stop with the PyYAML message (fw/params/CMakeLists.txt).
 l1_pyyaml_control() {
   local dir venv log status=0
@@ -609,6 +667,7 @@ step "constants: every constant in constants.hpp carries a citation and a physic
 step "G3: no truth or harness symbol in any host flight library (nm -C)" g3_host_symbols
 step "G3: no flight translation unit has a harness include directory (host)" g3_host_includes
 step "G3: the SIL libraries export only marv_sil_* (nm -D)" g3_host_exports
+step "per-push timeout: every ctest test of host-debug carries TIMEOUT = per_push_check_time_max (reference-set steps exempt)" per_push_timeout_applied
 step "host-release: configure, build, ctest" host_preset host-release
 step "frozen suites (ctest -L frozen)" frozen_suites
 step "m33: configure, build" m33_build
@@ -634,6 +693,7 @@ step "G3 negative control (planted marv_plant_ and marv::plant:: symbols in a fl
 step "L1 negative control (the core 2.1 example card without sigma must fail the card linter)" l1_card_lint_control
 step "L1 negative control (a card with sigma = 0 on a published entry must fail the parameter set build)" l1_flatten_control
 step "L1 negative control (a Python without PyYAML must fail the configure)" l1_pyyaml_control
+step "per-push timeout negative control (a planted test that overruns the limit must fail ctest as a timeout)" per_push_timeout_control
 step "L1 negative control (perturbed plant reference inputs must not reproduce the committed expected file)" plant_ref_control
 step "L4 negative control (a perturbed T3 input, kp one ulp up, must fail the SHA256SUMS check)" t3_reference_control
 step "L5 negative control (a perturbed T3 input, att_kp one ulp up, must fail the SHA256SUMS check)" att_t3_reference_control

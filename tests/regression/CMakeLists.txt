@@ -1,7 +1,7 @@
 include(GoogleTest)
 
 function(marv_frozen_suite test_target)
-  gtest_discover_tests(${test_target} PROPERTIES LABELS frozen ${ARGN})
+  gtest_discover_tests(${test_target} PROPERTIES LABELS frozen TIMEOUT ${MARV_PER_PUSH_CHECK_TIME_MAX} ${ARGN})
 endfunction()
 
 file(GLOB marv_frozen_layers

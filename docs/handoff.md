@@ -1,4 +1,4 @@
-# Handoff: quad L6 stage (a) closed (decision 0012); next is stage (b)
+# Handoff: quad L6 stage (b) in progress (decision 0013)
 
 2026-10-01. Written for the next agent working in this repository. This file records state; it adds no scope. The
 specs remain the only planning documents (core §0 rule 5).
@@ -70,12 +70,14 @@ Sources for stage (a):
 
 ## Next steps, in Luis's order
 
-1. **Stage (b), first item (Luis, 2026-10-01):** close the gap "nothing enforces the 60 s limit". Set CTest's TIMEOUT
-   on the per-push checks from `per_push_check_time_max`, so an overrun fails CI instead of relying on a measurement.
-   Stage (a) is closed and on `master` (approved by Luis, 2026-10-01, untagged). Its tests under
-   `tests/regression/quad/L06/{noise,imu,adapter,sim2,allan,tools}` are frozen; any edit to them needs a decision
-   record.
-2. **Stage (b), the gyro chain** (quad §4 L6, pass bar (b)): the low-pass and the eRPM-tracking notches at 1×/2×/3×
+1. **Done, stage (b)'s first item (0013):** the per-push limit is enforced as the CTest TIMEOUT of every per-push check,
+   read from `per_push_check_time_max`; the reference-set steps are exempt. Two CI steps check it: a positive check
+   and a planted-overrun control. The slowest check is the Allan test, 10.0 s in debug (6× under the limit). Stage (a)
+   is closed (0012), and its tests under `tests/regression/quad/L06/` are frozen.
+2. **Stage (b), the gyro chain** (quad §4 L6, pass bar (b)). Luis's seven decisions and the accepted design are in 0013.
+   The ESC clock-error figure is open with Luis: STM32F051 3.8 % or AT32F421 2 %; the notch Q and the lag depend on it.
+   In parallel: P2, the firmware chain, and P3, the plant rotor angle and vibration. Still to come: P1 (register,
+   profile and generator), P4 (the rotor-speed path), P5 (the design-model block) and P6 (tracking T1). the low-pass and the eRPM-tracking notches at 1×/2×/3×
    rotor frequency (QF-7), the eRPM path through `hal_sim`, and the rotor vibration model with its amplitude swept and
    flagged unsourced (0009 owner decision 4).
    - Stages (b) and (c) carry `latency_samples` = 1 in the design model's loop delay (0012, owner decision D).
