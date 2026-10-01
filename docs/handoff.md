@@ -1,4 +1,4 @@
-# Handoff: quad L6 stage (b) built and verified (decision 0013), awaiting Luis's close; next is stage (c)
+# Handoff: quad L6 stage (c) opened (decision 0014); stages (a) and (b) closed
 
 2026-10-01. Written for the next agent working in this repository. This file records state; it adds no scope. The
 specs remain the only planning documents (core §0 rule 5).
@@ -74,22 +74,18 @@ Sources for stage (a):
    read from `per_push_check_time_max`; the reference-set steps are exempt. Two CI steps check it: a positive check
    and a planted-overrun control. The slowest check is the Allan test, 10.0 s in debug (6× under the limit). Stage (a)
    is closed (0012), and its tests under `tests/regression/quad/L06/` are frozen.
-2. **Stage (b), the gyro chain: built, reviewed and verified, awaiting Luis's close** (0013 holds every owner
-   decision verbatim, the design, the build P1–P6 and the evidence).
-   - **Firmware:** `fw/gyro_chain` (12 eRPM notches + 2nd-order low-pass) and `RotorSpeedSample`. The rotor-speed path
-     through `marv_sil_tick_with_rotor_speed` and `hal_rotor_speed()`. Nothing in flight uses either until stage (c)
-     (owner decision 6).
-   - **Plant:** rotor angle, gyro vibration (stream id 1) and the bidirectional-DShot telemetry model.
-   - **Tools:** `tools/card/gyro_chain_design.py` (the rules and the exact loop) and `gyro_chain_params.py` (the five
-     derived parameters, ε = 2⁻⁸ + 65 ppm + the ESC's 2 %).
-   - **ESC:** the MicoAir 55A AM32 4in1, AT32F421 (AM32 2.17 clocks it from HICK). `esc_clock_error_max` = 2 % is the
-     requirement.
-   - **Stage (c)'s starting point:** the chain at today's L4 gains gives a worst-corner PM of 35.5° against the 45°
-     floor (0013, P5).
-   - Q derives from the flown part's ESC figure; the requirement is a lint check (Luis, 2026-10-01).
-3. Still owed to Luis from 0009: the final CI split with measured times, and the T4 confirmation seed count with its
+2. **Stage (b), the gyro chain: closed and pushed (`1159d5c`, decision 0013).** Stage (c) starts from a worst-corner
+   PM of 35.5° at today's L4 gains with the chain in the loop.
+3. **Stage (c), the D term and ω×Jω (decision 0014).** Luis's eight decisions are in 0014.
+   - PI × lead meets PM 45° and Ms 2 with the chain; N* is set by Ms at the flown ESC.
+   - The FF is lag-compensated, built inert, and goes live at (e) with the gate file. FF-on evidence is reported in (c).
+   - J corners are the physical 3-D ones.
+   - R2's setup change (steady-tumble rotor speeds) gets its own record, after the lower-bound proof is committed and
+     reviewed.
+   - The spec line for the combined D + FF noise budget is awaiting Luis.
+4. Still owed to Luis from 0009: the final CI split with measured times, and the T4 confirmation seed count with its
    cost. Add to it the T4 turn-on-corner count (nominal plus each scenario's worst T3 corner) and its cost (0012).
-4. **Stage (c), carried:**
+5. **Stage (c), carried:**
    - Re-run `L05/results/step_cause/step_cause.py` at N = 1 when D7 regenerates L5, under stage (c)'s record (Luis,
      2026-10-01). Today's `cause.txt` describes att_loop_ratio 2 (H = 10372) from before `0533044`.
    - The per-sample noise convention σ_d = N·√(f_s/2) (0012) feeds the D-path noise budget.
@@ -115,6 +111,20 @@ from musl 1.2.5 (MIT, Arm MIT, Sun fdlibm notices; `THIRD_PARTY_NOTICES.md`).
   - L5 takes about 2 min at `--procs 4` and peaks at 0.26 GiB. The first local ctest or pytest run on a fresh tree
     generates it.
 - **Changing a golden:** regenerate in the image, update `SHA256SUMS`, write a decision record.
+
+## Pre-L8 gate and hardware list (Luis, 2026-10-01, decision 0014)
+
+- **Gate:** before L8, measure J with its σ (S0, pendulum), then re-run the L4 acro check over the measured band. The
+  pilot doesn't fly until it passes there. Today the acro item closes at the card plant only, and its excess at the
+  physical J corners is recorded in 0014.
+- **Hardware list:** measure J (S0) and the motor τ_m on the bench. That shrinks the band box and raises the achievable
+  crossover by rule. The closed-loop time constant of about 0.161 s at the J+ corner is the "sluggish" question again.
+- **The hover-rotor tumble** (the collision or prop-strike case) is run and reported, and has no pass bar yet. Propose
+  one at L8, from an absolute recovery requirement rather than the linear envelope.
+- **Finding:** the ESC clock error is the largest single limit on crossover. A crystal ESC would roughly double it.
+  This is not a requirement, since the flown ESC would fail it (Luis, decision 7).
+- **B3 candidate (INFERRED, an idea only):** estimate each ESC's clock scale in flight from the gyro's harmonic peaks,
+  which tightens ε without new hardware.
 
 ## Known failing items (safety)
 

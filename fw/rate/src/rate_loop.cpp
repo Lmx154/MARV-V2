@@ -37,6 +37,10 @@ const char* message(ConfigError e) noexcept {
       return "rate: tau_ref is not positive";
     case ConfigError::Period:
       return "rate: the design period is not positive";
+    case ConfigError::DFilter:
+      return "rate: a D filter time constant is negative";
+    case ConfigError::Feedforward:
+      return "rate: an inertia, the motor time constant or the feed-forward filter time constant is negative";
   }
   return "rate: unknown configuration error";
 }

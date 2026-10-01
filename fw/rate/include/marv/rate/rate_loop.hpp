@@ -11,6 +11,17 @@
 //   I_n = I_(n-1) + (freeze_(n-1) ? 0 : ki e_(n-1) dt_n)
 //   D_n = -kd (y_n - y_(n-1)) / dt_n                                D = 0 at that first execution
 //   u_n = kp e_n + I_n + D_n
+// D low-pass (quad spec D2, decision 0014): with T_f > 0 the derivative above is the input of a first-order low-pass,
+//   Df_n = Df_(n-1) + (1 - exp(-dt_n / T_f)) (D_n - Df_(n-1)),   Df := 0 at the first execution, u_n uses Df_n,
+// the discretisation of the prefilter. T_f = 0 runs the expression above unchanged (not an alpha computed to 1).
+// Feed-forward (quad spec F1-F3, decision 0014), when some inertia J_a > 0: with w = y_n and g(w) = w x (J w),
+//   u_n += g(w_n) + tau_m gdot_n,  gdot_n = gdot_(n-1) + (1 - exp(-dt_n / T_ff)) ((g_n - g_(n-1)) / dt_n - gdot_(n-1)),
+// gdot := 0 at the first execution; T_ff = 0 takes gdot_n = (g_n - g_(n-1)) / dt_n. g is the gyroscopic torque of
+// Euler's equation for a rigid body in principal axes, J w' + w x (J w) = tau (H. Goldstein, C. Poole and J. Safko,
+// Classical Mechanics, 3rd ed., section 5.5, with the body axes the principal axes): the torque that holds w
+// constant. The motor torque follows the request through a first-order lag, tau_m u' + u = u_req, so u_req = u + tau_m u'
+// delivers u (feed-forward by inverting the first-order actuator lag; the identity is derived here, in this line);
+// here u = g and u' = gdot. All J_a = 0 skips the term: u is exactly the PID law.
 // freeze_n is recorded by record_allocation from execution n's allocation and gates the increment applied at
 // execution n + 1, so the update has no lag.
 
@@ -47,6 +58,10 @@ struct RateConfig {
   prim::Vec3<T> kd{};       // N*m*s^2/rad
   prim::Vec3<T> tau_ref{};  // reference-model time constant, s
   T period{};               // design period T of a rate-loop execution, s
+  prim::Vec3<T> d_filter_tau{};  // D low-pass time constant T_f, s, [roll, pitch, yaw]; 0 = unfiltered D
+  prim::Vec3<T> inertia{};       // J, kg*m^2, principal moments [roll, pitch, yaw]; all 0 = no feed-forward
+  T motor_tau{};                 // motor time constant tau_m, s
+  T ff_filter_tau{};             // T_ff, the filter of the feed-forward derivative, s; 0 = unfiltered
   // Effectiveness B of decision 0004 item 2: column i = [1, -y_i, x_i, s_i c_q], index = logical motor - 1.
   std::array<T, kMotors> rotor_x{};   // m, FRD
   std::array<T, kMotors> rotor_y{};   // m, FRD
@@ -54,15 +69,16 @@ struct RateConfig {
   T torque_ratio{};                   // c_q, N*m per N
 };
 
-enum class ConfigError : std::uint8_t { None, NonFinite, NegativeGain, TauRef, Period };
+enum class ConfigError : std::uint8_t { None, NonFinite, NegativeGain, TauRef, Period, DFilter, Feedforward };
 
 // The first violated rule, else None. Written with negated comparisons, so a NaN is rejected.
 template <class T>
 [[nodiscard]] ConfigError validate(const RateConfig<T>& c) noexcept {
   using std::isfinite;
-  bool finite = isfinite(c.period) && isfinite(c.torque_ratio);
+  bool finite = isfinite(c.period) && isfinite(c.torque_ratio) && isfinite(c.motor_tau) && isfinite(c.ff_filter_tau);
   for (std::size_t a = 0; a < kTorqueAxes; ++a) {
-    finite = finite && isfinite(c.kp[a]) && isfinite(c.ki[a]) && isfinite(c.kd[a]) && isfinite(c.tau_ref[a]);
+    finite = finite && isfinite(c.kp[a]) && isfinite(c.ki[a]) && isfinite(c.kd[a]) && isfinite(c.tau_ref[a]) &&
+             isfinite(c.d_filter_tau[a]) && isfinite(c.inertia[a]);
   }
   for (std::size_t i = 0; i < kMotors; ++i) {
     finite = finite && isfinite(c.rotor_x[i]) && isfinite(c.rotor_y[i]) && isfinite(c.yaw_sign[i]);
@@ -82,6 +98,18 @@ template <class T>
   }
   if (!(c.period > T(0))) {
     return ConfigError::Period;
+  }
+  for (std::size_t a = 0; a < kTorqueAxes; ++a) {
+    if (!(c.d_filter_tau[a] >= T(0))) {
+      return ConfigError::DFilter;
+    }
+  }
+  bool ff_ok = c.motor_tau >= T(0) && c.ff_filter_tau >= T(0);
+  for (std::size_t a = 0; a < kTorqueAxes; ++a) {
+    ff_ok = ff_ok && c.inertia[a] >= T(0);
+  }
+  if (!ff_ok) {
+    return ConfigError::Feedforward;
   }
   return ConfigError::None;
 }
@@ -135,6 +163,7 @@ class RateLoop {
     // exactly: |dt − T| > tol  ⇔  |2·dt − 2·T| > 2·tol, with 2·dt and 2·T integers.
     two_period_us_ =
         static_cast<std::uint64_t>(lround(2 * cfg.period * static_cast<T>(prim::kMicrosecondsPerSecond)));
+    ff_on_ = cfg.inertia[kRollAxis] > T(0) || cfg.inertia[kPitchAxis] > T(0) || cfg.inertia[kYawAxis] > T(0);
     reset_state();
     have_t_ = false;
     latched_ = false;
@@ -227,6 +256,9 @@ class RateLoop {
       r_ = y;
       e_ = prim::Vec3<T>();
       integral_ = prim::Vec3<T>();
+      if (ff_on_) {
+        g_prev_ = y.cross(inertia_times(y));
+      }
       seed_ = false;
     } else {
       const T dt = static_cast<T>(dt_us) / static_cast<T>(prim::kMicrosecondsPerSecond);
@@ -241,9 +273,28 @@ class RateLoop {
         if (!freeze_[a]) {
           integral_[a] = integral_[a] + cfg_.ki[a] * e_[a] * dt;
         }
-        const T d = -cfg_.kd[a] * (y[a] - y_prev_[a]) / dt;
+        T d = -cfg_.kd[a] * (y[a] - y_prev_[a]) / dt;
+        if (cfg_.d_filter_tau[a] > T(0)) {
+          const T alpha_d = T(1) - exp(-dt / cfg_.d_filter_tau[a]);
+          d_f_[a] = d_f_[a] + alpha_d * (d - d_f_[a]);
+          d = d_f_[a];
+        }
         u[a] = cfg_.kp[a] * e + integral_[a] + d;
         e_[a] = e;
+      }
+      if (ff_on_) {
+        const prim::Vec3<T> g = y.cross(inertia_times(y));
+        for (std::size_t a = 0; a < kTorqueAxes; ++a) {
+          const T raw = (g[a] - g_prev_[a]) / dt;
+          if (cfg_.ff_filter_tau > T(0)) {
+            const T alpha_ff = T(1) - exp(-dt / cfg_.ff_filter_tau);
+            gdot_f_[a] = gdot_f_[a] + alpha_ff * (raw - gdot_f_[a]);
+          } else {
+            gdot_f_[a] = raw;
+          }
+          u[a] = u[a] + (g[a] + cfg_.motor_tau * gdot_f_[a]);
+        }
+        g_prev_ = g;
       }
       for (std::size_t a = 0; a < kTorqueAxes; ++a) {
         if (!isfinite(u[a])) {
@@ -256,7 +307,16 @@ class RateLoop {
     return RateOutput<T>{u, false, latched_, count_};
   }
 
+  // J w, J diagonal.
+  [[nodiscard]] prim::Vec3<T> inertia_times(const prim::Vec3<T>& w) const noexcept {
+    return prim::Vec3<T>(cfg_.inertia[kRollAxis] * w[kRollAxis], cfg_.inertia[kPitchAxis] * w[kPitchAxis],
+                         cfg_.inertia[kYawAxis] * w[kYawAxis]);
+  }
+
   void reset_state() noexcept {
+    d_f_ = prim::Vec3<T>();
+    g_prev_ = prim::Vec3<T>();
+    gdot_f_ = prim::Vec3<T>();
     r_ = prim::Vec3<T>();
     e_ = prim::Vec3<T>();
     y_prev_ = prim::Vec3<T>();
@@ -281,6 +341,10 @@ class RateLoop {
   prim::Vec3<T> e_{};
   prim::Vec3<T> y_prev_{};
   prim::Vec3<T> integral_{};
+  prim::Vec3<T> d_f_{};      // the D low-pass state Df
+  prim::Vec3<T> g_prev_{};   // w x (J w) at the previous execution
+  prim::Vec3<T> gdot_f_{};   // the filtered derivative of w x (J w)
+  bool ff_on_ = false;
   std::array<bool, kTorqueAxes> freeze_{};
   TimeUs t_us_ = 0;
   bool have_t_ = false;

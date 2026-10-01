@@ -32,6 +32,18 @@
 // exactly its input and its direct-form-I history keeps running with input = output. No stale coefficient is held: a
 // call decides every notch from the sample it is given alone. A motor with at least one bypassed notch sets its bit in
 // bypass_flags() (bit i = motor i + 1, rewritten at every update) and increments its saturating counter.
+//
+// Non-finite gyro input (decision 0014, the 0013 known limit): an axis whose input value is NaN or infinite outputs
+// the last output of that axis (0 before any), its filter states are NOT updated, its bit is set in input_fault_flags()
+// (bit a = axis a: roll, pitch, yaw) and its saturating counter incremented; the other axes are untouched. At the next
+// finite sample of that axis its states are reset to the steady state of that sample and the bit is cleared. With
+// seed_first_sample set the same reset also seeds the first finite sample after init, so a constant input gives no
+// start-up transient (the D term of the rate loop would see it as a kick); unset (the default), that first sample
+// starts from the zero states of init, as the chain did before decision 0014. Steady state of a constant input x: every stage is a unity-DC-gain section, so its
+// output is x and the direct-form-I history is x_(n-1) = x_(n-2) = y_(n-1) = y_(n-2) = x for the notch and the low-pass
+// alike. DC gain (b0 + b1 + b2) / (1 + a1 + a2): the notch has b0 + b1 + b2 = (2 - 2 cos w0) / a0 = 1 + a1 + a2 (and the
+// identity stage has gain 1), the Butterworth low-pass has b0 + b1 + b2 = 4 K^2 norm = 1 + a1 + a2. The float
+// coefficients meet this to their rounding, so the seeded chain starts within that error of the input, not exactly on it.
 
 #include <array>
 #include <cmath>
@@ -124,6 +136,7 @@ struct GyroChainConfig {
   T cutoff_hz{};                             // low-pass cutoff f_c, Hz
   std::array<T, kHarmonics> notch_q{};       // notch quality per harmonic index (1x, 2x, 3x)
   T omega_threshold_rad_s{};                 // omega_th: a notch is active only at omega >= omega_th, rad/s
+  bool seed_first_sample = false;            // seed the states at the first finite sample after init (file comment)
 };
 
 enum class ConfigError : std::uint8_t { None, NonFinite, Period, Divisor, Cutoff, NotchQ, Threshold };
@@ -177,6 +190,10 @@ class GyroChain {
     state_ = {};
     bypass_flags_ = 0;
     bypass_count_ = {};
+    seeded_ = {};
+    last_out_ = prim::Vec3<T>();
+    fault_flags_ = 0;
+    fault_count_ = {};
   }
 
   // Recomputes the 12 notch coefficients from the latest rotor speeds (rule in the file comment). Call it when the
@@ -207,15 +224,32 @@ class GyroChain {
     }
   }
 
-  // One tick: gyro rates (FRD, rad/s) through the notches and the low-pass.
+  // One tick: gyro rates (FRD, rad/s) through the notches and the low-pass. A non-finite axis value holds that axis
+  // (rules in the file comment).
   [[nodiscard]] prim::Vec3<T> filter(const prim::Vec3<T>& gyro_rad_s) noexcept {
+    using std::isfinite;
     prim::Vec3<T> out;
     for (std::size_t a = 0; a < kAxes; ++a) {
+      const std::uint32_t bit = std::uint32_t{1} << a;
       T v = gyro_rad_s[a];
+      if (!isfinite(v)) {
+        out[a] = last_out_[a];
+        fault_flags_ |= bit;
+        if (fault_count_[a] != std::numeric_limits<std::uint32_t>::max()) {
+          ++fault_count_[a];
+        }
+        continue;
+      }
+      if ((cfg_.seed_first_sample && !seeded_[a]) || (fault_flags_ & bit) != 0) {
+        seed(state_[a], v);
+        fault_flags_ &= ~bit;
+      }
+      seeded_[a] = true;
       for (std::size_t n = 0; n < kNotches; ++n) {
         v = step(notch_[n], state_[a][n], v);
       }
       out[a] = step(lowpass_, state_[a][kNotches], v);
+      last_out_[a] = out[a];
     }
     return out;
   }
@@ -224,6 +258,10 @@ class GyroChain {
   [[nodiscard]] std::uint32_t bypass_flags() const noexcept { return bypass_flags_; }
   // Number of updates with a bypassed notch of motor index i, saturating at the maximum of uint32_t.
   [[nodiscard]] std::uint32_t bypass_count(std::size_t motor_index) const noexcept { return bypass_count_[motor_index]; }
+  // Bit a is set from the tick axis a (0 roll, 1 pitch, 2 yaw) had a non-finite input until its next finite sample.
+  [[nodiscard]] std::uint32_t input_fault_flags() const noexcept { return fault_flags_; }
+  // Number of non-finite samples of axis `axis`, saturating at the maximum of uint32_t.
+  [[nodiscard]] std::uint32_t input_fault_count(std::size_t axis) const noexcept { return fault_count_[axis]; }
 
  private:
   struct State {
@@ -232,6 +270,13 @@ class GyroChain {
     T y1{0};
     T y2{0};
   };
+
+  // The steady state of a constant input x for every stage of an axis (rule in the file comment).
+  static void seed(std::array<State, kNotches + 1>& axis, T x) noexcept {
+    for (State& s : axis) {
+      s = State{x, x, x, x};
+    }
+  }
 
   [[nodiscard]] static T step(const BiquadCoeffs<T>& c, State& s, T x) noexcept {
     const T y = c.b0 * x + c.b1 * s.x1 + c.b2 * s.x2 - c.a1 * s.y1 - c.a2 * s.y2;
@@ -250,6 +295,10 @@ class GyroChain {
   T half_fs_{};
   std::uint32_t bypass_flags_ = 0;
   std::array<std::uint32_t, kMotors> bypass_count_{};
+  std::array<bool, kAxes> seeded_{};
+  prim::Vec3<T> last_out_{};
+  std::uint32_t fault_flags_ = 0;
+  std::array<std::uint32_t, kAxes> fault_count_{};
 };
 
 extern template class GyroChain<float>;
