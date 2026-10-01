@@ -258,6 +258,10 @@ class Loop:
         self.b4 = [self.bs[r] for r in OTHER]
         self.ell = [self.p[THETA][c] for c in OTHER]
         self.d = self.bs[THETA]
+        self._evaluate_grid()
+
+    def _evaluate_grid(self):
+        """|F| over |z - 1| and the unwrapped arg F on the grid, with the branch and low-frequency checks of step 4."""
         g = _GRID
         self.h, arg = [], []
         for i in range(len(g.theta)):
@@ -290,6 +294,19 @@ class Loop:
 
     def stable(self, k):
         return jury(self.closed_poly(k))
+
+    def radius(self, k):
+        """The closed loop's spectral radius at gain k (step 5's Jury radius), None when it is not below 1."""
+        return jury_radius(self.closed_poly(k))
+
+    def release_crossing(self, limit):
+        """The first attitude execution k in 1..limit with omega_k <= 0 in yaw_release_crossing's release, or None."""
+        x = [0.0, 1.0, 0.0, 0.0, 0.0]
+        for k in range(1, limit + 1):
+            x = matvec(self.p, x)
+            if x[1] <= 0:
+                return k
+        return None
 
     def margin(self, k):
         """(crossover angle theta = w T_a, PM, reason); angle and PM are None without a unique crossover."""
@@ -358,8 +375,7 @@ def pm_worst(loops, k, w32=None):
     for axis, name, loop in loops:
         kk = axis_k(axis, k, w32)
         theta, pm, why = loop.margin(kk)
-        radius = loop.closed_poly(kk)
-        radius = jury_radius(radius)
+        radius = loop.radius(kk)
         if pm is None or radius is None:
             worst = -math.inf
         else:
@@ -447,25 +463,17 @@ def yaw_release_crossing(loops, t_a, refuse):
     for axis, name, loop in loops:
         if axis != "yaw":
             continue
-        x = [0.0, 1.0, 0.0, 0.0, 0.0]
-        for k in range(1, BRAKE_SCAN_EXECUTIONS + 1):
-            x = matvec(loop.p, x)
-            if x[1] <= 0:
-                out.append((name, k, k * t_a))
-                break
-        else:
+        k = loop.release_crossing(BRAKE_SCAN_EXECUTIONS)
+        if k is None:
             refuse(f"the yaw rate at corner {name} does not cross zero within {BRAKE_SCAN_EXECUTIONS} attitude executions "
                    "after a release")
+        out.append((name, k, k * t_a))
     return rate.r32_up(max(t for _, _, t in out)), out
 
 
-def design(card, budget, scenario, card_path, rate_result=None):
-    """The whole rule: a dict of results (raises gpc.GenError when the card is refused)."""
-    def refuse(reason):
-        gpc.refuse(card_path, "attitude", f"{reason} (decision 0006)")
-
-    rr = rate_result if rate_result is not None else rate.design(card, budget, scenario, card_path)
-    pm_min = rr["inputs"]["PM_min"]
+def yaw_terms(rr, scenario, card_path, refuse):
+    """The outputs that do not depend on the rate loop's gains (steps 8 and 10, with the scenario checks): a dict
+    (yaw_deadband, alpha, w_raw, w, w32, alpha_min); refuse(reason) raises."""
     deadband = rate._value(scenario, "yaw_deadband", "scenario entry", card_path)
     rate._value(scenario, "angle_tilt_max", "scenario entry", card_path)
     if not 0 <= deadband < 1:
@@ -477,6 +485,22 @@ def design(card, budget, scenario, card_path, rate_result=None):
     w32 = r32(w)
     if not w32 > 0:
         refuse("the yaw weight is not a positive f32")
+    alpha_min = r32_down(alpha["yaw"])
+    if not (math.isfinite(alpha_min) and alpha_min > 0):
+        refuse(f"att_yaw_alpha_min {alpha_min!r} is not a positive finite f32")
+    return {"yaw_deadband": deadband, "alpha": alpha, "w_raw": alpha["yaw"] / min(alpha["roll"], alpha["pitch"]), "w": w,
+            "w32": w32, "alpha_min": alpha_min}
+
+
+def design(card, budget, scenario, card_path, rate_result=None):
+    """The whole rule: a dict of results (raises gpc.GenError when the card is refused)."""
+    def refuse(reason):
+        gpc.refuse(card_path, "attitude", f"{reason} (decision 0006)")
+
+    rr = rate_result if rate_result is not None else rate.design(card, budget, scenario, card_path)
+    pm_min = rr["inputs"]["PM_min"]
+    yt = yaw_terms(rr, scenario, card_path, refuse)
+    alpha, w, w32 = yt["alpha"], yt["w"], yt["w32"]
     t = rr["T"]
     cache = {}
 
@@ -492,16 +516,13 @@ def design(card, budget, scenario, card_path, rate_result=None):
 
     n = LOOP_RATIO
     final = sup_rule(loops_at(n), n * t, pm_min, w32, refuse)
-    if not all(jury(loop.closed_poly(axis_k(axis, final["k32"], w32))) for axis, _, loop in loops_at(n)):
+    if not all(loop.radius(axis_k(axis, final["k32"], w32)) is not None for axis, _, loop in loops_at(n)):
         refuse("the final gains are unstable at a corner (Jury test)")
-    alpha_min = r32_down(alpha["yaw"])
-    if not (math.isfinite(alpha_min) and alpha_min > 0):
-        refuse(f"att_yaw_alpha_min {alpha_min!r} is not a positive finite f32")
     t_cross, crossings = yaw_release_crossing(loops_at(n), n * t, refuse)
     return {"T": t, "rate": rr, "inputs": dict(rr["inputs"]), "alpha": alpha,
-            "w_raw": alpha["yaw"] / min(alpha["roll"], alpha["pitch"]), "w": w, "w32": w32,
-            "yaw_deadband": deadband, "N": n, "T_a": n * t,
-            "alpha_min": alpha_min, "t_cross": t_cross, "crossings": crossings,
+            "w_raw": yt["w_raw"], "w": w, "w32": w32,
+            "yaw_deadband": yt["yaw_deadband"], "N": n, "T_a": n * t,
+            "alpha_min": yt["alpha_min"], "t_cross": t_cross, "crossings": crossings,
             "final": final, "k": final["k"], "k32": final["k32"], "k_yaw_effective": yaw_effective(final["k32"], w32),
             "pm_worst": final["pm_worst"]}
 

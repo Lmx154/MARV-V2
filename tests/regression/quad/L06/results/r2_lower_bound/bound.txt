@@ -1,0 +1,47 @@
+MARV quad L6 stage (c): lower bound on the R2 rate excess forced by the motor lag (decision 0014, owner decision 5, condition 1)
+command: uv run python tests/regression/quad/L06/results/r2_lower_bound/r2_lower_bound.py --out <file>
+inputs sha256: card 62d5d522f19cf7022c87d5e9a0a9ab4e4d3a31d7759a5166c43cda959e23f11f; scenario 2195cea03e4911570a1af332878689d8f1b40b7556209dbe11f80548d382419e; test_t4_recovery.py 8f7d2e2748f7dcc108342490403056524e1c035a8b4602b157f33bfd4105b4a0; recovery_model.py 40450f1f19fd330e3d7d155dd773bcaae61112db0668c35d362361280a8f475c; attitude_t3_inputs.txt 24b0886168b36a48c078213442baa3a4302924a5187ce03f99d4a89a1dd435de; cause.txt 685630d7ce93502dc24226c772bae3b0bdf2e1778072acc57cd61572f7b44be4
+
+== 0. inputs
+card: J diag [0.0025, 0.0021, 0.0043] kg m^2; k 1.5625e-06 N/(rad/s)^2; motor tau 0.033 s; speed range [150, 2800] rad/s; B (roll, pitch, yaw rows, per motor thrust) [-0.1, 0.1, 0.1, -0.1]; [0.075, -0.075, 0.075, -0.075]; [0.022, 0.022, -0.022, -0.022]
+scenario: w0 [11.694, 11.694, 11.694] rad/s; rotors 'hover' -> run_l5.hover_rotor_speeds ['1100.5796047212257', '1100.5796047212257', '1100.5796047212257', '1100.5796047212257'] rad/s; cause.txt world initial_rotor_speed_rad_s equal: True
+timing: tick 0.00015625 s; attitude period T_a 0.0003125 s; host step H = max(m_sequence) ticks = 0.0003125 s; quadrature step 9.7656e-06 s; window 32 executions = 0.01 s
+
+== 1. coupling at t = 0
+w0 x Jw0 [0.30083, -0.24614, -0.054697] N m; push direction s = sign(-(w0 x Jw0)) [-1, 1, 1]; rotor torque at t = 0 (hover rotors, B k W^2) [0, 0, 0] N m
+
+== 2. lower bound L(t) on s (w(t) - w0), every command history in [0, W_max] (no gain enters)
+a-priori box radius [2.6844, 2.5345, 0.34092] rad/s over the window; Phi(R) <= R: True
+roll : L* 0.2563 rad/s at t* 0.0045605 s; L(t_n) at n = 1: 0.034069, 4: 0.12163, 8: 0.20433, 16: 0.2539, 24: 0.15104, 32: -0.1014
+pitch: L* 0.27245 rad/s at t* 0.0049414 s; L(t_n) at n = 1: 0.033462, 4: 0.12065, 8: 0.20618, 16: 0.27241, 24: 0.20014, 32: -0.008679
+yaw  : L* 0.020931 rad/s at t* 0.0035645 s; L(t_n) at n = 1: 0.0035172, 4: 0.012127, 8: 0.01908, 16: 0.017525, 24: -0.0044367, 32: -0.046404
+
+== 3. against the R2 predicate (test_t4_recovery.make_design: envelope, F, Q; E is the run's m = 1 vs m = 2 term)
+w_x: F 0.060216 (its halving term 0.058949) Q 0.029271 F + Q 0.089487 rad/s; the envelope moves past w0 in the push direction within the window: True; X* = max_n X(n) 0.22176 rad/s at n 13 (t 0.0040625 s); X*/(F + Q) 2.48; E needed at n*: >= 0.13227 rad/s
+w_y: F 0.094979 (its halving term 0.093712) Q 0.020117 F + Q 0.1151 rad/s; the envelope moves past w0 in the push direction within the window: False; X* = max_n X(n) 0.28283 rad/s at n 16 (t 0.005 s); X*/(F + Q) 2.46; E needed at n*: >= 0.16773 rad/s
+w_z: F 0.059647 (its halving term 0.05838) Q 0.0044357 F + Q 0.064083 rad/s; the envelope moves past w0 in the push direction within the window: False; X* = max_n X(n) 0.033591 rad/s at n 19 (t 0.0059375 s); X*/(F + Q) 0.524; E needed at n*: >= -0.030492 rad/s
+binding axis (largest X* - (F + Q)): w_y; claim X* > F + Q: True (the predicate then holds at n* only if E(n*) >= X* - (F + Q))
+
+== 4. cross-check against the committed R2 replay (cause.txt section 2, gz m = 1 TRUTH; minus half a printed unit)
+exec 1 w_x 11.656: departure 0.037206 >= L 0.034069: True; excess over the envelope 0.037206 >= X 0.034069: True
+exec 1 w_y 11.73: departure 0.035794 >= L 0.033462: True; excess over the envelope 0.035794 >= X 0.033462: True
+exec 1 w_z 11.698: departure 0.0037944 >= L 0.0035172: True; excess over the envelope 0.0037944 >= X 0.0035172: True
+exec 16 w_x 11.078: departure 0.61521 >= L 0.2539: True; excess over the envelope 0.56656 >= X 0.20526: True
+exec 16 w_y 12.247: departure 0.55279 >= L 0.27241: True; excess over the envelope 0.56321 >= X 0.28283: True
+exec 16 w_z 11.732: departure 0.037794 >= L 0.017525: True; excess over the envelope 0.053133 >= X 0.032863: True
+
+== 5. comparison: the architect's form g^2 tau / (2 J Delta), Delta = 2 tau_max (tau_max = half the full-range torque), slew 2 tau_max / tau
+roll : tau_max 2.443 N m; slew 148.06 N m/s against the largest reachable slew over the window 91.791 N m/s; bound 0.12225 rad/s
+pitch: tau_max 1.8323 N m; slew 111.05 N m/s against the largest reachable slew over the window 68.843 N m/s; bound 0.1299 rad/s
+yaw  : tau_max 0.53746 N m; slew 32.573 N m/s against the largest reachable slew over the window 20.194 N m/s; bound 0.01068 rad/s
+
+== 6. negative controls (each must collapse the bound to at most F + Q)
+NC1 steady-tumble rotors, T = M (F, w0 x Jw0). At the hover collective 7.5706 N: T [-0.30146, 2.8436, 2.4458, 2.5826] N against [k W_min^2, k W_max^2] = [0.035157, 12.25] N; realisable: False
+    control variant: the smallest collective with every T >= k W_min^2, 8.917 N: T [0.035157, 3.1802, 2.7824, 2.9192] N, largest T <= k W_max^2: True; rotors [150, 1426.6, 1334.4, 1366.8] rad/s; net torque at t = 0 [-5.5511e-17, -2.7756e-17, -6.9389e-18] N m
+    w_x: L* 0 rad/s; X* -0.0034082 at n 1; X* <= F + Q 0.089487: True
+    w_y: L* 0 rad/s; X* -0.0030181 at n 1; X* <= F + Q 0.1151: True
+    w_z: L* 0 rad/s; X* -0.00045817 at n 1; X* <= F + Q 0.064083: True
+NC2 equal moments J [0.0029667, 0.0029667, 0.0029667] kg m^2 (the card's mean), hover rotors: w0 x Jw0 [0, 0, 0] N m
+    w_x: L* 0 rad/s; X* -0.0029019 at n 1; X* <= F + Q 0.089487: True
+    w_y: L* 0 rad/s; X* -0.0021765 at n 1; X* <= F + Q 0.1151: True
+    w_z: L* 0 rad/s; X* -0.00063843 at n 1; X* <= F + Q 0.064083: True

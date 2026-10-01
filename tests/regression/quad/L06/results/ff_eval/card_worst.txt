@@ -1,0 +1,58 @@
+MARV quad L6 stage (c): omega x J omega feed-forward, T3 evaluation on the L4 acro combined full-stick segment
+command: uv run python tools/sim/l6_ff_eval.py --out <file> --corners 11
+label: design model (T3), not a validation run; reported, not asserted (decision 0014 owner decision 2)
+inputs:
+  vehicles/uzh_neurobem_5in.yaml sha256 62d5d522f19cf7022c87d5e9a0a9ab4e4d3a31d7759a5166c43cda959e23f11f
+  design/budget.yaml sha256 fe18e4c638f126dbb4e587868041877430614ed84bded0ef0e1099bfeccff817
+  design/scenario_values.yaml sha256 7542b0f83d94537f697f4cc1ac1868b6deb8c12ac7d2682ec23a54f70ee0ec1d
+  sensors/profiles/marv_v2_board_default.yaml sha256 ce28e3d7ec2f3baffa4a84c325d385fa695d271ad5f949417e226b06657855cd
+  scenarios/quad/L04/acro.yaml sha256 5ef270f614862dfb42e9a86d0158f8e553c3bdc8de4ee8ef20c25abe5075f3d5
+  tests/regression/quad/L04/t3/reference/rate_t3_inputs.txt sha256 5b1450e07e46a5d6d203f239a12873e1b960e839bb18041408ea186cd2cd8271
+  fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml sha256 9635f560de88ec1e30334bdac3f5459f82d60d6e3209b393e0392b1805de922d
+  tests/regression/quad/L04/results/acro_cause/cause.txt sha256 d84156dbba000eb4b8396a08c56decd89003271aade03cd89d7bef9a565f3d08
+  docs/decisions/0005-l4-rate-loop-choices.md sha256 0c0c0747ccdcb43474f4e04beeb5d686f01565d3d5e215c350c1c6f9ee580b26
+
+== design (tools/card/rate_lead.py design(); tau_ref: rate.py rule step 9 with rate_lead's tau_cl)
+N* 3.87736923, w_c,nom 12.1291914 rad/s, tau_cl 0.150625 s, T_ff 0.012311602011322975 s (f32)
+  PI          kp 0.0199378729 0.0167478137 0.0342931412  ki 0.0687137991 0.057719592 0.118187733  kd 0 0 0  tau_ref 0.160937503 0.160937503 0.160937503  T_f 0 0 0
+  PID         kp 0.0246310178 0.0206900556 0.0423653498  ki 0.077088505 0.0647543445 0.132592216  kd 0.0014596869 0.00122613704 0.00251066149  tau_ref 0.150625005 0.150625005 0.150625005  T_f 0.0418696739 0.0418696739 0.0418696739
+  PID+FF      kp 0.0246310178 0.0206900556 0.0423653498  ki 0.077088505 0.0647543445 0.132592216  kd 0.0014596869 0.00122613704 0.00251066149  tau_ref 0.150625005 0.150625005 0.150625005  T_f 0.0418696739 0.0418696739 0.0418696739  J 0.00249999994 0.00209999993 0.00430000015 tau_m 0 T_ff 0
+  PID+FF+lag  kp 0.0246310178 0.0206900556 0.0423653498  ki 0.077088505 0.0647543445 0.132592216  kd 0.0014596869 0.00122613704 0.00251066149  tau_ref 0.150625005 0.150625005 0.150625005  T_f 0.0418696739 0.0418696739 0.0418696739  J 0.00249999994 0.00209999993 0.00430000015 tau_m 0.0329999998 T_ff 0.012311602
+sensors (chain f_c 625.416138 Hz, omega_th 348.037405 rad/s, latency_samples 1):
+  T3   T3 worst case: latency_samples, the chain with every notch at omega_th (rate_lead's operating point): latency 1 tick(s), 13 fixed filter stages
+  T4c  T4 (c) configuration: truth gyro (no latency), the chain with every notch bypassed (the low-pass): latency 0 tick(s), 1 fixed filter stages
+  L4   L4 as flown in acro_cause: truth gyro, no chain, no latency: latency 0 tick(s), 0 fixed filter stages
+  T4e  stage (e) flight configuration: latency_samples, the notches tracking the telemetered rotor speeds, the low-pass: latency 1 tick(s), 1 fixed filter stages; 12 tracked notches (telemetry: 7 pole pairs, 3 + 9 bits, unit 1e-06 s, latency 2 ticks); Z, F from its linear design model: latency_samples, every notch at omega_hover, the low-pass (13 stages)
+plan: T_s 0.00015625 s, D 2, executions 0..16000, thrust request 7.570578098297119 N (f32), segments (number, kind, first, last, phase) [[1, 'single', 3200, 4799, 'linear'], [2, 'reversal', 4800, 6399, 'linear'], [3, 'single', 6400, 7999, 'linear'], [4, 'single', 8000, 9599, 'linear'], [5, 'zero', 9600, 11199, 'linear'], [6, 'combined', 11200, 12799, 'combined'], [7, 'zero', 12800, 16000, 'recovery']]
+plants: motor tau 0.033 s at every plant; J (kg m^2):
+  card                       0.0025 0.0021 0.0043  (J/J0 1 1 1)
+  corner 11 box              0.00375 0.00315 0.00215  (J/J0 1.5 1.5 0.5)
+
+== predicate terms: F = TOL + H per axis (E = 0)
+  PI, L4 sensor (test_t4_acro.design_bound): roll F 8.029545e-02 (TOL 1.654e-03, H 7.864156e-02); pitch F 4.129496e-02 (TOL 1.050e-03, H 4.024537e-02); yaw F 4.129536e-02 (TOL 1.050e-03, H 4.024530e-02)
+  stage (c) law, T3 sensor (linear_response): roll F 1.569724e-02 (TOL 0.000e+00, H 1.569724e-02); pitch F 7.436305e-03 (TOL 0.000e+00, H 7.436305e-03); yaw F 9.845262e-03 (TOL 0.000e+00, H 9.845262e-03)
+
+== cross-check: the PI law as flown in acro_cause, card plant, L4 sensor, against the gz runs
+  design_bound on the fixture: pitch P 13.772466003387304 + F 0.041294955659512175 (cause.txt, the gz build's table: P 13.772466003387304 + F 0.041294955659512175; identical True)
+  roll  outside 1378 (0005: 1377); excess 8.4798 rad/s at execution 14313, |w| 9.6082 against Z + F 1.1284 (0005: |w| 9.61, bound 1.13, excess 8.48)
+  pitch outside 1036 (0005: 1037); excess 2.8312 rad/s at execution 14653, |w| 4.7489 against Z + F 1.9177 (0005: |w| 4.75, bound 1.92, excess 2.83)
+  yaw   outside 352 (0005: 350); excess 0.1407 rad/s at execution 14551, |w| 1.7888 against Z + F 1.6481 (0005: |w| 1.79, bound 1.65, excess 0.14)
+  trace (cause.txt, 49 rows, executions 11200..16000): max |model - gz| 0.0054 0.0055 0.0008 rad/s; trace peak |w| 10.2898 13.8835 12.7055
+  RK4 steps per tick doubled: max change of w 0.000000000 0.000000000 0.000000000 rad/s
+  control, the plant without w x J w: outside 0 0 0, excess -0.3247 -0.3244 -0.3614 rad/s, trace max |model - gz| 12.8657 3.3744 0.6104 rad/s
+  linear_response = run_l4.script_response bit for bit (PI, L4 sensor, nominal J and tau): roll True, pitch True, yaw True
+
+== results, T3 sensor: recovery predicate |w| <= Z + F + E (E = 0); excess = max(|w| - (Z + F))
+plant          variant      outside, of 3201 (r p y)  max excess rad/s (r p y)      flagged (r p y)    verdict
+card           PID           1488  1747   623           +5.5860   +2.3014   +0.2599       0     0     0   FAIL
+card           PID+FF        1270   225     0           +0.7333   +0.6636   -0.1271       0     0     0   FAIL
+card           PID+FF+lag     311     0     0           +0.0581   -0.1442   -0.1365       0     0     0   FAIL
+corner 11      PID           2440  1508   596           +1.2709   +5.1407   +0.4781       0     0     0   FAIL
+corner 11      PID+FF        1907  2219     0           +0.8419   +9.3702   -0.0615       0     0     0   FAIL
+corner 11      PID+FF+lag    2149  2161     0           +1.0218   +9.4550   -0.1031       0     0     0   FAIL
+card PID+FF+lag, RK4 steps per tick doubled: max change of w 0.000000000 0.000000000 0.000000000 rad/s, of the excess 0.000000000 0.000000000 0.000000000 rad/s
+
+== summary over the 1 corner(s) run, T3 sensor
+PID          worst corner 11 (excess 5.1407 rad/s); per axis largest excess +1.2709 +5.1407 +0.4781 rad/s, largest outside 2440 1508 596; corners passing 0 of 1
+PID+FF       worst corner 11 (excess 9.3702 rad/s); per axis largest excess +0.8419 +9.3702 -0.0615 rad/s, largest outside 1907 2219 0; corners passing 0 of 1
+PID+FF+lag   worst corner 11 (excess 9.4550 rad/s); per axis largest excess +1.0218 +9.4550 -0.1031 rad/s, largest outside 2149 2161 0; corners passing 0 of 1
