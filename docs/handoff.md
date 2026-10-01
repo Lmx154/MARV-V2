@@ -1,97 +1,140 @@
-# Handoff: quad L5 passed (two tracked failing items), next is quad L6
+# Handoff: quad L6 stage (a) is next; the T3 storage migration is on master (decision 0011)
 
-2026-09-30. Written for the next agent working in this repository. This file records state; it adds no scope. The
-specs remain the only planning documents (core §0 rule 5). Replace this file at the next handoff.
+2026-10-01. Written for the next agent working in this repository. This file records state; it adds no scope. The
+specs remain the only planning documents (core §0 rule 5).
+
+**Update rule (Luis, 2026-09-30):** "From here on, update it at every stage close and every decision, not only at
+layer end." Rewrite this file in the same change as every decision record and every L6 stage close.
 
 ## Read first, in this order
 
 1. `CLAUDE.md`: the rules CI enforces (ACTIVE-spec rule, number rule, UNKNOWN rule, gates G1–G8), commands,
-   conventions.
-2. `docs/spec/00-core-contracts.md` (ACTIVE): §2 numbers and provenance, §3 conventions, §4 firmware boundary, §7
-   testing, freezing and the §7.5 convergence rule. **§7.5 now has a "Flight rate groups" paragraph** (owner decision
-   0006-21): a flight rate group that no product rule sets runs at its parent group's rate unless that fails EMB-3;
-   only then does the convergence rule choose a lower rate.
-3. `docs/spec/10-quad-flight-software.md` (ACTIVE): §4, the spine (L0–L10), and §6.2. **§4 "L6 — Sensor models and
-   the gyro chain" is your next step.**
+   conventions. **Verified means `ci/local_ci.sh`** (fresh clone, the Actions containers, as root, under the measured
+   runner limits).
+2. `docs/spec/00-core-contracts.md` (ACTIVE): §2 numbers and provenance, §3 conventions, §4 firmware boundary, §5
+   sensor profiles, §7 testing, freezing, and §7.5 (convergence rule, flight rate groups).
+3. `docs/spec/10-quad-flight-software.md` (ACTIVE): §4 the spine. **§4 "L6 — Sensor models, the gyro chain and the D
+   term"** is the current layer: Builds, stages (a)–(e) and the pass bar, all approved by Luis (0009). §6.2 QF-3 now
+   includes `Ms_max`; QF-7 names the notch harmonics.
 4. `docs/spec/20-ground-segment.md` and `30-rocket.md` are PARKED: read them for context, never implement from them.
-5. `docs/decisions/0001`–`0008`. **Decision 0006 holds every L5 choice** (25 owner decisions verbatim, lead decisions
-   A–H, results, spec gaps, carried-forward items). 0007 is the additive L2 change (plant initial rotor speed) and the
-   one approved frozen edit. 0008 is the post-merge `safe.directory` fix to the L5 rate-bypass regenerate script. 0005 holds the L4 choices. Read 0005 and 0006 whole before touching the rate loop, the
-   attitude loop, their gains or any L04/L05 test.
+5. `docs/decisions/0001`–`0011`. **0011** moves the T3 references to generator + inputs + `SHA256SUMS`. **0009 opens L6**: Luis's L6 decisions verbatim, D1–D7 (D term), F1–F3 (ω×Jω), the
+   new register entries and the gate file. 0010 is the L5 chirp-cache memory fix (frozen edit, approved). 0005 and
+   0006 hold the L4 and L5 choices: read them whole before touching the rate loop, the attitude loop, their gains or
+   any L04/L05 test.
 
 Luis (the owner) makes the final calls. Numbers you cannot source are tagged `UNKNOWN` and you stop to ask.
 
-## Luis's instructions for L6 (verbatim, 2026-09-30)
+## Luis's instructions (verbatim)
 
-> For the handoff / L6:
-> 1. The T3 reference data is 8.6 MB and will grow each layer. Since it's regenerable by rule in the pinned image,
->    propose committing the generator plus a content hash instead of the data (or git LFS). Decide before L6 adds
->    more.
-> 2. Still owed: T4 suite wall-clock per layer and the smoke-per-push / full-nightly split.
-> 3. L6 is the performance layer: D term, gyro chain, DShot error diffusion, and ω×Jω feed-forward evaluation. Both
->    strict xfails (L4 acro, L5 R2) must pass there. Start L6 by bringing me the D-term design choices.
+2026-09-30:
 
-So the first L6 actions, in order: bring Luis the T3-reference storage proposal (item 1) and the D-term design choices
-(item 3), and measure the T4 wall-clock per layer (item 2). Measured so far (this session, marv-ci-gz): L02 gz about
-1.7 min, `gz_l4` 2 min 21 s, `gz_l5` 7 min 21 s; the L05 T3 oracle about 50 s host, 2 min 20 s in marv-ci.
+> Order: T3 storage migration first (with its decision record), then stage (a),
+> so no L6 reference data ever gets committed.
+>
+> Before either: rewrite docs/handoff.md to match master now. From here on,
+> update it at every stage close and every decision, not only at layer end.
 
-## Known failing items (safety): read this first
+2026-10-01, on stage (a) (the S1/S3/S4/S9 answers of 2026-09-30 are superseded where these differ):
 
-Both are the same cause class and have the same gating. **L6 cannot pass until both pass, and both must pass before L8
+> 1. **Datasheet.** Cite DS-000577 rev 1.0. Both ACTIVE specs still cite DS-000489, in the core §5 table and the quad
+>    §5.5 FIFO packet line. Log this as a spec gap in the stage (a) record. Check core §5's ICM-45686 figures and the
+>    20-byte FIFO packet against DS-000577, then send me the two-line spec fix to approve. If any figure differs, keep
+>    both values and mark them UNVERIFIED.
+> 2. **Crystal.** Use the worst-case linear sum, ±65 ppm: ±30 tolerance, ±30 stability and ±5 first-year aging, from
+>    the ABM8-272-T3 spec. Don't use RSS. Datasheet limits are bounds, not σ, and no source says the terms are
+>    independent. Record that the aging term covers the first year only, and that these are the Pico 2 test setup's
+>    values until the MARV V2 BOM crystal is known.
+> 3. **Clock model.** Yes, apply the error only against the plant's clock. With CLKIN, the IMU's ODR and hal_time_us
+>    share one error e, so draw e once per run, never separately for each. Keep the ±1.25 % / ±1 % internal-oscillator
+>    figures (DS-000577 §3.3.2) in the profile as the non-CLKIN case, but don't fly them. "The ODR follows CLKIN
+>    exactly" stays INFERRED until a committed test or measurement shows it. Exercise e at the corners −65, 0 and +65
+>    ppm, not as a sampled distribution.
+> 4. **S2 and S5–S8.** That list is lost, so don't reconstruct it. Check stage (a)'s pass-bar lines against core §5's
+>    profile fields, and send me only the questions stage (a) is actually blocked on, each one answerable in one word.
+
+Still standing from 2026-09-30: S3, "labelled scenario values, each with a written rationale, flagged in every run
+report; replaced by my bench dataset later"; S4, the IMU is clocked from the MCU via CLKIN on GPIO18 (EMB-2, single
+master clock); S9, "60 s is fine as the per-push threshold; record it as a labelled convenience value" (a check longer
+than that runs nightly, 0009 second message item 4). The datasheet PDFs stay local in `datasheets/` (gitignored); cite
+them by document number and revision.
+
+Sources for stage (a):
+- **ICM-45686:** DS-000577 rev 1.0 (07/25/2024).
+  - CLKIN accepts 20–40 kHz (§4.14).
+  - Internal clock: ±1.25 % initial and ±1 % over temperature with the gyro active (§3.3.2).
+- **Pico 2:** RP-008299-DS, release 5. It names the crystal, Abracon ABM8-272-T3, but gives no ppm.
+- **ABM8-272-T3:** Abracon Drawing #456603, rev IR, 2023-11-16.
+  - 12.000 MHz; ±30 ppm tolerance at +25 °C.
+  - ±30 ppm stability over −40…+85 °C.
+  - ±5 ppm aging, first year, 25 ± 3 °C.
+
+## Next steps, in Luis's order
+
+1. **Stage (a) prerequisites to bring Luis:** the two-line DS-000577 spec fix (core §5, quad §5.5) for approval, and
+   the one-word questions stage (a) is blocked on.
+2. **Stage (a), sensor noise model** (quad §4 L6, pass bar lines (a)):
+   - The generic IMU model driven by the profile, with seeded per-sensor streams.
+   - The Allan check, with its two negative controls.
+   - SIM-2 with noise.
+   - The adapter's sensor bytes equal a direct `marv_plant` call.
+   - ODR/clock error e at the corners −65, 0 and +65 ppm, against the plant clock.
+
+   Stage (a)'s decision record logs the DS-000489 → DS-000577 spec gap. Its reference sets go in
+   `tools/refdata/refdata.py`'s registry, never committed (0011).
+3. Still owed to Luis from 0009: the final CI split with measured times, and the T4 confirmation seed count with its
+   cost.
+4. **Stage (c), carried:** re-run `L05/results/step_cause/step_cause.py` at N = 1 when D7 regenerates L5, under stage
+   (c)'s record (Luis, 2026-10-01). Today's `cause.txt` describes att_loop_ratio 2 (H = 10372) from before `0533044`.
+
+## T3 reference storage (decision 0011, approved 2026-10-01)
+
+- **What moved:** five files are no longer committed: `L04/t3/reference/rate_t3_{golden,envelope}.txt` and
+  `L05/t3/reference/attitude_t3_{golden,envelope,q}.txt`. Each reference dir holds `SHA256SUMS` instead.
+- **How they are made:** `tools/refdata/refdata.py ensure <id>` generates into `build/reference` (or
+  `$MARV_REFERENCE_DIR`) and checks every hash. ctest gets them through a fixture setup test, the Python consumers
+  through `refdata.reference_dir`.
+  - L5 takes about 2 min at `--procs 4` and peaks at 0.26 GiB. The first local ctest or pytest run on a fresh tree
+    generates it.
+- **Changing a golden:** regenerate in the image, update `SHA256SUMS`, write a decision record.
+
+## Known failing items (safety)
+
+Both have the same cause class and the same gating. **L6 cannot close until both pass, and both must pass before L8
 (pilot in the loop).** Each is a strict pytest xfail (`raises=AssertionError`, strict) whose condition is
-"`tests/regression/quad/L06/XFAIL_GATE_CLOSED` does not exist" (decision 0009; L6 stage (e) creates it): from then
-on it is a normal test and must pass;
-an unexpected pass fails CI. Do not re-seed envelopes from wound-up state and do not tune bounds (0005 decision 12,
-0006 decisions 5 and 15).
+"`tests/regression/quad/L06/XFAIL_GATE_CLOSED` does not exist" (0009). Stage (e) creates the file; from then on each is
+a normal test and must pass, and an unexpected pass fails CI. Do not re-seed envelopes from wound-up state and do not
+tune bounds (0005 decision 12, 0006 decisions 5 and 15).
 
 1. **L4 acro, combined full-stick segment** (0005 decision 12). `tests/regression/quad/L04/gz/test_t4_acro.py`,
-   evidence `tests/regression/quad/L04/results/acro_cause/`. The PI baseline (ω_c 8.3 rad/s) cannot reject ω×Jω;
-   the integrator absorbs then releases it, giving uncommanded rates with the stick centred. No L3 flag set.
-2. **L5 R2, inverted and tumbling at rate_max on all axes** (0006 decision 15, new). `tests/regression/quad/L05/gz/
-   test_t4_recovery.py`, evidence `tests/regression/quad/L05/results/recovery_cause/` (bit-exact replay, 20747
-   executions). No L3 flag, s = t = 1 throughout; |ω×Jω| at the first execution is 41/44/33 % of τ_held and larger than
-   any torque the loop requests. Counterfactual distance to gz: design 7.96, + ω×Jω 1.46e-2, + DShot 7.9e-3. The
-   vehicle recovers (α < 90° at 0.259 s against 0.124 s in the design model), but leaves the envelope by up to
-   0.80 rad and 5.3 rad/s.
+   evidence `tests/regression/quad/L04/results/acro_cause/`. The PI baseline (ω_c 8.3 rad/s) cannot reject ω×Jω.
+2. **L5 R2, inverted and tumbling at rate_max on all axes** (0006 decision 15). `tests/regression/quad/L05/gz/
+   test_t4_recovery.py`, evidence `tests/regression/quad/L05/results/recovery_cause/`. |ω×Jω| at the first execution
+   is 41/44/33 % of τ_held. The vehicle recovers, but leaves the envelope by up to 0.80 rad and 5.3 rad/s.
 
-Luis: at L6, evaluate ω×Jω feed-forward together with the D-term design, then re-run both checks.
+Stage (c) evaluates ω×Jω feed-forward (F1–F3) with the D term (D1–D7), then both checks are re-run.
 
 ## Current state
 
-- **Branch and tag.** `master` holds the L5 work, pushed to `github.com:Lmx154/MARV-V2`. Luis's condition: tag
-  `quad-L5-pass` only once GitHub Actions is green on the pushed head. Actions failed on `e9bfaae` (run 36785715345):
-  the new `rate_bypass/regenerate.sh` ran `git archive` as root on a checkout owned by another user, and git refused it
-  for dubious ownership. Local CI had used `-u` and hidden this. `d7a044c` passes `safe.directory`. Its run
-  (36788978797) then failed the regression-change check: L5 was frozen from `e9bfaae`, and that push carried no
-  record. Decision 0008 records the change, with Luis's approval. The tag goes on the head that carries 0008 and this
-  handoff, once Actions is green there. **Reproduce GitHub's conditions before pushing: run the CI images
-  as root (no `-u`) with `MARV_CI_BASE_REF` set to the push range base.**
-  Earlier tags: `quad-L4-pass` on `daac5d9`, `quad-L3-pass` on `dcaf2fb`, `quad-L2-pass` on `320cf18`, `quad-L1-pass`
-  on `b8ed690`, `quad-L0-pass` on `6cca7ec`.
-- **Verified.** Full CI on clean copies of `quad-l5` at `f56c0fb` (the final commit `e9bfaae` changes only 0006 text),
-  with `MARV_CI_BASE_REF=master`:
-  - `ci/run_ci.sh` in `marv-ci`: 49 steps, ALL STEPS PASSED; ctest 454/454 (debug and release), frozen 453/453;
-    regression-change check: 1 frozen file changed, covered by 2 decision records.
-  - `ci/run_ci_gz.sh` in `marv-ci-gz`: 10 steps; `gz_l4` 40 passed, 1 xfailed; `gz_l5` 63 passed, 1 xfailed; 0 skipped.
-- **Frozen files changed at L5.** One: `tests/regression/quad/L01/tools/test_gen_sdf_plant_config.py`
-  (`initial_omega_rad_s` added to `SCENARIO_FIELDS`, plus a negative control), approved by Luis and recorded in 0007.
-  Luis: that test stays a pinned set deliberately; it is not one of the snapshot tests to generalise.
-- **Branches and worktrees.** `quad-l5` (merged) and the worker branches `worktree-agent-*` and `quad-l5-p9b` remain
-  locally, all merged into `master`; worktrees under `.claude/worktrees/` can be removed.
-
-## What L5 built (quad spec §4 L5; details and numbers in 0006)
-
-| Area | Where | Notes |
-| --- | --- | --- |
-| Attitude law | `fw/attitude/` (`marv_attitude`) | PX4 reduced-attitude (tilt-prioritised) with yaw-weight compensation (0006 C, decisions 9, 12, 13). One gain k on all axes; w = α_max,yaw / min(α_max,roll, α_max,pitch) ≤ 1 shapes large combined errors only. ρ = 0 branch at exactly 180° tilt. Faults, latch, period check as L4. |
-| Angle mode | `fw/attitude/` | Tilt = θ_max·s/max(1,‖s‖), θ_max 60° (Betaflight 4.5.2 `pid.c:138`). Yaw stick outside the deadband is a rate command (world-down) with the heading tracking; on release, heading lock at the first world-down yaw-rate zero crossing; guard (a) one lock per release; guard (b) fallback at max(t_cross, ω_r/α_min) (decisions 14, 17, 18). Deadband 0 (Betaflight default) — revisit at L8. |
-| Gains | `tools/card/attitude.py` (`flatten.py --out-attitude`) | Exact sampled-data closed rate loop (bypass), 0005's sup rule on the P gain, band box per decision 1. At 3.2 kHz: k = 3.0872879, PM 69.390° nominal, 45.000018° worst at (J+, τ+), crossover 3.477–4.610 rad/s, w = 0.143256, α_min 83.327 rad/s², t_cross 0.25625 s. `att_loop_ratio` = 1 by the core §7.5 flight-rate-group rule (decision 21; EMB-3 met per §5.4; re-check at L9). |
-| Rate-loop change | `fw/rate/` | Additive `execute_bypass` (prefilter skipped for the attitude path; acro unchanged, bit-identity golden from `quad-L4-pass`). |
-| Truth attitude | `fw/sil` (`marv_truth.h`, `TRUTH_STATE` option), `sim/gz/adapter` (`marv_gz_truth_attitude`), `<attitude_source>truth</attitude_source>` | Test-only SIL entry `marv_truth_state_set`, exported only by `TRUTH_STATE` libraries; G3 export rule extended with controls. q canonicalised to w ≥ 0. Log record type 5. `AttitudeState<T>` in `fw/types` is L7's opening. |
-| Plant | `sim/plant`, plugin, scenarios | `marv_plant_config.initial_omega_rad_s` (default 0, bit-identical), `<initial_rotor_speed_rad_s>`, `initial_state.rotor_speed_rad_s` (`hover` resolved by `run_l5.hover_rotor_speeds`) — 0007. |
-| Composition | `fw/compositions/l5_attitude_scripted`, `sim/l5_attitude_scripted`, preset `host-gz-l5` | Stick script, attitude chirp (rad/s at the attitude output), constant yaw disturbance, thrust — its own register appended to the product set. |
-| T3 | `tests/regression/quad/L05/t3/`, `L05/tools/` | Fixed-input golden with derived tolerance; controls ×1.1 (×3946 roll/pitch, ×192 yaw) and +1 tick (×46.4, ×8.2); 17×17 grid margins; t_cross and fallback properties; envelopes; Q (DShot quantisation term). |
-| T4 | `tests/regression/quad/L05/gz/`, `tools/sim/{l5_scenario,run_l5,gen_l5_chirp}.py`, `scenarios/quad/L05/` | Angle steps, truth plumbing, attitude chirp (roll 68.90°, pitch 68.90°, yaw 69.40°; slack ≥ 21°), yaw release and fallback, recovery R1 (π − 0.01, hover rotors) and exact-180° α check, R2 (strict xfail). All predicates envelope ± (E + F + Q). |
+- **Tags.** `quad-L5-pass` on `5ac1cf4` (placed on the first commit green in Actions, per 0009; not re-checked here, `gh` is not installed). Earlier: `quad-L4-pass` `daac5d9`, `quad-L3-pass`
+  `dcaf2fb`, `quad-L2-pass` `320cf18`, `quad-L1-pass` `b8ed690`, `quad-L0-pass` `6cca7ec`.
+- **Since the L5 handoff** (`33ac37b`):
+  - `b966588`: L5 chirp tests keep one axis's runs in memory (0010). `gz_l5` peak 18.33 GiB → 7.37 GiB, same results.
+  - `5ac1cf4`: CI split into parallel jobs `core`, `gz-l2`, `gz-l4`, `gz-l5`; nightly cron and `workflow_dispatch` run
+    them with `MARV_CI_MODE=full` (where stage (e)'s Monte Carlo will hook in; today both modes run the same steps);
+    a PEAK-MEM line per step; `ci/local_ci.sh` runs the same jobs as root under the runner's limits.
+  - `7d5a663`: the L6 spec section, the register entries (`Ms_max` 2.0, `d_path_noise_budget` 0.5,
+    `t4_pass_probability_{tracking,safety}` 0.90/0.95, `t4_confidence_{tracking,safety}` 0.90/0.95,
+    `allan_check_confidence` 0.99), the `L06/param_ids` manifest and the gate-file condition (0009).
+  - `3158fb9`: `local_ci.sh` limits from the measured runner (4 CPUs, 16765378560 B RAM, 1025118208 B headroom, no
+    swap locally), sampler and docker-start guards.
+- **L6 progress.** Opened: spec, register and gate (0009). Nothing built: `tests/regression/quad/L06/` holds only
+  `param_ids`. Stages (a)–(e) are all open.
+- **Measured wall-clock** (marv-ci-gz, before the split): L02 gz about 1.7 min, `gz_l4` 2 min 21 s, `gz_l5` about
+  9 min (548 s before 0010, 539 s after); the L05 T3 oracle about 50 s on the host, 2 min 20 s in marv-ci.
+- **Expected results.** ctest 454/454 (debug and release), frozen 453/453; L04 gz 40 passed, 1 xfailed; L05 gz 63
+  passed, 1 xfailed; 0 skipped.
+- **Local leftovers.** Branches `quad-l5`, `quad-l5-p9b`, `worktree-agent-*` are merged into `master`; worktrees under
+  `.claude/worktrees/` can be removed.
 
 ## How to verify
 
@@ -99,69 +142,55 @@ Luis: at L6, evaluate ω×Jω feed-forward together with the D-term design, then
 uv sync --frozen
 cmake --preset host-debug && cmake --build --preset host-debug && ctest --preset host-debug
 cmake --preset m33 && cmake --build --preset m33
-cmake --preset host-gz && cmake --build --preset host-gz && uv run pytest tests/regression/quad/L02 -q -rs
-cmake --preset host-gz-l4 && cmake --build --preset host-gz-l4 && uv run pytest tests/regression/quad/L04/gz -q -rs
-cmake --preset host-gz-l5 && cmake --build --preset host-gz-l5 && uv run pytest tests/regression/quad/L05/gz -q -rs
-docker build -t marv-ci -f ci/Dockerfile . && docker build -t marv-ci-gz -f ci/Dockerfile.gz .
-docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/src -w /src marv-ci ci/run_ci.sh      # verified, part 1
-docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/src -w /src marv-ci-gz ci/run_ci_gz.sh  # verified, part 2
+ci/local_ci.sh [--commit <rev>] [core|gz-l2|gz-l4|gz-l5 ...]     # the definition of verified
 ```
 
-Run the Docker commands on clean copies (`rsync -a --exclude build --exclude .venv --exclude __pycache__ --exclude
-.claude ./ <dir>/`, one per image), once with `-u` and once as root without it, as GitHub Actions runs them (a
-root-owned copy needs a container to delete it). To exercise the regression-change check, commit in the copy on a
-new branch and pass `-e MARV_CI_BASE_REF=master`. `test_truth_gyro.py` (L04 gz) needs `build/host-gz` as well as
-`build/host-gz-l4`, or it skips. Expected: L04 gz 40 passed, 1 xfailed; L05 gz 63 passed, 1 xfailed; 0 skipped.
+Set `MARV_CI_BASE_REF` to the push range base to exercise the regression-change check as Actions does. `local_ci.sh`
+tests a fresh clone of a commit, so uncommitted files are not tested. `test_truth_gyro.py` (L04 gz) needs
+`build/host-gz` as well as `build/host-gz-l4`, or it skips; a skip in the gz image is a failure.
 
-## Findings at L5 that shape L6
+## Findings that shape L6
 
-- **DShot quantisation at hover** (measured, `L05/results/step_cause/`): hover sits at DShot 765 (765.06 rounded); one
-  step is 4.56 mN per motor, a request dead band of ±8.0e-4 / ±6.0e-4 / ±1.8e-4 N·m (roll/pitch/yaw), giving a ±0.006
-  rad attitude limit cycle. Q absorbs it at T4 (decision 19). Consequence: T4 angle steps catch gross failures and
-  attitude-gain errors only; the +1-tick delay and ±10 % rate-gain errors are enforced at T3. Luis: evaluate DShot
-  error diffusion at L6 (it changes L3 output: its own decision record).
-- **The chirp at roll/pitch** carries about 2.5° of measurement uncertainty from that limit cycle (plateau rule,
-  decision 20); yaw is clean (0.085°).
-- **T3 reference size**: golden + envelope 8.6 MB (about 2.6 MB compressed in git) at 3.2 kHz — Luis's item 1.
-- **Regeneration at L6**: gains, T3 fixture (`--refresh-inputs`, `--refresh-q-inputs`), golden/envelope/Q, step and
-  yaw scenario execution counts, and the chirp scenarios (`uv run python tools/sim/gen_l5_chirp.py`) all regenerate by
-  rule; tests assert rule properties and fail loudly when a committed value is stale.
+- **DShot quantisation at hover** (`L05/results/step_cause/`): hover sits at DShot 765; one step is 4.56 mN per motor,
+  a request dead band of ±8.0e-4 / ±6.0e-4 / ±1.8e-4 N·m (roll/pitch/yaw), a ±0.006 rad attitude limit cycle. Q
+  absorbs it at T4 (0006 decision 19). T4 angle steps catch gross failures only; delay and gain errors are enforced
+  at T3. Stage (d) evaluates DShot error diffusion (it changes L3 output: its own decision record).
+- **The roll/pitch chirp** carries about 2.5° of measurement uncertainty from that limit cycle (0006 decision 20); yaw
+  is clean (0.085°).
+- **Regeneration at L6.** Gains, the T3 fixtures (`--refresh-inputs`, `--refresh-q-inputs`), golden/envelope/Q, step
+  and yaw scenario execution counts and the chirp scenarios (`uv run python tools/sim/gen_l5_chirp.py`) all regenerate
+  by rule; tests assert rule properties and fail loudly when a committed value is stale.
 
 ## Carried forward (not L6 unless the spec or Luis says so)
 
-- **From L5 (0006 "Carried forward").** L8: yaw deadband (0 today) with real sticks; the guard that only test
-  compositions may carry `TRUTH_STATE`. L9: re-check the attitude rate against EMB-3 with measured WCET (decision 21).
-  `run_l4` passes `rotor_speed_rad_s` through but `l4_scenario` does not accept it yet (0007). The recovery envelope's
-  T3 rounding term is borrowed (INFERRED, about 1e-5 against a 4.1e-2 halving term). The runner fills the L2
-  separatrix field with the state's own value for recovery scenarios (the analytic check does not apply there). The
-  plugin applies initial rates one host step late (0003 item 11); the recovery test skips rate channels at execution 0.
-- **From L4 (0005, handoff of quad-L4-pass).** QF-8 open until motor τ σ exists; D term, its filter rule and the
-  crossover cap move to L6; the replay fidelity gate is DShot-quantised; the composition's extended parameter set
-  relies on link order (a flight composition uses the product set only, L9); the step predicate cannot resolve an
-  envelope shift below about 15 ms.
-- **Snapshot-style frozen tests in L00–L03** (Luis asked for the list; nothing changed): L01 `test_flatten_report.py`
-  (:31, :134-160, :206, :218, :238, :455, :214, :389, :393, :196); L01 `test_card_lint.py:482`; L02
-  `test_run_scenario.py:358, 385-395`; L03 `test_mixer_params.py` (:164, :267, :34-36, :77, :241, :256); L00
-  `test_lint_g1.py:98-104`. Not `test_gen_sdf_plant_config.py` (kept pinned by decision, 0007).
-- **L3, SIM-3, CI pinning, B1, L9, QF-4, spec gaps**: unchanged from the quad-L4-pass handoff; see 0005 "Spec gaps
-  logged" and 0006 "Spec gaps logged". New L5 spec gaps: the attitude chirp joins the L5 pass bar (decision 16);
-  angle-mode yaw bypasses QF-2's reference model; 0006 F's first chirp amplitude rule was superseded (decision 20).
+- **From L5 (0006 "Carried forward").** L8: yaw deadband (0 today) with real sticks; only test compositions may carry
+  `TRUTH_STATE`. L9: re-check the attitude rate against EMB-3 with measured WCET (decision 21). `run_l4` passes
+  `rotor_speed_rad_s` through but `l4_scenario` does not accept it yet (0007). The recovery envelope's T3 rounding term
+  is borrowed (INFERRED). The runner fills the L2 separatrix field with the state's own value for recovery scenarios.
+  The plugin applies initial rates one host step late (0003 item 11).
+- **From L4 (0005).** QF-8 open until motor τ σ exists; the replay fidelity gate is DShot-quantised; the composition's
+  extended parameter set relies on link order (L9); the step predicate cannot resolve an envelope shift below about
+  15 ms.
+- **Snapshot-style frozen tests in L00–L03** (listed for Luis; unchanged): L01 `test_flatten_report.py`, L01
+  `test_card_lint.py:482`, L02 `test_run_scenario.py:358, 385-395`, L03 `test_mixer_params.py`, L00
+  `test_lint_g1.py:98-104`. Not `test_gen_sdf_plant_config.py` (pinned by 0007).
+- **Spec gaps** are logged in 0005, 0006 and 0009.
 - **Known, accepted gate limits.** G1 and G3 do not cover `sim/gz` (review only). `ci/run_ci.sh` does not run the L02
-  pytest suites; `run_ci_gz.sh` does.
+  pytest suites; `run_ci_gz.sh l2` does.
 
 ## Working notes
 
 - **Numeric literals.** Every literal under `fw/` other than 0, 1, 2 and ½ fails CI. Cited constants go in
   `constants.hpp` with `Citation:` and `Kind:`. Test numbers are derived or labelled `scenario test value` with a
   reason.
-- **New product-set parameters.** Add the layer's `tests/regression/quad/Lnn/param_ids` manifest (0004).
-- **Goldens.** Regenerated only inside the image, with the command recorded next to them; CI reproduces them byte
-  for byte with a perturbed-input control.
-- **Gazebo tests.** One scenario per gz process (`run_gz_process`), `gz sim --force-version 8`; a skipped pytest in
-  the gz image is a failure. Protobuf "already exists" lines are noise.
+- **New product-set parameters.** Add them to the layer's `tests/regression/quad/Lnn/param_ids` manifest (0004).
+- **Goldens.** Regenerated only inside the image, with the command recorded next to them; CI reproduces them byte for
+  byte with a perturbed-input control.
+- **Gazebo tests.** One scenario per gz process (`run_gz_process`), `gz sim --force-version 8`. Protobuf "already
+  exists" lines are noise. Keep parsed logs out of long-lived caches (0010).
 - **Parallel workers.** Worktrees start from `master`; fast-forward them to the working branch first. Size packets to
-  finish inside a worker's turn budget: the large T3 and Gazebo packets overran at L5.
+  finish inside a worker's turn budget.
 - **Replays.** L4 (`tests/regression/quad/L04/replay/`) and L5 (`results/{step,recovery}_cause/`) re-execute the
-  firmware on logged samples and must match DShot bit for bit; use them to recover internals the log does not carry.
-- **Scope.** Keep changes to the layer being executed. Prefer fixing harness or setup limitations over adding
-  tolerance terms, and after any new term re-confirm the fine negative controls (0006 decision 24).
+  firmware on logged samples and must match DShot bit for bit.
+- **Scope.** Keep changes to the layer and stage being executed. Prefer fixing harness or setup limitations over
+  adding tolerance terms, and after any new term re-confirm the fine negative controls (0006 decision 24).

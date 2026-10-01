@@ -15,6 +15,7 @@ endif()
 
 include(cmake/flags.cmake)
 include(cmake/flight_targets.cmake)
+include(cmake/reference_data.cmake)
 
 add_subdirectory(fw/prim)
 add_subdirectory(fw/types)

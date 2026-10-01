@@ -11,16 +11,24 @@ trajectories are compared with an independent double oracle within a derived rou
 | `t3_test.cpp` | The harness and the assertions (gtest, label `frozen`). |
 | `reference/attitude_t3_oracle.py` | The independent oracle (python3 stdlib only): law, plant, tolerance, band envelopes. |
 | `reference/attitude_t3_inputs.txt` | The fixture: the f32 product values of 2026-09-30 (hex floats) plus `tau_held_yaw_nm`. |
-| `reference/attitude_t3_golden.txt` | Per script: the trajectory (angle, rate) per attitude execution, the node error bounds, the tolerances. |
-| `reference/attitude_t3_envelope.txt` | The band envelopes of the design model (for T4) and the fallback property. |
-
 | `reference/attitude_t3_q_inputs.txt` | The quantiser fixture (hex floats): the firmware mixer's f32 values, the scenario collective `l5_thrust_n`, the card's plant side in double. |
-| `reference/attitude_t3_q.txt` | The DShot quantisation term Q per script and channel (for T4). |
+| `reference/SHA256SUMS` | The committed SHA-256 of the three generated files below (`sha256sum` format). |
+| `attitude_t3_golden.txt` (generated, not committed) | Per script: the trajectory (angle, rate) per attitude execution, the node error bounds, the tolerances. |
+| `attitude_t3_envelope.txt` (generated, not committed) | The band envelopes of the design model (for T4) and the fallback property. |
+| `attitude_t3_q.txt` (generated, not committed) | The DShot quantisation term Q per script and channel (for T4). |
 
-Regenerate the golden, the envelope and Q (about 1 min on the host; byte-identical on the host and in `marv-ci`, and
+The golden, the envelope and Q are not committed (decision 0011). `tools/refdata/refdata.py` generates them from the committed
+inputs and the oracle into `build/reference/quad/L05/t3/` (or `$MARV_REFERENCE_DIR`), together with copies of the inputs, and
+checks them against `reference/SHA256SUMS`; the ctest fixture `marv_reference_quad_L05_t3_ensure` does it before `t3_l5_attitude`
+runs, the Python consumers (`../tools/`, `../gz/`, `../results/`) call `refdata.reference_dir("quad/L05/t3")`, and a mismatch
+fails naming the file and both hashes:
+
+    uv run python tools/refdata/refdata.py ensure quad/L05/t3 [--procs N]
+
+Generate them by hand (about 2 min on 16 CPUs, about 6 min on one; byte-identical on the host and in `marv-ci`, and
 independent of `--procs`, which only spreads the Q runs over worker processes):
 
-    uv run python tests/regression/quad/L05/t3/reference/attitude_t3_oracle.py --procs 8
+    uv run python tests/regression/quad/L05/t3/reference/attitude_t3_oracle.py --procs 8 --dir <dir with the two inputs files>
 
 Regenerate the quantiser fixture (when the card or a product mixer parameter changes, or at L6; it reads
 `vehicles/uzh_neurobem_5in.yaml`, the `l5_thrust_n` rule of `tools/sim/run_l5.py` and the build's parameter table) and then Q:
@@ -37,9 +45,9 @@ Regenerate the inputs from a built product parameter table (only when a product 
 The fixture equals the product parameter values of the commit that regenerated it (att_loop_ratio = 1, 3.2 kHz, owner decision 21; earlier 2026-09-30 at N = 2) and does not follow later changes (decision 0006, owner
 decision 7: goldens only on fixed inputs the test owns; rule properties on the live parameters, in `../tools/`). The test
 builds its `AttitudeConfig` and `RateConfig` from the fixture, not from the live parameters. Goldens are regenerated only
-inside the CI image (CLAUDE.md), and a change under `tests/regression/` needs a decision record (core 7.3). CI regenerates
-the golden and the envelope from the fixture and compares them byte for byte, and shows that a perturbed input does not
-reproduce them.
+inside the CI image (CLAUDE.md). A changed golden means: regenerate in the image, update `reference/SHA256SUMS` from the new
+files (`sha256sum`), and write a decision record (core 7.3). CI regenerates the golden, the envelope and Q from the fixtures
+and checks them against `reference/SHA256SUMS`, and shows that a perturbed input fails that check.
 
 ## Harness
 
@@ -65,7 +73,7 @@ envelope's end value is below `F`. The start value did not settle (3.24 s): the 
 `H = 20731` executions (T_a = 312.5 us), 41463 executions per script. `F = T3 tolerance + the envelope's last-halving change + the kinematics
 halving change` of the script; `F` is a term of the T4 tolerance `E + F` with `E >= 0`, so an envelope that ends below `F`
 has settled below the T4 tolerance (for yaw: the yaw rate and the heading relative to the lock; the heading relative to the
-release is then constant). The test asserts this on the committed files, and an envelope cut at the release fails it.
+release is then constant). The test asserts this on the generated files, and an envelope cut at the release fails it.
 
 ## Tolerance (derived)
 
@@ -155,7 +163,7 @@ every member locks at the fallback execution 21553.
 With the same script and `d = sigma_r tau_held,yaw` (0.1635 N m, the collective-held yaw torque envelope of 0005's chirp
 rule), every box member keeps `sigma_r w > 0` from the release up to its fallback execution. If some member crossed, the held
 stick would halve (core 7.5) until none does; the recorded `stick_scale` is 1 (full stick suffices), and the smallest
-`sigma_r w` over the members is +0.0989 rad/s. The test asserts it on the committed envelope, with the release script (no
+`sigma_r w` over the members is +0.0989 rad/s. The test asserts it on the generated envelope, with the release script (no
 disturbance, smallest `sigma_r w` = -3.577 rad/s, it crosses) as the control. The same property on the live parameters is
 checked in `../tools/`.
 

@@ -11,25 +11,33 @@ double oracle within a derived rounding tolerance.
 | `t3_test.cpp` | The harness and the assertions (gtest, label `frozen`). |
 | `reference/rate_t3_oracle.py` | The independent oracle: law, plant, impulse responses, tolerance, band envelope. |
 | `reference/rate_t3_inputs.txt` | The fixture: the f32 gains, tau_ref, inertias, motor tau, rate_max, tick and band values that both the oracle and the test read (hex floats). It equals the product parameter values on 2026-09-30. |
-| `reference/rate_t3_golden.txt` | Per axis: trajectory `y_n`, the `l1_*` norms, the `rho_*` injections and the `tolerance`. |
-| `reference/rate_t3_envelope.txt` | Per axis: pointwise min / max of the band-box step responses (for T4). |
+| `reference/SHA256SUMS` | The committed SHA-256 of the two generated files below (`sha256sum` format). |
+| `rate_t3_golden.txt` (generated, not committed) | Per axis: trajectory `y_n`, the `l1_*` norms, the `rho_*` injections and the `tolerance`. |
+| `rate_t3_envelope.txt` (generated, not committed) | Per axis: pointwise min / max of the band-box step responses (for T4). |
 
-Regenerate the golden and the envelope (byte-identical on the host and in the `marv-ci` image, python3 stdlib only):
+The golden and the envelope are not committed (decision 0011). `tools/refdata/refdata.py` generates them from the committed
+inputs and the oracle into `build/reference/quad/L04/t3/` (or `$MARV_REFERENCE_DIR`), together with copies of the inputs, and
+checks them against `reference/SHA256SUMS`; the ctest fixture `marv_reference_quad_L04_t3_ensure` does it before `t3_l4_rate`
+runs, and a mismatch fails naming the file and both hashes:
 
-    uv run python tests/regression/quad/L04/t3/reference/rate_t3_oracle.py
+    uv run python tools/refdata/refdata.py ensure quad/L04/t3
+
+Generate them by hand (byte-identical on the host and in the `marv-ci` image, python3 stdlib only):
+
+    uv run python tests/regression/quad/L04/t3/reference/rate_t3_oracle.py --dir <dir with rate_t3_inputs.txt>
 
 Regenerate the inputs from a built product parameter table (needed only when a parameter changes):
 
     uv run python tests/regression/quad/L04/t3/reference/rate_t3_oracle.py --refresh-inputs \
         build/<preset>/generated/marv_params/marv/params/param_defaults.cpp
 
-Goldens are regenerated only inside the CI image (CLAUDE.md), and a change under `tests/regression/` needs a decision
-record (core 7.3). The inputs are a fixture: the T3 test builds its `RateConfig` (gains, tau_ref, period) and its plant
+Goldens are regenerated only inside the CI image (CLAUDE.md). A changed golden means: regenerate in the image, update
+`reference/SHA256SUMS` from the new files (`sha256sum`), and write a decision record (core 7.3). The inputs are a fixture: the T3 test builds its `RateConfig` (gains, tau_ref, period) and its plant
 from `rate_t3_inputs.txt` and does not read the live product parameters, so a legitimate parameter change (a B1 card
 update, say) does not fail T3. The rotor geometry is left at its zero default (the mixer is out of the loop). The rule
 that produces the gains is tested on the live parameters by `tools/test_rate_design.py`, and `from_params` /
 `load_config` by `unit/rate/params_test.cpp`. CI (`ci/run_ci.sh`) regenerates the golden and the envelope from the
-fixture and compares them byte for byte, and shows that a perturbed input does not reproduce them.
+fixture and checks them against `reference/SHA256SUMS`, and shows that a perturbed input fails that check.
 
 ## Scenario
 
@@ -71,7 +79,7 @@ and 3 (the two dt phases; every later injection is a shifted copy of one of them
     TOL_a = l1_r max_n(rho_r) + l1_e max_n(rho_e) + l1_I max_n(rho_I) + l1_u max_n(rho_u)
 
 The plant and the oracle are double: their rounding is 2^-29 of a float operation's and is not in the sum. The test
-checks `TOL = sum(l1 x rho)` from the committed numbers (`ToleranceIsTheSumOfL1TimesRho`).
+checks `TOL = sum(l1 x rho)` from the generated numbers (`ToleranceIsTheSumOfL1TimesRho`).
 
 ## Negative controls (quad 4 L4 pass bar)
 

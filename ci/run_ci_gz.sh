@@ -113,6 +113,12 @@ gz_build_l5() {
   cmake --preset host-gz-l5 && cmake --build --preset host-gz-l5
 }
 
+# The L5 T4 suite reads the T3 envelope and Q files, which are generated, not committed (decision 0011): tools/refdata
+# regenerates them into build/reference and checks them against reference/SHA256SUMS. 4 = the runner's CPUs (ci/local_ci.sh).
+gz_reference_l5() {
+  uv run python tools/refdata/refdata.py ensure quad/L05/t3 --procs 4
+}
+
 # The L5 T4 suite (angle steps, truth plumbing, chirp, yaw release and fallback, recovery) on the host-gz-l5 build.
 gz_l5() {
   pytest_no_skips tests/regression/quad/L05/gz
@@ -138,6 +144,7 @@ group_l4() {
 
 group_l5() {
   step gz_build_l5 gz_build_l5
+  step gz_reference_l5 gz_reference_l5
   step gz_l5 gz_l5
 }
 

@@ -53,11 +53,14 @@ sys.path.insert(0, str(ROOT / "tools" / "card"))
 sys.path.insert(0, str(ROOT / "tools" / "sim"))
 import run_l5  # noqa: E402
 import run_scenario  # noqa: E402
+sys.path.insert(0, str(ROOT / "tools" / "refdata"))
+import refdata  # noqa: E402
 
 CARD = ROOT / "vehicles" / "uzh_neurobem_5in.yaml"
 SCEN = ROOT / "scenarios" / "quad" / "L05"
 PLUGIN_DIR = run_l5.DEFAULT_PLUGIN_DIR
 T3_REFERENCE = ROOT / "tests" / "regression" / "quad" / "L05" / "t3" / "reference"
+T3_GENERATED = refdata.reference_dir("quad/L05/t3")  # the generated golden, envelope and q (decision 0011)
 AXES = ("roll", "pitch")
 GAIN_SCALE = 1.1  # scenario test value: control (c), the spec's fine gain control (t3_test.cpp kGainScale)
 AXIS_INDEX = {"roll": 0, "pitch": 1}
@@ -93,7 +96,7 @@ def parse_envelope(path, scenario):
     rows = [tuple(map(float, ln.split())) for ln in text[i + 2:i + 2 + count]]
     assert len(rows) == count and all(len(r) == 2 for r in rows)
     return Envelope(scenario, first, count, [r[0] for r in rows], [r[1] for r in rows], F, halving,
-                    parse_q(T3_REFERENCE / "attitude_t3_q.txt", scenario, "theta"))
+                    parse_q(T3_GENERATED / "attitude_t3_q.txt", scenario, "theta"))
 
 
 def parse_q(path, scenario, channel):
@@ -244,7 +247,7 @@ def axis(request):
 
 @pytest.fixture(scope="module")
 def envelope(axis):
-    return parse_envelope(T3_REFERENCE / "attitude_t3_envelope.txt", f"step_{axis}")
+    return parse_envelope(T3_GENERATED / "attitude_t3_envelope.txt", f"step_{axis}")
 
 
 def fly(tmp_path_factory, name, axis, env, overrides=None):

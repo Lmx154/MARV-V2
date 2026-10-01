@@ -21,10 +21,14 @@ import run_l5  # noqa: E402
 import run_scenario  # noqa: E402
 import scenario as scn  # noqa: E402
 import schema  # noqa: E402
+sys.path.insert(0, str(ROOT / "tools" / "refdata"))
+import refdata  # noqa: E402
 
 SCEN = ROOT / "scenarios" / "quad" / "L05"
 CARD = ROOT / "vehicles" / "uzh_neurobem_5in.yaml"
-ENVELOPE = ROOT / "tests" / "regression" / "quad" / "L05" / "t3" / "reference" / "attitude_t3_envelope.txt"
+T3_REFERENCE = ROOT / "tests" / "regression" / "quad" / "L05" / "t3" / "reference"
+T3_GENERATED = refdata.reference_dir("quad/L05/t3")  # the generated golden, envelope and q (decision 0011)
+ENVELOPE = T3_GENERATED / "attitude_t3_envelope.txt"
 STEPS = ("step_roll", "step_pitch")
 BUILD = {"tick_period_num_us": 625, "tick_period_den": 4, "rate_loop_divisor": 2, "att_loop_ratio": 2}
 REGISTER = schema.load_yaml(l5s.REGISTER)
@@ -74,7 +78,7 @@ def test_control_a_moved_release_differs_from_the_recorded_envelope():
 
 
 YAW = ("yaw_release", "yaw_fallback")
-INPUTS = ENVELOPE.parent / "attitude_t3_inputs.txt"
+INPUTS = T3_REFERENCE / "attitude_t3_inputs.txt"
 
 
 def yaw_block(name):

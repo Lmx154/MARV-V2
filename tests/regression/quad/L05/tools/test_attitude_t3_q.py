@@ -12,11 +12,17 @@ Quantiser). Checked here, on a short segment (the rule is the same at any length
 
 import importlib.util
 import math
+import sys
 from pathlib import Path
 
 import pytest
 
+ROOT = Path(__file__).resolve().parents[5]
+sys.path.insert(0, str(ROOT / "tools" / "refdata"))
+import refdata  # noqa: E402
+
 REFERENCE = Path(__file__).resolve().parents[1] / "t3" / "reference"
+T3_GENERATED = refdata.reference_dir("quad/L05/t3")  # the generated golden, envelope and q (decision 0011)
 SHORT_SEGMENT = 1200  # attitude executions of the hold and of the release segment: long enough for every yaw member to lock (att_yaw_t_cross / T_a = 820 after the release at N = 1; 410 at N = 2)
 DEAD_BAND_REL_TOL = 1e-3  # scenario test value: the two derivations agree to this relative difference (cause.txt prints 4 digits)
 BISECTIONS = 80  # scenario test value: the dead-band search halves an interval of 1e-2 N m this many times
@@ -84,7 +90,7 @@ def test_quantiser_reproduces_the_diagnosis_quantum(setup):
 def test_committed_q_file_is_recorded_for_every_script_and_channel():
     rows = {}
     scenario = None
-    for line in (REFERENCE / "attitude_t3_q.txt").read_text().splitlines():
+    for line in (T3_GENERATED / "attitude_t3_q.txt").read_text().splitlines():
         w = line.split()
         if not w or w[0].startswith("#"):
             continue

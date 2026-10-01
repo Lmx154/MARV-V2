@@ -300,7 +300,11 @@ plant_ref_control() {
   rm -rf "${dir}"
 }
 
-# rate_t3_oracle.py reads rate_t3_inputs.txt and writes rate_t3_golden.txt and rate_t3_envelope.txt into --dir.
+# T3 reference data is not committed (decision 0011): tools/refdata/refdata.py regenerates it from the committed inputs into
+# ${MARV_REFERENCE_DIR:-build/reference} and checks it against the committed SHA256SUMS. The reproduction steps below
+# regenerate (--force) and the ctest fixtures of the T3 suites then read that same directory. The L5 generator runs on the
+# runner's 4 CPUs (ci/local_ci.sh RUNNER_CPUS); the output does not depend on the number of processes.
+refdata="tools/refdata/refdata.py"
 t3_reference_dir=tests/regression/quad/L04/t3/reference
 
 t3_oracle_run() {
@@ -309,22 +313,14 @@ t3_oracle_run() {
 }
 
 t3_reference_reproduces() {
-  local dir status=0
-  dir="$(mktemp -d)"
-  cp "${t3_reference_dir}/rate_t3_inputs.txt" "${dir}/rate_t3_inputs.txt"
-  t3_oracle_run "${dir}" || status=$?
-  if [[ ${status} -eq 0 ]]; then
-    cmp "${t3_reference_dir}/rate_t3_golden.txt" "${dir}/rate_t3_golden.txt" || status=$?
-    cmp "${t3_reference_dir}/rate_t3_envelope.txt" "${dir}/rate_t3_envelope.txt" || status=$?
-  fi
-  rm -rf "${dir}"
-  return "${status}"
+  uv run python "${refdata}" ensure quad/L04/t3 --force
 }
 
-# The same run with rate_kp_roll one float32 ulp up must differ from the committed golden.
+# The same run with rate_kp_roll one float32 ulp up must fail the SHA256SUMS check, naming rate_t3_golden.txt.
 t3_reference_control() {
-  local dir
+  local dir log
   dir="$(mktemp -d)"
+  log="$(mktemp)"
   uv run python - "${t3_reference_dir}/rate_t3_inputs.txt" "${dir}/rate_t3_inputs.txt" <<'PY'
 import struct
 import sys
@@ -340,16 +336,22 @@ open(sys.argv[2], "w").write("".join(out))
 PY
   if cmp -s "${t3_reference_dir}/rate_t3_inputs.txt" "${dir}/rate_t3_inputs.txt"; then
     echo "control setup failed: the perturbation did not change the inputs"
-    rm -rf "${dir}"
+    rm -rf "${dir}" "${log}"
     return 1
   fi
-  t3_oracle_run "${dir}" || { rm -rf "${dir}"; return 1; }
-  if cmp -s "${t3_reference_dir}/rate_t3_golden.txt" "${dir}/rate_t3_golden.txt"; then
-    echo "control produced the committed golden from a perturbed input: the reproduction check cannot fail"
-    rm -rf "${dir}"
+  t3_oracle_run "${dir}" || { rm -rf "${dir}" "${log}"; return 1; }
+  if uv run python "${refdata}" verify quad/L04/t3 --dir "${dir}" 2>"${log}"; then
+    echo "control passed the SHA256SUMS check from a perturbed input: the reproduction check cannot fail"
+    rm -rf "${dir}" "${log}"
     return 1
   fi
-  rm -rf "${dir}"
+  cat "${log}"
+  if ! grep -q "rate_t3_golden.txt: sha256" "${log}"; then
+    echo "control failed, but not on rate_t3_golden.txt"
+    rm -rf "${dir}" "${log}"
+    return 1
+  fi
+  rm -rf "${dir}" "${log}"
 }
 
 g3_check() {
@@ -465,34 +467,26 @@ g3_plant_control() {
 }
 
 
-# L5 T3: attitude_t3_oracle.py reads attitude_t3_inputs.txt and writes attitude_t3_golden.txt and
-# attitude_t3_envelope.txt into --dir (decision 0006 F).
+# L5 T3: attitude_t3_oracle.py reads attitude_t3_inputs.txt and attitude_t3_q_inputs.txt and writes attitude_t3_golden.txt,
+# attitude_t3_envelope.txt and attitude_t3_q.txt into --dir (decision 0006 F); regenerated and checked as for L4 (decision 0011).
 att_t3_reference_dir=tests/regression/quad/L05/t3/reference
+att_t3_procs=4
 
 att_t3_oracle_run() {
   local dir="$1"
-  uv run python "${att_t3_reference_dir}/attitude_t3_oracle.py" --dir "${dir}"
+  uv run python "${att_t3_reference_dir}/attitude_t3_oracle.py" --dir "${dir}" --procs "${att_t3_procs}"
 }
 
 att_t3_reference_reproduces() {
-  local dir status=0
-  dir="$(mktemp -d)"
-  cp "${att_t3_reference_dir}/attitude_t3_inputs.txt" "${dir}/attitude_t3_inputs.txt"
-  cp "${att_t3_reference_dir}/attitude_t3_q_inputs.txt" "${dir}/attitude_t3_q_inputs.txt"
-  att_t3_oracle_run "${dir}" || status=$?
-  if [[ ${status} -eq 0 ]]; then
-    cmp "${att_t3_reference_dir}/attitude_t3_golden.txt" "${dir}/attitude_t3_golden.txt" || status=$?
-    cmp "${att_t3_reference_dir}/attitude_t3_envelope.txt" "${dir}/attitude_t3_envelope.txt" || status=$?
-    cmp "${att_t3_reference_dir}/attitude_t3_q.txt" "${dir}/attitude_t3_q.txt" || status=$?
-  fi
-  rm -rf "${dir}"
-  return "${status}"
+  uv run python "${refdata}" ensure quad/L05/t3 --force --procs "${att_t3_procs}"
 }
 
-# The same run with att_kp one float32 ulp up must differ from the committed golden.
+# The same run with att_kp one float32 ulp up must fail the SHA256SUMS check, naming attitude_t3_golden.txt and
+# attitude_t3_envelope.txt (the Q file is checked as well and is not required to differ).
 att_t3_reference_control() {
-  local dir
+  local dir log name
   dir="$(mktemp -d)"
+  log="$(mktemp)"
   cp "${att_t3_reference_dir}/attitude_t3_q_inputs.txt" "${dir}/attitude_t3_q_inputs.txt"
   uv run python - "${att_t3_reference_dir}/attitude_t3_inputs.txt" "${dir}/attitude_t3_inputs.txt" <<'PY'
 import struct
@@ -509,16 +503,24 @@ open(sys.argv[2], "w").write("".join(out))
 PY
   if cmp -s "${att_t3_reference_dir}/attitude_t3_inputs.txt" "${dir}/attitude_t3_inputs.txt"; then
     echo "control setup failed: the perturbation did not change the inputs"
-    rm -rf "${dir}"
+    rm -rf "${dir}" "${log}"
     return 1
   fi
-  att_t3_oracle_run "${dir}" || { rm -rf "${dir}"; return 1; }
-  if cmp -s "${att_t3_reference_dir}/attitude_t3_golden.txt" "${dir}/attitude_t3_golden.txt"; then
-    echo "control produced the committed golden from a perturbed input: the reproduction check cannot fail"
-    rm -rf "${dir}"
+  att_t3_oracle_run "${dir}" || { rm -rf "${dir}" "${log}"; return 1; }
+  if uv run python "${refdata}" verify quad/L05/t3 --dir "${dir}" 2>"${log}"; then
+    echo "control passed the SHA256SUMS check from a perturbed input: the reproduction check cannot fail"
+    rm -rf "${dir}" "${log}"
     return 1
   fi
-  rm -rf "${dir}"
+  cat "${log}"
+  for name in attitude_t3_golden.txt attitude_t3_envelope.txt; do
+    if ! grep -q "${name}: sha256" "${log}"; then
+      echo "control failed, but not on ${name}"
+      rm -rf "${dir}" "${log}"
+      return 1
+    fi
+  done
+  rm -rf "${dir}" "${log}"
 }
 
 # L5 rate bypass (decision 0006 A, I-A1): the fixture and the acro golden regenerate from fw/ at quad-L4-pass.
@@ -588,13 +590,13 @@ g3_truth_planted_control() {
 }
 
 step "uv sync --frozen" uv sync --frozen
+step "L4: T3 oracle regenerates rate_t3_golden.txt and rate_t3_envelope.txt from rate_t3_inputs.txt, matching reference/SHA256SUMS" t3_reference_reproduces
+step "L5: T3 oracle regenerates attitude_t3_golden.txt, attitude_t3_envelope.txt and attitude_t3_q.txt from their inputs, matching reference/SHA256SUMS" att_t3_reference_reproduces
 step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools)" \
   uv run pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools -q
 step "G8: CLAUDE.md keeps the ACTIVE-spec, number, UNKNOWN and CI-gate sections" g8_check
 step "L1: the committed vehicle card, its sensor profile and the design budget lint clean (sigma policy)" l1_card_lint
 step "L1: plant known-answer reference reproduces plant_ref_expected.txt from plant_ref_inputs.txt" plant_ref_reproduces
-step "L4: T3 oracle reproduces rate_t3_golden.txt and rate_t3_envelope.txt from rate_t3_inputs.txt" t3_reference_reproduces
-step "L5: T3 oracle reproduces attitude_t3_golden.txt, attitude_t3_envelope.txt and attitude_t3_q.txt from their inputs" att_t3_reference_reproduces
 step "L5: rate-bypass fixture reproduces from gen_fixture.py" rate_bypass_fixture_reproduces
 step "L5: acro identity golden reproduces from fw/ at quad-L4-pass" rate_bypass_golden_reproduces
 if [[ -n "${MARV_CI_BASE_REF:-}" ]]; then
@@ -633,8 +635,8 @@ step "L1 negative control (the core 2.1 example card without sigma must fail the
 step "L1 negative control (a card with sigma = 0 on a published entry must fail the parameter set build)" l1_flatten_control
 step "L1 negative control (a Python without PyYAML must fail the configure)" l1_pyyaml_control
 step "L1 negative control (perturbed plant reference inputs must not reproduce the committed expected file)" plant_ref_control
-step "L4 negative control (a perturbed T3 input, kp one ulp up, must not reproduce the committed golden)" t3_reference_control
-step "L5 negative control (a perturbed T3 input, att_kp one ulp up, must not reproduce the committed golden)" att_t3_reference_control
+step "L4 negative control (a perturbed T3 input, kp one ulp up, must fail the SHA256SUMS check)" t3_reference_control
+step "L5 negative control (a perturbed T3 input, att_kp one ulp up, must fail the SHA256SUMS check)" att_t3_reference_control
 step "L5 negative control (a perturbed rate-bypass input, kp one ulp up, must not reproduce the acro identity golden)" rate_bypass_golden_control
 step "G3 negative control (unflagged SIL library exporting marv_truth_state_set must fail the export check)" g3_truth_unflagged_control
 step "G3 negative control (truth_state library also exporting marv_truth_planted must fail the export check)" g3_truth_planted_control

@@ -67,11 +67,14 @@ import l5_scenario as l5s  # noqa: E402
 import recovery_model as rm  # noqa: E402
 import run_l5  # noqa: E402
 import run_scenario  # noqa: E402
+sys.path.insert(0, str(ROOT / "tools" / "refdata"))
+import refdata  # noqa: E402
 
 CARD = ROOT / "vehicles" / "uzh_neurobem_5in.yaml"
 SCEN = ROOT / "scenarios" / "quad" / "L05"
 PLUGIN_DIR = run_l5.DEFAULT_PLUGIN_DIR
 T3_REFERENCE = ROOT / "tests" / "regression" / "quad" / "L05" / "t3" / "reference"
+T3_GENERATED = refdata.reference_dir("quad/L05/t3")  # the generated golden, envelope and q (decision 0011)
 XFAIL_GATE = ROOT / "tests" / "regression" / "quad" / "L06" / "XFAIL_GATE_CLOSED"  # created by L6 stage (e), decision 0009
 R1, R1X, R2 = "recover_inverted", "recover_inverted_exact", "recover_tumble"
 GAIN_SCALE = 1.1  # scenario test value: the spec's fine gain control (t3_test.cpp kGainScale)
@@ -99,7 +102,7 @@ def recorded_inputs():
 def recorded_t3_terms():
     """{"angle": max of F - halving over the recorded theta and heading_lock channels, "rate": over the omega channels} of the
     recorded envelope file's settle lines (F = T3 tolerance + halving + kinematics of the script)."""
-    text = (T3_REFERENCE / "attitude_t3_envelope.txt").read_text(encoding="utf-8").splitlines()
+    text = (T3_GENERATED / "attitude_t3_envelope.txt").read_text(encoding="utf-8").splitlines()
     settle = re.compile(r"^#\s+(\w+) (\w+): end \S+ < F (\S+)$")
     halving, script, terms = {}, None, {"angle": 0.0, "rate": 0.0}
     for ln in text:

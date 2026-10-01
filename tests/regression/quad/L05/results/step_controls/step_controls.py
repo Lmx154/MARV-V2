@@ -29,8 +29,10 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[5]
 sys.path.insert(0, str(ROOT / "tools" / "sim"))
 sys.path.insert(0, str(ROOT / "tools" / "card"))
+sys.path.insert(0, str(ROOT / "tools" / "refdata"))
 sys.path.insert(0, str(ROOT / "tests" / "regression" / "quad" / "L05" / "gz"))
 sys.path.insert(0, str(HERE.parent / "step_cause"))
+import refdata  # noqa: E402
 import run_l4  # noqa: E402
 import run_l5  # noqa: E402
 import step_cause as sc  # noqa: E402
@@ -38,7 +40,7 @@ import test_t4_steps as t4  # noqa: E402
 
 CARD = ROOT / "vehicles" / "uzh_neurobem_5in.yaml"
 SCEN = ROOT / "scenarios" / "quad" / "L05"
-T3 = ROOT / "tests" / "regression" / "quad" / "L05" / "t3" / "reference"
+T3_GENERATED = refdata.reference_dir("quad/L05/t3")  # the generated golden, envelope and q (decision 0011)
 GAIN_SCALE = 1.1  # scenario test value: the spec's fine control, "gain x 1.1" (decision 0006 F; t3_test.cpp kGainScale)
 DELAYS = (0, 1)  # ticks of added delay: 0 (the surrogate itself) and 1 (the spec's fine control)
 SUBSTEPS = (1, 2)
@@ -110,13 +112,13 @@ def main(argv=None):
          f"label: {run_l5.LABEL}: not a validation run",
          f"card: {CARD.relative_to(ROOT)} sha256 {sha(CARD)}",
          f"parameter table (build): {Path(defaults).relative_to(ROOT)} sha256 {sha(defaults)}",
-         f"envelope sha256 {sha(T3 / 'attitude_t3_envelope.txt')}; Q file sha256 {sha(T3 / 'attitude_t3_q.txt')}",
+         f"envelope sha256 {sha(T3_GENERATED / 'attitude_t3_envelope.txt')}; Q file sha256 {sha(T3_GENERATED / 'attitude_t3_q.txt')}",
          f"predicate: tests/regression/quad/L05/gz/test_t4_steps.py sha256 {sha(t4.__file__)} (evaluate)",
          f"tool: step_controls_tool.cpp sha256 {sha(HERE / 'step_controls_tool.cpp')}",
          f"gain scale {GAIN_SCALE} (f32 {run_l4.r32(GAIN_SCALE)!r}); att override {att_over}; rate overrides {rate_over}", ""]
     for axis in t4.AXES:
         k = t4.AXIS_INDEX[axis]
-        env = t4.parse_envelope(T3 / "attitude_t3_envelope.txt", f"step_{axis}")
+        env = t4.parse_envelope(T3_GENERATED / "attitude_t3_envelope.txt", f"step_{axis}")
         L.append(f"== step_{axis}: F {env.F!r}, Q (theta) {env.Q!r}, F + Q {env.F + env.Q!r}")
         seqs = {}
         for name, tag, over in (("baseline", "base", None), ("(a) att_kp x 1.1", "att", att_over),

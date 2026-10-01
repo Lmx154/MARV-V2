@@ -67,12 +67,15 @@ sys.path.insert(0, str(ROOT / "tools" / "card"))
 sys.path.insert(0, str(ROOT / "tools" / "sim"))
 import run_l5  # noqa: E402
 import run_scenario  # noqa: E402
+sys.path.insert(0, str(ROOT / "tools" / "refdata"))
+import refdata  # noqa: E402
 
 CARD = ROOT / "vehicles" / "uzh_neurobem_5in.yaml"
 SCEN = ROOT / "scenarios" / "quad" / "L05"
 PLUGIN_DIR = run_l5.DEFAULT_PLUGIN_DIR
 T3_REFERENCE = ROOT / "tests" / "regression" / "quad" / "L05" / "t3" / "reference"
-ENVELOPE = T3_REFERENCE / "attitude_t3_envelope.txt"
+T3_GENERATED = refdata.reference_dir("quad/L05/t3")  # the generated golden, envelope and q (decision 0011)
+ENVELOPE = T3_GENERATED / "attitude_t3_envelope.txt"
 SCENARIOS = ("yaw_release", "yaw_fallback")
 CHANNELS = ("omega", "heading_release", "heading_lock")
 SHIFTS = (-1, 1)
@@ -147,7 +150,7 @@ def parse_envelope(path, scenario):
     assert set(raw) == set(CHANNELS), sorted(raw)
     angle_base = fs["heading_lock"] - raw["heading_lock"][2]  # T3 tolerance + kinematics halving change of the angle channels
     f = {"omega": fs["omega"], "heading_lock": fs["heading_lock"], "heading_release": angle_base + raw["heading_release"][2]}
-    channels = {c: Channel(*raw[c], f[c], parse_q(T3_REFERENCE / "attitude_t3_q.txt", scenario, c)) for c in CHANNELS}
+    channels = {c: Channel(*raw[c], f[c], parse_q(T3_GENERATED / "attitude_t3_q.txt", scenario, c)) for c in CHANNELS}
     h = header
     return YawEnvelope(scenario, int(h["release_execution"]), int(h["lock_execution_min"]), int(h["lock_execution_max"]),
                        int(h["fallback_execution_min"]), int(h["fallback_execution_max"]), header, channels)

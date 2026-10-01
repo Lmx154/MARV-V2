@@ -31,14 +31,16 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[5]
 sys.path.insert(0, str(ROOT / "tools" / "sim"))
 sys.path.insert(0, str(ROOT / "tools" / "card"))
+sys.path.insert(0, str(ROOT / "tools" / "refdata"))
 sys.path.insert(0, str(ROOT / "tests" / "regression" / "quad" / "L05" / "gz"))
+import refdata  # noqa: E402
 import run_l4  # noqa: E402
 import run_l5  # noqa: E402
 import test_t4_steps as t4  # noqa: E402
 
 CARD = ROOT / "vehicles" / "uzh_neurobem_5in.yaml"
 SCEN = ROOT / "scenarios" / "quad" / "L05"
-T3 = ROOT / "tests" / "regression" / "quad" / "L05" / "t3" / "reference"
+T3_GENERATED = refdata.reference_dir("quad/L05/t3")  # the generated golden, envelope and q (decision 0011)
 MODES = ("design", "cont", "quant", "quant_gyro")
 SUBSTEPS = (1, 2)
 L4_F_RAD_S = 0.0409  # cited: decision 0005 "T4 per-axis steps (result, 2026-09-30)", F = 0.0409 rad/s
@@ -211,18 +213,18 @@ def main(argv=None):
          f"label: {run_l5.LABEL} (truth gyro, truth attitude, one card for truth and firmware): not a validation run",
          f"card: {CARD.relative_to(ROOT)} sha256 {sha(CARD)}",
          f"parameter table (build): {Path(defaults).relative_to(ROOT)} sha256 {sha(defaults)}",
-         f"envelope: {(T3 / 'attitude_t3_envelope.txt').relative_to(ROOT)} sha256 {sha(T3 / 'attitude_t3_envelope.txt')}",
+         f"envelope: {(T3_GENERATED / 'attitude_t3_envelope.txt').relative_to(ROOT)} sha256 {sha(T3_GENERATED / 'attitude_t3_envelope.txt')}",
          f"tool: step_cause_tool.cpp sha256 {sha(HERE / 'step_cause_tool.cpp')} (built by build_tool.sh on the host-gz-l5 libraries)",
          "neutral injections (build table defaults, not overridden by the runs): " + ", ".join(
              f"{k} {params[k]!r}" for k in ("l5_chirp_axis", "l5_chirp_amp_rad_s", "l5_dist_yaw_nm")), ""]
-    golden = (T3 / "attitude_t3_golden.txt").read_text().splitlines()
+    golden = (T3_GENERATED / "attitude_t3_golden.txt").read_text().splitlines()
     ripple = {}
     for axis in t4.AXES:
         k = t4.AXIS_INDEX[axis]
         scen = SCEN / f"step_{axis}.yaml"
         wd = work / axis
         runs, _ = run_l5.run_sequence(CARD, scen, wd, run_l5.DEFAULT_PLUGIN_DIR)
-        env = t4.parse_envelope(T3 / "attitude_t3_envelope.txt", f"step_{axis}")
+        env = t4.parse_envelope(T3_GENERATED / "attitude_t3_envelope.txt", f"step_{axis}")
         ev = t4.evaluate(runs, env, axis)
         by_m = {s.run.m: s for s in runs}
         s1, p = by_m[1], by_m[1].plan
