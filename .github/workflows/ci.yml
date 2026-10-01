@@ -1,27 +1,85 @@
 name: ci
 
+# Per push and pull request: the core job and the three Gazebo groups, in parallel. Nightly (schedule) and workflow_dispatch:
+# the same jobs with MARV_CI_MODE=full, where the multi-seed Monte Carlo of L6 stage e will hook in (it does not exist
+# yet, so full runs the same steps today). A tag is made only after a full run is green (owner decision).
 on:
   push:
     branches: [master]
   pull_request:
     branches: [master]
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+env:
+  MARV_CI_MODE: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'full' || 'per-push' }}
 
 jobs:
-  ci:
+  core:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Runner resources
+        run: |
+          nproc
+          free -b
+          head -3 /proc/meminfo
       - name: Build CI image
         run: docker build -t marv-ci -f ci/Dockerfile .
       - name: Run CI
         env:
           # Pull request: check against the target branch. Push: check the whole pushed range (the commit before the
-          # push), except when the push creates the branch (before is all zeros).
+          # push), except when the push creates the branch (before is all zeros). Schedule and dispatch: empty, no check.
           MARV_CI_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before || '') }}
-        run: docker run --rm -e MARV_CI_BASE_REF -v "$PWD":/src -w /src marv-ci ci/run_ci.sh
+        run: docker run --rm -e MARV_CI_BASE_REF -e MARV_CI_MODE -v "$PWD":/src -w /src marv-ci ci/run_ci.sh
+
+  gz-l2:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runner resources
+        run: |
+          nproc
+          free -b
+          head -3 /proc/meminfo
+      - name: Build CI image
+        run: docker build -t marv-ci -f ci/Dockerfile .
       - name: Build Gazebo CI image
         run: docker build -t marv-ci-gz -f ci/Dockerfile.gz .
-      - name: Run Gazebo CI
-        run: docker run --rm -v "$PWD":/src -w /src marv-ci-gz ci/run_ci_gz.sh
+      - name: Run Gazebo CI (group l2)
+        run: docker run --rm -e MARV_CI_MODE -v "$PWD":/src -w /src marv-ci-gz ci/run_ci_gz.sh l2
+
+  gz-l4:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runner resources
+        run: |
+          nproc
+          free -b
+          head -3 /proc/meminfo
+      - name: Build CI image
+        run: docker build -t marv-ci -f ci/Dockerfile .
+      - name: Build Gazebo CI image
+        run: docker build -t marv-ci-gz -f ci/Dockerfile.gz .
+      - name: Run Gazebo CI (group l4)
+        run: docker run --rm -e MARV_CI_MODE -v "$PWD":/src -w /src marv-ci-gz ci/run_ci_gz.sh l4
+
+  gz-l5:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runner resources
+        run: |
+          nproc
+          free -b
+          head -3 /proc/meminfo
+      - name: Build CI image
+        run: docker build -t marv-ci -f ci/Dockerfile .
+      - name: Build Gazebo CI image
+        run: docker build -t marv-ci-gz -f ci/Dockerfile.gz .
+      - name: Run Gazebo CI (group l5)
+        run: docker run --rm -e MARV_CI_MODE -v "$PWD":/src -w /src marv-ci-gz ci/run_ci_gz.sh l5

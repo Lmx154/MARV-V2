@@ -4,13 +4,23 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 export UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}"
 
+# shellcheck source=ci/peakmem.sh
+source ci/peakmem.sh
+
+# MARV_CI_MODE: per-push (default) or full (nightly and workflow_dispatch). The multi-seed Monte Carlo of L6 stage e hooks
+# in here when it exists; nothing reads the mode yet (owner decision: per push = frozen T4 at committed seeds).
+echo "MARV_CI_MODE=${MARV_CI_MODE:-per-push}"
+
 step() {
   local name="$1"
   shift
   echo "=== ${name}"
+  peakmem_start
   if "$@"; then
+    peakmem_report "${name}"
     echo "PASS: ${name}"
   else
+    peakmem_report "${name}"
     echo "FAIL: ${name}"
     exit 1
   fi
@@ -108,13 +118,42 @@ gz_l5() {
   pytest_no_skips tests/regression/quad/L05/gz
 }
 
-step gz_toolchain gz_toolchain
-step gz_build gz_build
-step gz_plugin_smoke gz_plugin_smoke
-step gz_determinism gz_determinism
-step gz_runner_tools gz_runner_tools
-step gz_analytic gz_analytic
-step gz_build_l4 gz_build_l4
-step gz_l4 gz_l4
-step gz_build_l5 gz_build_l5
-step gz_l5 gz_l5
+# Usage: ci/run_ci_gz.sh [l2|l4|l5]. No argument runs every step (l2, l4, l5 in order). The Actions jobs gz-l2, gz-l4 and
+# gz-l5 run one group each, in parallel on separate runners, so a group must not depend on another group's build: gz_build
+# is in l2 and in l4 (test_truth_gyro.py runs on the host-gz build).
+group_l2() {
+  step gz_toolchain gz_toolchain
+  step gz_build gz_build
+  step gz_plugin_smoke gz_plugin_smoke
+  step gz_determinism gz_determinism
+  step gz_runner_tools gz_runner_tools
+  step gz_analytic gz_analytic
+}
+
+group_l4() {
+  step gz_build gz_build
+  step gz_build_l4 gz_build_l4
+  step gz_l4 gz_l4
+}
+
+group_l5() {
+  step gz_build_l5 gz_build_l5
+  step gz_l5 gz_l5
+}
+
+case "${1:-all}" in
+  l2) group_l2 ;;
+  l4) group_l4 ;;
+  l5) group_l5 ;;
+  all)
+    group_l2
+    group_l4
+    group_l5
+    ;;
+  *)
+    echo "usage: ci/run_ci_gz.sh [l2|l4|l5]" >&2
+    exit 2
+    ;;
+esac
+
+echo "ALL STEPS PASSED"

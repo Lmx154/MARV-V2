@@ -62,9 +62,9 @@ CI enforces these whether or not anyone reads this file (core §7.4):
 - `uv sync --frozen` first (the parameter generator runs from `.venv`).
 - Build and test: `cmake --preset host-debug && cmake --build --preset host-debug && ctest --preset host-debug`
   (also `host-release`); target compile check: `cmake --preset m33 && cmake --build --preset m33`.
-- Full CI, the definition of verified: `docker build -t marv-ci -f ci/Dockerfile .` then
-  `docker run --rm -u $(id -u):$(id -g) -e HOME=/tmp -v "$PWD":/src -w /src marv-ci ci/run_ci.sh` (run on a clean
-  copy if a host `build/` exists). Goldens are regenerated only inside this image.
+- Full CI, the definition of verified: `ci/local_ci.sh [--commit <rev>] [core|gz-l2|gz-l4|gz-l5 ...]` (fresh clone of a
+  commit, the same containers as Actions, as root, under the runner's 4 CPUs and memory limit; a local pass must predict
+  an Actions pass). Goldens are regenerated only inside these images.
 
 ## Code conventions (core §3)
 

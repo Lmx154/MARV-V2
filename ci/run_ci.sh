@@ -4,13 +4,23 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 export UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}"
 
+# shellcheck source=ci/peakmem.sh
+source ci/peakmem.sh
+
+# MARV_CI_MODE: per-push (default) or full (nightly and workflow_dispatch). The multi-seed Monte Carlo of L6 stage e hooks
+# in here when it exists; nothing reads the mode yet (owner decision: per push = frozen T4 at committed seeds).
+echo "MARV_CI_MODE=${MARV_CI_MODE:-per-push}"
+
 step() {
   local name="$1"
   shift
   echo "=== ${name}"
+  peakmem_start
   if "$@"; then
+    peakmem_report "${name}"
     echo "PASS: ${name}"
   else
+    peakmem_report "${name}"
     echo "FAIL: ${name}"
     exit 1
   fi
