@@ -145,6 +145,7 @@ def measure(tmp_path_factory, axis):
     key = axis
     if key in _CACHE:
         return _CACHE[key]
+    _CACHE.clear()
     out = tmp_path_factory.mktemp(f"chirp_{axis}")
     scenario = SCEN / f"chirp_{axis}.yaml"
     runs, scales, margins = {}, {}, {}
