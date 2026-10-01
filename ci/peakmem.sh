@@ -9,6 +9,8 @@
 # MARV_CGROUP_DIR overrides the cgroup directory (tests of this file only).
 
 PEAKMEM_DIR="${MARV_CGROUP_DIR:-/sys/fs/cgroup}"
+# Sampling interval: a scenario value (a choice), 0.2 s. A spike shorter than the interval can be missed, so PEAK-MEM is
+# a per-step growth indicator, not the OOM verdict; the verdict is the container's OOMKilled flag (ci/local_ci.sh).
 PEAKMEM_INTERVAL_S="${MARV_PEAKMEM_INTERVAL_S:-0.2}"
 PEAKMEM_PID=""
 PEAKMEM_FILE=""
@@ -37,8 +39,11 @@ peakmem_start() {
   if [[ ! -r "${PEAKMEM_DIR}/memory.current" || ! -r "${PEAKMEM_DIR}/memory.stat" ]]; then
     return 0
   fi
-  PEAKMEM_FILE="$(mktemp)"
-  echo 0 >"${PEAKMEM_FILE}"
+  # A sampler that cannot start must not abort the step under set -e: the report then says UNKNOWN.
+  if ! PEAKMEM_FILE="$(mktemp 2>/dev/null)" || ! echo 0 >"${PEAKMEM_FILE}"; then
+    PEAKMEM_FILE=""
+    return 0
+  fi
   peakmem_sampler &
   PEAKMEM_PID=$!
 }
@@ -47,7 +52,7 @@ peakmem_start() {
 peakmem_report() {
   local name="$1" bytes saved
   if [[ -z "${PEAKMEM_FILE}" ]]; then
-    echo "PEAK-MEM: ${name} UNKNOWN (${PEAKMEM_DIR}/memory.current or memory.stat not readable: no cgroup v2 memory controller visible)"
+    echo "PEAK-MEM: ${name} UNKNOWN (${PEAKMEM_DIR}/memory.current or memory.stat not readable, or no temporary file for the sampler)"
     return 0
   fi
   kill "${PEAKMEM_PID}" 2>/dev/null || true

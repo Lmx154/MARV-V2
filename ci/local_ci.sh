@@ -8,16 +8,16 @@
 #             and untracked files are not tested, exactly as on Actions.
 # Environment: MARV_CI_BASE_REF (passed to the core job, as ci.yml does), MARV_CI_MODE (per-push or full).
 #
-# Runner limits. Source: GitHub-hosted standard runner for public repositories, ubuntu-24.04: 4 vCPU, 16 GB RAM,
-# https://docs.github.com/en/actions/reference/runners/github-hosted-runners (section "Standard GitHub-hosted runners for
-# public repositories"). UNVERIFIED until a job's logged `free -b` (the "Runner resources" step of ci.yml) confirms it.
-# 16 GB is read as 16e9 bytes, the lower of the two readings (16 GiB is larger), so the limit errs on the strict side.
-# Headroom: UNKNOWN. The rule is "what the runner's OS, the runner agent and the docker daemon use before the container
-# starts"; no source for that number has been found, so the value below is a SCENARIO value (1 GiB), not a measurement.
-# Replace it with the first idle-runner reading of `free -b` (total minus available) once a job has logged one.
+# Runner limits, measured. Source: ci/runner_resources/run-36803301740-core.txt, the raw output of the "Runner
+# resources" step of ci.yml on Actions run 36803301740 (job core, ubuntu-24.04 image 20260920.314.1), logged before the
+# job built or ran anything: nproc 4; free -b total 16765378560 B, available 15740260352 B.
+# Runner RAM = free -b total. Headroom = total minus available at job start (1025118208 B): what the runner's OS, agent
+# and docker daemon hold before the container starts. One reading from one job; a later reading that differs replaces it.
+# The runner also has 3221221376 B of swap; the local container gets none (--memory-swap = --memory), the strict side,
+# so a local pass predicts an Actions pass but a local OOM is not proof of an Actions OOM.
 RUNNER_CPUS="${MARV_LOCAL_CI_CPUS:-4}"
-RUNNER_RAM_BYTES="${MARV_LOCAL_CI_RUNNER_RAM_BYTES:-16000000000}"
-HEADROOM_BYTES="${MARV_LOCAL_CI_HEADROOM_BYTES:-1073741824}"
+RUNNER_RAM_BYTES="${MARV_LOCAL_CI_RUNNER_RAM_BYTES:-16765378560}"
+HEADROOM_BYTES="${MARV_LOCAL_CI_HEADROOM_BYTES:-1025118208}"
 
 set -euo pipefail
 
@@ -70,7 +70,7 @@ git clone --quiet --no-hardlinks "${src_repo}" "${clone}"
 git -C "${clone}" fetch --quiet origin "${sha}" 2>/dev/null || true
 git -C "${clone}" checkout --quiet --detach "${sha}"
 echo "local CI: commit ${sha} cloned to ${clone}"
-echo "local CI: runner limits --cpus ${RUNNER_CPUS} --memory ${mem_bytes} (${mem_gib} GiB; runner RAM ${RUNNER_RAM_BYTES} B UNVERIFIED minus headroom ${HEADROOM_BYTES} B UNKNOWN scenario value), --memory-swap equal"
+echo "local CI: runner limits --cpus ${RUNNER_CPUS} --memory ${mem_bytes} (${mem_gib} GiB; runner RAM ${RUNNER_RAM_BYTES} B minus headroom ${HEADROOM_BYTES} B, measured on Actions run 36803301740), --memory-swap equal"
 
 build_ci() {
   docker build -q -t marv-ci -f ci/Dockerfile . >/dev/null
@@ -90,9 +90,15 @@ run_job() {
   echo "##### job ${name}: docker run ${image} $*"
   docker run --name "${container}" --cpus "${RUNNER_CPUS}" --memory "${mem_bytes}" --memory-swap "${mem_bytes}" \
     -e MARV_CI_BASE_REF -e MARV_CI_MODE -v "${clone}":/src -w /src "${image}" "$@" || true
-  oom="$(docker inspect -f '{{.State.OOMKilled}}' "${container}")"
-  exit_code="$(docker inspect -f '{{.State.ExitCode}}' "${container}")"
-  docker rm -f "${container}" >/dev/null
+  # docker run exits 125 without creating the container when it cannot start it (bad option, missing image); then
+  # there is nothing to inspect and the job is a failure, not an abort of this script.
+  if oom="$(docker inspect -f '{{.State.OOMKilled}}' "${container}" 2>/dev/null)"; then
+    exit_code="$(docker inspect -f '{{.State.ExitCode}}' "${container}")"
+    docker rm -f "${container}" >/dev/null
+  else
+    oom="false"
+    exit_code="125"
+  fi
   container=""
   if [[ "${oom}" == "true" || "${exit_code}" == "137" ]]; then
     status="OOM-KILLED (OOMKilled=${oom}, exit ${exit_code}) under --memory ${mem_bytes}: this job would be killed on Actions"

@@ -9,6 +9,8 @@ on:
   pull_request:
     branches: [master]
   schedule:
+    # 03:17 UTC daily: a choice (scenario value). Off the hour because GitHub delays scheduled runs under the high load
+    # at the start of every hour (docs.github.com, "Events that trigger workflows", schedule).
     - cron: '17 3 * * *'
   workflow_dispatch:
 

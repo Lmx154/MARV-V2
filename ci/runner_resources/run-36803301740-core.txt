@@ -1,0 +1,10 @@
+# Raw output of the "Runner resources" step of .github/workflows/ci.yml (nproc; free -b; head -3 /proc/meminfo).
+# Run 36803301740 (commit 5ac1cf4), job core, 2026-10-01T01:54:23Z, runner image ubuntu-24.04 20260920.314.1,
+# Azure region northcentralus. Copied verbatim from the job log (timestamps stripped). Read by ci/local_ci.sh.
+4
+               total        used        free      shared  buff/cache   available
+Mem:     16765378560  1025118208 13506244608    43642880  2609868800 15740260352
+Swap:     3221221376           0  3221221376
+MemTotal:       16372440 kB
+MemFree:        13189692 kB
+MemAvailable:   15371348 kB
