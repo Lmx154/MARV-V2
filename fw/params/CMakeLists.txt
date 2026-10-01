@@ -96,7 +96,11 @@ endfunction()
 # scenario-values register is linted and flattened too (--scenario/--out-scenario) and joins the CARD files, and the
 # L4 rate-loop parameters (rate_{kp,ki,kd,tau_ref}_<axis>; tools/card/rate.py, --out-rate) and their derivation report
 # are generated from it, and so are the L5 attitude-loop parameters (att_kp, att_yaw_weight, att_loop_ratio;
-# tools/card/attitude.py, --out-attitude) with their report (<name>_attitude_report.txt). The command depends on
+# tools/card/attitude.py, --out-attitude) with their report (<name>_attitude_report.txt), and the L6 gyro-chain
+# parameters (gyro_lpf_cutoff_hz, gyro_notch_q_h1..h3, gyro_notch_omega_min; tools/card/gyro_chain_params.py,
+# --out-gyro-chain) with their report (<name>_gyro_chain_report.txt) and the header of the chain's relative tracking error
+# (<name>_gyro_chain_design.hpp, the target property MARV_GYRO_CHAIN_DESIGN_HEADER of <name>_generated; for tests, not
+# parameters). The command depends on
 # the card, the sensor profile the card names, the budget, the scenario register and tools/card/*.py.
 # EXTRA_REGISTER appends one more register file after the budget register, so every id of the set without it keeps its
 # value and the extra entries follow (a composition's own scenario parameters); without it the outputs are unchanged.
@@ -112,6 +116,8 @@ function(marv_add_card_param_set name)
   set(rate_outputs)
   set(attitude_args)
   set(attitude_outputs)
+  set(gyro_chain_args)
+  set(gyro_chain_outputs)
   if(ARG_SCENARIO)
     cmake_path(ABSOLUTE_PATH ARG_SCENARIO BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
     set(flat_scenario "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_scenario.yaml")
@@ -126,6 +132,11 @@ function(marv_add_card_param_set name)
     set(flat_attitude_report "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_attitude_report.txt")
     set(attitude_args --out-attitude "${flat_attitude}")
     set(attitude_outputs "${flat_attitude}" "${flat_attitude_report}")
+    set(flat_gyro_chain "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_gyro_chain.yaml")
+    set(flat_gyro_chain_report "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_gyro_chain_report.txt")
+    set(gyro_chain_args --out-gyro-chain "${flat_gyro_chain}")
+    set(flat_gyro_chain_design "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_gyro_chain_design.hpp")
+    set(gyro_chain_outputs "${flat_gyro_chain}" "${flat_gyro_chain_report}" "${flat_gyro_chain_design}")
   endif()
 
   marv_card_profile_file(profile_file ${name} "${ARG_CARD}")
@@ -137,17 +148,20 @@ function(marv_add_card_param_set name)
   file(GLOB marv_card_tools CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/tools/card/*.py")
 
   add_custom_command(
-    OUTPUT "${flat_card}" "${flat_register}" "${flat_mixer}" ${scenario_outputs} ${rate_outputs} ${attitude_outputs}
+    OUTPUT "${flat_card}" "${flat_register}" "${flat_mixer}" ${scenario_outputs} ${rate_outputs} ${attitude_outputs} ${gyro_chain_outputs}
     COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/card/flatten.py"
             --card "${ARG_CARD}" --budget "${ARG_BUDGET}"
             --out-card "${flat_card}" --out-register "${flat_register}" --out-mixer "${flat_mixer}"
-            ${scenario_args} ${rate_args} ${attitude_args}
+            ${scenario_args} ${rate_args} ${attitude_args} ${gyro_chain_args}
             --root "${PROJECT_SOURCE_DIR}"
     DEPENDS "${ARG_CARD}" "${profile_file}" "${ARG_BUDGET}" ${scenario_depends} ${marv_card_tools}
     COMMENT "Linting and flattening the vehicle card and design budget (${name})"
     VERBATIM)
 
-  marv_add_param_set(${name} CARD "${flat_card}" "${flat_mixer}" ${scenario_outputs} ${flat_rate} ${flat_attitude} REGISTER "${flat_register}" ${ARG_EXTRA_REGISTER})
+  marv_add_param_set(${name} CARD "${flat_card}" "${flat_mixer}" ${scenario_outputs} ${flat_rate} ${flat_attitude} ${flat_gyro_chain} REGISTER "${flat_register}" ${ARG_EXTRA_REGISTER})
+  if(ARG_SCENARIO)
+    set_target_properties(${name}_generated PROPERTIES MARV_GYRO_CHAIN_DESIGN_HEADER "${flat_gyro_chain_design}")
+  endif()
 endfunction()
 
 # marv_add_card_report(<name> CARD <card.yaml> BUDGET <budget.yaml>)

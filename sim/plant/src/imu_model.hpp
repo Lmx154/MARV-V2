@@ -100,6 +100,7 @@ inline float quantise(double y, const ImuAxisParams& p, bool& sat) {
 class ImuModel {
  public:
   bool attached() const { return attached_; }
+  std::uint64_t samples_taken() const { return index_; }
 
   void attach(const ImuParams& p, std::uint64_t seed) {
     p_ = p;

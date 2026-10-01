@@ -227,3 +227,29 @@ per_push_check_time_max:
     (MARV_CI_MODE=full) instead of per push, and its spec line says so (decision 0009, owner's second message, item 4).
     Luis's words (2026-09-30, S9): "60 s is fine as the per-push threshold; record it as a labelled convenience value".
   used_by: [quad L6 stage (a) T1 checks (per-push or nightly placement)]
+
+gyro_chain_attenuation_min:
+  value: 0.1
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    One rule: the gyro chain attenuates every unwanted component by at least a_min. It sets both the low-pass gain at
+    the rate loop's Nyquist (the cutoff rule: the digital gain of the second-order Butterworth at f_r/2 equals a_min)
+    and the notch depth over +-eps (each notch's Q is the largest that still attenuates by a_min at f0 (1 +- eps)).
+    A choice, not a derived or sourced value; 0.01 would cost 49 deg of phase margin at crossover. Luis's decision
+    (2026-10-01, decision 0013, owner decision 3).
+  used_by: [quad L6 stage (b) gyro chain (low-pass cutoff, notch Q), QF-7]
+
+esc_clock_error_max:
+  value: 0.02
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    A requirement on any ESC flown: the relative error of the ESC's clock, hence of the eRPM it reports, over its
+    operating temperature range. A replacement ESC either meets it or forces a deliberate profile change. The notch
+    quality factors Q and everything downstream derive from the profile's rotor_speed esc_clock_error by rule, and the
+    generator refuses a profile figure above this value; nothing is tied to one part. Luis's decision (2026-10-01,
+    decision 0013, owner decision 4, second round: "ESC clock error: (b), 2 %").
+  used_by: [quad L6 stage (b) gyro chain (notch Q), QF-7]

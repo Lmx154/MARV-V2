@@ -23,6 +23,14 @@
 // initial rotor state at the first tick): what the SIL's tick j can have seen before it issues dshot_j, so dshot_j
 // cannot reach its own sample. The truth-gyro path has the same freshness (truth_gyro.hpp: the body at the host step's
 // start, taken before the tick's step).
+//
+// Opt-in rotor-speed path (AdapterConfig::rotor_speed non-null, L6 stage (b), decision 0013; independent of the IMU path;
+// the default leaves every output as without it). The adapter attaches the plant's rotor-speed sensor once at
+// construction. For each tick j, in this order: (1) the IMU sample, if that path is on; (2) marv_plant_rotor_speed_sample
+// gives the sample of tick j, from the rotor state after step j - 1 (the initial rotor state at the first tick), the same
+// freshness as the IMU sample; (3) the command source takes both and gives dshot_j; (4) marv_plant_step. The rotor sample
+// reaches the SIL as the bytes the plant produced, through RotorSilCommandSource (marv_sil_tick_with_rotor_speed). A source
+// that does not override the rotor-speed form ignores the sample. No truth symbol.
 
 #include <array>
 #include <cstdint>
@@ -57,6 +65,10 @@ class CommandSource {
   // The same, given the IMU sample of the tick (never null when called by an Adapter with the IMU path enabled). The
   // default ignores the sample and calls the method above.
   virtual bool dshot(std::uint64_t tick, const marv_imu_meas* imu, Dshot& out);
+  // The same, given the rotor-speed sample of the tick as well (never null when called by an Adapter with the rotor-speed
+  // path enabled; imu is null if the IMU path is off). The default ignores the rotor sample and calls the IMU form when
+  // imu is non-null, else the first form.
+  virtual bool dshot(std::uint64_t tick, const marv_imu_meas* imu, const marv_rotor_speed_meas* rotor, Dshot& out);
 };
 
 // A function of the tick number, for tests.
@@ -97,10 +109,30 @@ class ImuSilCommandSource final : public CommandSource {
   std::uint64_t stamp_us_ = 0;
 };
 
+// The SIL with the rotor-speed sample: marv_sil_tick_with_rotor_speed(tick, 1, imu, rotor, out) with the plant's rotor-speed
+// bytes verbatim (marv_plant_rotor_speed_out and marv_rotor_speed_meas have the same layout, static_asserted in
+// rotor_sil.cpp). A null imu or a null rotor passes a zeroed sample of that kind; with a null rotor it calls marv_sil_tick
+// (the HAL then reports the rotor speed invalid). The caller has run marv_sil_init and links a SIL library. No truth
+// symbol. Its code is in rotor_sil.cpp, a separate object of the adapter library, so that a program that does not use it
+// does not need marv_sil_tick_with_rotor_speed.
+class RotorSilCommandSource final : public CommandSource {
+ public:
+  bool dshot(std::uint64_t tick, Dshot& out) override;
+  bool dshot(std::uint64_t tick, const marv_imu_meas* imu, Dshot& out) override;
+  bool dshot(std::uint64_t tick, const marv_imu_meas* imu, const marv_rotor_speed_meas* rotor, Dshot& out) override;
+  std::int32_t last_status() const { return status_; }        // marv_sil_status of the last call
+  std::uint64_t last_stamp_us() const { return stamp_us_; }   // the SIL's t_us of the last tick
+
+ private:
+  std::int32_t status_ = 0;
+  std::uint64_t stamp_us_ = 0;
+};
+
 struct TickOutput {
   std::uint64_t tick = 0;
   Dshot dshot{};
   marv_plant_imu_out imu{};  // the sample of this tick; zero unless the IMU path is enabled
+  marv_plant_rotor_speed_out rotor_speed{};  // the rotor-speed sample of this tick; zero unless that path is enabled
   marv_plant_out out{};  // as marv_plant_step returned it, NED
   Wrench wrench_enu{};   // W_j
 };
@@ -119,6 +151,8 @@ struct AdapterConfig {
   int clock_corner = 0;                         // -1, 0, +1
   double odr_error = 0.0;                       // magnitude of the fractional clock error, from the caller
   const marv_plant_imu_config* imu = nullptr;   // non-null enables the IMU path (read during construction only)
+  const marv_plant_rotor_speed_config* rotor_speed = nullptr;  // non-null enables the rotor-speed path (read during
+                                                               // construction only)
 };
 
 class Adapter {
@@ -134,8 +168,11 @@ class Adapter {
   double t_tick_s() const { return t_tick_s_; }  // t_true
   bool imu_enabled() const { return imu_enabled_; }
   marv_plant_status imu_attach_status() const { return imu_attach_status_; }  // MARV_PLANT_OK when the IMU is off
+  bool rotor_speed_enabled() const { return rotor_speed_enabled_; }
+  marv_plant_status rotor_speed_attach_status() const { return rotor_speed_attach_status_; }  // OK when it is off
 
-  // m >= 1 else kZeroTicks with nothing done. A failed IMU attach is kPlant with that status, nothing done. On a
+  // m >= 1 else kZeroTicks with nothing done. A failed IMU or rotor-speed attach is kPlant with that status
+  // (the IMU's first), nothing done. On a
   // failure part-way the plant has already advanced by the completed ticks and `ticks` holds them.
   StepResult step(const marv_plant_body& body, std::uint64_t first_tick, std::uint32_t m);
 
@@ -145,6 +182,8 @@ class Adapter {
   double t_tick_s_;
   bool imu_enabled_ = false;
   marv_plant_status imu_attach_status_ = MARV_PLANT_OK;
+  bool rotor_speed_enabled_ = false;
+  marv_plant_status rotor_speed_attach_status_ = MARV_PLANT_OK;
 };
 
 }  // namespace marv::gz

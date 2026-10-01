@@ -1,9 +1,11 @@
 #include "marv_sil.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <span>
 
 #include <marv/composition.hpp>
@@ -13,6 +15,7 @@
 #include <marv/params/param.hpp>
 #include <marv/types/actuator.hpp>
 #include <marv/types/imu_sample.hpp>
+#include <marv/types/rotor_speed_sample.hpp>
 
 #include "param_override.hpp"
 #include "sil_session.hpp"
@@ -40,6 +43,19 @@ static_assert(static_cast<std::uint32_t>(MARV_IMU_GYRO_VALID) == static_cast<std
 static_assert(static_cast<std::uint32_t>(MARV_IMU_ACCEL_VALID) == static_cast<std::uint32_t>(ImuFlag::AccelValid));
 static_assert(static_cast<std::uint32_t>(MARV_IMU_TEMP_VALID) == static_cast<std::uint32_t>(ImuFlag::TempValid));
 static_assert(static_cast<std::uint32_t>(MARV_IMU_FLAG_COUNT) == static_cast<std::uint32_t>(ImuFlag::Count));
+// RotorSpeedSample has 4 bytes of tail padding (8-byte aligned by t_us), the C struct has none: compare through flags.
+static_assert(sizeof(marv_rotor_speed_meas) ==
+              offsetof(RotorSpeedSample, flags) + sizeof(RotorSpeedSample::flags) - sizeof(TimeUs));
+static_assert(sizeof(marv_rotor_speed_meas::omega_rad_s) == sizeof(RotorSpeedSample::omega_rad_s));
+static_assert(offsetof(marv_rotor_speed_meas, omega_rad_s) + sizeof(TimeUs) == offsetof(RotorSpeedSample, omega_rad_s));
+static_assert(offsetof(marv_rotor_speed_meas, flags) + sizeof(TimeUs) == offsetof(RotorSpeedSample, flags));
+static_assert(sizeof(marv_rotor_speed_meas::flags) == sizeof(RotorSpeedSample::flags));
+static_assert(static_cast<std::size_t>(MARV_ROTOR_SPEED_MOTORS) == kQuadXMotors);
+static_assert(static_cast<std::uint32_t>(MARV_ROTOR_SPEED_M1_VALID) == static_cast<std::uint32_t>(RotorSpeedFlag::M1Valid));
+static_assert(static_cast<std::uint32_t>(MARV_ROTOR_SPEED_M2_VALID) == static_cast<std::uint32_t>(RotorSpeedFlag::M2Valid));
+static_assert(static_cast<std::uint32_t>(MARV_ROTOR_SPEED_M3_VALID) == static_cast<std::uint32_t>(RotorSpeedFlag::M3Valid));
+static_assert(static_cast<std::uint32_t>(MARV_ROTOR_SPEED_M4_VALID) == static_cast<std::uint32_t>(RotorSpeedFlag::M4Valid));
+static_assert(static_cast<std::uint32_t>(MARV_ROTOR_SPEED_FLAG_COUNT) == static_cast<std::uint32_t>(RotorSpeedFlag::Count));
 static_assert(static_cast<std::uint32_t>(MARV_PARAM_F32) == static_cast<std::uint32_t>(ParamType::F32));
 static_assert(static_cast<std::uint32_t>(MARV_PARAM_I32) == static_cast<std::uint32_t>(ParamType::I32));
 
@@ -97,6 +113,24 @@ Session g_session;
     return m.temp_k > 0.0f;
   }
   return m.temp_k == 0.0f;
+}
+
+// The rotor-speed sample at the boundary (fw/types/rotor_speed_sample.hpp): finite speeds, no reserved bit, a clear valid
+// bit means a speed of exactly 0, a valid speed is not negative (a mechanical speed magnitude; INFERRED, not in core 3).
+[[nodiscard]] bool rotor_sample_valid(const marv_rotor_speed_meas& m) noexcept {
+  if ((m.flags & ~kRotorSpeedFlagsDefined) != 0) {
+    return false;
+  }
+  for (std::size_t i = 0; i < kQuadXMotors; ++i) {
+    const float w = m.omega_rad_s[i];
+    if (!std::isfinite(w)) {
+      return false;
+    }
+    if ((m.flags & rotor_speed_valid_bit(i)) == 0 ? w != 0.0f : w < 0.0f) {
+      return false;
+    }
+  }
+  return true;
 }
 
 [[nodiscard]] ImuSample to_sample(const marv_imu_meas& m, TimeUs t_us) noexcept {
@@ -182,14 +216,19 @@ extern "C" {
   return MARV_SIL_OK;
 }
 
-[[gnu::visibility("default")]] marv_sil_status marv_sil_tick(std::uint64_t first_tick, std::uint32_t k,
-                                                             const marv_imu_meas* imu, marv_sil_out* out) {
+}  // extern "C"
+
+namespace {
+
+// The body of both tick entries. with_rotor is false for marv_sil_tick: the HAL then reports every motor invalid.
+marv_sil_status run_ticks(std::uint64_t first_tick, std::uint32_t k, const marv_imu_meas* imu, bool with_rotor,
+                          const marv_rotor_speed_meas* rotor, marv_sil_out* out) {
   using namespace marv;
   using namespace marv::sil;
   if (g_session.state != Lifecycle::Ready) {
     return MARV_SIL_E_STATE;
   }
-  if (imu == nullptr || out == nullptr) {
+  if (imu == nullptr || out == nullptr || (with_rotor && rotor == nullptr)) {
     return MARV_SIL_E_NULL;
   }
   if (out->struct_size != sizeof(marv_sil_out)) {
@@ -209,10 +248,24 @@ extern "C" {
       return fail_at(MARV_SIL_E_INPUT, i);
     }
   }
+  if (with_rotor) {
+    for (std::uint32_t i = 0; i < k; ++i) {
+      if (!rotor_sample_valid(rotor[i])) {
+        return fail_at(MARV_SIL_E_INPUT, i);
+      }
+    }
+  }
 
   for (std::uint32_t i = 0; i < k; ++i) {
     const Tick n = first_tick + i;
     const TimeUs t_us = hal_sim::stamp_us(g_session.period, n);
+    std::array<float, kQuadXMotors> omega{};
+    std::uint32_t rotor_flags = 0;
+    if (with_rotor) {
+      std::copy(std::begin(rotor[i].omega_rad_s), std::end(rotor[i].omega_rad_s), omega.begin());
+      rotor_flags = rotor[i].flags;
+    }
+    hal_sim::stage_rotor_speed(omega, rotor_flags);
     hal_sim::begin_tick(n);
     composition::tick(to_sample(imu[i], t_us));
     hal_sim::end_tick();
@@ -227,6 +280,22 @@ extern "C" {
     }
   }
   return MARV_SIL_OK;
+}
+
+}  // namespace
+
+extern "C" {
+
+[[gnu::visibility("default")]] marv_sil_status marv_sil_tick(std::uint64_t first_tick, std::uint32_t k,
+                                                             const marv_imu_meas* imu, marv_sil_out* out) {
+  return run_ticks(first_tick, k, imu, false, nullptr, out);
+}
+
+[[gnu::visibility("default")]] marv_sil_status marv_sil_tick_with_rotor_speed(std::uint64_t first_tick, std::uint32_t k,
+                                                                              const marv_imu_meas* imu,
+                                                                              const marv_rotor_speed_meas* rotor,
+                                                                              marv_sil_out* out) {
+  return run_ticks(first_tick, k, imu, true, rotor, out);
 }
 
 [[gnu::visibility("default")]] marv_sil_status marv_sil_shutdown(void) {

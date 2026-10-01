@@ -3,6 +3,7 @@
 #include "marv/types/actuator.hpp"
 #include "marv/types/attitude_state.hpp"
 #include "marv/types/imu_sample.hpp"
+#include "marv/types/rotor_speed_sample.hpp"
 #include "marv/types/time.hpp"
 
 namespace marv {

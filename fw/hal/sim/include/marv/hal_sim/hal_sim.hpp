@@ -1,9 +1,11 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <span>
 
 #include "marv/types/actuator.hpp"
+#include "marv/types/rotor_speed_sample.hpp"
 #include "marv/types/time.hpp"
 
 namespace marv::hal_sim {
@@ -25,6 +27,10 @@ void setup(TickPeriod p, std::span<DshotValue> motor_latch, std::span<ServoUs> s
 
 // pre: 0 first, then previous + 1 (else hal_panic). time := stamp_us(p, n); clears the per-tick write flag.
 void begin_tick(Tick n) noexcept;
+
+// Stages the rotor-speed sample that hal_rotor_speed() returns from the next begin_tick on (its t_us is the tick's); it
+// replaces any earlier one. Never staged: every valid bit clear and every speed 0. pre: outside a tick (else hal_panic).
+void stage_rotor_speed(const std::array<float, kQuadXMotors>& omega_rad_s, std::uint32_t flags) noexcept;
 
 // Marks "outside a tick" so a later write panics.
 void end_tick() noexcept;

@@ -8,5 +8,7 @@
 namespace marv::plant::noise {
 
 inline constexpr std::uint16_t kStreamPrimaryImu = 0;
+// L6 stage (b), decision 0013: the gyro vibration phases (vibration_model.hpp). Ids are ABI and are never renumbered.
+inline constexpr std::uint16_t kVibration = 1;
 
 }  // namespace marv::plant::noise

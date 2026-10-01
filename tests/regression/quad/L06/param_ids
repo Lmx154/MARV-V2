@@ -10,3 +10,11 @@ allan_check_confidence
 stream_independence_confidence
 normal_moments_confidence
 per_push_check_time_max
+gyro_chain_attenuation_min
+esc_clock_error_max
+# Derived by rule (tools/card/gyro_chain_params.py, flatten.py --out-gyro-chain; decision 0013), not register entries.
+gyro_lpf_cutoff_hz
+gyro_notch_q_h1
+gyro_notch_q_h2
+gyro_notch_q_h3
+gyro_notch_omega_min

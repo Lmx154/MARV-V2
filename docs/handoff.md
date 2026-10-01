@@ -1,4 +1,4 @@
-# Handoff: quad L6 stage (b) in progress (decision 0013)
+# Handoff: quad L6 stage (b) built and verified (decision 0013), awaiting Luis's close; next is stage (c)
 
 2026-10-01. Written for the next agent working in this repository. This file records state; it adds no scope. The
 specs remain the only planning documents (core §0 rule 5).
@@ -74,16 +74,19 @@ Sources for stage (a):
    read from `per_push_check_time_max`; the reference-set steps are exempt. Two CI steps check it: a positive check
    and a planted-overrun control. The slowest check is the Allan test, 10.0 s in debug (6× under the limit). Stage (a)
    is closed (0012), and its tests under `tests/regression/quad/L06/` are frozen.
-2. **Stage (b), the gyro chain** (quad §4 L6, pass bar (b)). Luis's seven decisions and the accepted design are in 0013.
-   The ESC clock-error figure is open with Luis: STM32F051 3.8 % or AT32F421 2 %; the notch Q and the lag depend on it.
-   In parallel: P2, the firmware chain, and P3, the plant rotor angle and vibration. Still to come: P1 (register,
-   profile and generator), P4 (the rotor-speed path), P5 (the design-model block) and P6 (tracking T1). the low-pass and the eRPM-tracking notches at 1×/2×/3×
-   rotor frequency (QF-7), the eRPM path through `hal_sim`, and the rotor vibration model with its amplitude swept and
-   flagged unsourced (0009 owner decision 4).
-   - Stages (b) and (c) carry `latency_samples` = 1 in the design model's loop delay (0012, owner decision D).
-   - Owner question E (clock corners on Gazebo's integer-nanosecond host step: round outward, 70.4 ppm at m = 1 and
-     67.2 ppm at m = 2, or nearest, 64.0 ppm; lead recommends outward) goes to Luis with the stage (b) choices if stage
-     (b) needs it, otherwise before stage (e)'s T4.
+2. **Stage (b), the gyro chain: built, reviewed and verified, awaiting Luis's close** (0013 holds every owner
+   decision verbatim, the design, the build P1–P6 and the evidence).
+   - **Firmware:** `fw/gyro_chain` (12 eRPM notches + 2nd-order low-pass) and `RotorSpeedSample`. The rotor-speed path
+     through `marv_sil_tick_with_rotor_speed` and `hal_rotor_speed()`. Nothing in flight uses either until stage (c)
+     (owner decision 6).
+   - **Plant:** rotor angle, gyro vibration (stream id 1) and the bidirectional-DShot telemetry model.
+   - **Tools:** `tools/card/gyro_chain_design.py` (the rules and the exact loop) and `gyro_chain_params.py` (the five
+     derived parameters, ε = 2⁻⁸ + 65 ppm + the ESC's 2 %).
+   - **ESC:** the MicoAir 55A AM32 4in1, AT32F421 (AM32 2.17 clocks it from HICK). `esc_clock_error_max` = 2 % is the
+     requirement.
+   - **Stage (c)'s starting point:** the chain at today's L4 gains gives a worst-corner PM of 35.5° against the 45°
+     floor (0013, P5).
+   - Q derives from the flown part's ESC figure; the requirement is a lint check (Luis, 2026-10-01).
 3. Still owed to Luis from 0009: the final CI split with measured times, and the T4 confirmation seed count with its
    cost. Add to it the T4 turn-on-corner count (nominal plus each scenario's worst T3 corner) and its cost (0012).
 4. **Stage (c), carried:**
@@ -146,10 +149,11 @@ Stage (c) evaluates ω×Jω feed-forward (F1–F3) with the D term (D1–D7), th
   - The next commit on `master`: L6 stage (a) (0012) and the two spec fixes it carries.
   - `3158fb9`: `local_ci.sh` limits from the measured runner (4 CPUs, 16765378560 B RAM, 1025118208 B headroom, no
     swap locally), sampler and docker-start guards.
-- **L6 progress.** Opened: spec, register and gate (0009). Stage (a) is closed (0012). Stages (b)–(e) are open.
+- **L6 progress.** Opened: spec, register and gate (0009). Stage (a) is closed (0012). Stage (b) is built and verified,
+  and awaits Luis's close (0013). Stages (c)–(e) are open.
 - **Measured wall-clock** (marv-ci-gz, before the split): L02 gz about 1.7 min, `gz_l4` 2 min 21 s, `gz_l5` about
   9 min (548 s before 0010, 539 s after); the L05 T3 oracle about 50 s on the host, 2 min 20 s in marv-ci.
-- **Expected results with stage (a).** ctest 535/535 (debug and release), frozen 534; core tools tests 921 passed,
+- **Expected results with stage (b).** ctest 610/610 (debug and release); core tools tests 963 passed,
   1 skipped (pre-existing); L04 gz 40 passed, 1 xfailed; L05 gz 63 passed, 1 xfailed.
 - **Local leftovers.** Branches `quad-l5`, `quad-l5-p9b`, `worktree-agent-*` are merged into `master`; worktrees under
   `.claude/worktrees/` can be removed.
@@ -197,6 +201,9 @@ tests a fresh clone of a commit, so uncommitted files are not tested. `test_trut
   pytest suites; `run_ci_gz.sh l2` does.
 
 ## Working notes
+
+- **Result files (Luis, 2026-10-01, optional going forward).** New result files print a "produced at <commit>" line
+  in their header, so a stale hash explains itself without a record. Old files stay as they are.
 
 - **Numeric literals.** Every literal under `fw/` other than 0, 1, 2 and ½ fails CI. Cited constants go in
   `constants.hpp` with `Citation:` and `Kind:`. Test numbers are derived or labelled `scenario test value` with a

@@ -24,6 +24,10 @@ Profile structure: profile (the id, equal to the file name without .yaml) and cl
 to {part, entries: {name: entry}}. imu, high_g_accel, barometer and rotor_speed are required.
 
 Budget structure: a mapping from entry name to a register entry (schema.py).
+
+Profile against budget (decision 0013, owner decision 2): with --budget, every profile given by --profile or named by a
+--card is also checked against the register's requirements: the rotor_speed esc_clock_error (unit %, converted to a
+fraction by / 100) may not exceed the budget's esc_clock_error_max.
 Scenario register structure (design/scenario_values.yaml): the same, with method: scenario.
 """
 
@@ -228,6 +232,47 @@ def lint_profile(path, out, expect_id=None):
             schema.check_entry(entry, f"{cp}.entries.{name}", out, path)
 
 
+ESC_ENTRY = "classes.rotor_speed.entries.esc_clock_error"
+ESC_MAX_ENTRY = "esc_clock_error_max"
+PERCENT = 100.0
+
+
+def lint_profile_budget(profile_path, budget_path, out):
+    """The profile's requirements against the register's (a missing or malformed file or entry is the per-file lint's)."""
+    try:
+        profile = schema.load_yaml(profile_path)
+        budget = schema.load_yaml(budget_path)
+    except (OSError, yaml.YAMLError):
+        return
+    try:
+        esc = profile["classes"]["rotor_speed"]["entries"]["esc_clock_error"]
+        esc_max = budget[ESC_MAX_ENTRY]
+    except (KeyError, TypeError):
+        return
+    if not (isinstance(esc, dict) and isinstance(esc_max, dict)):
+        return
+    value, limit = esc.get("value"), esc_max.get("value")
+    if not (schema.is_number(value) and schema.is_number(limit)):
+        return
+    if esc.get("unit") != "%":
+        out.add(profile_path, ESC_ENTRY, f"unit: must be '%' to compare with {ESC_MAX_ENTRY}, got {esc.get('unit')!r}")
+    elif value / PERCENT > limit:
+        out.add(profile_path, ESC_ENTRY, f"{value!r} % (= {value / PERCENT!r}) exceeds the requirement on any ESC, "
+                                         f"{ESC_MAX_ENTRY} {limit!r} ({budget_path}: {ESC_MAX_ENTRY})")
+
+
+def profile_of_card(card_path, root):
+    """The profile file the card names, or None when the card or its sensor_profile is unusable (lint_card's findings)."""
+    try:
+        pid = schema.load_yaml(card_path)["sensor_profile"]
+    except (OSError, yaml.YAMLError, KeyError, TypeError):
+        return None
+    if not (isinstance(pid, str) and IDENTIFIER.fullmatch(pid)):
+        return None
+    pfile = Path(root) / PROFILE_DIR / f"{pid}.yaml"
+    return pfile if pfile.is_file() else None
+
+
 def lint_budget(path, out):
     doc = load(path, out)
     if doc is None:
@@ -269,6 +314,10 @@ def main(argv=None):
         lint_budget(f, out)
     for f in args.scenario:
         lint_scenario(f, out)
+    profiles = list(args.profile) + [p for p in (profile_of_card(c, args.root) for c in args.card) if p is not None]
+    for b in args.budget:
+        for p in profiles:
+            lint_profile_budget(p, b, out)
     if out:
         for line in out.lines():
             print(line, file=sys.stderr)

@@ -30,7 +30,8 @@ enum {
   MARV_PLANT_E_CMD,     /* a DShot value is neither 0 nor in 48..2047 */
   MARV_PLANT_E_DT,      /* dt_s is non-finite or <= 0 */
   MARV_PLANT_E_ALLOC,   /* marv_plant_create could not allocate */
-  MARV_PLANT_E_STATE    /* an IMU entry was called out of order: attached twice, or sampled before the attach */
+  MARV_PLANT_E_STATE    /* an IMU, vibration or rotor-speed entry was called out of order: attached twice, sampled before its
+                           attach, or the vibration attached after the first IMU sample */
 };
 
 /* ESC map model. DShot 0 -> commanded rotor speed 0 (stop). DShot 48..2047 -> commanded rotor speed linear in the
@@ -148,6 +149,73 @@ marv_plant_status marv_plant_imu_attach(marv_plant* plant, const marv_plant_imu_
  * changes no state, draws nothing and leaves *out as it was. */
 marv_plant_status marv_plant_imu_sample(marv_plant* plant, const marv_plant_body* body, double dt_s,
                                         marv_plant_imu_out* out);
+
+/* Gyro vibration (L6 stage (b), decision 0013). Opt-in, like the IMU: a plant that never calls
+ * marv_plant_vibration_attach, or attaches it with every amplitude exactly 0, gives IMU bytes bit-identical to a plant
+ * without the entry, and marv_plant_step is never affected. Motion at the IMU, gyro only: marv_plant_imu_sample adds
+ *     v_axis = sum over rotors i, harmonics h = 1..3 of
+ *              amplitude_rad_s[h-1] * (omega_i / omega_hover_rad_s)^speed_exponent * sin(h * theta_i + phi_{i,h,axis})
+ * to the truth body rate of each gyro axis (FRD, the same amplitude on all three; INFERRED) before the delay line, the
+ * noise, the quantiser and the saturation. omega_i and the mechanical angle theta_i (rad, in [0, 2 pi), 0 at the start,
+ * the exact integral of the motor model) are those of the rotor state after the last marv_plant_step, so the vibration
+ * has the freshness of the specific force. The 36 phases phi are drawn once at attach, uniform on [0, 2 pi), from the
+ * seeded noise stream id 1 of rng_seed (order and the draw rule: sim/plant/src/vibration_model.hpp). The accelerometer
+ * is not affected. The speed exponent is an integer (a non-integer one is refused at v0). */
+enum { MARV_PLANT_VIBRATION_HARMONICS = 3, MARV_PLANT_VIBRATION_MAX_EXPONENT = 8 }; /* the exponent bound is a labelled capacity bound */
+
+typedef struct marv_plant_vibration_config {
+  uint32_t struct_size;                               /* sizeof(marv_plant_vibration_config), checked exactly */
+  double amplitude_rad_s[MARV_PLANT_VIBRATION_HARMONICS]; /* A_h at omega_hover, each finite and >= 0; index h - 1 */
+  double omega_hover_rad_s;                           /* finite, > 0 */
+  double speed_exponent;                              /* p: an integer value in 0..MARV_PLANT_VIBRATION_MAX_EXPONENT */
+} marv_plant_vibration_config;
+
+/* Once, before the first IMU sample. Errors: E_NULL, E_ABI, E_CONFIG (a non-finite or negative amplitude, omega_hover
+ * not finite and positive, an exponent that is not an integer in range), E_STATE (already attached, or the IMU has
+ * already taken a sample). A refused call changes nothing. */
+marv_plant_status marv_plant_vibration_attach(marv_plant* plant, const marv_plant_vibration_config* cfg);
+
+/* Rotor-speed sensor (L6 stage (b), decision 0013, owner decision 7). Opt-in, like the IMU: a plant that never calls
+ * marv_plant_rotor_speed_attach is untouched, and the model never changes marv_plant_step or the IMU bytes (it only reads
+ * the rotor speeds). One sample per motor of omega after the last marv_plant_step (before any step, the initial rotor
+ * speeds): the electrical period 2 pi / (omega * pole_count / 2) is encoded on the bidirectional-DShot telemetry grid
+ * (exponent_bits + mantissa_bits word, period = m << e in units of period_unit_s), decoded again to SI rad/s, and delayed
+ * by latency_ticks samples (sample 0's value before the start). A rotor too slow for the grid (including omega = 0) is a
+ * VALID sample of speed exactly 0 (the all-ones word, which the protocol reads as zero eRPM); a non-finite or negative
+ * omega is an INVALID sample (valid bit clear, value 0). The grid, the rule and the citation: sim/plant/src/
+ * rotor_speed_model.hpp. The pole count, the grid parameters and the latency are the caller's (the profile, the
+ * scenario value); the plant has no default. */
+enum { MARV_PLANT_ROTOR_SPEED_MAX_LATENCY_TICKS = 64 }; /* delay-line capacity (a labelled bound, not a sensor figure) */
+enum { MARV_PLANT_ROTOR_SPEED_MAX_EXPONENT_BITS = 4, MARV_PLANT_ROTOR_SPEED_MAX_MANTISSA_BITS = 16 }; /* labelled capacity bounds */
+
+/* Flag bit numbers: bit i is motor i + 1 valid; identical to the firmware's RotorSpeedFlag (a test pins it). */
+enum { MARV_PLANT_ROTOR_SPEED_M1_VALID = 0, MARV_PLANT_ROTOR_SPEED_M2_VALID, MARV_PLANT_ROTOR_SPEED_M3_VALID,
+       MARV_PLANT_ROTOR_SPEED_M4_VALID };
+
+typedef struct marv_plant_rotor_speed_config {
+  uint32_t struct_size;                               /* sizeof(marv_plant_rotor_speed_config), checked exactly */
+  uint32_t pole_count;                                /* motor magnet poles: even and > 0 */
+  uint32_t latency_ticks;                             /* <= MARV_PLANT_ROTOR_SPEED_MAX_LATENCY_TICKS */
+  uint32_t exponent_bits;                             /* telemetry word exponent field, 1..MAX_EXPONENT_BITS (3) */
+  uint32_t mantissa_bits;                             /* telemetry word mantissa field, 1..MAX_MANTISSA_BITS (9) */
+  double period_unit_s;                               /* the unit of the telemetry period, finite and > 0 (1 us) */
+} marv_plant_rotor_speed_config;
+
+/* The layout of the firmware's RotorSpeedSample without t_us (a test pins it): speeds in rad/s, a clear valid bit means
+ * a speed of exactly 0, bits above the four valid bits are 0. */
+typedef struct marv_plant_rotor_speed_out {
+  float omega_rad_s[MARV_PLANT_N_MOTORS];
+  uint32_t flags;
+} marv_plant_rotor_speed_out;
+
+/* Once. Errors: E_NULL, E_ABI, E_CONFIG (pole count odd or 0, latency or a grid field out of range, a period unit that is
+ * not finite and positive), E_STATE (already attached). A refused call changes nothing. */
+marv_plant_status marv_plant_rotor_speed_attach(marv_plant* plant, const marv_plant_rotor_speed_config* cfg);
+
+/* One sample of the rotor speeds, once per tick, in the order of the host (the adapter: after the IMU sample of the tick,
+ * before the tick's marv_plant_step, so it sees the rotor state after step j - 1). Errors: E_NULL, E_STATE (not attached).
+ * A refused call changes no state and leaves *out as it was. */
+marv_plant_status marv_plant_rotor_speed_sample(marv_plant* plant, marv_plant_rotor_speed_out* out);
 
 #ifdef __cplusplus
 }

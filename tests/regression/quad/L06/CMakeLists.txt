@@ -10,3 +10,7 @@ add_subdirectory(sim2)
 # L6 stage (a) T1 Allan check: the simulated IMU's Allan deviation against the profile, with its two negative controls
 # (allan/).
 add_subdirectory(allan)
+add_subdirectory(gyro_chain)
+add_subdirectory(vibration)
+add_subdirectory(rotor_speed)
+add_subdirectory(tracking)

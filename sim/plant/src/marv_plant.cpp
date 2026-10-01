@@ -12,6 +12,8 @@
 #include "marv/types/actuator.hpp"
 #include "imu_model.hpp"
 #include "plant_model.hpp"
+#include "rotor_speed_model.hpp"
+#include "vibration_model.hpp"
 
 static_assert(MARV_PLANT_N_MOTORS == marv::kQuadXMotors);
 
@@ -22,6 +24,8 @@ struct marv_plant {
   std::uint32_t pole_count;
   std::uint64_t seed;
   marv::plant::ImuModel imu;
+  marv::plant::VibrationModel vibration;
+  marv::plant::RotorSpeedModel rotor_speed;
 };
 
 namespace marv::plant {
@@ -82,6 +86,32 @@ bool imu_axis_valid(const marv_plant_imu_axis_config& a) {
          positive(a.lsb) && positive(a.full_scale) &&
          a.full_scale <= static_cast<double>(std::numeric_limits<float>::max()) * 0.5 && all_finite(a.turn_on_bias) &&
          finite(imu_detail::rw_gain(ImuAxisParams{a.noise_density, a.bias_instability, a.lsb, a.full_scale, {}}));
+}
+
+static_assert(kVibrationHarmonics == MARV_PLANT_VIBRATION_HARMONICS);
+static_assert(kVibrationMaxExponent == MARV_PLANT_VIBRATION_MAX_EXPONENT);
+
+bool vibration_valid(const marv_plant_vibration_config& c) {
+  for (double a : c.amplitude_rad_s) {
+    if (!finite(a) || a < 0.0) {
+      return false;
+    }
+  }
+  // An integer value in 0..max: the range test first, so the conversion below is defined.
+  return positive(c.omega_hover_rad_s) && finite(c.speed_exponent) && c.speed_exponent >= 0.0 &&
+         c.speed_exponent <= static_cast<double>(kVibrationMaxExponent) &&
+         c.speed_exponent == std::floor(c.speed_exponent);
+}
+
+static_assert(kRotorSpeedMotors == MARV_PLANT_N_MOTORS);
+static_assert(kRotorSpeedMaxLatency == MARV_PLANT_ROTOR_SPEED_MAX_LATENCY_TICKS);
+static_assert(kRotorSpeedMaxExponentBits == MARV_PLANT_ROTOR_SPEED_MAX_EXPONENT_BITS);
+static_assert(kRotorSpeedMaxMantissaBits == MARV_PLANT_ROTOR_SPEED_MAX_MANTISSA_BITS);
+
+bool rotor_speed_valid(const marv_plant_rotor_speed_config& c) {
+  return c.pole_count != 0 && c.pole_count % 2 == 0 && c.latency_ticks <= kRotorSpeedMaxLatency &&
+         c.exponent_bits >= 1 && c.exponent_bits <= kRotorSpeedMaxExponentBits && c.mantissa_bits >= 1 &&
+         c.mantissa_bits <= kRotorSpeedMaxMantissaBits && positive(c.period_unit_s);
 }
 
 ImuAxisParams to_imu_axis(const marv_plant_imu_axis_config& a) {
@@ -230,12 +260,84 @@ marv_plant_status marv_plant_imu_sample(marv_plant* plant, const marv_plant_body
     const double omega = plant->model.omega()[i];
     thrust += mp.thrust_coeff * omega * omega;
   }
-  const std::array<double, 6> truth = {body->omega_frd_rad_s[0], body->omega_frd_rad_s[1], body->omega_frd_rad_s[2],
-                                       0.0, 0.0, -(thrust / mp.mass)};
+  std::array<double, 6> truth = {body->omega_frd_rad_s[0], body->omega_frd_rad_s[1], body->omega_frd_rad_s[2],
+                                 0.0, 0.0, -(thrust / mp.mass)};
+  // Vibration, when attached with some nonzero amplitude: added to the gyro truth, before the delay line. Otherwise
+  // the truth is not touched (not even by + 0), so the stage (a) bytes are unchanged by construction.
+  if (plant->vibration.active()) {
+    const std::array<double, 3> vib = plant->vibration.value(plant->model.omega(), plant->model.theta());
+    for (std::size_t a = 0; a < 3; ++a) {
+      truth[a] += vib[a];
+    }
+  }
   const ImuOut m = plant->imu.sample(truth, dt_s);
   out->gyro_rad_s = {m.gyro[0], m.gyro[1], m.gyro[2]};
   out->accel_m_s2 = {m.accel[0], m.accel[1], m.accel[2]};
   out->temp_k = 0.0F;
+  out->flags = m.flags;
+  return MARV_PLANT_OK;
+}
+
+marv_plant_status marv_plant_vibration_attach(marv_plant* plant, const marv_plant_vibration_config* cfg) {
+  using namespace marv::plant;
+  if (plant == nullptr || cfg == nullptr) {
+    return MARV_PLANT_E_NULL;
+  }
+  if (cfg->struct_size != sizeof(marv_plant_vibration_config)) {
+    return MARV_PLANT_E_ABI;
+  }
+  if (!vibration_valid(*cfg)) {
+    return MARV_PLANT_E_CONFIG;
+  }
+  if (plant->vibration.attached() || plant->imu.samples_taken() != 0) {
+    return MARV_PLANT_E_STATE;
+  }
+  VibrationParams p;
+  for (std::size_t h = 0; h < kVibrationHarmonics; ++h) {
+    p.amplitude[h] = cfg->amplitude_rad_s[h];
+  }
+  p.omega_hover = cfg->omega_hover_rad_s;
+  p.exponent = static_cast<std::uint32_t>(cfg->speed_exponent);
+  plant->vibration.attach(p, plant->seed);
+  return MARV_PLANT_OK;
+}
+
+marv_plant_status marv_plant_rotor_speed_attach(marv_plant* plant, const marv_plant_rotor_speed_config* cfg) {
+  using namespace marv::plant;
+  if (plant == nullptr || cfg == nullptr) {
+    return MARV_PLANT_E_NULL;
+  }
+  if (cfg->struct_size != sizeof(marv_plant_rotor_speed_config)) {
+    return MARV_PLANT_E_ABI;
+  }
+  if (!rotor_speed_valid(*cfg)) {
+    return MARV_PLANT_E_CONFIG;
+  }
+  if (plant->rotor_speed.attached()) {
+    return MARV_PLANT_E_STATE;
+  }
+  RotorSpeedParams p;
+  p.pole_count = cfg->pole_count;
+  p.latency = cfg->latency_ticks;
+  p.exponent_bits = cfg->exponent_bits;
+  p.mantissa_bits = cfg->mantissa_bits;
+  p.period_unit_s = cfg->period_unit_s;
+  plant->rotor_speed.attach(p);
+  return MARV_PLANT_OK;
+}
+
+marv_plant_status marv_plant_rotor_speed_sample(marv_plant* plant, marv_plant_rotor_speed_out* out) {
+  using namespace marv::plant;
+  if (plant == nullptr || out == nullptr) {
+    return MARV_PLANT_E_NULL;
+  }
+  if (!plant->rotor_speed.attached()) {
+    return MARV_PLANT_E_STATE;
+  }
+  const RotorSpeedOut m = plant->rotor_speed.sample(plant->model.omega());
+  for (std::size_t i = 0; i < kMotors; ++i) {
+    out->omega_rad_s[i] = m.omega[i];
+  }
   out->flags = m.flags;
   return MARV_PLANT_OK;
 }

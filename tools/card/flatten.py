@@ -3,7 +3,7 @@
 
   flatten.py --card <card> --budget <budget> --out-card <file> --out-register <file> [--out-mixer <file>]
              [--scenario <file> --out-scenario <file>] [--out-rate <file>] [--out-attitude <file>]
-             [--root <repo>]
+             [--out-gyro-chain <file>] [--root <repo>]
 
 The card and the budget are linted first (lint.py's checks, which use schema.py); on any finding nothing is written
 and the exit status is 1. Otherwise two params_gen source files are written, deterministically and byte-stable:
@@ -50,6 +50,14 @@ att_loop_ratio (= 1, the parent-rate rule of core 7.5), att_yaw_alpha_min and at
 E), and next to it the derivation report <file stem>_report.txt. The rate loop is designed in memory for it (rate.py), so
 --out-rate is not needed. When attitude.py or rate.py refuses, nothing is written and the exit status is 1. Without the flag
 the other outputs are byte-identical.
+
+--out-gyro-chain <file> (optional, needs --scenario) adds a seventh params_gen --card file: gyro_lpf_cutoff_hz,
+gyro_notch_q_h1, gyro_notch_q_h2, gyro_notch_q_h3 and gyro_notch_omega_min (gyro_chain_params.py, which applies
+gyro_chain_design.py's rules, decision 0013), and next to it the derivation report <file stem>_report.txt and the C++ header
+<file stem>_design.hpp (the relative tracking error eps and its three terms, for tests; not parameters). The inputs
+include the sensor profile the card names (imu odr_error, rotor_speed esc_clock_error). When gyro_chain_params.py refuses
+(an UNKNOWN input, an esc_clock_error above the budget's esc_clock_error_max), nothing is written and the exit status is
+1. Without the flag the other outputs are byte-identical.
 """
 
 from __future__ import annotations
@@ -61,6 +69,7 @@ from pathlib import Path
 
 import attitude
 import gen_plant_config as gpc
+import gyro_chain_params
 import lint
 import mixer
 import rate
@@ -166,6 +175,9 @@ def lint_all(card, budget, root, scenario=None):
     out = schema.Findings()
     lint.lint_card(card, out, root=root)
     lint.lint_budget(budget, out)
+    profile = lint.profile_of_card(card, root)
+    if profile is not None:
+        lint.lint_profile_budget(profile, budget, out)
     if scenario:
         lint.lint_scenario(scenario, out)
     return out
@@ -182,6 +194,7 @@ def main(argv=None):
     ap.add_argument("--out-scenario")
     ap.add_argument("--out-rate")
     ap.add_argument("--out-attitude")
+    ap.add_argument("--out-gyro-chain")
     ap.add_argument("--root", default=str(lint.ROOT), help="repository root (resolves sensor_profile)")
     args = ap.parse_args(argv)
 
@@ -191,6 +204,8 @@ def main(argv=None):
         ap.error("--out-rate needs --scenario (the rate loop period and maximum rates are scenario values)")
     if args.out_attitude and not args.scenario:
         ap.error("--out-attitude needs --scenario (the loop period is a scenario value)")
+    if args.out_gyro_chain and not args.scenario:
+        ap.error("--out-gyro-chain needs --scenario (the tick period and the rate-loop divisor are scenario values)")
 
     findings = lint_all(args.card, args.budget, args.root, args.scenario)
     if findings:
@@ -229,6 +244,18 @@ def main(argv=None):
         try:
             attitude_entries, attitude_report, _ = attitude.attitude_entries(
                 card, budget, schema.load_yaml(args.scenario), args.card, _rel(args.card, args.root), rate_result)
+        except gpc.GenError as e:
+            for line in e.lines:
+                print(line, file=sys.stderr)
+            return 1
+
+    gyro_chain_entries = None
+    if args.out_gyro_chain:
+        profile_path = Path(args.root) / lint.PROFILE_DIR / f"{card['sensor_profile']}.yaml"
+        try:
+            gyro_chain_entries, gyro_chain_report, gyro_chain_design = gyro_chain_params.gyro_chain_entries(
+                card, budget, schema.load_yaml(args.scenario), schema.load_yaml(profile_path), profile_path,
+                _rel(args.card, args.root))
         except gpc.GenError as e:
             for line in e.lines:
                 print(line, file=sys.stderr)
@@ -292,6 +319,20 @@ def main(argv=None):
         outputs.append((args.out_attitude, render(attitude_header, attitude_entries)))
         attitude_report_path = Path(args.out_attitude).with_name(Path(args.out_attitude).stem + "_report.txt")
         outputs.append((str(attitude_report_path), "\n".join(attitude_report) + "\n"))
+    if gyro_chain_entries is not None:
+        gyro_chain_header = [
+            f"params_gen input for the L6 gyro chain, computed from vehicle card {_rel(args.card, args.root)}, the design "
+            "budget, the scenario register and the sensor profile by tools/card/gyro_chain_params.py through "
+            "tools/card/flatten.py. Generated; do not edit.",
+            "gyro_lpf_cutoff_hz, gyro_notch_q_h1..h3 and gyro_notch_omega_min (decision 0013); the derivation is in the "
+            "report next to this file.",
+        ]
+        outputs.append((args.out_gyro_chain, render(gyro_chain_header, gyro_chain_entries)))
+        gyro_chain_report_path = Path(args.out_gyro_chain).with_name(Path(args.out_gyro_chain).stem + "_report.txt")
+        outputs.append((str(gyro_chain_report_path), "\n".join(gyro_chain_report) + "\n"))
+        gyro_chain_design_path = Path(args.out_gyro_chain).with_name(Path(args.out_gyro_chain).stem + "_design.hpp")
+        outputs.append((str(gyro_chain_design_path),
+                        gyro_chain_params.design_header_text(gyro_chain_design, _rel(args.card, args.root))))
     for path, text in outputs:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_text(text, encoding="utf-8", newline="\n")

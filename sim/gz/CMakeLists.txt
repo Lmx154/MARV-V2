@@ -1,8 +1,10 @@
 # The Gazebo adapter (host only, quad spec section 4 L2, decision 0003 items 5, 6 and 8): frame maps and the per-host-step
 # loop over marv_plant and a command source, with no Gazebo header. The Gazebo plugin (a shared object) links it, so it
 # and marv_plant are built position independent. marv_sil_tick is resolved by whatever links the adapter (a SIL
-# library); only its header is used here. -ffp-contract=off comes from marv_apply_flags on host.
-add_library(marv_gz_adapter STATIC adapter/src/adapter.cpp adapter/src/truth_gyro.cpp)
+# library); only its header is used here. rotor_sil.cpp (RotorSilCommandSource, L6 stage (b)) is the only object that calls
+# marv_sil_tick_with_rotor_speed; being a separate object of this archive, it is linked only by a program that uses it.
+# -ffp-contract=off comes from marv_apply_flags on host.
+add_library(marv_gz_adapter STATIC adapter/src/adapter.cpp adapter/src/truth_gyro.cpp adapter/src/rotor_sil.cpp)
 target_include_directories(marv_gz_adapter PUBLIC adapter/include)
 target_include_directories(marv_gz_adapter PUBLIC "${PROJECT_SOURCE_DIR}/fw/sil/include")
 target_link_libraries(marv_gz_adapter PUBLIC marv_plant)

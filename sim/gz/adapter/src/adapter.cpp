@@ -33,6 +33,11 @@ bool CommandSource::dshot(std::uint64_t tick, const marv_imu_meas* imu, Dshot& o
   return dshot(tick, out);
 }
 
+bool CommandSource::dshot(std::uint64_t tick, const marv_imu_meas* imu, const marv_rotor_speed_meas* rotor, Dshot& out) {
+  static_cast<void>(rotor);
+  return imu != nullptr ? dshot(tick, imu, out) : dshot(tick, out);
+}
+
 bool ScriptedCommandSource::dshot(std::uint64_t tick, Dshot& out) {
   out = script_(tick);
   return true;
@@ -81,7 +86,7 @@ bool ImuSilCommandSource::dshot(std::uint64_t tick, const marv_imu_meas* imu, Ds
 }
 
 Adapter::Adapter(marv_plant* plant, CommandSource& source, double t_tick_s)
-    : Adapter(plant, source, AdapterConfig{t_tick_s, 0, 0.0, nullptr}) {}
+    : Adapter(plant, source, AdapterConfig{t_tick_s, 0, 0.0, nullptr, nullptr}) {}
 
 Adapter::Adapter(marv_plant* plant, CommandSource& source, const AdapterConfig& cfg)
     : plant_(plant),
@@ -90,6 +95,10 @@ Adapter::Adapter(marv_plant* plant, CommandSource& source, const AdapterConfig& 
   if (cfg.imu != nullptr) {
     imu_enabled_ = true;
     imu_attach_status_ = marv_plant_imu_attach(plant_, cfg.imu);
+  }
+  if (cfg.rotor_speed != nullptr) {
+    rotor_speed_enabled_ = true;
+    rotor_speed_attach_status_ = marv_plant_rotor_speed_attach(plant_, cfg.rotor_speed);
   }
 }
 
@@ -106,6 +115,11 @@ StepResult Adapter::step(const marv_plant_body& body, std::uint64_t first_tick, 
     r.plant_status = imu_attach_status_;
     return r;
   }
+  if (rotor_speed_attach_status_ != MARV_PLANT_OK) {
+    r.status = Status::kPlant;
+    r.plant_status = rotor_speed_attach_status_;
+    return r;
+  }
   r.ticks.reserve(m);
   Wrench sum{};
   for (std::uint32_t i = 0; i < m; ++i) {
@@ -119,8 +133,20 @@ StepResult Adapter::step(const marv_plant_body& body, std::uint64_t first_tick, 
         r.plant_status = is;
         return r;
       }
-      marv_imu_meas meas{};
-      std::memcpy(&meas, &t.imu, sizeof(meas));
+    }
+    marv_imu_meas meas{};
+    std::memcpy(&meas, &t.imu, sizeof(meas));
+    if (rotor_speed_enabled_) {
+      const marv_plant_status rs = marv_plant_rotor_speed_sample(plant_, &t.rotor_speed);
+      if (rs != MARV_PLANT_OK) {
+        r.status = Status::kPlant;
+        r.plant_status = rs;
+        return r;
+      }
+      marv_rotor_speed_meas rotor{};
+      std::memcpy(&rotor, &t.rotor_speed, sizeof(rotor));
+      got = source_.dshot(t.tick, imu_enabled_ ? &meas : nullptr, &rotor, t.dshot);
+    } else if (imu_enabled_) {
       got = source_.dshot(t.tick, &meas, t.dshot);
     } else {
       got = source_.dshot(t.tick, t.dshot);

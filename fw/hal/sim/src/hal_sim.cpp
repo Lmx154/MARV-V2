@@ -15,6 +15,7 @@ struct State {
   std::span<DshotValue> motor_latch{};
   std::span<ServoUs> servo_latch{};
   TimeUs now_us = 0;
+  RotorSpeedSample rotor{};
   Tick next_tick = 0;
   bool configured = false;
   bool in_tick = false;
@@ -26,6 +27,12 @@ State g_state;
 }  // namespace
 
 TimeUs hal_time_us() noexcept { return g_state.now_us; }
+
+RotorSpeedSample hal_rotor_speed() noexcept {
+  RotorSpeedSample s = g_state.rotor;
+  s.t_us = g_state.now_us;
+  return s;
+}
 
 void hal_actuators_write(std::span<const DshotValue> motor, std::span<const ServoUs> servo) noexcept {
   if (!g_state.in_tick) {
@@ -62,6 +69,17 @@ void setup(TickPeriod p, std::span<DshotValue> motor_latch, std::span<ServoUs> s
   std::fill(motor_latch.begin(), motor_latch.end(), DshotValue::stop());
   std::fill(servo_latch.begin(), servo_latch.end(), ServoUs{});
   g_state.configured = true;
+}
+
+void stage_rotor_speed(const std::array<float, kQuadXMotors>& omega_rad_s, std::uint32_t flags) noexcept {
+  if (!g_state.configured) {
+    hal_panic("hal_sim::stage_rotor_speed before setup");
+  }
+  if (g_state.in_tick) {
+    hal_panic("hal_sim::stage_rotor_speed inside a tick");
+  }
+  g_state.rotor.omega_rad_s = omega_rad_s;
+  g_state.rotor.flags = flags;
 }
 
 void begin_tick(Tick n) noexcept {

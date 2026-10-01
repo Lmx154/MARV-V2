@@ -229,3 +229,52 @@ classes:
         sigma: exact
         status: [INFERRED]
         note: "Bauersfeld et al. 2021 §IV-B names only 'Hobbywing XRotor 2306 motors' (no variant or KV); the Race Pro is the only Hobbywing 2306 found, so the variant match is inferred"
+      esc_clock_error_datasheet:
+        value: [-2, 1.5]
+        unit: "%"
+        shape: range
+        method: datasheet
+        source: "Artery AT32F421 Series Datasheet V2.02 (Chinese edition, 2023-10-17), §5.3.7 Table 27 (HICK clock characteristics); DS_AT32F421 V2.01 (English edition, 2022-06-06), §5.3.7 Table 27 'HICK clock characteristics', owner cross-check 2026-10-01"
+        sigma: [UNKNOWN, UNKNOWN]
+        status: [UNVERIFIED, INFERRED]
+        note: "The AT32F421 HICK accuracy over −40…105 °C as the datasheet writes it: −2 % / +1.5 %, [min, max] (asymmetric), factory calibrated, characterised not production-tested. Both editions give the same limits. The ESC is the MicoAir 55A AM32 4in1 (see esc_clock_error for the MCU inference). Footnote on the accuracy row: the factory-calibrated condition cell '出厂校准(2)', which spans the four temperature rows including -40~105 °C, carries footnote (2), verbatim (CN V2.02 p.42, Table 27): '由综合评估得出，不在生产中测试。' (translation: obtained by comprehensive evaluation, not tested in production). Footnote (1), '由设计保证，不在生产中测试。' (guaranteed by design, not tested in production), belongs only to the user-calibration row (CRM_CTRL, ±1 %). Read from the rendered page image; the EN V2.01 text was not retrieved (owner cross-check only)."
+      esc_clock_error:
+        value: 2
+        unit: "%"
+        method: derived(max(|min|, |max|) of esc_clock_error_datasheet = max(|−2|, |+1.5|) = 2 %; the symmetric bound that contains the asymmetric datasheet limits)
+        source: "Artery AT32F421 Series Datasheet V2.02 (Chinese edition, 2023-10-17), §5.3.7 Table 27 (HICK clock characteristics); DS_AT32F421 V2.01 (English edition, 2022-06-06), §5.3.7 Table 27 'HICK clock characteristics', owner cross-check 2026-10-01"
+        sigma: UNKNOWN
+        status: [UNVERIFIED, INFERRED]
+        note: "The ESC is the MicoAir 55A AM32 4in1 (the motor `part` above is the simulated reference vehicle's; MARV's own motor is not chosen). The value is the symmetric bound that contains the datasheet's asymmetric limits (esc_clock_error_datasheet), max(|−2|, |+1.5|) = 2 % (a bound, not a sigma); its unit is % as the datasheet states it. Unit conversion to a fraction (÷ 100) belongs to the generator. UNVERIFIED: a datasheet figure, not measured on this ESC; the chain's cost at today's gains is a worst-corner phase margin of 35.5° (decision 0013). The MCU is the AT32F421 (AM32 2.17 build files, below); the eRPM error maps one-to-one from the MCU clock error because the commutation timer runs on that clock. AM32 facts, read for these facts only (AM32 is GPL; nothing copied): AM32 tag 2.17, commit 9f6fc6d32e864c9a60a0f680279d5c9cf38e3e7b: Inc/targets.h defines the F4A_4IN1_F421 target in HARDWARE_GROUP_AT_E (MCU_AT421); f421makefile.mk builds it for AT32F421K8U7; Mcu/f421/Src/peripherals.c system_clock_config() enables HICK and configures the PLL from CRM_PLL_SOURCE_HICK, switching sclk to the PLL; HEXT is never enabled in the F421 code; no run-time HICK trim was seen; the commutation timer (TMR17, peripherals.c) runs on that clock. So the ESC clocks from HICK, not a crystal, if it runs that target. INFERRED: that the MicoAir 55A runs that target, from a seller's firmware name `AM32_F4A_4IN1_F421_2.17` (the `_F421` suffix); to be confirmed by the chip marking (Luis will photograph it). If a crystal were fitted instead, the error would drop to the ppm level and this figure would change; the 2 % requirement (design/budget.yaml esc_clock_error_max) would stay."
+      telemetry_exponent_bits:
+        value: 3
+        unit: "1"
+        method: published
+        source: "Betaflight, github.com/betaflight/betaflight, commit 5a09417ee75e91e81003cf7891bc1f4de86f3a83, src/main/drivers/dshot.c lines 206-221 (dshot_decode_eRPM_telemetry_value) and line 395; cited for the format only (Betaflight is GPL-3.0: no code taken)"
+        sigma: exact
+        status: [INFERRED]
+        note: "Bidirectional-DShot eRPM telemetry word, 12 bits: eee mmmmmmmmm (3 exponent bits, 9 mantissa bits). The period in microseconds is m << e; the word 0x0fff is zero eRPM; a decoded period of 0 is invalid. The format is the decoder's (Betaflight); INFERRED: that the ESC's firmware (AM32) encodes the same format; nothing here shows it and no committed test does."
+      telemetry_mantissa_bits:
+        value: 9
+        unit: "1"
+        method: published
+        source: "Betaflight, github.com/betaflight/betaflight, commit 5a09417ee75e91e81003cf7891bc1f4de86f3a83, src/main/drivers/dshot.c lines 206-221 (dshot_decode_eRPM_telemetry_value) and line 395; cited for the format only (Betaflight is GPL-3.0: no code taken)"
+        sigma: exact
+        status: [INFERRED]
+        note: "See telemetry_exponent_bits. The resolution of the encoded period is 2^-8 relative (a 9-bit mantissa with its leading one: periods of at least 256 us). INFERRED: the ESC's encoder truncates the low bits of the period (the rounding rule of AM32's encoder is not read anywhere here and no test shows it)."
+      telemetry_period_unit:
+        value: 1
+        unit: us
+        method: published
+        source: "Betaflight, github.com/betaflight/betaflight, commit 5a09417ee75e91e81003cf7891bc1f4de86f3a83, src/main/drivers/dshot.c lines 206-221 (dshot_decode_eRPM_telemetry_value) and line 395; cited for the format only (Betaflight is GPL-3.0: no code taken)"
+        sigma: exact
+        status: [INFERRED]
+        note: "One unit of the encoded period is 1 us (60 * 10^6 / period is the electrical rpm in the decoder). See telemetry_exponent_bits for the INFERRED status."
+      latency_rate_periods:
+        value: 1
+        unit: "1"
+        method: scenario
+        source: "labelled scenario value (decision 0013, owner decision 7: delayed by one rate-loop period)"
+        sigma: choice
+        status: [UNVERIFIED, INFERRED]
+        note: "A count of rate-loop periods. Ticks = this value x the scenario register's rate_loop_divisor (design/scenario_values.yaml), so the plant's delay follows the rate loop. Rationale: a telemetry reply follows each DShot frame and is read at the next rate-loop execution. INFERRED: that timing is not read from a source or measured; Luis's bench measurement replaces it."
