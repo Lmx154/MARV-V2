@@ -8,7 +8,8 @@ export UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}"
 source ci/peakmem.sh
 
 # MARV_CI_MODE: per-push (default) or full (nightly and workflow_dispatch). The multi-seed Monte Carlo of L6 stage e hooks
-# in here when it exists; nothing reads the mode yet (owner decision: per push = frozen T4 at committed seeds).
+# in here when it exists (owner decision: per push = frozen T4 at committed seeds). Today the mode selects the tools tests
+# only: per push skips nightly_tools_tests, full runs them.
 echo "MARV_CI_MODE=${MARV_CI_MODE:-per-push}"
 
 step() {
@@ -412,6 +413,62 @@ PY
   rm -rf "${dir}" "${log}"
 }
 
+# The product parameter table (decision 0014, owner ruling 2026-10-03): the table the build generates
+# (fw/params/CMakeLists.txt, tools/gen/params_gen.py --out-table) must equal the committed one byte for byte.
+product_table_name=marv_params_product_table.txt
+product_table_committed=tests/regression/quad/L06/product_params/${product_table_name}
+product_table_regen='docker run ... marv-ci bash -lc "uv sync --frozen -q && cmake --preset host-debug && cmake --build --preset host-debug --target marv_params_generated" and copy build/host-debug/generated/marv_params/'"${product_table_name}"' over '"${product_table_committed}"' (see tests/regression/quad/L06/product_params/README.md); a change needs a decision record'
+
+# product_table_compare <generated table> <committed table>
+product_table_compare() {
+  local generated="$1" committed="$2"
+  if [[ ! -f "${generated}" ]]; then
+    echo "product table ${generated} was not generated"
+    return 1
+  fi
+  if ! cmp -s "${generated}" "${committed}"; then
+    echo "the generated product parameter table ${generated} differs from the committed ${committed}:"
+    diff -u "${committed}" "${generated}" | head -n 40 || true
+    echo "regenerate: ${product_table_regen}"
+    return 1
+  fi
+}
+
+product_table_host() {
+  product_table_compare "build/host-debug/generated/marv_params/${product_table_name}" "${product_table_committed}"
+}
+
+product_table_m33() {
+  product_table_compare "build/m33/generated/marv_params/${product_table_name}" "${product_table_committed}"
+}
+
+# A copy of the committed table with one value changed (mass, 0.772000015 to 0.772000030) must fail the comparison with the
+# build's table, showing the changed row and the regeneration command.
+product_table_control() {
+  local dir log status=0
+  dir="$(mktemp -d)"
+  log="$(mktemp)"
+  sed 's/^\(0\tmass\tf32\t\)0\.772000015\t/\10.772000030\t/' "${product_table_committed}" >"${dir}/${product_table_name}"
+  if cmp -s "${product_table_committed}" "${dir}/${product_table_name}"; then
+    echo "control setup failed: the perturbation did not change the table"
+    rm -rf "${dir}" "${log}"
+    return 1
+  fi
+  product_table_compare "build/host-debug/generated/marv_params/${product_table_name}" "${dir}/${product_table_name}" >"${log}" 2>&1 || status=$?
+  cat "${log}"
+  if [[ ${status} -eq 0 ]]; then
+    echo "control passed: a changed value in the committed table is not detected"
+    rm -rf "${dir}" "${log}"
+    return 1
+  fi
+  if ! grep -q '^+0.*mass.*0\.772000015' "${log}" || ! grep -q '^-0.*mass.*0\.772000030' "${log}" || ! grep -q '^regenerate: ' "${log}"; then
+    echo "control failed, but not with the changed mass row and the regeneration command"
+    rm -rf "${dir}" "${log}"
+    return 1
+  fi
+  rm -rf "${dir}" "${log}"
+}
+
 g3_check() {
   uv run python tools/ci/check_g3.py "$@"
 }
@@ -647,11 +704,34 @@ g3_truth_planted_control() {
     exports --manifest build/host-debug/tests/regression/quad/L05/controls/g3_control_truth_planted.json --nm nm
 }
 
+# Tools tests that run in the full mode only (nightly and workflow_dispatch), not per push: the files whose alone time exceeds the
+# 60 s per-push limit (owner ruling of 2026-10-03). Each time is the file run alone in the CI image (docker run --cpus 4 --memory
+# 15740260352 on a quiet host, load < 1.5) after the S9 speed-ups, the session fixtures included. The per-push files closest
+# to the limit (test_r1x_coupling.py 58.9 s, margin 1.1 s; test_r2_lower_bound.py 56.2 s, margin 3.8 s) stay per push. Per push these files are --ignore'd; the full mode
+# runs them with the rest. S9, decision 0014 fifth round item 6.
+nightly_tools_tests=(
+  tests/regression/quad/L06/tools/test_chirp_admission.py   # 111.7 s alone. S9, decision 0014 fifth round item 6
+  tests/regression/quad/L06/tools/test_notch_mixes.py       # 92.4 s alone. S9, decision 0014 fifth round item 6
+  tests/regression/quad/L06/tools/test_attitude_lead.py     # 81.4 s alone. S9, decision 0014 fifth round item 6
+  tests/regression/quad/L01/tools/test_flatten_report.py    # 64.5 s alone. S9, decision 0014 fifth round item 6
+  tests/regression/quad/L05/tools/test_attitude_t3.py       # 60.7 s alone (60.5 s to 61.0 s in four runs). S9, decision 0014 fifth round item 6
+)
+
+tools_tests() {
+  local skip=() f
+  if [[ "${MARV_CI_MODE:-per-push}" != full ]]; then
+    for f in "${nightly_tools_tests[@]}"; do
+      skip+=(--ignore "${f}")
+    done
+  fi
+  uv run pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools -q ${skip[@]+"${skip[@]}"}
+}
+
 step "uv sync --frozen" uv sync --frozen
 step "L4: T3 oracle regenerates rate_t3_golden.txt and rate_t3_envelope.txt from rate_t3_inputs.txt, matching reference/SHA256SUMS" t3_reference_reproduces
 step "L5: T3 oracle regenerates attitude_t3_golden.txt, attitude_t3_envelope.txt and attitude_t3_q.txt from their inputs, matching reference/SHA256SUMS" att_t3_reference_reproduces
-step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools)" \
-  uv run pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools -q
+step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools; the nightly list only in MARV_CI_MODE=full)" \
+  tools_tests
 step "G8: CLAUDE.md keeps the ACTIVE-spec, number, UNKNOWN and CI-gate sections" g8_check
 step "L1: the committed vehicle card, its sensor profile and the design budget lint clean (sigma policy)" l1_card_lint
 step "L1: plant known-answer reference reproduces plant_ref_expected.txt from plant_ref_inputs.txt" plant_ref_reproduces
@@ -661,6 +741,7 @@ if [[ -n "${MARV_CI_BASE_REF:-}" ]]; then
   step "regression change check against ${MARV_CI_BASE_REF}" regression_change_check
 fi
 step "host-debug: configure, build, ctest" host_preset host-debug
+step "product parameters: the host-debug generated table equals the committed tests/regression/quad/L06/product_params table byte for byte" product_table_host
 step "L1: the run report of the product parameter set (card, budget, provenance)" l1_report
 step "G1: no unexplained numeric literals under fw/ (clang-tidy, token scan, NOLINT check)" g1_lint
 step "constants: every constant in constants.hpp carries a citation and a physics/standard/math kind" constants_check
@@ -671,6 +752,7 @@ step "per-push timeout: every ctest test of host-debug carries TIMEOUT = per_pus
 step "host-release: configure, build, ctest" host_preset host-release
 step "frozen suites (ctest -L frozen)" frozen_suites
 step "m33: configure, build" m33_build
+step "product parameters: the m33 (flight) generated table equals the committed table byte for byte" product_table_m33
 step "G3: no truth or harness symbol in any m33 flight library (arm-none-eabi-nm -C)" g3_m33_symbols
 step "G3: no flight translation unit has a harness include directory (m33)" g3_m33_includes
 step "PB2 negative control (planted float to double promotion must fail m33)" pb2_negative_control
@@ -698,6 +780,7 @@ step "L1 negative control (perturbed plant reference inputs must not reproduce t
 step "L4 negative control (a perturbed T3 input, kp one ulp up, must fail the SHA256SUMS check)" t3_reference_control
 step "L5 negative control (a perturbed T3 input, att_kp one ulp up, must fail the SHA256SUMS check)" att_t3_reference_control
 step "L5 negative control (a perturbed rate-bypass input, kp one ulp up, must not reproduce the acro identity golden)" rate_bypass_golden_control
+step "product parameters negative control (a committed table with one value changed must fail the byte-for-byte comparison)" product_table_control
 step "G3 negative control (unflagged SIL library exporting marv_truth_state_set must fail the export check)" g3_truth_unflagged_control
 step "G3 negative control (truth_state library also exporting marv_truth_planted must fail the export check)" g3_truth_planted_control
 

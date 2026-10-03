@@ -76,7 +76,7 @@ script:
     rule: "one attitude period T_a = rate_loop_divisor * att_loop_ratio * tick = 312.5 us: the recovery starts at the initial state, so nothing settles; the origin execution a0 = 2 is only the first execution that keeps the T3 stamp phase (tools/sim/run_l5.py plan)"
   segments: []
   end_attitude_execution:
-    value: 20744
+    value: 20292
     unit: "1"
     label: derived
-    rule: "executions 0 .. 20744 of the recovery design model (tests/regression/quad/L05/gz/test_t4_recovery.py: the box envelope of the 3-axis design model from this initial state, horizon ten attitude time constants 1/att_kp = 10372 executions doubled once, the T3 settle rule of core 7.5: every envelope end value, tilt, heading error and rate, is below F)"
+    rule: "executions 0 .. 20292 of the recovery design model (tests/regression/quad/L05/gz/test_t4_recovery.py: the box envelope of the 3-axis design model from this initial state, horizon ten attitude time constants 1/att_kp = 10146 executions doubled once, the T3 settle rule of core 7.5: every envelope end value, tilt, heading error and rate, is below F)"

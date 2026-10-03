@@ -80,10 +80,10 @@ script:
         label: derived
         rule: "stick_scale 1.0 of the yaw_fallback block of attitude_t3_envelope.txt (the T3 property min sigma_r omega > 0 up to the fallback holds at full stick, so the stick does not halve, decision 0006 F T4 yaw-lock fallback); positive s_yaw yaws nose right (l5_script.hpp); the other sticks are 0"
     - start_attitude_execution:
-        value: 20732
+        value: 20293
         unit: "1"
         label: derived
-        rule: "release_execution of yaw_fallback in tests/regression/quad/L05/t3/reference/attitude_t3_envelope.txt: a_r = 1 + H, H = 20731 attitude executions (segment_seconds 6.478177814791293 s, ten attitude time constants 1/att_kp doubled once until every envelope end value is below F)"
+        rule: "release_execution of yaw_fallback in tests/regression/quad/L05/t3/reference/attitude_t3_envelope.txt: a_r = 1 + H, H = 20292 attitude executions (segment_seconds 6.341210085512444 s, ten attitude time constants 1/att_kp doubled once until every envelope end value is below F)"
       stick:
         value: [0.0, 0.0, 0.0]
         unit: "1"
@@ -96,12 +96,12 @@ script:
       label: derived
       rule: "d = sigma_r tau_held,yaw with sigma_r = +1 (a positive yaw stick gives a positive yaw rate at the release): disturbance_nm of the yaw_fallback block of attitude_t3_envelope.txt, the collective-held yaw torque envelope of decision 0005's chirp rule (attitude_t3_inputs.txt tau_held_yaw_nm, f32); the test re-checks it against the recorded fixture"
     start_attitude_execution:
-      value: 20732
+      value: 20293
       unit: "1"
       label: derived
       rule: "the release execution of the script (decision 0006 F T4 yaw-lock fallback: the disturbance is on from the release stamp, so the rate integrator has not absorbed it during the hold)"
   end_attitude_execution:
-    value: 41462
+    value: 40584
     unit: "1"
     label: derived
-    rule: "1 + 2 H of the recorded envelope (attitude_t3_envelope.txt channel omega of yaw_fallback, count 41463 executions 0..41462): the run ends with the envelope"
+    rule: "1 + 2 H of the recorded envelope (attitude_t3_envelope.txt channel omega of yaw_fallback, count 40585 executions 0..40584): the run ends with the envelope"

@@ -30,7 +30,8 @@ T_a = D_a t. The attitude group runs at ticks D_a a (tick 0 included) and the SI
   rotor_speed_rad_s     optional (decision 0007), marv_plant_config.initial_omega_rad_s: the scenario's 4 numbers, or for the
                         text "hover" the card's hover rotor speed per motor (hover_rotor_speeds): omega_i = sqrt(T_i / k),
                         T_i = M[i, thrust] m g(phi, h0), the firmware mixer's allocation at the hover collective and zero
-                        torque (tools/card/mixer.py), k the card's thrust coefficient.
+                        torque (tools/card/mixer.py), k the card's thrust coefficient; for the text "steady_tumble" the
+                        speeds at which marv_plant's torque at t = 0 equals w0 x J w0 (steady_tumble).
 """
 
 from __future__ import annotations
@@ -52,6 +53,7 @@ ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "card"))
 import attitude  # noqa: E402
+import attitude_lead  # noqa: E402
 import gen_plant_config as gpc  # noqa: E402
 import l5_scenario as l5s  # noqa: E402
 import run_l4 as l4  # noqa: E402
@@ -179,6 +181,102 @@ def hover_rotor_speeds(card, vals, root=ROOT):
     return speeds
 
 
+def euler_coupling(inertia, w):
+    """w x (J w), J = diag(inertia): the body torque that holds the body rates w constant (Euler's equation
+    J w' = tau - w x J w)."""
+    jw = [j * x for j, x in zip(inertia, w)]
+    return (w[1] * jw[2] - w[2] * jw[1], w[2] * jw[0] - w[0] * jw[2], w[0] * jw[1] - w[1] * jw[0])
+
+
+def rotor_torque(card, speeds, root=ROOT):
+    """The body torque (FRD, N m) of marv_plant v0 at the rotor speeds `speeds` (logical order): (B T)_axis for the roll,
+    pitch and yaw rows of the card's effectiveness matrix B (tools/card/mixer.py, the plant's forward map) and
+    T_i = k omega_i omega_i, in the plant's order of operations (plant_model.hpp Model::wrench)."""
+    card_doc, profile = gpc.load_linted(card, root)
+    cfg, _ = gpc.config_from(card_doc, profile, card, root)
+    _, b, _ = mixer.mixer_matrix(card_doc, card)
+    k = cfg["thrust_coeff"]
+    thrust = [k * w * w for w in speeds]
+    return tuple(sum(b[a][i] * thrust[i] for i in range(scn.MOTORS)) for a in range(1, len(mixer.AXES)))
+
+
+def steady_tumble(card, vals, root=ROOT):
+    """The steady-tumble rotor state of an L5 scenario (decision 0014, owner decision 5 and second round item 1): the rotor
+    speeds at which every torque marv_plant v0 applies at t = 0 holds the body at its initial rates w0, so that
+    J w' = tau - w0 x J w0 = 0 (Euler's equation; J the card's diagonal inertia).
+
+      torque     marv_plant v0's body torque is (B T)_(roll, pitch, yaw), T_i = k omega_i^2 and B the card's effectiveness
+                 matrix (tools/card/mixer.py; plant_model.hpp Model::wrench): the rotor thrust moments r_i x (0, 0, -T_i)
+                 and the rotor yaw reaction s_i c_q T_i. The plant has no rotor inertia (no rotor gyroscopic torque), no
+                 drag and no position-dependent torque, and its force acts at the centre of mass (the plugin refuses a
+                 link whose CM is not its origin). So the rotors supply all of w0 x J w0 and nothing else is subtracted.
+      thrusts    T(c) = M (c, w0 x J w0): the firmware mixer's inverse M = B^-1 (mixer.mixer_matrix) at collective c.
+      c*         the hover collective m g(phi, h0) (run_l4.hover_thrust) if every T_i(m g) lies in the card's thrust range
+                 [k omega_min^2, k omega_max^2] and every omega_i in [omega_min, omega_max]; otherwise the smallest
+                 collective at which every rotor does. The floor is the card's own minimum rotor thrust k omega_min^2.
+                 Closed form c_lo = max_i (k omega_min^2 - d_i) / M[i, thrust], d_i = sum_axis M[i, axis] (w0 x J w0)_axis,
+                 then moved by single binary64 steps to the smallest double whose T_i(c) and omega_i pass the floor in
+                 binary64 (T_i is nondecreasing in c, so the floor test is monotone; the closed form is within a few
+                 roundings of that double).
+      speeds     omega_i = sqrt(T_i(c*) / k).
+
+    Raises PlanError if no collective keeps every rotor within the range: c_lo > c_hi = min_i (k omega_max^2 - d_i) /
+    M[i, thrust], or the ceiling fails at c*. Returns {"speeds", "collective", "hover_collective", "hover_feasible",
+    "thrusts", "torque", "thrust_range", "speed_range"}."""
+    card_doc, profile = gpc.load_linted(card, root)
+    cfg, _ = gpc.config_from(card_doc, profile, card, root)
+    m, _, _ = mixer.mixer_matrix(card_doc, card)
+    inertia = [float(x) for x in card_doc["inertia_diag"]["value"]]
+    w0 = [float(x) for x in vals["initial_state"]["body_rates_frd_rad_s"]]
+    torque = euler_coupling(inertia, w0)
+    k = cfg["thrust_coeff"]
+    w_lo, w_hi = cfg["omega_min_rad_s"], cfg["omega_max_rad_s"]
+    f_lo, f_hi = k * w_lo * w_lo, k * w_hi * w_hi
+    d = [sum(m[i][a + 1] * torque[a] for a in range(len(torque))) for i in range(scn.MOTORS)]
+
+    def thrusts(c):
+        return [m[i][0] * c + d[i] for i in range(scn.MOTORS)]
+
+    def above_floor(c):
+        return all(t >= f_lo and math.sqrt(t / k) >= w_lo for t in thrusts(c))
+
+    def below_ceiling(c):
+        return all(t <= f_hi and math.sqrt(t / k) <= w_hi for t in thrusts(c))
+
+    hover = l4.hover_thrust(card, vals, root)
+    c_lo = max((f_lo - d[i]) / m[i][0] for i in range(scn.MOTORS))
+    c_hi = min((f_hi - d[i]) / m[i][0] for i in range(scn.MOTORS))
+    if c_lo > c_hi:
+        raise PlanError([f"steady tumble: no collective keeps every rotor in the card's thrust range [{f_lo!r}, {f_hi!r}] N "
+                         f"(the floor needs c >= {c_lo!r} N, the ceiling c <= {c_hi!r} N)"])
+    hover_ok = above_floor(hover) and below_ceiling(hover)
+    c = hover
+    if not hover_ok:
+        c = c_lo
+        while not above_floor(c):
+            c = math.nextafter(c, math.inf)
+        while above_floor(math.nextafter(c, -math.inf)):
+            c = math.nextafter(c, -math.inf)
+        if not below_ceiling(c):
+            raise PlanError([f"steady tumble: at the smallest collective {c!r} N that keeps every rotor above the card's "
+                             f"floor, a rotor exceeds the ceiling {f_hi!r} N"])
+    t = thrusts(c)
+    return {"speeds": tuple(math.sqrt(x / k) for x in t), "collective": c, "hover_collective": hover,
+            "hover_feasible": hover_ok, "thrusts": t, "torque": torque, "thrust_range": (f_lo, f_hi),
+            "speed_range": (w_lo, w_hi)}
+
+
+def initial_rotor_speeds(card, vals, root=ROOT):
+    """The scenario's initial rotor speed per motor (decision 0007): the 4 numbers, the keyword "hover" resolved by
+    hover_rotor_speeds, "steady_tumble" by steady_tumble, or None when absent (the rotors at rest)."""
+    rotor = vals["initial_state"].get("rotor_speed_rad_s")
+    if rotor == l5s.ROTOR_SPEED_HOVER:
+        return hover_rotor_speeds(card, vals, root)
+    if rotor == l5s.ROTOR_SPEED_STEADY_TUMBLE:
+        return steady_tumble(card, vals, root)["speeds"]
+    return None if rotor is None else tuple(rotor)
+
+
 def plan(doc, params, card, root=ROOT):
     """The derived plan of a valid L5 scenario against the build's parameters (module docstring). Raises PlanError."""
     vals = l5s.values(doc)
@@ -238,9 +336,7 @@ def plan(doc, params, card, root=ROOT):
     last_tick = att_div * (a0 + end)
     duration = (last_tick // lcm + 1) * lcm
     thrust = l4.hover_thrust(card, vals, root)
-    rotor = vals["initial_state"].get("rotor_speed_rad_s")
-    if rotor == l5s.ROTOR_SPEED_HOVER:
-        rotor = hover_rotor_speeds(card, vals, root)
+    rotor = initial_rotor_speeds(card, vals, root)
     return Plan(num_us=num, den=den, divisor=divisor, ratio=ratio, tick_s=tick, period_s=period,
                 settle_s=script["settle_s"], origin=a0, end=end, segments=segments, chirp=chirp,
                 disturbance=disturbance, duration_ticks=duration, m_sequence=tuple(vals["m_sequence"]),
@@ -496,14 +592,17 @@ def steady_torque_peak(rm, axis, jt, tau, k, n, omega):
     return best
 
 
-def peak_torque_gain(rm, axis, k, n, band, loops):
+def peak_torque_gain(rm, axis, k, n, band, loops, peak=None):
     """(max over the band and the box of steady_torque_peak, at omega, loop name): a log grid of PEAK_GRID_POINTS over the
-    band, then a golden-section refinement around the largest grid point (run_l4.max_sensitivity's search)."""
+    band, then a golden-section refinement around the largest grid point (run_l4.max_sensitivity's search). `peak`, when
+    given, replaces steady_torque_peak: peak(loop name, omega)."""
     lo, hi = band
     grid = [lo * (hi / lo) ** (i / (PEAK_GRID_POINTS - 1)) for i in range(PEAK_GRID_POINTS)]
     best = (-math.inf, None, None)
     for name, jt, tau in loops:
         def f(w):
+            if peak is not None:
+                return peak(name, w)
             return steady_torque_peak(rm, axis, jt, tau, k, n, w)
         vals = [f(w) for w in grid]
         i = max(range(PEAK_GRID_POINTS), key=vals.__getitem__)
@@ -560,6 +659,131 @@ def chirp_design(card, params, thrust_n, root=ROOT):
                       "tau_held_nm": held, "amplitude_rad_s": held / g}
     return {"T_a": t_a, "N": n, "a": rm["a"], "band": band, "design_pm": design_pm, "design_crossover": crossover,
             "pm_min": inputs["PM_min"], "loops": loops, "axes": axes, "result": res}
+
+
+# ---- the stage (c) design reference of the attitude chirp (decision 0014, commit 3) -----------------------------------
+#
+# From stage (c) on, the build's attitude parameters come from tools/card/attitude_lead.py (flatten.py --out-attitude-lead) on
+# the stage (c) rate loop of tools/card/rate_lead.py, so run_chirp and gen_l5_chirp take chirp_design_lead; chirp_design and
+# attitude.py stay the PI reference. chirp_design_lead's quantities are chirp_design's, on attitude_lead's loops in the
+# configuration the chirp flies, the stage (c) T4 configuration (decision 0014; run_l4's chirp section): the truth gyro
+# (latency 0) and the chain with every notch bypassed, its low-pass at the design's cutoff.
+#   build check         the build's att_kp, att_yaw_weight and att_loop_ratio must equal attitude_lead.design()'s on the
+#                       product inner loop (attitude_lead.lead_inner: notches at omega_th, the profile's latency; flatten.py's
+#                       call), and its rate gains and gyro_lpf_cutoff_hz rate_lead's (run_l4.chirp_design's check); else the
+#                       build is stale and refused.
+#   loops               attitude_lead.build_loops on the T4 inner loop: rate_lead's f32 PID gains, latency 0, the chain's
+#                       low-pass; N = 1 (attitude_lead refuses another N).
+#   PM_design, w_c      attitude.pm_worst on those loops at the build's gain: the PM and the crossover theta / T_a of the
+#                       nominal loop and the four tau x J corners of every axis, each certified stable by attitude_lead's
+#                       rule step 5' (refused without a unique crossover or a certificate).
+#   band, tau_held, A_a as chirp_design; G_tau(w) is steady_torque_peak_lead on the T4 loops.
+
+@functools.lru_cache(maxsize=None)
+def attitude_lead_design(card, root=str(ROOT)):
+    """(rate_lead.design(), attitude_lead.design() on the product inner loop): flatten.py --out-attitude-lead's derivation of
+    the build's attitude parameters (decision 0014, commit 3)."""
+    lead = l4._lead_design(card, root)
+    card_doc = schema.load_yaml(card)
+    budget = schema.load_yaml(Path(root) / "design" / "budget.yaml")
+    register = schema.load_yaml(Path(root) / "design" / "scenario_values.yaml")
+    return lead, attitude_lead.design(card_doc, budget, register, str(card), attitude_lead.lead_inner(lead), lead["pi_l4"])
+
+
+def steady_torque_peak_lead(loop, j_a, jt, k, omega):
+    """|torque request| (N m) per unit steady sinusoid d at omega (rad/s) added to the rate setpoint at every rate execution,
+    for the attitude_lead.LeadLoop `loop` (N = 1, corner inertia ratio jt, axis inertia j_a) closed with the attitude gain k:
+    r = d - k theta, so x' = A_cl x + B d with A_cl = loop.closed(k), B = loop.b, and the steady state is x = X z^i,
+    X = (z I - A_cl)^-1 B, z = e^(j omega T). The law's output u = kp e + I + D of an execution is what the execution leaves in
+    the next state z X (LeadLoop.step: I, e_prev and the D filter are updated at the rate tick), in LeadLoop's units
+    (torque / (j_a jt)); |z| = 1, so the peak is j_a jt |u(X)|."""
+    z = cmath.exp(1j * omega * loop.t)
+    a = loop.closed(k)
+    x = attitude.csolve([[(z if r == c else 0) - a[r][c] for c in range(loop.n)] for r in range(loop.n)], loop.b)
+    o = 3 + loop.lat + 2 * len(loop.stages)
+    return abs(j_a * jt * (x[o] + loop.kp * x[o + 1] + (x[o + 3] if loop.kd else 0)))
+
+
+@functools.lru_cache(maxsize=None)
+def t4_lead_reference(card, root=str(ROOT)):
+    """The design-model part of chirp_design_lead at the product design's gains (section comment): {"inner", "loops",
+    "detail" (attitude.pm_worst's), "corners", "band", "design_pm", "design_crossover", "peaks" (axis -> peak_torque_gain)}.
+    Raises PlanError."""
+    lead, res = attitude_lead_design(card, root)
+    m, ch = lead["model"], lead["chain"]
+    gcd = l4.gcd
+    stages = [s for s in gcd.chain_stages(ch["t_s"], ch["f_c"], ch["q"], ch["omega_th"], [ch["omega_th"]] * gcd.MOTORS,
+                                          bypass_all=True) if s != gcd.IDENTITY]
+    inner = attitude_lead.Inner(f"stage (c) T4: rate_lead's f32 PID (N* {lead['n_star']!r}), notches bypassed, latency 0",
+                                lead["axes32"], m.t_s, m.divisor, 0, stages)
+    rr, t_a = res["rate"], res["T_a"]
+    loops = attitude_lead.build_loops(rr, inner)
+    _, detail = attitude.pm_worst(loops, res["k32"], res["w32"])
+    bad = [f"{a} {name}: the phase of F fails attitude_lead's start or branch check" for a, name, lp in loops
+           if not (lp.start_ok and lp.branch_ok)]
+    bad += [f"{a} {name}: {why}" for a, name, _, _, _, why in detail if why]
+    if bad:
+        raise PlanError([f"the stage (c) T4 attitude design loop at att_kp {res['k32']!r}: {x}" for x in bad])
+    crossover = {a: {} for a in l5s.AXES}
+    design_pm = {a: {} for a in l5s.AXES}
+    for axis, name, pm, theta, _, _ in detail:
+        crossover[axis][name], design_pm[axis][name] = theta / t_a, pm
+    every = [w for c in crossover.values() for w in c.values()]
+    band = (min(every) / rr["a"], rr["a"] * max(every))
+    corners = l4.rate.corner_list(rr["inputs"]["tau"], rr["inputs"]["b_tau"], rr["inputs"]["b_J"])
+    jt_of = {name: jt for name, jt, _ in corners}
+    by = {(a, name): lp for a, name, lp in loops}
+    peaks = {}
+    for axis in l5s.AXES:
+        kk = attitude.axis_k(axis, res["k32"], res["w32"])
+        j_a = rr["axes"][axis]["J"]
+
+        def peak(name, w, axis=axis, kk=kk, j_a=j_a):
+            return steady_torque_peak_lead(by[axis, name], j_a, jt_of[name], kk, w)
+        peaks[axis] = peak_torque_gain(rr, axis, kk, res["N"], band, corners, peak)
+    return {"inner": inner, "loops": loops, "detail": detail, "corners": corners, "band": band, "design_pm": design_pm,
+            "design_crossover": crossover, "peaks": peaks}
+
+
+def chirp_design_lead(card, params, thrust_n, root=ROOT):
+    """chirp_design's quantities on the stage (c) design reference (section comment), per axis, as a dict; "result" holds the
+    T4 loop's N, T_a, k32, w32, rate (rate.py's result), inner (attitude_lead.Inner), detail, and the product design.
+    Raises PlanError on a stale build."""
+    lead, res = attitude_lead_design(str(card), str(root))
+    fails = []
+    if (params.get("att_kp"), params.get("att_yaw_weight"), params.get("att_loop_ratio")) != (
+            res["k32"], res["w32"], res["N"]):
+        fails.append(f"the build's att_kp, att_yaw_weight, att_loop_ratio {params.get('att_kp')!r}, "
+                     f"{params.get('att_yaw_weight')!r}, {params.get('att_loop_ratio')!r} are not the design's "
+                     f"{res['k32']!r}, {res['w32']!r}, {res['N']!r} (tools/card/attitude_lead.py on {card}): the build is stale")
+    for a, gains32 in zip(l5s.AXES, lead["axes32"]):
+        for q, v in zip(l4.LEAD_GAINS, gains32):
+            if params.get(f"rate_{q}_{a}") != v:
+                fails.append(f"the build's rate_{q}_{a} {params.get(f'rate_{q}_{a}')!r} is not the design's {v!r} "
+                             f"(tools/card/rate_lead.py on {card}): the build is stale")
+    if params.get("gyro_lpf_cutoff_hz") != l4.r32(lead["chain"]["f_c"]):
+        fails.append(f"the build's gyro_lpf_cutoff_hz {params.get('gyro_lpf_cutoff_hz')!r} is not the design's "
+                     f"{l4.r32(lead['chain']['f_c'])!r} (tools/card/rate_lead.py on {card}): the build is stale")
+    if fails:
+        raise PlanError(fails)
+    ref = t4_lead_reference(str(card), str(root))
+    rr = res["rate"]
+    f_min = params["rotor_thrust_coeff"] * params["idle_speed"] ** 2
+    f_max = params["rotor_thrust_coeff"] * params["rotor_speed_max"] ** 2
+    rows = l4._mixer_rows(params)
+    axes = {}
+    for axis in l5s.AXES:
+        g, g_at, g_loop = ref["peaks"][axis]
+        held = l4.tau_held(rows, MIXER_COLUMNS.index(axis), thrust_n, f_min, f_max)
+        if held is None or not held > 0:
+            raise PlanError([f"the hover thrust {thrust_n!r} N leaves no held-collective torque on {axis}"])
+        axes[axis] = {"k": attitude.axis_k(axis, params["att_kp"], params["att_yaw_weight"]), "peak_torque_per_rad_s": g,
+                      "peak_at_rad_s": g_at, "peak_loop": g_loop, "tau_held_nm": held, "amplitude_rad_s": held / g}
+    result = {"N": res["N"], "T_a": res["T_a"], "k32": res["k32"], "w32": res["w32"], "rate": rr, "inner": ref["inner"],
+              "detail": ref["detail"], "product": res}
+    return {"T_a": res["T_a"], "N": res["N"], "a": rr["a"], "band": ref["band"], "design_pm": ref["design_pm"],
+            "design_crossover": ref["design_crossover"], "pm_min": rr["inputs"]["PM_min"], "loops": ref["corners"],
+            "axes": axes, "result": result}
 
 
 def canonical(q):
@@ -649,7 +873,7 @@ def run_chirp(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, amp_
     d = [l4.chirp_value(t, amp, w_lo, w_hi, ch["t0_us"], ch["dur_us"]) for t in stamps]
     return ChirpRun(step=s, axis=c["axis"], axis_index=idx, amp=amp, w_lo=w_lo, w_hi=w_hi, t0_us=ch["t0_us"],
                     dur_us=ch["dur_us"], k=flown_gain(params, s.overrides, c["axis"]),
-                    design=chirp_design(card, params, p.thrust_n, root),
+                    design=chirp_design_lead(card, params, p.thrust_n, root),
                     stamps=stamps, y=y, d=d, dshot_end_executions=ends)
 
 
@@ -660,21 +884,31 @@ def run_chirp(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, amp_
 # A_env): runs k = 1..5 at m = 1 and amplitude A_env / 2^k; PM = the minimum over the k that give a unique crossover, U_A =
 # max - min of the PM over those k (the plateau's spread), E_H = |PM - PM(m = 2)| of the run at the minimum's k and amplitude,
 # U_d that of that run. U = E_H + U_A + U_d on every axis.
+# The plateau's admission (owner decision of 2026-10-02, decision 0014 third round item 2, amending decision 20's plateau):
+# only the k that chirp_admission admits enter the plateau, and the plateau must hold at least PLATEAU_MIN_RUNS of them
+# (section "the plateau admission" below).
 PLATEAU_K = tuple(range(1, 6))
 ROLL_PITCH = ("roll", "pitch")
+PLATEAU_MIN_RUNS = 3  # owner decision (decision 0014 third round item 2): "The plateau must hold at least three runs"
 
 
 def plateau_name(k):
     return f"k{k}"
 
 
-def u_terms(axis, pm):
+def u_terms(axis, pm, admitted=None):
     """{"margin_run", "pm", "E_H", "U_A"} (rad) from `pm`, run name -> PM (rad) or None (no unique crossover): yaw's runs are
-    m1, m2, half_amplitude; roll and pitch's are k1 .. k5 (m = 1) and m2 (m = 2, at the minimum's amplitude)."""
+    m1, m2, half_amplitude; roll and pitch's are k1 .. k5 (m = 1) and m2 (m = 2, at the minimum's amplitude). `admitted`, when
+    given, are the run names chirp_admission admits: the plateau is those of them with a crossover, at least
+    PLATEAU_MIN_RUNS."""
     if axis not in ROLL_PITCH:
         return {"margin_run": "m1", "pm": pm["m1"], "E_H": abs(pm["m1"] - pm["m2"]),
                 "U_A": abs(pm["m1"] - pm["half_amplitude"])}
-    plateau = {plateau_name(k): pm[plateau_name(k)] for k in PLATEAU_K if pm.get(plateau_name(k)) is not None}
+    plateau = {plateau_name(k): pm[plateau_name(k)] for k in PLATEAU_K if pm.get(plateau_name(k)) is not None
+               and (admitted is None or plateau_name(k) in admitted)}
+    if admitted is not None and len(plateau) < PLATEAU_MIN_RUNS:
+        raise PlanError([f"{axis}: the plateau holds {len(plateau)} admitted runs with a unique crossover, it needs "
+                         f"{PLATEAU_MIN_RUNS}"])
     if len(plateau) < 2:
         raise PlanError([f"{axis}: {len(plateau)} of the amplitudes A_env/2^k give a unique crossover, the plateau needs two"])
     low = min(plateau, key=plateau.get)
@@ -701,6 +935,174 @@ def float_input_term(s, margin):
     kappa = abs(cmath.phase(up / down)) / abs(math.log(abs(up) / abs(down)))
     return {"U_d": math.asin(min(e, 1.0)) + e * kappa, "max |delta| / A": max(abs(x) for x in delta) / s.amp,
             "rho": rho, "e": e, "kappa": kappa}
+
+
+# ---- the plateau admission of roll and pitch (owner decision of 2026-10-02, decision 0014 third round item 2) ------------
+#
+# It amends decision 20's plateau. Run k (amplitude A_env / 2^k) enters the plateau iff its modelled nonlinear PM shift is
+# smaller than the PM change the fine negative control (attitude gains x 1.1) produces on the design model at the same corner:
+# a run whose nonlinearity is as large as the fine fault cannot tell the two apart. Excluded runs are still flown and reported.
+#   corner              the plant the chirp flies: the nominal card plant (the build's f32 J and tau), in the stage (c) T4
+#                       configuration (truth gyro, latency 0, every notch bypassed: the chain's low-pass alone), at the
+#                       build's f32 rate and attitude gains.
+#   shift_k             PM_nl(k) - PM_lin (chirp_model_pm), each identified from the model's own window as chirp_margin
+#                       identifies a flown run (run_l4.identify: C the axis gain, T_a, the f32 band; the chirp at the plan's
+#                       stamps from the window's first execution; the window's length). PM_nl(k): the design model of the T4
+#                       recovery envelope (tests/regression/quad/L05/gz/recovery_model.py on the L5 T3 oracle's pieces: per
+#                       axis the exact ZOH plant J w' = u_m, tau u_m' = u - u_m; the chain's low-pass seeded with the first
+#                       sample; the rate law in bypass with its D low-pass at the stamp dt; recovery_model.law, the attitude
+#                       law on the full quaternion; the quaternion integrated per tick; no w x Jw), driven at A_env / 2^k, its
+#                       torque request through recovery_model.Quant3 (the firmware mixer's allocation at the scenario
+#                       collective, DShot rounding, marv_plant's ESC map and rotor geometry): kinematics and quantisation
+#                       together. PM_lin: the same loop with the axis's angle theta in place of the law (r = -C theta on the
+#                       axis, 0 on the others) and no quantiser, the linear design model. Its loop is linear, so its PM does
+#                       not depend on the amplitude and one run, at k = 1's amplitude, serves every k. The method of the
+#                       stage (c) chirp diagnosis (a1_model.py, 2026-10-02), ported operation for operation.
+#   threshold           |PM(f32(att_kp f32(1.1))) - PM(att_kp)| (fine_control_pm_change): attitude.Loop.margin of the axis's
+#                       nominal loop on chirp_design_lead's T4 inner loop (attitude_lead.build_loops), the gain scaled as
+#                       t3_test.cpp scales the fine control.
+#   admitted            |shift_k| < threshold (plateau_admission). A run whose model gives no unique crossover has no shift
+#                       and is excluded.
+FINE_GAIN_SCALE = 1.1  # the fine negative control "gains x 1.1" (core 7.2; quad spec 4 L5 T3; t3_test.cpp kGainScale)
+RECOVERY_MODEL_DIR = ROOT / "tests" / "regression" / "quad" / "L05" / "gz"
+
+
+def _recovery_model():
+    """tests/regression/quad/L05/gz/recovery_model.py (it imports the L5 T3 oracle as recovery_model.oracle)."""
+    if str(RECOVERY_MODEL_DIR) not in sys.path:
+        sys.path.append(str(RECOVERY_MODEL_DIR))
+    import recovery_model  # noqa: PLC0415
+    return recovery_model
+
+
+def quant_inputs(card, params, thrust_n, root=ROOT):
+    """The quantiser's inputs (attitude_t3_oracle.Q_KEYS) for a run: the build's mixer parameters (f32), the scenario
+    collective thrust_n (N) and the card's plant side, mapped as attitude_t3_oracle.refresh_q_inputs maps them."""
+    oracle = _recovery_model().oracle
+    cfg = gpc.plant_config(card, root)
+    out = {k: params[k] for k in oracle.Q_FW_KEYS if k != "l5_thrust_n"}
+    out.update(l5_thrust_n=thrust_n, plant_thrust_coeff=cfg["thrust_coeff"], plant_omega_min=cfg["omega_min_rad_s"],
+               plant_omega_max=cfg["omega_max_rad_s"], plant_torque_ratio=cfg["torque_ratio_m"])
+    for i, (pos, sign) in enumerate(zip(cfg["rotor_position_frd_m"], cfg["yaw_sign"]), 1):
+        out.update({f"plant_rotor{i}_x": pos[0], f"plant_rotor{i}_y": pos[1], f"plant_rotor{i}_yaw_sign": float(sign)})
+    return out
+
+
+def chirp_model_pm(su, qf, axis, amp, w_lo, w_hi, dur_us, n_exec, *, linear=False):
+    """run_l4.identify's result (plus "peak |y|", rad) for the design model of section "the plateau admission" driven by the
+    chirp (amp rad/s, w_lo, w_hi rad/s, dur_us from the window's first execution) on `axis` for n_exec attitude executions:
+    su = attitude_t3_oracle.Setup on the build's parameter table, qf = quant_inputs; `linear` runs PM_lin's model."""
+    rm = _recovery_model()
+    oracle = rm.oracle
+    idx = l5s.AXES.index(axis)
+    p, cfg = su.p, su.cfg
+    n_ticks = su.divisor * su.ratio
+    plants = [oracle.Axis(p[oracle.INERTIA[n]], p["motor_tau"], su.tick_s) for n in oracle.AXES]
+    kp = [p[f"rate_kp_{a}"] for a in oracle.AXES]
+    ki = [p[f"rate_ki_{a}"] for a in oracle.AXES]
+    kd = [p[f"rate_kd_{a}"] for a in oracle.AXES]
+    b0, b1, b2, f1, f2 = su.lpf
+    qz = None if linear else rm.Quant3(qf)
+    chain, y_tick = [None] * 3, [0.0] * 3
+    integral, e_prev, u = [0.0] * 3, [0.0] * 3, [0.0] * 3
+    y_prev, d_f = [0.0] * 3, [0.0] * 3
+    q = q_sp = (1.0, 0.0, 0.0, 0.0)
+    ys, ds = [], []
+    for j in range(n_exec * n_ticks):
+        for i, pl in enumerate(plants):
+            x = pl.w
+            x1, x2, yy1, yy2 = chain[i] if j > 0 else (x, x, x, x)
+            yv = b0 * x + b1 * x1 + b2 * x2 - f1 * yy1 - f2 * yy2
+            chain[i] = (x, x1, yv, yy1)
+            y_tick[i] = yv
+        if j % n_ticks == 0:
+            a = j // n_ticks
+            dd = l4.chirp_value(su.stamp_us(j), amp, w_lo, w_hi, 0, dur_us)
+            if linear:
+                yerr = plants[idx].th
+                r_hold = [0.0, 0.0, 0.0]
+                r_hold[idx] = -cfg.kp * yerr
+            else:
+                yerr = attitude_error(q, cfg.w)[idx]
+                r_hold = rm.law(cfg, q, q_sp)
+            ys.append(yerr)
+            ds.append(dd)
+            r_hold[idx] += dd
+            if a == 0:
+                u = [0.0] * 3 if qz is None else qz([0.0, 0.0, 0.0])
+                y_prev = list(y_tick)
+            else:
+                dt = su.dt_exec(a)
+                req = [0.0] * 3
+                for i in range(3):
+                    alpha = su.alpha(dt, i)[0]
+                    integral[i] += ki[i] * e_prev[i] * dt
+                    e = r_hold[i] - y_tick[i]
+                    d_raw = -kd[i] * (y_tick[i] - y_prev[i]) / dt
+                    d_f[i] = d_f[i] + alpha * (d_raw - d_f[i]) if alpha != 1.0 else d_raw
+                    req[i] = kp[i] * e + integral[i] + d_f[i]
+                    e_prev[i] = e
+                    y_prev[i] = y_tick[i]
+                u = req if qz is None else qz(req)
+        d3 = [pl.step(u[i]) for i, pl in enumerate(plants)]
+        q = oracle.qmul(q, oracle.quat_exp(d3))
+        nq = math.sqrt(sum(c * c for c in q))
+        q = tuple(c / nq for c in q)
+    out = l4.identify(ys, ds, su.t_a, attitude.axis_k(axis, p["att_kp"], p["att_yaw_weight"]), 0.0, (w_lo, w_hi))
+    out["peak |y|"] = max(abs(v) for v in ys)
+    return out
+
+
+def fine_control_pm_change(result, axis):
+    """(threshold, PM at att_kp, PM at the fine control's gain) (rad) of section "the plateau admission": attitude.Loop.margin
+    of the nominal loop of `axis` on chirp_design_lead's T4 inner loop (result = its "result"). Raises PlanError without a
+    unique crossover."""
+    loop = next(lp for a, name, lp in attitude_lead.build_loops(result["rate"], result["inner"], (axis,))
+                if a == axis and name == "nominal")
+    pms = []
+    for k in (result["k32"], l4.r32(result["k32"] * l4.r32(FINE_GAIN_SCALE))):
+        _, pm, why = loop.margin(attitude.axis_k(axis, k, result["w32"]))
+        if pm is None:
+            raise PlanError([f"{axis} nominal at att_kp {k!r}: {why}"])
+        pms.append(pm)
+    return abs(pms[1] - pms[0]), pms[0], pms[1]
+
+
+def plateau_admission(shifts, threshold):
+    """The run names admitted to the plateau from `shifts`, name -> shift (rad) or None: |shift| < threshold."""
+    return tuple(name for name, s in shifts.items() if s is not None and abs(s) < threshold)
+
+
+def chirp_admission(card, scenario, plugin_dir=DEFAULT_PLUGIN_DIR, *, params=None, result=None, root=ROOT):
+    """Section "the plateau admission" for a roll or pitch chirp scenario: {"axis", "threshold", "pm_design", "pm_fine",
+    "pm_linear", "runs" (plateau_name(k) -> {"amp", "pm", "shift"}), "admitted"} (rad, rad/s; pm None without a unique
+    crossover). params: the build's parameter table (default: plugin_dir's build, as run_chirp reads it); result:
+    chirp_design_lead's "result" (default: computed on params, which refuses a stale build)."""
+    if params is None:
+        _, defaults = build_parameters(plugin_dir)
+        params = l4.read_param_defaults(defaults)
+    p = plan(l5s.load(scenario), params, card, root)
+    c = p.chirp
+    axis = c["axis"]
+    if axis not in ROLL_PITCH:
+        raise PlanError([f"{scenario}: the plateau admission is roll and pitch's (owner decision 20), not {axis}'s"])
+    if result is None:
+        result = chirp_design_lead(card, params, p.thrust_n, root)["result"]
+    threshold, pm_design, pm_fine = fine_control_pm_change(result, axis)
+    su = _recovery_model().oracle.Setup(params)
+    qf = quant_inputs(card, params, p.thrust_n, root)
+    a_env, w_lo, w_hi = (l4.r32(c[key]) for key in ("amp_rad_s", "w_lo_rad_s", "w_hi_rad_s"))
+    amps = {plateau_name(k): l4.r32(a_env * 2.0 ** -k) for k in PLATEAU_K}
+    n_exec = p.end + 1
+    lin = chirp_model_pm(su, qf, axis, amps[plateau_name(PLATEAU_K[0])], w_lo, w_hi, c["dur_us"], n_exec, linear=True)
+    if lin["pm"] is None:
+        raise PlanError([f"{axis}: the linear design model has no unique crossover in the band ({lin['reason']})"])
+    runs = {}
+    for name, amp in amps.items():
+        pm = chirp_model_pm(su, qf, axis, amp, w_lo, w_hi, c["dur_us"], n_exec)["pm"]
+        runs[name] = {"amp": amp, "pm": pm, "shift": None if pm is None else pm - lin["pm"]}
+    return {"axis": axis, "threshold": threshold, "pm_design": pm_design, "pm_fine": pm_fine, "pm_linear": lin["pm"],
+            "runs": runs, "admitted": plateau_admission({n: r["shift"] for n, r in runs.items()}, threshold)}
 
 
 def main(argv=None):

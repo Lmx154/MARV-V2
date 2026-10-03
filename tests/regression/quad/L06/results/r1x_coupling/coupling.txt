@@ -1,0 +1,66 @@
+MARV quad L6 stage (c): R1X's alpha excess in gz is the coupling w x Jw, under the stage (c) gains and the old ones (decision 0014, third round, item 3)
+command: uv run python tests/regression/quad/L06/results/r1x_coupling/r1x_coupling.py --out <file>
+label: the design model (T3) on gz's branch against gz's truth-fed, perfect-model runs: not a validation run
+inputs sha256: gz_new.txt dbf3205cfa85cd9f70e0609928f03a0189e1dd53a8cb19ec829480d499da08f1; gz_old.txt 1f5d47ec237b9eb8999b3ea6e98a154ae643b01ad958bde17734f6b3f78b9887; r1x_model.py 50835be1d97161004c7fffb5a537f59e9b4eac7599686a32ac03546f644646af; capture_gz.py 5d21a874160b01af0eb0530d7d7de515142677e01bb290fe1cdccb751dd9d39f; test_t4_recovery.py efbef63005ef5af52ba5818e700191d81f3e646c187d3a38c9a5d796abaaa59c; recovery_model.py 118438c0a091221f65345a11a077851f86bbcfee57e5173731fa72dfa3c793e3; attitude_t3_oracle.py bc0be546f00a99ecb7d43bb8dae407b5de0be3df35474681274168552e4c52e8; attitude_t3_inputs.txt f7e67b54c78709eb67ff4c5ab9ea6c6a3cc208ea6b0be129111d5c357a8057c5; attitude_t3_q_inputs.txt 663db0bf424ab32127df1aa015ee879467d8b766a437c2677a7858be6bfe23aa; attitude_t3_envelope.txt (generated, decision 0011) 6e7b44933f90285501dee225e5f92f3f5c6a788de02557245d2ba88d270a14c2; scenario 8aaeaf13ae8784f1767a80a5b292777c5e5f6f9fde3b26ec4a1ef3757118dd0c
+
+== 0. the two gain sets and the re-run
+new: this repository's tree (the inputs' sha256 pin it) (gz_new.txt)
+old: a checkout of 69c62f2 (checked blob for blob against git ls-tree -r 69c62f2: 522 files) (gz_old.txt; its model section is quoted: the 69c62f2 design model is not in this tree)
+r1x_model.py as captured (sha256 in both summaries equals today's): True
+re-run here, new gains: the design and every model series equal gz_new.txt's, line for line: True
+dist rows: |gz - run| at the stated n (new: and the run's value is the re-run's): new True, old True
+gz's own verdict equals the capture's predicate on gz's alpha with E: new True, old True
+
+== 1. (i) new gains: gz against the design model's nominal member on gz's branch
+gains: att_kp 3.154, att_yaw_weight 0.1433, rate_kp_roll 0.02463, rate_ki_roll 0.07709, rate_kd_roll 0.00146, rate_kp_pitch 0.02069, rate_ki_pitch 0.06475, rate_kd_pitch 0.001226, rate_kp_yaw 0.04237, rate_ki_yaw 0.1326, rate_kd_yaw 0.002511; design N 20293, F 2.294e-02, Q 6.735e-03, F + Q 2.968e-02
+gz (the test's evaluate, E + F + Q): FAIL, 74 violations, first n 2271, worst n 2338 slack 5.048e-03 (alpha 0.2279, hi 0.1916, E 1.507e-03); max E 1.520e-03; max(alpha - hi) 3.623e-02 at n 2338
+D  design model, no w x Jw, gz's branch: 0 violations at F + Q; worst slack -2.968e-02 at n 0; max(alpha - hi) 0.000e+00 at n 0
+C  + w x Jw, gz's branch:              85 violations at F + Q, first n 2262, worst n 2338 slack 6.085e-03 (alpha 0.2274, hi 0.1916); max(alpha - hi) 3.576e-02 at n 2338
+C0 + w x Jw, exact start (control):    0 violations at F + Q; worst slack -2.968e-02 at n 2344
+alpha below pi/2 first at n: gz 1126, D 1125, C 1126
+distance to gz, max_n |gz - run| over n = 0 .. N - 1 (rad, rad/s), at n:
+  D  alpha 9.383e-02 (n 2204); w_x 1.804e-01 (n 1463); w_y 5.515e-01 (n 2825); w_z 1.738e-01 (n 2162); err_z 6.771e-02 (n 1956)
+  C  alpha 2.280e-03 (n 18172); w_x 5.556e-03 (n 9758); w_y 7.253e-03 (n 9751); w_z 3.043e-03 (n 204); err_z 1.056e-03 (n 701)
+  C0 alpha 2.271e-01 (n 2342); w_x 1.272e+01 (n 1044); w_y 2.441e+00 (n 1031); w_z 1.989e+00 (n 1831); err_z 6.051e-01 (n 1362)
+  D / C alpha 41.15; w_x 32.48; w_y 76.03; w_z 57.11; err_z 64.11
+largest of these: D 5.515e-01 (w_y) -> C 7.253e-03 (w_y)
+alpha distance against the test's F + Q 2.968e-02: C 2.280e-03 within: True; D 9.383e-02 beyond: True
+
+== 2. (ii) old gains (69c62f2): the same
+gains: att_kp 3.087, att_yaw_weight 0.1433, rate_kp_roll 0.01994, rate_ki_roll 0.06871, rate_kd_roll 0, rate_kp_pitch 0.01675, rate_ki_pitch 0.05772, rate_kd_pitch 0, rate_kp_yaw 0.03429, rate_ki_yaw 0.1182, rate_kd_yaw 0; design N 20745, F 4.140e-02, Q 6.657e-03, F + Q 4.805e-02
+gz (the test's evaluate, E + F + Q): PASS, 0 violations, worst n 19153 slack -4.771e-02 (alpha 0.0007935, hi 0.0003408, E 1.122e-04); max E 9.564e-04; max(alpha - hi) 4.526e-04 at n 19153
+D  design model, no w x Jw, gz's branch: 0 violations at F + Q; worst slack -4.805e-02 at n 0; max(alpha - hi) 0.000e+00 at n 0
+C  + w x Jw, gz's branch:              0 violations at F + Q; worst slack -4.805e-02 at n 0; max(alpha - hi) 0.000e+00 at n 0
+C0 + w x Jw, exact start (control):    0 violations at F + Q; worst slack -4.805e-02 at n 0
+alpha below pi/2 first at n: gz 1069, D 1068, C 1069
+distance to gz, max_n |gz - run| over n = 0 .. N - 1 (rad, rad/s), at n:
+  D  alpha 9.973e-02 (n 2013); w_x 3.801e-01 (n 2394); w_y 8.858e-01 (n 2575); w_z 1.877e-01 (n 2479); err_z 8.546e-02 (n 1909)
+  C  alpha 2.701e-03 (n 2671); w_x 1.178e-02 (n 1544); w_y 3.498e-02 (n 950); w_z 2.452e-02 (n 1717); err_z 6.902e-03 (n 1318)
+  C0 alpha 1.239e-01 (n 2009); w_x 1.396e+01 (n 938); w_y 2.776e+00 (n 999); w_z 2.153e+00 (n 1698); err_z 6.223e-01 (n 1306)
+  D / C alpha 36.92; w_x 32.27; w_y 25.32; w_z 7.654; err_z 12.38
+largest of these: D 8.858e-01 (w_y) -> C 3.498e-02 (w_y)
+alpha distance against the test's F + Q 4.805e-02: C 2.701e-03 within: True; D 9.973e-02 beyond: True
+
+== 3. (iii) old against new (gz: the m = 1 run unless stated; model: gz's branch, nominal member)
+q_gz(1): m = 1 old [4.329780301713277e-17, 1.0, 7.850462159063936e-17, 4.329780301713277e-17] new [4.329780301713277e-17, 1.0, 7.850462159063936e-17, 4.329780301713277e-17]: bit-identical True; m = 2 bit-identical True
+w_gz(1): bit-identical m = 1 True, m = 2 True
+w_y / w_x at n 300 (gz, the branch's tilt-axis split): old -0.4449 new -0.4459 (change +0.22%)
+coupling integral sum_n |w x Jw| T_a (gz, N m s, roll pitch yaw): old ['0.003381', '0.00584', '0.002386'] new ['0.002982', '0.006193', '0.002228'] (change -11.8%, +6.0%, -6.6%)
+  the same on C's rates: old ['0.003452', '0.005892', '0.002411'] new ['0.002973', '0.006183', '0.002227']
+the coupling's alpha effect max_n |alpha_C - alpha_D|: old 0.1014 at n 2013 new 0.09328 at n 2204 (change -8.0%)
+the envelope's F + Q: old 4.805e-02 new 2.968e-02
+max(alpha - hi), old -> new: D 0.000e+00 (n 0) -> 0.000e+00 (n 0); C 0.000e+00 (n 0) -> 3.576e-02 (n 2338); gz 4.526e-04 (n 19153) -> 3.623e-02 (n 2338)
+no threshold is set on these changes (none is sourced); they are reported
+
+== 4. (iv) the ideal lag-compensated feed-forward on the coupled model (CF), gz's branch, nominal member
+new: max_n |CF - D| ['3.911e-13', '9.682e-13', '2.942e-12', '4.200e-12', '1.121e-11', '9.497e-12', '3.572e-11'] <= K + R ['6.414e-12', '1.549e-11', '4.719e-11', '6.775e-11', '1.798e-10', '1.523e-10', '2.984e-08']: True; CF 0 violations at F + Q; worst slack -2.968e-02 at n 0
+  control, max_n |C - D| ['4.861e-02', '1.014e-01', '6.707e-02', '1.798e-01', '5.509e-01', '1.719e-01', '9.328e-02'] beyond K + R ['1.286e-11', '2.294e-11', '5.018e-11', '7.875e-11', '1.932e-10', '1.645e-10', '2.984e-08'] on every channel: True
+old: max_n |CF - D| ['4.340e-13', '9.235e-13', '3.018e-12', '4.909e-12', '1.272e-11', '1.029e-11', '1.779e-11'] <= K + R ['6.945e-12', '1.475e-11', '4.850e-11', '7.905e-11', '2.042e-10', '1.653e-10', '2.982e-08']: True; CF 0 violations at F + Q; worst slack -4.805e-02 at n 0
+  control, max_n |C - D| ['8.211e-02', '1.483e-01', '8.987e-02', '3.889e-01', '9.015e-01', '2.040e-01', '1.014e-01'] beyond K + R ['1.795e-11', '2.560e-11', '5.210e-11', '9.650e-11', '2.204e-10', '1.795e-10', '2.982e-08'] on every channel: True
+  channels err_x, err_y, err_z, w_x, w_y, w_z, alpha
+
+== 5. claims
+new: gz leaves the envelope True; D inside True; C leaves it True (as gz: True); C closer to gz than D on alpha, w_x, w_y, w_z, err_z: True; C's alpha distance within F + Q True, D's beyond True; control C0 closer than D on any: False; CF within K + R of D True and inside True; control C beyond K + R True
+old: gz leaves the envelope False; D inside True; C leaves it False (as gz: True); C closer to gz than D on alpha, w_x, w_y, w_z, err_z: True; C's alpha distance within F + Q True, D's beyond True; control C0 closer than D on any: False; CF within K + R of D True and inside True; control C beyond K + R True
+old and new: q_gz(1) bit-identical (both runs) True
+the excess is the coupling: True

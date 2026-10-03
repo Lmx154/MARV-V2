@@ -6,15 +6,17 @@ perfect-model (tools/sim/run_l5.py): not a validation run.
 
 Runs. scenarios/quad/L05/recover_inverted.yaml (R1: a roll of pi - delta from level, at rest, delta = 0.01 rad, owner decision 22:
 far above the rounding noise in (w, z) of the plant's first step, so the model and gz take the same branch of the tilt-yaw split) and
-recover_tumble.yaml (R2: inverted, body rates (rate_max_roll, rate_max_pitch, rate_max_yaw)), both with the rotors at the card's hover
-speed (owner decision 23; rotor_speed_rad_s: hover), one gz process per m of [2, 1] (tools/sim/run_l5.py run_sequence). The setpoint is
+recover_tumble.yaml (R2: inverted, body rates (rate_max_roll, rate_max_pitch, rate_max_yaw)), R1 with the rotors at the card's hover
+speed (owner decision 23; rotor_speed_rad_s: hover), R2 at its steady tumble (decision 0015; rotor_speed_rad_s: steady_tumble), one gz
+process per m of [2, 1] (tools/sim/run_l5.py run_sequence). The setpoint is
 level, locked at angle mode's initial heading; no sticks. The run starts at the scenario's initial state (settle_s is one attitude
 period): the firmware's attitude execution n is the design model's execution n.
 
 Envelope. The 3-axis design model of the MODEL section below (the T3 oracle's pieces; no w x Jw): box envelope over the 17 x 17
 tau x J grid of the model driven from the exact initial attitude and rates, never re-seeded, for six channels per attitude
 execution: the body-frame rotation vector of the attitude error q_e = canonical(conj(q) (x) q_sp) (err_x, err_y the tilt error,
-err_z the heading error) and the body rates (w_x, w_y, w_z). The recorded T3 envelope file has no recovery script (t3/ is not this
+err_z the heading error) and the body rates (w_x, w_y, w_z). The design model's motor state starts at 0, the deviation from the trim
+of the initial rotor speeds (R2: the steady tumble, decision 0015). The recorded T3 envelope file has no recovery script (t3/ is not this
 packet's to extend), so the envelope is computed here for the live parameters, which must equal the recorded fixture
 attitude_t3_inputs.txt (as the step test requires).
 
@@ -43,6 +45,9 @@ The T3 property is asserted too: every envelope end value is below its F_c at th
 R1 must pass. R2's envelope test is a strict xfail (raises=AssertionError) while tests/regression/quad/L06/XFAIL_GATE_CLOSED does not exist (decision 0009), exactly as
 the L4 acro recovery (docs/handoff.md, known failing item): its cause is the gyroscopic coupling (no L3 flag, s = t = 1, |w x Jw| 33-44 %
 of tau_held; tests/regression/quad/L05/results/recovery_cause/). It extends the L4 item: blocks L6, must pass before L8.
+The side check's envelope predicate is a strict xfail on the same gate (decision 0014, owner decisions third round, item 3): its
+cause is the same coupling on the branch gz's first step picks (tests/regression/quad/L06/results/r1x_coupling/); it must pass at L6
+stage (e) with the feed-forward live. The side check's clean run, DShot range and settled end value stay normal tests.
 Helper module: recovery_model.py, next to this file (the cause script imports it too).
 
 Negative controls, harness only (0003 item 9), each passes only if the check fails:
@@ -84,6 +89,13 @@ RECOVERY_KNOWN_FAILING = (
     "the R2 recovery leaves the design-model envelope by the gyroscopic coupling w x Jw (no L3 flag, s = t = 1; cause in "
     "tests/regression/quad/L05/results/recovery_cause/cause.txt). Blocks L6 (a normal test once tests/regression/quad/L06/XFAIL_GATE_CLOSED exists, decision 0009); "
     "must pass before L8."
+)
+EXACT_KNOWN_FAILING = (
+    "known failing item (decision 0014, owner decisions third round, item 3; docs/handoff.md): the exact-180 degree recovery's tilt "
+    "angle leaves the design model's alpha envelope by the gyroscopic coupling w x Jw on the branch of the tilt-yaw split that gz's "
+    "first-step rounding picks; the design model plus w x Jw reproduces gz and its excess under the stage (c) and the old gains "
+    "(tests/regression/quad/L06/results/r1x_coupling/coupling.txt). Only the envelope predicate; a normal test once "
+    "tests/regression/quad/L06/XFAIL_GATE_CLOSED exists (decision 0009); must pass at L6 stage (e) with the feed-forward live."
 )
 CH = rm.CHANNELS
 
@@ -272,7 +284,7 @@ def test_scenario_initial_state_is_the_labelled_test_value(name, live_params):
     st = l5s.values(l5s.load(SCEN / f"{name}.yaml"))["initial_state"]
     exact = l5s.values(l5s.load(SCEN / f"{R1X}.yaml"))["initial_state"]
     assert exact["attitude_q_wxyz"] == [0.0, 1.0, 0.0, 0.0] and exact["rotor_speed_rad_s"] == "hover"
-    assert st["rotor_speed_rad_s"] == "hover"
+    assert st["rotor_speed_rad_s"] == ("steady_tumble" if name == R2 else "hover")
     if name == R1:
         w, x = st["attitude_q_wxyz"][:2]
         assert st["attitude_q_wxyz"][2:] == [0.0, 0.0] and abs(w * w + x * x - 1.0) < 1e-15
@@ -368,12 +380,15 @@ def test_exact_180_design_alpha_envelope_has_settled(exact_design, capsys):
     assert all(exact_design.end_ok)
 
 
-def test_exact_180_tilt_angle_is_inside_the_alpha_envelope(exact, exact_design, capsys):
+def test_exact_180_run_is_clean_on_truth_and_in_the_dshot_range(exact, live_params):
+    test_run_is_clean_on_truth_and_in_the_dshot_range(exact, R1X, live_params)
+
+
+def test_exact_180_tilt_angle_is_inside_the_alpha_envelope(exact, exact_design, request, capsys):
     ev = exact.evaluation
     _say(capsys, verdict_line(R1X, "alpha", ev, exact.wall_s), f"    report: {exact.report_path}")
-    for s in exact.runs:
-        assert run_scenario.complete_trailer(s.run.log, s.run.iterations, s.run.m)
-        assert s.window_stale == []
+    request.applymarker(pytest.mark.xfail(condition=not XFAIL_GATE.exists(), reason=EXACT_KNOWN_FAILING, strict=True,
+                                          raises=AssertionError))
     assert ev["passed"], ev["components"]
 
 

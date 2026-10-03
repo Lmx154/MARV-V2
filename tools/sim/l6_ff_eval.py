@@ -60,20 +60,22 @@ Predicate (test_t4_acro.py, recovery): per axis, |w_a(n)| <= Z_a(n) + F_a + E_a(
 window (run_l4.acro_phases), run_l4.recovery_evaluation. E_a = 0: E is the difference of two gz runs (m = 1, m = 2), which
 this model does not have; E >= 0, so E = 0 makes the check stricter. Z_a = run_l4.rest_bound of the envelope (lo, hi) of
 the linear design model driven by the script from rest over the 17 x 17 tau x J grid of the band box, F_a = TOL_a + H_a.
-  PI (the cross-check): test_t4_acro.design_bound itself (Z and F, TOL included), on the L4 T3 fixture (the L4 product
-  parameters, rate_t3_inputs.txt) instead of a gz build's table.
+  PI (the cross-check): the linear design model below (linear_response) of the PI law at the L4 sensor, on the same
+  grid, F_a = H_a (TOL_a = 0, as below); its P_a (the largest |w| of the envelope) is the one test_t4_acro.design_bound
+  gave on the acro_cause build (cause.txt), where the T3 oracle and run_l4.script_response were the PI law's.
   Stage (c) law, per sensor configuration: the linear design model of the same loop without the coupling
   (linear_response): per axis J w' = u_m, tau u_m' = u - u_m, exact ZOH per tick, the same sensor (latency and chain)
   and the same law with FF off (the coupling it cancels is not in the linear model); grid and bands as the test (fixture
   f32 J, tau and bands); H_a the largest change of lo, hi between the 9 x 9 subset and the 17 x 17 grid (the 9 x 9 points
-  are exactly the even-index 17 x 17 points); TOL_a = 0: the oracle's float32 rounding bound covers the PI law only and
-  none is derived for the D path here; TOL >= 0, so 0 is stricter.
+  are exactly the even-index 17 x 17 points); TOL_a = 0: no float32 rounding bound is derived here for these sensors
+  (the T3 oracle's covers its own configuration); TOL >= 0, so 0 is stricter.
 
-Cross-check (PI, the L4 law as flown in acro_cause: truth gyro, no chain, no latency, fixture f32 gains and tau_ref):
-the model's recovery counts and worst excess against decision 0005's measured table (the m = 1 and m = 2 gz runs, E
+Cross-check (PI, the L4 law as flown in acro_cause: truth gyro, no chain, no latency; the f32 gains and tau_ref of
+tools/card/rate.py, rate_lead.design()["pi_l4"], the L4 PI reference that gave the L4 product parameters then): the
+model's recovery counts and worst excess against decision 0005's measured table (the m = 1 and m = 2 gz runs, E
 included), and its rates against the m = 1 gz trace of acro_cause/cause.txt ("roll trace every 100 executions"). The
-linear model is checked against the test's run_l4.script_response bit for bit (PI law, no sensor dynamics, nominal J and
-tau, each axis).
+linear model is checked against the test's run_l4.script_response bit for bit (the stage (c) law of the L4 T3 fixture,
+the fixture's chain low-pass as the T3 oracle computes it (Setup.lowpass) as the sensor, nominal J and tau, each axis).
 
 Inputs (none retyped; the output lists each with its SHA-256): the card, design/budget.yaml, design/scenario_values.yaml
 and the sensor profile (rate_lead.design), scenarios/quad/L04/acro.yaml, the L4 T3 fixture, the l4_rate_scripted
@@ -89,11 +91,9 @@ import hashlib
 import math
 import multiprocessing
 import re
-import shutil
 import sys
 import time
 from pathlib import Path
-from unittest import mock
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -135,6 +135,7 @@ VARIANTS = ("PID", "PID+FF", "PID+FF+lag")
 SENSITIVITY = ("T4c", "L4", "T4e")  # the sensor keys of --sensitivity (setup())
 # Simulation keys are (law, plant index, RK4 steps per tick, coupling, sensor key).
 PI_RUN = ("PI", 0, RK_SUBSTEPS, True, "L4")  # the cross-check run
+PI_GRID = ("PI", "L4")  # its Z grid: (law, sensor)
 PI_UNCOUPLED = ("PI", 0, RK_SUBSTEPS, False, "L4")  # its control: the plant without w x J w
 
 
@@ -475,8 +476,8 @@ def tick_map(su1, inertia, tau):
 
 def linear_response(kp, ki, kd, tau_ref, d_tau, sensor, maps, sps, stamps, divisor):
     """w per execution of one axis's linear design model (module docstring): law at the executions, plant advanced by
-    `maps` = (per-execution map, per-tick map). With no sensor dynamics the per-execution map is used, so with kd = 0
-    this is run_l4.script_response operation for operation."""
+    `maps` = (per-execution map, per-tick map). With no sensor dynamics the per-execution map is used; with the T3
+    oracle's chain low-pass as the only stage and no latency this is run_l4.script_response operation for operation."""
     stages = sensor.stages
     dynamic = bool(stages) or sensor.latency > 0
     a12, b1, a22, b2 = maps[1] if dynamic else maps[0]
@@ -536,11 +537,11 @@ _CTX = {}
 
 
 def _row_task(args):
-    """Envelope rows of the linear design model of the stage (c) law with sensor `skey`: grid row i of axis a, its 17
+    """Envelope rows of the linear design model of law `law_name` with sensor `skey`: grid row i of axis a, its 17
     members and, on an even row, the 9 x 9 subset's members."""
-    skey, a, i = args
+    law_name, skey, a, i = args
     c = _CTX
-    p, law, sensor = c["fixture"], c["laws"]["PID"], c["sensors"][skey]
+    p, law, sensor = c["fixture"], c["laws"][law_name], c["sensors"][skey]
     sensor = sensor.linear or sensor
     inertia, tau = p[INERTIA_KEYS[a]], p["motor_tau"]
     jb, tb = p["inertia_robustness_band"], p["tau_robustness_band"]
@@ -558,7 +559,7 @@ def _row_task(args):
         if i % 2 == 0 and q % 2 == 0:
             lo9 = y if lo9 is None else [min(x, z) for x, z in zip(lo9, y)]
             hi9 = y if hi9 is None else [max(x, z) for x, z in zip(hi9, y)]
-    return skey, a, i, lo, hi, lo9, hi9
+    return law_name, skey, a, i, lo, hi, lo9, hi9
 
 
 def _sim_task(args):
@@ -570,12 +571,6 @@ def _sim_task(args):
     w, flagged = simulate(c["laws"][law_name], c["sensors"][skey], plant, c["plan"], c["sps"], c["plan"].thrust_n,
                           substeps)
     return args, w, flagged
-
-
-def _design_bound_task(_):
-    """test_t4_acro.design_bound on the L4 T3 fixture (its oracle.refresh_inputs replaced by a copy of the fixture)."""
-    with mock.patch.object(t4.oracle, "refresh_inputs", lambda _src, dst: shutil.copyfile(FIXTURE, dst)):
-        return t4.design_bound(_CTX["plan"], FIXTURE)
 
 
 # ---- inputs -------------------------------------------------------------------------------------------------------
@@ -625,7 +620,7 @@ def read_cause_trace():
 
 
 def read_cause_pitch_bound():
-    """cause.txt's pitch rate bound line: (P, F) of the gz build's test_t4_acro.design_bound, as printed (repr)."""
+    """cause.txt's pitch rate bound line: (P, F) of test_t4_acro.design_bound on the acro_cause build, as printed."""
     m = re.search(r"^pitch rate bound \(iii\): P (\S+) \+ F (\S+) \+ E\(n\)$", CAUSE.read_text(), re.M)
     if not m:
         raise SystemExit(f"{CAUSE}: the pitch rate bound line was not found")
@@ -653,15 +648,15 @@ def setup(corner_sel):
             raise SystemExit(f"--corners: distinct indices in 1..{len(corners)}")
     plants = [base] + [dataclasses.replace(base, name=f"corner {i}", inertia=tuple(corners[i - 1]["J"])) for i in chosen]
     pi_l4 = d["pi_l4"]
+    pi_axes = [pi_l4["axes"][a] for a in AXES]
     tau_ref_c = tuple(rate.r32_up(max(d["tau_cl"], pi_l4["axes"][a]["authority_term"])) for a in AXES)
     ax32 = d["axes32"]
     pid = Law("PID", kp=tuple(x[0] for x in ax32), ki=tuple(x[1] for x in ax32), kd=tuple(x[2] for x in ax32),
               tau_ref=tau_ref_c, d_tau=tuple(x[3] for x in ax32))
     j32 = tuple(fixture[k] for k in INERTIA_KEYS)
     laws = {
-        "PI": Law("PI", kp=tuple(fixture[f"rate_kp_{a}"] for a in AXES), ki=tuple(fixture[f"rate_ki_{a}"] for a in AXES),
-                  kd=tuple(fixture[f"rate_kd_{a}"] for a in AXES),
-                  tau_ref=tuple(fixture[f"rate_tau_ref_{a}"] for a in AXES), d_tau=(0.0, 0.0, 0.0)),
+        "PI": Law("PI", kp=tuple(x["kp"] for x in pi_axes), ki=tuple(x["ki"] for x in pi_axes), kd=(0.0, 0.0, 0.0),
+                  tau_ref=tuple(x["tau_ref"] for x in pi_axes), d_tau=(0.0, 0.0, 0.0)),
         "PID": pid,
         "PID+FF": dataclasses.replace(pid, name="PID+FF", inertia=j32, motor_tau=0.0, ff_tau=0.0),
         "PID+FF+lag": dataclasses.replace(pid, name="PID+FF+lag", inertia=j32, motor_tau=fixture["motor_tau"],
@@ -738,13 +733,12 @@ def run(corner_sel="all", jobs=None, sensitivity=False):
     _CTX.update(c)
     jobs = jobs or default_jobs()
     grids, sims = plan_runs(len(c["plants"]), sensitivity)
-    rows = [(k, a, i) for k in grids for a in range(3) for i in range(GRID)]
+    keys = [PI_GRID] + [("PID", k) for k in grids]
+    rows = [(law, k, a, i) for law, k in keys for a in range(3) for i in range(GRID)]
     t0 = time.time()
     with multiprocessing.get_context("fork").Pool(jobs) as pool:
-        bound_async = pool.map_async(_design_bound_task, [None])
         env_async = pool.map_async(_row_task, rows, chunksize=1)
         sim_async = pool.map_async(_sim_task, sims, chunksize=1)
-        bound_pi = bound_async.get()[0]
         env_rows = env_async.get()
         sim_out = sim_async.get()
     print(f"l6_ff_eval: runs {time.time() - t0:.1f} s on {jobs} processes", file=sys.stderr)
@@ -756,16 +750,18 @@ def run(corner_sel="all", jobs=None, sensitivity=False):
                 acc = r_ if acc is None else [fn(x, y) for x, y in zip(acc, r_)]
         return acc
 
-    bound_c = {}
-    for k in grids:
-        bound_c[k] = {}
+    bounds = {}
+    for key in keys:
+        bounds[key] = {}
         for a, axis in enumerate(AXES):
-            part = [r_ for r_ in env_rows if r_[0] == k and r_[1] == a]
-            l17, h17 = reduce([r_[3] for r_ in part], min), reduce([r_[4] for r_ in part], max)
-            l9, h9 = reduce([r_[5] for r_ in part], min), reduce([r_[6] for r_ in part], max)
+            part = [r_ for r_ in env_rows if r_[:3] == (*key, a)]
+            l17, h17 = reduce([r_[4] for r_ in part], min), reduce([r_[5] for r_ in part], max)
+            l9, h9 = reduce([r_[6] for r_ in part], min), reduce([r_[7] for r_ in part], max)
             halving = max(max(abs(x - y) for x, y in zip(l9, l17)), max(abs(x - y) for x, y in zip(h9, h17)))
-            bound_c[k][axis] = {"Z": run_l4.rest_bound(l17, h17), "H": halving, "TOL": 0.0, "F": halving}
-    c.update(bound_pi=bound_pi, bound_c=bound_c, sim={args: (w, fl) for args, w, fl in sim_out},
+            bounds[key][axis] = {"P": max(max(abs(x) for x in l17), max(abs(x) for x in h17)),
+                                 "Z": run_l4.rest_bound(l17, h17), "H": halving, "TOL": 0.0, "F": halving}
+    bound_c = {k: bounds[("PID", k)] for k in grids}
+    c.update(bound_pi=bounds[PI_GRID], bound_c=bound_c, sim={args: (w, fl) for args, w, fl in sim_out},
              sensitivity=sensitivity)
     return c
 
@@ -871,7 +867,7 @@ def render(c, res):
             " common-scale" if d["j_corners"][idx - 1]["common_scale"] else "")
         lines.append(f"  {tag:<26} {fmt_axes(p.inertia, '.6g')}  (J/J0 {fmt_axes([x / y for x, y in zip(p.inertia, j0)], '.4g')})")
     lines += ["", "== predicate terms: F = TOL + H per axis (E = 0)"]
-    terms = [("PI, L4 sensor (test_t4_acro.design_bound)", c["bound_pi"])]
+    terms = [("PI, L4 sensor (linear_response)", c["bound_pi"])]
     terms += [(f"stage (c) law, {k} sensor (linear_response)", c["bound_c"][k]) for k in c["bound_c"]]
     for label, b in terms:
         lines.append(f"  {label}: " + "; ".join(
@@ -879,8 +875,8 @@ def render(c, res):
     xc = cross_check(c, res)
     lines += ["", "== cross-check: the PI law as flown in acro_cause, card plant, L4 sensor, against the gz runs"]
     (mp, mf), (gp, gf) = xc["pitch_bound"]
-    lines.append(f"  design_bound on the fixture: pitch P {mp} + F {mf} (cause.txt, the gz build's table: P {gp} + F {gf}; "
-                 f"identical {(mp, mf) == (gp, gf)})")
+    lines.append(f"  PI law (rate.py), L4 sensor: pitch P {mp} + F {mf} (TOL 0; cause.txt, the acro_cause build's "
+                 f"design_bound: P {gp} + F {gf}; P identical {mp == gp})")
     for axis, (p, (pk, bd, cnt)) in zip(AXES, xc["axes"]):
         lines.append(f"  {axis:<5} outside {p['violations']} (0005: {cnt}); excess {-p['worst margin']:.4f} rad/s at "
                      f"execution {p['at execution']}, |w| {abs(p['w there']):.4f} against Z + F {p['Z + F + E there']:.4f} "
@@ -895,7 +891,8 @@ def render(c, res):
     lines.append(f"  control, the plant without w x J w: outside {fmt_axes(outside(ctl['pred']), 'd')}, excess "
                  f"{fmt_axes(excess(ctl['pred']), '.4f')} rad/s, trace max |model - gz| "
                  f"{fmt_axes(cross_check(c, res, PI_UNCOUPLED)['resid'], '.4f')} rad/s")
-    lines.append("  linear_response = run_l4.script_response bit for bit (PI, L4 sensor, nominal J and tau): "
+    lines.append("  linear_response = run_l4.script_response bit for bit (stage (c) law and chain low-pass of the "
+                 "fixture, nominal J and tau): "
                  + ", ".join(f"{a} {ok}" for a, ok in zip(AXES, linear_matches_script_response(c))))
     nwin = sum(1 for ph in c["phases"] if ph == "recovery")
     head = (f"plant          variant      outside, of {nwin} (r p y)  max excess rad/s (r p y)      "
@@ -930,16 +927,24 @@ def render(c, res):
     return "\n".join(lines) + "\n"
 
 
+def fixture_law(c, a):
+    """(kp, ki, kd, T_f, tau_ref) of axis a in the L4 T3 fixture (the stage (c) product law)."""
+    return tuple(c["fixture"][f"rate_{q}_{AXES[a]}"] for q in ("kp", "ki", "kd", "d_filter_tau", "tau_ref"))
+
+
 def linear_matches_script_response(c):
-    """The PI law, nominal J and tau, L4 sensor: linear_response against run_l4.script_response, per axis."""
-    p, law = c["fixture"], c["laws"]["PI"]
+    """The fixture's stage (c) law, nominal J and tau, the fixture's chain low-pass (the T3 oracle's Setup.lowpass) as
+    the sensor, no latency: linear_response against run_l4.script_response, per axis."""
+    p, su = c["fixture"], c["su"]
+    sensor = Sensor("the fixture's chain low-pass", 0, (su.lowpass,))
     out = []
     for a in range(3):
+        kp, ki, kd, tf, tau_ref = fixture_law(c, a)
         jt, tt = p[INERTIA_KEYS[a]], p["motor_tau"]
-        maps = (c["su"].plant_map(jt, tt), tick_map(c["su1"], jt, tt))
-        mine = linear_response(law.kp[a], law.ki[a], law.kd[a], law.tau_ref[a], law.d_tau[a], c["sensors"]["L4"], maps,
-                               c["sps"][a], c["stamps"], c["plan"].divisor)
-        ref = run_l4.script_response(law.kp[a], law.ki[a], law.tau_ref[a], maps[0], c["sps"][a], c["stamps"])
+        maps = (su.plant_map(jt, tt), tick_map(c["su1"], jt, tt))
+        mine = linear_response(kp, ki, kd, tau_ref, tf, sensor, maps, c["sps"][a], c["stamps"], c["plan"].divisor)
+        ref = run_l4.script_response(kp, ki, kd, tf, tau_ref, (su.divisor, su.lowpass, su.lowpass_error),
+                                     su.tick_map(jt, tt), c["sps"][a], c["stamps"])
         out.append(mine == ref)
     return out
 

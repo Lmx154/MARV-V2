@@ -48,6 +48,7 @@
 #include <marv/prim/constants.hpp>
 #include <marv/prim/vec.hpp>
 #include <marv/rate/rate_loop.hpp>
+#include <marv/rate_group/rate_group.hpp>
 #include <marv/sched/rate_groups.hpp>
 #include <marv/types/imu_sample.hpp>
 
@@ -64,7 +65,7 @@ constexpr int kDecimal = 10;
 constexpr std::size_t kNumberBuffer = 32;
 constexpr std::size_t kImuFloats = 7;  // marv_imu_meas: gyro 3, accel 3, temperature
 
-// The segment ids of the composition, in its kSegmentIds order (l4_rate_scripted.cpp lines 39-47).
+// The segment ids of the composition, in its kSegmentIds order (l4_rate_scripted.cpp lines 40-48).
 struct SegmentIds {
   ParamId t_us;
   ParamId roll;
@@ -83,7 +84,7 @@ constexpr std::array kSegmentIds{
     SegmentIds{ParamId::l4_seg8_t_us, ParamId::l4_seg8_roll, ParamId::l4_seg8_pitch, ParamId::l4_seg8_yaw}};
 
 constexpr std::size_t kSegments = kSegmentIds.size();
-enum Group : std::size_t { kRate, kGroupCount };  // the composition's rate groups (l4_rate_scripted.cpp line 54)
+enum Group : std::size_t { kRate, kGroupCount };  // the composition's rate groups (l4_rate_scripted.cpp line 55)
 using Script = composition::SetpointScript<float, kSegments>;
 
 [[nodiscard]] int fail(const std::string& reason) {
@@ -279,13 +280,13 @@ int main(int argc, char** argv) {
   // composition panics.
   const rate::RateConfig<float> rate_cfg = rate::load_config();
   const mixer::MixerConfig<float> mixer_cfg = mixer::load_config();
-  rate::RateLoop<float> loop;
-  loop.init(rate_cfg, mixer_cfg);
   const std::int32_t divisor = param_value<ParamId::rate_loop_divisor>();
   sched::RateGroups<kGroupCount> groups;
   if (divisor < 1 || !groups.init({static_cast<std::uint32_t>(divisor)})) {
     return fail("rate_loop_divisor is below 1");
   }
+  rate_group::RateGroupStep step;
+  step.init(rate_cfg, mixer_cfg, rate_group::load_chain_config());
   const float thrust = param_value<ParamId::l4_thrust_n>();
   if (!std::isfinite(thrust) || !(thrust >= 0.0F)) {
     return fail("l4_thrust_n is not finite and >= 0");
@@ -308,16 +309,18 @@ int main(int argc, char** argv) {
   // repeated (the stamps are the SIL's own, from the log).
   std::uint64_t k = 0;
   for (const TickLine& t : ticks) {
-    if ((groups.due(t.n) & (std::uint32_t{1} << kRate)) == 0) {
+    const bool rate_due = (groups.due(t.n) & (std::uint32_t{1} << kRate)) != 0;
+    step.filter(t.sample, rate_due);
+    if (!rate_due) {
       continue;
     }
     const ImuSample& s = t.sample;
     const Vec3f sp = composition::setpoint_at(script, s.t_us);
-    const rate::RateOutput<float> r = loop.execute(s, sp);
-    const Vec3f request = r.torque + composition::chirp_torque(chirp, s.t_us);
-    const mixer::Allocation<float> alloc = mixer::allocate(mixer_cfg, mixer::Request<float>{thrust, request});
-    loop.record_allocation(request, alloc);
-    const std::array<DshotValue, mixer::kMotors> dshot = mixer::thrust_to_dshot(mixer_cfg, alloc.f);
+    const rate_group::Execution e = step.execute(sp, composition::chirp_torque(chirp, s.t_us), thrust);
+    const rate::RateOutput<float>& r = e.rate;
+    const Vec3f& request = e.request;
+    const mixer::Allocation<float>& alloc = e.alloc;
+    const std::array<DshotValue, mixer::kMotors>& dshot = e.dshot;
 
     const double s_factor = request[0] != 0.0F ? ratio(alloc.achieved_torque[0], request[0])
                                                : ratio(alloc.achieved_torque[1], request[1]);

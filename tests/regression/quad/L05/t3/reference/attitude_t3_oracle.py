@@ -13,13 +13,17 @@ attitude_t3_golden.txt and attitude_t3_envelope.txt beside itself (or into --dir
 repository (tools/sim/run_l4.py computes tau_held,yaw for the fallback disturbance). The file is the T3 fixture; the golden
 and the envelope are functions of it.
 
-What the golden is. The firmware path of angle mode, the attitude law and the rate loop in bypass (decision 0006 A, C, D)
-closed around the design plant, all in double: per axis J w' = u_m, tau u_m' = u - u_m with u held over a tick (exact
-zero-order-hold maps), no w x Jw; the body quaternion integrated from the exact per-axis angle increments of each sub-step,
-q <- q (x) exp(dphi/2). The loop runs at tick resolution (a tick is one IMU sample): tick j has the stamp
-floor(j num / den) us; the rate loop executes at j = 0 mod D (seed execution at j = 0), the attitude group at j = 0 mod D N
-and before the rate group of the same tick, its rate setpoint held until the next attitude execution; the torque computed at
-tick j acts from tick j (zero computation delay). Three scripts, every one from level and at rest, with the attitude
+What the golden is. The firmware path of angle mode, the attitude law, the gyro chain and the rate loop in bypass with its
+filtered D term (decision 0006 A, C, D; L6 stage (c), decision 0014) closed around the design plant, all in double: per axis
+J w' = u_m, tau u_m' = u - u_m with u held over a tick (exact zero-order-hold maps), no w x Jw; the body quaternion integrated
+from the exact per-axis angle increments of each sub-step, q <- q (x) exp(dphi/2). The loop runs at tick resolution (a tick
+is one IMU sample): tick j has the stamp floor(j num / den) us; the rate loop executes at j = 0 mod D (seed execution at
+j = 0), the attitude group at j = 0 mod D N and before the rate group of the same tick, its rate setpoint held until the next
+attitude execution; the torque computed at tick j acts from tick j (zero computation delay). The rate group is composed as
+fw/rate_group composes it: every tick the gyro chain filters the plant's w of that tick (no latency), and the rate loop runs
+on the chain output. There is no rotor speed, so every notch is bypassed (the identity, exact) and the chain is its
+second-order Butterworth low-pass (exact coefficients at the exact tick period), seeded with the first sample. The rate law is
+u = kp e + I + Df, Df the D low-pass of -kd (y_n - y_(n-1)) / dt_n with alpha_n = 1 - exp(-dt_n / T_f). Three scripts, every one from level and at rest, with the attitude
 execution a = 0 (the seed, sticks 0) and stick segments in attitude executions (scenario test values, rule below):
   step_roll, step_pitch: the stick is 1 for executions a_s <= a < a_r (a_s = 1, a_r = 1 + H), then 0 (the release), to 1 + 2 H
   yaw_release:           the same with the yaw stick: a sustained full yaw stick, its release (braking, the crossing or
@@ -38,15 +42,22 @@ call (sin, cos, atan2, hypot, sqrt) is within one unit in the last place of its 
 step in this script by a number type E (value, first-order absolute error bound): the value is the double computation, the
 bound propagates the operation errors and the error of the inputs (the plant's double q and w cast to float32: u |x|). The
 attitude group (measurement cast, angle mode, law) therefore yields one injection bound rho_ref(a) on the rate setpoint of each
-attitude execution; the bypass loop has the nodes e (gyro cast and fl(r - y)), I and u of decision 0005 (kd = 0; the
-prefilter node of L4 does not exist in bypass), with the bound rho_p(k) of each rate execution k. An injection at node p of
-execution k moves a channel at execution m by g_p(m, k) times its size, so the error of a channel is at most
+attitude execution; the chain has the nodes gyro (the cast of w at the chain input, every tick) and lpf (the nine roundings of
+the direct-form-I step, at its output, every tick); the bypass loop has the nodes e (fl(r - y)), I, D (the D path and its
+low-pass, into Df) and u (fl(fl(kp e) + I) + Df), with the bound rho_p(k) of each rate execution k (the prefilter node of
+L4 does not exist in bypass). An injection at node p of tick or execution k moves a channel at execution m by g_p(m, k) times
+its size, so the error of a channel is at most
       sum over p, k of |g_p(m, k)| rho_p(k)      (rho_p(k) in blocks of BLOCK injections, each block at its maximum)
 and the tolerance of a channel is the sum over the nodes of the largest of this over the observation executions m. g is the
-response of the linearised closed loop: the per-execution ZOH rate loop of the nominal plant with the stamp dt of the
-integrator and the attitude feedback gain g_fb = k c frozen at each of C_POINTS values of c in [c_min, 1] (c_min from the
-trajectory's largest error; the largest bound over the c is kept); the responses are summed over every injection execution
-and every phase of the rate executions within an attitude period. Before the yaw lock the attitude loop is open on yaw (the
+response of the linearised closed loop: the per-tick ZOH plant, the chain's low-pass and the rate law of the nominal plant
+with the stamp dt of the integrator and of the D path, and the attitude feedback gain g_fb = k c frozen at each of C_POINTS
+values of c in [c_min, 1] (c_min from the trajectory's largest error; the largest bound over the c is kept); the responses
+are summed over every injection and every phase of the loop's period (L = lcm(N, 2) rate executions: the stamp dt
+alternates). Two coefficient nodes are fixed offsets, not per-operation roundings: the float low-pass coefficients (b0, with
+b1 = 2 b0 and b2 = b0 exact, a1, a2; lpf_coef) and the float D alpha at each stamp spacing (alpha) are computed once, so each
+differs from the exact one by one delta, |delta| <= its first-order bound, and moves a channel by delta S(m), S the signed
+response of the linearised loop to the signal the coefficient multiplies (x + 2 x1 + x2, -y1, -y2; D - Df); the node's
+bound is sum_i |delta_i| |S_i(m)|, its largest over m. Before the yaw lock the attitude loop is open on yaw (the
 heading setpoint tracks the heading); at the lock the regime changes: the responses are composed through the componentwise
 bound of the error state at the lock, weighted by rho_p(k), and the lock heading is an added state (the lock copies the
 measured heading). The decision margin of the lock (the sign of the yaw rate at the two executions around the crossing) is
@@ -56,8 +67,9 @@ Kinematics (core 7.5): the golden is integrated with KIN_SUBSTEPS sub-steps per 
 change of a channel between the two is recorded and must be below the tolerance.
 
 Envelope: pointwise min / max, over the tau x J band box (J (1 +- inertia_robustness_band), tau (1 +- tau_robustness_band)), of
-the design-model response of each script: the exact sampled-data rate loop of tools/card/attitude.py (bypass, the f32 nominal
-gains, integrator step T) lifted to T_a, the attitude law in its single-axis closed form (tilt: r = 2 k sin(e/2); yaw lock:
+the design-model response of each script: the exact sampled-data rate loop (bypass, the f32 nominal gains, integrator and D
+step T, the chain's low-pass with the notches bypassed: the stage (c) T4 configuration, decision 0014) at tick resolution,
+the attitude law in its single-axis closed form (tilt: r = 2 k sin(e/2); yaw lock:
 r = (k/w) 2 sin(w e/2), e wrapped into [-pi, pi]), driven by the exact script from the exact initial state. The 17 x 17 grid
 contains the corners and the 9 x 9 grid; halving_max_change is the largest change of any envelope point from 9 x 9 to 17 x 17.
 The yaw script's envelope includes the release logic of decision 0006 D (braking, crossing, the fallback with att_yaw_t_cross
@@ -76,7 +88,12 @@ ROOT = os.path.abspath(os.path.join(HERE, *([os.pardir] * 6)))
 
 AXES = ("roll", "pitch", "yaw")
 INERTIA = {"roll": "inertia_xx", "pitch": "inertia_yy", "yaw": "inertia_zz"}
-NODES = ("ref", "e", "I", "u")
+INJECTION_NODES = ("ref", "gyro", "lpf", "e", "I", "D", "u")  # rounding injections, bounded in absolute value
+TICK_NODES = ("gyro", "lpf")      # injected at every tick (the gyro chain)
+RATE_NODES = ("e", "I", "D", "u")  # injected at every rate execution
+COEF_NODES = ("lpf_coef", "alpha")  # float coefficients computed once: a fixed offset, bounded through the signed response
+NODES = INJECTION_NODES + COEF_NODES
+STATE = 11  # the linearised error state [m, w, theta, I, e_prev, y_prev, Df, x1, x2, y1, y2] (Lin)
 
 # Scenario test values (rationale in README.md).
 HORIZON_TAUS = 10        # first segment length: ten attitude time constants 1 / k
@@ -95,7 +112,9 @@ INPUT_KEYS = (
     "rate_kp_roll", "rate_kp_pitch", "rate_kp_yaw",
     "rate_ki_roll", "rate_ki_pitch", "rate_ki_yaw",
     "rate_kd_roll", "rate_kd_pitch", "rate_kd_yaw",
+    "rate_d_filter_tau_roll", "rate_d_filter_tau_pitch", "rate_d_filter_tau_yaw",
     "rate_tau_ref_roll", "rate_tau_ref_pitch", "rate_tau_ref_yaw",
+    "gyro_lpf_cutoff_hz", "gyro_notch_q_h1", "gyro_notch_q_h2", "gyro_notch_q_h3", "gyro_notch_omega_min",
     "tau_robustness_band", "inertia_robustness_band",
     "att_kp", "att_yaw_weight", "angle_tilt_max", "yaw_deadband", "att_yaw_alpha_min", "att_yaw_t_cross",
     "tau_held_yaw_nm",
@@ -145,7 +164,7 @@ def refresh_inputs(defaults_cpp, path):
     table["tau_held_yaw_nm"] = r32(held)
     with open(path, "w") as out:
         out.write("# The L5 T3 fixture: the f32 values the oracle and the T3 test use (hex floats are exact). Equal to the\n")
-        out.write("# product parameter values of 2026-09-30 (attitude_t3_oracle.py --refresh-inputs from\n")
+        out.write("# product parameter values of 2026-10-01, L6 stage (c) (attitude_t3_oracle.py --refresh-inputs from\n")
         out.write(f"# {os.path.basename(defaults_cpp)}); tau_held_yaw_nm is the collective-held yaw torque envelope of decision 0005's\n")
         out.write("# chirp rule (tools/sim/run_l4.py tau_held at the hover thrust of the L4 chirp_yaw scenario's site), rounded to f32.\n")
         out.write("# The T3 test reads this file, not the live parameters, so it does not follow later parameter changes.\n")
@@ -243,6 +262,12 @@ def e_cos(a):
     a = E.of(a)
     v = math.cos(a.v)
     return E(v, abs(math.sin(a.v)) * a.e + ulp32(v))
+
+
+def e_tan(a):
+    a = E.of(a)
+    v = math.tan(a.v)
+    return E(v, (1 + v * v) * a.e + ulp32(v))
 
 
 def e_atan2(y, x):
@@ -448,6 +473,41 @@ class AngleMode:
         return q_sp, cmd
 
 
+# ---- the gyro chain's low-pass and the D low-pass ----------------------------------------------------------------------
+
+
+def lowpass(f_c, tick_s):
+    """The chain's second-order Butterworth low-pass (gyro_chain.hpp lowpass_coeffs: K = tan(pi f_c T_s), norm = 1 / (1 +
+    sqrt(2) K + K^2), b0 = K^2 norm, b1 = 2 b0, b2 = b0, a1 = 2 (K^2 - 1) norm, a2 = (1 - sqrt(2) K + K^2) norm) as
+    ((b0, b1, b2, a1, a2) in double at the exact tick period, the first-order bound of each float coefficient's distance from
+    it). The float path: rate_group chain_from_params (period = fl(fl(num / den) / 1e6), two roundings), then
+    lowpass_coeffs<float> operation by operation (pi cast to float, tanf and sqrtf within one ulp)."""
+    period = E(tick_s, 2 * UNIT_ROUNDOFF * tick_s)
+    pi = E(math.pi, UNIT_ROUNDOFF * math.pi)
+    k = e_tan(pi * E(f_c) * period)
+    k2 = k * k
+    rk = e_sqrt(E(2.0)) * k
+    norm = E(1.0) / (E(1.0) + rk + k2)
+    b0 = k2 * norm
+    b1 = b0 * 2
+    a1 = (k2 - E(1.0)) * 2 * norm
+    a2 = (E(1.0) - rk + k2) * norm
+    coeffs = (b0, b1, b0, a1, a2)
+    return tuple(c.v for c in coeffs), tuple(c.e for c in coeffs)
+
+
+def d_alpha(dt, tf):
+    """(alpha, bound) of the D low-pass of rate_loop.hpp step(): alpha = 1 - exp(-dt / T_f) in double, and the first-order bound
+    of the float alpha_d = fl(1 - expf(fl(-dt_f / T_f))) from it, dt_f = fl(dt_us / 1e6) (relative u): the argument carries
+    2 u x, expf one ulp of its result, the subtraction u alpha. T_f = 0 is the unfiltered branch: alpha 1, exact."""
+    if tf == 0.0:
+        return 1.0, 0.0
+    x = dt / tf
+    ex = math.exp(-x)
+    alpha = -math.expm1(-x)
+    return alpha, ex * x * 2 * UNIT_ROUNDOFF + ulp32(ex) + UNIT_ROUNDOFF * alpha
+
+
 # ---- the plant ---------------------------------------------------------------------------------------------------------
 
 
@@ -464,6 +524,15 @@ class Setup:
         self.tau_band = p["tau_robustness_band"]
         self.j_band = p["inertia_robustness_band"]
         self.cfg = Config(p)
+        self.lpf, self.lpf_err = lowpass(p["gyro_lpf_cutoff_hz"], self.tick_s)
+        self._alpha = {}
+
+    def alpha(self, dt, axis):
+        """d_alpha(dt, T_f of the axis), cached per (dt, axis)."""
+        key = (dt, axis)
+        if key not in self._alpha:
+            self._alpha[key] = d_alpha(dt, self.p[f"rate_d_filter_tau_{AXES[axis]}"])
+        return self._alpha[key]
 
     def stamp_us(self, tick):
         return (tick * self.num) // self.den
@@ -519,8 +588,9 @@ def script_sticks(name, a, a_s, a_r):
 
 
 def simulate(su, name, h_seg, m_sub=KIN_SUBSTEPS):
-    """The golden run. Returns a dict: th, om (per attitude execution), rho (per node, the maximum), cross_axes (maximum bound
-    on the other axes' rate setpoints), rate_bound, events, e_max (maximum tilt or heading error of the axis)."""
+    """The golden run. Returns a dict: th, om (per attitude execution), rho (per node, the maximum), rho_seq (per node and
+    injection), cross_axes (maximum bound on the other axes' rate setpoints), err_max (maximum tilt or heading error of the
+    axis), the lock."""
     p, cfg = su.p, su.cfg
     axis = scenario_axis(name)
     n_att = su.attitude_executions(h_seg)
@@ -531,17 +601,29 @@ def simulate(su, name, h_seg, m_sub=KIN_SUBSTEPS):
     r_hold = (0.0, 0.0, 0.0)
     kp = [p[f"rate_kp_{a}"] for a in AXES]
     ki = [p[f"rate_ki_{a}"] for a in AXES]
+    kd = [p[f"rate_kd_{a}"] for a in AXES]
+    b0, b1, b2, a1, a2 = su.lpf
+    chain = [(0.0, 0.0, 0.0, 0.0)] * 3  # per axis the direct-form-I history (x1, x2, y1, y2) of the low-pass
+    y_tick = [0.0] * 3
     integral = [0.0] * 3
     e_prev = [0.0] * 3
+    y_prev = [0.0] * 3
+    d_f = [0.0] * 3
     u = [0.0] * 3
+    uu = UNIT_ROUNDOFF
     rho = dict.fromkeys(NODES, 0.0)
-    rho_seq = {node: [0.0] * (n_att * su.ratio if node != "ref" else n_att) for node in NODES}
+    ticks = n_att * su.divisor * su.ratio
+    rho_seq = {node: [0.0] * (ticks if node in TICK_NODES else (n_att if node == "ref" else n_att * su.ratio))
+               for node in INJECTION_NODES}
+    # The signals the float coefficients multiply (scripted axis): per tick x + 2 x1 + x2 (b0, with b1 = 2 b0 and b2 = b0
+    # exactly in float), -y1 (a1), -y2 (a2); per rate execution the D low-pass input D - Df (alpha), with its spacing dt.
+    coef_seq = {"b": [0.0] * ticks, "a1": [0.0] * ticks, "a2": [0.0] * ticks, "gap": [0.0] * (n_att * su.ratio),
+                "dt": [0.0] * (n_att * su.ratio)}
     cross_axes = 0.0
     th_out, om_out = [], []
     err_max = 0.0
     lock_a = None
     lock_info = None
-    ticks = n_att * su.divisor * su.ratio
     for j in range(ticks):
         if j % (su.divisor * su.ratio) == 0:
             a = j // (su.divisor * su.ratio)
@@ -564,36 +646,73 @@ def simulate(su, name, h_seg, m_sub=KIN_SUBSTEPS):
                 err_max = max(err_max, abs(wrap(angle.psi_lock.v - plants[2].th)))
             elif name != "yaw_release":
                 err_max = max(err_max, abs(sticks[axis] * cfg.tilt_max - plants[axis].th))
+        # The gyro chain, every tick (rate_group.hpp filter): no rotor speed, so every notch is bypassed (the identity, its
+        # output exactly its input) and the chain is its low-pass, seeded with the steady state of the first sample.
+        for i, pl in enumerate(plants):
+            x = pl.w
+            x1, x2, y1, y2 = chain[i] if j > 0 else (x, x, x, x)
+            p0, p1 = b0 * x, b1 * x1
+            s1 = p0 + p1
+            p2 = b2 * x2
+            s2 = s1 + p2
+            p3 = a1 * y1
+            s3 = s2 - p3
+            p4 = a2 * y2
+            y = s3 - p4
+            chain[i] = (x, x1, y, y1)
+            y_tick[i] = y
+            if i == axis:
+                v_g = uu * abs(x)
+                v_f = uu * (abs(p0) + abs(p1) + abs(s1) + abs(p2) + abs(s2) + abs(p3) + abs(s3) + abs(p4) + abs(y))
+                rho["gyro"], rho["lpf"] = max(rho["gyro"], v_g), max(rho["lpf"], v_f)
+                rho_seq["gyro"][j], rho_seq["lpf"][j] = v_g, v_f
+                coef_seq["b"][j], coef_seq["a1"][j], coef_seq["a2"][j] = x + 2 * x1 + x2, -y1, -y2
         if j % su.divisor == 0:
             n = j // su.divisor
-            dt = su.dt_exec(n) if n > 0 else 0.0
-            y = [pl.w for pl in plants]
             if n == 0:
-                integral, e_prev, u = [0.0] * 3, [0.0] * 3, [0.0] * 3
+                integral, e_prev, u, d_f = [0.0] * 3, [0.0] * 3, [0.0] * 3, [0.0] * 3
+                y_prev = list(y_tick)
             else:
-                a = axis
-                inc = ki[a] * e_prev[a] * dt
-                integral_new = integral[a] + inc
-                e_a = r_hold[a] - y[a]
-                u_a = kp[a] * e_a + integral_new
-                step_rho = {"e": UNIT_ROUNDOFF * (abs(y[a]) + abs(e_a)),
-                            "I": 3 * UNIT_ROUNDOFF * abs(inc) + UNIT_ROUNDOFF * abs(integral_new),
-                            "u": UNIT_ROUNDOFF * abs(kp[a] * e_a) + UNIT_ROUNDOFF * abs(u_a)}
-                for node, v in step_rho.items():
-                    rho[node] = max(rho[node], v)
-                    rho_seq[node][n] = v
+                dt = su.dt_exec(n)
                 for i in range(3):
-                    integral[i] = integral[i] + ki[i] * e_prev[i] * dt
-                    e_i = r_hold[i] - y[i]
-                    u[i] = kp[i] * e_i + integral[i]
+                    alpha, alpha_bound = su.alpha(dt, i)
+                    inc = ki[i] * e_prev[i] * dt
+                    integral[i] = integral[i] + inc
+                    e_i = r_hold[i] - y_tick[i]
+                    d_raw = -kd[i] * (y_tick[i] - y_prev[i]) / dt
+                    gap = d_raw - d_f[i]
+                    d_new = d_f[i] + alpha * gap if alpha != 1.0 else d_raw
+                    pe = kp[i] * e_i
+                    pi_sum = pe + integral[i]
+                    u[i] = pi_sum + d_new
+                    if i == axis:
+                        filtered = alpha * (4 * uu * abs(d_raw) + 2 * uu * abs(gap)) + uu * abs(d_new)
+                        if alpha != 1.0:
+                            coef_seq["gap"][n], coef_seq["dt"][n] = gap, dt
+                        step_rho = {"e": uu * abs(e_i),
+                                    "I": 3 * uu * abs(inc) + uu * abs(integral[i]),
+                                    "D": filtered if alpha != 1.0 else 4 * uu * abs(d_raw),
+                                    "u": uu * (abs(pe) + abs(pi_sum) + abs(u[i]))}
+                        for node, v in step_rho.items():
+                            rho[node] = max(rho[node], v)
+                            rho_seq[node][n] = v
+                    d_f[i] = d_new
                     e_prev[i] = e_i
+                    y_prev[i] = y_tick[i]
         for _ in range(m_sub):
             d = [pl.step(u[i]) for i, pl in enumerate(plants)]
             q = qmul(q, quat_exp(d))
         nq = math.sqrt(sum(c * c for c in q))
         q = tuple(c / nq for c in q)
-    return {"th": th_out, "om": om_out, "rho": rho, "rho_seq": rho_seq, "cross_axes": cross_axes, "err_max": err_max, "lock_a": lock_a,
-            "lock_info": lock_info, "a_r": a_r, "n_att": n_att, "angle_phase": angle.phase}
+    dts = sorted({dt for dt in coef_seq["dt"] if dt > 0.0})
+    coef = [("lpf_coef", "lpf", coef_seq[c], su.lpf_err[k]) for c, k in (("b", 0), ("a1", 3), ("a2", 4))]
+    coef += [("alpha", "D", [g if dt == v else 0.0 for g, dt in zip(coef_seq["gap"], coef_seq["dt"])], su.alpha(v, axis)[1])
+             for v in dts]
+    for node in COEF_NODES:
+        rho[node] = max([c[3] for c in coef if c[0] == node], default=0.0)
+    return {"th": th_out, "om": om_out, "rho": rho, "rho_seq": rho_seq, "coef": coef, "cross_axes": cross_axes,
+            "err_max": err_max, "lock_a": lock_a, "lock_info": lock_info, "a_r": a_r, "n_att": n_att,
+            "angle_phase": angle.phase}
 
 
 def wrap(x):
@@ -604,46 +723,80 @@ def wrap(x):
 
 
 class Lin:
-    """The per-execution ZOH rate loop of one axis (nominal plant, the f32 gains) with the stamp dt of the integrator, as a
-    linear map on the error state [m, w, theta, I, e_prev] (plus the held lock heading as a sixth component)."""
+    """The linearised closed loop of one axis at tick resolution (nominal plant, the f32 gains), as a linear map on the error
+    state [m, w, theta, I, e_prev, y_prev, Df, x1, x2, y1, y2] (STATE components; plus the held lock heading). Per tick: the
+    exact ZOH plant over the tick with the torque held; the chain's low-pass (exact coefficients) on w; at a rate tick the law
+    with the stamp dt of the integrator and of the D path and its alpha(dt) (the seed execution 0: dt = 0, no D)."""
 
     def __init__(self, su, axis):
         p = su.p
-        self.su = su
-        self.kp, self.ki = p[f"rate_kp_{AXES[axis]}"], p[f"rate_ki_{AXES[axis]}"]
-        self.j, self.tau = p[INERTIA[AXES[axis]]], p["motor_tau"]
-        t = su.period_s
-        self.t = t
-        self.e = math.exp(-t / self.tau)
-        self.em = -math.expm1(-t / self.tau)
-        self.g = t - self.tau * self.em
-        self.q = t * t / 2 - self.tau * self.g
+        name = AXES[axis]
+        self.su, self.axis = su, axis
+        self.kp, self.ki, self.kd = p[f"rate_kp_{name}"], p[f"rate_ki_{name}"], p[f"rate_kd_{name}"]
+        self.j, self.tau = p[INERTIA[name]], p["motor_tau"]
+        h = su.tick_s
+        self.h = h
+        self.e = math.exp(-h / self.tau)
+        self.em = -math.expm1(-h / self.tau)
+        self.g = h - self.tau * self.em
+        self.q = h * h / 2 - self.tau * self.g
 
-    def run(self, n_start, n_boundaries, state, psi, fb, kind=None, k0=None, b_inj=None, record_states=False):
-        """Steps rate executions n_start ... ; the attitude boundaries are n = 0 mod N. Returns the observations (theta, w) at
-        the boundaries b = ceil(n_start / N) .. n_boundaries - 1 (taken before that execution's step), and the states."""
+    def run(self, t_start, n_boundaries, state, psi, fb, kind=None, at=None, record_states=False, drive=None, lock=None):
+        """Steps the ticks t_start ... ; the attitude boundaries are the ticks t = 0 mod D N. A unit injection of `kind` at `at`
+        (the boundary for ref, the tick for TICK_NODES, the rate execution for RATE_NODES); or drive = ("lpf", per-tick
+        sequence) or ("D", per-execution sequence), a signed injection at every tick or rate execution; lock = (boundary,
+        feedback gain): there the held heading copies theta and the feedback gain becomes the lock's. Returns the
+        observations (theta, w) at the boundaries ceil(t_start / D N) .. n_boundaries - 1 (taken before that tick's filter and
+        step), and the states there."""
         su = self.su
-        ratio = su.ratio
-        m, w, th, i_int, ep = state
-        kp, ki, tau, j, e_, em, g, q2, t = self.kp, self.ki, self.tau, self.j, self.e, self.em, self.g, self.q, self.t
+        div, per_att = su.divisor, su.divisor * su.ratio
+        m, w, th, i_int, ep, yp, df, x1, x2, y1, y2 = state
+        kp, ki, kd, tau, j, e_, em, g, q2, h = self.kp, self.ki, self.kd, self.tau, self.j, self.e, self.em, self.g, self.q, self.h
+        b0, b1, b2, a1, a2 = su.lpf
+        inj_gyro = at if kind == "gyro" else -1
+        inj_lpf = at if kind == "lpf" else -1
+        inj_rate = at if kind in RATE_NODES else -1
+        drive_y = drive[1] if drive is not None and drive[0] == "lpf" else None
+        drive_d = drive[1] if drive is not None and drive[0] == "D" else None
         obs, states = [], []
         r = 0.0
-        for n in range(n_start, n_boundaries * ratio):
-            if n % ratio == 0:
-                b = n // ratio
+        u = 0.0
+        for t in range(t_start, n_boundaries * per_att):
+            if t % per_att == 0:
+                b = t // per_att
+                if lock is not None and b == lock[0]:
+                    psi, fb = th, lock[1]
                 obs.append((th, w))
                 if record_states:
-                    states.append((m, w, th, i_int, ep))
-                r = fb * (psi - th) + (1.0 if (kind == "ref" and b == b_inj) else 0.0)
-            dt = su.dt_exec(n) if n > 0 else 0.0
-            inj = 1.0 if (n == k0 and kind in ("e", "I", "u")) else 0.0
-            i_int = i_int + ki * dt * ep + (inj if kind == "I" else 0.0)
-            e = r - w + (inj if kind == "e" else 0.0)
-            u = kp * e + i_int + (inj if kind == "u" else 0.0)
-            th = th + t * w + (tau * g * m + q2 * u) / j
+                    states.append((m, w, th, i_int, ep, yp, df, x1, x2, y1, y2))
+                r = fb * (psi - th) + (1.0 if (kind == "ref" and b == at) else 0.0)
+            x = w + (1.0 if t == inj_gyro else 0.0)
+            y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2 + (1.0 if t == inj_lpf else 0.0)
+            if drive_y is not None:
+                y += drive_y[t]
+            x2, x1, y2, y1 = x1, x, y1, y
+            if t % div == 0:
+                n = t // div
+                inj = 1.0 if n == inj_rate else 0.0
+                if n > 0:
+                    dt = su.dt_exec(n)
+                    alpha = su.alpha(dt, self.axis)[0]
+                    i_int = i_int + ki * dt * ep
+                    d_raw = -kd * (y - yp) / dt
+                    df = df + alpha * (d_raw - df) if alpha != 1.0 else d_raw
+                if kind == "I":
+                    i_int += inj
+                e = r - y + (inj if kind == "e" else 0.0)
+                if kind == "D":
+                    df += inj
+                if drive_d is not None:
+                    df += drive_d[n]
+                u = kp * e + i_int + df + (inj if kind == "u" else 0.0)
+                ep = e
+                yp = y
+            th = th + h * w + (tau * g * m + q2 * u) / j
             w = w + (tau * em * m + g * u) / j
             m = e_ * m + em * u
-            ep = e
         return obs, states
 
 
@@ -654,27 +807,51 @@ def strided_cum(seq, s):
     return out
 
 
-def phases(su):
+def phases(su, node="e"):
+    """(phases, stride): the linearised loop is periodic in L = lcm(N, 2) rate executions (the stamp dt alternates), L / N
+    attitude boundaries, L D ticks. A node's injections fall into `phases` classes (L / N for ref, L for a rate node, L D for
+    a tick node); consecutive injections of one class are `stride` = L / N attitude boundaries apart."""
     L = math.lcm(su.ratio, 2)
-    return L, L // su.ratio
+    if node == "ref":
+        return L // su.ratio, L // su.ratio
+    return (L * su.divisor if node in TICK_NODES else L), L // su.ratio
+
+
+def injection_start(su, node, base_b, p):
+    """(the injection index of phase p's first injection at or after boundary base_b, its first boundary offset c_p)."""
+    if node == "ref":
+        return base_b + p, p
+    if node in TICK_NODES:
+        per_att = su.divisor * su.ratio
+        return base_b * per_att + p, -(-p // per_att)
+    return base_b * su.ratio + p, -(-p // su.ratio)
 
 
 def node_sums(su, lin, fb, n_att, b_first):
     """Per node the strided cumulative sums of the absolute responses of (theta, w) and the raw error states: {node: (rows, s)},
-    rows = [(c_p, Ctheta, Comega, states)] per phase. The injections of a phase are the rate executions k = b_first N + p + L q
-    (every attitude execution b_first + q for the node ref), a sequence is indexed by the attitude boundary counted from the
-    first boundary of its injection."""
-    ratio = su.ratio
-    L, s = phases(su)
+    rows = [(c_p, Ctheta, Comega, states)] per phase. The injections of a phase are those of injection_start's index plus whole
+    periods; a sequence is indexed by the attitude boundary counted from the first boundary of its injection. The loop is
+    periodic, so every injection of a phase has the same response, shifted, except one at the seed execution (no D, y_prev
+    seeded): from b_first = 0 the phase's response is taken from its injection one period later (and the run one period
+    longer), and tolerance() requires a zero bound at the seed injections."""
+    per_att = su.divisor * su.ratio
     out = {}
-    obs, sts = lin.run(b_first * ratio, n_att, [0.0] * 5, 0.0, fb, kind="ref", b_inj=b_first, record_states=True)
-    out["ref"] = ([(0, strided_cum([abs(o[0]) for o in obs], 1), strided_cum([abs(o[1]) for o in obs], 1), sts)], 1)
-    for node in ("e", "I", "u"):
+    for node in INJECTION_NODES:
+        n_ph, s = phases(su, node)
         rows = []
-        for p in range(L):
-            k0 = b_first * ratio + p
-            obs, sts = lin.run(k0, n_att, [0.0] * 5, 0.0, fb, kind=node, k0=k0, record_states=True)
-            rows.append((-(-p // ratio), strided_cum([abs(o[0]) for o in obs], s), strided_cum([abs(o[1]) for o in obs], s), sts))
+        for p in range(n_ph):
+            at, c_p = injection_start(su, node, b_first, p)
+            shift = n_ph if b_first == 0 else 0
+            at += shift
+            if node == "ref":
+                t0 = at * per_att
+            elif node in TICK_NODES:
+                t0 = at
+            else:
+                t0 = at * su.divisor
+            obs, sts = lin.run(t0, n_att + (s if shift else 0), [0.0] * STATE, 0.0, fb, kind=node, at=at,
+                               record_states=True)
+            rows.append((c_p, strided_cum([abs(o[0]) for o in obs], s), strided_cum([abs(o[1]) for o in obs], s), sts))
         out[node] = (rows, s)
     return out
 
@@ -696,12 +873,11 @@ def phase_blocks(rho):
 
 
 def injection_rho(run, node, base_b, p, su):
-    """The rounding injection bounds of the injections of phase p that start at attitude boundary base_b: rate executions
-    k = base_b N + p + L q (every attitude execution base_b + q for the node ref)."""
-    if node == "ref":
-        return run["rho_seq"]["ref"][base_b:]
-    L, _ = phases(su)
-    return run["rho_seq"][node][base_b * su.ratio + p::L]
+    """The rounding injection bounds of the injections of phase p that start at attitude boundary base_b (injection_start's
+    index plus whole periods)."""
+    n_ph, _ = phases(su, node)
+    first, _ = injection_start(su, node, base_b, p)
+    return run["rho_seq"][node][first::n_ph]
 
 
 def region_bound(su, run, sums, base_b, m_lo, m_hi, extra=None):
@@ -736,7 +912,7 @@ def region_bound(su, run, sums, base_b, m_lo, m_hi, extra=None):
 
 def state_sums(su, run, node, rows, s, b, base_b=0):
     """The componentwise bound X_i of sum over the injections before the attitude boundary b of rho_k |error state_i at b|."""
-    x = [0.0] * 5
+    x = [0.0] * STATE
     for p, (c_p, _, _, sts) in enumerate(rows):
         rho = injection_rho(run, node, base_b, p, su)
         for q, r in enumerate(rho):
@@ -744,13 +920,30 @@ def state_sums(su, run, node, rows, s, b, base_b=0):
             if idx < 0:
                 break
             if idx < len(sts):
-                for i in range(5):
-                    x[i] += r * abs(sts[idx][i])
+                st = sts[idx]
+                for i in range(STATE):
+                    x[i] += r * abs(st[i])
     return x
 
 
 def max_pair(a, b):
     return {n: (max(a[n][0], b[n][0]), max(a[n][1], b[n][1])) for n in a}
+
+
+def coefficient_bound(su, run, lin, fb, lock=None):
+    """Per coefficient node the largest over the observation executions of sum_i delta_i |S_i(m)|, as (theta, omega). A float
+    coefficient computed once differs from the exact one by a fixed delta_i, |delta_i| <= its bound; to first order it moves a
+    channel at m by delta_i S_i(m), S_i(m) = sum_k g(m, k) s_i(k) the signed response of the linearised loop to the signal s_i
+    the coefficient multiplies, injected where the coefficient acts (one forward run per coefficient)."""
+    n_att = run["n_att"]
+    acc = {node: [[0.0, 0.0] for _ in range(n_att)] for node in COEF_NODES}
+    for node, kind, seq, delta in run["coef"]:
+        obs, _ = lin.run(0, n_att, [0.0] * STATE, 0.0, fb, drive=(kind, seq), lock=lock)
+        rows = acc[node]
+        for m, (th, w) in enumerate(obs):
+            rows[m][0] += delta * abs(th)
+            rows[m][1] += delta * abs(w)
+    return {node: (max(r[0] for r in rows), max(r[1] for r in rows)) for node, rows in acc.items()}
 
 
 def tolerance(su, name, run):
@@ -760,6 +953,9 @@ def tolerance(su, name, run):
     axis = scenario_axis(name)
     n_att = run["n_att"]
     lin = Lin(su, axis)
+    seed = {"ref": 0, "e": 0, "I": 0, "D": 0, "u": 0, "gyro": 0, "lpf": 0}
+    if any(run["rho_seq"][node][k] != 0.0 for node, k in seed.items()):
+        sys.exit(f"{name}: a rounding bound at the seed execution is not zero; node_sums' periodic responses do not cover it")
     if name != "yaw_release":
         c_min = math.cos(run["err_max"] / 2)
         bound = None
@@ -767,29 +963,34 @@ def tolerance(su, name, run):
             c = c_min + (1 - c_min) * i / (C_POINTS - 1)
             sums = node_sums(su, lin, cfg.kp * c, n_att, 0)
             cur = region_bound(su, run, sums, 0, 0, n_att)
+            cur.update(coefficient_bound(su, run, lin, cfg.kp * c))
             bound = cur if bound is None else max_pair(bound, cur)
     else:
         a_l = run["lock_a"]
         sums_pre = node_sums(su, lin, 0.0, n_att, 0)
         bound = region_bound(su, run, sums_pre, 0, 0, a_l)
+        bound.update(dict.fromkeys(COEF_NODES, (0.0, 0.0)))
         xs = {node: state_sums(su, run, node, rows, s, a_l) for node, (rows, s) in sums_pre.items()}
         c_min = math.cos(cfg.w * run["err_max"] / 2)
+        per_att = su.divisor * su.ratio
         for i in range(C_POINTS):
             c = c_min + (1 - c_min) * i / (C_POINTS - 1)
             fb = cfg.k_yaw.v * cfg.w * c
             sums_post = node_sums(su, lin, fb, n_att, a_l)
             g = []
-            for comp in range(6):
-                state = [1.0 if comp == k else 0.0 for k in range(5)]
-                obs, _ = lin.run(a_l * su.ratio, n_att, state, 1.0 if comp == 5 else 0.0, fb)
+            for comp in range(STATE + 1):
+                state = [1.0 if comp == k else 0.0 for k in range(STATE)]
+                obs, _ = lin.run(a_l * per_att, n_att, state, 1.0 if comp == STATE else 0.0, fb)
                 g.append(obs)
 
             def extra(node, m, xs=xs, g=g):
                 x = xs[node] + [xs[node][2]]
                 d = m - a_l
-                return (sum(x[k] * abs(g[k][d][0]) for k in range(6)), sum(x[k] * abs(g[k][d][1]) for k in range(6)))
+                return (sum(x[k] * abs(g[k][d][0]) for k in range(STATE + 1)),
+                        sum(x[k] * abs(g[k][d][1]) for k in range(STATE + 1)))
 
             cur = region_bound(su, run, sums_post, a_l, a_l, n_att, extra)
+            cur.update(coefficient_bound(su, run, lin, 0.0, lock=(a_l, fb)))
             bound = max_pair(bound, cur)
     tol = (sum(bound[n][0] for n in NODES), sum(bound[n][1] for n in NODES))
     return bound, tol
@@ -799,38 +1000,57 @@ def tolerance(su, name, run):
 
 
 class Member:
-    """One corner or grid point of the band box: the lifted exact ZOH rate loop of the design model on the plant with
-    J (1 + s b_J) and tau (1 + t b_tau), the f32 nominal gains, integrator step T (decision 0006 E)."""
+    """One corner or grid point of the band box: the exact sampled-data rate loop of the design model on the plant with
+    J (1 + s b_J) and tau (1 + t b_tau), the f32 nominal gains, integrator and D step T (decision 0006 E), at tick resolution:
+    per tick the exact ZOH plant over the tick with the torque held over the rate period and the chain's low-pass (exact
+    coefficients, the notches bypassed: the stage (c) T4 configuration, decision 0014) on w; every D ticks the law
+    u = kp e + I + Df on the chain output y, I += ki T e_prev, Df += alpha_T (-kd (y - y_prev) / T - Df), alpha_T =
+    1 - exp(-T / T_f)."""
 
     def __init__(self, su, axis, s, t):
         p = su.p
         name = AXES[axis]
         self.su = su
-        self.kp, self.ki = p[f"rate_kp_{name}"], p[f"rate_ki_{name}"]
+        self.kp, self.ki, self.kd = p[f"rate_kp_{name}"], p[f"rate_ki_{name}"], p[f"rate_kd_{name}"]
+        self.alpha = d_alpha(su.period_s, p[f"rate_d_filter_tau_{name}"])[0]
         self.j = p[INERTIA[name]] * (1 + s * su.j_band)
         self.tau = p["motor_tau"] * (1 + t * su.tau_band)
-        tt = su.period_s
-        self.t = tt
-        self.e = math.exp(-tt / self.tau)
-        self.em = -math.expm1(-tt / self.tau)
-        self.g = tt - self.tau * self.em
-        self.q = tt * tt / 2 - self.tau * self.g
+        self.t = su.period_s
+        h = su.tick_s
+        self.h = h
+        self.e = math.exp(-h / self.tau)
+        self.em = -math.expm1(-h / self.tau)
+        self.g = h - self.tau * self.em
+        self.q = h * h / 2 - self.tau * self.g
+
+    @staticmethod
+    def zero_state():
+        """[m, w, theta, I, e_prev, y_prev, Df, x1, x2, y1, y2]: at rest (the chain seeded with the first sample, 0)."""
+        return (0.0,) * STATE
 
     def attitude_step(self, st, r, d, quant=None):
         """One attitude period of N rate executions with the held reference r and a torque disturbance d; `quant` (the T4
         quantisation term Q, below) maps the torque request of the rate loop to the torque the DShot commands give."""
-        m, w, th, i_int, ep = st
-        kp, ki, tau, j, e_, em, g, q2, t = self.kp, self.ki, self.tau, self.j, self.e, self.em, self.g, self.q, self.t
+        m, w, th, i_int, ep, yp, df, x1, x2, y1, y2 = st
+        kp, ki, kd, alpha, tau, j, e_, em, g, q2, t, h = (self.kp, self.ki, self.kd, self.alpha, self.tau, self.j, self.e,
+                                                          self.em, self.g, self.q, self.t, self.h)
+        b0, b1, b2, a1, a2 = self.su.lpf
         for _ in range(self.su.ratio):
-            i_int += ki * t * ep
-            e = r - w
-            u = kp * e + i_int
-            if quant is not None:
-                u = quant(u)
-            u = u + d
-            th, w, m = th + t * w + (tau * g * m + q2 * u) / j, w + (tau * em * m + g * u) / j, e_ * m + em * u
-            ep = e
-        return (m, w, th, i_int, ep)
+            for k in range(self.su.divisor):
+                y = b0 * w + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
+                x2, x1, y2, y1 = x1, w, y1, y
+                if k == 0:
+                    i_int += ki * t * ep
+                    e = r - y
+                    d_raw = -kd * (y - yp) / t
+                    df = df + alpha * (d_raw - df) if alpha != 1.0 else d_raw
+                    u = kp * e + i_int + df
+                    if quant is not None:
+                        u = quant(u)
+                    u = u + d
+                    ep, yp = e, y
+                th, w, m = th + h * w + (tau * g * m + q2 * u) / j, w + (tau * em * m + g * u) / j, e_ * m + em * u
+        return (m, w, th, i_int, ep, yp, df, x1, x2, y1, y2)
 
 
 def tilt_member_run(su, axis, s, t, h_seg, quant=None, om=None):
@@ -838,7 +1058,7 @@ def tilt_member_run(su, axis, s, t, h_seg, quant=None, om=None):
     cfg = su.cfg
     mem = Member(su, axis, s, t)
     a_r = 1 + h_seg
-    st = (0.0, 0.0, 0.0, 0.0, 0.0)
+    st = Member.zero_state()
     out = []
     sin = math.sin
     k2 = 2 * cfg.kp
@@ -864,7 +1084,7 @@ def yaw_member_run(su, s, t, h_seg, stick, d_amp, quant=None):
     mem = Member(su, 2, s, t)
     a_r = 1 + h_seg
     n_att = su.attitude_executions(h_seg)
-    st = (0.0, 0.0, 0.0, 0.0, 0.0)
+    st = Member.zero_state()
     om, th = [], []
     phase = "yawrate"
     sigma = omega_r = psi_l = 0.0
@@ -1095,10 +1315,11 @@ def write_golden(su, res, path):
         f"# period_us {su.period_s / MICROSECOND!r}  attitude_period_us {su.t_a / MICROSECOND!r}  tick_us {su.tick_s / MICROSECOND!r}  unit_roundoff 2^-24",
         f"# segment_seconds {res['dur_s']!r}  segment_executions {res['h']}  doublings {res['doublings']}  kinematic_substeps {KIN_SUBSTEPS}",
         "# per script: the unwrapped angle (rad) and body rate (rad/s) of the stepped axis at each attitude execution (before that",
-        "# execution's torque acts); per channel and rounding node (ref: the attitude group's rate setpoint; e, I, u: the bypass",
-        "# rate loop) err_<channel>_<node>, the largest over the executions of sum_k |g(m, k)| rho_k; the largest rounding",
-        "# injection rho_<node> (information); and the tolerance of each channel, the sum of err over the nodes. The yaw script",
-        "# adds the lock execution and its decision margin.",
+        "# execution's torque acts); per channel and rounding node (ref: the attitude group's rate setpoint; gyro, lpf: the gyro",
+        "# chain; e, I, D, u: the bypass rate loop with its filtered D) err_<channel>_<node>, the largest over the executions of",
+        "# sum_k |g(m, k)| rho_k; per coefficient node (lpf_coef: the low-pass coefficients; alpha: the D low-pass alpha) the largest",
+        "# of sum_i delta_i |S_i(m)|; rho_<node> the largest rounding injection or coefficient bound (information); and the",
+        "# tolerance of each channel, the sum of err over the nodes. The yaw script adds the lock execution and its decision margin.",
     ]
     for name in SCENARIOS:
         d = res["golden"][name]
@@ -1137,7 +1358,8 @@ def write_envelope(su, res, path):
     lines = [
         "# T3 band envelopes of the L5 attitude loop (decision 0006 F 'T3 envelopes'): pointwise min / max over the tau x J band",
         "# box (17 x 17 grid, which contains the corners and the 9 x 9 grid) of the design-model response of each script, f32",
-        "# nominal gains, driven by the exact script from the exact initial state. Written by attitude_t3_oracle.py; see",
+        "# nominal gains, the filtered D and the chain's low-pass (notches bypassed), driven by the exact script from the exact",
+        "# initial state. Written by attitude_t3_oracle.py; see",
         "# README.md. Values are rounded outward to 7 significant digits. halving_max_change is the largest change of any point",
         "# from the 9 x 9 grid to the 17 x 17 grid. A channel lists 'lo hi' for the executions first .. first + count - 1.",
         f"# segment_seconds {res['dur_s']!r}  segment_executions {res['h']}  doublings {res['doublings']}",
@@ -1472,8 +1694,10 @@ def main():
         return
     p = read_inputs(inputs_path)
     for axis in AXES:
-        if p[f"rate_kd_{axis}"] != 0.0:
-            sys.exit("the rounding derivation assumes kd = 0 (decision 0005, owner decision 5)")
+        if not (p[f"rate_kd_{axis}"] >= 0.0 and p[f"rate_d_filter_tau_{axis}"] >= 0.0):
+            sys.exit(f"{axis}: kd and T_f must be >= 0 (rate_loop.hpp validate)")
+    if not 0.0 < 2 * p["gyro_lpf_cutoff_hz"] * p["tick_period_num_us"] / p["tick_period_den"] * MICROSECOND < 1.0:
+        sys.exit("gyro_lpf_cutoff_hz is not in (0, f_s / 2) (gyro_chain.hpp validate)")
     su = Setup(p)
     res = settle(su)
     write_golden(su, res, os.path.join(args.dir, "attitude_t3_golden.txt"))

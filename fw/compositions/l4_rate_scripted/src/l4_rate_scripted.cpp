@@ -1,13 +1,13 @@
-// The L4 test composition: the rate loop (marv::rate) and the mixer (marv::mixer) flown with scripted inputs. Scenario
-// parameters (fw/compositions/l4_rate_scripted/params) give the collective thrust request, a piecewise-constant
-// body-rate setpoint script and one torque chirp; nothing here is a vehicle number. The IMU sample is the rate
-// loop's gyro input as given (in the Gazebo runs it is the plant's truth body rate).
+// The L4 test composition: the gyro chain, the rate loop and the mixer through the shared rate-group step
+// (marv::rate_group), flown with scripted inputs. Scenario parameters (fw/compositions/l4_rate_scripted/params) give
+// the collective thrust request, a piecewise-constant body-rate setpoint script and one torque chirp; nothing here is a
+// vehicle number. The IMU sample is the chain's input (in the Gazebo runs it is the plant's truth body rate).
 //
-// Per tick, on the ticks the rate group is due (every rate_loop_divisor ticks, tick 0 included):
-//   setpoint = script(t); out = rate.execute(sample, setpoint); request = out.torque + chirp(t) on the chirp axis;
-//   alloc = allocate({thrust, request}); rate.record_allocation(request, alloc); DShot = thrust_to_dshot(alloc.f).
+// Every tick: step.filter(sample, due) (rate_group.hpp: on a due tick the notches are updated first). On the ticks the
+// rate group is due (every rate_loop_divisor ticks, tick 0 included): step.execute(script(t), chirp(t) on the chirp
+// axis, thrust), the rate loop on the chain output, allocate, record_allocation, thrust_to_dshot; the DShot is written.
 // On the other ticks nothing is written: the HAL latch holds the last command (hal_sim keeps it between writes).
-// init panics naming the violated rule on an invalid rate or mixer configuration or invalid scenario parameters.
+// init panics naming the violated rule on an invalid rate, mixer or chain configuration or invalid scenario parameters.
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -21,6 +21,7 @@
 #include <marv/params/param.hpp>
 #include <marv/prim/vec.hpp>
 #include <marv/rate/rate_loop.hpp>
+#include <marv/rate_group/rate_group.hpp>
 #include <marv/sched/rate_groups.hpp>
 #include <marv/types/actuator.hpp>
 #include <marv/types/imu_sample.hpp>
@@ -54,8 +55,7 @@ using Vec3f = prim::Vec3<float>;
 enum Group : std::size_t { kRate, kGroupCount };
 
 sched::RateGroups<kGroupCount> g_groups;
-rate::RateLoop<float> g_rate;
-mixer::MixerConfig<float> g_mixer;
+rate_group::RateGroupStep g_step;
 Script g_script;
 Chirp<float> g_chirp;
 float g_thrust = 0.0F;
@@ -119,13 +119,13 @@ void require_valid_script(ScriptError e) noexcept {
 
 void init() noexcept {
   const rate::RateConfig<float> rate_cfg = rate::load_config();
-  g_mixer = mixer::load_config();
-  g_rate.init(rate_cfg, g_mixer);
+  const mixer::MixerConfig<float> mixer_cfg = mixer::load_config();
 
   const std::int32_t divisor = param_value<ParamId::rate_loop_divisor>();
   if (divisor < 1 || !g_groups.init({static_cast<std::uint32_t>(divisor)})) {
     hal_panic("l4_rate_scripted composition: rate_loop_divisor is below 1");
   }
+  g_step.init(rate_cfg, mixer_cfg, rate_group::load_chain_config());
 
   g_thrust = param_value<ParamId::l4_thrust_n>();
   if (!std::isfinite(g_thrust) || !(g_thrust >= 0.0F)) {
@@ -144,15 +144,15 @@ void tick(const ImuSample& s) noexcept {
   }
   const std::uint32_t due = g_groups.due(g_n);
   ++g_n;
-  if (!fired(due, kRate)) {
+  const bool rate_due = fired(due, kRate);
+  g_step.filter(s, rate_due);
+  if (!rate_due) {
     return;
   }
-  const rate::RateOutput<float> out = g_rate.execute(s, setpoint_at(g_script, s.t_us));
-  const Vec3f request = out.torque + chirp_torque(g_chirp, s.t_us);
-  const mixer::Allocation<float> alloc = mixer::allocate(g_mixer, mixer::Request<float>{g_thrust, request});
-  g_rate.record_allocation(request, alloc);
+  const rate_group::Execution e =
+      g_step.execute(setpoint_at(g_script, s.t_us), chirp_torque(g_chirp, s.t_us), g_thrust);
   ActuatorOutput<kMotors, kServos> o{};
-  o.motor = mixer::thrust_to_dshot(g_mixer, alloc.f);
+  o.motor = e.dshot;
   hal_actuators_write(o);
 }
 

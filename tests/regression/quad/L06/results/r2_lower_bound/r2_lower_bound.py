@@ -3,7 +3,8 @@
 
     uv run python tests/regression/quad/L06/results/r2_lower_bound/r2_lower_bound.py --out <file>
 
-Claim. R2 (scenarios/quad/L05/recover_tumble.yaml) starts at the body rates w0 with every rotor at the card's hover speed,
+Claim. R2 as specified before its steady-tumble setup (decision 0015), the hover-rotor tumble
+scenarios/quad/L05/recover_tumble_prop_strike.yaml, starts at the body rates w0 with every rotor at the card's hover speed,
 so the rotor torque is zero at t = 0 while the coupling w x Jw is not. No command history, so no controller, can keep the
 body rate inside the R2 predicate's design tolerance F + Q (tests/regression/quad/L05/gz/test_t4_recovery.py) on the
 binding axis.
@@ -70,7 +71,7 @@ import run_l5  # noqa: E402
 import test_t4_recovery as t4r  # noqa: E402
 
 CARD = ROOT / "vehicles" / "uzh_neurobem_5in.yaml"
-SCEN_NAME = "recover_tumble"
+SCEN_NAME = "recover_tumble_prop_strike"
 SCEN = ROOT / "scenarios" / "quad" / "L05" / f"{SCEN_NAME}.yaml"
 CAUSE = ROOT / "tests" / "regression" / "quad" / "L05" / "results" / "recovery_cause" / "cause.txt"
 T3_INPUTS = ROOT / "tests" / "regression" / "quad" / "L05" / "t3" / "reference" / "attitude_t3_inputs.txt"

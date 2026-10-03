@@ -62,6 +62,7 @@
 #include <marv/prim/quat.hpp>
 #include <marv/prim/vec.hpp>
 #include <marv/rate/rate_loop.hpp>
+#include <marv/rate_group/rate_group.hpp>
 #include <marv/sched/rate_groups.hpp>
 #include <marv/types/attitude_state.hpp>
 #include <marv/types/imu_sample.hpp>
@@ -178,7 +179,7 @@ struct AxisPlant {
 
 // The composition, configured from the build's table with the run's overrides (composition::init).
 struct Composition {
-  rate::RateLoop<float> rate;
+  rate_group::RateGroupStep step;
   mixer::MixerConfig<float> mix{};
   attitude::AngleMode<float> angle;
   attitude::AttitudeLaw<float> law;
@@ -192,7 +193,7 @@ struct Composition {
   bool init() {
     const rate::RateConfig<float> rc = rate::load_config();
     mix = mixer::load_config();
-    rate.init(rc, mix);
+    step.init(rc, mix, rate_group::load_chain_config());
     const attitude::AttitudeConfig<float> ac = attitude::load_config();
     angle.init(ac);
     law.init(ac);
@@ -239,15 +240,17 @@ struct Composition {
           angle.execute(attitude::AngleSticks<float>{stick[0], stick[1], stick[2]}, latch);
       sp = law.execute(latch, a.q_sp, a.yaw_rate_cmd).rate_setpoint;
     }
-    if ((due & (1U << kRate)) == 0) {
+    const bool rate_due = (due & (1U << kRate)) != 0;
+    step.filter(s, rate_due);
+    if (!rate_due) {
       return o;
     }
-    const rate::RateOutput<float> r = rate.execute_bypass(s, sp + composition::chirp_rate(chirp, s.t_us));
-    o.request = r.torque + composition::disturbance_torque(dist, s.t_us);
-    o.alloc = mixer::allocate(mix, mixer::Request<float>{thrust, o.request});
-    rate.record_allocation(o.request, o.alloc);
-    o.dshot = mixer::thrust_to_dshot(mix, o.alloc.f);
-    o.fault = r.fault_active;
+    const rate_group::Execution e = step.execute_bypass(sp + composition::chirp_rate(chirp, s.t_us),
+                                                        composition::disturbance_torque(dist, s.t_us), thrust);
+    o.request = e.request;
+    o.alloc = e.alloc;
+    o.dshot = e.dshot;
+    o.fault = e.rate.fault_active;
     o.rate_ran = true;
     return o;
   }

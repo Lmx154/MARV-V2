@@ -8,9 +8,10 @@ and checks:
     every line of its terms, cross-check and results sections is a line of sweep.txt;
   - the model's cross-check against acro_cause: decision 0005's measured recovery table and cause.txt's m = 1 trace, within
     CROSS_CHECK_REL; control: the same model with the plant's w x J w removed fails it;
-  - the test's own design_bound on the L4 T3 fixture reproduces cause.txt's pitch bound bit for bit (so the fixture is the
-    gz build's parameter table);
-  - linear_response is run_l4.script_response bit for bit for the PI law; control: ki one ulp higher is not.
+  - the PI law's (tools/card/rate.py) design-model P at the L4 sensor reproduces cause.txt's pitch P bit for bit (so the
+    PI law is the one the acro_cause build flew);
+  - linear_response is run_l4.script_response bit for bit for the L4 T3 fixture's stage (c) law with its chain low-pass;
+    control: ki one ulp higher is not.
 The variants' verdicts are reported, not asserted (owner decision 2).
 """
 
@@ -106,9 +107,9 @@ def test_control_without_the_coupling_fails_the_cross_check(run):
     assert cross_check_findings(fe.cross_check(c, res, fe.PI_UNCOUPLED))
 
 
-def test_design_bound_on_the_fixture_is_the_gz_builds(run):
+def test_pi_law_is_the_acro_cause_builds(run):
     c, res, _, _ = run
-    mine, gz = fe.cross_check(c, res)["pitch_bound"]
+    (mine, _), (gz, _) = fe.cross_check(c, res)["pitch_bound"]
     assert mine == gz
 
 
@@ -119,11 +120,13 @@ def test_linear_model_is_the_tests_script_response(run):
 
 def test_control_one_ulp_of_ki_breaks_the_identity(run):
     c, *_ = run
-    p, law = c["fixture"], c["laws"]["PI"]
+    p, su = c["fixture"], c["su"]
+    kp, ki, kd, tf, tau_ref = fe.fixture_law(c, 0)
     jt, tt = p[fe.INERTIA_KEYS[0]], p["motor_tau"]
-    maps = (c["su"].plant_map(jt, tt), fe.tick_map(c["su1"], jt, tt))
-    ki = math.nextafter(law.ki[0], math.inf)
-    mine = fe.linear_response(law.kp[0], ki, 0.0, law.tau_ref[0], 0.0, c["sensors"]["L4"], maps, c["sps"][0],
-                              c["stamps"], c["plan"].divisor)
-    ref = fe.run_l4.script_response(law.kp[0], law.ki[0], law.tau_ref[0], maps[0], c["sps"][0], c["stamps"])
+    maps = (su.plant_map(jt, tt), fe.tick_map(c["su1"], jt, tt))
+    sensor = fe.Sensor("the fixture's chain low-pass", 0, (su.lowpass,))
+    mine = fe.linear_response(kp, math.nextafter(ki, math.inf), kd, tau_ref, tf, sensor, maps, c["sps"][0], c["stamps"],
+                              c["plan"].divisor)
+    ref = fe.run_l4.script_response(kp, ki, kd, tf, tau_ref, (su.divisor, su.lowpass, su.lowpass_error),
+                                    su.tick_map(jt, tt), c["sps"][0], c["stamps"])
     assert mine != ref

@@ -1,0 +1,31 @@
+MARV quad L6 stage (c): FF-on report run, reported, not asserted (decision 0014, owner decision 2; third round, item 3)
+command: uv run python tests/regression/quad/L06/results/ff_on/capture_gz.py --case <case> --work <dir> --out <file>
+label: truth-fed, perfect-model gz runs: not a validation run
+case = 'r1x'
+title = 'L5 R1X, exactly 180 degrees (scenarios/quad/L05/recover_inverted_exact.yaml): the alpha envelope predicate, tests/regression/quad/L05/gz/test_t4_recovery.py'
+ff_on_override = {'rate_ff_enable': ('i32', '1')}
+inputs sha256: card 62d5d522f19cf7022c87d5e9a0a9ab4e4d3a31d7759a5166c43cda959e23f11f; scenario 8aaeaf13ae8784f1767a80a5b292777c5e5f6f9fde3b26ec4a1ef3757118dd0c; test_t4_recovery.py efbef63005ef5af52ba5818e700191d81f3e646c187d3a38c9a5d796abaaa59c; recovery_model.py 118438c0a091221f65345a11a077851f86bbcfee57e5173731fa72dfa3c793e3; attitude_t3_oracle.py bc0be546f00a99ecb7d43bb8dae407b5de0be3df35474681274168552e4c52e8; attitude_t3_inputs.txt f7e67b54c78709eb67ff4c5ab9ea6c6a3cc208ea6b0be129111d5c357a8057c5; attitude_t3_q_inputs.txt 663db0bf424ab32127df1aa015ee879467d8b766a437c2677a7858be6bfe23aa; attitude_t3_envelope.txt (generated, decision 0011) 6e7b44933f90285501dee225e5f92f3f5c6a788de02557245d2ba88d270a14c2; run_l5.py 2d6a6dbb6da7877592883f64496ccc75092a98c51dbab66c11690853ede85069; parameter table (build) build/host-gz-l5/generated/marv_params_l5_attitude_scripted/marv/params/param_defaults.cpp f3fbfb740bf95105376760d06a2c54a083c416a1d95fd970d9e8f5eabacb0086; capture_gz.py c2b1687d94414217fb906f25437be238eea447b391ba40894f8ef73f17c56cb2
+versions: gz-sim 8.15.0 (log header); gz-physics 7.8.0-1~noble (dpkg libgz-physics7); DART 6.13.2+ds1-1~osrf2~noble (dpkg libdart-core+collisions+odelcpsolver6.13, libdart.so.6.13.2); sdformat 14.9.0-1~noble (dpkg libsdformat14); physics engine dartsim (gz-physics-dartsim-plugin), named in the world; plugin build type Debug
+params = {'rate_ff_enable': 0, 'rate_ff_filter_tau': 0.012311602011322975, 'inertia_xx': 0.0024999999441206455, 'inertia_yy': 0.002099999925121665, 'inertia_zz': 0.00430000014603138, 'motor_tau': 0.032999999821186066}
+
+# == design: the predicate's fixed terms (the same for both variants)
+design.scenario = 'recover_inverted_exact'
+design.N = 20293
+design.channels = ['alpha']
+design.F = [0.022943072859291678]
+design.Q = [0.006735488927931568]
+
+# == off: rate_ff_enable at its default (no harness override)
+off.runs = {2: {'host_steps': 20295, 'ticks': 40590, 'dshot': [628, 883], 'stale_in_window': 0, 'harness_overrides': {}, 'sil_override_rate_ff_enable': None}, 1: {'host_steps': 40590, 'ticks': 40590, 'dshot': [628, 883], 'stale_in_window': 0, 'harness_overrides': {}, 'sil_override_rate_ff_enable': None}}
+off.truth_sha256 = {2: '885747920d7beea4df56b7418430e53a6017b99108ffcc24919847651d6600de', 1: '4af80218450c1998488d25cd66cc7524a159ccc297a6ae6e3a40bab139e5e4d8'}
+off.clean = True
+off.predicate = {'passed': False, 'violations': 74, 'stale': {'m2': 0, 'm1': 0}, 'channels': {'alpha': {'violations': 74, 'first': 2271, 'worst': {'n': 2338, 'slack': 0.005047782113857376, 'outside': 0.03623329736735112, 'E': 0.0015069534662704998, 'y': 0.22786547127555046, 'lo': 0.00013166041275513115, 'hi': 0.19163217390819934}, 'max_out': 0.03623329736735112, 'max_E': 0.0015196195025390102}}}
+
+# == on: rate_ff_enable = 1 by harness sil_override
+on.runs = {2: {'host_steps': 20295, 'ticks': 40590, 'dshot': [628, 883], 'stale_in_window': 0, 'harness_overrides': {'rate_ff_enable': ('i32', '1')}, 'sil_override_rate_ff_enable': ('i32', '1')}, 1: {'host_steps': 40590, 'ticks': 40590, 'dshot': [628, 883], 'stale_in_window': 0, 'harness_overrides': {'rate_ff_enable': ('i32', '1')}, 'sil_override_rate_ff_enable': ('i32', '1')}}
+on.truth_sha256 = {2: '2a38de4ff379775f5a6407ab8b70f460ef1c331568d0c905c84575192f439f9c', 1: '8497f9f0766e39dc53f74435b4b3e9f27b2271594a3b3e60371404d8c2c71862'}
+on.clean = True
+on.predicate = {'passed': True, 'violations': 0, 'stale': {'m2': 0, 'm1': 0}, 'channels': {'alpha': {'violations': 0, 'first': None, 'worst': {'n': 14026, 'slack': -0.02922597046229054, 'outside': 0.0006321485896506863, 'E': 0.00017955726471798094, 'y': 0.0024878112547198233, 'lo': 1.5088536457016897e-06, 'hi': 0.001855662665069137}, 'max_out': 0.000899929289422174, 'max_E': 0.0008894009124520985}}}
+
+# == compare: excess = the worst excess over the tolerance (> 0) or minus the slack (<= 0), rad or rad/s; on - off
+compare.alpha = {'off': {'excess': 0.005047782113857376, 'at': 2338, 'violations': 74, 'first': 2271}, 'on': {'excess': -0.02922597046229054, 'at': 14026, 'violations': 0, 'first': None}, 'on - off': {'excess': -0.03427375257614791}}

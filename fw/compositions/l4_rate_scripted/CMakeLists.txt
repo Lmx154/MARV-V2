@@ -5,5 +5,5 @@ add_library(marv_composition_l4_rate_scripted STATIC src/l4_rate_scripted.cpp)
 target_include_directories(marv_composition_l4_rate_scripted PUBLIC include)
 target_link_libraries(marv_composition_l4_rate_scripted
   PUBLIC marv_hal marv_types marv_prim
-  PRIVATE marv_sched marv_rate marv_mixer marv_params_l4_rate_scripted_runtime)
+  PRIVATE marv_sched marv_rate_group marv_rate marv_mixer marv_params_l4_rate_scripted_runtime)
 marv_apply_flags(marv_composition_l4_rate_scripted FIRMWARE)

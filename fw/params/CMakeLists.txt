@@ -26,7 +26,7 @@ endif()
 set(MARV_PARAMS_GEN_SCRIPT "${PROJECT_SOURCE_DIR}/tools/gen/params_gen.py")
 set(MARV_PARAMS_RUNTIME_SOURCE "${CMAKE_CURRENT_LIST_DIR}/src/param.cpp")
 
-# marv_add_param_set(<name> CARD <files...> REGISTER <files...>)
+# marv_add_param_set(<name> CARD <files...> REGISTER <files...> [TABLE <out.txt> TABLE_INPUTS <repository-relative paths...>])
 #
 # A self-contained parameter set: runs tools/gen/params_gen.py on the given sources into its own output directory
 # ${CMAKE_BINARY_DIR}/generated/<name> and builds two static FIRMWARE libraries (host and m33):
@@ -36,9 +36,11 @@ set(MARV_PARAMS_RUNTIME_SOURCE "${CMAKE_CURRENT_LIST_DIR}/src/param.cpp")
 # Its target property MARV_PARAM_MANIFEST on <name>_generated is the path of the set's params_manifest.json, and
 # MARV_PARAM_CARD_FILES / MARV_PARAM_REGISTER_FILES hold the sources. Sets are independent: a binary must link
 # the generated and runtime library of one set only, since every set defines the same marv::generated symbols.
+# With TABLE the generator also writes the human-readable table of every record to <out.txt> (params_gen.py --out-table;
+# its header names TABLE_INPUTS); the table is a source of <name>_generated, so every build produces it.
 # Call it from fw/params (the targets take the calling directory as SOURCE_DIR, which puts them under fw/ for G3).
 function(marv_add_param_set name)
-  cmake_parse_arguments(ARG "" "" "CARD;REGISTER" ${ARGN})
+  cmake_parse_arguments(ARG "" "TABLE" "CARD;REGISTER;TABLE_INPUTS" ${ARGN})
   set(gen_root "${CMAKE_BINARY_DIR}/generated/${name}")
   set(gen_dir "${gen_root}/marv/params")
 
@@ -50,11 +52,23 @@ function(marv_add_param_set name)
     list(APPEND gen_args --register "${f}")
   endforeach()
 
+  set(table_outputs)
+  set(table_sources)
+  if(ARG_TABLE)
+    foreach(f IN LISTS ARG_TABLE_INPUTS)
+      list(APPEND gen_args --table-input "${f}")
+    endforeach()
+    list(APPEND gen_args --out-table "${ARG_TABLE}")
+    set(table_outputs "${ARG_TABLE}")
+    set(table_sources "${ARG_TABLE}")
+  endif()
+
   add_custom_command(
     OUTPUT "${gen_dir}/param_ids.hpp"
            "${gen_dir}/param_defaults.cpp"
            "${gen_dir}/params_manifest.json"
            "${gen_dir}/params_provenance.json"
+           ${table_outputs}
     COMMAND "${MARV_PYTHON}" "${MARV_PARAMS_GEN_SCRIPT}" ${gen_args} --out-dir "${gen_dir}"
     DEPENDS "${MARV_PARAMS_GEN_SCRIPT}" ${ARG_CARD} ${ARG_REGISTER}
     COMMENT "Generating parameter ids, defaults, manifest and provenance (${name})"
@@ -62,7 +76,8 @@ function(marv_add_param_set name)
 
   add_library(${name}_generated STATIC
     "${gen_dir}/param_defaults.cpp"
-    "${gen_dir}/param_ids.hpp")
+    "${gen_dir}/param_ids.hpp"
+    ${table_sources})
   target_include_directories(${name}_generated PUBLIC "${gen_root}")
   target_link_libraries(${name}_generated PUBLIC marv_params)
   set_target_properties(${name}_generated PROPERTIES
@@ -87,25 +102,29 @@ function(marv_card_profile_file out name card)
 endfunction()
 
 # marv_add_card_param_set(<name> CARD <card.yaml> BUDGET <budget.yaml> [SCENARIO <scenario_values.yaml>]
-#                         [EXTRA_REGISTER <register.yaml>])
+#                         [EXTRA_REGISTER <register.yaml>] [PRODUCT_TABLE])
 #
 # A parameter set (marv_add_param_set) whose sources are a vehicle card and the design-budget register: a build-time
 # custom command runs tools/card/flatten.py (lints first; a lint finding fails the build) into
 # ${CMAKE_BINARY_DIR}/generated/<name>/flatten/ and marv_add_param_set consumes its outputs: the flattened card and
 # register plus the L3 mixer parameters (idle_speed, mixer_m<i>_*; tools/card/mixer.py). With SCENARIO the
 # scenario-values register is linted and flattened too (--scenario/--out-scenario) and joins the CARD files, and the
-# L4 rate-loop parameters (rate_{kp,ki,kd,tau_ref}_<axis>; tools/card/rate.py, --out-rate) and their derivation report
-# are generated from it, and so are the L5 attitude-loop parameters (att_kp, att_yaw_weight, att_loop_ratio;
-# tools/card/attitude.py, --out-attitude) with their report (<name>_attitude_report.txt), and the L6 gyro-chain
+# rate-loop parameters (rate_{kp,ki,kd,d_filter_tau,tau_ref}_<axis>, rate_ff_filter_tau; the stage (c) PI x lead rule tools/card/rate_lead.py,
+# --out-rate-lead, decision 0014) and their derivation report are generated from it, and so are the attitude-loop
+# parameters (att_kp, att_yaw_weight, att_loop_ratio, ...; tools/card/attitude_lead.py, --out-attitude-lead) with their
+# report (<name>_attitude_report.txt), and the L6 gyro-chain
 # parameters (gyro_lpf_cutoff_hz, gyro_notch_q_h1..h3, gyro_notch_omega_min; tools/card/gyro_chain_params.py,
 # --out-gyro-chain) with their report (<name>_gyro_chain_report.txt) and the header of the chain's relative tracking error
 # (<name>_gyro_chain_design.hpp, the target property MARV_GYRO_CHAIN_DESIGN_HEADER of <name>_generated; for tests, not
 # parameters). The command depends on
 # the card, the sensor profile the card names, the budget, the scenario register and tools/card/*.py.
+# PRODUCT_TABLE (with SCENARIO) also writes ${CMAKE_BINARY_DIR}/generated/<name>/<name>_product_table.txt, the readable
+# table of every record, whose header names the repository-relative card, sensor profile, budget and scenario register;
+# CI compares it byte for byte with tests/regression/quad/L06/product_params/marv_params_product_table.txt.
 # EXTRA_REGISTER appends one more register file after the budget register, so every id of the set without it keeps its
 # value and the extra entries follow (a composition's own scenario parameters); without it the outputs are unchanged.
 function(marv_add_card_param_set name)
-  cmake_parse_arguments(ARG "" "CARD;BUDGET;SCENARIO;EXTRA_REGISTER" "" ${ARGN})
+  cmake_parse_arguments(ARG "PRODUCT_TABLE" "CARD;BUDGET;SCENARIO;EXTRA_REGISTER" "" ${ARGN})
   cmake_path(ABSOLUTE_PATH ARG_CARD BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
   cmake_path(ABSOLUTE_PATH ARG_BUDGET BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ARG_CARD}")
@@ -126,11 +145,11 @@ function(marv_add_card_param_set name)
     set(scenario_depends "${ARG_SCENARIO}")
     set(flat_rate "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_rate.yaml")
     set(flat_rate_report "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_rate_report.txt")
-    set(rate_args --out-rate "${flat_rate}")
+    set(rate_args --out-rate-lead "${flat_rate}")
     set(rate_outputs "${flat_rate}" "${flat_rate_report}")
     set(flat_attitude "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_attitude.yaml")
     set(flat_attitude_report "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_attitude_report.txt")
-    set(attitude_args --out-attitude "${flat_attitude}")
+    set(attitude_args --out-attitude-lead "${flat_attitude}")
     set(attitude_outputs "${flat_attitude}" "${flat_attitude_report}")
     set(flat_gyro_chain "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_gyro_chain.yaml")
     set(flat_gyro_chain_report "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_gyro_chain_report.txt")
@@ -158,7 +177,21 @@ function(marv_add_card_param_set name)
     COMMENT "Linting and flattening the vehicle card and design budget (${name})"
     VERBATIM)
 
-  marv_add_param_set(${name} CARD "${flat_card}" "${flat_mixer}" ${scenario_outputs} ${flat_rate} ${flat_attitude} ${flat_gyro_chain} REGISTER "${flat_register}" ${ARG_EXTRA_REGISTER})
+  set(table_args)
+  if(ARG_PRODUCT_TABLE)
+    if(NOT ARG_SCENARIO)
+      message(FATAL_ERROR "marv_add_card_param_set(${name}): PRODUCT_TABLE needs SCENARIO")
+    endif()
+    set(table_inputs)
+    foreach(f IN ITEMS "${ARG_CARD}" "${profile_file}" "${ARG_BUDGET}" "${ARG_SCENARIO}")
+      file(RELATIVE_PATH f_rel "${PROJECT_SOURCE_DIR}" "${f}")
+      list(APPEND table_inputs "${f_rel}")
+    endforeach()
+    list(APPEND table_inputs "tools/card/*.py")
+    set(table_args TABLE "${CMAKE_BINARY_DIR}/generated/${name}/${name}_product_table.txt" TABLE_INPUTS ${table_inputs})
+  endif()
+
+  marv_add_param_set(${name} CARD "${flat_card}" "${flat_mixer}" ${scenario_outputs} ${flat_rate} ${flat_attitude} ${flat_gyro_chain} REGISTER "${flat_register}" ${ARG_EXTRA_REGISTER} ${table_args})
   if(ARG_SCENARIO)
     set_target_properties(${name}_generated PROPERTIES MARV_GYRO_CHAIN_DESIGN_HEADER "${flat_gyro_chain_design}")
   endif()
@@ -191,7 +224,7 @@ endfunction()
 # INTERFACE library `marv_params` above is the include root that every set's <name>_generated links; this set's
 # targets are marv_params_generated and marv_params_runtime.)
 marv_add_card_param_set(marv_params CARD "${MARV_VEHICLE_CARD}" BUDGET "${MARV_DESIGN_BUDGET}"
-  SCENARIO "${MARV_SCENARIO_VALUES}")
+  SCENARIO "${MARV_SCENARIO_VALUES}" PRODUCT_TABLE)
 
 # The L0 parameter set: built from the frozen L0 fixtures, whatever MARV_PARAM_*_FILES name. The L0 composition, the
 # null plant, the SIL test library and the L0 tests link it, so later layers can change the product's parameter

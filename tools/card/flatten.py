@@ -3,7 +3,7 @@
 
   flatten.py --card <card> --budget <budget> --out-card <file> --out-register <file> [--out-mixer <file>]
              [--scenario <file> --out-scenario <file>] [--out-rate <file>] [--out-attitude <file>]
-             [--out-gyro-chain <file>] [--root <repo>]
+             [--out-gyro-chain <file>] [--out-rate-lead <file>] [--out-attitude-lead <file>] [--procs <n>] [--root <repo>]
 
 The card and the budget are linted first (lint.py's checks, which use schema.py); on any finding nothing is written
 and the exit status is 1. Otherwise two params_gen source files are written, deterministically and byte-stable:
@@ -58,6 +58,18 @@ gyro_chain_design.py's rules, decision 0013), and next to it the derivation repo
 include the sensor profile the card names (imu odr_error, rotor_speed esc_clock_error). When gyro_chain_params.py refuses
 (an UNKNOWN input, an esc_clock_error above the budget's esc_clock_error_max), nothing is written and the exit status is
 1. Without the flag the other outputs are byte-identical.
+
+--out-rate-lead <file> and --out-attitude-lead <file> (optional, need --scenario; each refuses to be given with its L4/L5
+twin --out-rate / --out-attitude, which write the same parameter names) are the stage (c) switch of decision 0014: the same
+parameter files and reports from the stage (c) rules instead of rate.py and attitude.py. --out-rate-lead writes the 16
+rate-loop parameters rate_{kp,ki,kd,d_filter_tau,tau_ref}_{roll,pitch,yaw} and rate_ff_filter_tau (rate_lead.py: PI x lead
+with the gyro chain; tau_ref by rate.py rule step 9 with rate_lead's tau_cl; T_ff by rule step 9) and the report <file stem>_report.txt. --out-attitude-lead writes the
+same five parameters as --out-attitude (att_kp, att_yaw_weight, att_loop_ratio, att_yaw_alpha_min, att_yaw_t_cross) from
+attitude_lead.py on the stage (c) rate loop, and its report (which sets the new design against today's attitude.py one); the
+rate loop is designed in memory for it, once for both flags. The sensor profile the card names feeds the gyro chain.
+--procs <n> (default tools/card/cpu_quota.py usable_cpus()) is the worker count of rate_lead's N search; the outputs do not
+depend on it. rate.py and attitude.py stay the L4/L5 PI reference. When rate_lead.py or attitude_lead.py refuses, nothing is
+written and the exit status is 1. Without the flags the other outputs are byte-identical.
 """
 
 from __future__ import annotations
@@ -68,11 +80,15 @@ import sys
 from pathlib import Path
 
 import attitude
+import attitude_lead
+import cpu_quota
 import gen_plant_config as gpc
+import gyro_chain_design as gcd
 import gyro_chain_params
 import lint
 import mixer
 import rate
+import rate_lead
 import schema
 
 FORWARD = ("unit", "method", "source", "sigma", "lock", "shape", "status", "conflict", "check")
@@ -195,6 +211,10 @@ def main(argv=None):
     ap.add_argument("--out-rate")
     ap.add_argument("--out-attitude")
     ap.add_argument("--out-gyro-chain")
+    ap.add_argument("--out-rate-lead")
+    ap.add_argument("--out-attitude-lead")
+    ap.add_argument("--procs", type=int, default=cpu_quota.usable_cpus(),
+                    help="worker processes of rate_lead's N search (the outputs do not depend on it)")
     ap.add_argument("--root", default=str(lint.ROOT), help="repository root (resolves sensor_profile)")
     args = ap.parse_args(argv)
 
@@ -206,6 +226,15 @@ def main(argv=None):
         ap.error("--out-attitude needs --scenario (the loop period is a scenario value)")
     if args.out_gyro_chain and not args.scenario:
         ap.error("--out-gyro-chain needs --scenario (the tick period and the rate-loop divisor are scenario values)")
+
+    if args.out_rate_lead and not args.scenario:
+        ap.error("--out-rate-lead needs --scenario (the rate loop period and maximum rates are scenario values)")
+    if args.out_attitude_lead and not args.scenario:
+        ap.error("--out-attitude-lead needs --scenario (the loop period is a scenario value)")
+    if args.out_rate_lead and args.out_rate:
+        ap.error("--out-rate-lead and --out-rate write the same parameters")
+    if args.out_attitude_lead and args.out_attitude:
+        ap.error("--out-attitude-lead and --out-attitude write the same parameters")
 
     findings = lint_all(args.card, args.budget, args.root, args.scenario)
     if findings:
@@ -246,6 +275,28 @@ def main(argv=None):
                 card, budget, schema.load_yaml(args.scenario), args.card, _rel(args.card, args.root), rate_result)
         except gpc.GenError as e:
             for line in e.lines:
+                print(line, file=sys.stderr)
+            return 1
+
+    lead_rate_entries = lead_attitude_entries = None
+    if args.out_rate_lead or args.out_attitude_lead:
+        profile_path = Path(args.root) / lint.PROFILE_DIR / f"{card['sensor_profile']}.yaml"
+        where = _rel(args.card, args.root)
+        try:
+            scenario_doc = schema.load_yaml(args.scenario)
+            lead = rate_lead.design(card, budget, scenario_doc, schema.load_yaml(profile_path), args.card, profile_path,
+                                    args.procs)
+            if args.out_rate_lead:
+                lead_rate_entries = rate_lead.entries_from(lead)
+                lead_rate_report = rate_lead.report_lines(lead)
+            if args.out_attitude_lead:
+                today = attitude.design(card, budget, scenario_doc, args.card, lead["pi_l4"])
+                att = attitude_lead.design(card, budget, scenario_doc, args.card, attitude_lead.lead_inner(lead),
+                                           lead["pi_l4"])
+                lead_attitude_entries = attitude_lead.entries_from(att)
+                lead_attitude_report = attitude_lead.report_lines(att, today, lead)
+        except (gpc.GenError, gcd.DesignError) as e:
+            for line in getattr(e, "lines", None) or [str(e)]:
                 print(line, file=sys.stderr)
             return 1
 
@@ -319,6 +370,28 @@ def main(argv=None):
         outputs.append((args.out_attitude, render(attitude_header, attitude_entries)))
         attitude_report_path = Path(args.out_attitude).with_name(Path(args.out_attitude).stem + "_report.txt")
         outputs.append((str(attitude_report_path), "\n".join(attitude_report) + "\n"))
+    if lead_rate_entries is not None:
+        lead_rate_header = [
+            f"params_gen input for the stage (c) rate loop, computed from vehicle card {_rel(args.card, args.root)}, the "
+            "design budget, the scenario register and the sensor profile by tools/card/rate_lead.py through "
+            "tools/card/flatten.py. Generated; do not edit.",
+            "rate_kp, rate_ki, rate_kd, rate_d_filter_tau and rate_tau_ref per axis (decision 0014); the derivation is in the "
+            "report next to this file.",
+        ]
+        outputs.append((args.out_rate_lead, render(lead_rate_header, lead_rate_entries)))
+        report_path = Path(args.out_rate_lead).with_name(Path(args.out_rate_lead).stem + "_report.txt")
+        outputs.append((str(report_path), "\n".join(lead_rate_report) + "\n"))
+    if lead_attitude_entries is not None:
+        lead_attitude_header = [
+            f"params_gen input for the stage (c) attitude loop, computed from vehicle card {_rel(args.card, args.root)}, the "
+            "design budget, the scenario register and the sensor profile by tools/card/attitude_lead.py through "
+            "tools/card/flatten.py. Generated; do not edit.",
+            "att_kp, att_yaw_weight, att_loop_ratio, att_yaw_alpha_min and att_yaw_t_cross on the stage (c) rate loop "
+            "(decisions 0006 E, 0014 D7); the derivation is in the report next to this file.",
+        ]
+        outputs.append((args.out_attitude_lead, render(lead_attitude_header, lead_attitude_entries)))
+        report_path = Path(args.out_attitude_lead).with_name(Path(args.out_attitude_lead).stem + "_report.txt")
+        outputs.append((str(report_path), "\n".join(lead_attitude_report) + "\n"))
     if gyro_chain_entries is not None:
         gyro_chain_header = [
             f"params_gen input for the L6 gyro chain, computed from vehicle card {_rel(args.card, args.root)}, the design "

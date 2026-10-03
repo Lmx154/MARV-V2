@@ -219,6 +219,8 @@ class RateLoop {
   }
 
   [[nodiscard]] const prim::Vec3<T>& integrator() const noexcept { return integral_; }
+  // True iff the next execution is a first execution (after init, reset or a fault): it seeds from its gyro.
+  [[nodiscard]] bool seeding() const noexcept { return seed_; }
   [[nodiscard]] bool fault_latched() const noexcept { return latched_; }
   [[nodiscard]] std::uint32_t fault_count() const noexcept { return count_; }
 
@@ -355,7 +357,8 @@ class RateLoop {
 
 // The product parameter set's rate configuration: rate_{kp,ki,kd,tau_ref}_<axis>, the period
 // T = rate_loop_divisor * tick_period_num_us / tick_period_den microseconds in seconds, rotor_position_m<i>_{x,y},
-// rotor_yaw_sign_m<i> and rotor_torque_ratio. Not validated. pre: params_init succeeded.
+// rotor_yaw_sign_m<i> and rotor_torque_ratio. With rate_ff_enable == 1 also inertia_{xx,yy,zz}, motor_tau and
+// rate_ff_filter_tau (the feed-forward); any other value leaves them 0. Not validated. pre: params_init succeeded.
 [[nodiscard]] RateConfig<float> from_params() noexcept;
 
 // hal_panic naming the violated rule unless validate(c) == None.

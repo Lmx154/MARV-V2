@@ -201,13 +201,26 @@ TEST(L6GyroChainFaults, ValidatorRefusals) {
   EXPECT_EQ(with([&](auto& c) { c.omega_threshold_rad_s = nan; }), ConfigError::NonFinite);
   EXPECT_EQ(with([&](auto& c) { c.period = 0.0F; }), ConfigError::Period);
   EXPECT_EQ(with([&](auto& c) { c.period = -c.period; }), ConfigError::Period);
-  EXPECT_EQ(with([&](auto& c) { c.rate_divisor = 1; }), ConfigError::Divisor);
+  EXPECT_EQ(with([&](auto& c) { c.rate_divisor = 1; }), ConfigError::None);
   EXPECT_EQ(with([&](auto& c) { c.rate_divisor = 0; }), ConfigError::Divisor);
   EXPECT_EQ(with([&](auto& c) { c.rate_divisor = 2; }), ConfigError::None);
+  // Decision 0014, fifth round, item 1: the cutoff must lie below the rate loop's Nyquist f_s / (2 D). D* is the smallest
+  // divisor at which the fixture's (product) cutoff reaches it: the old rule (D >= 2) accepted D*, the new rule refuses it;
+  // D* - 1 brackets the boundary.
+  const float fc_period = 2.0F * fx.cutoff * fx.period;
+  const std::uint32_t d_star = static_cast<std::uint32_t>(std::ceil(1.0F / fc_period));
+  ASSERT_GE(d_star, 2U);
+  ASSERT_GE(fc_period * static_cast<float>(d_star), 1.0F);
+  ASSERT_LT(fc_period * static_cast<float>(d_star - 1U), 1.0F);
+  EXPECT_EQ(with([&](auto& c) { c.rate_divisor = d_star; }), ConfigError::Cutoff);
+  EXPECT_EQ(with([&](auto& c) { c.rate_divisor = d_star - 1U; }), ConfigError::None);
   EXPECT_EQ(with([&](auto& c) { c.cutoff_hz = 0.0F; }), ConfigError::Cutoff);
   EXPECT_EQ(with([&](auto& c) { c.cutoff_hz = static_cast<float>(fx.fs / 2.0); }), ConfigError::Cutoff);
   EXPECT_EQ(with([&](auto& c) { c.cutoff_hz = static_cast<float>(fx.fs); }), ConfigError::Cutoff);
-  EXPECT_EQ(with([&](auto& c) { c.cutoff_hz = static_cast<float>(0.99 * fx.fs / 2.0); }), ConfigError::None);
+  EXPECT_EQ(with([&](auto& c) { c.cutoff_hz = static_cast<float>(0.99 * fx.fs / (2.0 * kDivisor)); }),
+            ConfigError::None);
+  // Accepted by the old f_s / 2 bound, refused by (b) at the fixture's divisor (decision 0014, fifth round, item 1).
+  EXPECT_EQ(with([&](auto& c) { c.cutoff_hz = static_cast<float>(0.99 * fx.fs / 2.0); }), ConfigError::Cutoff);
   EXPECT_EQ(with([&](auto& c) { c.notch_q[2] = 0.0F; }), ConfigError::NotchQ);
   EXPECT_EQ(with([&](auto& c) { c.notch_q[0] = -1.0F; }), ConfigError::NotchQ);
   EXPECT_EQ(with([&](auto& c) { c.omega_threshold_rad_s = 0.0F; }), ConfigError::Threshold);

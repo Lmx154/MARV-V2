@@ -92,7 +92,7 @@ class Envelope:
 
 def oracle_envelope(p, axis):
     """The oracle's main() terms for one axis on the inputs p: envelope, TOL and the halving change H."""
-    assert p[f"rate_kd_{axis}"] == 0.0, "the oracle's rounding derivation assumes kd = 0 (decision 0005, owner decision 5)"
+    assert p[f"rate_d_filter_tau_{axis}"] > 0.0, "the stage (c) law: kd from the parameters, D through T_f > 0 (0014)"
     su = oracle.Setup(p)
     n = su.executions(axis)
     sp = p[f"rate_max_{axis}"]

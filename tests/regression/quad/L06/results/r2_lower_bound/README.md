@@ -1,7 +1,8 @@
 Lower bound on the R2 rate excess forced by the motor lag (decision 0014, owner decision 5, condition 1: evidence first).
 
-R2 (`scenarios/quad/L05/recover_tumble.yaml`) starts inverted, at `rate_max` on all three axes, with every rotor at the card's
-hover speed. The rotor torque at t = 0 is therefore zero, while the coupling ω×Jω is not. The script bounds from below how far
+R2 as specified before its steady-tumble setup (decision 0015), now the hover-rotor tumble
+`scenarios/quad/L05/recover_tumble_prop_strike.yaml`, starts inverted, at `rate_max` on all three axes, with every rotor at the
+card's hover speed. The rotor torque at t = 0 is therefore zero, while the coupling ω×Jω is not. The script bounds from below how far
 the body rate must leave the R2 design-model envelope for every command history. It then compares that bound with the
 tolerance the R2 predicate applies (`tests/regression/quad/L05/gz/test_t4_recovery.py`: envelope ± (E + F + Q)).
 
@@ -33,18 +34,18 @@ Findings (`bound.txt`):
    - Pitch: at least 0.27245 rad/s.
    - Yaw: at least 0.020931 rad/s.
 3. **Against the predicate.** X* is the forced excess over the envelope.
-   - **w_y is the binding axis.** X* is 0.28283 rad/s at execution 16 (5 ms), against F + Q = 0.1151 rad/s, a ratio of
-     2.46. F is 0.094979, of which the envelope's halving term is 0.093712; Q is 0.020117.
-   - w_x: 0.22176 against 0.089487 (2.48).
-   - w_z is not forced: 0.033591 against 0.064083.
-   - At execution 16 the predicate can hold only if the run's step-size term satisfies E ≥ 0.16773 rad/s (w_y). E is a
-     measurement of each gz run, and no committed artefact records it at that execution.
+   - **w_y is the binding axis.** X* is 0.28537 rad/s at execution 17 (5.3125 ms), against F + Q = 0.031128 rad/s, a ratio of
+     9.17. F is 0.017472, of which the envelope's halving term is 0.015583; Q is 0.013656.
+   - w_x: 0.21596 against 0.032875 (6.57), at execution 12.
+   - w_z is forced too: 0.039504 against 0.0079155 (4.99), at execution 22.
+   - At execution 17 the predicate can hold only if the run's step-size term satisfies E ≥ 0.25424 rad/s (w_y). E is a
+     measurement of each gz run; `e_measured.md` measures it.
 4. **The figure in decision 0014.** The "tolerance of about 1.3e-3 rad/s" is R1's w_y F (`cause.txt:55`), which is the
-   T3 rate term alone. R2's own F + Q on w_y is 0.1151 rad/s. The architect's form g²τ/(2J·2τ_max) gives 0.1299 rad/s
-   (section 5), which is 1.13 times R2's tolerance. Its slew, 2τ_max/τ = 111.05 N m/s, does cover the largest reachable
+   T3 rate term alone. R2's own F + Q on w_y is 0.031128 rad/s. The architect's form g²τ/(2J·2τ_max) gives 0.1299 rad/s
+   (section 5), which is 4.17 times R2's tolerance. Its slew, 2τ_max/τ = 111.05 N m/s, does cover the largest reachable
    slew over the window (68.843 N m/s). This script's bound uses the reachable torque set itself instead of a slew bound.
 5. **Cross-check against `cause.txt`.** At executions 1 and 16, every observed departure and excess is at least the bound,
-   after allowing half a printed unit. At execution 16 on w_y, the observed excess is 0.56321 against 0.28283.
+   after allowing half a printed unit. At execution 16 on w_y, the observed excess is 0.56552 against 0.28514.
 6. **Negative controls.**
    - **NC1, steady-tumble rotors** (T = M (F, ω0×Jω0)). At the hover collective, T₁ = −0.30146 N, so no rotor speeds give
      that state. The control therefore uses the smallest collective with every rotor at or above W_min, 8.917 N, which

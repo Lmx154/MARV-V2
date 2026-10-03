@@ -1,0 +1,54 @@
+MARV quad L6 stage (c): R2 under envelope A, the design model with w x Jw in the plant and ideal lag-compensated feed-forward (decision 0015; decision 0014 owner decision 5)
+command: uv run python tests/regression/quad/L06/results/r2_envelope_a/r2_envelope_a.py --out <file>
+label: design model (T3), not a validation run
+inputs sha256: card 62d5d522f19cf7022c87d5e9a0a9ab4e4d3a31d7759a5166c43cda959e23f11f; scenario b81461d640dd67835a93aee1ee03aa0e5f589d896136e988d299bce4e3e9ac24; attitude_t3_inputs.txt f7e67b54c78709eb67ff4c5ab9ea6c6a3cc208ea6b0be129111d5c357a8057c5; test_t4_recovery.py efbef63005ef5af52ba5818e700191d81f3e646c187d3a38c9a5d796abaaa59c; recovery_model.py 118438c0a091221f65345a11a077851f86bbcfee57e5173731fa72dfa3c793e3; attitude_t3_oracle.py bc0be546f00a99ecb7d43bb8dae407b5de0be3df35474681274168552e4c52e8; run_l5.py 2d6a6dbb6da7877592883f64496ccc75092a98c51dbab66c11690853ede85069
+
+== 0. setup
+scenario scenarios/quad/L05/recover_tumble.yaml: q0 [0.0, 1.0, 0.0, 0.0]; w0 ['11.693705558776855', '11.693705558776855', '11.693705558776855'] rad/s; executions 0 .. 20292 (T_a 0.0003125 s, 2 ticks of 0.0001563 s each, 40586 ticks)
+design model (fixture): J ['0.0024999999441206455', '0.002099999925121665', '0.00430000014603138'] kg m^2; tau 0.032999999821186066 s; bands J +-0.5, tau +-0.3; rate_kp_roll 0.024631017819046974 rate_ki_roll 0.07708850502967834; rate_kp_pitch 0.020690055564045906 rate_ki_pitch 0.06475434452295303; rate_kp_yaw 0.04236534982919693 rate_ki_yaw 0.13259221613407135; att_kp 3.1539721488952637
+steady tumble (run_l5.steady_tumble): collective 8.917 N (hover 7.571 N, hover feasible False); rotor speeds [150, 1427, 1334, 1367] rad/s
+tau0 (run_l5.rotor_torque at those speeds) ['0.3008340493298115', '-0.2461369494516637', '-0.05469709987814753'] N m
+c_d(w0) = w0 x J w0, fixture J ['0.300834079537613', '-0.24613697706149268', '-0.05469710247612031'] N m
+v0 = tau0 - c_d(w0) [-3.021e-08, 2.761e-08, 2.598e-09] N m = [c_card(w0) - c_d(w0), f32 rounding of J] [-3.021e-08, 2.761e-08, 2.598e-09] + [tau0 - c_card(w0), the rule's binary64 residue] [2.22e-16, 5.551e-17, -6.939e-18]
+
+== 1. tolerance delta = V + K + R per channel (rad for err_*, rad/s for w_*); guard: K + R <= binary64 scale ROUNDOFF ticks max|y| (INFERRED)
+err_x: V 9.732e-09; K 1.521e-14; R 1.841e-14; delta 9.732e-09; scale 1.416e-11
+err_y: V 1.158e-08; K 1.626e-14; R 5.551e-15; delta 1.158e-08; scale 4.825e-12
+err_z: V 3.374e-08; K 1.621e-14; R 1.969e-14; delta 3.374e-08; scale 5.744e-12
+w_x: V 2.457e-07; K 2.416e-13; R 4.872e-14; delta 2.457e-07; scale 5.269e-11
+w_y: V 2.702e-07; K 1.874e-13; R 3.553e-14; delta 2.702e-07; scale 5.269e-11
+w_z: V 1.017e-07; K 2.824e-13; R 5.356e-14; delta 1.017e-07; scale 5.269e-11
+guard on the rate channels: True
+
+== 2. convergence: max_n |C_S - D(v0)| per channel, S RK4 steps per tick (reported run S = 4)
+S 1: [2.821e-13, 2.513e-13, 2.216e-13, 3.869e-12, 2.931e-12, 4.718e-12]
+S 2: [1.748e-14, 1.465e-14, 2.665e-14, 2.522e-13, 1.865e-13, 3.002e-13]
+S 4: [1.731e-14, 1.066e-14, 1.586e-14, 5.306e-14, 3.064e-14, 4.252e-14]
+S 8: [1.731e-14, 1.177e-14, 1.592e-14, 5.306e-14, 3.753e-14, 5.151e-14]
+
+== 3. claim (a): C inside envelope A to rounding, executions 0 .. 20292
+err_x: |C - D(v0)| 1.731e-14 (<= K + R 3.362e-14: True); |C - D(0)| 9.732e-09; max outside A 5.866e-13 at n 1; executions outside by more than delta 0; zero-width executions 2; least margin where A is open 5.073e-09 at n 2 (width 2.438e-08)
+err_y: |C - D(v0)| 1.066e-14 (<= K + R 2.182e-14: True); |C - D(0)| 1.158e-08; max outside A 4.809e-14 at n 1; executions outside by more than delta 0; zero-width executions 2; least margin where A is open 1.349e-08 at n 2 (width 6.485e-08)
+err_z: |C - D(v0)| 1.586e-14 (<= K + R 3.589e-14: True); |C - D(0)| 3.374e-08; max outside A 1.005e-12 at n 1; executions outside by more than delta 0; zero-width executions 2; least margin where A is open 8.947e-09 at n 2 (width 4.304e-08)
+w_x: |C - D(v0)| 5.306e-14 (<= K + R 2.903e-13: True); |C - D(0)| 2.457e-07; max outside A 3.758e-09 at n 1; executions outside by more than delta 0; zero-width executions 2; least margin where A is open 1.135e-05 at n 20056 (width 0.002917)
+w_y: |C - D(v0)| 3.064e-14 (<= K + R 2.229e-13: True); |C - D(0)| 2.702e-07; max outside A 4.089e-09 at n 1; executions outside by more than delta 0; zero-width executions 2; least margin where A is open 1.352e-05 at n 19731 (width 0.002725)
+w_z: |C - D(v0)| 4.252e-14 (<= K + R 3.36e-13: True); |C - D(0)| 1.017e-07; max outside A 1.879e-10 at n 1; executions outside by more than delta 0; zero-width executions 2; least margin where A is open 7.243e-06 at n 18441 (width 0.00165)
+claim (a) on the rate channels: True
+
+== 4. claim (b): C leaves envelope B (motor state tau0), executions 0 .. 31
+err_x: first outside B by more than delta at n 1 (t 0.0003125 s): C 3.1379278988143886, B [3.137916207606536, 3.1379240098461487], outside by 3.889e-06; max outside 0.003038 at n 31
+err_y: first outside B by more than delta at n 1 (t 0.0003125 s): C -0.005733457408617778, B [-0.005732798053547135, -0.005731475217148342], outside by 6.594e-07; max outside 0.0006135 at n 31
+err_z: first outside B by more than delta at n 1 (t 0.0003125 s): C 0.005733457409574376, B [0.005715530335455781, 0.005727494101982592], outside by 5.963e-06; max outside 0.004871 at n 31
+w_x: first outside B by more than delta at n 1 (t 0.0003125 s): C 11.693705555018704, B [11.718606253662994, 11.768640812920179], outside by 0.0249; max outside 0.6362 at n 31
+w_y: first outside B by more than delta at n 1 (t 0.0003125 s): C 11.693705562866066, B [11.620716673899933, 11.669451634863771], outside by 0.02425; max outside 0.6054 at n 31
+w_z: first outside B by more than delta at n 1 (t 0.0003125 s): C 11.69370555896477, B [11.685784285000583, 11.691073350163332], outside by 0.002632; max outside 0.0224 at n 17
+claim (b) on the rate channels: True
+
+== 5. control: C without the feed-forward (f = 0), m(0) = tau0, against envelope A
+err_x: first outside A by more than delta: n 1 by 1.847e-08; max outside 0.2293 at n 2076; executions outside by more than delta 1794
+err_y: first outside A by more than delta: n 2 by 1.229e-08; max outside 0.3552 at n 906; executions outside by more than delta 2893
+err_z: first outside A by more than delta: n 2 by 2.162e-07; max outside 0.2662 at n 1026; executions outside by more than delta 5549
+w_x: first outside A by more than delta: n 1 by 0.0001777; max outside 2.022 at n 336; executions outside by more than delta 3021
+w_y: first outside A by more than delta: n 1 by 0.0001727; max outside 0.8109 at n 189; executions outside by more than delta 858
+w_z: first outside A by more than delta: n 1 by 1.876e-05; max outside 1.055 at n 1764; executions outside by more than delta 5216
+control leaves A on a rate channel: True

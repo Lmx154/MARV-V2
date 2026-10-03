@@ -10,7 +10,7 @@ torque-envelope amplitude A_env (decision 0006 F, re-derived here from the live 
 window; the chirp is added to the rate setpoint at every rate execution, sticks 0, heading locked.
   yaw:          (m = 1, A_env), (m = 2, A_env), (m = 1, A_env/2), (m = 1, A_env, D/2).
   roll, pitch:  (m = 1, A_env/2^k) for k = 1..5 (owner decision 20: at A_env the vehicle tumbles, peak attitude error 2, and there
-                is no crossover); then, at the amplitude of the k with the smallest PM, (m = 2) and (D/2).
+                is no crossover); then, at the amplitude of the admitted k with the smallest PM, (m = 2) and (D/2).
   control:      (m = 1, att_kp x c) at the margin run's amplitude.
 
 Measurement. PM(run) = run_l5.chirp_margin: indirect closed-loop identification from the log alone (run_l5 section "T4 attitude
@@ -20,11 +20,16 @@ arg L). The margin and its terms are run_l5.u_terms: yaw as at L4 (PM of the (m 
 U_A = |PM(A_env) - PM(A_env/2)|); roll and pitch (owner decision 20) PM = the minimum over the k that give a unique crossover,
 U_A = the spread (max - min) of those PMs, E_H = |PM(m = 1) - PM(m = 2)| at the minimum's amplitude. U_d is run_l5.float_input_term
 of the margin run (the L4 rule on the attitude period). U = E_H + U_A + U_d on every axis.
+Plateau admission (owner decision of 2026-10-02, decision 0014 third round item 2, amending decision 20's plateau): on roll
+and pitch only the k that run_l5.chirp_admission admits enter the plateau, |modelled nonlinear PM shift| < the PM change of
+the fine control (att_kp x 1.1) on the design model at the same corner; the plateau must hold at least run_l5.PLATEAU_MIN_RUNS
+admitted runs with a crossover, and fewer fails. Every run is still flown and printed with its modelled shift.
 
 Predicate per axis. PASS iff no host step read in any window is stale (0003 item 11) and
   PM - U >= PM_min   and   min_box PM_design - U <= PM <= max_box PM_design + U,
-PM_design at nominal and the four tau x J corners from tools/card/attitude.py design() (the build's gains are checked equal to
-the design's), PM_min the budget's. The plateau's spread is inside U_A, so the decision's "min - U_A >= PM_min" is implied.
+PM_design at nominal and the four tau x J corners from tools/card/attitude_lead.py's loops in the stage (c) T4 configuration
+(run_l5.chirp_design_lead; the build's gains are checked equal to the design's), PM_min the budget's. The plateau's spread is
+inside U_A, so the decision's "min - U_A >= PM_min" is implied.
 
 Duration (core 7.5). The scenario's duration_s is the converged one: |PM(D) - PM(D/2)| < E_H + U_A, both at D, at the margin run.
 
@@ -46,6 +51,7 @@ ROOT = Path(__file__).resolve().parents[5]
 sys.path.insert(0, str(ROOT / "tools" / "card"))
 sys.path.insert(0, str(ROOT / "tools" / "sim"))
 import attitude  # noqa: E402
+import attitude_lead  # noqa: E402
 import l5_scenario as l5s  # noqa: E402
 import run_l5  # noqa: E402
 import run_scenario  # noqa: E402
@@ -86,11 +92,21 @@ def verdict(pm, u_terms, design_pms, pm_min):
             "in range": in_range}
 
 
+def admission_table(admission, margins):
+    """The threshold and every plateau run's flown PM, modelled PM, modelled shift and admission (run_l5.chirp_admission),
+    in degrees."""
+    return {"threshold (deg)": deg(admission["threshold"]),
+            "runs": {n: {"PM (deg)": deg(margins[n]["pm"]), "model PM (deg)": deg(r["pm"]),
+                         "modelled shift (deg)": deg(r["shift"]), "admitted": n in admission["admitted"]}
+                     for n, r in admission["runs"].items()}}
+
+
 def control_c(result, axis, limit):
     """The smallest power of two c >= 2 whose effective gain c k gives a nominal design-model PM below `limit` (rad), with
-    that PM and crossover (rad/s); attitude.Loop.margin on the axis's nominal loop at N*."""
+    that PM and crossover (rad/s); attitude.Loop.margin on the axis's nominal stage (c) T4 loop (attitude_lead.build_loops)."""
     n, t_a, k32, w32 = result["N"], result["T_a"], result["k32"], result["w32"]
-    loop = next(lp for a, name, lp in attitude.build_loops(result["rate"], n) if a == axis and name == "nominal")
+    loop = next(lp for a, name, lp in attitude_lead.build_loops(result["rate"], result["inner"], (axis,))
+                if a == axis and name == "nominal")
     c = FIRST_CONTROL_C
     while True:
         theta, pm, why = loop.margin(attitude.axis_k(axis, l4.r32(c * k32), w32))
@@ -155,10 +171,15 @@ def measure(tmp_path_factory, axis):
         scales[name] = scale
         margins[name] = run_l5.chirp_margin(runs[name])
 
+    admission = None
     if axis in run_l5.ROLL_PITCH:
         for k in run_l5.PLATEAU_K:
             go(run_l5.plateau_name(k), 1, MARGIN_SCALE[run_l5.plateau_name(k)])
-        valid = {n: r["pm"] for n, r in margins.items() if r["pm"] is not None}
+        admission = run_l5.chirp_admission(CARD, scenario, PLUGIN_DIR)
+        valid = {n: r["pm"] for n, r in margins.items() if r["pm"] is not None and n in admission["admitted"]}
+        assert len(valid) >= run_l5.PLATEAU_MIN_RUNS, (
+            f"{axis}: the plateau holds {len(valid)} admitted runs with a crossover, fewer than {run_l5.PLATEAU_MIN_RUNS} "
+            f"(owner decision of 2026-10-02, decision 0014): {admission_table(admission, margins)}")
         low = min(valid, key=valid.get)
         go("m2", 2, scales[low])
         go("half_duration", 1, scales[low], True)
@@ -168,7 +189,7 @@ def measure(tmp_path_factory, axis):
         go("half_amplitude", 1, HALF)
         go("half_duration", 1, 1.0, True)
     pms = {name: r["pm"] for name, r in margins.items()}
-    terms = run_l5.u_terms(axis, pms)
+    terms = run_l5.u_terms(axis, pms, None if admission is None else admission["admitted"])
     assert pms["m2"] is not None and pms["half_duration"] is not None, {n: r["reason"] for n, r in margins.items()}
     m_run = terms["margin_run"]
     design = runs[m_run].design
@@ -188,6 +209,7 @@ def measure(tmp_path_factory, axis):
         "stale reads in the windows": {n: len(s.window_stale) for n, s in runs.items()},
         "window executions with a motor at a DShot end": {n: s.dshot_end_executions for n, s in runs.items()},
         "att_loop_ratio flown": design["N"],
+        **({"plateau admission": admission_table(admission, margins)} if admission else {}),
     })
     wall = sum(s.step.run.wall_s for s in runs.values())
     run_l5.write_report([s.step for s in runs.values()], dict(ev, gz_wall_s=wall),
@@ -238,7 +260,8 @@ def test_chirp_margin_meets_qf3(chirp, axis, capsys):
                  f"{ev['range (deg)'][1]:.6f}], measured - design nominal "
                  f"{ev['measured - design nominal (deg)']:+.6f} deg, gz wall {chirp.wall_s:.2f} s",
          f"    runs (deg): {ev['PM per run (deg)']}", f"    no crossover: {ev['no crossover']}",
-         f"    peak |y| (rad): {ev['peak |y| per run (rad)']}")
+         f"    peak |y| (rad): {ev['peak |y| per run (rad)']}",
+         *([f"    plateau admission: {ev['plateau admission']}"] if "plateau admission" in ev else []))
     for s in chirp.runs.values():
         assert run_scenario.complete_trailer(s.step.run.log, s.step.run.iterations, s.step.run.m)
         assert s.window_stale == [], f"m = {s.step.run.m}: stale reads in the window at host steps {s.window_stale[:8]}"

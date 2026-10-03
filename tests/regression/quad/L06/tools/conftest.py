@@ -1,5 +1,5 @@
-"""Shared fixtures of the L6 tool tests: rate_lead.design on the committed card runs once per pytest session (about 45 s of
-plain Python), however many test files use it."""
+"""Shared fixtures of the L6 tool tests: rate_lead.design and attitude_lead.design (over the configuration set, on that rate
+design) on the committed card run once per pytest session (about 25 s and 35 s on 4 CPUs), however many test files use them."""
 
 import sys
 from pathlib import Path
@@ -20,3 +20,15 @@ def rate_lead_design():
 
     card, budget, scenario, profile = rate_lead.load(CARD, BUDGET, SCENARIO, PROFILE)
     return rate_lead.design(card, budget, scenario, profile, CARD, PROFILE)
+
+
+@pytest.fixture(scope="session")
+def attitude_lead_design(rate_lead_design):
+    sys.path.insert(0, str(ROOT / "tools" / "card"))
+    import attitude_lead
+    import rate
+    import rate_lead
+
+    card, budget, scenario, _ = rate_lead.load(CARD, BUDGET, SCENARIO, PROFILE)
+    l4 = rate.design(card, budget, scenario, CARD)
+    return attitude_lead.design(card, budget, scenario, CARD, attitude_lead.lead_inner(rate_lead_design), l4)

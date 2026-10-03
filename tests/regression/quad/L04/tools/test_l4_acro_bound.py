@@ -39,8 +39,9 @@ def fixture_inputs():
     return p, oracle.Setup(p)
 
 
-def law(p, axis=AXIS):
-    return p[f"rate_kp_{axis}"], p[f"rate_ki_{axis}"], p[f"rate_tau_ref_{axis}"]
+def law(p, su, axis=AXIS):
+    return (p[f"rate_kp_{axis}"], p[f"rate_ki_{axis}"], p[f"rate_kd_{axis}"], p[f"rate_d_filter_tau_{axis}"],
+            p[f"rate_tau_ref_{axis}"], (su.divisor, su.lowpass, su.lowpass_error))
 
 
 def test_script_response_is_the_oracle_closed_loop_for_a_step(fixture_inputs):
@@ -48,12 +49,12 @@ def test_script_response_is_the_oracle_closed_loop_for_a_step(fixture_inputs):
     n, sp = su.executions(AXIS), p[f"rate_max_{AXIS}"]
     stamps = [su.stamp_us(k) for k in range(1, n + 1)]
     want = oracle.closed_loop(su, AXIS, p["inertia_xx"], p["motor_tau"], n, sp, want_rho=True)
-    got = run_l4.script_response(*law(p), su.plant_map(p["inertia_xx"], p["motor_tau"]), [sp] * n, stamps, True)
+    got = run_l4.script_response(*law(p, su), su.tick_map(p["inertia_xx"], p["motor_tau"]), [sp] * n, stamps, True)
     assert got == want
-    lo, hi = run_l4.script_envelope(*law(p), su.plant_map, p["inertia_xx"], p["motor_tau"], p["inertia_robustness_band"],
-                                    p["tau_robustness_band"], [sp] * n, stamps, oracle.GRID)
+    lo, hi = run_l4.script_envelope(*law(p, su), su.tick_map, p["inertia_xx"], p["motor_tau"],
+                                    p["inertia_robustness_band"], p["tau_robustness_band"], [sp] * n, stamps, oracle.GRID)
     assert (lo, hi) == oracle.band_envelope(su, AXIS, n, sp, oracle.GRID)
-    other = run_l4.script_response(*law(p), su.plant_map(p["inertia_xx"], p["motor_tau"]),
+    other = run_l4.script_response(*law(p, su), su.tick_map(p["inertia_xx"], p["motor_tau"]),
                                    [math.nextafter(sp, math.inf)] * n, stamps)
     assert other != want[0]  # control: a setpoint one ulp higher is not reproduced
 
@@ -65,13 +66,13 @@ def test_the_rule_covers_a_settled_reversal_by_construction(fixture_inputs):
     n = math.ceil(END_S / period)
     stamps = [su.stamp_us(k) for k in range(1, n + 1)]
     sps = [r if k * period < REVERSAL_AT_S else -r for k in range(n)]
-    lo, hi = run_l4.script_envelope(*law(p), su.plant_map, p["inertia_xx"], p["motor_tau"], p["inertia_robustness_band"],
-                                    p["tau_robustness_band"], sps, stamps, HALVED)
+    lo, hi = run_l4.script_envelope(*law(p, su), su.tick_map, p["inertia_xx"], p["motor_tau"],
+                                    p["inertia_robustness_band"], p["tau_robustness_band"], sps, stamps, HALVED)
     box_peak = max(max(abs(x) for x in lo), max(abs(x) for x in hi))
     peaks = {}
     for name, jf, tf in (("nominal", 1.0, 1.0), ("J+,tau+", 1 + p["inertia_robustness_band"],
                                                     1 + p["tau_robustness_band"])):
-        y = run_l4.script_response(*law(p), su.plant_map(p["inertia_xx"] * jf, p["motor_tau"] * tf), sps, stamps)
+        y = run_l4.script_response(*law(p, su), su.tick_map(p["inertia_xx"] * jf, p["motor_tau"] * tf), sps, stamps)
         peaks[name] = max(abs(v) for v in y)
         assert peaks[name] <= box_peak
     _, step_hi = oracle.band_envelope(su, AXIS, su.executions(AXIS), r, HALVED)

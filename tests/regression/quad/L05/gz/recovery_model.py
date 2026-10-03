@@ -7,7 +7,9 @@ fixture reader, Setup, Axis, the quaternion helpers, grid_members, Envelope, Qua
 
   Design model. Per axis the exact ZOH plant J w' = u_m, tau u_m' = u - u_m (oracle Axis, stepped per tick with u held over
   the rate period), the rate loop in bypass with the f32 nominal gains (the oracle's simulate loop: seed execution u = 0,
-  integral step = the stamp dt), the attitude law of decision 0006 C in closed form on the full quaternion, the quaternion
+  integral step = the stamp dt; every tick the chain's low-pass with the notches bypassed, the stage (c) T4 configuration of
+  decision 0014, filters w, seeded with the first sample, and the law runs on its output with the D low-pass at the stamp
+  dt), the attitude law of decision 0006 C in closed form on the full quaternion, the quaternion
   integrated per tick from the exact per-axis angle increments (q <- q (x) exp(dphi / 2)). No w x Jw (as at L4): a coupling
   limit shows up as an envelope exit. The state is seeded once, at execution 0, with the scenario's exact initial attitude
   and rates (motor torque state, integrator and previous error 0) and never re-seeded. The setpoint is level, locked at the
@@ -137,26 +139,41 @@ def member_run(su, s, t, q0, w0, n_exec, quant=None, m_sub=1, fn=None):
         plants.append(pl)
     kp = [p[f"rate_kp_{a}"] for a in oracle.AXES]
     ki = [p[f"rate_ki_{a}"] for a in oracle.AXES]
+    kd = [p[f"rate_kd_{a}"] for a in oracle.AXES]
+    b0, b1, b2, a1, a2 = su.lpf
+    chain, y_tick = [None] * 3, [0.0] * 3
     integral, e_prev, u = [0.0] * 3, [0.0] * 3, [0.0] * 3
+    y_prev, d_f = [0.0] * 3, [0.0] * 3
     q = tuple(q0)
     out = []
     r_hold = [0.0] * 3
     for j in range(n_exec * n_ticks):
+        for i, pl in enumerate(plants):
+            x = pl.w
+            x1, x2, y1, y2 = chain[i] if j > 0 else (x, x, x, x)
+            y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2
+            chain[i] = (x, x1, y, y1)
+            y_tick[i] = y
         if j % n_ticks == 0:
             a = j // n_ticks
             out.append((fn or channels)(q, [pl.w for pl in plants]))
             r_hold = law(cfg, q, q_sp)
             if a == 0:
                 u = [0.0] * 3
+                y_prev = list(y_tick)
             else:
                 dt = su.dt_exec(a)
-                y = [pl.w for pl in plants]
+                y = list(y_tick)
                 req = [0.0] * 3
                 for i in range(3):
+                    alpha = su.alpha(dt, i)[0]
                     integral[i] += ki[i] * e_prev[i] * dt
                     e = r_hold[i] - y[i]
-                    req[i] = kp[i] * e + integral[i]
+                    d_raw = -kd[i] * (y[i] - y_prev[i]) / dt
+                    d_f[i] = d_f[i] + alpha * (d_raw - d_f[i]) if alpha != 1.0 else d_raw
+                    req[i] = kp[i] * e + integral[i] + d_f[i]
                     e_prev[i] = e
+                    y_prev[i] = y[i]
                 u = quant(req) if quant is not None else req
             if a == 0 and quant is not None:
                 u = quant([0.0, 0.0, 0.0])

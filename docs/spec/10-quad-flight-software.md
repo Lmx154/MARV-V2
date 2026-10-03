@@ -254,8 +254,10 @@ of freezing: core §7.2–7.3.
     low-pass. Gains come from the loop-shaping rule extended to PI × lead. The lead ratio is bounded by
     `d_path_noise_budget` and the sensitivity peak by `Ms_max`. The attitude gains regenerate on the new closed rate
     loop.
-  - ω×Jω feed-forward, from the filtered measured rate and the card's J, evaluated on the design model. It is built if
-    the evaluation shows the L4 acro and L5 R2 checks need it.
+  - ω×Jω feed-forward with motor-lag compensation, from the filtered measured rate and the card's J and motor time
+    constant τ_m. Its derivative filter T_ff is set by the combined D + FF noise line of the pass bar. Built and tested
+    in stage (c), and inert until stage (e) switches it on, in the same change that creates
+    `tests/regression/quad/L06/XFAIL_GATE_CLOSED`.
   - DShot error diffusion in L3's thrust → DShot conversion, with its own decision record.
 - **Opening:** the IMU sample struct, now noisy; eRPM to the gyro chain; filtered rates to L4.
 - **Stages.** Built and closed in order. Each stage has its own decision round and freezes its lines of the pass bar
@@ -281,8 +283,9 @@ of freezing: core §7.2–7.3.
     vibration sweep.
   - (b, c) T3: the chain's group delay at crossover and the D low-pass are in the design model's loop delay. QF-3
     (`PM_min` and `Ms_max`) holds over the band box.
-  - (c) T3: at hover, with the profile's noise, the D path's RMS contribution to each motor's command is at most
-    `d_path_noise_budget` × the hover DShot step's thrust.
+  - (c) T3: with the profile's noise, the combined RMS contribution of the D path and the ω×Jω feed-forward path to
+    each motor's command is at most `d_path_noise_budget` × the hover DShot step's thrust. It is evaluated at hover and
+    at `rate_max` on all three axes, with the feed-forward at the card's J and τ_m. The budget is spent once, on the sum.
   - (c) T3: the L4 and L5 T3 goldens regenerate with the D term; their controls (gains × 1.1, one tick of added
     delay) still break them.
   - (c) T3: the ω×Jω evaluation, run on the design model with ω×Jω in the plant, with the result recorded.

@@ -2,8 +2,8 @@
 """L6 stage (c) rate-loop gain rule: PI x lead on the exact discrete loop with the gyro chain and the IMU latency (quad
 spec L6 stage (c); decisions 0009 D1-D5, 0014 "the design" and owner decisions 3, 6 and 8).
 
-A tool only: flatten.py does not call it and no product parameter changes (decision 0014, commit 2; commit 3 switches the
-product gains). Plain Python double (math, cmath), no numpy, like rate.py. Imported, not copied: rate.py (plant constants,
+A tool, and the source of the product rate parameters: flatten.py --out-rate-lead calls design() and entries_from()
+(decision 0014, commit 3). Plain Python double (math, cmath), no numpy, like rate.py. Imported, not copied: rate.py (plant constants,
 spacing a, the band-box corner list, the sup rule's scan and bisection constants, r32, r32_up), gyro_chain_design.py (the
 exact discrete loop Loop.f, crossovers, the chain response and stages), gyro_chain_params.py (the flown chain's parameters
 from the committed card, budget, register and profile), gen_imu_config.py (sigma_d), mixer.py (M) and tools/sim's
@@ -13,8 +13,9 @@ Rule (every number comes from the card, the budget, the scenario register or the
 below set resolution and termination only)
 
   1. Loop model: gyro_chain_design's exact discrete loop at tick T_s and rate-loop period T = D T_s, with the flown chain
-     (gyro_chain_params.design) at its worst operating point, every notch at omega_th on all four motors (decision 0014,
-     "Feasibility"), and the profile's latency (1 sample). Corners: rate.corner_list (nominal and J -+ b_J x tau -+ b_tau,
+     (gyro_chain_params.design) at its design point, every notch at omega_th on all four motors (decision 0014,
+     "Feasibility"), and the profile's latency (1 sample). Step 13 asserts the result over the whole configuration set
+     instead of assuming that this point is the worst. Corners: rate.corner_list (nominal and J -+ b_J x tau -+ b_tau,
      each axis a SISO loop with J normalised to 1, rate.py's per-axis convention).
   2. Controller: the firmware law (rate_loop.hpp), deferred forward-Euler I, D on the measurement by backward difference
      through the first-order D low-pass discretised like the prefilter (decision 0009 D2):
@@ -115,6 +116,22 @@ below set resolution and termination only)
      The box vertices that survive (including the common-scale corners (1 -+ b_J) J0 when J0 is physical) and the new
      vertices where a triangle plane cuts the box are both returned, each marked. For the feed-forward evaluation; the
      loop margins keep rate.py's per-axis corners.
+ 13. The configuration set (owner decision 1 of decision 0014's third round: "Assert the rate loop's PM and Ms over the
+     same configuration set, rather than relying on 'omega_th is the worst case'"): every chain configuration the firmware
+     flies or is tested in. The notches of all four motors at one rotor speed omega in [omega_th, omega_max] (omega_max the
+     card's speed_range maximum; below omega_th the firmware bypasses a notch), and every notch bypassed (the chain its
+     low-pass: no rotor speed, the stage (c) T4 configuration); each at the profile's latency (flight) and at latency 0 (the
+     truth gyro of T4 and the T3 harness). At every configuration, step 8's evaluation of the chosen f32 design (the
+     firmware loop, the dt pattern, the f32 alpha, expf -+LIBM_EXP_ULPS) at nominal and the four corners must give worst
+     PM >= PM_min and worst Ms <= Ms_max; otherwise the card is refused (the design is not changed: a failure goes to the
+     owner). Notch grid (core 7.5): level L is omega_i = omega_th (omega_max/omega_th)^(i/2^L), i = 0..2^L, the two ends
+     exact, so level 0 is the two ends and every level contains the one before. Level L is resolved when one halving of
+     the log step (level L + 1) leaves both the worst PM and the worst Ms over the set unchanged: no added speed is worse
+     than the worst of level L, the strictest form of 7.5's rule, with no tolerance to choose. L rises from 0 until
+     resolved (refused past NOTCH_GRID_HALVINGS_MAX); the floors are asserted on every configuration evaluated (level
+     L + 1 and the bypassed ones). The configurations run in --procs worker processes; each evaluation is a function of
+     its configuration alone and the results come back in input order, so the result is the serial one for any count.
+     The four motors share the speed, as in step 1; motors at different speeds are not swept.
 
     uv run python tools/card/rate_lead.py --report
 """
@@ -123,6 +140,7 @@ from __future__ import annotations
 
 import argparse
 import cmath
+import collections
 import itertools
 import math
 import multiprocessing
@@ -163,6 +181,7 @@ CORNER_TOL_ULPS = 8               # triangle-inequality and duplicate tolerance,
 # (tests/regression/quad/L06/gyro_chain/support.hpp kLibmUlps, INFERRED from glibc's documented float maxima).
 LIBM_EXP_ULPS = 2
 MICRO_PER_UNIT = 1e6              # SI prefix: microseconds per second (fw prim::kMicrosecondsPerSecond)
+NOTCH_GRID_HALVINGS_MAX = 6       # no resolved notch grid by level 6 (65 speeds): refused (rule step 13)
 
 SIGN_PATTERNS = tuple(itertools.product((1, -1), repeat=3))  # the signs of w0 at rate_max (rule step 6)
 
@@ -773,9 +792,117 @@ def guard_passes(rows, pm_min, ms_max):
     return all(r[0] >= pm_min and r[2] <= ms_max for r in rows)
 
 
+def _guard_job(axes32):
+    c = _CONTEXT
+    return guard(c["model"], axes32, c["dts"], stop=c["stop"])
+
+
+def first_passing_guard(candidates, procs):
+    """(candidate, guard rows) of the first of `candidates` (an iterator of (..., axes32), in the step-down order) whose
+    guard passes, or None. The result is the serial step-down's for any procs: each guard depends on its axes32 alone
+    (_CONTEXT: model, dts, stop = (PM_min, Ms_max), set before the workers fork), up to `procs` candidates ahead of the
+    first undecided one run speculatively on the pool, and the decision is taken here in the step-down order."""
+    stop = _CONTEXT["stop"]
+    if procs <= 1:
+        for cand in candidates:
+            rows = _guard_job(cand[-1])
+            if guard_passes(rows, *stop):
+                return cand, rows
+        return None
+    with multiprocessing.get_context("fork").Pool(procs) as pool:
+        window = collections.deque()
+        for cand in itertools.chain(candidates, [None]):
+            while len(window) >= procs or (cand is None and window):
+                head, job = window.popleft()
+                rows = job.get()
+                if guard_passes(rows, *stop):
+                    return head, rows
+            if cand is not None:
+                window.append((cand, pool.apply_async(_guard_job, (cand[-1],))))
+    return None
+
+
+# ---- the configuration set (rule step 13) ----------------------------------------------------------------------------
+
+
+def notch_grid(omega_th, omega_max, level):
+    """[(i / 2^level, omega_i)] of rule step 13's notch grid, the two ends exact (i / 2^level is exact in binary, so a level's
+    points recur bit for bit in the next)."""
+    n = 2 ** level
+    return [(i / n, omega_th if i == 0 else omega_max if i == n else omega_th * (omega_max / omega_th) ** (i / n))
+            for i in range(n + 1)]
+
+
+def configuration_set(chain, latency, level):
+    """Rule step 13's configurations at notch-grid level `level`: [(key, label, latency, stages)], key = (grid fraction, or
+    None with every notch bypassed, latency). Speed-major, each at `latency` then 0, then every notch bypassed; the first is
+    step 1's design point (its stages equal design()'s)."""
+    lats = (latency, 0) if latency else (0,)
+    t_s, f_c, q, th = chain["t_s"], chain["f_c"], chain["q"], chain["omega_th"]
+    out = []
+    for frac, w in notch_grid(th, chain["omega_max"], level):
+        st = gcd.chain_stages(t_s, f_c, q, th, [w] * MOTORS)
+        out += [((frac, lat), f"notches at {w:.4f} rad/s, latency {lat}", lat, st) for lat in lats]
+    st = gcd.chain_stages(t_s, f_c, q, th, [th] * MOTORS, bypass_all=True)
+    return out + [((None, lat), f"notches bypassed, latency {lat}", lat, st) for lat in lats]
+
+
+def _set_job(cfg):
+    c = _CONTEXT
+    model = Model(c["t_s"], c["divisor"], cfg[2], cfg[3], c["corners"], c["a"], c["inertia"])
+    return guard(model, c["set_axes32"], c["dts"])
+
+
+def set_worst(rows):
+    """((worst PM, label, axis, corner), (worst Ms, label, axis, corner)) over [(key, label, guard rows)]."""
+    pm = min((r[0], label, axis, r[1]) for _, label, g in rows for axis, r in zip(AXES, g))
+    ms = max((r[2], label, axis, r[3]) for _, label, g in rows for axis, r in zip(AXES, g))
+    return pm, ms
+
+
+def set_passes(rows, pm_min, ms_max):
+    return all(guard_passes(g, pm_min, ms_max) for _, _, g in rows)
+
+
+def configuration_rows(model, chain, axes32, dts, procs, card_path):
+    """Rule step 13's evaluation of the f32 design axes32: dict(level (the resolved one), levels [(level, speeds, worst PM,
+    worst Ms)], rows [(key, label, guard rows)] over every configuration evaluated, in level L + 1's order)."""
+    _CONTEXT.update(t_s=model.t_s, divisor=model.divisor, corners=model.corners, a=model.a, inertia=model.inertia,
+                    set_axes32=axes32, dts=dts)
+    done, levels, level = {}, [], 0
+
+    def rows_of(cfgs):
+        return [(c[0], c[1], done[c[0]]) for c in cfgs]
+
+    def run(mapper):
+        nonlocal level
+        while True:
+            coarse, finer = (configuration_set(chain, model.latency, lv) for lv in (level, level + 1))
+            todo = [c for c in finer if c[0] not in done]
+            for c, g in zip(todo, mapper(todo)):
+                done[c[0]] = g
+            if not levels:
+                levels.append((level, 2 ** level + 1, *set_worst(rows_of(coarse))))
+            levels.append((level + 1, 2 ** (level + 1) + 1, *set_worst(rows_of(finer))))
+            if levels[-1][2][0] == levels[-2][2][0] and levels[-1][3][0] == levels[-2][3][0]:
+                return rows_of(finer)
+            level += 1
+            if level > NOTCH_GRID_HALVINGS_MAX:
+                refuse(card_path, f"the configuration set's worst PM or Ms still changes past notch-grid level "
+                                  f"{NOTCH_GRID_HALVINGS_MAX} (rule step 13)")
+
+    if procs <= 1:
+        rows = run(lambda cs: [_set_job(c) for c in cs])
+    else:
+        with multiprocessing.get_context("fork").Pool(procs) as pool:
+            rows = run(lambda cs: pool.map(_set_job, cs, chunksize=1))
+    return {"level": level, "levels": levels, "rows": rows}
+
+
 def design(card, budget, scenario, profile, card_path, profile_path, procs=None):
     """The whole rule: a dict of results (raises gpc.GenError when the card is refused). procs: worker processes of the
-    N search (default cpu_quota.usable_cpus()); the result does not depend on it (n_search)."""
+    N search and the f32 guard's step-down (default cpu_quota.usable_cpus()); the result does not depend on it (n_search,
+    first_passing_guard)."""
     procs = procs or cpu_quota.usable_cpus()
     pi = rate.design(card, budget, scenario, card_path)
     inp = pi["inputs"]
@@ -825,17 +952,15 @@ def design(card, budget, scenario, profile, card_path, profile_path, procs=None)
                               f"{nxt['n']!r}: the N* rule assumes it")
 
     # Rule step 8: the f32 guard, stepping down through w_c(N*)'s history, then through the N history.
-    chosen = None
-    for cand_n in reversed(n_history):
-        for cand_w in reversed(cand_n["sup"]["history"]):
-            g = model.gains(cand_w, cand_n["n"])
-            axes32 = f32_axes(model, g)
-            rows = guard(model, axes32, dts, stop=(pm_min, ms_max))
-            if guard_passes(rows, pm_min, ms_max):
-                chosen = (cand_n, cand_w, g, axes32, rows)
-                break
-        if chosen:
-            break
+    def step_down():
+        for cand_n in reversed(n_history):
+            for cand_w in reversed(cand_n["sup"]["history"]):
+                g = model.gains(cand_w, cand_n["n"])
+                yield cand_n, cand_w, g, f32_axes(model, g)
+
+    _CONTEXT.update(model=model, dts=dts, stop=(pm_min, ms_max))
+    found = first_passing_guard(step_down(), procs)
+    chosen = None if found is None else (*found[0][:3], found[0][3], found[1])
     if chosen is None:
         refuse(card_path, "no feasible design passes the f32 guard (PM >= PM_min, Ms <= Ms_max on the f32 gains)")
     star, omega_c, gains, axes32, guard_rows = chosen
@@ -916,7 +1041,15 @@ def design(card, budget, scenario, profile, card_path, profile_path, procs=None)
             refuse(card_path, f"the step response at {name} does not reach 1 - e^-1 within {MAX_STEP_TICKS} ticks")
         t63.append((name, r))
 
+    # Rule step 13: the chosen f32 design over the configuration set (in `procs` processes; the result does not depend on it).
+    cset = configuration_rows(model, chain, axes32, dts, procs, card_path)
+    if not set_passes(cset["rows"], pm_min, ms_max):
+        (pm, pl, pa, pc), (ms, ml, ma, mc) = set_worst(cset["rows"])
+        refuse(card_path, f"the f32 design fails a floor over the configuration set (rule step 13): worst PM {pm!r} rad at "
+                          f"{pl}, {pa} {pc} (PM_min {pm_min!r}); worst Ms {ms!r} at {ml}, {ma} {mc} (Ms_max {ms_max!r})")
+
     return {
+        "set": cset,
         "inputs": {"inertia": inp["inertia"], "tau": inp["tau"], "PM_min": pm_min, "Ms_max": ms_max, "b_tau": inp["b_tau"],
                    "b_J": inp["b_J"], "noise_budget": noise_budget, "rate_max": rate_max, "sigma_d": sigma_d,
                    "latency": si["latency_samples"], "T": t, "T_s": chain["t_s"], "a": a},
@@ -988,6 +1121,20 @@ def report_lines(r):
                  f"{'pass' if guard_passes(r['guard'], i['PM_min'], i['Ms_max']) else 'FAIL'}")
     lines.append("  effects at the chosen design, roll, worst PM - PM_min (rad): "
                  + "; ".join(f"{name} {v:+.3e}" for name, v in r["effects"]))
+    cset = r["set"]
+    (pm, pl, pa, pc), (ms, ml, ma, mc) = set_worst(cset["rows"])
+    lines.append("configuration set (rule step 13: step 8's evaluation at every configuration; notch grid halvings: level, "
+                 "speeds, worst PM deg, worst Ms):")
+    lines += [f"  level {lv} ({n} speeds): PM {deg(p[0]):.7f} ({p[1]}, {p[2]} {p[3]}), Ms {m[0]:.7f} ({m[1]}, {m[2]} {m[3]})"
+              for lv, n, p, m in cset["levels"]]
+    lines.append(f"  resolved at level {cset['level']} (level {cset['level'] + 1} leaves both unchanged); per configuration "
+                 "evaluated: worst PM deg (axis corner), PM - PM_min rad; worst Ms (axis corner), Ms_max - Ms")
+    for _, label, g in cset["rows"]:
+        (p, _, a1, c1), (m, _, a2, c2) = set_worst([(None, label, g)])
+        lines.append(f"  {label:<40} {deg(p):.7f} ({a1} {c1}) {p - i['PM_min']:+.3e}; {m:.7f} ({a2} {c2}) "
+                     f"{i['Ms_max'] - m:+.3e}")
+    lines.append(f"  worst over the set: PM {deg(pm):.7f} deg at {pl}, {pa} {pc}; Ms {ms:.7f} at {ml}, {ma} {mc}: "
+                 f"{'pass' if set_passes(cset['rows'], i['PM_min'], i['Ms_max']) else 'FAIL'}")
     d = r["dshot"]
     lines += [
         f"noise: sigma_d {i['sigma_d']!r} rad/s per tick sample; hover DShot step: D {d['rows'][0]['d']} (D* "
@@ -1019,6 +1166,68 @@ def report_lines(r):
         lines.append(f"  J {v['J'][0]:.6g} {v['J'][1]:.6g} {v['J'][2]:.6g}  "
                      + ("box" if v["box"] else "cut") + (" common-scale" if v["common_scale"] else ""))
     return lines
+
+
+# ---- the product parameters (decision 0014, commit 3) ------------------------------------------------------------------
+
+GAIN_METHOD = (
+    "derived(rate PID by the PI x lead rule of decision 0014 (rule steps 1-12 of tools/card/rate_lead.py): the 0005 PI "
+    "structure (integral zero w_c,nom/a, a = sqrt((1 + sin PM_min)/(1 - sin PM_min))) with the derivative-on-measurement "
+    "lead at N* = the largest N, on the grid 2^(k/4) refined by bisection, whose worst-case phase margin over the "
+    "tau_robustness_band x inertia_robustness_band box stays >= PM_min, whose worst Ms stays <= Ms_max and whose noise floor "
+    "at rate_max stays within d_path_noise_budget x the DShot step; w_c,nom the largest such crossover on the design model "
+    "(flown gyro chain with every notch at omega_th, the profile's latency, the firmware's forward-Euler PID with the D "
+    "low-pass); kp, ki, kd = J x kappa rounded to f32 and stepped down until the f32 guard (PM >= PM_min, Ms <= Ms_max on "
+    "the firmware's run-time f32 coefficients, 2-periodic dt, expf +-2 ulp) passes, and that guard's PM >= PM_min and "
+    "Ms <= Ms_max asserted over the configuration set (all notches at each rotor speed of a halving-resolved grid from "
+    "omega_th to omega_max, and every notch bypassed, each at the profile's latency and at 0; rule step 13); "
+    "tools/card/rate_lead.py)")
+GAIN_SOURCE = ("vehicle card inertia_diag, rotors.motor_lag.tau, thrust_coeff, speed_range and the mixer M; design-budget "
+               "PM_min, Ms_max, d_path_noise_budget, tau_robustness_band, inertia_robustness_band; scenario register "
+               "tick_period_num_us, tick_period_den, rate_loop_divisor, rate_max_<axis>; the sensor profile the card names "
+               "(the gyro chain, decision 0013); decision 0014")
+TF_METHOD = ("derived(T_f = 1/w_p, w_p = w_c,nom sqrt(N*), the pole of the PI x lead rule's prototype (rule step 3, "
+             "tools/card/rate_lead.py), rounded to f32 with the gains and stepped down with them by the f32 guard; decision "
+             "0014)")
+TAU_REF_METHOD = (
+    "derived(tau_ref = max(tau_cl, rate_max/alpha_max) of decision 0005 QF-2 (tools/card/rate.py rule step 9) with tau_cl the "
+    "largest 63.2 % rise time over the robustness box of the stage (c) closed-loop step response (rate_lead.py rule step "
+    "11, the PID with the gyro chain and latency) in place of the PI's; alpha_max = tau_max/(J (1 + "
+    "inertia_robustness_band)), tau_max the air-mode envelope torque of the mixer M with the collective free; rounded up "
+    "to f32; tools/card/rate_lead.py tau_ref_lead)")
+TAU_REF_SOURCE = ("the gain rule's inputs (decision 0014) and the vehicle card rotors thrust_coeff and speed_range, the mixer "
+                  "M and the scenario register rate_max_<axis>; decision 0005 QF-2; lead decision 2026-10-01 (decision 0014 "
+                  "c5)")
+T_FF_METHOD = (
+    "derived(T_ff = the smallest T_ff >= 0 whose combined RMS of the D path and the lag-compensated omega x J omega "
+    "feed-forward path per motor at rate_max (every sign pattern, every notch bypassed) is at most d_path_noise_budget x "
+    "the hover DShot step's thrust, on the firmware model at the guarded f32 design (rule step 9 of "
+    "tools/card/rate_lead.py), rounded up to f32; read by the rate loop only while rate_ff_enable is 1; decision 0014, "
+    "owner decision 8)")
+
+
+def tau_ref_lead(result):
+    """tau_ref per axis: rate.py rule step 9, r32_up(max(tau_cl, rate_max_a / alpha_max_a)), with this design's tau_cl."""
+    pi = result["pi_l4"]
+    return [rate.r32_up(max(result["tau_cl"], pi["axes"][ax]["authority_term"])) for ax in AXES]
+
+
+def entries_from(result):
+    """The 16 rate-loop parameters (ordered (name, params_gen entry) pairs) of a design() result, in rate.entries_from's
+    order with rate_d_filter_tau_<axis> after rate_kd_<axis>, then rate_ff_filter_tau (T_ff)."""
+    ax32, tau_ref = result["axes32"], tau_ref_lead(result)
+    out = []
+    for column, name, unit in ((0, "kp", "N m s/rad"), (1, "ki", "N m/rad"), (2, "kd", "N m s^2/rad"), (3, "d_filter_tau", "s")):
+        for i, axis in enumerate(AXES):
+            method = TF_METHOD if column == 3 else GAIN_METHOD
+            out.append((f"rate_{name}_{axis}", {"type": "f32", "value": ax32[i][column], "unit": unit, "method": method,
+                                                 "source": GAIN_SOURCE, "sigma": schema.UNKNOWN}))
+    for i, axis in enumerate(AXES):
+        out.append((f"rate_tau_ref_{axis}", {"type": "f32", "value": tau_ref[i], "unit": "s", "method": TAU_REF_METHOD,
+                                              "source": TAU_REF_SOURCE, "sigma": schema.UNKNOWN}))
+    out.append(("rate_ff_filter_tau", {"type": "f32", "value": result["t_ff"], "unit": "s", "method": T_FF_METHOD,
+                                       "source": GAIN_SOURCE, "sigma": schema.UNKNOWN}))
+    return out
 
 
 def load(card_path, budget_path, scenario_path, profile_path):

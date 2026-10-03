@@ -61,6 +61,8 @@ RateConfig<float> from_params() noexcept {
   c.ki = load_axes<ParamId::rate_ki_roll, ParamId::rate_ki_pitch, ParamId::rate_ki_yaw>();
   c.kd = load_axes<ParamId::rate_kd_roll, ParamId::rate_kd_pitch, ParamId::rate_kd_yaw>();
   c.tau_ref = load_axes<ParamId::rate_tau_ref_roll, ParamId::rate_tau_ref_pitch, ParamId::rate_tau_ref_yaw>();
+  c.d_filter_tau =
+      load_axes<ParamId::rate_d_filter_tau_roll, ParamId::rate_d_filter_tau_pitch, ParamId::rate_d_filter_tau_yaw>();
   // T in microseconds is an exact float quotient (an integer product over an integer), so the one division below is
   // the only rounding of the period.
   const float period_us = static_cast<float>(param_value<ParamId::rate_loop_divisor>()) *
@@ -72,6 +74,13 @@ RateConfig<float> from_params() noexcept {
                 ParamId::rotor_position_m3_x, ParamId::rotor_position_m3_y, ParamId::rotor_yaw_sign_m3,
                 ParamId::rotor_position_m4_x, ParamId::rotor_position_m4_y, ParamId::rotor_yaw_sign_m4>(c);
   c.torque_ratio = param_value<ParamId::rotor_torque_ratio>();
+  // The feed-forward only while rate_ff_enable is 1; otherwise J, tau_m and T_ff keep RateConfig's 0, the exact PID law
+  // (decision 0014, owner decision 2: inert until stage (e)).
+  if (param_value<ParamId::rate_ff_enable>() == 1) {
+    c.inertia = load_axes<ParamId::inertia_xx, ParamId::inertia_yy, ParamId::inertia_zz>();
+    c.motor_tau = param_value<ParamId::motor_tau>();
+    c.ff_filter_tau = param_value<ParamId::rate_ff_filter_tau>();
+  }
   return c;
 }
 

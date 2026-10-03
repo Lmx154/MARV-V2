@@ -80,17 +80,17 @@ script:
         label: scenario
         rationale: "full yaw stick, the T3 yaw_release script (attitude_t3_oracle.py script_sticks: stick 1 on the yaw axis); positive s_yaw yaws nose right (l5_script.hpp); the other sticks are 0"
     - start_attitude_execution:
-        value: 20732
+        value: 20293
         unit: "1"
         label: derived
-        rule: "release_execution of yaw_release in tests/regression/quad/L05/t3/reference/attitude_t3_envelope.txt: a_r = 1 + H, H = 20731 attitude executions (segment_seconds 6.478177814791293 s, ten attitude time constants 1/att_kp doubled once until every envelope end value is below F)"
+        rule: "release_execution of yaw_release in tests/regression/quad/L05/t3/reference/attitude_t3_envelope.txt: a_r = 1 + H, H = 20292 attitude executions (segment_seconds 6.341210085512444 s, ten attitude time constants 1/att_kp doubled once until every envelope end value is below F)"
       stick:
         value: [0.0, 0.0, 0.0]
         unit: "1"
         label: scenario
         rationale: "the release, all sticks 0: angle mode enters braking (decision 0006 D) at this execution"
   end_attitude_execution:
-    value: 41462
+    value: 40584
     unit: "1"
     label: derived
-    rule: "1 + 2 H of the recorded envelope (attitude_t3_envelope.txt channel omega of yaw_release, count 41463 executions 0..41462): the run ends with the envelope"
+    rule: "1 + 2 H of the recorded envelope (attitude_t3_envelope.txt channel omega of yaw_release, count 40585 executions 0..40584): the run ends with the envelope"

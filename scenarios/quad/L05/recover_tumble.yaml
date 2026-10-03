@@ -1,5 +1,5 @@
 # Quad L5 scenario 'recover_tumble' (docs/spec/10-quad-flight-software.md section 4 L5, T4; docs/decisions/0006 F "T4 large-angle recovery", owner decision 15).
-# R2, inverted and tumbling at rate_max on every axis: the acro limit, the regime of the L4 known failing item (gyroscopic coupling w x Jw at full-stick rates, docs/handoff.md; owner decision 15). The setpoint is level, locked at angle mode's initial heading (sticks 0 throughout: no segments), flown by the l5_attitude_scripted
+# R2, inverted and tumbling at rate_max on every axis: the acro limit, the regime of the L4 known failing item (gyroscopic coupling w x Jw at full-stick rates, docs/handoff.md; owner decision 15), from a steady tumble (rotor_speed_rad_s, decision 0015). The setpoint is level, locked at angle mode's initial heading (sticks 0 throughout: no segments), flown by the l5_attitude_scripted
 # composition (angle mode, the attitude law, the rate loop in bypass) on truth gyro and truth attitude: a truth-fed, perfect-model run, not a
 # validation run (core section 6). The initial state is a labelled scenario test value (decision 0006 F). The run starts at the initial state:
 # settle_s is one attitude period, so the origin execution is only the first execution that keeps the stamp phase (tools/sim/run_l5.py plan) and
@@ -59,10 +59,10 @@ initial_state:
     label: derived
     rule: "float32 rate_max_roll, rate_max_pitch, rate_max_yaw of the build (design/scenario_values.yaml): full rates on all three axes, the acro limit of decision 0006 F R2; the value is the float32 exactly"
   rotor_speed_rad_s:
-    value: hover
+    value: steady_tumble
     unit: rad/s
     label: derived
-    rule: "owner decision 23: the recovery starts at the card's hover rotor speed per motor, sqrt(T_i / k) with T_i the firmware mixer allocation at the hover collective and zero torque (tools/sim/run_l5.py hover_rotor_speeds); the design model's rate loop assumes spun rotors"
+    rule: "decision 0015 (decision 0014 owner decision 5 and second round item 1; replaces owner decision 23's hover start for R2): the steady tumble, the rotor speeds at which every torque marv_plant v0 applies at t = 0 (the rotor thrust moments and the rotor yaw reaction; it models no rotor gyroscopic, drag or position-dependent torque) equals w0 x J w0, so the body holds its initial rates (Euler's equation): sqrt(T_i / k), T the firmware mixer inverse of w0 x J w0 at collective c*, c* the hover collective if every rotor is then within the card's thrust range [k omega_min^2, k omega_max^2], else the smallest collective that keeps every rotor in it, the floor being the card's own minimum rotor thrust (tools/sim/run_l5.py steady_tumble; T1 on the plant: tests/regression/quad/L06/tools/test_steady_tumble.py). The extra collective does not touch the check: the world has no ground or contact (position_ned_m) and marv_plant v0 has no drag or position-dependent torque (velocity_ned_m_s), so it moves only the translation; the firmware's thrust request stays hover (thrust). The hover-rotor tumble is recover_tumble_prop_strike.yaml"
 thrust:
   value: hover
   unit: "1"
@@ -76,7 +76,7 @@ script:
     rule: "one attitude period T_a = rate_loop_divisor * att_loop_ratio * tick = 312.5 us: the recovery starts at the initial state, so nothing settles; the origin execution a0 = 2 is only the first execution that keeps the T3 stamp phase (tools/sim/run_l5.py plan)"
   segments: []
   end_attitude_execution:
-    value: 20744
+    value: 20292
     unit: "1"
     label: derived
-    rule: "executions 0 .. 20744 of the recovery design model (tests/regression/quad/L05/gz/test_t4_recovery.py: the box envelope of the 3-axis design model from this initial state, horizon ten attitude time constants 1/att_kp = 10372 executions doubled once, the T3 settle rule of core 7.5: every envelope end value, tilt, heading error and rate, is below F)"
+    rule: "executions 0 .. 20292 of the recovery design model (tests/regression/quad/L05/gz/test_t4_recovery.py: the box envelope of the 3-axis design model from this initial state, horizon ten attitude time constants 1/att_kp = 10146 executions doubled once, the T3 settle rule of core 7.5: every envelope end value, tilt, heading error and rate, is below F)"

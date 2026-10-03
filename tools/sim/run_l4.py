@@ -61,11 +61,14 @@ ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "card"))
 import gen_plant_config as gpc  # noqa: E402
+import gyro_chain_design as gcd  # noqa: E402
 import hover  # noqa: E402
 import l4_scenario as l4s  # noqa: E402
+import lint  # noqa: E402
 import lockstep_log  # noqa: E402
 import prim_constants  # noqa: E402
 import rate  # noqa: E402
+import rate_lead  # noqa: E402
 import run_scenario  # noqa: E402
 import scenario as scn  # noqa: E402
 import schema  # noqa: E402
@@ -404,19 +407,24 @@ def write_report(runs, evaluation=None, path=None):
 
 # ---- T4 chirp margins (quad spec 4 L4 T4: "chirp injection measures margins that meet QF-3") --------------------------
 #
-# Design quantities (chirp_design), from tools/card/rate.py design() on the card, the budget and the scenario register
-# the build was generated from; the build's f32 gains must equal the design's (else the build is stale and refused):
-#   band [w_lo, w_hi]   [min over the box loops of w_c / a, a max over the box loops of w_c]: w_c the design crossover of
-#                       the nominal loop and the four tau x J corners (design()["margins"]), a = design()["a"], the
-#                       loop-shaping spacing of PM_min.
+# Design quantities (chirp_design), from tools/card/rate_lead.py design() (decision 0014: the stage (c) rule the build's
+# rate parameters come from) on the card, the budget, the scenario register and the sensor profile the card names; the
+# build's f32 kp, ki, kd and T_f of every axis and its gyro_lpf_cutoff_hz must equal the design's (else the build is
+# stale and refused). The design loop is rate_lead's exact discrete loop (rate_lead.Model: the firmware's PID with the D
+# low-pass) in the stage (c) T4 configuration (decision 0014 "Wiring"): the truth gyro, no latency, and the chain with
+# every notch bypassed, its low-pass at the design's cutoff (gyro_chain_design.chain_stages).
+#   PM_design           the phase margin of the design's gains (design()["gains"], normalised) at the nominal loop and
+#                       the four tau x J corners (rate_lead.Model.margins: the smallest over each loop's crossovers).
+#   band [w_lo, w_hi]   [min over the box loops of w_c / a, a max over the box loops of w_c]: w_c every crossover of
+#                       those loops, a = design()["inputs"]["a"], the loop-shaping spacing of PM_min.
 #   tau_held,a          the largest single-axis torque the mixer delivers at the hover thrust request with the
 #                       collective held: the largest t >= 0 with f_min <= c_h M[i,thrust] + s t M[i,a] <= f_max for every
 #                       motor i and both signs s, c_h the plan's float32 hover thrust, M, f_min = k idle^2 and
 #                       f_max = k speed_max^2 from the build's parameters.
-#   max|S|              the largest |S(e^{jwT})| = |1/(1 + L)| of the design model (design_loop) over the nominal loop
-#                       and the four corners, the axis's f32 gains normalised by its J, and w in (0, pi/T]: a log grid of
-#                       SENSITIVITY_GRID_POINTS angles from pi 2^GRID_LOG2_LOW to pi, then a golden-section refinement
-#                       around the largest grid point.
+#   max|S|              the largest |S(e^{jwT})| = |1/(1 + L)| of the design loop over the nominal loop and the four
+#                       corners, the axis's f32 gains normalised by its J (rate_lead.Model.sensitivity:
+#                       gyro_chain_design's log grid of angles up to pi, then a golden-section refinement around the
+#                       largest grid point).
 #   A_a                 tau_held,a / max|S|: with sp = 0 the plant-input torque is S d, so a steady sinusoid keeps it
 #                       inside the unsaturated hover envelope.
 # Plan (plan_chirp): execution k0 = ceil(settle_s / T) (k T >= settle_s), t0 = its stamp; the chirp runs D = duration_s
@@ -425,8 +433,15 @@ def write_report(runs, evaluation=None, path=None):
 #
 # Identification (identify), from the log alone (indirect closed-loop identification, Ljung 1999 section 13.5). With
 # sp = 0 and the prefilter seeded from a zero first gyro sample, r is exactly 0, so the loop is u = -C y, the plant input
-# v = u + d and y = P v:  G_m = Y/D = P/(1 + CP), L = C G_m / (1 - C G_m), C(z) = kp + ki T/(z - 1) (the firmware's
-# forward-Euler PI, kd = 0, the f32 gains of the build). y(n) is the gyro sample the firmware received at execution n,
+# v = u + d and y = P v:  G_m = Y/D = P/(1 + CP), L = C G_m / (1 - C G_m), C (controller) the firmware's law on the
+# chain's output with the gains the run flew: (kp + ki T/(z - 1) + kd alpha (z - 1)/(T (z - beta))) H(e^{j w h}), the
+# forward-Euler PI and the D path on the measurement through its low-pass at the period T (alpha = 1 - e^(-T/T_f),
+# beta = e^(-T/T_f), rate_lead's rule step 2), H the chain's low-pass at the tick h from the build's gyro_lpf_cutoff_hz
+# (gyro_chain_design.lowpass_coeffs; every notch bypassed); with kd = 0 and no chain, L4's PI. The rate loop reads the
+# chain's output every D ticks while y is the execution-rate sample, so C H(e^{j w h}) leaves out the images the
+# decimation folds back. chirp_design evaluates that omission on the T4 design loop, max |C H(e^{j w h}) P_1 / L - 1|
+# over the box loops at the band's ends and their crossovers (P_1 the loop's plant part without the chain), and the run
+# report prints it (decimation images, reported). y(n) is the gyro sample the firmware received at execution n,
 # d(n) the chirp recomputed in binary64 from the composition's float32 parameters at the logged stamp (chirp_value).
 # Y and D are the DTFTs over the window, evaluated at any w (dtft_pair, Horner in binary64). Estimator: the plain DTFT
 # ratio over one record, not a cross-spectral (Welch) average. The run is deterministic with no stochastic noise to
@@ -515,39 +530,71 @@ def _rate_design(card, root):
     return rate.design(card_doc, budget, register, card)
 
 
+LEAD_GAINS = ("kp", "ki", "kd", "d_filter_tau")  # rate_lead.design()["axes32"] columns, as rate_<q>_<axis>
+
+
+@functools.lru_cache(maxsize=None)
+def _lead_design(card, root):
+    """tools/card/rate_lead.py design() on the card, the budget, the scenario register and the sensor profile the card
+    names (decision 0014: the rule the build's rate parameters come from)."""
+    card_doc = schema.load_yaml(card)
+    budget = schema.load_yaml(Path(root) / "design" / "budget.yaml")
+    register = schema.load_yaml(Path(root) / "design" / "scenario_values.yaml")
+    profile = Path(root) / lint.PROFILE_DIR / f"{card_doc['sensor_profile']}.yaml"
+    return rate_lead.design(card_doc, budget, register, schema.load_yaml(profile), card, profile)
+
+
 def chirp_design(card, params, thrust_n, root=ROOT):
     """The design quantities of the section comment, per axis, as a dict. Raises PlanError on a stale build."""
-    res = _rate_design(str(card), str(root))
+    res = _lead_design(str(card), str(root))
+    ch, inputs = res["chain"], res["inputs"]
     fails = []
-    for a in l4s.AXES:
-        for q in ("kp", "ki"):
-            if params.get(f"rate_{q}_{a}") != res["axes"][a][q]:
-                fails.append(f"the build's rate_{q}_{a} {params.get(f'rate_{q}_{a}')!r} is not the design's "
-                             f"{res['axes'][a][q]!r} (tools/card/rate.py on {card}): the build is stale")
+    for a, gains32 in zip(l4s.AXES, res["axes32"]):
+        for q, v in zip(LEAD_GAINS, gains32):
+            if params.get(f"rate_{q}_{a}") != v:
+                fails.append(f"the build's rate_{q}_{a} {params.get(f'rate_{q}_{a}')!r} is not the design's {v!r} "
+                             f"(tools/card/rate_lead.py on {card}): the build is stale")
+    if params.get("gyro_lpf_cutoff_hz") != r32(ch["f_c"]):
+        fails.append(f"the build's gyro_lpf_cutoff_hz {params.get('gyro_lpf_cutoff_hz')!r} is not the design's "
+                     f"{r32(ch['f_c'])!r} (tools/card/rate_lead.py on {card}): the build is stale")
     if fails:
         raise PlanError(fails)
-    T = res["T"]
-    a = res["a"]
-    crossovers = [m[2] for m in res["margins"]]
-    pms = {m[0]: m[1] for m in res["margins"]}
-    inputs = res["inputs"]
+    T = inputs["T"]
+    a = inputs["a"]
     loops = rate.corner_list(inputs["tau"], inputs["b_tau"], inputs["b_J"])
+    stages = [c for c in gcd.chain_stages(ch["t_s"], ch["f_c"], ch["q"], ch["omega_th"], [ch["omega_th"]] * gcd.MOTORS,
+                                          bypass_all=True) if c != gcd.IDENTITY]
+    model = rate_lead.Model(ch["t_s"], ch["divisor"], 0, stages, loops, a, inputs["inertia"])  # truth gyro: latency 0
+    margins = model.margins(res["gains"])
+    if any(m[2] is None for m in margins):
+        raise PlanError([f"the T4 design loop has no valid crossover at {[m[0] for m in margins if m[2] is None]}"])
+    crossovers = [w for m in margins for w in m[3]]
+    band = (min(crossovers) / a, a * max(crossovers))
+    bare = rate_lead.Model(ch["t_s"], ch["divisor"], 0, None, loops, a, inputs["inertia"])
+    images = 0.0
+    for (_, jt, tau), m in zip(loops, margins):
+        loop, plain = model.loop(res["gains"], jt, tau), bare.loop(res["gains"], jt, tau)
+        for w in (*band, *m[3]):
+            th = w * T
+            images = max(images, abs(gcd.chain_response(stages, w * ch["t_s"]) * plain.plant(th) / loop.plant(th) - 1))
     k = params["rotor_thrust_coeff"]
     f_min, f_max = k * params["idle_speed"] ** 2, k * params["rotor_speed_max"] ** 2
     rows = _mixer_rows(params)
     axes = {}
-    for axis in l4s.AXES:
-        j = res["axes"][axis]["J"]
-        kp, ki = params[f"rate_kp_{axis}"], params[f"rate_ki_{axis}"]
-        s_max, s_at, s_loop = max_sensitivity(T, kp / j, ki / j, loops)
+    for axis, j in zip(l4s.AXES, inputs["inertia"]):
+        kp, ki, kd, tf = (params[f"rate_{q}_{axis}"] for q in LEAD_GAINS)
+        s_loop, s_max, s_at = max(model.sensitivity((kp / j, ki / j, kd / j, tf)), key=lambda r: r[1])
         held = tau_held(rows, MIXER_COLUMNS.index(axis), thrust_n, f_min, f_max)
         if held is None or not held > 0:
             raise PlanError([f"the hover thrust {thrust_n!r} N leaves no held-collective torque on {axis}"])
-        axes[axis] = {"J": j, "kp": kp, "ki": ki, "max_sensitivity": s_max, "max_sensitivity_at_rad_s": s_at,
-                      "max_sensitivity_loop": s_loop, "tau_held_nm": held, "amplitude_nm": held / s_max}
-    return {"T": T, "a": a, "band": (min(crossovers) / a, a * max(crossovers)), "design_pm": pms,
-            "design_crossover": {m[0]: m[2] for m in res["margins"]}, "pm_min": inputs["PM_min"],
-            "tau": inputs["tau"], "loops": loops, "f_min": f_min, "f_max": f_max, "axes": axes}
+        axes[axis] = {"J": j, "kp": kp, "ki": ki, "kd": kd, "d_filter_tau": tf, "max_sensitivity": s_max,
+                      "max_sensitivity_at_rad_s": s_at, "max_sensitivity_loop": s_loop, "tau_held_nm": held,
+                      "amplitude_nm": held / s_max}
+    return {"T": T, "a": a, "band": band, "design_pm": {m[0]: m[1] for m in margins},
+            "design_crossover": {m[0]: m[2] for m in margins}, "pm_min": inputs["PM_min"],
+            "tau": inputs["tau"], "loops": loops, "f_min": f_min, "f_max": f_max, "axes": axes,
+            "lowpass": gcd.lowpass_coeffs(params["gyro_lpf_cutoff_hz"], ch["t_s"]), "tick_s": ch["t_s"],
+            "decimation_images": images}
 
 
 def chirp_value(t_us, amp, w_lo, w_hi, t0_us, dur_us):
@@ -571,24 +618,32 @@ def dtft_pair(y, d, omega, T):
     return ay, ad
 
 
-def controller(omega, T, kp, ki):
-    """C(e^{j omega T}) = kp + ki T/(e^{j omega T} - 1), the firmware's PI (kd = 0) at the design period T."""
-    return kp + ki * T / (cmath.exp(1j * omega * T) - 1)
+def controller(omega, T, kp, ki, kd=0.0, d_filter_tau=0.0, lowpass=None, tick_s=None):
+    """C(e^{j omega T}) = kp + ki T/(e^{j omega T} - 1), the firmware's PI at the design period T; with kd, plus the D
+    path kd alpha (z - 1)/(T (z - beta)) through its low-pass T_f (rate_lead.lowpass_pole: T_f = 0 unfiltered); with
+    lowpass = (b0, b1, b2, a1, a2), times the chain's low-pass H(e^{j omega tick_s}) (section comment)."""
+    c = kp + ki * T / (cmath.exp(1j * omega * T) - 1)
+    if kd:
+        c += kd * rate_lead.derivative(cmath.exp(1j * omega * T), T, *rate_lead.lowpass_pole(T, d_filter_tau))
+    if lowpass is not None:
+        c *= gcd.chain_response([lowpass], omega * tick_s)
+    return c
 
 
-def measured_loop(y, d, omega, T, kp, ki):
-    """L = C G_m / (1 - C G_m), G_m = Y/D (section comment)."""
+def measured_loop(y, d, omega, T, kp, ki, **law):
+    """L = C G_m / (1 - C G_m), G_m = Y/D (section comment); `law` the controller's terms beyond kp, ki."""
     ym, dm = dtft_pair(y, d, omega, T)
-    cg = controller(omega, T, kp, ki) * ym / dm
+    cg = controller(omega, T, kp, ki, **law) * ym / dm
     return cg / (1 - cg)
 
 
-def identify(y, d, T, kp, ki, band, grid_points=CROSSOVER_GRID_POINTS):
+def identify(y, d, T, kp, ki, band, grid_points=CROSSOVER_GRID_POINTS, **law):
     """{"pm", "crossover", "L", "grid", "reason"}: the measured loop's crossover and phase margin in the band (rad,
-    rad/s). pm is None, with the reason, when |L| - 1 does not change sign exactly once on the grid, from above 1."""
+    rad/s). pm is None, with the reason, when |L| - 1 does not change sign exactly once on the grid, from above 1.
+    `law`: the controller's terms beyond kp, ki (controller's kd, d_filter_tau, lowpass, tick_s)."""
     lo, hi = band
     ws = [lo * (hi / lo) ** (i / (grid_points - 1)) for i in range(grid_points)]
-    mags = [abs(measured_loop(y, d, w, T, kp, ki)) for w in ws]
+    mags = [abs(measured_loop(y, d, w, T, kp, ki, **law)) for w in ws]
     changes = [i for i in range(grid_points - 1) if (mags[i] > 1) != (mags[i + 1] > 1)]
     out = {"pm": None, "crossover": None, "L": None, "grid": list(zip(ws, mags)), "reason": ""}
     if len(changes) != 1 or not mags[0] > 1:
@@ -600,12 +655,12 @@ def identify(y, d, T, kp, ki, band, grid_points=CROSSOVER_GRID_POINTS):
         mid = (a + b) / 2
         if not a < mid < b:
             break
-        if abs(measured_loop(y, d, mid, T, kp, ki)) > 1:
+        if abs(measured_loop(y, d, mid, T, kp, ki, **law)) > 1:
             a = mid
         else:
             b = mid
     w = (a + b) / 2
-    loop = measured_loop(y, d, w, T, kp, ki)
+    loop = measured_loop(y, d, w, T, kp, ki, **law)
     out.update(pm=math.pi + cmath.phase(loop), crossover=w, L=loop)
     return out
 
@@ -648,6 +703,8 @@ class ChirpPlan:
     w_hi: float
     kp: float
     ki: float
+    kd: float
+    d_filter_tau: float
     design: dict
 
     def tick_of(self, k):
@@ -684,6 +741,9 @@ class ChirpPlan:
             "max|S| at (rad/s), loop": f"{ax['max_sensitivity_at_rad_s']!r}, {ax['max_sensitivity_loop']}",
             "A = tau_held / max|S| (N m)": ax["amplitude_nm"], "amplitude scale": self.amp_scale,
             "l4_chirp_amp_nm (float32)": self.amp_nm, "C gains kp, ki (build float32)": [self.kp, self.ki],
+            "C D path kd, T_f (build float32)": [self.kd, self.d_filter_tau],
+            "C chain low-pass b0 b1 b2 a1 a2 (build cutoff, tick)": list(self.design["lowpass"]),
+            "decimation images (T4 design loop, reported)": self.design["decimation_images"],
         }
 
 
@@ -745,7 +805,7 @@ def plan_chirp(doc, params, card, root=ROOT, *, amp_scale=1.0, halved=False):
                      duration_ticks=_duration_ticks(divisor, end, vals["m_sequence"]),
                      m_sequence=tuple(vals["m_sequence"]), thrust_n=r32(thrust), thrust_n_double=thrust,
                      amp_nm=r32(r32(ax["amplitude_nm"]) * amp_scale), w_lo=r32(lo), w_hi=r32(hi), kp=ax["kp"],
-                     ki=ax["ki"], design=design)
+                     ki=ax["ki"], kd=ax["kd"], d_filter_tau=ax["d_filter_tau"], design=design)
 
 
 def _log_counts(log):
@@ -843,11 +903,20 @@ def flown_gains(s):
                  for q in ("kp", "ki"))
 
 
+def flown_law(s):
+    """The controller's terms beyond kp, ki that the run flew (controller's keywords): kd and T_f of the chirp axis, a
+    harness sil_override if there is one, else the build's, and the chain's low-pass at the build's cutoff and tick."""
+    p = s.plan
+    kd, tf = (float(s.overrides[f"rate_{q}_{p.axis}"][1]) if f"rate_{q}_{p.axis}" in s.overrides else getattr(p, q)
+              for q in ("kd", "d_filter_tau"))
+    return {"kd": kd, "d_filter_tau": tf, "lowpass": p.design["lowpass"], "tick_s": p.design["tick_s"]}
+
+
 def chirp_margin(s):
-    """identify() on one chirp run: C with the gains the run flew, the swept float32 band."""
+    """identify() on one chirp run: C with the law the run flew, the swept float32 band."""
     p = s.plan
     kp, ki = flown_gains(s)
-    return identify(s.y, s.d, float(p.period_s), kp, ki, (p.w_lo, p.w_hi))
+    return identify(s.y, s.d, float(p.period_s), kp, ki, (p.w_lo, p.w_hi), **flown_law(s))
 
 
 # ---- T4 acro (quad spec 4 L4 T4: "acro with a scripted stick sequence completes without saturation beyond the mixer's
@@ -1048,13 +1117,14 @@ def float_input_term(s, margin):
     p = s.plan
     T = float(p.period_s)
     kp, ki = flown_gains(s)
+    law = flown_law(s)
     w = margin["crossover"]
     delta = [chirp_value_f32(t, p.amp_nm, p.w_lo, p.w_hi, p.t0_us, p.dur_us) - d for t, d in zip(s.stamps, s.d)]
     _, dm = dtft_pair(s.y, s.d, w, T)
     rho = sum(abs(x) for x in delta) / abs(dm)
     e = rho * abs(1 + margin["L"])
     h = w * 2.0 ** DIFF_LOG2_STEP
-    up, down = measured_loop(s.y, s.d, w + h, T, kp, ki), measured_loop(s.y, s.d, w - h, T, kp, ki)
+    up, down = measured_loop(s.y, s.d, w + h, T, kp, ki, **law), measured_loop(s.y, s.d, w - h, T, kp, ki, **law)
     kappa = abs(cmath.phase(up / down)) / abs(math.log(abs(up) / abs(down)))
     return {"U_d": math.asin(min(e, 1.0)) + e * kappa, "max |delta| / A": max(abs(x) for x in delta) / p.amp_nm,
             "rho": rho, "e": e, "kappa": kappa}
@@ -1063,11 +1133,16 @@ def float_input_term(s, margin):
 # ---- the acro rate bound: the linear design model on the script ------------------------------------------------------
 #
 # script_response is the T3 oracle's closed_loop (tests/regression/quad/L04/t3/reference/rate_t3_oracle.py) with a
-# setpoint per execution instead of one step: the firmware's law in binary64 (prefilter seeded at the first execution,
-# forward-Euler integral deferred one execution, kd = 0, no anti-windup and no mixer), the plant advanced by the exact
-# per-execution map (a12, b1, a22, b2) of J w' = u_m, tau u_m' = u - u_m, and, with want_rho, the oracle's first-order
-# float32 rounding injections per node. script_envelope is band_envelope's grid over the tau x J box on it.
-RHO_NODES = ("r", "e", "I", "u")
+# setpoint per execution instead of one step, operation for operation: the stage (c) rate path of decision 0014 in
+# binary64, the gyro chain's low-pass on the plant omega at every tick (direct form I, seeded with the first sample;
+# every notch bypassed, the T4 (c) configuration), then on the execution ticks the firmware's law on the chain output
+# (prefilter seeded at the first execution, forward-Euler integral deferred one execution, D on the measurement through
+# its low-pass T_f, no anti-windup, no mixer), the plant advanced tick by tick by the exact per-tick map
+# (a12, b1, a22, b2) of J w' = u_m, tau u_m' = u - u_m, u held over the D ticks of an execution; with want_rho, the
+# oracle's first-order float32 rounding injections at its seven nodes. chain = (D, the low-pass's (b0, b1, b2, a1, a2),
+# their f32 error bounds): the oracle's Setup.divisor, Setup.lowpass and Setup.lowpass_error. script_envelope is
+# band_envelope's grid over the tau x J box on it.
+RHO_NODES = ("x", "f", "r", "e", "I", "D", "u")
 UNIT_ROUNDOFF_F32 = 2.0 ** -24
 
 
@@ -1075,51 +1150,87 @@ def _ulp32(x):
     return 2.0 ** (math.frexp(abs(x))[1] - 24)
 
 
-def script_response(kp, ki, tau_ref, plant_map, setpoints, stamps_us, want_rho=False):
+def script_response(kp, ki, kd, d_filter_tau, tau_ref, chain, tick_map, setpoints, stamps_us, want_rho=False):
     """w at each execution of the linear design model driven by `setpoints` at `stamps_us` (section comment)."""
-    a12, b1, a22, b2 = plant_map
+    divisor, (c0, c1, c2, c3, c4), (dc0, dc1, dc2, dc3, dc4) = chain
+    a12, b1, a22, b2 = tick_map
     u32 = UNIT_ROUNDOFF_F32
-    w = um = r = integral = e_prev = 0.0
-    y = []
+    w = um = 0.0
+    x1 = x2 = f1 = f2 = 0.0
+    r = integral = e_prev = y_prev = d_f = u = 0.0
+    y_out = []
     rho = dict.fromkeys(RHO_NODES, 0.0)
     for n, sp in enumerate(setpoints):
-        yn = w
-        y.append(yn)
-        if n == 0:
-            r, e_prev, integral, u = yn, 0.0, 0.0, 0.0
-        else:
-            dt = (stamps_us[n] - stamps_us[n - 1]) * 1e-6  # us to s, as the oracle's MICROSECOND
-            x = dt / tau_ref
-            alpha = -math.expm1(-x)
-            r_prev = r
-            r = r + alpha * (sp - r)
-            e = r - yn
-            i_prev_term = ki * e_prev * dt
-            integral = integral + i_prev_term
-            u = kp * e + integral
+        y_out.append(w)
+        for tick in range(divisor):
+            x = w
+            if n == 0 and tick == 0:
+                x1 = x2 = f1 = f2 = x
+            p0, p1, p2, p3, p4 = c0 * x, c1 * x1, c2 * x2, c3 * f1, c4 * f2
+            s1 = p0 + p1
+            s2 = s1 + p2
+            s3 = s2 - p3
+            f = s3 - p4
             if want_rho:
-                d_alpha = math.exp(-x) * x * 2 * u32 + _ulp32(math.exp(-x)) + u32 * alpha
-                s = abs(sp - r_prev)
-                rho["r"] = max(rho["r"], d_alpha * s + 2 * u32 * alpha * s + u32 * abs(r))
-                rho["e"] = max(rho["e"], u32 * (abs(yn) + abs(e)))
-                rho["I"] = max(rho["I"], 3 * u32 * abs(i_prev_term) + u32 * abs(integral))
-                rho["u"] = max(rho["u"], u32 * abs(kp * e) + u32 * abs(u))
-            e_prev = e
-        w, um = w + a12 * um + b1 * u, a22 * um + b2 * u
-    return (y, rho) if want_rho else y
+                rho["x"] = max(rho["x"], u32 * abs(w))
+                rho["f"] = max(rho["f"], u32 * (abs(p0) + abs(p1) + abs(p2) + abs(p3) + abs(p4)
+                                                + abs(s1) + abs(s2) + abs(s3) + abs(f))
+                               + dc0 * abs(x) + dc1 * abs(x1) + dc2 * abs(x2) + dc3 * abs(f1) + dc4 * abs(f2))
+            x2, x1, f2, f1 = x1, x, f1, f
+            if tick == 0:
+                y = f
+                if n == 0:
+                    r, e_prev, integral, d_f, u = y, 0.0, 0.0, 0.0, 0.0
+                else:
+                    dt = (stamps_us[n] - stamps_us[n - 1]) * 1e-6  # us to s, as the oracle's MICROSECOND
+                    xr = dt / tau_ref
+                    alpha = -math.expm1(-xr)
+                    r_prev = r
+                    r = r + alpha * (sp - r)
+                    e = r - y
+                    i_prev_term = ki * e_prev * dt
+                    integral = integral + i_prev_term
+                    d = -kd * (y - y_prev) / dt
+                    d_prev = d_f
+                    if d_filter_tau > 0.0:
+                        xd = dt / d_filter_tau
+                        alpha_d = -math.expm1(-xd)
+                        d_f = d_f + alpha_d * (d - d_f)
+                    else:
+                        d_f = d
+                    pi_sum = kp * e + integral
+                    u = pi_sum + d_f
+                    if want_rho:
+                        d_alpha = math.exp(-xr) * xr * 2 * u32 + _ulp32(math.exp(-xr)) + u32 * alpha
+                        s = abs(sp - r_prev)
+                        rho["r"] = max(rho["r"], d_alpha * s + 2 * u32 * alpha * s + u32 * abs(r))
+                        rho["e"] = max(rho["e"], u32 * abs(e))
+                        rho["I"] = max(rho["I"], 3 * u32 * abs(i_prev_term) + u32 * abs(integral))
+                        rho_d = 4 * u32 * abs(d)
+                        if d_filter_tau > 0.0:
+                            d_alpha_d = math.exp(-xd) * xd * 2 * u32 + _ulp32(math.exp(-xd)) + u32 * alpha_d
+                            s_d = abs(d - d_prev)
+                            rho_d = alpha_d * rho_d + d_alpha_d * s_d + 2 * u32 * alpha_d * s_d + u32 * abs(d_f)
+                        rho["D"] = max(rho["D"], rho_d)
+                        rho["u"] = max(rho["u"], u32 * (abs(kp * e) + abs(pi_sum) + abs(u)))
+                    e_prev = e
+                y_prev = y
+            w, um = w + a12 * um + b1 * u, a22 * um + b2 * u
+    return (y_out, rho) if want_rho else y_out
 
 
-def script_envelope(kp, ki, tau_ref, plant_map_of, inertia, tau, j_band, tau_band, setpoints, stamps_us, points):
+def script_envelope(kp, ki, kd, d_filter_tau, tau_ref, chain, tick_map_of, inertia, tau, j_band, tau_band, setpoints,
+                    stamps_us, points):
     """(lo, hi) per execution over the points x points grid of J (1 + s j_band), tau (1 + t tau_band), s, t in [-1, 1]
-    (the oracle's band_envelope grid, corners included); plant_map_of(J, tau) gives the per-execution plant map."""
+    (the oracle's band_envelope grid, corners included); tick_map_of(J, tau) gives the per-tick plant map."""
     lo = [math.inf] * len(setpoints)
     hi = [-math.inf] * len(setpoints)
     for i in range(points):
         for j in range(points):
             s = -1.0 + 2.0 * i / (points - 1)
             t = -1.0 + 2.0 * j / (points - 1)
-            y = script_response(kp, ki, tau_ref, plant_map_of(inertia * (1 + s * j_band), tau * (1 + t * tau_band)),
-                                setpoints, stamps_us)
+            y = script_response(kp, ki, kd, d_filter_tau, tau_ref, chain,
+                                tick_map_of(inertia * (1 + s * j_band), tau * (1 + t * tau_band)), setpoints, stamps_us)
             lo = [min(a, b) for a, b in zip(lo, y)]
             hi = [max(a, b) for a, b in zip(hi, y)]
     return lo, hi

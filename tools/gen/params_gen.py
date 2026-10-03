@@ -8,6 +8,8 @@ Reads YAML parameter sources and writes, into --out-dir:
   param_defaults.cpp    the const ParamRecord defaults table and the names table
   params_manifest.json  name -> id, type, unit, plus the schema hash, for the harness
   params_provenance.json  per source entry: name, shape, component names, sigma kind of each component, lock
+  <--out-table file>    optional: the human-readable table of every record (id, type, exact value, sigma, unit, method,
+                        origin, lock, source), whose header names this generator and the --table-input paths
 
 Source file: a YAML mapping, parameter name -> entry. One entry:
 
@@ -539,6 +541,40 @@ def render_defaults(params: list[Param]) -> str:
     return "\n".join(lines)
 
 
+TABLE_COLUMNS = ("id", "name", "type", "value", "value_exact", "sigma", "sigma_kind", "unit", "method", "origin",
+                 "locked", "source")
+
+
+def table_text(s: str) -> str:
+    return json.dumps(s, ensure_ascii=False)
+
+
+def render_table(params: list[Param], digest: int, inputs: list[str]) -> str:
+    lines = [
+        "# MARV product parameter table: every record the build compiles in, in id order.",
+        "# DERIVED COPY. It is checked byte for byte against the table the build generates (ci/run_ci.sh) and is never",
+        "# edited by hand; a change to it comes with a decision record (docs/decisions/) in the same change.",
+        "# Generator: tools/gen/params_gen.py --out-table (run by fw/params/CMakeLists.txt at build time).",
+        "# Inputs (repository-relative): " + ", ".join(inputs),
+        "# Value format: f32 `value` is the stored float printed with nine significant digits (printf %.9g), which round-trips",
+        "# it; `value_exact` is the same float as a hexadecimal float, exact to the bit. i32 values are decimal and have no",
+        "# hexadecimal form (`-`). `sigma` is printed like an f32 value. unit and source are JSON strings. Columns are tab",
+        "# separated.",
+        f"# schema_hash 0x{digest:016x}  count {len(params)}",
+        "\t".join(TABLE_COLUMNS),
+    ]
+    for i, p in enumerate(params):
+        if p.type == "f32":
+            value, exact = f"{p.value:.9g}", float.hex(p.value)
+        else:
+            value, exact = str(p.value), "-"
+        sigma = f"{p.sigma:.9g}"
+        method = "derived" if p.method.startswith("derived(") else p.method
+        lines.append("\t".join((str(i), p.name, p.type, value, exact, sigma, p.sigma_kind, table_text(p.unit), method,
+                                p.origin, "true" if p.locked else "false", table_text(p.source))))
+    return "\n".join(lines) + "\n"
+
+
 def render_provenance(entries: list[Entry], digest: int) -> str:
     doc = {
         "schema_hash": f"0x{digest:016x}",
@@ -582,7 +618,13 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out-dir", required=True, type=Path,
                     help="directory receiving param_ids.hpp, param_defaults.cpp, params_manifest.json, "
                          "params_provenance.json")
+    ap.add_argument("--out-table", type=Path, default=None,
+                    help="optional file receiving the human-readable table of every record")
+    ap.add_argument("--table-input", action="append", default=[], metavar="PATH",
+                    help="repository-relative input path named in the table header; repeatable")
     args = ap.parse_args(argv)
+    if args.out_table is not None and not args.table_input:
+        ap.error("--out-table needs at least one --table-input")
     if not args.sources:
         ap.error("at least one --card or --register source is required")
 
@@ -603,6 +645,9 @@ def main(argv: list[str] | None = None) -> int:
     args.out_dir.mkdir(parents=True, exist_ok=True)
     for fname, text in outputs.items():
         (args.out_dir / fname).write_text(text, encoding="utf-8", newline="\n")
+    if args.out_table is not None:
+        args.out_table.parent.mkdir(parents=True, exist_ok=True)
+        args.out_table.write_text(render_table(params, digest, args.table_input), encoding="utf-8", newline="\n")
     return 0
 
 

@@ -4,10 +4,10 @@ label: design model (T3), not a validation run; reported, not asserted (decision
 inputs:
   vehicles/uzh_neurobem_5in.yaml sha256 62d5d522f19cf7022c87d5e9a0a9ab4e4d3a31d7759a5166c43cda959e23f11f
   design/budget.yaml sha256 fe18e4c638f126dbb4e587868041877430614ed84bded0ef0e1099bfeccff817
-  design/scenario_values.yaml sha256 7542b0f83d94537f697f4cc1ac1868b6deb8c12ac7d2682ec23a54f70ee0ec1d
+  design/scenario_values.yaml sha256 ff83b832a91f6c6765b642d53c2ad2529d66bb3fb1066cf1ec782432bc22ea0f
   sensors/profiles/marv_v2_board_default.yaml sha256 ce28e3d7ec2f3baffa4a84c325d385fa695d271ad5f949417e226b06657855cd
   scenarios/quad/L04/acro.yaml sha256 5ef270f614862dfb42e9a86d0158f8e553c3bdc8de4ee8ef20c25abe5075f3d5
-  tests/regression/quad/L04/t3/reference/rate_t3_inputs.txt sha256 5b1450e07e46a5d6d203f239a12873e1b960e839bb18041408ea186cd2cd8271
+  tests/regression/quad/L04/t3/reference/rate_t3_inputs.txt sha256 d0bcac90260c0d8a4cf90e43e1240d13514e5bf2f445c05a42f21e0498163e0c
   fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml sha256 9635f560de88ec1e30334bdac3f5459f82d60d6e3209b393e0392b1805de922d
   tests/regression/quad/L04/results/acro_cause/cause.txt sha256 d84156dbba000eb4b8396a08c56decd89003271aade03cd89d7bef9a565f3d08
   docs/decisions/0005-l4-rate-loop-choices.md sha256 0c0c0747ccdcb43474f4e04beeb5d686f01565d3d5e215c350c1c6f9ee580b26
@@ -40,21 +40,21 @@ plants: motor tau 0.033 s at every plant; J (kg m^2):
   corner 12 box common-scale 0.00375 0.00315 0.00645  (J/J0 1.5 1.5 1.5)
 
 == predicate terms: F = TOL + H per axis (E = 0)
-  PI, L4 sensor (test_t4_acro.design_bound): roll F 8.029545e-02 (TOL 1.654e-03, H 7.864156e-02); pitch F 4.129496e-02 (TOL 1.050e-03, H 4.024537e-02); yaw F 4.129536e-02 (TOL 1.050e-03, H 4.024530e-02)
+  PI, L4 sensor (linear_response): roll F 7.864156e-02 (TOL 0.000e+00, H 7.864156e-02); pitch F 4.024537e-02 (TOL 0.000e+00, H 4.024537e-02); yaw F 4.024530e-02 (TOL 0.000e+00, H 4.024530e-02)
   stage (c) law, T3 sensor (linear_response): roll F 1.569724e-02 (TOL 0.000e+00, H 1.569724e-02); pitch F 7.436305e-03 (TOL 0.000e+00, H 7.436305e-03); yaw F 9.845262e-03 (TOL 0.000e+00, H 9.845262e-03)
   stage (c) law, T4c sensor (linear_response): roll F 1.217459e-02 (TOL 0.000e+00, H 1.217459e-02); pitch F 6.619936e-03 (TOL 0.000e+00, H 6.619936e-03); yaw F 8.933776e-03 (TOL 0.000e+00, H 8.933776e-03)
   stage (c) law, L4 sensor (linear_response): roll F 1.237632e-02 (TOL 0.000e+00, H 1.237632e-02); pitch F 6.554697e-03 (TOL 0.000e+00, H 6.554697e-03); yaw F 9.107479e-03 (TOL 0.000e+00, H 9.107479e-03)
   stage (c) law, T4e sensor (linear_response): roll F 1.264982e-02 (TOL 0.000e+00, H 1.264982e-02); pitch F 6.799416e-03 (TOL 0.000e+00, H 6.799416e-03); yaw F 9.226957e-03 (TOL 0.000e+00, H 9.226957e-03)
 
 == cross-check: the PI law as flown in acro_cause, card plant, L4 sensor, against the gz runs
-  design_bound on the fixture: pitch P 13.772466003387304 + F 0.041294955659512175 (cause.txt, the gz build's table: P 13.772466003387304 + F 0.041294955659512175; identical True)
-  roll  outside 1378 (0005: 1377); excess 8.4798 rad/s at execution 14313, |w| 9.6082 against Z + F 1.1284 (0005: |w| 9.61, bound 1.13, excess 8.48)
-  pitch outside 1036 (0005: 1037); excess 2.8312 rad/s at execution 14653, |w| 4.7489 against Z + F 1.9177 (0005: |w| 4.75, bound 1.92, excess 2.83)
-  yaw   outside 352 (0005: 350); excess 0.1407 rad/s at execution 14551, |w| 1.7888 against Z + F 1.6481 (0005: |w| 1.79, bound 1.65, excess 0.14)
+  PI law (rate.py), L4 sensor: pitch P 13.772466003387304 + F 0.04024537372222525 (TOL 0; cause.txt, the acro_cause build's design_bound: P 13.772466003387304 + F 0.041294955659512175; P identical True)
+  roll  outside 1378 (0005: 1377); excess 8.4814 rad/s at execution 14313, |w| 9.6082 against Z + F 1.1268 (0005: |w| 9.61, bound 1.13, excess 8.48)
+  pitch outside 1037 (0005: 1037); excess 2.8322 rad/s at execution 14653, |w| 4.7489 against Z + F 1.9167 (0005: |w| 4.75, bound 1.92, excess 2.83)
+  yaw   outside 353 (0005: 350); excess 0.1418 rad/s at execution 14551, |w| 1.7888 against Z + F 1.6470 (0005: |w| 1.79, bound 1.65, excess 0.14)
   trace (cause.txt, 49 rows, executions 11200..16000): max |model - gz| 0.0054 0.0055 0.0008 rad/s; trace peak |w| 10.2898 13.8835 12.7055
   RK4 steps per tick doubled: max change of w 0.000000000 0.000000000 0.000000000 rad/s
-  control, the plant without w x J w: outside 0 0 0, excess -0.3247 -0.3244 -0.3614 rad/s, trace max |model - gz| 12.8657 3.3744 0.6104 rad/s
-  linear_response = run_l4.script_response bit for bit (PI, L4 sensor, nominal J and tau): roll True, pitch True, yaw True
+  control, the plant without w x J w: outside 0 0 0, excess -0.3230 -0.3234 -0.3604 rad/s, trace max |model - gz| 12.8657 3.3744 0.6104 rad/s
+  linear_response = run_l4.script_response bit for bit (stage (c) law and chain low-pass of the fixture, nominal J and tau): roll True, pitch True, yaw True
 
 == results, T3 sensor: recovery predicate |w| <= Z + F + E (E = 0); excess = max(|w| - (Z + F))
 plant          variant      outside, of 3201 (r p y)  max excess rad/s (r p y)      flagged (r p y)    verdict

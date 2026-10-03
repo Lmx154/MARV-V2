@@ -4,8 +4,9 @@ decisions 7, 20 and 21).
 
   uv run python tools/sim/gen_l5_chirp.py [--plugin-dir build/host-gz-l5/sim/gz/plugin] [--duration-s 8] [--tail-s 15]
 
-The band, the amplitude A_env and the window end are derived values: run_l5.chirp_design on the host-gz-l5 build's parameter table
-(the live gains and N), so they regenerate cleanly when the rate loop changes (L6). Only the `script:` section of each file is
+The band, the amplitude A_env and the window end are derived values: run_l5.chirp_design_lead on the host-gz-l5 build's parameter
+table (the live gains and N; the stage (c) design reference of decision 0014: attitude_lead's loops on rate_lead's rate loop in the
+T4 configuration, latency 0 and notches bypassed), so they regenerate cleanly when the rate loop changes (L6). Only the `script:` section of each file is
 rewritten; everything above it (the world, the initial state, the hover thrust) is kept as committed. Run it after the product
 parameters are regenerated; tests/regression/quad/L05/gz/test_t4_chirp.py fails with this command when the committed files differ.
 
@@ -40,19 +41,19 @@ ROLL_PITCH_NOTE = ("; this is A_env, the torque-envelope amplitude: at A_env the
 
 
 def live_design(plugin_dir=run_l5.DEFAULT_PLUGIN_DIR, card=CARD, root=ROOT):
-    """chirp_design on the build's parameter table and the scenario's hover thrust."""
+    """chirp_design_lead on the build's parameter table and the scenario's hover thrust."""
     _, defaults = run_l5.build_parameters(plugin_dir)
     params = l4.read_param_defaults(defaults)
     vals = l5s.values(l5s.load(SCEN / "chirp_yaw.yaml"))
-    return run_l5.chirp_design(card, params, l4.r32(l4.hover_thrust(card, vals, root)), root)
+    return run_l5.chirp_design_lead(card, params, l4.r32(l4.hover_thrust(card, vals, root)), root)
 
 
 def script_section(axis, d, duration_s=DURATION_S, tail_s=TAIL_S):
-    """The text of the `script:` section of chirp_<axis>.yaml for the design `d` (run_l5.chirp_design)."""
+    """The text of the `script:` section of chirp_<axis>.yaml for the design `d` (run_l5.chirp_design_lead)."""
     res, ax, ta, n = d["result"], d["axes"][axis], d["T_a"], d["N"]
     end = round((duration_s + tail_s) / ta)
     lo, hi = d["band"]
-    detail = res["final"]["detail"]
+    detail = res["detail"]
     radius = max(x[4] for x in detail)
     worst = next(x for x in detail if x[4] == radius)
     tau_slow = ta / (1 - radius)
@@ -74,7 +75,7 @@ def script_section(axis, d, duration_s=DURATION_S, tail_s=TAIL_S):
     value: {end}
     unit: "1"
     label: derived
-    rule: "the chirp's last execution plus the tail: (duration_s + tail_s) / T_a = ({duration_s:g} s + {tail_s:g} s) / {ta!r} s, with tail_s = {tail_s:g} s a scenario value (the identification window runs past the chirp's end until the response has decayed: the slowest closed-loop pole of the lifted design model at N = {n} has spectral radius {radius:.6f} per T_a (Jury radius, tools/card/attitude.py, axis {worst[0]} corner {worst[1]}), a time constant of {tau_slow:.3g} s, so {tail_s:g} s leaves e^-{tail_s / tau_slow:.3g} of it, below the float32 resolution 2^-24 = 6e-8 of the TRUTH quaternion); {regen}"
+    rule: "the chirp's last execution plus the tail: (duration_s + tail_s) / T_a = ({duration_s:g} s + {tail_s:g} s) / {ta!r} s, with tail_s = {tail_s:g} s a scenario value (the identification window runs past the chirp's end until the response has decayed: the slowest closed-loop pole of the lifted design model at N = {n} has spectral radius {radius:.6f} per T_a (rho_K of rule step 5', tools/card/attitude_lead.py, on the stage (c) T4 configuration, axis {worst[0]} corner {worst[1]}), a time constant of {tau_slow:.3g} s, so {tail_s:g} s leaves e^-{tail_s / tau_slow:.3g} of it, below the float32 resolution 2^-24 = 6e-8 of the TRUTH quaternion); {regen}"
   chirp:
     axis:
       value: {axis}
@@ -85,12 +86,12 @@ def script_section(axis, d, duration_s=DURATION_S, tail_s=TAIL_S):
       value: {ax['amplitude_rad_s']!r}
       unit: rad/s
       label: derived
-      rule: "decision 0006 F 'T4 attitude chirp': A = tau_held,{axis} / max over the band and the tau x J box of G_tau, G_tau the design model's peak torque request per rad/s of a steady sinusoid added to the rate setpoint, in closed loop with the attitude law at the build's gain and N (tools/sim/run_l5.py chirp_design, steady_torque_peak): tau_held,{axis} = {ax['tau_held_nm']!r} N m, max G_tau = {ax['peak_torque_per_rad_s']!r} N m per rad/s at {ax['peak_at_rad_s']!r} rad/s ({ax['peak_loop']}){note}; the test re-derives it from the live build; {regen}"
+      rule: "decision 0006 F 'T4 attitude chirp': A = tau_held,{axis} / max over the band and the tau x J box of G_tau, G_tau the design model's peak torque request per rad/s of a steady sinusoid added to the rate setpoint, in closed loop with the attitude law at the build's gain and N on the stage (c) T4 configuration (tools/sim/run_l5.py chirp_design_lead, steady_torque_peak_lead): tau_held,{axis} = {ax['tau_held_nm']!r} N m, max G_tau = {ax['peak_torque_per_rad_s']!r} N m per rad/s at {ax['peak_at_rad_s']!r} rad/s ({ax['peak_loop']}){note}; the test re-derives it from the live build; {regen}"
     w_lo_rad_s:
       value: {lo!r}
       unit: rad/s
       label: derived
-      rule: "min over the box loops of the design crossover / a, the crossover |L| = 1 of the nominal loop and the four tau x J corners of every axis (tools/card/attitude.py, {cmin[0]:.4g} rad/s at {cmin[2]} on {cmin[1]}), a = {d['a']!r} (rate.py, the loop-shaping spacing of PM_min); the test re-derives it from the live build; {regen}"
+      rule: "min over the box loops of the design crossover / a, the crossover |L| = 1 of the nominal loop and the four tau x J corners of every axis (tools/card/attitude_lead.py at the build's gain on the stage (c) T4 configuration: rate_lead's PID, latency 0, notches bypassed; {cmin[0]:.4g} rad/s at {cmin[2]} on {cmin[1]}), a = {d['a']!r} (rate.py, the loop-shaping spacing of PM_min); the test re-derives it from the live build; {regen}"
     w_hi_rad_s:
       value: {hi!r}
       unit: rad/s

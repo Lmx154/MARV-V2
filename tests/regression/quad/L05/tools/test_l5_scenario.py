@@ -72,9 +72,11 @@ def test_step_script_equals_the_recorded_t3_envelope_script(name, axis):
 
 
 def test_control_a_moved_release_differs_from_the_recorded_envelope():
-    doc = mutated(lambda d: d["script"]["segments"][1]["start_attitude_execution"].update(value=20733))
+    # Pinned to literals on purpose (owner, decision 0014 third round item 4): the recorded release 20293 (att_kp
+    # 3.15397215) and the moved one stay literals here; the positive assertions read the scenario's derived value.
+    doc = mutated(lambda d: d["script"]["segments"][1]["start_attitude_execution"].update(value=20294))
     assert findings(doc) == []  # schema-valid ...
-    assert l5s.values(doc)["script"]["segments"][1]["start_attitude_execution"] != 20732  # ... but not the recorded one
+    assert l5s.values(doc)["script"]["segments"][1]["start_attitude_execution"] != 20293  # ... but not the recorded one
 
 
 YAW = ("yaw_release", "yaw_fallback")
@@ -136,7 +138,8 @@ def test_control_a_moved_yaw_release_or_disturbance_differs_from_the_recorded_en
 def test_yaw_fallback_plan_switches_the_disturbance_on_at_the_release_stamp():
     p = plan_of(name="yaw_fallback")
     o = p.overrides()
-    assert o["l5_dist_t0_us"] == o["l5_seg2_t_us"] == (run_l5.I32, str(p.stamp_us(p.origin + 20732)))
+    release = l5s.values(l5s.load(SCEN / "yaw_fallback.yaml"))["script"]["segments"][1]["start_attitude_execution"]
+    assert o["l5_dist_t0_us"] == o["l5_seg2_t_us"] == (run_l5.I32, str(p.stamp_us(p.origin + release)))
     assert o["l5_dist_yaw_nm"] == (run_l5.F32, repr(run_l5.l4.r32(0.1634589284658432)))
     assert o["l5_seg1_yaw"] == (run_l5.F32, "1.0") and o["l5_seg1_roll"] == (run_l5.F32, "0.0")
     assert "l5_dist_t0_us" not in plan_of(name="yaw_release").overrides()  # control: no disturbance without the entry
@@ -167,7 +170,8 @@ CASES = {
     "segment starts at 0": (lambda d: d["script"]["segments"][0]["start_attitude_execution"].update(value=0), "must be an integer >= 1"),
     "segments not increasing": (lambda d: d["script"]["segments"][1]["start_attitude_execution"].update(value=1), "not after the previous"),
     "stick above 1": (lambda d: d["script"]["segments"][0]["stick"].update(value=[1.5, 0.0, 0.0]), "outside [-1, 1]"),
-    "end not after the last start": (lambda d: d["script"]["end_attitude_execution"].update(value=20732), "not after the last segment"),
+    "end not after the last start": (lambda d: d["script"]["end_attitude_execution"].update(
+        value=d["script"]["segments"][-1]["start_attitude_execution"]["value"]), "not after the last segment"),
     "more than eight segments": (lambda d: d["script"].update(segments=d["script"]["segments"] * 5), "at most 8"),
     "settle not positive": (lambda d: d["script"]["settle_s"].update(value=0.0), "must be a finite number > 0"),
     "chirp band inverted": (lambda d: d["script"].update(chirp={
@@ -227,7 +231,8 @@ def test_plan_origin_stamps_and_duration():
     p = plan_of()
     assert p.att_divisor == 4 and p.origin == 1600 and p.tick_of(p.origin) == 6400
     assert (p.att_divisor * p.origin * p.num_us) % p.den == 0, "the stamp phase of the oracle"
-    assert p.segments[0][1] == p.stamp_us(p.origin + 1) and p.segments[1][1] == p.stamp_us(p.origin + 20732)
+    release = l5s.values(l5s.load(SCEN / "step_roll.yaml"))["script"]["segments"][1]["start_attitude_execution"]
+    assert p.segments[0][1] == p.stamp_us(p.origin + 1) and p.segments[1][1] == p.stamp_us(p.origin + release)
     assert p.stamp_us(p.origin + 1) - p.stamp_us(p.origin) == 625
     assert p.duration_ticks % 2 == 0 and p.duration_ticks > p.tick_of(p.origin + p.end)
     assert p.duration_ticks - 2 <= p.tick_of(p.origin + p.end) + 2
@@ -312,7 +317,8 @@ PARAMS = {"tick_period_num_us": 625, "tick_period_den": 4, "rate_loop_divisor": 
 def test_committed_recovery_scenarios_are_valid_and_have_no_segments(name):
     v = l5s.values(l5s.load(SCEN / f"{name}.yaml"))
     q = v["initial_state"]["attitude_q_wxyz"]
-    assert v["script"]["segments"] == [] and v["initial_state"]["rotor_speed_rad_s"] == "hover"
+    assert v["script"]["segments"] == [] and v["initial_state"]["rotor_speed_rad_s"] == (
+        "steady_tumble" if name == "recover_tumble" else "hover")
     assert (q == [0.0, 1.0, 0.0, 0.0]) == (name != "recover_inverted") and q[0] >= 0
     assert any(x != 0 for x in v["initial_state"]["body_rates_frd_rad_s"]) == (name == "recover_tumble")
 

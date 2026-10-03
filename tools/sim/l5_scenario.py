@@ -21,8 +21,10 @@ Required fields (no others are allowed):
   initial_state            optionally also rotor_speed_rad_s (decision 0007): 4 numbers >= 0, logical motor order
                            (marv_plant_config.initial_omega_rad_s), or the text "hover" with label derived: the runner
                            resolves it to the card's hover rotor speed per motor, sqrt(T_i / k), T_i the firmware mixer
-                           allocation M[i, thrust] m g(phi, h0) at zero torque (tools/sim/run_l5.py hover_rotor_speeds).
-                           Absent = the rotors start at rest, as before.
+                           allocation M[i, thrust] m g(phi, h0) at zero torque (tools/sim/run_l5.py hover_rotor_speeds),
+                           or the text "steady_tumble" with label derived: the runner resolves it to the speeds whose
+                           plant torque at t = 0 is w0 x J w0, at the hover collective or the smallest feasible one
+                           (tools/sim/run_l5.py steady_tumble). Absent = the rotors start at rest, as before.
   thrust                   value "hover", label derived: the collective request is the float32 of m g(phi, h0)
                            (tools/sim/run_l4.py hover_thrust)
   script
@@ -68,6 +70,7 @@ M_SEQUENCE = l4s.M_SEQUENCE
 SEGMENT_CAPACITY = 8  # the l5_attitude_scripted register's l5_seg1..8 entries
 THRUST_HOVER = "hover"
 ROTOR_SPEED_HOVER = "hover"
+ROTOR_SPEED_STEADY_TUMBLE = "steady_tumble"
 
 
 def _scalar(parent, key, path, check, why, fails):
@@ -155,7 +158,7 @@ def validate(doc, name, register):
             if "rotor_speed_rad_s" in state:
                 path = "initial_state.rotor_speed_rad_s"
                 e = scn._entry(state, "rotor_speed_rad_s", path, fails)
-                if e is not None and e["value"] == ROTOR_SPEED_HOVER:
+                if e is not None and e["value"] in (ROTOR_SPEED_HOVER, ROTOR_SPEED_STEADY_TUMBLE):
                     l4s._need_derived(e, "rotor_speed_rad_s", fails)
                 elif e is not None:
                     v = scn._vector(e, path, scn.OPTIONAL_STATE_LENGTH["rotor_speed_rad_s"], fails)

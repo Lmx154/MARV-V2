@@ -45,6 +45,7 @@
 #include <marv/prim/constants.hpp>
 #include <marv/prim/quat.hpp>
 #include <marv/rate/rate_loop.hpp>
+#include <marv/rate_group/rate_group.hpp>
 #include <marv/types/actuator.hpp>
 #include <marv/types/attitude_state.hpp>
 #include <marv/types/imu_sample.hpp>
@@ -184,6 +185,7 @@ struct Scenario {
 struct Ref {
   mixer::MixerConfig<float> mixer;
   rate::RateConfig<float> rate;
+  gyro_chain::GyroChainConfig<float> chain;
   attitude::AttitudeConfig<float> attitude;
   float hover = 0.0F;
   float p_torque_yaw = 0.0F;  // kp_yaw * rate_max_yaw: the P torque of a full-rate yaw error
@@ -217,6 +219,7 @@ Ref load_ref(const Overrides& ov) {
   Ref r;
   r.mixer = mixer::load_config();
   r.rate = rate::load_config();
+  r.chain = rate_group::load_chain_config();
   r.attitude = attitude::load_config();
   // The hover thrust is m g with m the card mass and g the WGS 84 equatorial normal gravity of constants.hpp; Gazebo runs
   // use g at the site, the test only needs a valid collective.
@@ -339,7 +342,7 @@ struct Variant {
 std::vector<Dshots> reference(const Ref& r, const Scenario& sc, const Trajectory& tr, std::uint32_t k, Variant v = {}) {
   attitude::AngleMode<float> angle;
   attitude::AttitudeLaw<float> law;
-  rate::RateLoop<float> rate;
+  rate_group::RateGroupStep step;
   const std::uint32_t attitude_divisor = v.attitude_divisor != 0 ? v.attitude_divisor : r.divisor * r.ratio;
   attitude::AttitudeConfig<float> acfg = r.attitude;
   if (v.attitude_divisor != 0) {
@@ -349,7 +352,7 @@ std::vector<Dshots> reference(const Ref& r, const Scenario& sc, const Trajectory
   }
   angle.init(acfg);
   law.init(acfg);
-  rate.init(r.rate, r.mixer);
+  step.init(r.rate, r.mixer, r.chain);
   Vec3f setpoint;
   Dshots held{};
   std::vector<Dshots> rows;
@@ -369,14 +372,14 @@ std::vector<Dshots> reference(const Ref& r, const Scenario& sc, const Trajectory
       }
     };
     const auto rate_group = [&] {
+      step.filter(imu, n % r.divisor == 0);
       if (n % r.divisor == 0) {
         const Vec3f chirp = composition::chirp_rate(sc.chirp, a.t_us);
-        const auto out = rate.execute_bypass(imu, v.chirp_as_torque ? setpoint : setpoint + chirp);
-        const Vec3f request =
-            out.torque + composition::disturbance_torque(sc.dist, a.t_us) + (v.chirp_as_torque ? chirp : Vec3f());
-        const auto alloc = mixer::allocate(r.mixer, mixer::Request<float>{sc.thrust, request});
-        rate.record_allocation(request, alloc);
-        const auto d = mixer::thrust_to_dshot(r.mixer, alloc.f);
+        const auto d = step.execute_bypass(v.chirp_as_torque ? setpoint : setpoint + chirp,
+                                           composition::disturbance_torque(sc.dist, a.t_us) +
+                                               (v.chirp_as_torque ? chirp : Vec3f()),
+                                           sc.thrust)
+                           .dshot;
         for (std::size_t i = 0; i < kMotors; ++i) {
           held[i] = d[i].raw();
         }

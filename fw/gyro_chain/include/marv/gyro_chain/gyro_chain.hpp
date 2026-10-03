@@ -142,8 +142,10 @@ struct GyroChainConfig {
 enum class ConfigError : std::uint8_t { None, NonFinite, Period, Divisor, Cutoff, NotchQ, Threshold };
 
 // The first violated rule, else None. Written with negated comparisons, so a NaN is rejected. Rules: period > 0;
-// divisor >= 2 (the low-pass rule puts f_r / 2 above the cutoff, so a divisor of 1 has no rate-loop Nyquist to
-// attenuate at); 0 < cutoff < f_s / 2; every Q > 0; omega_th > 0.
+// divisor >= 1 (the chain's arithmetic does not use it; the generator keeps D >= 2, the domain of its low-pass rule);
+// 0 < cutoff < f_s / (2 D) = f_r / 2, the cutoff below the rate loop's Nyquist, carried from the generator's low-pass
+// rule (decision 0013, "Low-pass": a_min at f_r / 2; decision 0014, fifth round), which implies cutoff < f_s / 2 for
+// D >= 1; every Q > 0; omega_th > 0.
 template <class T>
 [[nodiscard]] ConfigError validate(const GyroChainConfig<T>& c) noexcept {
   using std::isfinite;
@@ -157,10 +159,10 @@ template <class T>
   if (!(c.period > T(0))) {
     return ConfigError::Period;
   }
-  if (c.rate_divisor < 2) {
+  if (c.rate_divisor < 1) {
     return ConfigError::Divisor;
   }
-  if (!(c.cutoff_hz > T(0)) || !(T(2) * c.cutoff_hz * c.period < T(1))) {
+  if (!(c.cutoff_hz > T(0)) || !(T(2) * c.cutoff_hz * c.period * static_cast<T>(c.rate_divisor) < T(1))) {
     return ConfigError::Cutoff;
   }
   for (std::size_t h = 0; h < kHarmonics; ++h) {
@@ -191,6 +193,7 @@ class GyroChain {
     bypass_flags_ = 0;
     bypass_count_ = {};
     seeded_ = {};
+    reseed_ = {};
     last_out_ = prim::Vec3<T>();
     fault_flags_ = 0;
     fault_count_ = {};
@@ -240,9 +243,10 @@ class GyroChain {
         }
         continue;
       }
-      if ((cfg_.seed_first_sample && !seeded_[a]) || (fault_flags_ & bit) != 0) {
+      if ((cfg_.seed_first_sample && !seeded_[a]) || reseed_[a] || (fault_flags_ & bit) != 0) {
         seed(state_[a], v);
         fault_flags_ &= ~bit;
+        reseed_[a] = false;
       }
       seeded_[a] = true;
       for (std::size_t n = 0; n < kNotches; ++n) {
@@ -253,6 +257,10 @@ class GyroChain {
     }
     return out;
   }
+
+  // Every axis restarts at its next finite sample: its states are reset to that sample's steady state (the seeding rule
+  // in the file comment), whatever seed_first_sample is. Flags and counters are unchanged.
+  void reseed() noexcept { reseed_.fill(true); }
 
   // Bit i (rotor_speed_valid_bit(i)) is set iff motor i + 1 had a bypassed notch at the latest update_notches.
   [[nodiscard]] std::uint32_t bypass_flags() const noexcept { return bypass_flags_; }
@@ -296,6 +304,7 @@ class GyroChain {
   std::uint32_t bypass_flags_ = 0;
   std::array<std::uint32_t, kMotors> bypass_count_{};
   std::array<bool, kAxes> seeded_{};
+  std::array<bool, kAxes> reseed_{};
   prim::Vec3<T> last_out_{};
   std::uint32_t fault_flags_ = 0;
   std::array<std::uint32_t, kAxes> fault_count_{};

@@ -82,7 +82,80 @@ Sources for stage (a):
    - J corners are the physical 3-D ones.
    - R2's setup change (steady-tumble rotor speeds) gets its own record, after the lower-bound proof is committed and
      reviewed.
-   - The spec line for the combined D + FF noise budget is awaiting Luis.
+   - The spec lines (the FF Builds bullet, the combined D + FF noise line) are approved in Luis's wording.
+   - Built: commits 1–2 (`539855e`, `69c62f2`, local) and commit 3 (the atomic switch, uncommitted). Every frozen
+     file commit 3 changes is listed in 0014, "Frozen files changed by stage (c)".
+   - **FF-on report runs (0014, W4; `tests/regression/quad/L06/results/ff_on/`):** acro FAIL → PASS (roll margin
+     6.07 mrad/s, a knife edge); R1X FAIL → PASS; **R2 FAIL → FAIL** (13923 → 10398 violations, worst w_y +1.975,
+     DShot at both range ends). Diagnosed (0014, W4): mainly the gz step-0 zero-rate read, kicked by D and FF; then yaw
+     saturation with the integrator freeze.
+   - **Close round (0014, fourth round, 2026-10-03).** Luis's order:
+     1. answer three sent-back lead rulings (the chain divisor check, the chirp reference, the shared notch speed);
+     2. S9: share the configuration-set design (B), then move what is still over 60 s to nightly (A), after
+        confirming that a per-push check pins the generated gains;
+     3. commit 3, with no tag;
+     4. core CI on that exact commit;
+     5. push on his go-ahead;
+     6. 0016, the gz first gyro read returns the starting rates (approved; its own commit);
+     7. stage (d) under 0017 (rulings saved for 0017).
+     0015 is approved as built, subject to a seven-point checklist confirmed in 0015.
+   - **Fifth round (0014, 2026-10-03).** Luis's order:
+     1. the divisor check becomes f_c < f_s/(2D) with D ≥ 1, and the frozen `fault_test.cpp` edit is made net-stricter;
+     2. three new tests: the attitude Ms over the set, the rate-loop stability certificate, and the per-motor mixes
+        (plus a test that rate_lead with the lead off reproduces rate.py's chirp reference);
+     3. the generated product parameter table, committed and frozen under `tests/regression/quad/L06/`, compared byte
+        for byte on every push;
+     4. two output-identical speed-ups, then anything still over 60 s moves to nightly (no design cache);
+     5. full local CI, commit 3, core CI, push on his go-ahead;
+     6. then 0016 and stage (d).
+     **State (2026-10-03):**
+     - Items 1–4 are built (0014: "Divisor (b), as built", "Fifth round, items 2–5" and "item 6 (S9)").
+     - Full local CI passes on snapshot `b4c9e16`: core, gz-l2, gz-l4, gz-l5. The per-push tools step is 1013 passed and
+       1 skipped in 274 s.
+     - Luis answered the last open items (0014, sixth round): the chirp check uses option (i); `test_attitude_t3.py`
+       goes nightly; the extra divisor frozen line is accepted.
+
+## Handover (2026-10-03): stage (c) commit 3
+
+**Git state.**
+- `master` at `69c62f2` (stage (c) commit 2), with `539855e` (commit 1) before it. Neither is pushed;
+  `origin/master` is `1159d5c`.
+- Commit 3 is entirely uncommitted in the working tree: about 78 modified and 21 untracked paths, among them
+  `fw/rate_group/`, `docs/decisions/0015-…`, `tests/regression/quad/L06/{rate_group, product_params, results/ff_on,
+  results/r1x_coupling, results/r2_envelope_a}/` and the new L06 tools tests.
+- Full local CI passed on snapshot `b4c9e16` (`refs/tmp/stage-c`, a temporary commit-tree, not on any branch).
+- The tree since `b4c9e16` differs only in docs: this handoff, 0014's CI-evidence lines, the fifth- and sixth-round
+  quotes, and one docstring sentence in `L06/tools/test_notch_mixes.py`.
+- Safety copy: `~/marv-handover-2026-10-03/` (`git diff HEAD`, a tar of the untracked files, and the scratch evidence
+  for 0016 and stage (d)).
+- Local branches `l6-t3-storage-state` (datasheets; Luis deletes it), `quad-l5` and `quad-l6-spec` are untouched.
+
+**Remaining steps, in order:**
+1. **Done: the chirp lead-off test** (0014, sixth round, "(i), as built"):
+   `tests/regression/quad/L06/tools/test_chirp_lead_off.py`, per push, 2.5 s. Control: the lead at its design values (T_f
+   alone has no effect at kd = 0).
+2. Commit 3, with no tag. End the message with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+3. Core CI on that exact commit: `MARV_CI_BASE_REF=1159d5c ci/local_ci.sh --commit <rev> core`.
+4. Push on Luis's go.
+5. 0016: the gz first gyro read returns the initial rates (approved; 0014 W4 has the diagnosis).
+6. Stage (d) as 0017 (Luis's rulings are verbatim in 0014, fourth round, item 5).
+
+**Not in any file (the outgoing lead's notes).**
+- **Check first:** that `git status` matches the safety copy, and that `datasheets/` is still present and untracked
+  (it vanished once on a branch switch; restore with `git restore --source=l6-t3-storage-state --worktree datasheets`).
+- **Timing is the fragile part.** `test_r1x_coupling.py` is at 58.9 s alone, with 1.1 s of margin. Host load inflates
+  every number (one run read 332 s), so measure with load < 1.5. The code-index daemon can spike to 100 % CPU.
+- **Acro FF-on margin is 6.1 mrad/s.** It will be a knife edge at stage (e).
+- **0016 will change R2's FF-off numbers** in 0015 and 0014 W4, and the prop-strike report. The diagnosis scripts that
+  reproduce gz to 0.016 rad/s are in the safety copy (`r2ff/`: `tool2.cpp`, `b_ladder.py`). After the read fix, R2
+  should drop to about 2416 violations, worst w_z +0.24, and still fail. **If R2 passes, stop: it is a strict xfail.**
+- **R2's next blocker after 0016** is yaw saturation plus the yaw integrator freeze, which the linear design model
+  lacks. Luis expects the numbers for that choice: model the allocation and freeze in the design model, or rule R2
+  yaw-limited.
+- **The T3 oracles** (`rate_t3_oracle.py:340`, `attitude_t3_oracle.py:1699`) still check the old f_s/2 cutoff bound.
+  It is consistent at D = 2, frozen, not changed.
+- **Stage (d)'s record number** is 0017. Its architect draft is in the safety copy (`stage_d_draft.md`).
+- **Subagent permission denials:** never route around one; show the prompt to Luis.
 4. Still owed to Luis from 0009: the final CI split with measured times, and the T4 confirmation seed count with its
    cost. Add to it the T4 turn-on-corner count (nominal plus each scenario's worst T3 corner) and its cost (0012).
 5. **Stage (c), carried:**
@@ -114,13 +187,15 @@ from musl 1.2.5 (MIT, Arm MIT, Sun fdlibm notices; `THIRD_PARTY_NOTICES.md`).
 
 ## Pre-L8 gate and hardware list (Luis, 2026-10-01, decision 0014)
 
-- **Gate:** before L8, measure J with its σ (S0, pendulum), then re-run the L4 acro check over the measured band. The
-  pilot doesn't fly until it passes there. Today the acro item closes at the card plant only, and its excess at the
+- **Gate:** before L8, measure J with its σ (S0, pendulum), then re-run the L4 acro check over the measured band,
+  both with FF on and with FF off; FF flies only if it helps over the measured band (at the physical J corners FF can
+  make things worse than PID: 5.14 → 9.46 rad/s on pitch at corner 11). The pilot doesn't fly until it passes there. Today the acro item closes at the card plant only, and its excess at the
   physical J corners is recorded in 0014.
 - **Hardware list:** measure J (S0) and the motor τ_m on the bench. That shrinks the band box and raises the achievable
   crossover by rule. The closed-loop time constant of about 0.161 s at the J+ corner is the "sluggish" question again.
-- **The hover-rotor tumble** (the collision or prop-strike case) is run and reported, and has no pass bar yet. Propose
-  one at L8, from an absolute recovery requirement rather than the linear envelope.
+- **The hover-rotor tumble** (the collision or prop-strike case, `scenarios/quad/L05/recover_tumble_prop_strike.yaml`,
+  decision 0015) is run and reported, and has **no pass bar until L8**. Propose one at L8, from an absolute recovery
+  requirement rather than the linear envelope.
 - **Finding:** the ESC clock error is the largest single limit on crossover. A crystal ESC would roughly double it.
   This is not a requirement, since the flown ESC would fail it (Luis, decision 7).
 - **B3 candidate (INFERRED, an idea only):** estimate each ESC's clock scale in flight from the gyro's harmonic peaks,
@@ -128,7 +203,7 @@ from musl 1.2.5 (MIT, Arm MIT, Sun fdlibm notices; `THIRD_PARTY_NOTICES.md`).
 
 ## Known failing items (safety)
 
-Both have the same cause class and the same gating. **L6 cannot close until both pass, and both must pass before L8
+All three have the same cause class and the same gating. **L6 cannot close until all three pass, and all must pass before L8
 (pilot in the loop).** Each is a strict pytest xfail (`raises=AssertionError`, strict) whose condition is
 "`tests/regression/quad/L06/XFAIL_GATE_CLOSED` does not exist" (0009). Stage (e) creates the file; from then on each is
 a normal test and must pass, and an unexpected pass fails CI. Do not re-seed envelopes from wound-up state and do not
@@ -140,7 +215,14 @@ tune bounds (0005 decision 12, 0006 decisions 5 and 15).
    test_t4_recovery.py`, evidence `tests/regression/quad/L05/results/recovery_cause/`. |ω×Jω| at the first execution
    is 41/44/33 % of τ_held. The vehicle recovers, but leaves the envelope by up to 0.80 rad and 5.3 rad/s.
 
-Stage (c) evaluates ω×Jω feed-forward (F1–F3) with the D term (D1–D7), then both checks are re-run.
+   Since decision 0015 R2 starts from a steady tumble (c* 8.917 N); it is proven infeasible from the old hover start
+   (0014, c3 and c6).
+3. **L5 R1X, the exact-180° α envelope predicate only** (0014, third round, item 3). It is a strict xfail on the same gate
+   file. From the singular start, Gazebo takes a mixed-axis branch whose ω×Jω lag the coupling-free envelope can't
+   follow; the tighter stage (c) envelope exposes it. R1X's other assertions stay normal tests.
+
+All three must pass at stage (e), with the lag-compensated FF live (0014). With FF on through the harness (0014, W4),
+items 1 and 3 pass and item 2 (R2) still fails (diagnosis in 0014, W4; awaiting Luis).
 
 ## Current state
 
@@ -207,6 +289,9 @@ tests a fresh clone of a commit, so uncommitted files are not tested. `test_trut
   `test_card_lint.py:482`, L02 `test_run_scenario.py:358, 385-395`, L03 `test_mixer_params.py`, L00
   `test_lint_g1.py:98-104`. Not `test_gen_sdf_plant_config.py` (pinned by 0007).
 - **Spec gaps** are logged in 0005, 0006 and 0009.
+- **S9 is unenforced for pytest** (Luis, 2026-10-03). The 60 s per-push limit is enforced only as a CTest TIMEOUT. CI
+  runs the tools tests as one pytest session, so no per-file limit applies. Close this at the next CI change. Until
+  then, measure per file in the CI image.
 - **Known, accepted gate limits.** G1 and G3 do not cover `sim/gz` (review only). `ci/run_ci.sh` does not run the L02
   pytest suites; `run_ci_gz.sh l2` does.
 

@@ -1,6 +1,6 @@
 // L6 stage (c), commit 1, T1 (decision 0014): the rate loop's D low-pass (quad spec D2) and the lag-compensated
-// omega x J omega feed-forward (F1-F3). Both are inert by default: with T_f = 0 and every J = 0 the loop is today's law
-// bit for bit (the first two tests), and the frozen L4 and L5 suites stay as they were.
+// omega x J omega feed-forward (F1-F3). Both are inert by default: with T_f = 0 and every J = 0 (RateConfig's defaults,
+// set explicitly in the fixture) the loop is today's law bit for bit (the first two tests).
 //
 // Numbers here are one of: derived (the rule is stated), a cited constant (the float unit roundoff), or a "scenario test
 // value" named with its reason. Nothing is a product value.
@@ -60,6 +60,12 @@ const Fixture* fixture() {
     f.mixer = mixer::from_params();
     f.geometry = rate::from_params();
     f.geometry.period = kPeriodS;
+    // The inert law, built explicitly: from_params reads the product's D filter T_f (decision 0014, commit 3).
+    const RateConfig<float> inert{};
+    f.geometry.d_filter_tau = inert.d_filter_tau;
+    f.geometry.inertia = inert.inertia;
+    f.geometry.motor_tau = inert.motor_tau;
+    f.geometry.ff_filter_tau = inert.ff_filter_tau;
     return &f;
   }();
   return built;
@@ -562,8 +568,9 @@ TEST(L6DTerm, ValidateAcceptsZeroAndRejectsNegativeAndNonFinite) {
   EXPECT_EQ(with([&](auto& c) { c.ff_filter_tau = -0.01F; }), rate::ConfigError::Feedforward);
   EXPECT_EQ(with([&](auto& c) { c.ff_filter_tau = nan; }), rate::ConfigError::NonFinite);
   EXPECT_EQ(with([&](auto& c) { c.ff_filter_tau = inf; }), rate::ConfigError::NonFinite);
-  // From the product parameter set the new fields are 0 (not yet parameters): the product loop is today's.
-  EXPECT_EQ(rate::from_params().d_filter_tau[0], 0.0F);
+  // The inert configuration is RateConfig's default; from the product parameter set J stays 0 (the feed-forward is
+  // inert until stage (e), decision 0014), while T_f is a product parameter.
+  EXPECT_EQ(RateConfig<float>{}.d_filter_tau[0], 0.0F);
   EXPECT_EQ(rate::from_params().inertia[2], 0.0F);
 }
 

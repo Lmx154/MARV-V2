@@ -27,13 +27,14 @@ Predicate. PASS iff
         gyro sample the firmware received (m = 1), E_a(n) = |w_a,m=1(n) - w_a,m=2(n)| (decision 0003 E):
           P_a  the largest |w_a| over every execution and over the 17 x 17 tau x J grid of the band box (the T3 oracle's
                band_envelope grid, corners included) of the LINEAR design model driven by acro.yaml's exact setpoint
-               sequence at the run's stamps: run_l4.script_response, the oracle's closed_loop law and plant map (the
-               oracle's Setup.plant_map, the build's parameters through the oracle's inputs-refresh path) with a
-               setpoint per execution (run_l4.acro_setpoints, the composition's setpoint_at);
-          F_a  = TOL_a + H_a as in the step test: TOL_a = sum over the nodes r, e, I, u of l1 x rho, l1 the oracle's
-               impulse-response norms (rate_t3_oracle.l1_norm, both dt phases) and rho the oracle's first-order float32
-               rounding injections along the nominal script trajectory; H_a the envelope's last-halving change, the
-               largest change of lo(n), hi(n) between the 9 x 9 and the 17 x 17 grids;
+               sequence at the run's stamps: run_l4.script_response, the oracle's closed_loop chain, law and plant map
+               (the oracle's Setup.lowpass and Setup.tick_map, the build's parameters through the oracle's
+               inputs-refresh path) with a setpoint per execution (run_l4.acro_setpoints, the composition's
+               setpoint_at);
+          F_a  = TOL_a + H_a as in the step test: TOL_a = sum over the oracle's nodes (NODES) of l1 x rho, l1 the
+               oracle's impulse-response norms (rate_t3_oracle.l1_norm, both dt phases) and rho the oracle's
+               first-order float32 rounding injections along the nominal script trajectory; H_a the envelope's
+               last-halving change, the largest change of lo(n), hi(n) between the 9 x 9 and the 17 x 17 grids;
   (iv)  the replay reproduces both runs: per execution the log's tick, stamp and DShot, bit for bit
         (run_l4.replay_fidelity; its own test too);
   (v)   over the combined segment, from the m = 1 replay: flag consistency (run_l4.flag_findings: a set flag has
@@ -243,16 +244,16 @@ def design_bound(plan, defaults):
     su = oracle.Setup(p)
     out = {}
     for a, axis in enumerate(AXES):
-        kp, ki, tau_ref = p[f"rate_kp_{axis}"], p[f"rate_ki_{axis}"], p[f"rate_tau_ref_{axis}"]
+        law = (p[f"rate_kp_{axis}"], p[f"rate_ki_{axis}"], p[f"rate_kd_{axis}"], p[f"rate_d_filter_tau_{axis}"],
+               p[f"rate_tau_ref_{axis}"], (su.divisor, su.lowpass, su.lowpass_error))
         inertia, tau = p[oracle.INERTIA[axis]], p["motor_tau"]
         sps, stamps = run_l4.acro_setpoints(plan, a)
-        args = (kp, ki, tau_ref, su.plant_map, inertia, tau, p["inertia_robustness_band"], p["tau_robustness_band"],
-                sps, stamps)
+        args = (*law, su.tick_map, inertia, tau, p["inertia_robustness_band"], p["tau_robustness_band"], sps, stamps)
         lo_c, hi_c = run_l4.script_envelope(*args, oracle.GRID)
         lo, hi = run_l4.script_envelope(*args, HALVED)
         halving = max(max(abs(x - y) for x, y in zip(lo_c, lo)), max(abs(x - y) for x, y in zip(hi_c, hi)))
         peak = max(max(abs(x) for x in lo), max(abs(x) for x in hi))
-        _, rho = run_l4.script_response(kp, ki, tau_ref, su.plant_map(inertia, tau), sps, stamps, want_rho=True)
+        _, rho = run_l4.script_response(*law, su.tick_map(inertia, tau), sps, stamps, want_rho=True)
         n = su.executions(axis)
         l1 = {node: max(oracle.l1_norm(su, axis, node, k, n) for k in PHASES) for node in oracle.NODES}
         tol = sum(l1[node] * rho[node] for node in oracle.NODES)

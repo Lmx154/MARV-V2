@@ -18,3 +18,12 @@ gyro_notch_q_h1
 gyro_notch_q_h2
 gyro_notch_q_h3
 gyro_notch_omega_min
+# Derived by rule (tools/card/rate_lead.py, flatten.py --out-rate-lead; decision 0014), not register entries.
+rate_d_filter_tau_roll
+rate_d_filter_tau_pitch
+rate_d_filter_tau_yaw
+# The feed-forward's switch and T_ff (decision 0014, owner decision 2: inert until stage (e)). rate_ff_enable is a
+# scenario-register entry (design/scenario_values.yaml); rate_ff_filter_tau is derived by rule (tools/card/rate_lead.py
+# rule step 9, flatten.py --out-rate-lead). J and tau_m are the card's inertia_xx/yy/zz and motor_tau (L01).
+rate_ff_enable
+rate_ff_filter_tau

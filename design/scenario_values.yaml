@@ -105,3 +105,16 @@ yaw_deadband:
     (divider 500 - yaw_deadband). The heading lock engages only at exactly zero stick; with real sticks at L8 this
     value needs revisiting. The attitude generator refuses a value outside [0, 1).
   used_by: [angle mode, attitude generator input check]
+
+rate_ff_enable:
+  value: 0
+  unit: "1"
+  method: scenario
+  sigma: choice
+  rationale: >-
+    Switch of the rate loop's lag-compensated omega x J omega feed-forward: 1 = on (fw/rate RateConfig takes J from
+    inertia_xx/yy/zz, tau_m from motor_tau and T_ff from rate_ff_filter_tau), any other value = off (all three 0, the
+    exact PID law). 0: inert until stage (e) switches it on in the same change that creates
+    tests/regression/quad/L06/XFAIL_GATE_CLOSED (decision 0014, owner decision 2: "FF goes live at stage (e), with the
+    gate file"). Stage (c)'s FF-on evidence switches it through the test harness (sil_override), not here.
+  used_by: [rate loop feed-forward]

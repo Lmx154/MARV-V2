@@ -20,8 +20,10 @@ Commands (repository root, after `uv sync --frozen`):
 Inputs: the tool reads all of them, retypes none, and the outputs list each with its sha256.
 - The card, `design/budget.yaml`, `design/scenario_values.yaml` and the sensor profile, through `rate_lead.design`.
 - `scenarios/quad/L04/acro.yaml`.
-- The L4 T3 fixture, `rate_t3_inputs.txt`. It holds the L4 product parameters; the cross-check shows it equals the gz
-  build's table.
+- The L4 T3 fixture, `rate_t3_inputs.txt`: the stage (c) product parameters (J, τ, the bands, the tick, rate_max, and
+  the law of the linear-model identity check).
+- The PI law of the cross-check is `rate.py`'s, the L4 PI reference, through `rate_lead.design`. Its design-model P
+  reproduces cause.txt's bit for bit, so it is the law the acro_cause build flew.
 - The l4_rate_scripted register.
 - `L04/results/acro_cause/cause.txt` and decision 0005's table, for the cross-check.
 
@@ -41,7 +43,7 @@ Model:
   - E = 0, because E needs two gz runs. This is stricter.
   - Z comes from the linear design model of the same loop without the coupling, over the test's 17×17 τ×J grid.
   - F = H, the 9×9 to 17×17 halving change. TOL = 0 for the D law, also stricter.
-- **The PI cross-check** uses `test_t4_acro.design_bound` itself.
+- **The PI cross-check** uses the same linear model of the PI law at the L4 sensor, with F = H (TOL = 0).
 
 Sensors:
 
@@ -61,11 +63,12 @@ T4e in detail:
 - Its linear model, which gives Z and F, holds every notch at ω_hover.
 
 Cross-check (`sweep.txt`, the PI law as flown in acro_cause), model against the gz runs, per axis roll / pitch / yaw:
-- Executions outside: 1378 / 1036 / 352, against 1377 / 1037 / 350.
-- Excess: 8.4798 / 2.8312 / 0.1407 rad/s, against 8.48 / 2.83 / 0.14.
+- Executions outside: 1378 / 1037 / 353, against 1377 / 1037 / 350.
+- Excess: 8.4814 / 2.8322 / 0.1418 rad/s, against 8.48 / 2.83 / 0.14.
 - The trace in cause.txt is matched to at most 0.0055 rad/s.
-- `design_bound` on the fixture reproduces cause.txt's pitch bound bit for bit.
-- The linear model is `run_l4.script_response` bit for bit.
+- The PI law's design-model P reproduces cause.txt's pitch P bit for bit. Its F lacks the T3 oracle's TOL (about
+  1e-3 rad/s), which no longer covers the PI law.
+- The linear model is `run_l4.script_response` bit for bit, for the fixture's stage (c) law with its chain low-pass.
 - Doubling the RK4 steps per tick changes ω by less than 1e-9 rad/s.
 - Control: with ω×Jω removed from the plant, nothing is outside on any axis, and the cross-check fails.
 
@@ -96,8 +99,8 @@ Corners (T3): no variant passes at any of the 12 corners.
 UNKNOWNs and limits:
 - **E is not modelled.** It is set to 0.
 - **τ ±30 % is not swept at the corners.** Every plant uses the card's τ.
-- **The acro test cannot judge the stage (c) law yet.** `run_l4.script_response` and the T3 oracle model a PI law only
-  (kd is ignored). Commit 3 must extend them to the D law and its T_f before the test's Z describes the stage (c) loop.
+- **Resolved in commit 3:** `run_l4.script_response` and the T3 oracle now model the stage (c) law (D through T_f, the
+  chain's low-pass, notches bypassed), so the acro test's Z describes the T4c configuration.
 - **The outputs depend on `rate_lead.design`.** Re-run both commands whenever it changes.
 
 Run time: on 16 CPUs the full command takes about 32 s and the per-push case about 26 s (`rate_lead.design` about 17 s).

@@ -1,14 +1,19 @@
-// The L5 T3 suite (quad spec 4 L5, decision 0006 F "T3 step" and "T3 envelopes"): the firmware path of angle mode, the attitude
-// law and the rate loop in bypass (all float32), configured from the committed fixture reference/attitude_t3_inputs.txt (not
-// from the live product parameters), is closed with the design plant in double at tick resolution and compared with the
-// committed double oracle reference/attitude_t3_oracle.py (README.md has the rounding tolerance derivation).
+// The L5 T3 suite (quad spec 4 L5, decision 0006 F "T3 step" and "T3 envelopes"; quad spec 4 L6 stage (c), decision 0014):
+// the firmware path of angle mode, the attitude law, the gyro chain and the rate loop in bypass with its filtered D term (all
+// float32), configured from the committed fixture reference/attitude_t3_inputs.txt (not from the live product parameters),
+// is closed with the design plant in double at tick resolution and compared with the committed double oracle
+// reference/attitude_t3_oracle.py (README.md has the rounding tolerance derivation).
 //
 // Harness. Tick j has the stamp floor(j num / den) us. The rate loop executes at j = 0 mod D (the seed execution at j = 0),
 // the attitude group (angle mode, then the law) at j = 0 mod D N and before the rate group of the same tick; its rate setpoint
 // is held until the next attitude execution, and the torque computed at tick j acts from tick j (zero computation delay). The
-// plant per axis is J w' = u_m, tau u_m' = u - u_m with u held over a tick, exact per tick (and per kinematic sub-step), no
-// w x Jw; the body quaternion is integrated in double from the exact per-axis angle increments of each sub-step. The
-// firmware sees the plant's q and w as float32 with valid set.
+// rate group is composed as fw/rate_group composes it (rate_group.hpp): every tick the gyro chain filters the tick's
+// sample, on a rate tick after update_notches; the rate loop runs in bypass on the chain output. No rotor speed exists here
+// (every valid bit clear), so every notch is bypassed and the chain is its low-pass. The mixer and the allocation record
+// (the anti-windup) stay out of the loop, as before. The plant per axis is J w' = u_m, tau u_m' = u - u_m with u held over
+// a tick, exact per tick (and per kinematic sub-step), no w x Jw; the body quaternion is integrated in double from the exact
+// per-axis angle increments of each sub-step. The firmware sees the plant's q and w as float32 with valid set; the gyro
+// sample of tick j is the plant's w at the start of tick j (before that tick's step), as before the chain: no latency.
 //
 // Numbers in this file are one of: read from the committed reference, derived (the rule is stated), or a "scenario test
 // value" named with its reason.
@@ -29,12 +34,14 @@
 #include <marv/attitude/angle_mode.hpp>
 #include <marv/attitude/attitude_law.hpp>
 #include <marv/attitude/config.hpp>
+#include <marv/gyro_chain/gyro_chain.hpp>
 #include <marv/prim/constants.hpp>
 #include <marv/prim/quat.hpp>
 #include <marv/prim/vec.hpp>
 #include <marv/rate/rate_loop.hpp>
 #include <marv/types/attitude_state.hpp>
 #include <marv/types/imu_sample.hpp>
+#include <marv/types/rotor_speed_sample.hpp>
 
 namespace {
 
@@ -44,6 +51,8 @@ using attitude::AnglePhase;
 using attitude::AngleSticks;
 using attitude::AttitudeConfig;
 using attitude::AttitudeLaw;
+using gyro_chain::GyroChain;
+using gyro_chain::GyroChainConfig;
 using rate::RateConfig;
 using rate::RateLoop;
 using V3 = prim::Vec3<float>;
@@ -52,7 +61,8 @@ constexpr std::size_t kA = rate::kTorqueAxes;
 constexpr std::array<const char*, kA> kAxisName{"roll", "pitch", "yaw"};
 constexpr std::array<const char*, kA> kInertia{"inertia_xx", "inertia_yy", "inertia_zz"};
 constexpr std::array<const char*, 3> kScenario{"step_roll", "step_pitch", "yaw_release"};
-constexpr std::array<const char*, 4> kNode{"ref", "e", "I", "u"};
+// The oracle's error nodes (README.md, "Tolerance"): the rounding nodes, then the coefficient nodes.
+constexpr std::array<const char*, 9> kNode{"ref", "gyro", "lpf", "e", "I", "D", "u", "lpf_coef", "alpha"};
 
 // Scenario test value: negative control (a), the attitude gain k multiplied by 1.1 (quad spec 4 L5 pass bar).
 constexpr float kGainScale = 1.1F;
@@ -195,12 +205,14 @@ const std::map<std::string, EnvelopeScenario>& envelope() {
 
 // ---- the fixture -------------------------------------------------------------------------------------------------------
 // reference/attitude_t3_inputs.txt: the f32 values the oracle used (hex floats, exact). It is the test's own fixture; it equals
-// the product parameters of 2026-09-30 and does not follow later changes to them. The rotor geometry, the mixer and the
-// anti-windup are out of the loop here, so the geometry stays at its zero default.
+// the product parameters of 2026-10-01 (L6 stage (c)) and does not follow later changes to them. The rotor geometry, the
+// mixer and the anti-windup are out of the loop here, so the geometry stays at its zero default; the feed-forward is inert
+// (J = 0 in the rate configuration), as in the product until stage (e).
 
 struct Product {
   RateConfig<float> rate;
   AttitudeConfig<float> att;
+  GyroChainConfig<float> chain;
   std::array<double, kA> inertia{};
   double motor_tau = 0;
   std::uint64_t num_us = 0;
@@ -225,6 +237,7 @@ const Product* product() {
       p.rate.kp[a] = v.at("rate_kp_" + axis);
       p.rate.ki[a] = v.at("rate_ki_" + axis);
       p.rate.kd[a] = v.at("rate_kd_" + axis);
+      p.rate.d_filter_tau[a] = v.at("rate_d_filter_tau_" + axis);
       p.rate.tau_ref[a] = v.at("rate_tau_ref_" + axis);
       p.att.rate_max[a] = v.at("rate_max_" + axis);
       p.inertia[a] = static_cast<double>(v.at(kInertia[a]));
@@ -245,10 +258,19 @@ const Product* product() {
     p.att.yaw_deadband = v.at("yaw_deadband");
     p.att.yaw_alpha_min = v.at("att_yaw_alpha_min");
     p.att.yaw_t_cross = v.at("att_yaw_t_cross");
+    // The chain as rate_group::chain_from_params forms it: the tick period one float quotient in microseconds, then one
+    // division; the first finite sample seeds the states.
+    p.chain.period = v.at("tick_period_num_us") / v.at("tick_period_den") / static_cast<float>(prim::kMicrosecondsPerSecond);
+    p.chain.rate_divisor = static_cast<std::uint32_t>(p.divisor);
+    p.chain.cutoff_hz = v.at("gyro_lpf_cutoff_hz");
+    p.chain.notch_q = {v.at("gyro_notch_q_h1"), v.at("gyro_notch_q_h2"), v.at("gyro_notch_q_h3")};
+    p.chain.omega_threshold_rad_s = v.at("gyro_notch_omega_min");
+    p.chain.seed_first_sample = true;
     p.tick_s = static_cast<double>(p.num_us) / static_cast<double>(p.den) / prim::kMicrosecondsPerSecond;
     p.period_s = static_cast<double>(p.divisor) * p.tick_s;
     p.att_period_s = static_cast<double>(p.ratio) * p.period_s;
-    return rate::validate(p.rate) == rate::ConfigError::None && attitude::validate(p.att) == attitude::ConfigError::None
+    return rate::validate(p.rate) == rate::ConfigError::None && attitude::validate(p.att) == attitude::ConfigError::None &&
+                   gyro_chain::validate(p.chain) == gyro_chain::ConfigError::None
                ? &p
                : nullptr;
   }();
@@ -329,6 +351,17 @@ AngleSticks<float> sticks_of(std::size_t scenario, std::size_t a, std::size_t a_
   return s;
 }
 
+// The gyro sample of a tick: the plant's w at the start of the tick, as float32, with GyroValid.
+ImuSample sample_of(const std::array<Plant, kA>& plant, std::uint64_t stamp) {
+  ImuSample imu{};
+  imu.t_us = stamp;
+  imu.flags = imu_flag(ImuFlag::GyroValid);
+  for (std::size_t i = 0; i < kA; ++i) {
+    imu.gyro_rad_s[i] = static_cast<float>(plant[i].w);
+  }
+  return imu;
+}
+
 // One run of a script: `delay_ticks` ticks after a rate execution still apply the previous torque; `substeps` kinematic
 // sub-steps per tick.
 Trace run_script(const Product& prod, const AttitudeConfig<float>& acfg, const RateConfig<float>& rcfg, std::size_t scenario,
@@ -339,6 +372,9 @@ Trace run_script(const Product& prod, const AttitudeConfig<float>& acfg, const R
   law.init(acfg);
   RateLoop<float> loop;
   loop.init(rcfg, mixer::MixerConfig<float>());
+  GyroChain<float> chain;
+  chain.init(prod.chain);
+  const RotorSpeedSample no_rotor_speed{};  // every valid bit clear: every notch bypassed
   std::array<Plant, kA> plant;
   for (std::size_t a = 0; a < kA; ++a) {
     plant[a].inertia = prod.inertia[a];
@@ -376,18 +412,21 @@ Trace run_script(const Product& prod, const AttitudeConfig<float>& acfg, const R
           run.lock_execution = a;
         }
       }
-      ImuSample imu{};
-      imu.t_us = stamp;
-      imu.flags = imu_flag(ImuFlag::GyroValid);
-      for (std::size_t i = 0; i < kA; ++i) {
-        imu.gyro_rad_s[i] = static_cast<float>(plant[i].w);
-      }
+      // The rate tick (rate_group.hpp): the notches from the rotor speeds, the chain on the tick's sample, the rate loop on
+      // the chain output.
+      chain.update_notches(no_rotor_speed);
+      ImuSample imu = sample_of(plant, stamp);
+      imu.gyro_rad_s = chain.filter(imu.gyro_rad_s);
       const rate::RateOutput<float> out = loop.execute_bypass(imu, r_hold);
-      run.clean = run.clean && !out.fault_active;
+      run.clean = run.clean && !out.fault_active && chain.input_fault_flags() == 0;
       for (std::size_t i = 0; i < kA; ++i) {
         u_new[i] = static_cast<double>(out.torque[i]);
       }
       for (std::uint64_t k = 0; k < prod.divisor; ++k) {
+        if (k > 0) {
+          // The other ticks of the rate period: the chain filters every tick; its output is read at the next rate tick.
+          static_cast<void>(chain.filter(sample_of(plant, (tick0 + k) * prod.num_us / prod.den).gyro_rad_s));
+        }
         for (unsigned sub = 0; sub < substeps; ++sub) {
           std::array<double, 3> d{};
           for (std::size_t i = 0; i < kA; ++i) {

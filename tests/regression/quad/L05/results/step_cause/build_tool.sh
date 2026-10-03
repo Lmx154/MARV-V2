@@ -12,9 +12,11 @@ c++ -std=c++20 -g -ffp-contract=off -Wall -Wextra \
   -I"$b/generated/marv_params_l5_attitude_scripted" -I"$root/fw/params/include" -I"$root/fw/hal/include" \
   -I"$root/fw/hal/sim/include" -I"$root/fw/types/include" -I"$root/fw/prim/include" -I"$root/fw/sched/include" \
   -I"$root/fw/attitude/include" -I"$root/fw/rate/include" -I"$root/fw/mixer/include" \
+  -I"$root/fw/gyro_chain/include" -I"$root/fw/rate_group/include" \
   "$root/tests/regression/quad/L05/results/step_cause/step_cause_tool.cpp" "$root/fw/sil/src/param_override.cpp" \
   "$b/fw/params/libmarv_params_l5_attitude_scripted_runtime.a" "$b/fw/params/libmarv_params_l5_attitude_scripted_generated.a" \
-  "$b/fw/attitude/libmarv_attitude.a" "$b/fw/rate/libmarv_rate.a" "$b/fw/mixer/libmarv_mixer.a" \
+  "$b/fw/attitude/libmarv_attitude.a" "$b/fw/rate_group/libmarv_rate_group.a" "$b/fw/gyro_chain/libmarv_gyro_chain.a" \
+  "$b/fw/rate/libmarv_rate.a" "$b/fw/mixer/libmarv_mixer.a" \
   "$b/fw/sched/libmarv_sched.a" "$b/fw/types/libmarv_types_instantiate.a" "$b/fw/hal/sim/libmarv_hal_sim.a" \
   "$b/fw/prim/libmarv_prim.a" "$b/fw/params/libmarv_params_l5_attitude_scripted_runtime.a" \
   -o "$out"

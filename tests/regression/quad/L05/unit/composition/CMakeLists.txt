@@ -15,7 +15,7 @@ target_include_directories(unit_l5_composition PRIVATE
   "${PROJECT_SOURCE_DIR}/fw/compositions/l5_attitude_scripted/include")
 target_link_libraries(unit_l5_composition PRIVATE
   marv_sil_l5_attitude_scripted marv_params_l5_attitude_scripted_runtime marv_params_l5_attitude_scripted_generated
-  marv_attitude marv_rate marv_mixer marv_types marv_hal_sim GTest::gtest_main)
+  marv_attitude marv_rate_group marv_rate marv_mixer marv_types marv_hal_sim GTest::gtest_main)
 marv_apply_flags(unit_l5_composition)
 marv_frozen_suite(unit_l5_composition)
 

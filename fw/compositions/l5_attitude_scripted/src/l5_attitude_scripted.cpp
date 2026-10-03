@@ -1,19 +1,21 @@
-// The L5 test composition: angle mode, the attitude law (marv::attitude), the rate loop in bypass (marv::rate) and the
-// mixer (marv::mixer) flown with scripted inputs. Scenario parameters (fw/compositions/l5_attitude_scripted/params) give
-// the collective thrust request, a piecewise-constant stick script, one rate-setpoint chirp and a constant yaw torque
-// disturbance; nothing here is a vehicle number. The attitude is the state latched by attitude_input (truth at L5).
+// The L5 test composition: angle mode, the attitude law (marv::attitude), and the gyro chain, the rate loop in bypass
+// and the mixer through the shared rate-group step (marv::rate_group), flown with scripted inputs. Scenario parameters
+// (fw/compositions/l5_attitude_scripted/params) give the collective thrust request, a piecewise-constant stick script,
+// one rate-setpoint chirp and a constant yaw torque disturbance; nothing here is a vehicle number. The attitude is the
+// state latched by attitude_input (truth at L5).
 //
 // Per tick, in this order (decision 0006 E: the attitude group runs before the rate group in the same tick, and its
 // output acts at that tick):
 //   attitude group, every att_loop_ratio * rate_loop_divisor ticks (tick 0 included):
 //     the latched state must carry the sample stamp (else hal_panic, decision 0006 B);
 //     angle = angle_mode.execute(sticks(t), state); rate_sp = attitude.execute(state, angle.q_sp, angle.yaw_rate_cmd).
+//   every tick: step.filter(sample, due) (rate_group.hpp: on a rate-group tick the notches are updated first).
 //   rate group, every rate_loop_divisor ticks (tick 0 included):
-//     out = rate.execute_bypass(sample, rate_sp + chirp(t)); request = out.torque + disturbance(t);
-//     alloc = allocate({thrust, request}); rate.record_allocation(request, alloc); DShot = thrust_to_dshot(alloc.f).
+//     step.execute_bypass(rate_sp + chirp(t), disturbance(t), thrust): the rate loop in bypass on the chain output,
+//     request = out.torque + disturbance(t), allocate, record_allocation, thrust_to_dshot; the DShot is written.
 // The rate setpoint rate_sp is held between attitude executions. On a tick with no rate group nothing is written: the HAL
 // latch holds the last command (hal_sim keeps it between writes). init panics naming the violated rule on an invalid
-// attitude, rate or mixer configuration or invalid scenario parameters.
+// attitude, rate, mixer or chain configuration or invalid scenario parameters.
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -31,6 +33,7 @@
 #include <marv/params/param.hpp>
 #include <marv/prim/vec.hpp>
 #include <marv/rate/rate_loop.hpp>
+#include <marv/rate_group/rate_group.hpp>
 #include <marv/sched/rate_groups.hpp>
 #include <marv/types/actuator.hpp>
 #include <marv/types/attitude_state.hpp>
@@ -68,8 +71,7 @@ enum Group : std::size_t { kAttitude, kRate, kGroupCount };
 sched::RateGroups<kGroupCount> g_groups;
 attitude::AngleMode<float> g_angle;
 attitude::AttitudeLaw<float> g_attitude;
-rate::RateLoop<float> g_rate;
-mixer::MixerConfig<float> g_mixer;
+rate_group::RateGroupStep g_step;
 Script g_script;
 Chirp<float> g_chirp;
 Disturbance<float> g_disturbance;
@@ -153,8 +155,7 @@ void attitude_input(const AttitudeState<float>& a) noexcept {
 
 void init() noexcept {
   const rate::RateConfig<float> rate_cfg = rate::load_config();
-  g_mixer = mixer::load_config();
-  g_rate.init(rate_cfg, g_mixer);
+  const mixer::MixerConfig<float> mixer_cfg = mixer::load_config();
   const attitude::AttitudeConfig<float> attitude_cfg = attitude::load_config();
   g_angle.init(attitude_cfg);
   g_attitude.init(attitude_cfg);
@@ -171,6 +172,7 @@ void init() noexcept {
       !g_groups.init({static_cast<std::uint32_t>(attitude_divisor), static_cast<std::uint32_t>(divisor)})) {
     hal_panic("l5_attitude_scripted composition: rate_loop_divisor * att_loop_ratio is out of range");
   }
+  g_step.init(rate_cfg, mixer_cfg, rate_group::load_chain_config());
 
   g_thrust = param_value<ParamId::l5_thrust_n>();
   if (!std::isfinite(g_thrust) || !(g_thrust >= 0.0F)) {
@@ -201,15 +203,15 @@ void tick(const ImuSample& s) noexcept {
     const attitude::AngleOutput<float> angle = g_angle.execute(attitude::AngleSticks<float>{stick[0], stick[1], stick[2]}, g_latch);
     g_rate_setpoint = g_attitude.execute(g_latch, angle.q_sp, angle.yaw_rate_cmd).rate_setpoint;
   }
-  if (!fired(due, kRate)) {
+  const bool rate_due = fired(due, kRate);
+  g_step.filter(s, rate_due);
+  if (!rate_due) {
     return;
   }
-  const rate::RateOutput<float> out = g_rate.execute_bypass(s, g_rate_setpoint + chirp_rate(g_chirp, s.t_us));
-  const Vec3f request = out.torque + disturbance_torque(g_disturbance, s.t_us);
-  const mixer::Allocation<float> alloc = mixer::allocate(g_mixer, mixer::Request<float>{g_thrust, request});
-  g_rate.record_allocation(request, alloc);
+  const rate_group::Execution e = g_step.execute_bypass(g_rate_setpoint + chirp_rate(g_chirp, s.t_us),
+                                                        disturbance_torque(g_disturbance, s.t_us), g_thrust);
   ActuatorOutput<kMotors, kServos> o{};
-  o.motor = mixer::thrust_to_dshot(g_mixer, alloc.f);
+  o.motor = e.dshot;
   hal_actuators_write(o);
 }
 
