@@ -1028,7 +1028,7 @@ listed. The reason for each change is in the section named.
 - `tests/regression/quad/L05/unit/composition/composition_test.cpp`: 3b (wiring), 3d-L5.
 - `tests/regression/quad/L06/CMakeLists.txt`: commit 1 and 3b.
 - `tests/regression/quad/L06/d_term/rate_loop_test.cpp`: 3a (the inert law is built explicitly, since from_params now reads T_f).
-- `tests/regression/quad/L06/gyro_chain/fault_test.cpp`: 3b (reseed rule).
+- `tests/regression/quad/L06/gyro_chain/fault_test.cpp`: 3b (reseed rule) + divisor (b).
 - `tests/regression/quad/L06/param_ids`: 3a and W4.
 - `tests/regression/quad/L06/results/ff_eval/README.md`: 3d-L4 (the acro test's Z describes the stage (c) law at T4c) and W4.
 - `tests/regression/quad/L06/results/ff_eval/card_worst.txt`: W4 (regenerated).
@@ -1076,8 +1076,66 @@ listed. The reason for each change is in the section named.
   - The CMake generation (62.3 s): `rate_lead.design` 26.1 s, `attitude_lead.design` 35.1 s and `attitude.design`
     1.0 s, on `usable_cpus()` = 4 processes at about 73 % use. No work is duplicated.
 
+## Stage (c) close
+
+**1. What stage (c) adds.**
+- Firmware: the D term on the measurement through a low-pass (T_f = 1/ω_p = 41.87 ms); the lag-compensated ω×Jω FF (T_ff 12.31 ms), built and inert (`rate_ff_enable` 0) until (e); the chain's input guard and first-sample seeding; `fw/rate_group`, one tick step (chain, notch update, rate loop) shared by both compositions and the replay tools.
+- Tools: `rate_lead.py` (PI × lead, N* = the largest N within Ms_max and the D + FF noise budget, f32 guard on the 312/313 µs loop, physical 3-D J corners); `attitude_lead.py` (att_kp over the configuration set); Stein (rate, 120 loops) and Lyapunov (attitude) stability certificates.
+- 0015: R2 starts from a steady tumble at c* 8.917 N (hover is infeasible: motor 1 would need −0.301 N); the old hover-rotor tumble is `recover_tumble_prop_strike`.
+
+**2. Product numbers, before (stage (b), today's PI with the chain) → after.**
+- Rate ω_c 8.32 rad/s (today's L4 gains) → 12.129 rad/s nominal; N 1 → N* 3.877.
+- Worst PM 35.45° (ESC 2 %, J−, τ+) → 45.00004° over the set (J−, τ+); worst Ms not recorded before → 1.99994 (J−, τ−).
+- att_kp 3.0872879 → 3.1539721 (bound by bypassed, latency 0, roll J+ τ+, PM 45.00001°); attitude worst Ms 1.9150; t_cross 0.274375 s → 0.2925 s. Attitude PM and crossover before: not recorded in these records.
+- Closed-loop time constant at J+: about 0.161 s (design consult, "barely changed from PI"); the c2 tool's t63 is 0.151 s.
+- Noise: budget 0.5 × 4.56 mN = 2.281 mN; D + FF at rate_max 2.281 mN (100 %, T_ff is set by it); D path at hover 0.494 mN (21.7 %).
+
+**3. The pass bar.**
+- (b, c) T3, QF-3 over the band box with the chain and the D low-pass in the loop: PM 45.00004° ≥ 45°, Ms 1.99994 ≤ 2.0; margin zero by design (Luis, first round).
+- (c) T3, D + FF noise ≤ budget at hover and rate_max: met; zero margin at rate_max (T_ff rule).
+  - At hover ω = 0, so the FF path's noise contribution is zero to first order and the combined value equals the D path's 0.494 mN (21.7 %). Today only the maximum over the operating points is asserted (`test_rate_lead.py:128`); the hover assertion comes with 0016's commit.
+- (c) T3, goldens regenerate with D and the controls still break them: L4 float error 1.4 % of tolerance, gains ×1.1 283×, one tick 3.8×; L5 at final k gains ×1.1 ×2464.6 / ×70.7, rate ×1.1 ×1137.8 / ×206.3, one tick ×28.1 / ×5.1.
+- (c) T3, the ω×Jω evaluation recorded (c5): lag-compensated FF passes at the card plant by 24.1 mrad/s; PID alone and plain FF fail everywhere; nothing passes at the 12 physical J corners.
+- Added by rulings: configuration-set PM/Ms (above; controls fail); per-motor mixes, 70 per push (715 in the scratch evaluation), none worse than the set (control 44.560°, 2.0267); rate certificate ρ ≤ 0.9992518, min GM 2.5937 (control at 1.1·GM); attitude Ms over the set 1.9150 (control 2.0301); chirp plateau admission, slack ≥ +7.600° (control ×2 fails every axis); divisor f_c < f_s/(2D), D* 6 refused, 5 accepted; parameter pin, 93 records byte for byte; chirp lead-off reduction to rate.py within 2⁻³⁰ (control: the lead on, 0.174 rad).
+
+**4. Known failing items** (strict xfail while `L06/XFAIL_GATE_CLOSED` is absent; an unexpected pass fails CI; no reseeding or bound tuning).
+- L4 acro: FF off, roll excess 5.23 rad/s. FF on (W4): pass by 6.07 mrad/s (T3 predicted 3.2), at the card plant only. (e): FF live with the gate file.
+- L5 R2: FF off 13923 violations (w_x +3.866 rad/s); FF on 10398 (w_y +1.975). Causes: the gz step-0 zero-rate read (0016), then yaw saturation and the integrator freeze. 0016 expects about 2416 violations (w_z +0.24 rad/s), still failing. (e) needs the yaw choice too (model the allocation and freeze, or rule R2 yaw-limited).
+- L5 R1X (exact-180° α predicate only): FF off 74 violations (slack +5.05e-3); FF on pass (−2.92e-2). (e): FF live.
+
+**5. Frozen changes.** 32 files that existed at `1159d5c` (the CI count), plus 10 added by commits 1–2 and changed by commit 3: 42 listed above.
+- 3b wiring onto `RateGroupStep`, 12 (replay, results tools, L05 composition, L06 CMake, `fault_test.cpp`, which also carries divisor (b)); 3c-L4 L4 T3, 6; 3c-L5/W1b L5 T3 at the final k, 6; 3d-L4 L4 consumers, 5; W4 and 3a, 4; W1b set tests, 2; 3d-L5 envelope A, 1; third round item 2 chirp, 1; 0015/R1X, 5.
+- Relaxed, each approved: divisor 1 now accepted (generator domain), replaced by D* 6 refused / 5 accepted and 0.99·f_s/2 at D = 2 now refused (net stricter); R1X α became a strict xfail, with a new normal test for the clean run and the DShot range; the chirp plateau admits only runs with |shift| < 4.217°, floor 3 (amends 0006 decision 20); R2 hover start → steady tumble, the hover case kept as a reported scenario.
+
+**6. Verification.**
+- Full local CI, all four jobs, on snapshot `b4c9e16`: pass; tools 1013 passed, 1 skipped; gz-l4 40 passed, 1 xfailed; gz-l5 63 passed, 2 xfailed.
+- Core on `7ecfe8b`: pass (1578 s); ctest 642/642 debug and release, frozen 641/641; tools 1016 passed, 1 skipped; regression check 32 files, 2 records.
+- `b4c9e16` → `7ecfe8b`: 0014 (+36/−2), `docs/handoff.md` (+48), the new `L06/tools/test_chirp_lead_off.py` (+140), and two docstring lines in `L06/tools/test_notch_mixes.py` (+2/−2). None can affect gz-l2/l4/l5: those jobs collect only `L02`, `L04/gz` and `L05/gz`, and nothing built changed.
+
+**7. Recorded limits and findings.**
+- Physical J corners: FF can be worse than PID (pitch, corner 11: 5.14 → 9.46 rad/s); FF flies only if the pre-L8 re-run over the measured band shows it helps.
+- Response about 0.161 s at J+; the ESC clock error is the largest single limit on crossover (a crystal ESC: ω_c 23.6 rad/s, τ about 0.086 s).
+- The hover-rotor tumble (prop strike, 14353 violations) has no pass bar until L8.
+- S9 is unenforced for pytest. Nightly: `test_chirp_admission` 111.7 s, `test_notch_mixes` 92.4 s, `test_attitude_lead` 81.4 s, `test_flatten_report` 65 s, `test_attitude_t3` 61 s. Nearest per push: `test_r1x_coupling` 58.9 s (1.1 s margin), `test_r2_lower_bound` 56.2 s (3.8 s).
+- Acro FF-on margin 6.07 mrad/s is a knife edge for (e); the T3 oracles keep the f_s/2 bound (consistent at D = 2); the rate_max noise point is an upper bound (the hover convention would give T_ff 1.8 ms).
+
+**8. Carried forward.** 0016 (gz first read returns the starting rates; R2's FF-off numbers then change); stage (d) as 0017 (rulings: fourth round item 5; the motor-speed line text is owed to Luis); the pre-L8 gate and hardware list (J with σ, τ_m, AM32 per-frame, the prop-strike pass bar); owed from 0009 the final CI split with times and the T4 seed count with cost, from 0012 the turn-on-corner count with cost; the `step_cause` re-run at N = 1; S9 pytest enforcement at the next CI change.
+
+**9. For Luis.**
+- Accept the four lead decisions as recorded (rate_max noise on the notch-free chain, τ_ref from τ_cl, `seed_first_sample` on in the wiring, the geometric notch grid)? yes/no.
+- Commit the W4 diagnosis scripts as evidence with 0016? yes/no.
+- Approve stage (c) and push? yes/no.
+
 ## Approval
 
 Owner decisions: Luis, 2026-10-01, as quoted above. The spec lines (FF Builds bullet, combined D + FF noise line):
 Luis, 2026-10-01, approved in his wording (second round, item 3).
-The stage (c) build and close: pending.
+Stage (c) approved: Luis, 2026-10-03.
+
+Luis, 2026-10-03, on the close summary's section 9 (verbatim):
+
+"1. **The four lead decisions: yes.**
+   - Rate_max noise on the notch-free chain is the conservative case.
+   - The other three (τ_ref from τ_cl, first-sample seeding in the wiring, the geometric notch grid) are covered by the green suites and by the 70-mix per-push test.
+2. **The W4 diagnosis scripts: yes, commit them with 0016.** Include their inputs and raw output. The 0016 prediction (about 2416 violations) is a measurement, and under the number rule it counts only with those committed.
+3. **Stage (c): approved, and push.**"

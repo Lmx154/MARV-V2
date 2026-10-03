@@ -1,6 +1,6 @@
-# Handoff: quad L6 stage (c) opened (decision 0014); stages (a) and (b) closed
+# Handoff: quad L6 stages (a), (b) and (c) closed (decisions 0012–0015)
 
-2026-10-01. Written for the next agent working in this repository. This file records state; it adds no scope. The
+2026-10-03. Written for the next agent working in this repository. This file records state; it adds no scope. The
 specs remain the only planning documents (core §0 rule 5).
 
 **Update rule (Luis, 2026-09-30):** "From here on, update it at every stage close and every decision, not only at
@@ -115,34 +115,40 @@ Sources for stage (a):
      - Luis answered the last open items (0014, sixth round): the chirp check uses option (i); `test_attitude_t3.py`
        goes nightly; the extra divisor frozen line is accepted.
 
-## Handover (2026-10-03): stage (c) commit 3
+## Handover (2026-10-03): stage (c) closed
+
+**Stage (c) approved: Luis, 2026-10-03** (0014, "Stage (c) close" and "Approval"; the four lead decisions accepted,
+the W4 diagnosis scripts to be committed with 0016).
 
 **Git state.**
-- `master` at `69c62f2` (stage (c) commit 2), with `539855e` (commit 1) before it. Neither is pushed;
-  `origin/master` is `1159d5c`.
-- Commit 3 is entirely uncommitted in the working tree: about 78 modified and 21 untracked paths, among them
-  `fw/rate_group/`, `docs/decisions/0015-…`, `tests/regression/quad/L06/{rate_group, product_params, results/ff_on,
-  results/r1x_coupling, results/r2_envelope_a}/` and the new L06 tools tests.
-- Full local CI passed on snapshot `b4c9e16` (`refs/tmp/stage-c`, a temporary commit-tree, not on any branch).
-- The tree since `b4c9e16` differs only in docs: this handoff, 0014's CI-evidence lines, the fifth- and sixth-round
-  quotes, and one docstring sentence in `L06/tools/test_notch_mixes.py`.
-- Safety copy: `~/marv-handover-2026-10-03/` (`git diff HEAD`, a tar of the untracked files, and the scratch evidence
-  for 0016 and stage (d)).
+- `master`: `539855e` (commit 1), `69c62f2` (commit 2), `7ecfe8b` (commit 3, the atomic switch), then one docs-only
+  commit (the close section, the approval, this handoff). Push approved by Luis, with no tag; `origin/master` was
+  `1159d5c` before it. The Actions result on the pushed head goes in the next update of this file.
+- Verified: full local CI (core, gz-l2, gz-l4, gz-l5) on snapshot `b4c9e16`; core on `7ecfe8b` (1578 s); the
+  regression-change check on the docs-only commit. `b4c9e16` → `7ecfe8b` changes nothing the gz jobs collect or build.
+- Safety copy `~/marv-handover-2026-10-03/` holds the scratch evidence for 0016 (`r2ff/`) and stage (d)
+  (`stage_d_draft.md`, `stage_d_owner_2026-10-03.md`); the rest of it is now in `7ecfe8b`.
 - Local branches `l6-t3-storage-state` (datasheets; Luis deletes it), `quad-l5` and `quad-l6-spec` are untouched.
 
 **Remaining steps, in order:**
-1. **Done: the chirp lead-off test** (0014, sixth round, "(i), as built"):
-   `tests/regression/quad/L06/tools/test_chirp_lead_off.py`, per push, 2.5 s. Control: the lead at its design values (T_f
-   alone has no effect at kd = 0).
-2. Commit 3, with no tag. End the message with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-3. Core CI on that exact commit: `MARV_CI_BASE_REF=1159d5c ci/local_ci.sh --commit <rev> core`.
-4. Push on Luis's go.
-5. 0016: the gz first gyro read returns the initial rates (approved; 0014 W4 has the diagnosis).
-6. Stage (d) as 0017 (Luis's rulings are verbatim in 0014, fourth round, item 5).
+1. 0016: the gz first gyro read returns the initial rates (approved; 0014 W4 has the diagnosis). Its own commit, with:
+   - the W4 diagnosis scripts with their inputs and raw output (Luis: the 2416 prediction is a measurement and counts
+     only when committed);
+   - an assertion that the combined D + FF noise at hover equals the D path (0.494 mN): no test asserts it today, only
+     the maximum over the operating points (`test_rate_lead.py:128`).
+2. Stage (d) as 0017 (Luis's rulings are verbatim in 0014, fourth round, item 5; the motor-speed line text is owed).
+
+**For stage (e), recorded with no decision yet (Luis, 2026-10-03).**
+- **R2 fails even with FF on** (10398 violations; about 2416 expected after 0016), from yaw saturation and the integrator
+  freeze. Once 0016 lands, bring Luis the measured numbers and the options. He will not choose between "model the
+  allocation and the freeze in the envelope" and "rule R2 yaw-limited" until he sees them.
+- **Acro FF-on passes by only 6.07 mrad/s, at the card plant, with no noise.** Stage (e) adds noise and 59 safety seeds.
+  Before (e) starts, bring Luis an estimate of the margin under noise from the T3 design model, so it is known whether
+  (e) can pass as designed.
 
 **Not in any file (the outgoing lead's notes).**
-- **Check first:** that `git status` matches the safety copy, and that `datasheets/` is still present and untracked
-  (it vanished once on a branch switch; restore with `git restore --source=l6-t3-storage-state --worktree datasheets`).
+- **Check first:** that `datasheets/` is still present and untracked (it vanished once on a branch switch; restore
+  with `git restore --source=l6-t3-storage-state --worktree datasheets`).
 - **Timing is the fragile part.** `test_r1x_coupling.py` is at 58.9 s alone, with 1.1 s of margin. Host load inflates
   every number (one run read 332 s), so measure with load < 1.5. The code-index daemon can spike to 100 % CPU.
 - **Acro FF-on margin is 6.1 mrad/s.** It will be a knife edge at stage (e).
