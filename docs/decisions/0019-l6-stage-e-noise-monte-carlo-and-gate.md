@@ -141,6 +141,27 @@ of 2026-10-04 with the lead's decisions on its questions).
   - They run in the gz-l2 job (`ci/run_ci_gz.sh`, step `gz_sensors`).
 - No `fw/` change and no frozen file changed. The realised clock values are recorded in 0012's question E entry.
 
+**3. W1, commit C2: the sensor replay and test b** (the (a) T1 line "the adapter's sensor bytes equal a direct marv_plant
+call").
+- **`sim/gz/sensor_replay`**, a host tool built in every host build and needing no Gazebo. It reads a model-gyro log
+  (header, SENSORS, STEP bodies, TICK, ROTOR) and calls `marv_plant` directly in the adapter's order: IMU sample, rotor
+  sample, step.
+  - The true tick is derived from the header and SENSORS, not read from the log.
+  - Per tick it compares the IMU bytes, the rotor bytes and the plant outputs bitwise.
+  - Once per log, it checks SENSORS against `imu_corner_config(signs)`, the turn-on bounds and the ODR error.
+  - It also checks the rotor-speed sensor's latency (ticks), exponent and mantissa bits and period unit against the
+    profile's values (`gen_world.rotor_speed_values`, passed in by the test), not against the log. Controls: latency + 1
+    and mantissa + 1 in SENSORS each report one config mismatch naming the field (the review's finding).
+- **Test b** (`tests/regression/quad/L06/gz/test_sensor_replay.py`, 28 tests, about 10 s, in the gz-l2 `gz_sensors`
+  step): 4 runs, every one with 0 mismatches over 512 or 1024 ticks, all six turn-on signs nonzero:
+  - hover at m = 1, c = 0 and at m = 2, c = +1;
+  - rotation at m = 1, c = −1 and at m = 2, c = 0.
+- **Controls**, each made by editing a copy of the log:
+  - one flipped IMU bit gives exactly one mismatch;
+  - the seed + 1 makes the IMU mismatch on every tick;
+  - samples one tick late make the IMU mismatch on every tick, and the rotor on 340–377 ticks (hover).
+- No `fw/` or frozen-file change.
+
 ## Evidence
 
 Each item's checks are listed with it as it lands.

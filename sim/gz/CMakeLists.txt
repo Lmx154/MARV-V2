@@ -21,6 +21,10 @@ target_link_libraries(marv_gz_truth_attitude PUBLIC marv_gz_adapter)
 set_target_properties(marv_gz_truth_attitude PROPERTIES POSITION_INDEPENDENT_CODE ON)
 marv_apply_flags(marv_gz_truth_attitude)
 
+# The SIL-2 replay of the plugin's sensor path (decision 0019, W1 C2): marv_plant and the generated IMU header only, so it
+# is built in every host build, not only with MARV_GZ.
+add_subdirectory(sensor_replay)
+
 # The Gazebo lockstep plugin (quad spec 3.1): a gz-sim 8 (Harmonic) System plugin, built only with -DMARV_GZ=ON (preset
 # host-gz). The marv-ci image has no Gazebo, so nothing under this option is configured by the other presets.
 option(MARV_GZ "Build the gz-sim 8 lockstep plugin (needs gz-sim8)" OFF)
