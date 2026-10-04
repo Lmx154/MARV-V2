@@ -16,6 +16,12 @@ parameter set has no such parameter), and adds <gyro_source>truth</gyro_source> 
 parameter of the plan (below), then the caller's harness overrides (the negative controls; a name given twice is
 refused). The plugin is the host-gz-l4 build (MARV_GZ_SIL = marv_sil_l4_rate_scripted).
 
+Sensors (decision 0019). run_step, run_sequence, run_chirp and run_acro take `sensors`, a gen_world.SensorSet or None,
+and pass it to the world generation (run_scenario._run, gen_world.generate). With the model gyro gen_world writes
+<gyro_source>model</gyro_source> and world_edit adds no truth-gyro element; the run report's label then names the IMU
+model, while the world and log names keep the label above. None, the default, gives the world of a run without the
+argument, byte for byte.
+
 Live parameters. The plugin build's parameter table, <build>/generated/<MARV_GZ_PARAMS>/marv/params/param_defaults.cpp
 (MARV_GZ_PARAMS from that build's CMakeCache.txt, which must be marv_params_l4_rate_scripted), gives the values the
 firmware in the plugin runs with. Refused before any gz process starts: a scenario tick different from the build's
@@ -61,6 +67,7 @@ ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parent / "card"))
 import gen_plant_config as gpc  # noqa: E402
+import gen_world  # noqa: E402
 import gyro_chain_design as gcd  # noqa: E402
 import hover  # noqa: E402
 import l4_scenario as l4s  # noqa: E402
@@ -80,6 +87,10 @@ NAME_LABEL = "truth_fed_perfect_model"
 LABEL_LINE = (f"label: {LABEL}. The rate loop's gyro sample is the plant's truth body rate (<gyro_source>truth"
               "</gyro_source>, decision 0005 'Truth gyro') and truth and firmware share one card (core section 6): "
               "not a validation run")
+MODEL_LABEL = "IMU-model gyro, perfect-model"
+MODEL_LABEL_LINE = (f"label: {MODEL_LABEL}. The rate loop's gyro sample is the plant IMU model's (<gyro_source>model"
+                    "</gyro_source>, decisions 0012 and 0019) and truth and firmware share one card (core section 6): "
+                    "not a validation run")
 GYRO_ELEMENT = "<gyro_source>truth</gyro_source>"
 L2_DSHOT_OVERRIDE = re.compile(r'\s*<sil_override param="ol_dshot_m\d+" type="i32">[^<]*</sil_override>')
 PLUGIN_BLOCK = re.compile(r'<plugin filename="marv_gz_lockstep".*?</plugin>', flags=re.S)
@@ -273,9 +284,17 @@ def l2_scenario_doc(doc, p, stem, source):
     }
 
 
-def world_edit(overrides, extra_edit=None):
-    """The sdf_edit of an L4 run: drop the four L2 DShot overrides, add the truth-gyro element and `overrides`
-    (name -> (type, text)) inside the lockstep plugin element, then apply `extra_edit` (a callable on the text)."""
+def model_gyro(sensors):
+    """True when `sensors` (a gen_world.SensorSet or None) feeds the SIL the plant IMU model's bytes."""
+    return sensors is not None and sensors.gyro == gen_world.GYRO_SOURCE_MODEL
+
+
+def world_edit(overrides, extra_edit=None, sensors=None):
+    """The sdf_edit of an L4 run: drop the four L2 DShot overrides, add the truth-gyro element (none with the model gyro
+    of `sensors`, whose element gen_world wrote) and `overrides` (name -> (type, text)) inside the lockstep plugin
+    element, then apply `extra_edit` (a callable on the text)."""
+    gyro = "" if model_gyro(sensors) else f"\n  {GYRO_ELEMENT}"
+
     def edit(text):
         text, n = L2_DSHOT_OVERRIDE.subn("", text)
         if n != scn.MOTORS:
@@ -284,7 +303,7 @@ def world_edit(overrides, extra_edit=None):
         if len(blocks) != 1:
             raise run_scenario.RunError(f"the world holds {len(blocks)} marv_gz_lockstep plugin elements, expected 1")
         add = "".join(f'\n  <sil_override param="{k}" type="{t}">{v}</sil_override>' for k, (t, v) in overrides.items())
-        block = blocks[0].replace("</plugin>", f"{add}\n  {GYRO_ELEMENT}\n</plugin>")
+        block = blocks[0].replace("</plugin>", f"{add}{gyro}\n</plugin>")
         text = text.replace(blocks[0], block, 1)
         return extra_edit(text) if extra_edit is not None else text
     return edit
@@ -319,9 +338,10 @@ def executions(log, p, m):
 
 
 def run_step(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, overrides=None, extra_edit=None,
-             seed=None, root=ROOT, timeout_s=run_scenario.TIMEOUT_S):
+             seed=None, root=ROOT, timeout_s=run_scenario.TIMEOUT_S, sensors=None):
     """One gz process of an L4 step scenario at m ticks per host step; writes the world, the log and the run report
-    (the report's evaluation section empty) into out_dir. `overrides` are harness sil_overrides, name -> (type, text)."""
+    (the report's evaluation section empty) into out_dir. `overrides` are harness sil_overrides, name -> (type, text).
+    `sensors` is a gen_world.SensorSet or None (module docstring)."""
     doc = l4s.load(scenario)
     _, defaults = build_parameters(plugin_dir)
     params = read_param_defaults(defaults)
@@ -340,8 +360,9 @@ def run_step(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, overr
     l2_path = out_dir / f"{stem}.yaml"
     l2_path.write_text(yaml.safe_dump(l2_scenario_doc(doc, p, stem, Path(scenario).name), sort_keys=False),
                        encoding="utf-8")
-    r = run_scenario._run(card, l2_path, seed, m, "test", None, out_dir, plugin_dir, world_edit(applied, extra_edit),
-                          None, root, Path(root) / "design" / "budget.yaml", timeout_s)
+    r = run_scenario._run(card, l2_path, seed, m, "test", None, out_dir, plugin_dir,
+                          world_edit(applied, extra_edit, sensors), None, root, Path(root) / "design" / "budget.yaml",
+                          timeout_s, sensors)
     ex = executions(r.log, p, m)
     fresh = set(run_scenario.fresh_steps(r.log))
     steps = range(p.tick_of(p.window.start) // m, p.tick_of(p.window.stop - 1) // m + 1)
@@ -354,11 +375,11 @@ def run_step(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, overr
 
 
 def run_sequence(card, scenario, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, overrides=None, extra_edit=None, seed=None,
-                 root=ROOT, timeout_s=run_scenario.TIMEOUT_S):
+                 root=ROOT, timeout_s=run_scenario.TIMEOUT_S, sensors=None):
     """run_step for every m of the scenario's m_sequence, one gz process (one SIL) each; one sequence report."""
     doc = l4s.load(scenario)
     runs = [run_step(card, scenario, m, out_dir, plugin_dir, overrides=overrides, extra_edit=extra_edit, seed=seed,
-                     root=root, timeout_s=timeout_s) for m in l4s.values(doc)["m_sequence"]]
+                     root=root, timeout_s=timeout_s, sensors=sensors) for m in l4s.values(doc)["m_sequence"]]
     stem = re.sub(r"_m\d+(_seed\d+)$", r"\1", Path(runs[0].run.world_path).stem)
     path = str(Path(out_dir) / f"{stem}_sequence.report.txt")
     write_report(runs, None, path)
@@ -386,10 +407,11 @@ def render_report(runs, evaluation=None):
     first, rest = text.split("\n", 1)
     if first != "MARV L2 run report":
         raise run_scenario.RunError(f"unexpected run report header {first!r}")
+    label, line = (MODEL_LABEL, MODEL_LABEL_LINE) if model_gyro(s0.run.sensors) else (LABEL, LABEL_LINE)
     head = [
-        f"MARV L4 run report: {LABEL}",
+        f"MARV L4 run report: {label}",
         "",
-        LABEL_LINE,
+        line,
         f"l4 scenario: {s0.l4_scenario}",
         f"l4 scenario sha256: {s0.l4_scenario_sha256}",
         "(the scenario line below is the L2-schema world input the runner wrote from it)",
@@ -841,20 +863,23 @@ def _l2_doc_of(doc, p, stem, source):
     return l2_scenario_doc(step_like, p, stem, source)
 
 
-def _run_l4_world(card, doc, p, stem, scenario, m, out_dir, plugin_dir, applied, extra_edit, seed, root, timeout_s):
+def _run_l4_world(card, doc, p, stem, scenario, m, out_dir, plugin_dir, applied, extra_edit, seed, root, timeout_s,
+                  sensors=None):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     l2_path = out_dir / f"{stem}.yaml"
     l2_path.write_text(yaml.safe_dump(_l2_doc_of(doc, p, stem, Path(scenario).name), sort_keys=False),
                        encoding="utf-8")
-    return run_scenario._run(card, l2_path, seed, m, "test", None, out_dir, plugin_dir, world_edit(applied, extra_edit),
-                             None, root, Path(root) / "design" / "budget.yaml", timeout_s)
+    return run_scenario._run(card, l2_path, seed, m, "test", None, out_dir, plugin_dir,
+                             world_edit(applied, extra_edit, sensors), None, root, Path(root) / "design" / "budget.yaml",
+                             timeout_s, sensors)
 
 
 def run_chirp(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, amp_scale=1.0, halved=False, overrides=None,
-              extra_edit=None, seed=None, root=ROOT, timeout_s=run_scenario.TIMEOUT_S):
+              extra_edit=None, seed=None, root=ROOT, timeout_s=run_scenario.TIMEOUT_S, sensors=None):
     """One gz process of a chirp scenario at m ticks per host step; writes the world, the log and the run report.
-    `overrides` are harness sil_overrides (the negative control's gains), name -> (type, text)."""
+    `overrides` are harness sil_overrides (the negative control's gains), name -> (type, text). `sensors` is a
+    gen_world.SensorSet or None (module docstring)."""
     doc = l4s.load_chirp(scenario)
     _, defaults = build_parameters(plugin_dir)
     params = read_param_defaults(defaults)
@@ -869,7 +894,8 @@ def run_chirp(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, amp_
     applied.update(harness)
     tag = ("_halfamp" if amp_scale != 1 else "") + ("_halfdur" if halved else "") + ("_harness" if harness else "")
     stem = f"{doc['scenario']}{tag}_{NAME_LABEL}"
-    r = _run_l4_world(card, doc, p, stem, scenario, m, out_dir, plugin_dir, applied, extra_edit, seed, root, timeout_s)
+    r = _run_l4_world(card, doc, p, stem, scenario, m, out_dir, plugin_dir, applied, extra_edit, seed, root, timeout_s,
+                      sensors)
     log = r.log
     fresh = set(run_scenario.fresh_steps(log))
     lo, hi = dshot_idle_bound(params)
@@ -1026,9 +1052,10 @@ class AcroRun:
 
 
 def run_acro(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, overrides=None, extra_edit=None, seed=None,
-             root=ROOT, timeout_s=run_scenario.TIMEOUT_S):
+             root=ROOT, timeout_s=run_scenario.TIMEOUT_S, sensors=None):
     """One gz process of the acro scenario at m ticks per host step; writes the world, the log and the run report.
-    `overrides` are harness sil_overrides, name -> (type, text); they may replace plan parameters."""
+    `overrides` are harness sil_overrides, name -> (type, text); they may replace plan parameters. `sensors` is a
+    gen_world.SensorSet or None (module docstring)."""
     doc = l4s.load_acro(scenario)
     _, defaults = build_parameters(plugin_dir)
     params = read_param_defaults(defaults)
@@ -1038,7 +1065,8 @@ def run_acro(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, overr
     harness = dict(overrides or {})
     applied = {**p.overrides(), **harness}
     stem = f"{doc['scenario']}{'_harness' if harness else ''}_{NAME_LABEL}"
-    r = _run_l4_world(card, doc, p, stem, scenario, m, out_dir, plugin_dir, applied, extra_edit, seed, root, timeout_s)
+    r = _run_l4_world(card, doc, p, stem, scenario, m, out_dir, plugin_dir, applied, extra_edit, seed, root, timeout_s,
+                      sensors)
     ex = executions(r.log, p, m)
     fresh = set(run_scenario.fresh_steps(r.log))
     steps = range(p.tick_of(p.window.start) // m, p.tick_of(p.window.stop - 1) // m + 1)
@@ -1072,7 +1100,8 @@ def render_t4_report(runs, key, evaluation=None):
     first, rest = text.split("\n", 1)
     if first != "MARV L2 run report":
         raise run_scenario.RunError(f"unexpected run report header {first!r}")
-    head = [f"MARV L4 run report: {LABEL}", "", LABEL_LINE, f"l4 scenario: {s0.l4_scenario}",
+    label, line = (MODEL_LABEL, MODEL_LABEL_LINE) if model_gyro(s0.run.sensors) else (LABEL, LABEL_LINE)
+    head = [f"MARV L4 run report: {label}", "", line, f"l4 scenario: {s0.l4_scenario}",
             f"l4 scenario sha256: {s0.l4_scenario_sha256}",
             "(the scenario line below is the L2-schema world input the runner wrote from it)"]
     return "\n".join(head) + "\n" + rest

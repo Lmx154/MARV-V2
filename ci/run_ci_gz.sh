@@ -116,6 +116,12 @@ gz_l4() {
   pytest_no_skips tests/regression/quad/L04/gz
 }
 
+# The plugin's sensor elements on the host-gz-l4 build (decision 0019, W1 C3): run_l4's sensors passthrough (the world
+# diff over every L4 scenario) and the accelerometer tie of ruling 11 (test e) with its static guard.
+gz_sensors_l4() {
+  pytest_no_skips tests/regression/quad/L06/gz_compositions/test_l4_sensors.py
+}
+
 # The L5 plugin: the same plugin source on the l5_attitude_scripted composition (MARV_GZ_SIL =
 # marv_sil_l5_attitude_scripted, a TRUTH_STATE library), decision 0006 G.
 gz_build_l5() {
@@ -132,6 +138,11 @@ gz_reference_l5() {
 # The L5 T4 suite (angle steps, truth plumbing, chirp, yaw release and fallback, recovery) on the host-gz-l5 build.
 gz_l5() {
   pytest_no_skips tests/regression/quad/L05/gz
+}
+
+# The same on the host-gz-l5 build (decision 0019, W1 C3): run_l5's sensors passthrough and test e.
+gz_sensors_l5() {
+  pytest_no_skips tests/regression/quad/L06/gz_compositions/test_l5_sensors.py
 }
 
 # Usage: ci/run_ci_gz.sh [l2|l4|l5]. No argument runs every step (l2, l4, l5 in order). The Actions jobs gz-l2, gz-l4 and
@@ -152,12 +163,14 @@ group_l4() {
   step gz_build gz_build
   step gz_build_l4 gz_build_l4
   step gz_l4 gz_l4
+  step gz_sensors_l4 gz_sensors_l4
 }
 
 group_l5() {
   step gz_build_l5 gz_build_l5
   step gz_reference_l5 gz_reference_l5
   step gz_l5 gz_l5
+  step gz_sensors_l5 gz_sensors_l5
 }
 
 case "${1:-all}" in

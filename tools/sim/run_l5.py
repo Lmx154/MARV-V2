@@ -11,6 +11,12 @@ The L4 runner's machinery is reused by import (tools/sim/run_l4.py: the paramete
 generation, the overrides). This module adds the L5 schema (tools/sim/l5_scenario.py), the attitude-divisor plan, the
 second world element and the TRUTH records of the log.
 
+Sensors (decision 0019). run_step, run_sequence and run_chirp take `sensors`, a gen_world.SensorSet or None, and pass it
+to the world generation (run_scenario._run, gen_world.generate). With the model gyro gen_world writes
+<gyro_source>model</gyro_source> and world_edit adds no truth-gyro element (the attitude source stays the truth); the run
+report's label then names the IMU model, while the world and log names keep the label above. None, the default, gives
+the world of a run without the argument, byte for byte.
+
 Live parameters. The plugin build's parameter table (MARV_GZ_PARAMS must be marv_params_l5_attitude_scripted, the
 host-gz-l5 build). Refused before any gz process starts: a scenario tick different from the build's
 tick_period_num_us / tick_period_den, an m that does not divide the attitude divisor rate_loop_divisor * att_loop_ratio
@@ -69,6 +75,11 @@ NAME_LABEL = l4.NAME_LABEL
 LABEL_LINE = (f"label: {LABEL}. The rate loop's gyro sample and the attitude state are the plant's truth (<gyro_source>"
               "truth</gyro_source>, <attitude_source>truth</attitude_source>, decision 0006 B) and truth and firmware "
               "share one card (core section 6): not a validation run")
+MODEL_LABEL = "IMU-model gyro, truth-fed attitude, perfect-model"
+MODEL_LABEL_LINE = (f"label: {MODEL_LABEL}. The rate loop's gyro sample is the plant IMU model's (<gyro_source>model"
+                    "</gyro_source>, decisions 0012 and 0019), the attitude state is the plant's truth (<attitude_source>"
+                    "truth</attitude_source>, decision 0006 B) and truth and firmware share one card (core section 6): "
+                    "not a validation run")
 ATTITUDE_ELEMENT = "<attitude_source>truth</attitude_source>"
 F32, I32 = l4.F32, l4.I32
 I32_LIMIT_US = 2 ** 31
@@ -390,10 +401,11 @@ def l2_scenario_doc(doc, p, stem, source, card=None):
     }
 
 
-def world_edit(overrides, extra_edit=None, *, gyro_source=True, attitude_source=True):
+def world_edit(overrides, extra_edit=None, *, gyro_source=True, attitude_source=True, sensors=None):
     """The sdf_edit of an L5 run: drop the four L2 DShot overrides, add `overrides` (name -> (type, text)) and the
-    <gyro_source> and <attitude_source> truth elements (each only when asked: the controls leave one out) inside the
-    lockstep plugin element, then apply `extra_edit` (a callable on the text)."""
+    <gyro_source> and <attitude_source> truth elements (each only when asked: the controls leave one out; no truth-gyro
+    element with the model gyro of `sensors`, whose element gen_world wrote) inside the lockstep plugin element, then
+    apply `extra_edit` (a callable on the text)."""
     def edit(text):
         text, n = l4.L2_DSHOT_OVERRIDE.subn("", text)
         if n != scn.MOTORS:
@@ -402,7 +414,7 @@ def world_edit(overrides, extra_edit=None, *, gyro_source=True, attitude_source=
         if len(blocks) != 1:
             raise run_scenario.RunError(f"the world holds {len(blocks)} marv_gz_lockstep plugin elements, expected 1")
         add = "".join(f'\n  <sil_override param="{k}" type="{t}">{v}</sil_override>' for k, (t, v) in overrides.items())
-        if gyro_source:
+        if gyro_source and not l4.model_gyro(sensors):
             add += f"\n  {l4.GYRO_ELEMENT}"
         if attitude_source:
             add += f"\n  {ATTITUDE_ELEMENT}"
@@ -439,11 +451,12 @@ def executions(log, p, m):
 
 
 def run_step(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, overrides=None, extra_edit=None, seed=None,
-             root=ROOT, timeout_s=run_scenario.TIMEOUT_S, gyro_source=True, attitude_source=True, doc_edit=None):
+             root=ROOT, timeout_s=run_scenario.TIMEOUT_S, gyro_source=True, attitude_source=True, doc_edit=None,
+             sensors=None):
     """One gz process of an L5 scenario at m ticks per host step; writes the world, the log and the run report into
     out_dir. `overrides` are harness sil_overrides, name -> (type, text). The two source flags leave the plugin element
     out of the world (the controls). `doc_edit`, when given, is called on the loaded scenario document before the plan
-    (the chirp runs' amplitude and duration variants)."""
+    (the chirp runs' amplitude and duration variants). `sensors` is a gen_world.SensorSet or None (module docstring)."""
     doc = l5s.load(scenario)
     if doc_edit is not None:
         doc_edit(doc)
@@ -465,8 +478,9 @@ def run_step(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, overr
     l2_path.write_text(yaml.safe_dump(l2_scenario_doc(doc, p, stem, Path(scenario).name, card), sort_keys=False),
                        encoding="utf-8")
     r = run_scenario._run(card, l2_path, seed, m, "test", None, out_dir, plugin_dir,
-                          world_edit(applied, extra_edit, gyro_source=gyro_source, attitude_source=attitude_source),
-                          None, root, Path(root) / "design" / "budget.yaml", timeout_s)
+                          world_edit(applied, extra_edit, gyro_source=gyro_source, attitude_source=attitude_source,
+                                     sensors=sensors),
+                          None, root, Path(root) / "design" / "budget.yaml", timeout_s, sensors)
     ex = executions(r.log, p, m)
     fresh = set(run_scenario.fresh_steps(r.log))
     steps = range(p.tick_of(p.window.start) // m, p.tick_of(p.window.stop - 1) // m + 1)
@@ -479,11 +493,11 @@ def run_step(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, overr
 
 
 def run_sequence(card, scenario, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, overrides=None, extra_edit=None, seed=None,
-                 root=ROOT, timeout_s=run_scenario.TIMEOUT_S):
+                 root=ROOT, timeout_s=run_scenario.TIMEOUT_S, sensors=None):
     """run_step for every m of the scenario's m_sequence, one gz process (one SIL) each; one sequence report."""
     doc = l5s.load(scenario)
     runs = [run_step(card, scenario, m, out_dir, plugin_dir, overrides=overrides, extra_edit=extra_edit, seed=seed,
-                     root=root, timeout_s=timeout_s) for m in l5s.values(doc)["m_sequence"]]
+                     root=root, timeout_s=timeout_s, sensors=sensors) for m in l5s.values(doc)["m_sequence"]]
     stem = re.sub(r"_m\d+(_seed\d+)$", r"\1", Path(runs[0].run.world_path).stem)
     path = str(Path(out_dir) / f"{stem}_sequence.report.txt")
     write_report(runs, None, path)
@@ -512,7 +526,8 @@ def render_report(runs, evaluation=None):
     first, rest = text.split("\n", 1)
     if first != "MARV L2 run report":
         raise run_scenario.RunError(f"unexpected run report header {first!r}")
-    head = [f"MARV L5 run report: {LABEL}", "", LABEL_LINE, f"l5 scenario: {s0.l5_scenario}",
+    label, line = (MODEL_LABEL, MODEL_LABEL_LINE) if l4.model_gyro(s0.run.sensors) else (LABEL, LABEL_LINE)
+    head = [f"MARV L5 run report: {label}", "", line, f"l5 scenario: {s0.l5_scenario}",
             f"l5 scenario sha256: {s0.l5_scenario_sha256}",
             "(the scenario line below is the L2-schema world input the runner wrote from it)"]
     return "\n".join(head) + "\n" + rest
@@ -840,9 +855,10 @@ def flown_gain(params, overrides, axis):
 
 
 def run_chirp(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, amp_scale=1.0, halved=False, overrides=None,
-              extra_edit=None, seed=None, root=ROOT, timeout_s=run_scenario.TIMEOUT_S):
+              extra_edit=None, seed=None, root=ROOT, timeout_s=run_scenario.TIMEOUT_S, sensors=None):
     """One gz process of an L5 chirp scenario at m ticks per host step (run_step), with the amplitude scaled by amp_scale in
-    (0, 1] and the duration halved when `halved`; extracts the window's y and d. `overrides` are harness sil_overrides."""
+    (0, 1] and the duration halved when `halved`; extracts the window's y and d. `overrides` are harness sil_overrides.
+    `sensors` is a gen_world.SensorSet or None (module docstring)."""
     if not 0 < amp_scale <= 1:
         raise PlanError([f"amp_scale {amp_scale!r} is not in (0, 1]"])
     c = l5s.values(l5s.load(scenario))["script"]["chirp"]
@@ -856,7 +872,7 @@ def run_chirp(card, scenario, m, out_dir, plugin_dir=DEFAULT_PLUGIN_DIR, *, amp_
             ch["amp_rad_s"]["value"] = l4.r32(l4.r32(c["amp_rad_s"]) * amp_scale)
             ch["duration_s"]["value"] = c["duration_s"] / 2 if halved else c["duration_s"]
     s = run_step(card, scenario, m, out_dir, plugin_dir, overrides=harness, extra_edit=extra_edit, seed=seed, root=root,
-                 timeout_s=timeout_s, doc_edit=doc_edit)
+                 timeout_s=timeout_s, doc_edit=doc_edit, sensors=sensors)
     p = s.plan
     idx = l5s.AXES.index(c["axis"])
     ch = p.chirp

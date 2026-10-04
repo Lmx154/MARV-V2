@@ -162,6 +162,37 @@ call").
   - samples one tick late make the IMU mismatch on every tick, and the rotor on 340–377 ticks (hover).
 - No `fw/` or frozen-file change.
 
+**4. W1, commit C3: the L4 and L5 drivers carry the sensors, and the accelerometer tie is proven (ruling 11)**.
+- **Drivers.** `run_l4.py` and `run_l5.py` take `sensors=None`, passed through to the world. With the model gyro the
+  world carries `<gyro_source>model`, and the truth-gyro element is left out (the plugin takes exactly one). L5's
+  attitude source stays truth.
+- **World diff extended** (`tests/regression/quad/L06/gz_compositions/test_l4_sensors.py` and `test_l5_sensors.py`,
+  per push in gz-l4 and gz-l5, because they need the plugin build's parameter table):
+  - every L4 and L5 scenario × m × the 8 sensor sets is checked;
+  - `sensors=None` gives a byte-identical world;
+  - with sensors, the only differences are the inserted elements, the truth-gyro line removed under the model gyro,
+    and `max_step_size` when c ≠ 0;
+  - controls are flagged: a truth-gyro line left in, a seed edit, a c = +1 world checked as c = 0.
+  - The frozen `test_world_sensors.py` is unchanged; the new files import its sensor sets.
+- **Bit-identity:** every gz-suite log is identical by sha256 before and after (L04 33/33, L05 47/47).
+- **Test e, the exact accelerometer tie:**
+  - The case: L4 step_roll and L5 recover_tumble, m = 1, seed 1, model gyro and rotor on.
+  - The two corners differ only in the three accel signs. Their logs are equal byte for byte after zeroing the corner's
+    own accel fields in SENSORS and the 12 accel bytes of each tick's IMU sample.
+  - Every SIL-visible input and output agrees: the stamps, gyro, flags, DShot, plant outputs, TRUTH and ROTOR.
+  - Non-vacuity: the accel bytes differ on every tick, and AccelValid is set on every tick.
+  - Control: flipping the gyro x sign changes the DShot on 12122 of 16044 ticks (L4) and 29096 of 40590 ticks (L5).
+  - Static guard: the files compiled into the L4 and L5 SIL libraries that name the accel fields are exactly the SIL
+    boundary (`marv_sil.h`, `imu_sample.hpp`, `marv_sil.cpp`). Its control is the same scan on `marv_sil_l0`, which
+    flags `l0.cpp:88`.
+  - At L7 the estimator reads the accelerometer; this test is then expected to fail, and the tie breaks by itself.
+- **CI:** steps `gz_sensors_l4` and `gz_sensors_l5` in `ci/run_ci_gz.sh`.
+- No `fw/` change. One frozen file changed: `tests/regression/quad/L06/results/r2_envelope_a/envelope_a.txt`, regenerated
+  by its own command (`r2_envelope_a.py --out …`). Only its input-hash line changes, because it records `run_l5.py`'s
+  sha256, which this commit changes: `f4ef68ef…` becomes `5d611f4f…`. No data line or conclusion changes. The full
+  tools suite, nightly files included, gives 1096 passed.
+- **Known, not changed:** `run_scenario.locate_offset` has no names for record types 5–7.
+
 ## Evidence
 
 Each item's checks are listed with it as it lands.
