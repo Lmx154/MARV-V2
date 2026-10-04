@@ -6,9 +6,14 @@
 #   2. recovery_cause_tool (L05 recovery_cause/build_tool.sh) and tool2 (build2.sh) against build/host-gz-l5
 #   3. every script that writes a hashed file or a committed output
 #   4. SHA256SUMS (sha256sum -c, paths relative to the work dir), then the committed small files byte for byte.
+#   Every build and every script comes from a pristine detached git worktree of the commit this record was produced and
+#   verified at (PIN below), not from the current tree, so these pre-0016 outputs stay reproducible whatever the firmware
+#   becomes. The scripts run are the record's own copies in that worktree (identical to the ones in the current tree).
 # Exits nonzero on any mismatch. The work dir must not hold a gz/ directory unless MARV_R2FF_REUSE_GZ=1 (skips step 1).
 # Usage (repository root, after `uv sync --frozen`; gz-sim 8): tests/regression/quad/L06/results/r2_ff_diagnosis/regenerate.sh <work dir>
 set -euo pipefail
+# Decision 0016's commit: the tree this record was produced and verified at (the first with MARV_GZ_TEST_ZERO_FIRST_READ).
+PIN=4a76755bedb5dfb07a26aa65653c1a2b35b5008e
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/../../../../../.." && pwd)"
 mkdir -p "${1:?work dir}"
@@ -18,13 +23,23 @@ cd "$root"
 t0=$SECONDS
 stamp() { echo "regenerate: $* ($((SECONDS - t0)) s)"; }
 
+src="$work/src"
+[[ ! -e "$src" ]] || { echo "regenerate: $src exists" >&2; exit 2; }
+git worktree add --detach "$src" "$PIN" > /dev/null
+trap 'cd "$root"; git worktree remove --force "$src"; git worktree prune' EXIT
+rec="$src/${here#"$root"/}"
+uv_() { uv run --frozen --project "$root" "$@"; }
+cd "$src"
+stamp "pinned tree $PIN ready"
+
+cmake --preset host-gz-l5 -DMARV_PYTHON="$root/.venv/bin/python" > /dev/null
 cmake --build --preset host-gz-l5
-uv run python tools/refdata/refdata.py ensure quad/L05/t3
+uv_ python tools/refdata/refdata.py ensure quad/L05/t3
 stamp "build and reference ready"
 
 if [[ "${MARV_R2FF_REUSE_GZ:-0}" != 1 ]]; then
   [[ ! -e "$work/gz" ]] || { echo "regenerate: $work/gz exists (set MARV_R2FF_REUSE_GZ=1 to reuse it)" >&2; exit 2; }
-  MARV_GZ_TEST_ZERO_FIRST_READ=1 uv run python tests/regression/quad/L06/results/ff_on/capture_gz.py \
+  MARV_GZ_TEST_ZERO_FIRST_READ=1 uv_ python tests/regression/quad/L06/results/ff_on/capture_gz.py \
     --case r2 --work "$work/gz" --out "$work/capture_gz_r2.txt" > /dev/null
   for v in off on; do
     d=("$work"/gz/recover_tumble_ff_"$v"_*)
@@ -35,10 +50,10 @@ fi
 stamp "gz logs ready"
 
 tests/regression/quad/L05/results/recovery_cause/build_tool.sh "$work/recovery_cause_tool"
-"$here/build2.sh" "$work/tool2"
+"$rec/build2.sh" "$work/tool2"
 stamp "tools built"
 
-py() { uv run python "$here/$1" "${@:2}"; }
+py() { uv_ python "$rec/$1" "${@:2}"; }
 py a_replay.py > /dev/null
 py b_ladder.py A B > /dev/null
 py b_ladder.py C D E F G H I J K M > /dev/null

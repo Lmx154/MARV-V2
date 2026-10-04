@@ -143,17 +143,30 @@ the W4 diagnosis scripts to be committed with 0016).
      (2026-10-04).
    - **Stage (d) closed: approved by Luis, 2026-10-04** (0017, "Stage (d) close" and "Approval"). Pushed: `4bff7af`,
      `432daca`, `43a23a2` and the docs-only close commit.
-3. **Next (Luis, 2026-10-04), with no repo writes until he chooses:**
-   - R2: re-run on the post-(d) head; close the reproduction gap (AF with its own allocation and freeze, computed, not
-     copied, on all three rate channels); c1 as a real design option (a derived anti-windup law, bounded windup with a
-     test and control, the effect on every scenario, the fine controls); the FF-form and rotor-lag residual under the
-     perfect-controller test.
-   - The acro margin under noise, from 5.72 mrad/s.
-   - The (e) decision round: the Monte Carlo split (nightly and before stage closes and tags; deterministic nominal per
-     push) with parallel wall times, the 64-corner T3 scan cost (worst corner = smallest normalised slack), the gate-file
-     change.
-   - The Actions core-time growth is the runner, not the code (Luis read the logs). Plan (e)'s CI on the slower figure;
-     S9 is measured in the local CI image.
+3. **Stage (e) is open: decision 0019** (`docs/decisions/0019-l6-stage-e-noise-monte-carlo-and-gate.md`). It holds
+   Luis's rulings of 2026-10-04, verbatim: NT-2, `noise_term_confidence` 0.99, the gz truth state, bias corners as a
+   nonlinear delta, PP-A, 22/59 seeds, the clock corners inside the T3 search, question E outward, exact ties only, the
+   S9 pytest guard, the gate commit last, and the approved F1 spec line.
+   - **0018 (c1) is held, not on master:** local branch `l6-0018-c1`, commit `7ea4d29`, not pushed. Luis is choosing
+     between c1, a variant that does not bleed an axis clipped by another's demand, and keeping the freeze. When an
+     anti-windup change lands: the L5 rate-bypass golden is re-pinned to that commit (ruling (a), with the quad-L4-pass
+     golden as its control), and `l6_ff_eval.py` follows.
+   - **Running (analysis, no repo writes):** the trim loss at a realistic trim and the anti-windup variants. Done and
+     saved in `~/marv-e-round-2026-10-04/`:
+     - the R2 witness: in range, with the collective free to about 17 N; reviewed, PASS;
+     - the residual study: candidate (i), the rotor-lag-inverting allocation, gives 1340 violations and acro about
+       94 mrad/s.
+     Luis's three questions on the study (the collective, candidate (i), committing the witness) are pending; they come
+     back with the R2 package.
+   - **Master, in order:** the `r2_ff_diagnosis` regenerate pin (0019, item 1); then the (e) infrastructure in its own
+     commits:
+     - the plugin's IMU, rotor and clock wiring;
+     - the noise suite;
+     - the T3 corner scan;
+     - the Monte Carlo job;
+     - the S9 pytest guard;
+     - the register entry and the spec line.
+     The gate commit comes last.
 
 **For stage (e), recorded with no decision yet (Luis, 2026-10-03).**
 - **R2 fails even with FF on.** Measured with 0016: FF off 14420 violations (worst w_x +2.349 rad/s), FF on 2391 (worst

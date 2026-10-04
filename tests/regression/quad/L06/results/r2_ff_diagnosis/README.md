@@ -57,8 +57,11 @@ Work dir and gz-log dir: `MARV_R2FF_WORK` (the scripts' work dir, required) and 
 
     tests/regression/quad/L06/results/r2_ff_diagnosis/regenerate.sh <work dir>
 
-Needs `uv sync --frozen`, gz-sim 8 and the host-gz-l5 build; it runs `cmake --build --preset host-gz-l5`, ensures the L5 T3
-reference, runs `capture_gz.py --case r2` with the switch (gz logs kept in `<work dir>/gz`), builds the two tools, reruns
+Needs `uv sync --frozen` and gz-sim 8. Every build and script comes from a detached `git worktree` of the pinned commit
+(`PIN` at the top of `regenerate.sh`: decision 0016's commit 4a76755, where this record was produced and verified), removed
+at exit, so the pre-0016 outputs stay reproducible after the firmware changes (the diffuser of decision 0017 is live in
+the current tree); the scripts run are the record's own copies in that worktree. In it the script configures and builds
+host-gz-l5, ensures the L5 T3 reference, runs `capture_gz.py --case r2` with the switch (gz logs kept in `<work dir>/gz`), builds the two tools, reruns
 every script, then checks every `SHA256SUMS` line and the small files with `cmp`. It exits nonzero on any mismatch and
 refuses to start if `<work dir>/gz` exists (`MARV_R2FF_REUSE_GZ=1` reuses it). Measured: 186 s wall (3 min 6 s; a first run took 189 s) on 16
 cores, 0 mismatches (all 35 hashes and every committed small file reproduced bit for bit).
