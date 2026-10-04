@@ -141,13 +141,19 @@ the W4 diagnosis scripts to be committed with 0016).
      cycle is gone, the fine controls fail by more, no strict xfail passes, and the chirp admission set is unchanged.
      Q-dependent records are regenerated (0017 lists 18 frozen files). Pushed (`432daca`); P1 and P2 approved by Luis
      (2026-10-04).
-   - The motor-speed line is approved and its T1 test is built (hover 0.517 of the bound; the stateless control 4.43×).
-     The FF-on records are re-captured with the diffuser: acro FF-on margin 5.72 mrad/s, R2 FF-on 2431 violations.
-     Pending Luis: accepting the two-run superposition as the d̃ reference (0017).
-   - Next: the (d) close summary (nine headings), with the R2 yaw options, the Actions core-time finding and the owed
-     (e) sizing items. Facts drafted in the session scratch (`close_notes.md`).
-   - Alongside: the R2 yaw options for (e), a scratch analysis, brought with the (d) close. Saved outside the repo at
-     `~/marv-r2yaw-2026-10-04/r2yaw.tar.gz`.
+   - **Stage (d) closed: approved by Luis, 2026-10-04** (0017, "Stage (d) close" and "Approval"). Pushed: `4bff7af`,
+     `432daca`, `43a23a2` and the docs-only close commit.
+3. **Next (Luis, 2026-10-04), with no repo writes until he chooses:**
+   - R2: re-run on the post-(d) head; close the reproduction gap (AF with its own allocation and freeze, computed, not
+     copied, on all three rate channels); c1 as a real design option (a derived anti-windup law, bounded windup with a
+     test and control, the effect on every scenario, the fine controls); the FF-form and rotor-lag residual under the
+     perfect-controller test.
+   - The acro margin under noise, from 5.72 mrad/s.
+   - The (e) decision round: the Monte Carlo split (nightly and before stage closes and tags; deterministic nominal per
+     push) with parallel wall times, the 64-corner T3 scan cost (worst corner = smallest normalised slack), the gate-file
+     change.
+   - The Actions core-time growth is the runner, not the code (Luis read the logs). Plan (e)'s CI on the slower figure;
+     S9 is measured in the local CI image.
 
 **For stage (e), recorded with no decision yet (Luis, 2026-10-03).**
 - **R2 fails even with FF on.** Measured with 0016: FF off 14420 violations (worst w_x +2.349 rad/s), FF on 2391 (worst

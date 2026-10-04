@@ -295,11 +295,182 @@ P2 (working tree, before its commit):
 - Independent review: PASS. Its one prose finding is fixed.
 - The local CI on the commit is in the handoff.
 
-## Still to come in stage (d)
+## Stage (d) close
 
-- The evaluation and the stage close.
+**1. What landed.**
+- `4bff7af`, P1: `DshotDiffuser<T>` in `fw/mixer`, with 14 T1 tests. Not live; flight output unchanged.
+- `432daca`, P2: the diffuser goes live in `RateGroupStep` (reset at init, applied at every rate execution), so both
+  scripted compositions and the L4 replay diffuse. Unchanged: `l0`, `l2_open_loop`, `thrust_to_dshot`, `mix`,
+  allocation, saturation, the integrator freeze, the idle rule and the D-path budget unit.
+- `43a23a2` (local): the motor-speed T1 test, the FF-on records re-captured with the diffuser, `test_r1x_coupling.py`
+  moved to nightly (S9), and the P1/P2 approvals. No flight change.
+
+**2. Product numbers, before (d) → after.**
+- Q:
+  - roll θ 7.80e-3 → 2.98e-6 rad, ω 3.67e-2 → 6.01e-5 rad/s;
+  - pitch θ 7.03e-3 → 1.79e-6 rad, ω 3.31e-2 → 5.35e-5 rad/s;
+  - yaw ω 4.78e-3 → 1.60e-5 rad/s (release), 3.48e-3 → 1.53e-5 rad/s (fallback).
+- The gz hover limit cycle (step excursion outside the envelope): roll 5.73e-3 → 6.5e-10 rad, pitch
+  4.99e-3 → 7.7e-10 rad.
+- The fine controls (decision 24) still fail, by more:
+  - steps att_kp ×1.1: roll +4.205e-2 → +4.989e-2, pitch +4.287e-2 → +4.990e-2;
+  - recovery kp ×1.1: +0.385 → +0.424;
+  - chirp gain ×2: measured PM roll 34.88° → 35.53°, pitch 34.86° → 35.52°, yaw 35.59° → 35.62°.
+- The chirp slack: roll 7.600° → 13.256°, pitch 8.197° → 13.624°, yaw 15.188° → 15.170°. The admission set is
+  unchanged.
+- R2:
+  - FF off: worst w_x +2.349 → +2.368 rad/s; violations 14420 → 15206.
+  - FF on: violations 2391 → 2431; worst w_z +0.2373 → +0.2375 rad/s.
+- R1X α:
+  - FF off: +5.05e-3 → +1.174e-2 rad (fails);
+  - FF on: slack 2.923e-2 → 2.295e-2 rad (passes).
+- Acro:
+  - FF-on roll margin: 6.07 → 5.72 mrad/s;
+  - FF-off roll excess: 5.2322 → 5.2318 rad/s.
+
+**3. The pass bar, line by line.**
+- (d) "carried error within one DShot step": met. max |e| = 0.5 step over 12.06 M writes; margin ½ step.
+- (d) "mean applied command over a window matches the request within the stated bound": met for every window N with
+  1/N + δ_max. The bound is attained; the worst window comes within 2δ of it.
+- (d) "the L03 suite stays green": met.
+- (d) the motor-speed line: met.
+  - Hover: 0.00925 rad/s against 0.0179 rad/s (0.517 of the bound).
+  - Random sequence: 0.591 of the bound.
+  - Stateless control: 4.43×, fails.
+  - The affine step it relies on is asserted (second difference 4.55e-13 against 1.85e-9 rad/s; control 4.8e6×).
+- Added by your rulings:
+  - any sequence: random, adversarial and ramp sequences, with saturation separately, all within the bound;
+  - δ_max = 2^-14 step, derived and attained (ratio 1.0000);
+  - four reset paths, each with its own T1 test;
+  - Q recomputed with the diffuser in the loop (oracle and firmware: 0 mismatches over 550 k writes);
+  - the fine controls re-confirmed.
+
+**4. Known failing items** (strict xfail while `L06/XFAIL_GATE_CLOSED` is absent). No strict xfail passes: L4 gz
+40 passed, 1 xfailed; L5 gz 63 passed, 2 xfailed.
+- L4 acro, FF off: fails (roll excess 5.23 rad/s). FF on: passes by 5.72 mrad/s, at the card plant without noise.
+  (e): FF live.
+- L5 R2, FF off: 15206 violations. FF on: 2431 violations, all on the rate channels (the attitude channels are inside).
+  (e): FF live plus the yaw choice below.
+- L5 R1X α, FF off: fails (+1.17e-2 rad). FF on: passes. (e): FF live.
+
+**5. Frozen changes: 24 files.** None relaxed; one narrowed.
+- P1: 1 (the `add_subdirectory` line).
+- P2: 18 (0017, "Frozen files changed by P2"):
+  - references moved to the diffuser, with stateless rounding as the failing control: 3;
+  - Q recomputed: 5;
+  - comment only: 1;
+  - Q-embedding records regenerated, conclusions unchanged: 9. The R2 lower bound's margin grows, 9.17× → 15.6× on w_y.
+- `43a23a2`: 5 (the motor-speed target's CMake lines; the 4 FF-on records, with "before (d)" kept).
+- Narrowed: the fault test no longer compares the composition's DShot with the head path's own DShot at fault
+  executions. In its place, a diffuser reference checks every execution. Thrust-level equality at every fault
+  execution is kept (`fault_test.cpp:308-310`).
+
+**6. Verification, by commit.**
+- `4bff7af`:
+  - local: core 1691 s, gz-l2 363 s, gz-l4 447 s, gz-l5 901 s, all pass;
+  - Actions 37170708960: 3636 / 773 / 1548 / 2286 s, all pass.
+- `432daca`:
+  - local: 1946 / 394 / 498 / 1014 s, all pass;
+  - Actions 37177370498: 3649 / 769 / 1516 / 2337 s, all pass.
+- `43a23a2`: local 1546 / 342 / 418 / 882 s, all pass (ctest 661/661 ×2, frozen 660/660). Actions: after the push.
+- The Actions core time:
+  - before stage (c), 1200–1604 s;
+  - `af25f5e` (the stage (c) head) 2530 s;
+  - every push since, 3636–3886 s, including the docs-only `69f98f4` at 3886 s.
+  - So the growth after `af25f5e` does not come from code. Same runner pool and image; the job logs need
+    authentication, so the cause inside the script is not established.
+- The per-push files nearest 60 s (marv-ci, alone):
+  - `test_r1x_coupling.py` 60.6–61.5 s, now nightly;
+  - `test_r2_lower_bound.py` 57.8–58.3 s, margin 1.7–2.2 s;
+  - `test_rate_lead.py` 44.1 s.
+
+**7. Limits and findings.**
+- `fw/` has no disarm or motor-stop path until L8; those resets are modelled in tests.
+- δ_max and the window bound are attained, so neither is loose.
+- `marv_plant` has no fractional-command entry. The motor-speed reference is the affine combination of two plant runs,
+  exact because the motor step is affine, and that affinity is asserted.
+- Records left as records of their own runs: `ff_eval/`, `r2_ff_diagnosis/` and `L05/results/*`. The FF-on capture
+  headers still say "stage (c)".
+- The acro FF-on margin shrank by 0.35 mrad/s with the diffuser.
+- AM32 applying each frame stays INFERRED until the bench.
+- S9 is still unenforced for pytest.
+
+**8. Next and carried.**
+- The R2 yaw options for (e), from a scratch analysis on `4a76755`, before (d); the FF-on R2 run has since changed by
+  +40 violations.
+  - What saturates: only the yaw allocation, at executions 1–93 (0.3–29 ms; lowest t 0.761). The yaw integrator freeze
+    is on over exactly those executions. Roll and pitch never saturate.
+  - The w_z violations fall well after that window (executions 1564–3116 and 5768–5955).
+  - The design model with allocation and freeze ("AF") reproduces the gz yaw excess in sign and timing, and about
+    65 % of its size: +0.151 against +0.237 rad/s, with 1364 of gz's 1741 violations matched. The freeze alone
+    explains it; the lost torque does not.
+  - AF does not reproduce gz's roll/pitch rate violations (0 against 324/326). In the closed-loop tool, removing the
+    freeze clears w_y, which suggests the yaw freeze leaks into roll and pitch (INFERRED).
+  - The options:
+
+    | Option | R2 FF on | Still proves | Stops proving |
+    |---|---|---|---|
+    | (a) allocation + freeze in the envelope | 2391 → 1182 | attitude; FF off is still caught; settle | that anti-windup stays inside the linear design response (the reference copies `record_allocation`) |
+    | (b) R2 yaw-limited | w_z outside saturation: no change; dropping w_z: 650 (160 with (a)) | attitude and the roll/pitch rates | the yaw rate trajectory |
+    | (c1) firmware anti-windup change (product, flight safety) | predicted 1253 | the check unchanged | — (windup risk under sustained saturation) |
+
+  - None of them passes on its own. After (a), the rest is the FF form plus the rotor-speed lag (about the W4 tool's
+    1178).
+- Before (e): the acro margin under noise, from 5.72 mrad/s.
+- The (e) sizing:
+  - Seeds: tracking 22 (p = c = 0.90), safety 59 (p = c = 0.95).
+  - Scenarios: 14 tracking and 4 safety (acro, R1, R2, R1X), so 52 nominal gz processes per push.
+  - Measured gz wall per seed and corner (marv-ci-gz, 4 CPUs): tracking 194 s (L4 steps 3 × 4.8, L4 chirps 3 × 15.5,
+    L5 steps 2 × 7.75, yaw 2 × 7.75, L5 chirps 39.9 / 40.0 / 22.3), safety 23 s (acro 5.5, recoveries 3 × 5.85).
+  - Confirmation at nominal plus the worst corner: 2 × (22 × 194 + 59 × 23) ≈ 11,260 s ≈ 3.1 h serial gz time
+    (1.6 h at nominal only), plus the T3 design time.
+  - Turn-on corners (0012): the nominal plus each scenario's worst T3 corner. The metric that ranks "worst" is
+    undefined, and no 64-corner T3 scan exists yet.
+  - The CI split today: core, gz-l2, gz-l4 and gz-l5 run in parallel per push; nightly adds the 6 nightly tools files.
+    There is no Monte Carlo hook yet.
+- Pre-L8: J with σ, τ_m, AM32 per-frame behaviour, the prop-strike pass bar.
+- Carried: S9 enforcement for pytest; the `step_cause` re-run at N = 1.
+
+**9. For Luis.**
+1. Accept the two-run superposition as the d̃ reference of the motor-speed test? **yes (recommended)** / no
+2. Approve stage (d), and push `43a23a2` and this close? **yes (recommended)** / no
+3. R2 for (e): **a (recommended)** / b / c1 / defer. With (a), the reference becomes the law Gazebo flies, your chirp
+   principle. It still fails, at 1182 violations; the FF-form and rotor-lag residual then gets its own decision.
+4. Give me read access to the Actions logs (`gh` installed and authenticated) to find the core-time cause?
+   **yes (recommended)** / no
+5. Rank the "worst T3 corner" by the smallest predicate slack per scenario? **yes (recommended)** / no
 
 ## Approval
 
 Owner decisions: Luis, 2026-10-03, as quoted. The motor-speed line: Luis, 2026-10-04, with the four edits above.
-P1 and P2 approved: Luis, 2026-10-04. The stage: pending.
+P1 and P2 approved: Luis, 2026-10-04.
+
+Stage (d) approved: Luis, 2026-10-04.
+
+Luis, 2026-10-04, on the close's section 9 (verbatim, abridged to the rulings):
+
+"**1. The motor-speed reference as "the plant's own motor model": yes.** The blend is exact because the motor step is
+affine, and the test asserts that, with a control that fails by 4.8e6×.
+
+**2. Stage (d): approved. Push 43a23a2 and the close.** ... The re-captured FF-on records' headers still say "stage (c)".
+If that text is the generator's output, leave it and say so in the README.
+
+**3. R2 for (e): defer, leaning toward c1. Not (a), not (b).** ... Not (a): as described, the reference copies
+`record_allocation` from the run, so the envelope would come from the observed run, which we never do. ... The freeze is a
+controller choice, not physics. ... A design model that computes its own allocation limits from its own state is
+legitimate physics. ... Not (b): it turns off the yaw-rate trajectory on a safety check. ... Why defer: the model doesn't
+reproduce Gazebo yet. ... The freeze is per axis (`rate_loop.hpp:217`), so a yaw saturation can't freeze the roll or
+pitch integrators. Whatever drives those violations is missing from AF.
+
+**4. Actions logs: not needed.** ... Every step slowed by about the same factor between af25f5e and 4a76755, including
+steps 0016 doesn't touch ... So the jump is the runner, not the code: likely slower hosted-runner hardware (INFERRED).
+... Actions times don't predict anything; keep measuring S9 in the local CI image, which is the rule anyway. Plan (e)'s CI
+on the slower Actions figure.
+
+**5. Worst T3 corner = smallest predicate slack per scenario: yes, normalised.** Per scenario, take the corner with the
+smallest slack divided by that channel's own bound, minimised over channels so units compare. Keep both corners on a
+tie. It is computed on the T3 design model, never picked from Gazebo results."
+
+The R2 items (re-run on the post-(d) head, the reproduction gap, c1 as a design option, the FF-form and rotor-lag
+residual), the acro margin under noise and the (e) decision round go to Luis together, with no repo writes until he
+chooses.

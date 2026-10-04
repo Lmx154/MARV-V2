@@ -4,6 +4,10 @@ not asserted (decision 0014, owner decision 2; Luis, 2026-10-01: "stage (c) reco
 one T4 run of the acro and R2 scenarios with FF switched on through the test harness. These are reported, not asserted";
 third round, item 3: R1X "must pass at (e) with FF live").
 
+The data files' first line ("MARV quad L6 stage (c): FF-on report run ...") is the generator's own header
+(`capture_gz.py:253`), so it stays as written. The current files were re-captured at stage (d), with the DShot
+diffuser live (decision 0017); each case keeps its "before (d)" numbers below.
+
 The switch. `rate_ff_enable` (`design/scenario_values.yaml`) is 0 in every build, so the firmware flies the PID law and
 every suite runs FF-off. With it at 1, `rate::from_params` (`fw/rate/src/rate_loop.cpp`) reads J (`inertia_xx/yy/zz`),
 τ_m (`motor_tau`) and T_ff (`rate_ff_filter_tau`, 12.311602 ms, `tools/card/rate_lead.py` rule step 9). The FF-on runs
