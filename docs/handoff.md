@@ -139,7 +139,13 @@ the W4 diagnosis scripts to be committed with 0016).
    - P1 pushed (`4bff7af`, local CI green).
    - P2, the live switch, built: the diffuser is in `RateGroupStep`. Q falls by roughly ×300–2600, the gz hover limit
      cycle is gone, the fine controls fail by more, no strict xfail passes, and the chirp admission set is unchanged.
-     Q-dependent records are regenerated (0017 lists 18 frozen files). Next: local CI on its commit, then Luis's go.
+     Q-dependent records are regenerated (0017 lists 18 frozen files). Pushed (`432daca`); P1 and P2 approved by Luis
+     (2026-10-04).
+   - The motor-speed line is approved and its T1 test is built (hover 0.517 of the bound; the stateless control 4.43×).
+     The FF-on records are re-captured with the diffuser: acro FF-on margin 5.72 mrad/s, R2 FF-on 2431 violations.
+     Pending Luis: accepting the two-run superposition as the d̃ reference (0017).
+   - Next: the (d) close summary (nine headings), with the R2 yaw options, the Actions core-time finding and the owed
+     (e) sizing items. Facts drafted in the session scratch (`close_notes.md`).
    - Alongside: the R2 yaw options for (e), a scratch analysis, brought with the (d) close. Saved outside the repo at
      `~/marv-r2yaw-2026-10-04/r2yaw.tar.gz`.
 

@@ -20,15 +20,36 @@ Builds).
 6. **D-path budget unit: unchanged.** The DShot step's size doesn't change.
 7. **AM32 per-frame behaviour: yes, on the pre-L8 bench list.** The diffuser's benefit assumes the ESC applies each frame. That stays INFERRED until the bench shows it."
 
-**Motor-speed line, text sent to Luis for approval (2026-10-04), pending:**
+**Motor-speed line: approved by Luis (2026-10-04) with four edits, verbatim:**
 
-> (d) T1: at hover, the rotor-speed error that the diffused command leaves after the card's first-order motor lag stays
-> within (1 − e^(−T_r/τ−)) DShot steps + δ_max, converted to rad/s through the card's DShot-to-speed map. Here τ− is the
-> low corner of the motor-lag band, T_r the rate-execution period and δ_max the derived float32 accumulation bound.
-> Negative control: with the diffuser off (stateless rounding), the same check fails.
+"**The motor-speed line: approved, with four edits.** Apply them to the text in 0017 and quote the final text in the report.
+1. **Define the error.** It is the plant's rotor speed under the diffused command minus the same motor lag driven by the unquantised clamped request d̃, both starting from the same state. Say so in the line.
+2. **Between samples.** The derivation bounds the error at write instants. The plant integrates between them. Either extend the derivation to every plant step (the same summation by parts, with the partial-period factor), or assert only at write instants and say so in the line. I prefer the first.
+3. **The rad/s conversion.** Use the largest slope of the card's DShot-to-speed map over hover ± 1 step, as a derived value with that rule. Don't use the slope at hover alone.
+4. **Run it on the plant's own motor model** (`marv_plant`), not a re-implementation, as with R2's ω̇ = 0 check. Keep τ− as the corner: it gives the largest 1 − a, so it's the conservative one.
 
-Derivation: q_n = d̃_n + e_(n−1) − e_n with |e| ≤ ½. Through the lag a = e^(−T_r/τ), summation by parts bounds the error
-by (1 − a)(½ + ½) = 1 − a steps. A stateless constant error of up to ½ step passes the lag unattenuated.
+Negative control: as written, diffuser off must fail. Report its ratio at the hover request. Hover's fractional part is about 0.06 step, against a bound near 0.02 step if τ− is half the card's 33 ms (INFERRED: use the real band). If the stateless control doesn't fail at hover, stop and report rather than choosing another request."
+
+**The final line** (quad §4 L6 pass bar, after the (d) T1 line):
+
+> (d) T1: at hover, the rotor-speed error stays within (1 − e^(−T_r/τ−)) DShot steps + δ_max at every plant step,
+> converted to rad/s by the largest slope of the card's DShot-to-speed map over hover ± 1 step. The error is the
+> rotor speed of the plant's own motor model (`marv_plant`) under the diffused command minus the same motor lag driven
+> by the unquantised clamped request d̃, both from the same state. τ− is the low corner of the motor-lag band, T_r the
+> rate-execution period and δ_max the derived float32 bound. Negative control: with the diffuser off (stateless
+> rounding), the same check fails at the hover request.
+
+Derivation, at every plant step. The applied command is q_n = d̃_n + e_(n−1) − e_n with |e| ≤ ½.
+- Through the lag, the error at time s ∈ (0, T_r] after write n is Σ_j w_j (e_(j−1) − e_j), with a_s = e^(−s/τ),
+  w_n = 1 − a_s and w_j = a_s a^(n−1−j) (1 − a) for j < n.
+- Summation by parts bounds it by ½ (total variation of w) = max(1 − a_s, a_s (1 − a)) ≤ 1 − a.
+- At the write instants (s = T_r) this is the earlier bound 1 − a.
+- Luis's check (2026-10-04): the error at time s is ½[|1 − a_s(2 − a)| + 1 − a·a_s] = max(1 − a_s, a_s(1 − a)), and
+  both terms are ≤ 1 − a.
+- With the card's values (τ = 33 ms, band 0.3, so τ− = 23.1 ms; T_r = 312.5 µs), 1 − a = 0.01344 step. The test
+  derives the value itself.
+- A stateless constant error passes the lag unattenuated: at hover's fractional part (about 0.06 step) the control is
+  expected to fail by about 4.5× (INFERRED; the test measures it).
 
 ## Why
 
@@ -157,9 +178,14 @@ changes:
   thrusts, still bit-exact; stateless rounding is the control.
 - `tests/regression/quad/L06/rate_group/fault_test.cpp`: the composition's DShot reference is a diffuser run over the
   step's thrusts at every execution; the head path at :148 keeps its stateless reference; stateless is the control.
-  The direct composition-equals-head DShot equality is now checked only at the fault executions: away from them the
-  head's own carry history differs from the step's ({764,764,764,763} vs {764,764,764,764}), which comes with the
-  carry.
+  **Narrowed** (Luis, 2026-10-04: named here as narrowed). At each fault execution the composition's DShot is no longer
+  compared with the head path's own DShot (69c62f2's stateless path, :148). With the carry, the head's DShot history
+  differs from the step's ({764,764,764,763} vs {764,764,764,764}). In its place, the composition's DShot is compared at
+  every execution with a diffuser run over the step's thrusts, using the head's thrusts at fault executions.
+  - Kept: at every fault execution the step's torque, request and thrusts equal the head's bit for bit, before
+    quantisation (`fault_test.cpp:308-310`); the composition's DShot equals the step's at every tick (`:276`).
+  - The head is the path without the chain, so it equals the step only at fault executions. That was the test's scope
+    before this change too.
 - `tests/regression/quad/L05/t3/reference/attitude_t3_oracle.py` (`Quantiser(diffusion=…)`, `q_script`),
   `tests/regression/quad/L05/t3/reference/SHA256SUMS` (the Q line), `tests/regression/quad/L05/t3/README.md`.
 - `tests/regression/quad/L05/tools/test_attitude_t3_q.py`: the dead-band facts call the stateless path explicitly;
@@ -177,8 +203,78 @@ changes:
   - `tests/regression/quad/L06/results/r2_lower_bound/e_measured.txt`
   - `tests/regression/quad/L06/results/r2_lower_bound/hover_tumble.txt`
 
-No assertion, bound, tolerance or test name is loosened. Every reference stays bit-exact, and each moved reference keeps
+Apart from the fault-test narrowing above, no assertion, bound, tolerance or test name is loosened. Every reference stays bit-exact, and each moved reference keeps
 the stateless law as a failing control.
+
+The motor-speed T1 test and the FF-on re-capture (after Luis's approvals of 2026-10-04).
+
+**The motor-speed T1 test** (`tests/regression/quad/L06/dshot_diffusion/motor_speed_test.cpp`, target
+`unit_l6_dshot_motor_speed`, 3 tests, 0.38 s).
+- The terms:
+  - τ− = (1 − 0.300000012)·0.033 = 23.0999996 ms (the band is the parameter set's float32);
+  - T_r = 2 × 156.25 µs;
+  - 1 − a = 0.0134370447 step, with a read from the plant itself (a = d̂², d̂ the plant's one-tick decay);
+  - δ_max = 2^-14 step;
+  - the bound is 0.0134980799 step = 0.0178939028 rad/s at slope 2650/1999 = 1.32566283 rad/s per step. The card's map
+    is linear (asserted), so this is the largest slope over hover ± 1 step.
+- The plant runs in double. Its rounding adds ρ = 1.2e-9 rad/s, derived on its line in the test.
+- The hover request: 1.89264452 N per motor, so d* = 765.059814 (fraction 0.0598). Start: rotors at rest, zero carry,
+  as a SIL run starts. No transient is excluded.
+- Results, at every plant step:
+
+  | Case | Max error | Share of the bound |
+  |---|---|---|
+  | Hover, diffused | 0.00925186 rad/s (0.00697904 step), 32768 steps × 4 motors | 0.517 |
+  | Random in-range sequence (seed 601, extra) | 0.0105733 rad/s | 0.591 |
+  | Control, stateless at hover | 0.0792938 rad/s (0.0598 step), first over at plant step 38 | 4.43, fails |
+
+- **The d̃ reference (for Luis's acceptance).** `marv_plant` has no entry that takes a fractional command: the motor
+  takes `uint16_t` DShot, and the substep is private (`sim/plant/src/plant_model.hpp:51, 74`).
+  - The reference B is therefore built from two runs of `marv_plant`'s own motor model, one under ⌊d̃⌋ and one under
+    ⌊d̃⌋ + 1, both started from B's speed at each write. Their outputs are combined as (1 − f)·ω_lo + f·ω_hi.
+  - This is exact in real arithmetic, because the plant is affine in its command: the ESC map is linear (asserted by
+    the test) and the lag step is a zero-order hold.
+  - The lag is not re-implemented. A scratch check against a long-double lag at d̃ agrees to 1.7e-11 rad/s.
+  - The affinity it relies on is asserted (`PlantMotorStepIsAffineInTheCommandAtEveryStep`, the reviewer's gap). From
+    one state, marv_plant's motor advance under lo, lo + 1 and lo + 2 has a second difference of at most 4.55e-13 rad/s,
+    against a derived double-rounding bound of 1.85e-9 rad/s. It is checked at every plant step for four motors, at
+    hover and at rest, with lo at the hover floor, d_lo and d_max − 2.
+  - Control: unequal spacing (lo, lo + 1, lo + 3) gives at least 8.94e-3 rad/s, 4.8e6× the bound.
+  - The target now holds 5 tests.
+
+**The FF-on records re-captured with the diffuser live** (owner, 2026-10-04: their own commands, the "before (d)"
+numbers kept). Each case was run twice, byte-identical. No verdict changes.
+- Acro, FF-on roll margin: +6.07 → +5.72 mrad/s (pass). FF-off roll excess: 5.2322 → 5.2318 rad/s (fail, as before).
+- R1X α: FF off +5.05e-3 (74 violations) → +1.174e-2 rad (136 violations); FF-on slack 2.923e-2 → 2.295e-2 rad
+  (pass).
+- R2: FF off 14420 → 15206 violations (worst w_x +2.349 → +2.368 rad/s); FF on 2391 → 2431 violations (worst w_z
+  +0.2373 → +0.2375 rad/s).
+
+**Per-push file times (S9), measured in the CI image** (marv-ci, `--cpus 4 --memory 15740260352`, a fresh clone of
+`c424cbe`, each file alone after `uv sync` and the T3 references).
+- All 41 per-push tools files pass; together they take 311.3 s.
+- Nearest the limit:
+
+  | File | Alone time |
+  |---|---|
+  | `L06/tools/test_r1x_coupling.py` | 61.4, 60.6, 61.5, 61.0 s (58.9 s at stage (c)) |
+  | `L06/tools/test_r2_lower_bound.py` | 58.2, 57.8, 58.0, 58.3 s (56.2 s at stage (c); margin 1.7–2.2 s) |
+  | `L06/tools/test_rate_lead.py` | 44.1 s |
+  | `L06/tools/test_l6_ff_eval.py` | 40.1 s |
+  | `L06/tools/test_r2_envelope_a.py` | 22.8 s |
+
+- **Applied under Luis's standing S9 rule** (2026-10-03: "Anything still over 60 s in the CI image ... goes nightly,
+  under the S9 rule, recorded ... with its measured time"): `test_r1x_coupling.py` joins the nightly list in
+  `ci/run_ci.sh`.
+  - Per push it is `--ignore`d; `MARV_CI_MODE=full` runs it.
+  - The gz R1X run stays per push (gz-l5, `test_t4_recovery.py`). The coupling counterfactual record
+    (`r1x_coupling/`) is checked nightly.
+
+**Frozen files changed by this commit:**
+- `tests/regression/quad/L06/dshot_diffusion/CMakeLists.txt`: the `unit_l6_dshot_motor_speed` target (lines added).
+- `tests/regression/quad/L06/results/ff_on/gz_acro.txt`, `tests/regression/quad/L06/results/ff_on/gz_r1x.txt` and
+  `tests/regression/quad/L06/results/ff_on/gz_r2.txt`: re-captured with `capture_gz.py`.
+- `tests/regression/quad/L06/results/ff_on/README.md`: the new numbers, with the "before (d)" ones kept.
 
 ## Evidence
 
@@ -201,9 +297,9 @@ P2 (working tree, before its commit):
 
 ## Still to come in stage (d)
 
-- The motor-speed T1 test, once Luis approves the text above.
 - The evaluation and the stage close.
 
 ## Approval
 
-Owner decisions: Luis, 2026-10-03, as quoted. The motor-speed line text, P1 and the stage: pending.
+Owner decisions: Luis, 2026-10-03, as quoted. The motor-speed line: Luis, 2026-10-04, with the four edits above.
+P1 and P2 approved: Luis, 2026-10-04. The stage: pending.

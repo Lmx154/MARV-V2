@@ -707,7 +707,7 @@ g3_truth_planted_control() {
 # Tools tests that run in the full mode only (nightly and workflow_dispatch), not per push: the files whose alone time exceeds the
 # 60 s per-push limit (owner ruling of 2026-10-03). Each time is the file run alone in the CI image (docker run --cpus 4 --memory
 # 15740260352 on a quiet host, load < 1.5) after the S9 speed-ups, the session fixtures included. The per-push files closest
-# to the limit (test_r1x_coupling.py 58.9 s, margin 1.1 s; test_r2_lower_bound.py 56.2 s, margin 3.8 s) stay per push. Per push these files are --ignore'd; the full mode
+# to the limit (test_r2_lower_bound.py 57.8 s to 58.3 s at c424cbe, decision 0017) stays per push. Per push these files are --ignore'd; the full mode
 # runs them with the rest. S9, decision 0014 fifth round item 6.
 nightly_tools_tests=(
   tests/regression/quad/L06/tools/test_chirp_admission.py   # 111.7 s alone. S9, decision 0014 fifth round item 6
@@ -715,6 +715,7 @@ nightly_tools_tests=(
   tests/regression/quad/L06/tools/test_attitude_lead.py     # 81.4 s alone. S9, decision 0014 fifth round item 6
   tests/regression/quad/L01/tools/test_flatten_report.py    # 64.5 s alone. S9, decision 0014 fifth round item 6
   tests/regression/quad/L05/tools/test_attitude_t3.py       # 60.7 s alone (60.5 s to 61.0 s in four runs). S9, decision 0014 fifth round item 6
+  tests/regression/quad/L06/tools/test_r1x_coupling.py      # 61.1 s alone (60.6 s to 61.5 s in four runs, c424cbe). S9, decision 0017
 )
 
 tools_tests() {

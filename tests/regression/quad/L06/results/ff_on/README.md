@@ -38,7 +38,23 @@ What each case runs (nothing of a predicate is restated in the script):
 Excess: the worst excess over the tolerance (positive), or minus the slack (negative, a margin). rad/s for rates, rad for
 attitude. Acro recovery: |ω| against Z + F + E. R2, R1X: out against E + F + Q.
 
+Re-capture with the DShot error diffuser live (L6 stage (d), decision 0017; Luis, 2026-10-04: "Re-capture the FF-on
+records (acro, R1X, R2) with the diffuser live: yes ... Keep the pre-(d) numbers in each README as 'before (d)'"). The
+three summaries are re-captured at 432daca with their own commands; two runs of each were byte-identical. Every number
+below is read from the summaries; "before (d)" is the summary committed at stage (c) (R2: with decision 0016 applied).
+No verdict changed: acro FF-off pass bar PASS and recovery FAIL, FF-on both PASS; R2 FAIL in both; R1X FAIL off, PASS on.
+
 **Acro, recovery predicate: FAIL → PASS.**
+
+Now (diffuser live):
+
+| Axis | FF-off excess (violations, first) | FF-on excess (violations) |
+| --- | --- | --- |
+| roll | +5.2318 (1518, 13813) | −0.005721 (0) |
+| pitch | +2.1935 (1872, 12800) | −0.1433 (0) |
+| yaw | +0.2448 (712, 12961) | −0.1150 (0) |
+
+Before (d):
 
 | Axis | FF-off excess (violations, first) | FF-on excess (violations) |
 | --- | --- | --- |
@@ -46,19 +62,31 @@ attitude. Acro recovery: |ω| against Z + F + E. R2, R1X: out against E + F + Q.
 | pitch | +2.1931 (1872, 12800) | −0.1433 (0) |
 | yaw | +0.2448 (711, 12961) | −0.1149 (0) |
 
-- The FF-on roll margin, 6.07 mrad/s, sits at execution 12897, 97 executions into the window, while ω_x decays from full
-  stick (|ω| 12.7947 against Z + F + E 12.8008).
-- The pass bar (i)-(v) passes in both. Smallest slack, off → on: roll 0.3277 → 0.3278, pitch 0.2245 → 0.2038, yaw
-  0.0360 → 0.1830. The replay reproduces both FF-on runs bit for bit (iv), so `l4_acro_replay` carries the switch too.
-  No saturation flag in the combined segment. DShot range 48..1307 → 48..1446.
+- The FF-on roll margin, now 5.72 mrad/s (before (d) 6.07 mrad/s), sits at execution 12897, 97 executions into the window,
+  while ω_x decays from full stick (|ω| 12.7947 against Z + F + E 12.8005; before (d) 12.8008).
+- The pass bar (i)-(v) passes in both. Smallest slack, off → on: roll 0.3282 → 0.3288, pitch 0.2249 → 0.2041, yaw
+  0.0361 → 0.1829 (before (d): 0.3277 → 0.3278, 0.2245 → 0.2038, 0.0360 → 0.1830). The replay reproduces both FF-on runs bit
+  for bit (iv), so `l4_acro_replay` carries the switch too. No saturation flag in the combined segment. DShot range
+  48..1307 → 48..1446, unchanged by (d).
 - T3 prediction (c5, `../ff_eval/`, T4c: truth gyro, notches bypassed): PASS by 3.2 mrad/s, with E = 0 and TOL = 0, which
   is stricter than the test. The gz margin is 6.1 mrad/s. Both are knife edges. c5's flight configuration (T4e, 24.1 mrad/s)
   is not flown until stage (e).
 
-**R2 (steady tumble), envelope predicate: FAIL → FAIL.** Violations 14420 → 2391. These are the numbers with decision
-0016's first-read fix in the gz plugin (the scenario's initial body rates are fed at step 0); with
-`MARV_GZ_TEST_ZERO_FIRST_READ=1` the plugin restores the zero read at step 0 and the pre-0016 numbers are reproduced
-exactly (13923 → 10398).
+**R2 (steady tumble), envelope predicate: FAIL → FAIL.** Violations, now (diffuser live): 15206 → 2431. Before (d):
+14420 → 2391. The before (d) numbers are with decision 0016's first-read fix in the gz plugin (the scenario's initial body
+rates are fed at step 0); with `MARV_GZ_TEST_ZERO_FIRST_READ=1` the plugin restores the zero read at step 0 and the
+pre-0016 numbers were reproduced exactly (13923 → 10398; pre-0016, pre-(d)).
+
+| Channel | FF-off excess (violations, first) | FF-on excess (violations, first) |
+| --- | --- | --- |
+| err_x | +0.2409 (1428, 1731) | −0.002961 (0) |
+| err_y | +0.3820 (3243, 96) | −0.001834 (0) |
+| err_z | +0.2954 (3913, 36) | −0.001300 (0) |
+| w_x | +2.3678 (2895, 17) | +0.1603 (347, 905) |
+| w_y | +1.3403 (762, 10) | +0.1747 (339, 885) |
+| w_z | +1.1476 (2965, 836) | +0.2375 (1745, 1564) |
+
+Before (d):
 
 | Channel | FF-off excess (violations, first) | FF-on excess (violations, first) |
 | --- | --- | --- |
@@ -69,23 +97,28 @@ exactly (13923 → 10398).
 | w_y | +1.3264 (747, 13) | +0.1626 (326, 891) |
 | w_z | +1.1477 (2961, 836) | +0.2373 (1741, 1564) |
 
-- The worst channel moves from w_x (+2.349 at n 333) to w_z (+0.237 at n 2234). FF-on has no attitude violation and is
-  better on every channel.
+- The worst channel moves from w_x (+2.368 at n 333) to w_z (+0.2375 at n 2235); before (d) w_x (+2.349 at n 333) to w_z
+  (+0.2373 at n 2234). FF-on has no attitude violation and is better on every channel.
 - DShot spans 48..2047 in both variants: motors reach both ends of the range. Not examined further here.
 - Prediction (`../r2_envelope_a/`): the design model with the ideal feed-forward (continuous, true ω, exact J and τ, the
   first-order torque lag it inverts exactly) stays inside envelope A to rounding. The measured FF-on result agrees with
-  the W4 diagnosis model's no-zero-read prediction (about 2416 violations, worst w_z +0.24; decision 0014, W4). What
+  the W4 diagnosis model's no-zero-read prediction (about 2416 violations, worst w_z +0.24; decision 0014, W4); the
+  re-captured 2431 and +0.2375 are still near it. What
   remains (0.14 to 0.24 rad/s on the rate channels) is attributed by that diagnosis to yaw saturation plus the yaw
   integrator freeze, INFERRED (not shown by this run).
 
 **R1X (exactly 180°), alpha envelope predicate: FAIL → PASS.**
-- FF-off: +5.048e-3 rad (74 violations, first 2271, worst n 2338). FF-on: −2.923e-2 (0 violations, worst n 14026; the
-  largest distance outside the envelope 9.0e-4).
+- Now (diffuser live): FF-off +1.1744e-2 rad (136 violations, first 2218, worst n 2338). FF-on −2.2946e-2 (0 violations,
+  worst n 0; no execution outside the envelope, the largest distance outside 0).
+- Before (d): FF-off +5.048e-3 rad (74 violations, first 2271, worst n 2338). FF-on −2.923e-2 (0 violations, worst n
+  14026; the largest distance outside the envelope 9.0e-4).
 - Prediction (`../r1x_coupling/`, claim 4): the design model plus ω×Jω with the ideal feed-forward stays inside, under
   both gain sets. The gz run agrees.
 
-FF-off identity. Each FF-off run is the suite's default run. R1X's FF-off TRUTH series (m = 1 and m = 2) has the same
-sha256 as `../r1x_coupling/gz_new.txt`, captured before the feed-forward parameters existed; its verdict is the same.
+FF-off identity (before (d)). Each FF-off run was the suite's default run. R1X's FF-off TRUTH series (m = 1 and m = 2) had
+the same sha256 as `../r1x_coupling/gz_new.txt`, captured before the feed-forward parameters existed; its verdict is the
+same. The sha256 held until decision 0016 and (d); the re-captured FF-off TRUTH series (m = 1 and m = 2) again has the
+same sha256 as the P2 re-capture of `../r1x_coupling/gz_new.txt` (136 violations, first 2218, worst n 2338; verdict FAIL).
 
 Inputs. The script reads all of them and retypes none; each summary records the sha256 of each: the card, the scenario, the
 test module, the T3 oracle or design model and fixtures, the runner, the build's parameter table and `capture_gz.py`.
