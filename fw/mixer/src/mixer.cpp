@@ -10,6 +10,7 @@ template std::array<DshotValue, kMotors> thrust_to_dshot<float>(const MixerConfi
                                                                 const std::array<float, kMotors>&) noexcept;
 template MixerOutput<float> mix<float>(const MixerConfig<float>&, const Request<float>&) noexcept;
 template ConfigError validate<float>(const MixerConfig<float>&) noexcept;
+template class DshotDiffuser<float>;
 
 namespace {
 

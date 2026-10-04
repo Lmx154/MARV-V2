@@ -239,25 +239,45 @@ template <class T>
   return out;
 }
 
+// D(omega): the inverse of the linear-in-omega ESC map (omega_min at kDshotThrottleMin, omega_max at
+// kDshotThrottleMax), before rounding. thrust_to_dshot and DshotDiffuser take d_lo and d* from dshot_floor and
+// dshot_unrounded, so both see the same values bit for bit (decision 0017).
+template <class T>
+[[nodiscard]] T dshot_of_speed(const MixerConfig<T>& cfg, T omega) noexcept {
+  const T d_min = static_cast<T>(prim::kDshotThrottleMin);
+  const T d_max = static_cast<T>(prim::kDshotThrottleMax);
+  const T omega_span = cfg.omega_max - cfg.omega_min;
+  const T dshot_span = d_max - d_min;
+  return d_min + (omega - cfg.omega_min) / omega_span * dshot_span;
+}
+
+// d_lo = ceil(D(omega_idle)), the smallest throttle command.
+template <class T>
+[[nodiscard]] T dshot_floor(const MixerConfig<T>& cfg) noexcept {
+  using std::ceil;
+  return ceil(dshot_of_speed(cfg, cfg.omega_idle));
+}
+
+// d* = D(sqrt(f / k)), the command of per-motor thrust f (N) before rounding.
+template <class T>
+[[nodiscard]] T dshot_unrounded(const MixerConfig<T>& cfg, T f) noexcept {
+  using std::sqrt;
+  return dshot_of_speed(cfg, sqrt(f / cfg.thrust_coeff));
+}
+
 // omega = sqrt(f / k); DShot = the inverse of the linear-in-omega ESC map (omega_min at kDshotThrottleMin, omega_max
 // at kDshotThrottleMax), rounded to nearest, then clamped to [ceil(D(omega_idle)), kDshotThrottleMax]. pre:
 // validate(cfg) == None.
 template <class T>
 [[nodiscard]] std::array<DshotValue, kMotors> thrust_to_dshot(const MixerConfig<T>& cfg,
                                                               const std::array<T, kMotors>& f) noexcept {
-  using std::ceil;
   using std::round;
-  using std::sqrt;
-  const T d_min = static_cast<T>(prim::kDshotThrottleMin);
   const T d_max = static_cast<T>(prim::kDshotThrottleMax);
-  const T omega_span = cfg.omega_max - cfg.omega_min;
-  const T dshot_span = d_max - d_min;
-  const T d_lo = ceil(d_min + (cfg.omega_idle - cfg.omega_min) / omega_span * dshot_span);
+  const T d_lo = dshot_floor(cfg);
 
   std::array<DshotValue, kMotors> out{};
   for (std::size_t i = 0; i < kMotors; ++i) {
-    const T omega = sqrt(f[i] / cfg.thrust_coeff);
-    T d = round(d_min + (omega - cfg.omega_min) / omega_span * dshot_span);
+    T d = round(dshot_unrounded(cfg, f[i]));
     if (!(d >= d_lo)) {
       d = d_lo;
     } else if (d > d_max) {
@@ -279,6 +299,90 @@ template <class T>
   return out;
 }
 
+// DShot error diffusion (quad spec 4 L6 stage (d), decision 0017). Per motor, once per actuator write, with
+// d* = dshot_unrounded(cfg, f_i), d_lo = dshot_floor(cfg) and e the motor's carry:
+//   d~ = d* clamped to [d_lo, kDshotThrottleMax] (negated comparisons: NaN and -inf go to d_lo, +inf to the top);
+//   u = fl(d~ + e);  q = round(u) clamped to [d_lo, kDshotThrottleMax];  e = u - q (exact, Sterbenz).
+// q is the command. The request is clamped before the carry is added, so a saturated remainder is never carried (no
+// windup at the limits) and |e| <= 1/2 after every write. Allocation and its saturation flags come before this and are
+// unchanged.
+//
+// The carry is cleared on every path that writes the motors other than through the diffuser, so the next diffused
+// write is thrust_to_dshot's stateless rounding. The callers, wired in decision 0017's live step:
+//   init(cfg)  composition init (rate_group::RateGroupStep::init) and every mixer configuration reload;
+//   reset()    disarm and motor stop, each of which writes DshotValue::stop() itself, and from L8 every ESC command
+//              1-47 (core 4: written outside the actuator-output struct, only while disarmed).
+// A rate-loop fault is not a reset: the mixer still writes through the diffuser.
+template <class T>
+class DshotDiffuser {
+ public:
+  // Binds cfg and clears every carry. pre: validate(cfg) == None.
+  void init(const MixerConfig<T>& cfg) noexcept;
+
+  // Clears every carry.
+  void reset() noexcept;
+
+  // One actuator write from per-motor thrust f (N): apply_unrounded of d*_i = dshot_unrounded(cfg, f_i). pre: init.
+  [[nodiscard]] std::array<DshotValue, kMotors> apply(const std::array<T, kMotors>& f) noexcept;
+
+  // One actuator write from per-motor pre-round commands d* (the law above). pre: init.
+  [[nodiscard]] std::array<DshotValue, kMotors> apply_unrounded(const std::array<T, kMotors>& d_star) noexcept;
+
+  // The carry e per motor (logical motor order).
+  [[nodiscard]] const std::array<T, kMotors>& carry() const noexcept { return carry_; }
+
+ private:
+  MixerConfig<T> cfg_{};
+  T d_lo_{};
+  std::array<T, kMotors> carry_{};
+};
+
+template <class T>
+void DshotDiffuser<T>::init(const MixerConfig<T>& cfg) noexcept {
+  cfg_ = cfg;
+  d_lo_ = dshot_floor(cfg);
+  reset();
+}
+
+template <class T>
+void DshotDiffuser<T>::reset() noexcept {
+  carry_.fill(T(0));
+}
+
+template <class T>
+std::array<DshotValue, kMotors> DshotDiffuser<T>::apply(const std::array<T, kMotors>& f) noexcept {
+  std::array<T, kMotors> d_star{};
+  for (std::size_t i = 0; i < kMotors; ++i) {
+    d_star[i] = dshot_unrounded(cfg_, f[i]);
+  }
+  return apply_unrounded(d_star);
+}
+
+template <class T>
+std::array<DshotValue, kMotors> DshotDiffuser<T>::apply_unrounded(const std::array<T, kMotors>& d_star) noexcept {
+  using std::round;
+  const T d_max = static_cast<T>(prim::kDshotThrottleMax);
+  std::array<DshotValue, kMotors> out{};
+  for (std::size_t i = 0; i < kMotors; ++i) {
+    T d = d_star[i];
+    if (!(d >= d_lo_)) {
+      d = d_lo_;
+    } else if (d > d_max) {
+      d = d_max;
+    }
+    const T u = d + carry_[i];
+    T q = round(u);
+    if (!(q >= d_lo_)) {
+      q = d_lo_;
+    } else if (q > d_max) {
+      q = d_max;
+    }
+    carry_[i] = u - q;
+    out[i] = DshotValue::from_raw(static_cast<std::uint16_t>(q)).value_or(DshotValue::stop());
+  }
+  return out;
+}
+
 // The product parameter set's mixer: idle_speed, mixer_m<i>_*, rotor_thrust_coeff, rotor_speed_min/max. Not
 // validated. pre: params_init succeeded.
 [[nodiscard]] MixerConfig<float> from_params() noexcept;
@@ -294,5 +398,6 @@ extern template std::array<DshotValue, kMotors> thrust_to_dshot<float>(
     const MixerConfig<float>&, const std::array<float, kMotors>&) noexcept;
 extern template MixerOutput<float> mix<float>(const MixerConfig<float>&, const Request<float>&) noexcept;
 extern template ConfigError validate<float>(const MixerConfig<float>&) noexcept;
+extern template class DshotDiffuser<float>;
 
 }  // namespace marv::mixer
