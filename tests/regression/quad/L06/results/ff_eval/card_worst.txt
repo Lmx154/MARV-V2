@@ -3,7 +3,7 @@ command: uv run python tools/sim/l6_ff_eval.py --out <file> --corners 11
 label: design model (T3), not a validation run; reported, not asserted (decision 0014 owner decision 2)
 inputs:
   vehicles/uzh_neurobem_5in.yaml sha256 62d5d522f19cf7022c87d5e9a0a9ab4e4d3a31d7759a5166c43cda959e23f11f
-  design/budget.yaml sha256 fe18e4c638f126dbb4e587868041877430614ed84bded0ef0e1099bfeccff817
+  design/budget.yaml sha256 673aae3ead2ea10893f23f7c52bcc080b22c9d488b802df0e53fa4255500983d
   design/scenario_values.yaml sha256 ff83b832a91f6c6765b642d53c2ad2529d66bb3fb1066cf1ec782432bc22ea0f
   sensors/profiles/marv_v2_board_default.yaml sha256 ce28e3d7ec2f3baffa4a84c325d385fa695d271ad5f949417e226b06657855cd
   scenarios/quad/L04/acro.yaml sha256 5ef270f614862dfb42e9a86d0158f8e553c3bdc8de4ee8ef20c25abe5075f3d5

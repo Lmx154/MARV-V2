@@ -12,6 +12,7 @@ normal_moments_confidence
 per_push_check_time_max
 gyro_chain_attenuation_min
 esc_clock_error_max
+noise_term_confidence
 # Derived by rule (tools/card/gyro_chain_params.py, flatten.py --out-gyro-chain; decision 0013), not register entries.
 gyro_lpf_cutoff_hz
 gyro_notch_q_h1

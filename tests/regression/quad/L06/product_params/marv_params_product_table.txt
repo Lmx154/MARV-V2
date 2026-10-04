@@ -7,7 +7,7 @@
 # it; `value_exact` is the same float as a hexadecimal float, exact to the bit. i32 values are decimal and have no
 # hexadecimal form (`-`). `sigma` is printed like an f32 value. unit and source are JSON strings. Columns are tab
 # separated.
-# schema_hash 0xf6ef0ba9a14a9fc3  count 93
+# schema_hash 0x6563bcd58bca2c34  count 94
 id	name	type	value	value_exact	sigma	sigma_kind	unit	method	origin	locked	source
 0	mass	f32	0.772000015	0x1.8b43960000000p-1	0.00999999978	Known	"kg"	published	DefaultFromCard	false	"NeuroBEM dataset readme, https://rpg.ifi.uzh.ch/neuro_bem/Readme.html ('Our drone has a mass of 0.772 kg')"
 1	inertia_xx	f32	0.00249999994	0x1.47ae140000000p-9	0	Unknown	"kg m^2"	published	DefaultFromCard	false	"NeuroBEM dataset readme; uzh-rpg/agile_flight blackbird.yaml @ 24f21c4 (inertia) — agree"
@@ -102,3 +102,4 @@ id	name	type	value	value_exact	sigma	sigma_kind	unit	method	origin	locked	source
 90	per_push_check_time_max	f32	60	0x1.e000000000000p+5	0	Choice	"s"	design-budget	DefaultFromRegister	false	"design-budget register design/budget.yaml, entry per_push_check_time_max (rationale there)"
 91	gyro_chain_attenuation_min	f32	0.100000001	0x1.99999a0000000p-4	0	Choice	"1"	design-budget	DefaultFromRegister	false	"design-budget register design/budget.yaml, entry gyro_chain_attenuation_min (rationale there)"
 92	esc_clock_error_max	f32	0.0199999996	0x1.47ae140000000p-6	0	Choice	"1"	design-budget	DefaultFromRegister	false	"design-budget register design/budget.yaml, entry esc_clock_error_max (rationale there)"
+93	noise_term_confidence	f32	0.99000001	0x1.fae1480000000p-1	0	Choice	"1"	design-budget	DefaultFromRegister	false	"design-budget register design/budget.yaml, entry noise_term_confidence (rationale there)"

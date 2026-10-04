@@ -295,7 +295,10 @@ of freezing: core §7.2–7.3.
     - The seed count is N = ⌈ln(1 − c)/ln p⌉ (Wilks 1941), with p the scenario class's `t4_pass_probability_*` and
       c its `t4_confidence_*`. Recoveries and acro coupling are the safety class; steps, chirps and the other
       scenarios are the tracking class. The seeds are 1…N, committed.
-    - Envelopes carry a noise term, derived by propagating the noise model through the design model at quantile p.
+    - Envelopes carry a noise term, derived by propagating the noise model through the design model at the per-seed
+      quantile 1 − (1 − `noise_term_confidence`)/N, so that a correct build passes every seed with probability at
+      least `noise_term_confidence`. The fine negative controls of 0006 decision 24 still fail with the noise term in
+      place.
   - (e) T4: the L4 and L5 scenarios rerun with noise and filters and still meet QF-2 and QF-3.
     - Per push: every scenario at its committed seed.
     - Nightly and before the tag: the confirmation seeds.

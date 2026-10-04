@@ -253,3 +253,17 @@ esc_clock_error_max:
     generator refuses a profile figure above this value; nothing is tied to one part. Luis's decision (2026-10-01,
     decision 0013, owner decision 4, second round: "ESC clock error: (b), 2 %").
   used_by: [quad L6 stage (b) gyro chain (notch Q), QF-7]
+
+noise_term_confidence:
+  value: 0.99
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    Family-wise confidence of the quad L6 stage (e) T3 Monte Carlo that a correct build passes every one of its N
+    seeds, with the noise term of the envelopes derived at the per-seed quantile 1 - (1 - c)/N from Bonferroni's
+    correction (Dunn 1961, J. Am. Stat. Assoc. 56:52-64), which holds under any dependence between the seeds. It has
+    its own entry because each register entry has one purpose; it is neither allan_check_confidence,
+    stream_independence_confidence nor normal_moments_confidence, nor t4_confidence_*, which set N. Luis's choice
+    (2026-10-04, decision 0019, rulings 3 and 4).
+  used_by: [quad L6 stage (e) T3 Monte Carlo (envelope noise term)]
