@@ -131,12 +131,7 @@ the W4 diagnosis scripts to be committed with 0016).
 - Local branches `l6-t3-storage-state` (datasheets; Luis deletes it), `quad-l5` and `quad-l6-spec` are untouched.
 
 **Remaining steps, in order:**
-1. **0016, built (`docs/decisions/0016-gz-first-read-starting-rates.md`), its own commit after `af25f5e`:** the plugin
-   feeds the scenario's starting rates at step 0 (test-only switch `MARV_GZ_TEST_ZERO_FIRST_READ` restores the old read);
-   T1 `L02/gz/test_first_read.py`; the hover noise assertion `L06/tools/test_rate_lead_hover_noise.py`; the W4 evidence
-   in `L06/results/r2_ff_diagnosis/` (0011 style, Luis's choice); five frozen result files regenerated or restated.
-   Only `rotation`, R2 and the prop-strike scenario change (58 runs compared). Full local CI on the commit, then Luis's
-   go to push.
+1. **Done: 0016** (`4a76755`, pushed; approved by Luis 2026-10-04 on green local CI and Actions run 37164572071).
 2. Stage (d) as 0017 (Luis's rulings are verbatim in 0014, fourth round, item 5; the motor-speed line text is owed).
 
 **For stage (e), recorded with no decision yet (Luis, 2026-10-03).**

@@ -80,6 +80,8 @@ deterministic.
   variants.
 - Changed, the only three scenarios with nonzero starting rates:
   - L2 `rotation` (motors off): only the logged plant-body rates at step 0; DShot and the IMU bytes are equal.
+    It is the same fix: its starting rates (2, 3, 5 rad/s) are now fed at step 0 instead of gz's zero read. Its suites
+    still pass (gz-l2, including `test_plugin_smoke.py`, `test_analytic.py`, and `test_first_read.py`, which uses it).
   - L5 `recover_tumble` (R2) and `recover_tumble_prop_strike`: the tick-0 gyro and TRUTH now carry ω0, so DShot changes
     from tick 2 on.
 - Not run separately: the harness-override control runs (gain controls, kp = 0, source-absent worlds, plateau amplitude
@@ -125,8 +127,13 @@ impulse about −0.58·Jω0 per axis). The PI loop was immune.
 - `capture_gz.py --case r2` reruns are byte-identical (with the fix); `--case acro` and `--case r1x` are byte-identical
   to the committed files. `measure_e.py` reruns are byte-identical (sha256 `fd0c16f8…`).
 - `r2_ff_diagnosis/regenerate.sh`: 35 hashes and 41 small files reproduce, 0 mismatches.
-- The full local CI on this commit is in the handoff.
 
 ## Approval
 
-The fix and its conditions: Luis, 2026-10-03 (above). This record as built: pending.
+The fix and its conditions: Luis, 2026-10-03 (above).
+
+Approved: Luis, 2026-10-04, on green local CI and Actions run 37164572071.
+
+- Local CI on `4a76755`: core (tools 1019 passed, 1 skipped), gz-l2, gz-l4 (40 passed, 1 xfailed) and gz-l5 (63 passed,
+  2 xfailed) pass.
+- Actions run 37164572071 on `4a76755`: core, gz-l2, gz-l4 and gz-l5 pass.
