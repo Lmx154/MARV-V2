@@ -518,6 +518,9 @@ class Lockstep final : public gzs::System,
     // Exists only for the negative control of tests/regression/quad/L02/gz/test_plugin_smoke.py: with it set, the
     // velocity command components are not removed, which is the defect the removal fixes. Never set outside that test.
     keep_vel_cmd_ = std::getenv("MARV_GZ_TEST_KEEP_VEL_CMD") != nullptr;
+    // Exists only for the negative control of tests/regression/quad/L02/gz/test_first_read.py: with it set, the body
+    // fed at step 0 is gz's read (zero rates), which is the defect decision 0016 fixes. Never set outside that test.
+    zero_first_read_ = std::getenv("MARV_GZ_TEST_ZERO_FIRST_READ") != nullptr;
     v_ned_ = p.v_ned;
     w_frd_ = p.w_frd;
 
@@ -577,7 +580,15 @@ class Lockstep final : public gzs::System,
     gs.q_eu_wxyz = {pose.Rot().W(), pose.Rot().X(), pose.Rot().Y(), pose.Rot().Z()};
     gs.lin_vel_world_m_s = {lin.X(), lin.Y(), lin.Z()};
     gs.ang_vel_world_rad_s = {ang.X(), ang.Y(), ang.Z()};
-    const marv_plant_body body = to_plant_body(gs);
+    marv_plant_body body = to_plant_body(gs);
+    // Decision 0016: the body starts from (q0, w0) at t = 0, but gz reads zero rates before the first physics step
+    // (the scenario's rates are applied at the end of this PreUpdate), so step 0 is fed the scenario's FRD rates. The
+    // log keeps the raw gz read in the gz fields.
+    if (steps_ == 0 && w_frd_ && !zero_first_read_) {
+      for (std::size_t i = 0; i < std::size(body.omega_frd_rad_s); ++i) {
+        body.omega_frd_rad_s[i] = (*w_frd_)[i];
+      }
+    }
 
     const std::uint64_t first_tick = steps_ * m_;
     source_.begin_step();
@@ -773,6 +784,7 @@ class Lockstep final : public gzs::System,
   LogFile log_;
   std::optional<Vec3> v_ned_;
   std::optional<Vec3> w_frd_;
+  bool zero_first_read_ = false;
 };
 
 }  // namespace marv::gz

@@ -1,0 +1,1 @@
+none      viol 13438 | err_x +0.2219@2076 (viol 1284, first 1776); err_y +0.3504@906 (viol 2633, first 163); err_z +0.2643@1026 (viol 3238, first 51); w_x +1.9896@336 (viol 2734, first 48); w_y +0.7798@189 (viol 804, first 17); w_z +1.0475@1764 (viol 2745, first 937) | max|u| first 300 [0.166, 0.203, 0.495]

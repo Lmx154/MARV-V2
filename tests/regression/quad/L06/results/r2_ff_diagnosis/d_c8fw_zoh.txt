@@ -1,0 +1,1 @@
+zoh       viol     0 | err_x -0.0074@1 (viol 0, first None); err_y -0.0048@1 (viol 0, first None); err_z -0.0019@1 (viol 0, first None); w_x -0.0329@1 (viol 0, first None); w_y -0.0311@1 (viol 0, first None); w_z -0.0079@1 (viol 0, first None) | max|u| first 300 [0.301, 0.407, 0.55]

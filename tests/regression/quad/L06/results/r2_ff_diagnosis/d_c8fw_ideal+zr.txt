@@ -1,0 +1,1 @@
+ideal+zr  viol 14461 | err_x +0.2552@661 (viol 2477, first 145); err_y +0.0692@1461 (viol 1070, first 1228); err_z +0.0618@2835 (viol 2672, first 101); w_x +1.5699@299 (viol 2636, first 34); w_y +1.0209@1052 (viol 1514, first 61); w_z +0.8891@328 (viol 4092, first 189) | max|u| first 300 [0.599, 0.526, 1.239]

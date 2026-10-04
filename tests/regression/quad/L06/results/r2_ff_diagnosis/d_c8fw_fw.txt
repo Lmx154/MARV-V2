@@ -1,0 +1,1 @@
+fw        viol   141 | err_x -0.0074@3 (viol 0, first None); err_y -0.0048@2 (viol 0, first None); err_z -0.0019@8 (viol 0, first None); w_x -0.0325@2 (viol 0, first None); w_y -0.0304@4 (viol 0, first None); w_z +0.0015@2247 (viol 141, first 2157) | max|u| first 300 [0.135, 0.408, 0.55]

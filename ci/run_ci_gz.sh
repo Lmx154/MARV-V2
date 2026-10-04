@@ -83,6 +83,10 @@ gz_plugin_smoke() {
   pytest_no_skips tests/regression/quad/L02/gz/test_plugin_smoke.py
 }
 
+gz_first_read() {
+  pytest_no_skips tests/regression/quad/L02/gz/test_first_read.py
+}
+
 gz_determinism() {
   pytest_no_skips tests/regression/quad/L02/gz/test_determinism.py
 }
@@ -131,6 +135,7 @@ group_l2() {
   step gz_toolchain gz_toolchain
   step gz_build gz_build
   step gz_plugin_smoke gz_plugin_smoke
+  step gz_first_read gz_first_read
   step gz_determinism gz_determinism
   step gz_runner_tools gz_runner_tools
   step gz_analytic gz_analytic

@@ -55,23 +55,28 @@ attitude. Acro recovery: |ω| against Z + F + E. R2, R1X: out against E + F + Q.
   is stricter than the test. The gz margin is 6.1 mrad/s. Both are knife edges. c5's flight configuration (T4e, 24.1 mrad/s)
   is not flown until stage (e).
 
-**R2 (steady tumble), envelope predicate: FAIL → FAIL.** Violations 13923 → 10398.
+**R2 (steady tumble), envelope predicate: FAIL → FAIL.** Violations 14420 → 2391. These are the numbers with decision
+0016's first-read fix in the gz plugin (the scenario's initial body rates are fed at step 0); with
+`MARV_GZ_TEST_ZERO_FIRST_READ=1` the plugin restores the zero read at step 0 and the pre-0016 numbers are reproduced
+exactly (13923 → 10398).
 
 | Channel | FF-off excess (violations, first) | FF-on excess (violations, first) |
 | --- | --- | --- |
-| err_x | +0.4738 (2905, 235) | +0.0688 (353, 2006) |
-| err_y | +0.4196 (2364, 98) | +0.1278 (1386, 680) |
-| err_z | +0.0761 (1561, 760) | +0.3515 (4078, 47) |
-| w_x | +3.8664 (3784, 17) | +0.3384 (493, 20) |
-| w_y | +0.5673 (558, 24) | +1.9747 (990, 21) |
-| w_z | +1.2562 (2751, 895) | +0.7078 (3098, 14) |
+| err_x | +0.2365 (1326, 1737) | −0.005088 (0) |
+| err_y | +0.3791 (3050, 120) | −0.003806 (0) |
+| err_z | +0.2947 (3537, 41) | −0.001579 (0) |
+| w_x | +2.3491 (2799, 27) | +0.1406 (324, 917) |
+| w_y | +1.3264 (747, 13) | +0.1626 (326, 891) |
+| w_z | +1.1477 (2961, 836) | +0.2373 (1741, 1564) |
 
-- The worst channel moves from w_x (+3.866 at n 285) to w_y (+1.975 at n 263). FF-on is worse on err_z and w_y.
+- The worst channel moves from w_x (+2.349 at n 333) to w_z (+0.237 at n 2234). FF-on has no attitude violation and is
+  better on every channel.
 - DShot spans 48..2047 in both variants: motors reach both ends of the range. Not examined further here.
 - Prediction (`../r2_envelope_a/`): the design model with the ideal feed-forward (continuous, true ω, exact J and τ, the
-  first-order torque lag it inverts exactly) stays inside envelope A to rounding. The firmware's feed-forward in gz does
-  not: it is sampled, filtered by T_ff, and acts on `marv_plant`'s rotor-speed lag with thrust ∝ W². Which of these, or the
-  motor range, accounts for the remaining excess is not established by this run.
+  first-order torque lag it inverts exactly) stays inside envelope A to rounding. The measured FF-on result agrees with
+  the W4 diagnosis model's no-zero-read prediction (about 2416 violations, worst w_z +0.24; decision 0014, W4). What
+  remains (0.14 to 0.24 rad/s on the rate channels) is attributed by that diagnosis to yaw saturation plus the yaw
+  integrator freeze, INFERRED (not shown by this run).
 
 **R1X (exactly 180°), alpha envelope predicate: FAIL → PASS.**
 - FF-off: +5.048e-3 rad (74 violations, first 2271, worst n 2338). FF-on: −2.923e-2 (0 violations, worst n 14026; the

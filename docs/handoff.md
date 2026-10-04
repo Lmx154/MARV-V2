@@ -123,7 +123,7 @@ the W4 diagnosis scripts to be committed with 0016).
 **Git state.**
 - `master`: `539855e` (commit 1), `69c62f2` (commit 2), `7ecfe8b` (commit 3, the atomic switch), then one docs-only
   commit (the close section, the approval, this handoff). Push approved by Luis, with no tag; `origin/master` was
-  `1159d5c` before it. The Actions result on the pushed head goes in the next update of this file.
+  `1159d5c` before it. Actions on the pushed head `af25f5e` (run 37155376129): core, gz-l2, gz-l4, gz-l5 all pass.
 - Verified: full local CI (core, gz-l2, gz-l4, gz-l5) on snapshot `b4c9e16`; core on `7ecfe8b` (1578 s); the
   regression-change check on the docs-only commit. `b4c9e16` → `7ecfe8b` changes nothing the gz jobs collect or build.
 - Safety copy `~/marv-handover-2026-10-03/` holds the scratch evidence for 0016 (`r2ff/`) and stage (d)
@@ -131,16 +131,18 @@ the W4 diagnosis scripts to be committed with 0016).
 - Local branches `l6-t3-storage-state` (datasheets; Luis deletes it), `quad-l5` and `quad-l6-spec` are untouched.
 
 **Remaining steps, in order:**
-1. 0016: the gz first gyro read returns the initial rates (approved; 0014 W4 has the diagnosis). Its own commit, with:
-   - the W4 diagnosis scripts with their inputs and raw output (Luis: the 2416 prediction is a measurement and counts
-     only when committed);
-   - an assertion that the combined D + FF noise at hover equals the D path (0.494 mN): no test asserts it today, only
-     the maximum over the operating points (`test_rate_lead.py:128`).
+1. **0016, built (`docs/decisions/0016-gz-first-read-starting-rates.md`), its own commit after `af25f5e`:** the plugin
+   feeds the scenario's starting rates at step 0 (test-only switch `MARV_GZ_TEST_ZERO_FIRST_READ` restores the old read);
+   T1 `L02/gz/test_first_read.py`; the hover noise assertion `L06/tools/test_rate_lead_hover_noise.py`; the W4 evidence
+   in `L06/results/r2_ff_diagnosis/` (0011 style, Luis's choice); five frozen result files regenerated or restated.
+   Only `rotation`, R2 and the prop-strike scenario change (58 runs compared). Full local CI on the commit, then Luis's
+   go to push.
 2. Stage (d) as 0017 (Luis's rulings are verbatim in 0014, fourth round, item 5; the motor-speed line text is owed).
 
 **For stage (e), recorded with no decision yet (Luis, 2026-10-03).**
-- **R2 fails even with FF on** (10398 violations; about 2416 expected after 0016), from yaw saturation and the integrator
-  freeze. Once 0016 lands, bring Luis the measured numbers and the options. He will not choose between "model the
+- **R2 fails even with FF on.** Measured with 0016: FF off 14420 violations (worst w_x +2.349 rad/s), FF on 2391 (worst
+  w_z +0.237 rad/s, attitude inside), matching W4's 2416 prediction; the cause left is yaw saturation and the integrator
+  freeze (INFERRED). Bring Luis these numbers and the options. He will not choose between "model the
   allocation and the freeze in the envelope" and "rule R2 yaw-limited" until he sees them.
 - **Acro FF-on passes by only 6.07 mrad/s, at the card plant, with no noise.** Stage (e) adds noise and 59 safety seeds.
   Before (e) starts, bring Luis an estimate of the margin under noise from the T3 design model, so it is known whether
@@ -152,9 +154,6 @@ the W4 diagnosis scripts to be committed with 0016).
 - **Timing is the fragile part.** `test_r1x_coupling.py` is at 58.9 s alone, with 1.1 s of margin. Host load inflates
   every number (one run read 332 s), so measure with load < 1.5. The code-index daemon can spike to 100 % CPU.
 - **Acro FF-on margin is 6.1 mrad/s.** It will be a knife edge at stage (e).
-- **0016 will change R2's FF-off numbers** in 0015 and 0014 W4, and the prop-strike report. The diagnosis scripts that
-  reproduce gz to 0.016 rad/s are in the safety copy (`r2ff/`: `tool2.cpp`, `b_ladder.py`). After the read fix, R2
-  should drop to about 2416 violations, worst w_z +0.24, and still fail. **If R2 passes, stop: it is a strict xfail.**
 - **R2's next blocker after 0016** is yaw saturation plus the yaw integrator freeze, which the linear design model
   lacks. Luis expects the numbers for that choice: model the allocation and freeze in the design model, or rule R2
   yaw-limited.

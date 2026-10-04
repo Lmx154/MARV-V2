@@ -1,0 +1,1 @@
+fw+zr     viol 19197 | err_x +0.1599@745 (viol 1356, first 351); err_y +0.1928@579 (viol 3513, first 105); err_z +0.3186@546 (viol 6981, first 36); w_x +0.4616@1061 (viol 1281, first 20); w_y +3.2624@251 (viol 2246, first 13); w_z +1.1967@328 (viol 3820, first 149) | max|u| first 300 [0.572, 1.484, 1.452]
