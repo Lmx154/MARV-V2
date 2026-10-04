@@ -208,40 +208,52 @@ checked in `../tools/`.
 
 ## The quantisation term Q (owner decision 19, for T4)
 
-The design model has a continuous torque input; the flown loop rounds the thrust of each motor to a DShot step. T4 checks gz
-within `envelope +- (E + F + Q)`; the T3 envelope and its F are unchanged. `Q` is computed by rule, not fitted to Gazebo, and
+The design model has a continuous torque input; the flown loop writes each motor's thrust as a DShot step. Since decision 0017
+the rate group's `mixer::DshotDiffuser` does that: a per-motor error carry makes the mean applied command follow the request.
+T4 checks gz within `envelope +- (E + F + Q)`; the T3 envelope and its F are unchanged. `Q` is computed by rule, not fitted to Gazebo, and
 regenerates with the card (or L6):
 
 `Q = max over the time and over the tau x J box of |quantised - unquantised|` of the design-model trajectory for the same script,
 per channel the T4 predicates use (tilt scripts: angle and rate; yaw scripts: the rate and the headings relative to the release
 and to the lock, each member against its own release and lock). The unquantised model is the envelope's. The quantised model
-(`Quantiser` in the oracle, binary64) puts between the rate loop's torque request and the design plant's torque lag:
+(`Quantiser` in the oracle, binary64, with the diffuser in the loop: `diffusion=True`, the default) puts between the rate loop's torque request and the design plant's torque lag:
 
 1. `mixer::allocate` at the scenario collective `l5_thrust_n` (`fw/mixer/include/marv/mixer/mixer.hpp:145`), the request on the
    script's axis and the other two axes 0;
-2. `mixer::thrust_to_dshot` (`fw/mixer/include/marv/mixer/mixer.hpp:246`): `omega = sqrt(f / k)`, DShot = the linear-in-omega ESC
-   map inverted and rounded to nearest (halves away from zero, `std::round`), clamped to `[ceil(D(omega_idle)), 2047]`;
+2. `mixer::DshotDiffuser` (`fw/mixer/include/marv/mixer/mixer.hpp`, decision 0017), once per rate execution and per motor, with
+   every carry 0 at the start of the script run: `omega = sqrt(f / k)`, `d*` = the linear-in-omega ESC map inverted
+   (`dshot_unrounded`); `d~ = f32(d*)` clamped to `[ceil(D(omega_idle)), 2047]`; `u = f32(d~ + e)`; the DShot `q` = `u` rounded to
+   nearest (halves away from zero, `std::round`) and clamped to the same range; the carry `e = u - q`, exact. Clamping before the
+   rounding keeps `|e| <= 1/2` and nothing saturated is carried. With `diffusion=False` the quantiser is
+   `mixer::thrust_to_dshot`'s stateless rounding (`d*` rounded, clamped), the negative control of the diffusion and the rounding
+   the dead bands below describe;
 3. marv_plant's ESC map (`sim/plant/src/plant_model.hpp:47`, `Model::omega_cmd`: DShot 0 gives 0, 48..2047 map linearly to the
    card's `speed_range`), thrust `k_card omega^2`, the card's rotor geometry and yaw reaction, projected on the script's axis.
 
-It is the same actuator rule as the cause diagnosis (`../results/step_cause/`, `step_cause_tool.cpp` `omega_cmd` and
-`body_torque`), in the design model instead of the float path: hover DShot 765.06 gives 765, the request dead bands are 8.03e-4
-(roll), 6.02e-4 (pitch) and 1.77e-4 (yaw) N m, one DShot step at hover is 4.562e-3 N (`../tools/test_attitude_t3_q.py` checks
-them against `cause.txt`). Off-axis torque of the rounding is not carried (the design model is single-axis).
+Its ESC map, thrust and torque are the same as the cause diagnosis's (`../results/step_cause/`, `step_cause_tool.cpp` `omega_cmd`
+and `body_torque`), in the design model instead of the float path. The stateless path keeps the dead-band facts: hover DShot
+765.06 gives 765, the request dead bands are 8.03e-4 (roll), 6.02e-4 (pitch) and 1.77e-4 (yaw) N m, one DShot step at hover is
+4.562e-3 N (`../tools/test_attitude_t3_q.py` checks them, with `diffusion=False`, against `cause.txt`). The diffuser has no dead
+band: a request inside one step moves the mean applied command with it. Off-axis torque of the rounding is not carried (the
+design model is single-axis).
 
 Evaluation: at the four corners of the box plus the nominal (`q_corners`), then over the 9 x 9 grid that contains them
 (`q_grid`). `q` is `q_grid` where the grid exceeds the corners (`rule grid`), else `q_corners`. The rounding is not monotone in
-the parameters, so the corners do not bound it: in 5 of the 10 channels the grid maximum exceeds the corner maximum (by 3 % to
-11 %), and there `q` is the grid maximum. The recorded `saturated_executions` counts member x rate executions in which the
+the parameters, so the corners do not bound it: in 8 of the 10 channels the grid maximum exceeds the corner maximum (by 18 % to
+131 %), and there `q` is the grid maximum. The recorded `saturated_executions` counts member x rate executions in which the
 allocation scaled the request or moved the collective (none in the tilt scripts); for the yaw scripts `q_allocation_only` is the
-same comparison with the DShot rounding left out (at most 1.8e-7): the allocation's effect is negligible against the rounding.
+same comparison with the DShot command left out (at most 1.8e-7): the allocation's effect is small against the diffuser's.
 
 | Script | theta (rad) | omega (rad/s) | heading to the release (rad) | heading to the lock (rad) |
 | --- | --- | --- | --- | --- |
-| `step_roll` | 7.80e-3 | 3.67e-2 | - | - |
-| `step_pitch` | 7.03e-3 | 3.31e-2 | - | - |
-| `yaw_release` | - | 4.78e-3 | 1.45e-3 | 9.85e-4 |
-| `yaw_fallback` | - | 3.48e-3 | 1.09e-3 | 6.23e-4 |
+| `step_roll` | 2.98e-6 | 6.01e-5 | - | - |
+| `step_pitch` | 1.79e-6 | 5.35e-5 | - | - |
+| `yaw_release` | - | 1.60e-5 | 1.14e-6 | 5.91e-7 |
+| `yaw_fallback` | - | 1.53e-5 | 1.19e-6 | 6.06e-7 |
+
+With the stateless rounding (before decision 0017) Q was 7.80e-3 / 3.67e-2 (`step_roll`), 7.03e-3 / 3.31e-2 (`step_pitch`),
+4.78e-3 / 1.45e-3 / 9.85e-4 (`yaw_release`) and 3.48e-3 / 1.09e-3 / 6.23e-4 (`yaw_fallback`): the diffuser makes Q smaller by a
+factor of 227 to 3921 per channel.
 
 Checks: `t3_test.cpp` `L5T3Quantisation` (Q recorded, finite and positive for every script and channel); the control in
 `../tools/test_attitude_t3_q.py` (the quantiser disabled, the identity map, gives Q = 0 exactly; enabled it gives Q > 0). The measured

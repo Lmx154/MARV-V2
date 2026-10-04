@@ -11,8 +11,11 @@
 //  - 69c62f2's path, reproduced here: a RateLoop fed the raw samples at the rate ticks, then allocate, record_allocation
 //    and thrust_to_dshot as the composition did.
 // Checks: the composition's DShot is the step's at every tick; fault_active, fault_latched and fault_count are 69c62f2's
-// at every rate execution; at every fault execution the torque, the request, the thrusts and the DShot are 69c62f2's bit
-// for bit, and so is the composition's DShot; a non-finite sample on a non-rate tick reaches no rate execution and the
+// at every rate execution; at every fault execution the torque, the request and the thrusts are 69c62f2's bit for bit,
+// and the step's and the composition's DShot is the DShot diffuser's write of those thrusts (decision 0017: the carry of
+// the earlier executions, not reset by the fault), the diffuser run over the step's thrusts being the step's DShot at
+// every execution (control: 69c62f2's stateless thrust_to_dshot of the same thrusts differs at some execution); a
+// non-finite sample on a non-rate tick reaches no rate execution and the
 // command is held over it; at the rate tick where the rate loop reseeds after a fault the chain's output equals that
 // tick's sample within the seeding tolerance of d_term/chain_guard_test.cpp (seed_tolerance, the same rule on this
 // chain's stages), and not before; after the non-rate-tick refusal the chain is not reseeded and its output differs
@@ -305,10 +308,24 @@ TEST(L6RateGroupFault, AtEveryFaultExecutionTheOutputIsThatOfThePathWithoutTheCh
     EXPECT_TRUE(same_bits(r.step[k].rate.torque, r.head[k].rate.torque)) << k;
     EXPECT_TRUE(same_bits(r.step[k].request, r.head[k].request)) << k;
     EXPECT_EQ(std::memcmp(r.step[k].alloc.f.data(), r.head[k].alloc.f.data(), sizeof(float) * mixer::kMotors), 0) << k;
-    EXPECT_EQ(r.step[k].dshot, r.head[k].dshot) << k;
-    EXPECT_EQ(r.composition[k * d], r.head[k].dshot) << k;
   }
   EXPECT_EQ(faults, 1 + kInvalidExecutions);
+  // The DShot (decision 0017): the diffuser from init over the step's thrusts, with 69c62f2's thrusts at its fault
+  // executions, gives the step's DShot at every execution and the composition's at every fault execution.
+  const mixer::MixerConfig<float> mix = mixer::load_config();
+  mixer::DshotDiffuser<float> diffuser;
+  diffuser.init(mix);
+  bool stateless_differs = false;
+  for (std::size_t k = 0; k < kExecutions; ++k) {
+    const bool fault = r.head[k].rate.fault_active;
+    const Raw want = raw_of(diffuser.apply(fault ? r.head[k].alloc.f : r.step[k].alloc.f));
+    EXPECT_EQ(r.step[k].dshot, want) << k;
+    if (fault) {
+      EXPECT_EQ(r.composition[k * d], want) << k;
+    }
+    stateless_differs = stateless_differs || raw_of(mixer::thrust_to_dshot(mix, r.step[k].alloc.f)) != r.step[k].dshot;
+  }
+  EXPECT_TRUE(stateless_differs) << "control: 69c62f2's stateless rounding reproduces the step's DShot";
 }
 
 TEST(L6RateGroupFault, ControlTheChainsHeldOutputForTheNonFiniteSampleGivesNoFault) {

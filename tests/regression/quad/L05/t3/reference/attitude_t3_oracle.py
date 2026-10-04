@@ -1473,16 +1473,21 @@ def round_half_away(x):
 
 class Quantiser:
     """The actuator between the torque request and the plant, in binary64, for a single-axis request (the other two axes 0):
-    mixer::allocate at the scenario collective (fw/mixer/include/marv/mixer/mixer.hpp allocate), mixer::thrust_to_dshot (the
-    same file: omega = sqrt(f / k), DShot = round(the linear-in-omega ESC map inverted), clamped to [ceil(D(omega_idle)),
-    kDshotThrottleMax]), then marv_plant's ESC map (sim/plant/src/plant_model.hpp Model::omega_cmd: linear in omega over
-    DShot 48..2047), thrust k omega^2 and the rotor geometry (torque r x (0, 0, -f), yaw reaction s_i c_q f), projected on
-    the script's axis. The off-axis torques of the rounding are not carried by the single-axis design model. `identity` is
-    the control: the request passes unchanged. `saturated` counts the executions in which the allocation scaled the request
-    or a thrust or a DShot value hit a bound (none is expected; the count is recorded)."""
+    mixer::allocate at the scenario collective (fw/mixer/include/marv/mixer/mixer.hpp allocate), the DShot command, then
+    marv_plant's ESC map (sim/plant/src/plant_model.hpp Model::omega_cmd: linear in omega over DShot 48..2047), thrust
+    k omega^2 and the rotor geometry (torque r x (0, 0, -f), yaw reaction s_i c_q f), projected on the script's axis. The
+    DShot command is d* = the linear-in-omega ESC map inverted at omega = sqrt(f / k) (mixer.hpp dshot_unrounded), then
+    with `diffusion` (the default) mixer::DshotDiffuser (decision 0017), once per call, per motor in float32: d~ = f32(d*)
+    clamped to [ceil(D(omega_idle)), kDshotThrottleMax], u = f32(d~ + e), q = round(u) (halves away from zero) clamped
+    to the same range, e = u - q (exact), with every carry e 0 at construction (one instance per script run); without it
+    mixer::thrust_to_dshot's stateless rounding, round(d*) clamped (the negative control of the diffusion, and the
+    rounding the request dead bands describe). The off-axis torques of the rounding are not carried by the single-axis
+    design model. `identity` is the control: the request passes unchanged. `saturated` counts the executions in which the
+    allocation scaled the request or a thrust or a DShot value hit a bound (none is expected; the count is recorded)."""
 
-    def __init__(self, q, axis, identity=False, rounding=True):
+    def __init__(self, q, axis, identity=False, rounding=True, diffusion=True):
         self.axis, self.identity, self.rounding, self.saturated = axis, identity, rounding, 0
+        self.diffusion, self.carry = diffusion, [0.0, 0.0, 0.0, 0.0]
         self.k, self.c = q["rotor_thrust_coeff"], q["l5_thrust_n"]
         self.w_min, self.w_max = q["rotor_speed_min"], q["rotor_speed_max"]
         self.lo = self.k * (q["idle_speed"] * q["idle_speed"])
@@ -1528,15 +1533,24 @@ class Quantiser:
         scaled = s < 1.0 or (t < 1.0 and tz != 0.0) or c != self.c or any(v < lo or v > hi for v in raw)
         return f, scaled
 
+    def clamp(self, d):
+        if not d >= self.d_lo:
+            return self.d_lo
+        if d > self.d_max:
+            return self.d_max
+        return d
+
     def dshot(self, f):
         out = []
-        for fi in f:
+        for i, fi in enumerate(f):
             omega = math.sqrt(fi / self.k)
-            d = round_half_away(self.d_min + (omega - self.w_min) / self.w_span * self.d_span)
-            if not d >= self.d_lo:
-                d = self.d_lo
-            elif d > self.d_max:
-                d = self.d_max
+            d = self.d_min + (omega - self.w_min) / self.w_span * self.d_span
+            if self.diffusion:
+                u = r32(self.clamp(r32(d)) + self.carry[i])
+                d = self.clamp(round_half_away(u))
+                self.carry[i] = u - d
+            else:
+                d = self.clamp(round_half_away(d))
             out.append(int(d))
         return out
 
@@ -1567,10 +1581,10 @@ _Q_CONTEXT = {}
 def _q_member(job):
     """Worker: (max |quantised - unquantised| per channel with its execution, saturated count) of one grid member."""
     index, s, t = job
-    su, q, name, h_seg, stick, identity, rounding = (
-        _Q_CONTEXT[k] for k in ("su", "q", "name", "h", "stick", "identity", "rounding"))
+    su, q, name, h_seg, stick, identity, rounding, diffusion = (
+        _Q_CONTEXT[k] for k in ("su", "q", "name", "h", "stick", "identity", "rounding", "diffusion"))
     axis = scenario_axis(name) if name != "yaw_fallback" else 2
-    quant = Quantiser(q, axis, identity, rounding)
+    quant = Quantiser(q, axis, identity, rounding, diffusion)
     if name in ("step_roll", "step_pitch"):
         om_u, om_q = [], []
         th_u = tilt_member_run(su, axis, s, t, h_seg, None, om_u)
@@ -1602,11 +1616,12 @@ def _q_member(job):
     return index, s, t, out, quant.saturated
 
 
-def q_script(su, q, name, h_seg, stick=1.0, identity=False, procs=1, rounding=True):
+def q_script(su, q, name, h_seg, stick=1.0, identity=False, procs=1, rounding=True, diffusion=True):
     """Q of one script per channel: the maximum over the time of |quantised - unquantised| of the design-model trajectory, at
     the corners of the tau x J box and its nominal, and over the 9 x 9 grid that contains them. Returns {channel: dict}."""
     jobs = [(i, s, t) for i, s, t, coarse in grid_members() if coarse]
-    _Q_CONTEXT.update(su=su, q=q, name=name, h=h_seg, stick=stick, identity=identity, rounding=rounding)
+    _Q_CONTEXT.update(su=su, q=q, name=name, h=h_seg, stick=stick, identity=identity, rounding=rounding,
+                      diffusion=diffusion)
     if procs > 1:
         import multiprocessing  # noqa: PLC0415
 
@@ -1631,24 +1646,24 @@ def q_script(su, q, name, h_seg, stick=1.0, identity=False, procs=1, rounding=Tr
 
 
 def q_hover_facts(q):
-    """The quantum at the scenario collective, for the file header."""
-    qz = Quantiser(q, 0)
+    """The quantum at the scenario collective, for the file header: facts of the stateless rounding."""
+    qz = Quantiser(q, 0, diffusion=False)
     f = qz.allocate(0.0, 0.0, 0.0)[0]
     dreal = [qz.d_min + (math.sqrt(fi / qz.k) - qz.w_min) / qz.w_span * qz.d_span for fi in f]
     return {"hover_dshot_real": dreal[0], "hover_dshot_rounded": qz.dshot(f)[0],
-            "zero_request_torque": [Quantiser(q, a)(0.0) for a in range(3)]}
+            "zero_request_torque": [Quantiser(q, a, diffusion=False)(0.0) for a in range(3)]}
 
 
 def write_q(su, q, res, stick, path, procs):
     lines = [
         "# T3 quantisation term Q of the L5 T4 tolerance (owner decision 19): per script and channel the maximum over the",
         "# time of |quantised - unquantised| of the design-model trajectory, where the quantised model inserts the actuator",
-        "# (mixer allocation at the scenario collective l5_thrust_n, thrust_to_dshot rounding as the firmware does it,",
+        "# (mixer allocation at the scenario collective l5_thrust_n, the DShot diffuser of decision 0017 as the firmware runs it,",
         "# marv_plant's ESC map DShot -> omega -> k omega^2, rotor geometry back to torque) between the rate loop's torque",
         "# request and the torque lag of the design plant. Evaluated at the corners of the tau x J box plus the nominal",
         "# (q_corners), and over the 9 x 9 grid that contains them (q_grid); q is q_grid where the grid exceeds the corners",
         "# (rule grid), else q_corners (rule corners). Written by attitude_t3_oracle.py from attitude_t3_q_inputs.txt; see",
-        "# README.md. Rule: fw/mixer/include/marv/mixer/mixer.hpp allocate and thrust_to_dshot, sim/plant/src/plant_model.hpp",
+        "# README.md. Rule: fw/mixer/include/marv/mixer/mixer.hpp allocate and DshotDiffuser, sim/plant/src/plant_model.hpp",
         "# Model::omega_cmd. Units rad (theta, headings) and rad/s (omega). at = the member (s, t) and attitude execution.",
         f"# segment_executions {res['h']}  yaw_fallback stick_scale {stick!r}",
     ]

@@ -5,7 +5,8 @@
 //
 // Every tick: step.filter(sample, due) (rate_group.hpp: on a due tick the notches are updated first). On the ticks the
 // rate group is due (every rate_loop_divisor ticks, tick 0 included): step.execute(script(t), chirp(t) on the chirp
-// axis, thrust), the rate loop on the chain output, allocate, record_allocation, thrust_to_dshot; the DShot is written.
+// axis, thrust), the rate loop on the chain output, allocate, record_allocation, the rate group's DshotDiffuser (decision
+// 0017); the DShot is written.
 // On the other ticks nothing is written: the HAL latch holds the last command (hal_sim keeps it between writes).
 // init panics naming the violated rule on an invalid rate, mixer or chain configuration or invalid scenario parameters.
 #include <array>

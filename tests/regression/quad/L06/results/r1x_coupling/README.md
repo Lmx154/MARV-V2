@@ -25,8 +25,9 @@ Commands (repository root, after `uv sync --frozen`):
 - The analysis, which needs the generated L5 T3 reference (`uv run python tools/refdata/refdata.py ensure quad/L05/t3`,
   decision 0011):
   `uv run python tests/regression/quad/L06/results/r1x_coupling/r1x_coupling.py --out tests/regression/quad/L06/results/r1x_coupling/coupling.txt`
-  - About 17 s on 16 cores. In the marv-ci image under `--cpus 4` the pytest takes 60 s, and the output is byte-identical
-    to the host's (sha256 `21357056ea2590f28e29f818d2272c49d8e935e1f732df5c1931a7fd1b3b4394`).
+  - About 17 s on 16 cores. In the marv-ci image under `--cpus 4` the pytest takes 60 s, and the output was byte-identical
+    to the host's (for the earlier coupling.txt, sha256 `21357056ea2590f28e29f818d2272c49d8e935e1f732df5c1931a7fd1b3b4394`;
+    not re-run in the image for the regenerated one).
 - The captures, which need gz-sim 8, the tree's host-gz-l5 build and its generated T3 reference:
   - `uv run python tests/regression/quad/L06/results/r1x_coupling/capture_gz.py --tag new --work <dir> --out tests/regression/quad/L06/results/r1x_coupling/gz_new.txt`
   - `uv run python tests/regression/quad/L06/results/r1x_coupling/capture_gz.py --tag old --root <checkout of 69c62f2> --rev 69c62f2 --work <dir> --out tests/regression/quad/L06/results/r1x_coupling/gz_old.txt`
@@ -34,8 +35,9 @@ Commands (repository root, after `uv sync --frozen`):
     byte-identical on the host.
   - With `--rev`, the script first checks the checkout against `git ls-tree -r 69c62f2`, blob for blob (522 files).
   - The gz logs go to `--work`; a rerun regenerates them (decision 0003).
-  - Both summaries were captured before the R1X predicate change in `test_t4_recovery.py`. Their recorded
-    `test_t4_recovery.py` sha256 is the file before that change.
+  - `gz_old.txt` was captured before the R1X predicate change in `test_t4_recovery.py`; its recorded `test_t4_recovery.py`
+    sha256 is the file before that change. `gz_new.txt` was re-captured after it, with the DShot diffuser live (decision
+    0017); a second capture was byte-identical.
 
 Why two scripts. The distances need the full gz series: 20293 and 20745 executions, and one run's float32 q and ω alone are
 7 × 4 B per execution, about 0.57 MB. That is too large to commit (decision 0011). So:
@@ -73,19 +75,19 @@ The runs:
 Findings (`coupling.txt`). Distances are max over n = 0 .. N − 1 of |gz − run|, in rad or rad/s.
 
 1. **New gains (stage (c)): the design model plus ω×Jω reproduces gz and its excess.**
-   - gz fails the test: 74 violations, first at n 2271, worst at n 2338 with slack +5.05e-3; max(α − hi) is 3.62e-2.
+   - gz fails the test: 136 violations, first at n 2218, worst at n 2338 with slack +1.17e-2; max(α − hi) is 3.59e-2.
    - D on gz's branch stays inside the envelope (0 violations at F + Q).
-   - C on the same branch fails: 85 violations, first at n 2262, worst at n 2338 with slack +6.08e-3; max(α − hi) is 3.58e-2.
+   - C on the same branch fails: 143 violations, first at n 2213, worst at n 2338 with slack +1.28e-2; max(α − hi) is 3.58e-2.
 
    | Channel | D (no ω×Jω) | C (+ ω×Jω) |
    |---|---|---|
-   | α | 9.38e-2 | 2.28e-3 |
-   | ω_x | 0.180 | 5.56e-3 |
-   | ω_y | 0.551 | 7.25e-3 |
-   | ω_z | 0.174 | 3.04e-3 |
-   | err_z | 6.77e-2 | 1.06e-3 |
+   | α | 9.36e-2 | 9.42e-4 |
+   | ω_x | 0.181 | 6.02e-3 |
+   | ω_y | 0.551 | 3.93e-3 |
+   | ω_z | 0.172 | 3.07e-3 |
+   | err_z | 6.73e-2 | 7.21e-4 |
 
-   The largest distance falls from 0.551 to 7.25e-3, both on ω_y. C's α distance is within the test's F + Q (2.97e-2); D's is
+   The largest distance falls from 0.551 (ω_y) to 6.02e-3 (ω_x). C's α distance is within the test's F + Q (2.30e-2); D's is
    not.
 2. **Old gains (69c62f2): the same reproduction, inside a wider envelope.**
    - gz passes: 0 violations, worst slack −4.77e-2.
@@ -103,12 +105,12 @@ Findings (`coupling.txt`). Distances are max over n = 0 .. N − 1 of |gz − ru
 3. **Old against new.**
    - q_gz(1) = [4.33e-17, 1, 7.85e-17, 4.33e-17] and ω_gz(1) are bit-identical under both gain sets, in both runs. The seed
      execution's command is 0 whatever the gains, so the branch is the same.
-   - ω_y/ω_x at n 300 is −0.4449 (old) and −0.4459 (new), a change of +0.22 %.
-   - The coupling integral Σ|ω×Jω| T_a on gz's rates changes by −11.8 % (roll), +6.0 % (pitch) and −6.6 % (yaw).
+   - ω_y/ω_x at n 300 is −0.4449 (old) and −0.4453 (new), a change of +0.07 %.
+   - The coupling integral Σ|ω×Jω| T_a on gz's rates changes by −12.0 % (roll), +5.9 % (pitch) and −6.7 % (yaw).
    - The coupling's α effect, max |α_C − α_D|, is 0.1014 old and 0.0933 new (−8.0 %). The lead's diagnosis had 0.101 and
      0.099; its new figure was at the earlier product k 3.228.
-   - What changed is the envelope. F + Q went from 4.81e-2 to 2.97e-2, and max(α_C − hi) went from 0 (C never above hi) to
-     3.58e-2.
+   - What changed is the envelope. F + Q went from 4.81e-2 to 2.30e-2 (Q 6.74e-3 before the DShot diffuser of decision 0017,
+     2.67e-6 with it), and max(α_C − hi) went from 0 (C never above hi) to 3.58e-2.
    - No threshold is set on these changes, because none is sourced. They are reported, not judged.
 4. **The ideal feed-forward removes it.** Under both gain sets, CF equals D within K + R on every channel (the largest
    |CF − D| is 3.6e-11, on α) and stays inside the envelope. Control: C is beyond K + R from D on every channel.
@@ -118,7 +120,7 @@ Findings (`coupling.txt`). Distances are max over n = 0 .. N − 1 of |gz − ru
 
 Assumptions and limits:
 - The plant is the design model's first-order torque lag with ω×Jω (`r2_envelope_a`'s plant C). `marv_plant`'s rotor-speed
-  lag with thrust ∝ W² and the DShot rounding are not modelled. That is the residual C − gz (ω_y 7.3e-3 new, 3.5e-2 old).
+  lag with thrust ∝ W² and the DShot rounding are not modelled. That is the residual C − gz (largest 6.0e-3 new, on ω_x; 3.5e-2 old, on ω_y). The DShot diffuser is live in the new capture.
 - Only the nominal member is run on gz's branch. The envelope's other members run only from the exact start, as the test
   computes them.
 - The feed-forward of claim 4 is ideal (continuous, true ω, the plant's J and τ). The firmware's is evaluated by c5

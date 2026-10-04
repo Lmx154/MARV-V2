@@ -246,6 +246,36 @@ TimeUs stamp(const Ref& r, std::uint64_t n) {
   return static_cast<TimeUs>(static_cast<unsigned __int128>(n) * r.tick_num_us / r.tick_den);
 }
 
+// The composition's DShot per tick from init for a mixer request {thrust, torque(n)} (decision 0017): mixer::DshotDiffuser
+// on its allocation at every rate tick n (n % rate_loop_divisor == 0), the command held in between.
+template <class Torque>
+std::vector<Dshots> diffused(const Ref& r, float thrust, std::uint32_t k, Torque torque) {
+  mixer::DshotDiffuser<float> diffuser;
+  diffuser.init(r.mixer);
+  std::vector<Dshots> rows(k);
+  Dshots held{};
+  for (std::uint32_t n = 0; n < k; ++n) {
+    if (n % r.divisor == 0) {
+      const auto d = diffuser.apply(mixer::allocate(r.mixer, mixer::Request<float>{thrust, torque(n)}).f);
+      for (std::size_t i = 0; i < kMotors; ++i) {
+        held[i] = d[i].raw();
+      }
+    }
+    rows[n] = held;
+  }
+  return rows;
+}
+
+// The pure-thrust allocation of `thrust` as the composition writes it, per tick from init.
+std::vector<Dshots> pure_thrust_rows(const Ref& r, float thrust, std::uint32_t k) {
+  return diffused(r, thrust, k, [](std::uint32_t) { return Vec3f(); });
+}
+
+// Control: some row differs from the constant stateless command (thrust_to_dshot at every write).
+bool differs_from_stateless(const std::vector<Dshots>& rows, const Dshots& stateless) {
+  return std::any_of(rows.begin(), rows.end(), [&](const Dshots& d) { return d != stateless; });
+}
+
 // ---- the truth trajectory and the gyro ----------------------------------------------------------------------------
 
 // scenario test values: a tilt about the unit axis (0.6, 0, 0.8) of amplitude 0.2 rad at 0.01 rad/tick (a slow sweep over
@@ -463,9 +493,12 @@ TEST(L5Composition, HoverThrustLevelStillTruthAndNoScriptGivesThePureThrustAlloc
     for (std::size_t m = 0; m < kMotors; ++m) {
       ASSERT_GT(want[m], idle[m]) << "motor " << (m + 1);  // the hover is a real command
     }
-    for (const Dshots& d : run_sil(r, Trajectory{}, 64)) {
-      ASSERT_EQ(d, want);
+    const std::vector<Dshots> rows = run_sil(r, Trajectory{}, 64);
+    const std::vector<Dshots> diffused_want = pure_thrust_rows(r, r.hover, 64);
+    for (std::size_t n = 0; n < rows.size(); ++n) {
+      ASSERT_EQ(rows[n], diffused_want[n]) << "tick " << n;
     }
+    EXPECT_TRUE(differs_from_stateless(rows, want)) << "control: stateless rounding reproduces the composition";
   });
 }
 
@@ -490,10 +523,10 @@ void expect_matches_reference(std::int32_t divisor, std::int32_t ratio) {
       ASSERT_EQ(got[n], want[n]) << "tick " << n << " divisor " << r.divisor << " ratio " << r.ratio;
     }
     // power: the run is not the pure-thrust allocation, and the attitude group does something on many of its ticks
-    const Dshots base = dshot_of(r, r.hover, Vec3f());
+    const std::vector<Dshots> base = pure_thrust_rows(r, r.hover, kRun);
     std::uint32_t moved = 0;
-    for (const Dshots& d : got) {
-      moved += d != base ? 1 : 0;
+    for (std::uint32_t n = 0; n < kRun; ++n) {
+      moved += got[n] != base[n] ? 1 : 0;
     }
     EXPECT_GT(moved, kRun / 2);  // scenario test value: most ticks carry a non-neutral command
     // controls: each wrong behaviour fails to reproduce the composition's output
@@ -560,10 +593,10 @@ void expect_first_change_at_the_attitude_tick(std::int32_t divisor, std::int32_t
     ASSERT_EQ(init_with(r, ov), MARV_SIL_OK);
     const std::uint32_t k = want_tick + (2 * attitude_divisor);
     const std::vector<Dshots> rows = run_sil(r, Trajectory{}, k);
-    const Dshots base = dshot_of(r, r.hover, Vec3f());
+    const std::vector<Dshots> base = pure_thrust_rows(r, r.hover, k);
     const auto first_change = [&](const std::vector<Dshots>& v) {
       for (std::uint32_t t = 0; t < k; ++t) {
-        if (v[t] != base) {
+        if (v[t] != base[t]) {
           return t;
         }
       }
@@ -699,7 +732,8 @@ TEST(L5CompositionFreshness, NoStateIsNeededOnTicksWithoutAnAttitudeExecution) {
 // ---- the disturbance ----------------------------------------------------------------------------------------------
 
 // A level still vehicle, zero sticks: the rate loop's torque stays zero, so the DShot is the allocation of {thrust,
-// (0, 0, d)} from the first rate tick at or after the disturbance stamp and the pure-thrust allocation before it.
+// (0, 0, d)} from the first rate tick at or after the disturbance stamp and the pure-thrust allocation before it, both
+// through the diffuser from init.
 void expect_disturbance_from_its_stamp(std::int32_t divisor, std::uint32_t t0_tick) {
   in_child([=] {
     Scenario sc;
@@ -719,15 +753,19 @@ void expect_disturbance_from_its_stamp(std::int32_t divisor, std::uint32_t t0_ti
     const std::uint32_t first_rate_tick = ((t0_tick + r.divisor - 1) / r.divisor) * r.divisor;
     const std::uint32_t k = first_rate_tick + (3 * r.divisor);
     const std::vector<Dshots> rows = run_sil(r, Trajectory{}, k);
+    const std::vector<Dshots> want = diffused(r, r.hover, k, [&](std::uint32_t n) {
+      return n < first_rate_tick ? Vec3f() : Vec3f(0.0F, 0.0F, sc.dist.yaw_nm);
+    });
     for (std::uint32_t n = 0; n < k; ++n) {
-      ASSERT_EQ(rows[n], n < first_rate_tick ? base : pushed) << "tick " << n << " disturbance stamp tick " << t0_tick;
+      ASSERT_EQ(rows[n], want[n]) << "tick " << n << " disturbance stamp tick " << t0_tick;
     }
     // control: the reference without the disturbance stays at the pure-thrust allocation, so the step above is the disturbance
     Scenario none = sc;
     none.dist.yaw_nm = 0.0F;
     const std::vector<Dshots> quiet = reference(r, none, Trajectory{}, k);
-    for (const Dshots& d : quiet) {
-      ASSERT_EQ(d, base);
+    const std::vector<Dshots> pure = pure_thrust_rows(r, r.hover, k);
+    for (std::uint32_t n = 0; n < k; ++n) {
+      ASSERT_EQ(quiet[n], pure[n]) << "tick " << n;
     }
   });
 }
@@ -767,13 +805,13 @@ void expect_chirp_at_the_rate_setpoint(ChirpAxis axis) {
     const std::uint32_t k = 320;  // covers 16 + 40000 us / 156.25 us = 272 ticks
     const std::vector<Dshots> got = run_sil(r, Trajectory{}, k);
     EXPECT_EQ(first_difference(got, reference(r, sc, Trajectory{}, k)), k) << "axis " << static_cast<int>(axis);
-    const Dshots base = dshot_of(r, r.hover, Vec3f());
+    const std::vector<Dshots> base = pure_thrust_rows(r, r.hover, k);
     for (std::uint32_t n = 0; n < 16; ++n) {
-      ASSERT_EQ(got[n], base) << "tick " << n << " precedes the window";
+      ASSERT_EQ(got[n], base[n]) << "tick " << n << " precedes the window";
     }
     std::uint32_t moved = 0;
     for (std::uint32_t n = 16; n < k; ++n) {
-      moved += got[n] != base ? 1 : 0;
+      moved += got[n] != base[n] ? 1 : 0;
     }
     EXPECT_GT(moved, 100U);  // scenario test value: the chirp moves the command on many ticks
     Variant torque;

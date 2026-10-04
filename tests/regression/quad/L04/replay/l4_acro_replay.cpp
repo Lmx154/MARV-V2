@@ -18,7 +18,8 @@
 //   k tick t_us sp_{roll,pitch,yaw} req_{roll,pitch,yaw} ach_{roll,pitch,yaw} flag_{roll,pitch,yaw} s t ach_thrust
 //   dshot1..dshot4 fault
 // sp the setpoint, req the torque request passed to allocate (rate output + chirp), ach the allocation's achieved
-// torque, flag its saturation flags (0/1), ach_thrust its achieved collective thrust, dshot thrust_to_dshot's commands,
+// torque, flag its saturation flags (0/1), ach_thrust its achieved collective thrust, dshot the rate group's DshotDiffuser
+// commands (decision 0017),
 // fault the rate loop's fault_active (0/1). Floats are written as the shortest decimal of their exact binary64 value,
 // so reading one back as a double gives the binary32 value exactly. s and t are not outputs of allocate: they are
 // derived as ach/req in binary64 (roll, else pitch, for s; yaw for t), nan where the request is zero.

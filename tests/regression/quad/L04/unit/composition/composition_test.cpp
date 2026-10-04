@@ -1,9 +1,10 @@
 // The l4_rate_scripted composition through the SIL C ABI (marv_sil.h): the hover collective with a zero setpoint and a
-// valid zero gyro gives thrust_to_dshot(allocate({T_hover, 0})); the rate group writes only on its due ticks (the HAL
-// latch holds the command in between); a scripted setpoint step raises the motors the L3 sign contract names; a chirp
-// and a segment stamp reach the request exactly; a cleared GyroValid is the rate loop's fault path (zero torque, the
-// pure-thrust allocation) while a valid nonzero gyro moves the output (the control of the truth-gyro fault check of
-// decision 0005); invalid scenario parameters panic at init.
+// valid zero gyro gives allocate({T_hover, 0}) through the DShot diffuser (decision 0017: mixer::DshotDiffuser from init,
+// one write per due tick; thrust_to_dshot's stateless rounding is the control); the rate group writes only on its due
+// ticks (the HAL latch holds the command in between); a scripted setpoint step raises the motors the L3 sign contract
+// names; a chirp and a segment stamp reach the request exactly; a cleared GyroValid is the rate loop's fault path (zero
+// torque, the pure-thrust allocation) while a valid nonzero gyro moves the output (the control of the truth-gyro fault
+// check of decision 0005); invalid scenario parameters panic at init.
 //
 // marv_sil_init succeeds once per process, so every test that initialises runs in a forked child. The child also builds
 // the reference: the default parameter table of the composition's set (params_init) feeds mixer::load_config here, in
@@ -114,6 +115,36 @@ Dshots dshot_of(const Ref& r, float thrust, const prim::Vec3<float>& torque) {
   return out;
 }
 
+// The composition's DShot per tick from init (decision 0017): mixer::DshotDiffuser on allocate({thrust, torque(n)}) at
+// every due tick n (n % rate_loop_divisor == 0, tick 0 included), the command held in between.
+template <class Torque>
+std::vector<Dshots> diffused(const Ref& r, float thrust, std::uint32_t k, Torque torque) {
+  mixer::DshotDiffuser<float> diffuser;
+  diffuser.init(r.cfg);
+  std::vector<Dshots> rows(k);
+  Dshots held{};
+  for (std::uint32_t n = 0; n < k; ++n) {
+    if ((n % r.divisor) == 0) {
+      const auto d = diffuser.apply(mixer::allocate(r.cfg, mixer::Request<float>{thrust, torque(n)}).f);
+      for (std::size_t i = 0; i < kMotors; ++i) {
+        held[i] = d[i].raw();
+      }
+    }
+    rows[n] = held;
+  }
+  return rows;
+}
+
+// The pure-thrust allocation of `thrust` as the composition writes it, per tick from init.
+std::vector<Dshots> pure_thrust_rows(const Ref& r, float thrust, std::uint32_t k) {
+  return diffused(r, thrust, k, [](std::uint32_t) { return prim::Vec3<float>(); });
+}
+
+// Control: some row differs from the constant stateless command (thrust_to_dshot at every write).
+bool differs_from_stateless(const std::vector<Dshots>& rows, const Dshots& stateless) {
+  return std::any_of(rows.begin(), rows.end(), [&](const Dshots& d) { return d != stateless; });
+}
+
 struct Overrides {
   std::vector<marv_sil_param_override> v;
   void f32(ParamId id, float x) {
@@ -217,9 +248,11 @@ TEST(L4Composition, HoverThrustZeroGyroZeroSetpointGivesThePureThrustAllocation)
       ASSERT_GT(want[m], idle[m]) << "motor " << (m + 1);
     }
     const std::vector<Dshots> rows = run(kRun, valid_gyro(0, 0, 0));
+    const std::vector<Dshots> diffused_want = pure_thrust_rows(r, r.hover, kRun);
     for (std::uint32_t i = 0; i < kRun; ++i) {
-      ASSERT_EQ(rows[i], want) << "tick " << i;
+      ASSERT_EQ(rows[i], diffused_want[i]) << "tick " << i;
     }
+    EXPECT_TRUE(differs_from_stateless(rows, want)) << "control: stateless rounding reproduces the composition";
   });
 }
 
@@ -233,8 +266,9 @@ TEST(L4Composition, ThePureThrustAllocationDependsOnTheThrustParameter) {
     const Dshots want = dshot_of(r, 1.5F * r.hover / 2.0F, prim::Vec3<float>());
     ASSERT_NE(want, hover);
     const std::vector<Dshots> rows = run(16, valid_gyro(0, 0, 0));
-    for (const Dshots& d : rows) {
-      ASSERT_EQ(d, want);
+    const std::vector<Dshots> diffused_want = pure_thrust_rows(r, 1.5F * r.hover / 2.0F, 16);
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+      ASSERT_EQ(rows[i], diffused_want[i]) << "tick " << i;
     }
   });
 }
@@ -336,12 +370,12 @@ TEST(L4CompositionScript, ASegmentActsFromItsStampNotBefore) {
     ov.i32(ParamId::l4_seg1_t_us, static_cast<std::int32_t>(stamp(r, kStepTick)));
     ov.f32(ParamId::l4_seg1_roll, r.rate_max_roll);
     ASSERT_EQ(init_with(r, ov), MARV_SIL_OK);
-    const Dshots base = dshot_of(r, r.hover, prim::Vec3<float>());
+    const std::vector<Dshots> base = pure_thrust_rows(r, r.hover, kRun);
     const std::vector<Dshots> rows = run(kRun, valid_gyro(0, 0, 0));
     for (std::uint64_t i = 0; i < kStepTick; ++i) {
-      ASSERT_EQ(rows[i], base) << "tick " << i << " precedes the segment";
+      ASSERT_EQ(rows[i], base[i]) << "tick " << i << " precedes the segment";
     }
-    EXPECT_NE(rows.back(), base);
+    EXPECT_NE(rows.back(), base.back());
   });
 }
 
@@ -353,9 +387,10 @@ TEST(L4CompositionScript, SegmentsAreIgnoredWhileTheCountIsZero) {
     ov.i32(ParamId::l4_seg1_t_us, 0);
     ov.f32(ParamId::l4_seg1_roll, r.rate_max_roll);
     ASSERT_EQ(init_with(r, ov), MARV_SIL_OK);
-    const Dshots base = dshot_of(r, r.hover, prim::Vec3<float>());
-    for (const Dshots& d : run(256, valid_gyro(0, 0, 0))) {
-      ASSERT_EQ(d, base);
+    const std::vector<Dshots> base = pure_thrust_rows(r, r.hover, 256);
+    const std::vector<Dshots> rows = run(256, valid_gyro(0, 0, 0));
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+      ASSERT_EQ(rows[i], base[i]) << "tick " << i;
     }
   });
 }
@@ -383,7 +418,8 @@ TEST(L4CompositionScript, TheSecondSegmentReplacesTheFirst) {
 // ---- chirp --------------------------------------------------------------------------------------------------------
 
 // The request is chirp_torque on the chirp axis with a zero rate-loop torque (zero gyro and setpoint), so the DShot at
-// every due tick is exactly the allocation of {hover, chirp(t)}, held in between.
+// every due tick is exactly the allocation of {hover, chirp(t)} through the diffuser, held in between; outside the window
+// the request is the pure-thrust one, so before the window the rows are the pure-thrust rows.
 TEST(L4CompositionChirp, TheChirpReachesTheRequestOnItsAxisInsideItsWindowOnly) {
   in_child([] {
     const Ref r = load_ref();
@@ -403,25 +439,35 @@ TEST(L4CompositionChirp, TheChirpReachesTheRequestOnItsAxisInsideItsWindowOnly) 
     ov.i32(ParamId::l4_chirp_t0_us, c.t0_us);
     ov.i32(ParamId::l4_chirp_dur_us, c.dur_us);
     ASSERT_EQ(init_with(r, ov), MARV_SIL_OK);
-    const Dshots base = dshot_of(r, r.hover, prim::Vec3<float>());
     const std::uint32_t k = 3000;  // covers the window: 512 ticks + 200000 us / 156.25 us = 1792 < 3000
+    const std::vector<Dshots> base = pure_thrust_rows(r, r.hover, k);
     const std::vector<Dshots> rows = run(k, valid_gyro(0, 0, 0));
+    const auto inside = [&](std::uint32_t i) {
+      const TimeUs t = stamp(r, i);
+      return t >= static_cast<TimeUs>(c.t0_us) && t < static_cast<TimeUs>(c.t0_us) + static_cast<TimeUs>(c.dur_us);
+    };
+    const std::vector<Dshots> want = diffused(r, r.hover, k, [&](std::uint32_t i) {
+      return inside(i) ? composition::chirp_torque(c, stamp(r, i)) : prim::Vec3<float>();
+    });
     std::uint32_t inside_differs = 0;
-    Dshots held = base;
+    Dshots held_stateless{};
+    bool stateless_differs = false;
     for (std::uint32_t i = 0; i < k; ++i) {
       if ((i % r.divisor) == 0) {
-        held = dshot_of(r, r.hover, composition::chirp_torque(c, stamp(r, i)));
+        held_stateless = dshot_of(r, r.hover, composition::chirp_torque(c, stamp(r, i)));
       }
-      ASSERT_EQ(rows[i], held) << "tick " << i;
-      const TimeUs t = stamp(r, i);
-      const bool inside = t >= static_cast<TimeUs>(c.t0_us) && t < static_cast<TimeUs>(c.t0_us) + static_cast<TimeUs>(c.dur_us);
-      if (!inside) {
-        ASSERT_EQ(rows[i], base) << "tick " << i << " is outside the window";
-      } else if (rows[i] != base) {
+      stateless_differs = stateless_differs || rows[i] != held_stateless;
+      ASSERT_EQ(rows[i], want[i]) << "tick " << i;
+      if (!inside(i)) {
+        if (stamp(r, i) < static_cast<TimeUs>(c.t0_us)) {
+          ASSERT_EQ(rows[i], base[i]) << "tick " << i << " precedes the window";
+        }
+      } else if (rows[i] != base[i]) {
         ++inside_differs;
       }
     }
     EXPECT_GT(inside_differs, 100u);  // scenario test value: the chirp moves the command on many ticks
+    EXPECT_TRUE(stateless_differs) << "control: stateless rounding reproduces the composition";
   });
 }
 
@@ -436,9 +482,12 @@ TEST(L4CompositionFault, AClearedGyroValidFlagGivesZeroTorqueEvenWithAStepScript
     ASSERT_EQ(init_with(r, ov), MARV_SIL_OK);
     const Dshots base = dshot_of(r, r.hover, prim::Vec3<float>());
     const std::vector<Dshots> rows = run(kRun, marv_imu_meas{});  // GyroValid clear, zero fields
+    // the fault path writes through the diffuser and does not reset it (decision 0017)
+    const std::vector<Dshots> diffused_base = pure_thrust_rows(r, r.hover, kRun);
     for (std::uint32_t i = 0; i < kRun; ++i) {
-      ASSERT_EQ(rows[i], base) << "tick " << i;
+      ASSERT_EQ(rows[i], diffused_base[i]) << "tick " << i;
     }
+    EXPECT_TRUE(differs_from_stateless(rows, base)) << "control: stateless rounding reproduces the composition";
   });
 }
 

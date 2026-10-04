@@ -12,7 +12,8 @@
 //   every tick: step.filter(sample, due) (rate_group.hpp: on a rate-group tick the notches are updated first).
 //   rate group, every rate_loop_divisor ticks (tick 0 included):
 //     step.execute_bypass(rate_sp + chirp(t), disturbance(t), thrust): the rate loop in bypass on the chain output,
-//     request = out.torque + disturbance(t), allocate, record_allocation, thrust_to_dshot; the DShot is written.
+//     request = out.torque + disturbance(t), allocate, record_allocation, the rate group's DshotDiffuser (decision 0017);
+//     the DShot is written.
 // The rate setpoint rate_sp is held between attitude executions. On a tick with no rate group nothing is written: the HAL
 // latch holds the last command (hal_sim keeps it between writes). init panics naming the violated rule on an invalid
 // attitude, rate, mixer or chain configuration or invalid scenario parameters.

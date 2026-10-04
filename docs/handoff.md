@@ -133,10 +133,13 @@ the W4 diagnosis scripts to be committed with 0016).
 **Remaining steps, in order:**
 1. **Done: 0016** (`4a76755`, pushed; approved by Luis 2026-10-04 on green local CI and Actions run 37164572071).
 2. **Stage (d), 0017** (`docs/decisions/0017-l6-stage-d-dshot-error-diffusion.md`; Luis's rulings verbatim there).
-   - P1, built: `DshotDiffuser<T>` in `fw/mixer`, not live, with 14 T1 tests in `L06/dshot_diffusion/`. δ_max = 2^-14 step
+   - P1: `DshotDiffuser<T>` in `fw/mixer`, not live, with 14 T1 tests in `L06/dshot_diffusion/`. δ_max = 2^-14 step
      (derived, attained). Reviewer PASS.
    - Pending Luis: the motor-speed line text (in 0017).
-   - Next: P2, the atomic live switch (Q recomputed, fine controls re-confirmed, stop if a strict xfail passes).
+   - P1 pushed (`4bff7af`, local CI green).
+   - P2, the live switch, built: the diffuser is in `RateGroupStep`. Q falls by roughly ×300–2600, the gz hover limit
+     cycle is gone, the fine controls fail by more, no strict xfail passes, and the chirp admission set is unchanged.
+     Q-dependent records are regenerated (0017 lists 18 frozen files). Next: local CI on its commit, then Luis's go.
    - Alongside: the R2 yaw options for (e), a scratch analysis, brought with the (d) close. Saved outside the repo at
      `~/marv-r2yaw-2026-10-04/r2yaw.tar.gz`.
 

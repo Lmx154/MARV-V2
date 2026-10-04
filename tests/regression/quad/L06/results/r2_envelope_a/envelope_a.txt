@@ -1,7 +1,7 @@
 MARV quad L6 stage (c): R2 under envelope A, the design model with w x Jw in the plant and ideal lag-compensated feed-forward (decision 0015; decision 0014 owner decision 5)
 command: uv run python tests/regression/quad/L06/results/r2_envelope_a/r2_envelope_a.py --out <file>
 label: design model (T3), not a validation run
-inputs sha256: card 62d5d522f19cf7022c87d5e9a0a9ab4e4d3a31d7759a5166c43cda959e23f11f; scenario b81461d640dd67835a93aee1ee03aa0e5f589d896136e988d299bce4e3e9ac24; attitude_t3_inputs.txt f7e67b54c78709eb67ff4c5ab9ea6c6a3cc208ea6b0be129111d5c357a8057c5; test_t4_recovery.py efbef63005ef5af52ba5818e700191d81f3e646c187d3a38c9a5d796abaaa59c; recovery_model.py 118438c0a091221f65345a11a077851f86bbcfee57e5173731fa72dfa3c793e3; attitude_t3_oracle.py bc0be546f00a99ecb7d43bb8dae407b5de0be3df35474681274168552e4c52e8; run_l5.py 2d6a6dbb6da7877592883f64496ccc75092a98c51dbab66c11690853ede85069
+inputs sha256: card 62d5d522f19cf7022c87d5e9a0a9ab4e4d3a31d7759a5166c43cda959e23f11f; scenario b81461d640dd67835a93aee1ee03aa0e5f589d896136e988d299bce4e3e9ac24; attitude_t3_inputs.txt f7e67b54c78709eb67ff4c5ab9ea6c6a3cc208ea6b0be129111d5c357a8057c5; test_t4_recovery.py efbef63005ef5af52ba5818e700191d81f3e646c187d3a38c9a5d796abaaa59c; recovery_model.py 1eb543cdbe9f9b535e8cbd081ef50ddc8ae9184c3a421c13bc4c4bac11533777; attitude_t3_oracle.py b501d0e9b7fdbe39c432c8139a0a7216f0ecc80e42dac41769ce3b8465a1461b; run_l5.py f4ef68ef613ae7d9cbb51ab4dda0b06710151d172a98b07f899d293427cc2e3c
 
 == 0. setup
 scenario scenarios/quad/L05/recover_tumble.yaml: q0 [0.0, 1.0, 0.0, 0.0]; w0 ['11.693705558776855', '11.693705558776855', '11.693705558776855'] rad/s; executions 0 .. 20292 (T_a 0.0003125 s, 2 ticks of 0.0001563 s each, 40586 ticks)

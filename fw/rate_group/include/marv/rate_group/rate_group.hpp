@@ -18,7 +18,9 @@
 //   execute(setpoint, added, thrust), on a rate tick after filter:  out = rate.execute(held, setpoint);
 //   execute_bypass(reference, added, thrust), the same with         out = rate.execute_bypass(held, reference);
 //                         then request = out.torque + added; alloc = allocate({thrust, request});
-//                         rate.record_allocation(request, alloc); dshot = thrust_to_dshot(alloc.f).
+//                         rate.record_allocation(request, alloc); dshot = diffuser.apply(alloc.f), the DShot error
+//                         diffusion of decision 0017 (mixer::DshotDiffuser): one write per rate execution, its carry
+//                         cleared by init only (a rate-loop fault does not clear it).
 // Through marv_sil_tick no rotor speed is staged: hal_rotor_speed() reports every motor invalid, every notch is
 // bypassed and the chain is its low-pass alone (the stage (c) T4 configuration, decision 0014).
 
@@ -50,13 +52,13 @@ struct Execution {
   rate::RateOutput<float> rate{};                  // the rate loop's output
   prim::Vec3<float> request{};                     // rate.torque + added: the torque request passed to the mixer
   mixer::Allocation<float> alloc{};                // allocate({thrust, request})
-  std::array<DshotValue, mixer::kMotors> dshot{};  // thrust_to_dshot(alloc.f)
+  std::array<DshotValue, mixer::kMotors> dshot{};  // diffuser.apply(alloc.f)
 };
 
 class RateGroupStep {
  public:
   // pre: rate::validate(rate_cfg), mixer::validate(mixer_cfg) and gyro_chain::validate(chain_cfg) are None. Clears the
-  // rate loop and the chain.
+  // rate loop, the chain and the diffuser's carry (DshotDiffuser::init on mixer_cfg).
   void init(const rate::RateConfig<float>& rate_cfg, const mixer::MixerConfig<float>& mixer_cfg,
             const gyro_chain::GyroChainConfig<float>& chain_cfg) noexcept;
 
@@ -80,6 +82,7 @@ class RateGroupStep {
   mixer::MixerConfig<float> mixer_{};
   gyro_chain::GyroChain<float> chain_;
   ImuSample filtered_{};
+  mixer::DshotDiffuser<float> diffuser_;
 };
 
 }  // namespace marv::rate_group

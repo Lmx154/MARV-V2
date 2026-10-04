@@ -40,19 +40,19 @@ Findings (`e_measured.txt`):
 
 1. **E does not close the gap. The stop condition is not met.** The predicate can hold at the proof's binding execution n*
    only if E(n*) ≥ X* − (F + Q).
-   - **w_y, the binding axis:** E(17) = 6.7043e-4 rad/s, against 0.25424 needed (1/379 of it).
-   - **w_x:** E(12) = 2.6798e-4 rad/s, against 0.18308 needed (1/683).
-   - **w_z:** E(22) = 2.0981e-5 rad/s, against 0.031588 needed (1/1506). w_z is forced at these gains (X* 0.039504 > F + Q
-     0.0079155).
+   - **w_y, the binding axis:** E(17) = 6.6185e-4 rad/s, against 0.26704 needed (1/403 of it).
+   - **w_x:** E(12) = 2.6608e-4 rad/s, against 0.20183 needed (1/759).
+   - **w_z:** E(22) = 2.0981e-5 rad/s, against 0.031637 needed (1/1508). w_z is forced at these gains (X* 0.039504 > F + Q
+     0.0078669).
 2. **Where the forced excess alone exceeds the tolerance.** X(n) − (F + Q) > E(n) at n = 1–32 on w_y (all 32 of the proof's
-   32 executions), at n = 1–23 on w_x (23) and at n = 3–32 on w_z (30). The test's own `evaluate` on the same runs first
+   32 executions), at n = 1–24 on w_x (24) and at n = 3–32 on w_z (30). The test's own `evaluate` on the same runs first
    fails at n = 1 (w_x), n = 1 (w_y) and n = 3 (w_z).
-3. **E over the whole predicate window** (n = 1 .. 20292). The largest E is 0.012977 (w_x, n 281), 0.0065413 (w_y, n 152)
-   and 0.0022211 (w_z, n 348). Each is below its axis's needed value: by 14.1 times (w_x), 38.9 times (w_y) and 14.2 times
-   (w_z). Over the proof's window (n = 1 .. 32) the largest E is 3.0518e-4 (w_x, n 19), 1.4935e-3 (w_y, n 32) and
-   3.4332e-5 (w_z, n 32).
-4. **Determinism.** Two host runs of the final-gain output, with decision 0016's plugin first-read fix, are byte-identical, sha256
-   `fd0c16f81180767d264b1b8896696357745b35efdf96cf51963f9d87291c6586`. The marv-ci-gz image was not re-run for this output.
+3. **E over the whole predicate window** (n = 1 .. 20292). The largest E is 0.013024 (w_x, n 290), 0.0068560 (w_y, n 159)
+   and 0.0023570 (w_z, n 350). Each is below its axis's needed value: by 15.5 times (w_x), 39.0 times (w_y) and 13.4 times
+   (w_z). Over the proof's window (n = 1 .. 32) the largest E is 2.9850e-4 (w_x, n 18), 1.5030e-3 (w_y, n 32) and
+   3.6240e-5 (w_z, n 32).
+4. **Determinism.** Two host runs of the output with the DShot diffuser live (decision 0017) are byte-identical, sha256
+   `9ff2bf14467f942826e2b731426d7004d7649d7fe59105f1d245c844d2a5e689`. The marv-ci-gz image was not re-run for this output.
    For the earlier output (other gains) two image runs were byte-identical to each other and to the host's.
 
 Not in the output: wall times, and the plugin binary's sha256. The script prints that sha256 on stderr only, because the

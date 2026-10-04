@@ -22,7 +22,8 @@ fixture reader, Setup, Axis, the quaternion helpers, grid_members, Envelope, Qua
   the nominal and the four corner members.
   Q (owner decision 19). The largest |quantised - unquantised| of a channel over time at the corners and over the 9 x 9
   grid (oracle q_script's rule): the torque request passes through the oracle's Quantiser (mixer allocation at the
-  scenario collective, thrust_to_dshot rounding, marv_plant's ESC map and rotor geometry), here for the full 3-vector.
+  scenario collective, the DShot diffuser of decision 0017 with every carry 0 at the run's start, marv_plant's ESC map
+  and rotor geometry), here for the full 3-vector.
 """
 
 import math
@@ -101,11 +102,13 @@ def oracle_qmul_f(a, b):
 
 
 class Quant3:
-    """The oracle Quantiser for a 3-vector torque request: the allocation and the DShot rounding of oracle.Quantiser, and
-    the plant's torque of all three axes (oracle Quantiser.torque projects one)."""
+    """The oracle Quantiser for a 3-vector torque request: the allocation and the DShot command of oracle.Quantiser (the
+    diffuser by default, its carries 0 at construction: one instance per run; `diffusion` False is thrust_to_dshot's
+    stateless rounding, the negative control), and the plant's torque of all three axes (oracle Quantiser.torque projects
+    one)."""
 
-    def __init__(self, q):
-        self.qz = oracle.Quantiser(q, 0)
+    def __init__(self, q, diffusion=True):
+        self.qz = oracle.Quantiser(q, 0, diffusion=diffusion)
         self.saturated = 0
 
     def __call__(self, u):

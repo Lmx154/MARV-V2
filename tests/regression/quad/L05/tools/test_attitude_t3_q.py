@@ -1,11 +1,12 @@
 """L5 T3 quantisation term Q of the T4 tolerance (owner decision 19): the oracle's quantiser and its negative controls.
 
 Q is the maximum over the time and the tau x J box of |quantised - unquantised| of the design-model trajectory, the quantiser
-being the firmware's allocation and thrust_to_dshot rounding followed by marv_plant's ESC map (attitude_t3_oracle.py,
+being the firmware's allocation and DShot diffuser (decision 0017) followed by marv_plant's ESC map (attitude_t3_oracle.py,
 Quantiser). Checked here, on a short segment (the rule is the same at any length):
   1. control: with the quantiser disabled (identity map) Q = 0 exactly, for a tilt script and both yaw scripts;
   2. the quantiser enabled gives Q > 0 and finite on every channel (the positive control of 1);
-  3. the quantiser's request dead bands and the hover DShot equal the values step_cause.py derived independently
+  3. the stateless quantiser's (thrust_to_dshot's rounding, the diffuser's negative control) request dead bands and the
+     hover DShot equal the values step_cause.py derived independently
      (tests/regression/quad/L05/results/step_cause/cause.txt: hover DShot 765.06 -> 765; dead bands 8.03e-4 roll, 6.02e-4 pitch N m);
   4. the committed attitude_t3_q.txt holds a finite positive q for every script and channel.
 """
@@ -81,8 +82,8 @@ def test_quantiser_reproduces_the_diagnosis_quantum(setup):
     assert facts["hover_dshot_rounded"] == 765
     assert abs(facts["hover_dshot_real"] - 765.06) < 5e-3
     assert facts["zero_request_torque"] == [0.0, 0.0, 0.0]
-    assert _dead_band(ORACLE.Quantiser(q, 0)) == pytest.approx(8.03e-4, rel=DEAD_BAND_REL_TOL)
-    assert _dead_band(ORACLE.Quantiser(q, 1)) == pytest.approx(6.02e-4, rel=DEAD_BAND_REL_TOL)
+    assert _dead_band(ORACLE.Quantiser(q, 0, diffusion=False)) == pytest.approx(8.03e-4, rel=DEAD_BAND_REL_TOL)
+    assert _dead_band(ORACLE.Quantiser(q, 1, diffusion=False)) == pytest.approx(6.02e-4, rel=DEAD_BAND_REL_TOL)
     # Control: the identity map has no dead band (a request of one ulp passes through).
     assert ORACLE.Quantiser(q, 0, identity=True)(1e-12) == 1e-12
 

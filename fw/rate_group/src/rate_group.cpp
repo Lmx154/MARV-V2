@@ -78,6 +78,7 @@ void RateGroupStep::init(const rate::RateConfig<float>& rate_cfg, const mixer::M
   rate_.init(rate_cfg, mixer_cfg);
   chain_.init(chain_cfg);
   filtered_ = ImuSample{};
+  diffuser_.init(mixer_cfg);
 }
 
 void RateGroupStep::filter(const ImuSample& s, bool rate_due) noexcept {
@@ -111,7 +112,7 @@ Execution RateGroupStep::finish(const rate::RateOutput<float>& out, const prim::
   e.request = out.torque + added;
   e.alloc = mixer::allocate(mixer_, mixer::Request<float>{thrust, e.request});
   rate_.record_allocation(e.request, e.alloc);
-  e.dshot = mixer::thrust_to_dshot(mixer_, e.alloc.f);
+  e.dshot = diffuser_.apply(e.alloc.f);
   return e;
 }
 

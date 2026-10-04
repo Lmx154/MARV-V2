@@ -34,15 +34,16 @@ Findings (`bound.txt`):
    - Pitch: at least 0.27245 rad/s.
    - Yaw: at least 0.020931 rad/s.
 3. **Against the predicate.** X* is the forced excess over the envelope.
-   - **w_y is the binding axis.** X* is 0.28537 rad/s at execution 17 (5.3125 ms), against F + Q = 0.031128 rad/s, a ratio of
-     9.17. F is 0.017472, of which the envelope's halving term is 0.015583; Q is 0.013656.
-   - w_x: 0.21596 against 0.032875 (6.57), at execution 12.
-   - w_z is forced too: 0.039504 against 0.0079155 (4.99), at execution 22.
-   - At execution 17 the predicate can hold only if the run's step-size term satisfies E ≥ 0.25424 rad/s (w_y). E is a
-     measurement of each gz run; `e_measured.md` measures it.
+   - **w_y is the binding axis.** X* is 0.28537 rad/s at execution 17 (5.3125 ms), against F + Q = 0.01833 rad/s, a ratio of
+     15.6. F is 0.017472, of which the envelope's halving term is 0.015583; Q is 0.00085806 (the T3 Q with the DShot diffuser
+     of decision 0017 in the loop).
+   - w_x: 0.21596 against 0.014127 (15.3), at execution 12.
+   - w_z is forced too: 0.039504 against 0.0078669 (5.02), at execution 22.
+   - At execution 17 the predicate can hold only if the run's step-size term satisfies E ≥ 0.26704 rad/s (w_y). E is a
+     measurement of each gz run; `e_measured.md` measures it, with the DShot diffuser live (decision 0017), against this bound's F + Q.
 4. **The figure in decision 0014.** The "tolerance of about 1.3e-3 rad/s" is R1's w_y F (`cause.txt:55`), which is the
-   T3 rate term alone. R2's own F + Q on w_y is 0.031128 rad/s. The architect's form g²τ/(2J·2τ_max) gives 0.1299 rad/s
-   (section 5), which is 4.17 times R2's tolerance. Its slew, 2τ_max/τ = 111.05 N m/s, does cover the largest reachable
+   T3 rate term alone. R2's own F + Q on w_y is 0.01833 rad/s. The architect's form g²τ/(2J·2τ_max) gives 0.1299 rad/s
+   (section 5), which is 7.09 times R2's tolerance. Its slew, 2τ_max/τ = 111.05 N m/s, does cover the largest reachable
    slew over the window (68.843 N m/s). This script's bound uses the reachable torque set itself instead of a slew bound.
 5. **Cross-check against `cause.txt`.** At executions 1 and 16, every observed departure and excess is at least the bound,
    after allowing half a printed unit. At execution 16 on w_y, the observed excess is 0.56552 against 0.28514.

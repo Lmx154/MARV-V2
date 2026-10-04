@@ -953,7 +953,7 @@ def float_input_term(s, margin):
 #                       sample; the rate law in bypass with its D low-pass at the stamp dt; recovery_model.law, the attitude
 #                       law on the full quaternion; the quaternion integrated per tick; no w x Jw), driven at A_env / 2^k, its
 #                       torque request through recovery_model.Quant3 (the firmware mixer's allocation at the scenario
-#                       collective, DShot rounding, marv_plant's ESC map and rotor geometry): kinematics and quantisation
+#                       collective, the DShot diffuser, marv_plant's ESC map and rotor geometry): kinematics and quantisation
 #                       together. PM_lin: the same loop with the axis's angle theta in place of the law (r = -C theta on the
 #                       axis, 0 on the others) and no quantiser, the linear design model. Its loop is linear, so its PM does
 #                       not depend on the amplitude and one run, at k = 1's amplitude, serves every k. The method of the
