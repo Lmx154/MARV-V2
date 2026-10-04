@@ -91,6 +91,12 @@ gz_determinism() {
   pytest_no_skips tests/regression/quad/L02/gz/test_determinism.py
 }
 
+# The plugin's sensor elements on the host-gz build (decision 0019, W1): the clock corner, the IMU model's seed
+# determinism and the planted refusals.
+gz_sensors() {
+  pytest_no_skips tests/regression/quad/L06/gz
+}
+
 gz_runner_tools() {
   pytest_no_skips tests/regression/quad/L02/tools
 }
@@ -136,6 +142,7 @@ group_l2() {
   step gz_build gz_build
   step gz_plugin_smoke gz_plugin_smoke
   step gz_first_read gz_first_read
+  step gz_sensors gz_sensors
   step gz_determinism gz_determinism
   step gz_runner_tools gz_runner_tools
   step gz_analytic gz_analytic

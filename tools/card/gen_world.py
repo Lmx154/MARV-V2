@@ -69,8 +69,28 @@ Card children come from gen_plant_config.plugin_element() unchanged; scenario ch
                                                           section B); the plugin refuses it without <gyro_source>truth
                                                           </gyro_source> (which this generator does not write) and with
                                                           a SIL library that has no marv_truth_state_set
+  gyro_source                   text "model"   sensors    OPTIONAL (decision 0019), present iff sensors.gyro == "model":
+                                                          the SIL gets the plant IMU model's bytes, gyro and accel
+  imu_model                     block          profile    present iff gyro_source model: gen_imu_config.py
+                                                          imu_model_element() over the card's sensor profile, at the
+                                                          turn-on bias corner sensors.bias_signs
+  rotor_speed_model             block          profile    OPTIONAL, present iff sensors.rotor: latency_ticks (the
+                                                          profile's latency_rate_periods x the register's
+                                                          rate_loop_divisor), exponent_bits, mantissa_bits, period_unit_s
+                                                          (the telemetry grid); the pole count is <pole_count>
+  clock_corner, odr_error       int, float     sensors,   OPTIONAL, present iff sensors.clock_corner is not None: c in
+                                               profile    {-1, 0, +1} and the profile's ODR error e; max_step_size is
+                                                          then fl(n_true / 1e9) with n_true = outward(m tick_ns / (1 + c e))
+                                                          ns, exact rationals (floor for c = +1, ceil for c = -1), the
+                                                          plugin's realised host step (realised_host_step_ns)
   log_path                      text           --log-path OPTIONAL, present iff given; where the plugin writes its
                                                           binary log; no log if absent. Never written into the log.
+
+  sensors (generate(..., sensors=SensorSet(...)), decision 0019): None writes none of the four sensor elements and leaves
+  every other byte of the world as without the argument. With it, the world differs from that default world only by the
+  inserted elements, and by max_step_size iff clock_corner is nonzero. The plugin refuses a clock corner without the
+  model gyro (outside its test-only allow) and a rotor-speed model without the model gyro; the generator refuses the
+  latter too.
 
   The initial position and attitude are the model <pose> (ENU / FLU, above); the plugin converts them back once.
   Motor numbers are logical, 1 to 4 (core section 3).
@@ -79,17 +99,21 @@ Card children come from gen_plant_config.plugin_element() unchanged; scenario ch
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import math
 import sys
 import xml.etree.ElementTree as ET
+from fractions import Fraction
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE.parents[0] / "sim"))
+import gen_imu_config as gic  # noqa: E402
 import gen_plant_config as gpc  # noqa: E402
 import gen_sdf  # noqa: E402
 import hover  # noqa: E402
+import lint  # noqa: E402
 import scenario as scn  # noqa: E402
 import schema  # noqa: E402
 
@@ -106,7 +130,85 @@ POSE_FORMAT = "quat_xyzw"
 DSHOT_PARAM = "ol_dshot_m{}"
 DSHOT_TYPE = "i32"
 ATTITUDE_SOURCE_TRUTH = "truth"
+GYRO_SOURCE_MODEL = "model"
+CLOCK_CORNERS = (-1, 0, 1)
+SCENARIO_REGISTER = Path("design") / "scenario_values.yaml"
+# Nanoseconds per microsecond and per second: SI prefixes nano = 10^-9, micro = 10^-6 (BIPM, SI Brochure 9th ed. (2019),
+# Table 7).
+NS_PER_US = 1000
+NS_PER_S = 10 ** 9
+# The rotor-speed entries of the sensor profile the plugin's <rotor_speed_model> takes, with the unit each must have.
+ROTOR_SPEED_ENTRIES = {"telemetry_exponent_bits": "1", "telemetry_mantissa_bits": "1", "telemetry_period_unit": "us",
+                       "latency_rate_periods": "1"}
 S = math.sqrt(0.5)
+
+
+@dataclasses.dataclass(frozen=True)
+class SensorSet:
+    """The sensor elements of a world (decision 0019; module docstring). gyro: "model" or None (no <gyro_source> is
+    written; the caller's own, if any, stands). rotor: write <rotor_speed_model> (needs the model gyro). bias_signs: the
+    turn-on bias corner, six integers in {-1, 0, +1}, gyro x y z then accel x y z (with the model gyro only). clock_corner:
+    None (no clock element) or -1, 0, +1."""
+    gyro: str | None = None
+    rotor: bool = False
+    bias_signs: tuple | None = None
+    clock_corner: int | None = None
+
+
+def check_sensors(sensors):
+    """The findings of a SensorSet, [] if it is valid."""
+    bad = []
+    if sensors.gyro not in (None, GYRO_SOURCE_MODEL):
+        bad.append(f"sensors.gyro must be None or {GYRO_SOURCE_MODEL!r}, not {sensors.gyro!r}")
+    if not isinstance(sensors.rotor, bool):
+        bad.append(f"sensors.rotor must be a bool, not {sensors.rotor!r}")
+    if sensors.rotor and sensors.gyro != GYRO_SOURCE_MODEL:
+        bad.append("sensors.rotor needs sensors.gyro == 'model'")
+    if (sensors.gyro == GYRO_SOURCE_MODEL) != (sensors.bias_signs is not None):
+        bad.append("sensors.bias_signs is given iff sensors.gyro == 'model'")
+    signs = sensors.bias_signs
+    if signs is not None and (len(signs) != gic.SIGN_COUNT or not all(
+            isinstance(v, int) and not isinstance(v, bool) and v in gic.BIAS_SIGNS for v in signs)):
+        bad.append(f"sensors.bias_signs must be {gic.SIGN_COUNT} integers in {list(gic.BIAS_SIGNS)}, not {signs!r}")
+    c = sensors.clock_corner
+    if c is not None and (isinstance(c, bool) or c not in CLOCK_CORNERS):
+        bad.append(f"sensors.clock_corner must be None or one of {list(CLOCK_CORNERS)}, not {c!r}")
+    return bad
+
+
+def realised_host_step_ns(doc, m, corner, odr_error):
+    """n_true = outward(m tick_ns / (1 + corner e)) ns in exact rationals, e the binary64 odr_error exactly: floor for
+    corner +1, ceil for corner -1, m tick_ns for corner 0. tick_ns = num_us 1000 / den must be an integer."""
+    vals = scn.values(doc)
+    tick_ns = Fraction(vals["tick_period_num_us"] * NS_PER_US, vals["tick_period_den"])
+    if tick_ns.denominator != 1:
+        raise gpc.GenError([f"the tick period {tick_ns} ns is not a whole number of nanoseconds"])
+    n = m * tick_ns.numerator
+    exact = n / (1 + corner * Fraction(odr_error))
+    return n if corner == 0 else (math.floor(exact) if corner > 0 else math.ceil(exact))
+
+
+def rotor_speed_values(profile, card_path, root):
+    """{latency_ticks, exponent_bits, mantissa_bits, period_unit_s} of <rotor_speed_model> from the card's sensor profile
+    and the scenario register's rate_loop_divisor. Raises gpc.GenError on a missing, UNKNOWN, mis-united or non-integer
+    entry."""
+    entries = profile["classes"]["rotor_speed"]["entries"]
+    raw, bad = {}, []
+    for name, unit in ROTOR_SPEED_ENTRIES.items():
+        e = entries.get(name)
+        v = e.get("value") if isinstance(e, dict) else None
+        if not isinstance(e, dict) or e.get("unit") != unit or isinstance(v, bool) or not isinstance(v, int) or v <= 0:
+            bad.append(f"{card_path}: profile rotor_speed.entries.{name}: must be a whole number > 0 in unit {unit!r} "
+                       f"(the plugin's <rotor_speed_model> needs it), got {e!r}")
+        raw[name] = v
+    reg = schema.load_yaml(Path(root) / SCENARIO_REGISTER).get("rate_loop_divisor", {})
+    div = reg.get("value") if isinstance(reg, dict) else None
+    if isinstance(div, bool) or not isinstance(div, int) or div <= 0:
+        bad.append(f"{SCENARIO_REGISTER}: rate_loop_divisor: must be a whole number > 0, got {div!r}")
+    if bad:
+        raise gpc.GenError(bad)
+    return {"latency_ticks": raw["latency_rate_periods"] * div, "exponent_bits": raw["telemetry_exponent_bits"],
+            "mantissa_bits": raw["telemetry_mantissa_bits"], "period_unit_s": raw["telemetry_period_unit"] * gic.MICRO}
 
 
 def ned_to_enu(v):
@@ -137,7 +239,8 @@ def _world_stem(vehicle, name, mode, m):
     return f"{vehicle}_{name}_{mode}_m{m}"
 
 
-def world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitude_source=False):
+def world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitude_source=False, sensors=None,
+                  sensor_values=None):
     vals = scn.values(doc)
     tick = scn.tick_period_s(doc)
     stem = _world_stem(card["vehicle"], name, mode, m)
@@ -148,7 +251,11 @@ def world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitud
         f"mode {mode}, m = {m}. SDFormat {SDF_VERSION}. Gravity is zero (core section 6). No ground plane: no L2 "
         "scenario needs contact. "))
     physics = ET.SubElement(world, "physics", {"name": PHYSICS_NAME, "type": PHYSICS_TYPE})
-    gpc.text_element(physics, "max_step_size", repr(float(m * tick)))
+    if sensors is not None and sensors.clock_corner is not None:
+        n_true = realised_host_step_ns(doc, m, sensors.clock_corner, sensor_values["imu"][0]["odr_error"])
+        gpc.text_element(physics, "max_step_size", repr(float(Fraction(n_true, NS_PER_S))))
+    else:
+        gpc.text_element(physics, "max_step_size", repr(float(m * tick)))
     gpc.text_element(physics, "real_time_factor", repr(RTF[mode]))
     gpc.text_element(world, "gravity", ZERO_GRAVITY)
     system = ET.SubElement(world, "plugin", {"filename": PHYSICS_SYSTEM_FILENAME, "name": PHYSICS_SYSTEM_NAME})
@@ -179,6 +286,20 @@ def world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitud
     if "rotor_speed_rad_s" in st:
         gpc.text_element(plugin, "initial_rotor_speed_rad_s", " ".join(repr(float(c)) for c in st["rotor_speed_rad_s"]),
                          "rad/s")
+    if sensors is not None:
+        si, meta = sensor_values["imu"]
+        if sensors.gyro == GYRO_SOURCE_MODEL:
+            gpc.text_element(plugin, "gyro_source", GYRO_SOURCE_MODEL)
+            plugin.append(gic.imu_model_element(si, meta, sensors.bias_signs))
+        if sensors.rotor:
+            rotor = ET.SubElement(plugin, "rotor_speed_model")
+            rv = sensor_values["rotor"]
+            for k in ("latency_ticks", "exponent_bits", "mantissa_bits"):
+                gpc.text_element(rotor, k, str(rv[k]))
+            gpc.text_element(rotor, "period_unit_s", repr(float(rv["period_unit_s"])))
+        if sensors.clock_corner is not None:
+            gpc.text_element(plugin, "clock_corner", str(sensors.clock_corner))
+            gpc.text_element(plugin, "odr_error", repr(float(si["odr_error"])))
     if attitude_source:
         gpc.text_element(plugin, "attitude_source", ATTITUDE_SOURCE_TRUTH)
     if log_path is not None:
@@ -187,10 +308,13 @@ def world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitud
 
 
 def generate(card_path, scenario_path, mode, m, hover_member=None, log_path=None, root=gpc.ROOT,
-             attitude_source=False):
-    """Return (file name, text). Raises gpc.GenError, scn.ScenarioError or hover.HoverError."""
+             attitude_source=False, sensors=None):
+    """Return (file name, text). Raises gpc.GenError, scn.ScenarioError or hover.HoverError. `sensors` is a SensorSet or
+    None (module docstring)."""
     if mode not in MODES:
         raise gpc.GenError([f"mode {mode!r} is not one of {MODES}"])
+    if sensors is not None and check_sensors(sensors):
+        raise gpc.GenError(check_sensors(sensors))
     card, profile = gpc.load_linted(card_path, root)
     if card["inertia_diag"]["value"] == schema.UNKNOWN:
         gpc.refuse(card_path, "inertia_diag", f"value is {schema.UNKNOWN}; the SDF needs it")
@@ -216,7 +340,14 @@ def generate(card_path, scenario_path, mode, m, hover_member=None, log_path=None
         d = d_lo if hover_member == "lo" else d_hi
         dshot = [d] * scn.MOTORS
         name = f"{name}_{hover_member}"
-    sdf = world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitude_source)
+    sensor_values = None
+    if sensors is not None:
+        try:
+            imu = gic.imu_config(Path(root) / lint.PROFILE_DIR / f"{card['sensor_profile']}.yaml")[0::2]
+        except gic.GenError as e:
+            raise gpc.GenError(e.lines) from e
+        sensor_values = {"imu": imu, "rotor": rotor_speed_values(profile, card_path, root) if sensors.rotor else None}
+    sdf = world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitude_source, sensors, sensor_values)
     text = '<?xml version="1.0"?>\n' + gpc.to_text(sdf)
     return f"{_world_stem(card['vehicle'], name, mode, m)}.sdf", text
 

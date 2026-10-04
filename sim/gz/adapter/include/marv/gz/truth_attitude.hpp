@@ -28,6 +28,11 @@ class TruthAttitude final : public marv::gz::CommandSource {
   // False if marv_truth_state_set was not OK (the inner source is then not called; truth_status() is the status) or if
   // the inner source failed (truth_status() is OK).
   bool dshot(std::uint64_t tick, marv::gz::Dshot& out) override;
+  // The same, forwarding the tick's IMU sample (and rotor-speed sample) to the inner source's form of that arity, so a
+  // wrapped source that takes the sensor samples gets them (decision 0019). The two-argument path above is unchanged.
+  bool dshot(std::uint64_t tick, const marv_imu_meas* imu, marv::gz::Dshot& out) override;
+  bool dshot(std::uint64_t tick, const marv_imu_meas* imu, const marv_rotor_speed_meas* rotor,
+             marv::gz::Dshot& out) override;
   std::int32_t truth_status() const { return status_; }  // marv_sil_status of the last marv_truth_state_set
   const marv_truth_state& state() const { return state_; }  // the state last passed (or, before a call, the next one)
 

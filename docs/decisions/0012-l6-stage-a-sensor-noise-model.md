@@ -406,6 +406,14 @@ manifest to claim each id. Nothing is removed.
   - The 60 s per-push rule is applied by measurement, not enforced by a test.
   - The Gazebo-side items below remain.
   - Gazebo plugin wiring of the IMU path and the clock corners is stage (e), along with owner question E.
+  - **Owner question E, answered (Luis, 2026-10-04; 0019 ruling 10): outward rounding of the Gazebo step.**
+    - "±65 ppm is a bound. Nearest rounding (±64.004) never reaches it. Outward (±70.4 at m = 1, ±67.2 at m = 2)
+      covers it, at negligible cost (≤ 0.16 mrad/s at 65 ppm)." E is measured at the nominal clock, which is exact at
+      both m.
+    - Realised, as built (0019, item 2; exact integer arithmetic):
+      - m = 1: host step 156261 / 156250 / 156239 ns at c = −1 / 0 / +1, so e = −70.395044 / 0 / +70.404957 ppm;
+      - m = 2: host step 312521 / 312500 / 312479 ns, so e = −67.195484 / 0 / +67.204516 ppm.
+    - At c = 0 the plant's tick is bitwise the nominal 625/4 µs.
   - The rigid body in `sim/l6_noise_run` restates the card's inertia as a labelled value, because the card header
     carries none.
 

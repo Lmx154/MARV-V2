@@ -33,4 +33,23 @@ bool TruthAttitude::dshot(std::uint64_t tick, marv::gz::Dshot& out) {
   return inner_.dshot(tick, out);
 }
 
+bool TruthAttitude::dshot(std::uint64_t tick, const marv_imu_meas* imu, marv::gz::Dshot& out) {
+  state_.tick = tick;
+  status_ = marv_truth_state_set(&state_);
+  if (status_ != MARV_SIL_OK) {
+    return false;
+  }
+  return inner_.dshot(tick, imu, out);
+}
+
+bool TruthAttitude::dshot(std::uint64_t tick, const marv_imu_meas* imu, const marv_rotor_speed_meas* rotor,
+                          marv::gz::Dshot& out) {
+  state_.tick = tick;
+  status_ = marv_truth_state_set(&state_);
+  if (status_ != MARV_SIL_OK) {
+    return false;
+  }
+  return inner_.dshot(tick, imu, rotor, out);
+}
+
 }  // namespace marv::truth

@@ -96,6 +96,51 @@ Frozen files changed by item 1:
 - `tests/regression/quad/L06/results/r2_ff_diagnosis/README.md`: the regenerate section says what is pinned and why.
 No data file, `SHA256SUMS` or summary changes.
 
+**2. W1, commit C1: the Gazebo plugin's IMU-model, rotor-speed and clock wiring** (F4 of the (e) round; the design memo
+of 2026-10-04 with the lead's decisions on its questions).
+- **Interface.** All new SDF elements are optional. With none of them present the plugin takes exactly today's code
+  path.
+  - `<gyro_source>model` feeds the SIL the plant IMU model's bytes (decision 0012), in place of the truth gyro.
+  - `<imu_model>` carries the profile's figures as exact reprs, written by `gen_imu_config.imu_model_element` from
+    `imu_config()`:
+    - latency, noise density, bias instability, LSB and full scale for gyro and accel;
+    - the six turn-on signs in {−1, 0, +1}, with the plugin computing bias = sign × bound;
+    - the profile SHA-256 (format-checked only: the plugin holds no reference hash).
+  - `<rotor_speed_model>`: latency 2 ticks (1 rate period); a 3-bit exponent / 9-bit mantissa grid with 1 µs period
+    unit.
+  - `<clock_corner>` (−1/0/+1) with `<odr_error>` 6.5e-05. `gen_world` writes the outward-rounded integer-ns host step;
+    the plugin re-derives it in exact integer arithmetic and refuses any other step.
+- **Data path.**
+  - The IMU sample is the plant's own IMU model on the held body, with latency 1 and noise index = tick.
+  - The rotor sample is the plant's speed, put on the grid and delayed 2 ticks. `marv_sil_tick_with_rotor_speed` stages
+    it as `hal_rotor_speed()`, so the notches track.
+  - The clock error enters only the plant's clock, through a new `AdapterConfig::t_tick_true_s` (0 keeps today's
+    computation). `fw/` never sees e.
+  - `TruthAttitude` gains the 3- and 4-argument forwarding overrides.
+- **Logging.**
+  - Record type 6, SENSORS (242 bytes): written once, first after the header.
+  - Record type 7, ROTOR (the tick plus 20 bytes): after TICK and any TRUTH.
+  - Both appear only when a new element is present. The header stays version 1, and truth stays in the harness-only
+    STEP and TRUTH records (G3).
+- **Lead decisions** (the memo's questions):
+  - the sensor numbers live in the world (the card pattern);
+  - the realised tick at a corner is the new adapter field;
+  - the bias state is not logged (the replay rebuilds it);
+  - vibration is off: its amplitude is UNKNOWN, a known gap;
+  - a clock corner with the truth gyro is allowed only behind the test-only env var
+    `MARV_GZ_TEST_CLOCK_CORNER_ANY_GYRO`. It is used by the L2 T1 clock test, and a per-push scan proves it appears
+    nowhere else.
+- **Tests**, each with negative controls:
+  - (a), per push in core (`L06/tools/test_world_sensors.py`): every L2 world × m × 7 sensor sets differs from the
+    default only by the inserted elements (plus `max_step_size` iff c ≠ 0). The emitted values round-trip bitwise.
+  - (a), one-time: the sha256 of every gz-suite log is identical before and after (L02 32/32, L04 33/33, L05 47/47).
+    The control: a model run and a c = +1 run differ.
+  - (c) `L06/gz/test_sensor_seed.py`: seed determinism.
+  - (d) `L06/gz/test_sensor_clock.py`: the exact clock at m ∈ {1, 2} × c ∈ {−1, 0, +1}.
+  - (f) `L06/gz/test_sensor_refusals.py`: 13 planted malformed worlds refused.
+  - They run in the gz-l2 job (`ci/run_ci_gz.sh`, step `gz_sensors`).
+- No `fw/` change and no frozen file changed. The realised clock values are recorded in 0012's question E entry.
+
 ## Evidence
 
 Each item's checks are listed with it as it lands.

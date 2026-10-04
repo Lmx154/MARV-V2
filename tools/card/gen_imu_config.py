@@ -37,6 +37,12 @@ profile's note on accel_noise_density states the keying, INFERRED from that note
 range is accel_fsr's value (the profile assumes +-32 g); it must equal one of ACCEL_RANGES_G exactly, else the generator
 refuses. There is no nearest-range rule.
 
+World element (decision 0019): imu_model_element(si, meta, signs) is the <imu_model> child of the lockstep plugin element
+(tools/card/gen_world.py writes it) over the same SI values: latency_samples; <gyro> and <accel> each with noise_density,
+bias_instability, lsb, full_scale and turn_on_bias_bound; turn_on_bias_signs (six integers in {-1, 0, +1}, gyro x y z
+then accel x y z; the plugin puts s_i * bound in the axes, imu_corner_config's rule); profile_sha256. Floating values are
+Python repr (the shortest decimal that reads back as the identical binary64; SDFormat cannot parse hex floats).
+
 K and sigma_d are not emitted; the report applies the plant's own rules (sim/plant/src/imu_model.hpp):
   tau* = (N / B)^2,  K = (sqrt(6) / 2) B^2 / N,  sigma_d = N sqrt(f_s / 2),  f_s = 1e6 * tick_period_den /
   tick_period_num_us (design/scenario_values.yaml).
@@ -49,6 +55,7 @@ import hashlib
 import math
 import re
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import lint
@@ -305,6 +312,35 @@ def render_header(si, prov, meta, profile_name):
         "",
     ]
     return "\n".join(lines)
+
+
+BIAS_SIGNS = (-1, 0, 1)
+SIGN_COUNT = 6  # gyro x y z, then accel x y z (imu_corner_config's order)
+
+
+def imu_model_element(si, meta, signs):
+    """The <imu_model> element (module docstring) of the SI values `si` and `meta` of imu_config(), at the turn-on bias
+    corner `signs`. Raises GenError if `signs` is not six values in {-1, 0, +1}."""
+    signs = tuple(signs)
+    if len(signs) != SIGN_COUNT or not all(isinstance(s, int) and not isinstance(s, bool) and s in BIAS_SIGNS
+                                           for s in signs):
+        raise GenError([f"turn_on_bias_signs must be {SIGN_COUNT} integers in {list(BIAS_SIGNS)}, got {list(signs)!r}"])
+
+    def sub(parent, tag, text):
+        e = ET.SubElement(parent, tag)
+        e.text = text
+        return e
+
+    imu = ET.Element("imu_model")
+    sub(imu, "latency_samples", str(si["latency_samples"]))
+    for s in ("gyro", "accel"):
+        axis = ET.SubElement(imu, s)
+        for field in ("noise_density", "bias_instability", "lsb", "full_scale"):
+            sub(axis, field, repr(float(si[f"{s}_{field}"])))
+        sub(axis, "turn_on_bias_bound", repr(float(si[f"{s}_turn_on_bias_bound"])))
+    sub(imu, "turn_on_bias_signs", " ".join(str(v) for v in signs))
+    sub(imu, "profile_sha256", meta["sha256"])
+    return imu
 
 
 def render_report(si, meta, tick):

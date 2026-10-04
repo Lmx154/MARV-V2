@@ -86,12 +86,14 @@ bool ImuSilCommandSource::dshot(std::uint64_t tick, const marv_imu_meas* imu, Ds
 }
 
 Adapter::Adapter(marv_plant* plant, CommandSource& source, double t_tick_s)
-    : Adapter(plant, source, AdapterConfig{t_tick_s, 0, 0.0, nullptr, nullptr}) {}
+    : Adapter(plant, source, AdapterConfig{t_tick_s, 0, 0.0, nullptr, nullptr, 0.0}) {}
 
 Adapter::Adapter(marv_plant* plant, CommandSource& source, const AdapterConfig& cfg)
     : plant_(plant),
       source_(source),
-      t_tick_s_(true_tick_period_s(cfg.t_tick_nominal_s, clock_error(cfg.clock_corner, cfg.odr_error))) {
+      t_tick_s_(cfg.t_tick_true_s != 0.0
+                    ? cfg.t_tick_true_s
+                    : true_tick_period_s(cfg.t_tick_nominal_s, clock_error(cfg.clock_corner, cfg.odr_error))) {
   if (cfg.imu != nullptr) {
     imu_enabled_ = true;
     imu_attach_status_ = marv_plant_imu_attach(plant_, cfg.imu);

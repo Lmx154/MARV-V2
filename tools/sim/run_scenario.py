@@ -18,6 +18,9 @@ returned in RunResult.warnings, is reported in the run report and raises a Runti
 
 Seed. `--seed S` goes to gz and, when S differs from the scenario's seed, into the world's plugin <seed> element (the log
 header carries it). marv_plant v0 and the composition draw no random numbers, so the seed is RESERVED at v0 (no effect).
+With sensors (a gen_world.SensorSet, decision 0019; run(), run_sequence()) the world carries the plugin's sensor elements:
+with the model gyro the plant's IMU draws from the seed's noise stream 0, and the report says so; None is the world and
+the report as without the argument.
 
 Stale steps (0003 item 11). Step i is stale when its raw gz read (position, attitude, linear and angular velocity: 13
 doubles) is bitwise equal to step i-1's while the wrench applied between the two reads (APPLIED record i-1) was nonzero.
@@ -128,6 +131,7 @@ class RunResult:
     tick_period_s: Fraction
     stale: dict
     stderr_tail: str
+    sensors: object = None
 
     @property
     def rtf(self):
@@ -409,7 +413,8 @@ def _with_seed(text, seed, scenario_seed):
     return out
 
 
-def _run(card, scenario, seed, m, mode, hover, out_dir, plugin_dir, sdf_edit, iterations, root, budget, timeout_s):
+def _run(card, scenario, seed, m, mode, hover, out_dir, plugin_dir, sdf_edit, iterations, root, budget, timeout_s,
+         sensors=None):
     card, scenario, out_dir = Path(card), Path(scenario), Path(out_dir)
     doc = scn.load(scenario, card)
     vals = scn.values(doc)
@@ -420,7 +425,7 @@ def _run(card, scenario, seed, m, mode, hover, out_dir, plugin_dir, sdf_edit, it
     base = f"{Path(name).stem}_seed{seed}"
     out_dir.mkdir(parents=True, exist_ok=True)
     log_path, world_path = out_dir / f"{base}.bin", out_dir / f"{base}.sdf"
-    _, generated = gen_world.generate(card, scenario, mode, m, hover, _resolve(log_path), root)
+    _, generated = gen_world.generate(card, scenario, mode, m, hover, _resolve(log_path), root, sensors=sensors)
     text = _with_seed(generated, seed, vals["seed"])
     if sdf_edit is not None:
         text = sdf_edit(text)
@@ -441,33 +446,34 @@ def _run(card, scenario, seed, m, mode, hover, out_dir, plugin_dir, sdf_edit, it
         log_path=str(log_path), report_path=None, returncode=proc.returncode, warnings=warns, log=log,
         log_sha256=sha256_file(log_path), world_sha256=sha256_text(text), sdf_edited=text != generated,
         scenario_sha256=sha256_file(scenario), wall_s=proc.wall_s, cpu_s=proc.cpu_s, sim_s=float(n * m * tick),
-        tick_period_s=tick, stale=stale_report(log), stderr_tail=stderr_tail(proc.stderr))
+        tick_period_s=tick, stale=stale_report(log), stderr_tail=stderr_tail(proc.stderr), sensors=sensors)
 
 
 def run(card, scenario, seed, m, mode="test", hover=None, out_dir=None, plugin_dir=DEFAULT_PLUGIN_DIR, sdf_edit=None,
-        *, iterations=None, halving=None, root=ROOT, budget=None, timeout_s=TIMEOUT_S):
+        *, iterations=None, halving=None, root=ROOT, budget=None, timeout_s=TIMEOUT_S, sensors=None):
     """Generate the world, run one gz process, check it, parse the log; write the run report beside the log. `seed` None
     means the scenario's seed. `sdf_edit` is a callable on the SDF text (after the seed edit, before the world is written).
     `iterations` overrides the scenario's duration (measure_rtf uses it; the log's trailer is then checked against it).
-    `halving` is the T4 rule's output, a dict printed in the report's halving section."""
+    `halving` is the T4 rule's output, a dict printed in the report's halving section. `sensors` is a gen_world.SensorSet
+    or None (module docstring)."""
     if out_dir is None:
         raise ValueError("run() needs an out_dir")
     r = _run(card, scenario, seed, m, mode, hover, out_dir, plugin_dir, sdf_edit, iterations, root,
-             budget or Path(root) / "design" / "budget.yaml", timeout_s)
+             budget or Path(root) / "design" / "budget.yaml", timeout_s, sensors)
     r.report_path = str(Path(r.log_path).with_suffix(".report.txt"))
     write_report([r], halving, r.report_path)
     return r
 
 
 def run_sequence(card, scenario, seed, mode="test", hover=None, out_dir=None, plugin_dir=DEFAULT_PLUGIN_DIR,
-                 sdf_edit=None, *, halving=None, root=ROOT, budget=None, timeout_s=TIMEOUT_S):
+                 sdf_edit=None, *, halving=None, root=ROOT, budget=None, timeout_s=TIMEOUT_S, sensors=None):
     """run() for every m of the scenario's m_sequence, one gz process (one SIL) per m; one sequence report."""
     if out_dir is None:
         raise ValueError("run_sequence() needs an out_dir")
     doc = scn.load(scenario, card)
     budget = budget or Path(root) / "design" / "budget.yaml"
-    runs = [_run(card, scenario, seed, m, mode, hover, out_dir, plugin_dir, sdf_edit, None, root, budget, timeout_s)
-            for m in scn.values(doc)["m_sequence"]]
+    runs = [_run(card, scenario, seed, m, mode, hover, out_dir, plugin_dir, sdf_edit, None, root, budget, timeout_s,
+                 sensors) for m in scn.values(doc)["m_sequence"]]
     first = runs[0]
     stem = re.sub(r"_m\d+$", "", Path(first.world_path).stem)
     path = str(Path(out_dir) / f"{stem}_sequence.report.txt")
@@ -512,12 +518,25 @@ def _run_block(r, ver):
     last = st["last_fresh_index"]
     stale_time = (f"{st['last_fresh_time_ns']} ns = {repr(st['last_fresh_time_ns'] / 1e9)} s"
                   if last is not None else "none")
+    sensors = r.sensors
+    model = sensors is not None and sensors.gyro == gen_world.GYRO_SOURCE_MODEL
+    seed_line = (f"  seed: {r.seed} (the plant IMU model draws from its noise stream 0, decision 0019); log header seed "
+                 f"{h['seed']}" if model else
+                 f"  seed: {r.seed} (RESERVED at v0: marv_plant v0 and the composition draw no random numbers); log header "
+                 f"seed {h['seed']}")
+    sensor_lines = [] if sensors is None else [
+        f"  sensors (decision 0019): gyro {sensors.gyro or 'not set by the sensors'}"
+        + (f", turn-on bias signs {list(sensors.bias_signs)}" if model else "")
+        + f", rotor speed {'on' if sensors.rotor else 'off'}, clock corner "
+        + ("none" if sensors.clock_corner is None else f"{sensors.clock_corner:+d}")
+        + (f"; record 6: host step {r.log['sensors']['host_step_ns']} ns, plant tick {r.log['sensors']['tick_s']!r} s"
+           if r.log.get("sensors") else "")]
     lines = [
         f"run: m = {r.m}" + (f", hover {r.hover}" if r.hover else "") + f", mode {r.mode}",
         f"  world: {r.world_path}",
         f"  world sha256: {r.world_sha256}" + ("  (sdf_edit changed the generated world)" if r.sdf_edited else ""),
-        f"  seed: {r.seed} (RESERVED at v0: marv_plant v0 and the composition draw no random numbers); log header seed "
-        f"{h['seed']}",
+        seed_line,
+        *sensor_lines,
         f"  m (ticks per host step): {r.m}",
         f"  tick period: {h['tick_period_num_us']}/{h['tick_period_den']} us = {_tick_text(r.tick_period_s)}",
         f"  host step H = m * tick = {_tick_text(r.tick_period_s * r.m)}",

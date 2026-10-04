@@ -158,7 +158,13 @@ the W4 diagnosis scripts to be committed with 0016).
        94 mrad/s.
      Luis's three questions on the study (the collective, candidate (i), committing the witness) are pending; they come
      back with the R2 package.
-   - **Master, in order:** the `r2_ff_diagnosis` regenerate pin (0019, item 1); then the (e) infrastructure in its own
+   - **Landed on master:** `dd003e4` (0019 opens; the regenerate pin, pushed). W1 C1, the plugin's IMU, rotor and clock
+     wiring (0019 item 2), is in the next commit; its realised clock values are in 0012's question E entry.
+   - **Next:** W1 C2 (the sensor replay tool, test b) and C3 (the L4/L5 driver passthrough, the accel tie test, and the
+     gz times re-measured). Pending Luis: the five R2 questions (anti-windup: freeze recommended; the collective; (i) as
+     the study's base; commit the witness; keep the branch).
+   - **Master, in order (original plan):** the `r2_ff_diagnosis` regenerate pin (0019, item 1); then the (e)
+     infrastructure in its own
      commits:
      - the plugin's IMU, rotor and clock wiring;
      - the noise suite;

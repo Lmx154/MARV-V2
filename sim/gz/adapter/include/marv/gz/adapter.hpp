@@ -153,6 +153,10 @@ struct AdapterConfig {
   const marv_plant_imu_config* imu = nullptr;   // non-null enables the IMU path (read during construction only)
   const marv_plant_rotor_speed_config* rotor_speed = nullptr;  // non-null enables the rotor-speed path (read during
                                                                // construction only)
+  // 0 (the default): t_true = t_nom / (1 + e) as above. Nonzero: t_true itself, as the caller realised it (decision
+  // 0019: the lockstep plugin's host step n_true ns divided by m * 1e9, rounded once); clock_corner and odr_error are
+  // then not used. The plant's clock only: the SIL's period and stamps stay nominal.
+  double t_tick_true_s = 0.0;
 };
 
 class Adapter {

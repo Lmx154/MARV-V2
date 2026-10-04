@@ -35,12 +35,17 @@
 #include <bit>
 #include <charconv>
 #include <chrono>
+#include <climits>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -101,6 +106,19 @@ struct Override {
   std::int32_t i32 = 0;
 };
 
+constexpr std::size_t kAxes = std::extent_v<decltype(marv_plant_imu_axis_config::turn_on_bias)>;
+constexpr std::size_t kBiasSigns = 2 * kAxes;  // gyro x y z, then accel x y z
+
+// <imu_model> (decision 0019): the plant IMU configuration of the world, turn_on_bias = sign * bound per axis (the rule of
+// imu_corner_config, tools/card/gen_imu_config.py), and what record 6 logs besides.
+struct ImuModel {
+  marv_plant_imu_config cfg{};
+  double gyro_bound = 0.0;
+  double accel_bound = 0.0;
+  std::array<std::int8_t, kBiasSigns> signs{};
+  std::array<std::uint8_t, kSha256DigestBytes> profile_sha256{};
+};
+
 struct Parsed {
   marv_plant_config plant{};
   std::uint32_t m = 0;
@@ -113,6 +131,11 @@ struct Parsed {
   std::optional<std::string> log_path;
   bool truth_gyro = false;
   bool truth_attitude = false;
+  bool model_gyro = false;
+  std::optional<ImuModel> imu_model;
+  std::optional<marv_plant_rotor_speed_config> rotor_speed;
+  std::optional<std::int32_t> clock_corner;
+  std::optional<double> odr_error;
 };
 
 std::string text_of(const sdf::ElementPtr& e) { return e->Get<std::string>(); }
@@ -166,6 +189,116 @@ std::array<double, N> vector_of(const sdf::ElementPtr& e) {
 }
 
 Vec3 vec3_of(const sdf::ElementPtr& e) { return vector_of<3>(e); }
+
+// The children of a sensor block (decision 0019): each of `names` exactly once, in any order, and nothing else.
+std::vector<sdf::ElementPtr> children_of(const sdf::ElementPtr& block, const std::vector<std::string>& names) {
+  std::vector<sdf::ElementPtr> out(names.size());
+  for (sdf::ElementPtr c = block->GetFirstElement(); c; c = c->GetNextElement("")) {
+    std::size_t i = 0;
+    while (i < names.size() && names[i] != c->GetName()) {
+      ++i;
+    }
+    if (i == names.size()) {
+      refuse("unknown element <" + c->GetName() + "> in <" + block->GetName() + ">");
+    }
+    if (out[i]) {
+      refuse("<" + block->GetName() + "> element <" + c->GetName() + "> appears twice");
+    }
+    out[i] = c;
+  }
+  for (std::size_t i = 0; i < names.size(); ++i) {
+    if (!out[i]) {
+      refuse("<" + block->GetName() + "> lacks <" + names[i] + ">");
+    }
+  }
+  return out;
+}
+
+// <gyro> or <accel> of <imu_model>: the axis configuration without its turn-on bias; returns the turn-on bias bound.
+double imu_axis_of(const sdf::ElementPtr& e, marv_plant_imu_axis_config& a) {
+  const std::vector<sdf::ElementPtr> c =
+      children_of(e, {"noise_density", "bias_instability", "lsb", "full_scale", "turn_on_bias_bound"});
+  a.noise_density = number_of(c[0]);
+  a.bias_instability = number_of(c[1]);
+  a.lsb = number_of(c[2]);
+  a.full_scale = number_of(c[3]);
+  return number_of(c[4]);
+}
+
+std::array<std::int8_t, kBiasSigns> signs_of(const sdf::ElementPtr& e) {
+  std::array<std::int8_t, kBiasSigns> s{};
+  const std::string t = trim(text_of(e));
+  std::size_t pos = 0;
+  for (std::size_t i = 0; i < s.size(); ++i) {
+    pos = t.find_first_not_of(" \t\r\n", pos);
+    std::int32_t v = 0;
+    const auto r = pos == std::string::npos ? std::from_chars_result{nullptr, std::errc::invalid_argument}
+                                            : std::from_chars(t.data() + pos, t.data() + t.size(), v);
+    if (r.ec != std::errc{}) {
+      refuse("<turn_on_bias_signs> is not " + std::to_string(s.size()) + " integers: '" + t + "'");
+    }
+    if (v < -1 || v > 1) {
+      refuse("<turn_on_bias_signs> component " + std::to_string(i) + " is " + std::to_string(v) + ", not -1, 0 or +1");
+    }
+    s[i] = static_cast<std::int8_t>(v);
+    pos = static_cast<std::size_t>(r.ptr - t.data());
+  }
+  if (t.find_first_not_of(" \t\r\n", pos) != std::string::npos) {
+    refuse("<turn_on_bias_signs> has more than " + std::to_string(s.size()) + " components: '" + t + "'");
+  }
+  return s;
+}
+
+std::array<std::uint8_t, kSha256DigestBytes> sha256_of(const sdf::ElementPtr& e) {
+  constexpr std::string_view kHex = "0123456789abcdef";
+  std::array<std::uint8_t, kSha256DigestBytes> d{};
+  const std::string t = trim(text_of(e));
+  const auto bad = [&] {
+    refuse("<profile_sha256> is not " + std::to_string(2 * d.size()) + " lowercase hexadecimal digits: '" + t + "'");
+  };
+  if (t.size() != 2 * d.size()) {
+    bad();
+  }
+  for (std::size_t i = 0; i < d.size(); ++i) {
+    const std::size_t hi = kHex.find(t[2 * i]);
+    const std::size_t lo = kHex.find(t[2 * i + 1]);
+    if (hi == std::string_view::npos || lo == std::string_view::npos) {
+      bad();
+    }
+    d[i] = static_cast<std::uint8_t>(hi * kHex.size() + lo);
+  }
+  return d;
+}
+
+ImuModel imu_model_of(const sdf::ElementPtr& e) {
+  const std::vector<sdf::ElementPtr> c =
+      children_of(e, {"latency_samples", "gyro", "accel", "turn_on_bias_signs", "profile_sha256"});
+  ImuModel m;
+  m.cfg.struct_size = sizeof(m.cfg);
+  m.cfg.latency_samples = integer_of<std::uint32_t>(c[0]);
+  m.gyro_bound = imu_axis_of(c[1], m.cfg.gyro);
+  m.accel_bound = imu_axis_of(c[2], m.cfg.accel);
+  m.signs = signs_of(c[3]);
+  m.profile_sha256 = sha256_of(c[4]);
+  for (std::size_t i = 0; i < kAxes; ++i) {
+    m.cfg.gyro.turn_on_bias[i] = static_cast<double>(m.signs[i]) * m.gyro_bound;
+    m.cfg.accel.turn_on_bias[i] = static_cast<double>(m.signs[kAxes + i]) * m.accel_bound;
+  }
+  return m;
+}
+
+// <rotor_speed_model>; pole_count is the plugin's <pole_count>, filled in by the caller.
+marv_plant_rotor_speed_config rotor_speed_model_of(const sdf::ElementPtr& e) {
+  const std::vector<sdf::ElementPtr> c =
+      children_of(e, {"latency_ticks", "exponent_bits", "mantissa_bits", "period_unit_s"});
+  marv_plant_rotor_speed_config r{};
+  r.struct_size = sizeof(r);
+  r.latency_ticks = integer_of<std::uint32_t>(c[0]);
+  r.exponent_bits = integer_of<std::uint32_t>(c[1]);
+  r.mantissa_bits = integer_of<std::uint32_t>(c[2]);
+  r.period_unit_s = number_of(c[3]);
+  return r;
+}
 
 Parsed parse_plugin(const sdf::ElementPtr& root) {
   Parsed p;
@@ -290,10 +423,26 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
       }
     } else if (name == "gyro_source") {
       once(name);
-      if (trim(text_of(e)) != "truth") {
-        refuse("<gyro_source> is '" + trim(text_of(e)) + "', not 'truth'");
+      const std::string source = trim(text_of(e));
+      if (source == "truth") {
+        p.truth_gyro = true;
+      } else if (source == "model") {
+        p.model_gyro = true;
+      } else {
+        refuse("<gyro_source> is '" + source + "', not 'truth' or 'model'");
       }
-      p.truth_gyro = true;
+    } else if (name == "imu_model") {
+      once(name);
+      p.imu_model = imu_model_of(e);
+    } else if (name == "rotor_speed_model") {
+      once(name);
+      p.rotor_speed = rotor_speed_model_of(e);
+    } else if (name == "clock_corner") {
+      once(name);
+      p.clock_corner = integer_of<std::int32_t>(e);
+    } else if (name == "odr_error") {
+      once(name);
+      p.odr_error = number_of(e);
     } else if (name == "attitude_source") {
       once(name);
       if (trim(text_of(e)) != "truth") {
@@ -334,10 +483,54 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
   return p;
 }
 
+// The realised host step of a clock corner (decision 0019, ruling 10): n_true = outward(n / (1 + c e)) ns, exactly. The
+// binary64 e is M 2^-K (M odd), so n / (1 + c e) = n 2^K / (2^K + c M), evaluated in unsigned 128-bit integers; outward is
+// floor for c = +1 (the fast clock's shorter step), ceil for c = -1, and n itself for c = 0 or e = 0. e is finite, in
+// [0, 1), and c in {-1, 0, +1} (checked by the caller); an e whose 2^K does not fit the exact arithmetic is refused.
+std::uint64_t realised_host_step_ns(std::uint64_t n, std::int32_t corner, double e) {
+  if (corner == 0) {
+    return n;
+  }
+  __extension__ using Wide = unsigned __int128;
+  constexpr int kWideBits = static_cast<int>(sizeof(Wide) * CHAR_BIT);
+  constexpr int kDigits = std::numeric_limits<double>::digits;
+  int exponent = 0;
+  const double fraction = std::frexp(e, &exponent);
+  auto mantissa = static_cast<std::uint64_t>(std::ldexp(fraction, kDigits));
+  int k = kDigits - exponent;
+  if (mantissa == 0) {
+    return n;
+  }
+  while ((mantissa & 1U) == 0 && k > 0) {
+    mantissa >>= 1U;
+    --k;
+  }
+  if (k < 1 || static_cast<int>(std::bit_width(n)) + k >= kWideBits) {
+    refuse("<odr_error> is not M 2^-K with n 2^K inside the exact 128-bit arithmetic of the realised host step");
+  }
+  const Wide scaled = static_cast<Wide>(n) << static_cast<unsigned>(k);
+  const Wide unit = static_cast<Wide>(1) << static_cast<unsigned>(k);
+  Wide q = 0;
+  if (corner > 0) {
+    q = scaled / (unit + mantissa);
+  } else {
+    const Wide den = unit - mantissa;
+    q = (scaled + den - 1) / den;
+  }
+  if (q > std::numeric_limits<std::uint64_t>::max()) {
+    refuse("the realised host step does not fit in 64 bits of nanoseconds");
+  }
+  return static_cast<std::uint64_t>(q);
+}
+
 // A command source that keeps the SIL's stamp and the IMU sample of every tick of the current host step. The sample is
 // the one passed to the SIL: SilCommandSource passes a zeroed one; the truth-gyro source (optional <gyro_source>) its own.
 // With the optional <attitude_source> (which needs the truth gyro and a SIL library built with TRUTH_STATE) the truth-
 // attitude source wraps the truth-gyro one, and the marv_truth_state passed for every tick is kept as well.
+// With <gyro_source>model</gyro_source> (decision 0019) the adapter hands each tick the plant's IMU sample (and, with
+// <rotor_speed_model>, its rotor-speed sample): the three- and four-argument forms below pass them to the SIL through
+// RotorSilCommandSource (marv_sil_tick, or marv_sil_tick_with_rotor_speed with a rotor sample), wrapped by the truth-
+// attitude source with <attitude_source>, and keep both samples. Without that element only the two-argument form runs.
 class RecordingSource final : public CommandSource {
  public:
   bool dshot(std::uint64_t tick, Dshot& out) override {
@@ -359,18 +552,51 @@ class RecordingSource final : public CommandSource {
     }
     return ok;
   }
+  bool dshot(std::uint64_t tick, const marv_imu_meas* imu, Dshot& out) override { return dshot(tick, imu, nullptr, out); }
+  bool dshot(std::uint64_t tick, const marv_imu_meas* imu, const marv_rotor_speed_meas* rotor, Dshot& out) override {
+    if (!use_model_) {
+      return CommandSource::dshot(tick, imu, rotor, out);
+    }
+    bool ok = false;
+#ifdef MARV_GZ_TRUTH_STATE
+    if (use_attitude_) {
+      ok = attitude_model_.dshot(tick, imu, rotor, out);
+      if (ok) {
+        truths_.push_back(attitude_model_.state());
+      }
+    } else
+#endif
+    {
+      ok = model_.dshot(tick, imu, rotor, out);
+    }
+    if (ok) {
+      stamps_.push_back(model_.last_stamp_us());
+      imus_.push_back(imu != nullptr ? *imu : marv_imu_meas{});
+      rotors_.push_back(rotor != nullptr ? *rotor : marv_rotor_speed_meas{});
+    }
+    return ok;
+  }
   // The failed call of the last dshot(), as a message.
   std::string failure() const {
 #ifdef MARV_GZ_TRUTH_STATE
-    if (use_attitude_ && attitude_.truth_status() != MARV_SIL_OK) {
+    if (use_attitude_ && use_model_ && attitude_model_.truth_status() != MARV_SIL_OK) {
+      return std::string("marv_truth_state_set: ") +
+             marv_sil_status_str(static_cast<marv_sil_status>(attitude_model_.truth_status()));
+    }
+    if (use_attitude_ && !use_model_ && attitude_.truth_status() != MARV_SIL_OK) {
       return std::string("marv_truth_state_set: ") +
              marv_sil_status_str(static_cast<marv_sil_status>(attitude_.truth_status()));
     }
 #endif
+    if (use_model_) {
+      return std::string("marv_sil_tick (model IMU): ") +
+             marv_sil_status_str(static_cast<marv_sil_status>(model_.last_status()));
+    }
     return std::string("marv_sil_tick: ") +
            marv_sil_status_str(static_cast<marv_sil_status>(use_truth_ ? truth_.last_status() : inner_.last_status()));
   }
   void use_truth_gyro() { use_truth_ = true; }
+  void use_model_gyro() { use_model_ = true; }
   void use_truth_attitude() {
 #ifdef MARV_GZ_TRUTH_STATE
     use_attitude_ = true;
@@ -380,28 +606,37 @@ class RecordingSource final : public CommandSource {
     truth_.set_body(body);
 #ifdef MARV_GZ_TRUTH_STATE
     attitude_.set_body(body);
+    if (use_model_) {
+      attitude_model_.set_body(body);
+    }
 #endif
   }
   void begin_step() {
     stamps_.clear();
     imus_.clear();
     truths_.clear();
+    rotors_.clear();
   }
   const std::vector<std::uint64_t>& stamps() const { return stamps_; }
   const std::vector<marv_imu_meas>& imus() const { return imus_; }
   const std::vector<marv_truth_state>& truths() const { return truths_; }
+  const std::vector<marv_rotor_speed_meas>& rotors() const { return rotors_; }
 
  private:
   SilCommandSource inner_;
   truth::TruthGyroSilCommandSource truth_;
+  RotorSilCommandSource model_;
 #ifdef MARV_GZ_TRUTH_STATE
   truth::TruthAttitude attitude_{truth_};
+  truth::TruthAttitude attitude_model_{model_};
   bool use_attitude_ = false;
 #endif
   bool use_truth_ = false;
+  bool use_model_ = false;
   std::vector<std::uint64_t> stamps_;
   std::vector<marv_imu_meas> imus_;
   std::vector<marv_truth_state> truths_;
+  std::vector<marv_rotor_speed_meas> rotors_;
 };
 
 std::atomic<bool> g_configured{false};
@@ -434,7 +669,7 @@ class Lockstep final : public gzs::System,
       refuse("a second marv::gz::Lockstep instance in this process (one SIL init per process)");
     }
     const Parsed p = parse_plugin(sdf->Clone());
-    if (p.truth_attitude && !p.truth_gyro) {
+    if (p.truth_attitude && !p.truth_gyro && !p.model_gyro) {
       refuse("<attitude_source> needs <gyro_source>truth</gyro_source>");
     }
 #ifndef MARV_GZ_TRUTH_STATE
@@ -459,6 +694,8 @@ class Lockstep final : public gzs::System,
     if (!same_bits(p.plant.motor_substep_s, t_tick_s_)) {
       refuse("motor_substep_s is not the tick period");
     }
+    host_ns_ = m_ * tick_ns_;
+    check_sensors(p);
 
     check_world(entity, ecm, p);
 
@@ -513,7 +750,11 @@ class Lockstep final : public gzs::System,
     }
     sil_ready_ = true;
 
-    adapter_ = std::make_unique<Adapter>(plant, source_, t_tick_s_);
+    if (!sensors_) {
+      adapter_ = std::make_unique<Adapter>(plant, source_, t_tick_s_);
+    } else {
+      start_sensors(plant, p);
+    }
     link_.EnableVelocityChecks(ecm, true);
     // Exists only for the negative control of tests/regression/quad/L02/gz/test_plugin_smoke.py: with it set, the
     // velocity command components are not removed, which is the defect the removal fixes. Never set outside that test.
@@ -555,15 +796,15 @@ class Lockstep final : public gzs::System,
         ecm.RemoveComponent<gzs::components::AngularVelocityCmd>(link_.Entity());
       }
     }
-    const std::chrono::nanoseconds host_dt{m_ * tick_ns_};
+    const std::chrono::nanoseconds host_dt{host_ns_};
     if (info.dt != host_dt) {
-      refuse("UpdateInfo dt " + std::to_string(std::chrono::nanoseconds(info.dt).count()) + " ns is not m*tick " +
-             std::to_string(host_dt.count()) + " ns");
+      refuse("UpdateInfo dt " + std::to_string(std::chrono::nanoseconds(info.dt).count()) + " ns is not " +
+             (clock_ ? "the realised host step n_true " : "m*tick ") + std::to_string(host_dt.count()) + " ns");
     }
-    const std::chrono::nanoseconds expected_sim{(steps_ + 1) * m_ * tick_ns_};
+    const std::chrono::nanoseconds expected_sim{(steps_ + 1) * host_ns_};
     if (info.simTime != expected_sim) {
-      refuse("simTime " + std::to_string(std::chrono::nanoseconds(info.simTime).count()) + " ns is not ticks*tick " +
-             std::to_string(expected_sim.count()) + " ns");
+      refuse("simTime " + std::to_string(std::chrono::nanoseconds(info.simTime).count()) + " ns is not " +
+             (clock_ ? "steps*n_true " : "ticks*tick ") + std::to_string(expected_sim.count()) + " ns");
     }
 
     const auto* pose_c = ecm.Component<gzs::components::WorldPose>(link_.Entity());
@@ -637,6 +878,11 @@ class Lockstep final : public gzs::System,
         b.u64(t.tick);
         b.bytes(&source_.truths()[j], sizeof(marv_truth_state));  // the state passed before this tick's marv_sil_tick
       }
+      if (log_rotor_) {
+        b.u8(static_cast<std::uint8_t>(LogRecord::kRotor));
+        b.u64(t.tick);
+        b.bytes(&source_.rotors()[j], sizeof(marv_rotor_speed_meas));  // the sample passed to the SIL for this tick
+      }
     }
     if (r.status == Status::kOk) {
       b.u8(static_cast<std::uint8_t>(LogRecord::kApplied));
@@ -692,10 +938,125 @@ class Lockstep final : public gzs::System,
     if (phys == nullptr) {
       refuse("the world has no physics component");
     }
-    const double want_step = static_cast<double>(m_ * tick_ns_) / kNanosecondsPerSecond;
+    const double want_step = static_cast<double>(host_ns_) / kNanosecondsPerSecond;
     if (!same_bits(phys->Data().MaxStepSize(), want_step)) {
+      if (clock_) {
+        refuse("physics max_step_size is not the realised host step n_true = " + std::to_string(host_ns_) +
+               " ns (clock corner " + std::to_string(clock_corner_) + ")");
+      }
       refuse("physics max_step_size is not m*tick");
     }
+  }
+
+  // The sensor elements of decision 0019 (each optional). Without any of them this changes nothing: host_ns_ stays
+  // m * tick_ns and sensors_ false, so the plugin builds the three-argument Adapter and writes no new record.
+  void check_sensors(const Parsed& p) {
+    if (p.model_gyro && !p.imu_model) {
+      refuse("<gyro_source>model</gyro_source> needs an <imu_model> element");
+    }
+    if (p.imu_model && !p.model_gyro) {
+      refuse("<imu_model> needs <gyro_source>model</gyro_source>");
+    }
+    if (p.rotor_speed) {
+      if (!p.model_gyro) {
+        refuse("<rotor_speed_model> needs <gyro_source>model</gyro_source>");
+      }
+      if (p.rotor_speed->latency_ticks > MARV_PLANT_ROTOR_SPEED_MAX_LATENCY_TICKS) {
+        refuse("<rotor_speed_model> latency_ticks " + std::to_string(p.rotor_speed->latency_ticks) +
+               " is above the plant's delay-line capacity MARV_PLANT_ROTOR_SPEED_MAX_LATENCY_TICKS = " +
+               std::to_string(MARV_PLANT_ROTOR_SPEED_MAX_LATENCY_TICKS));
+      }
+      if (p.plant.pole_count == 0) {
+        refuse("<rotor_speed_model> needs a nonzero <pole_count> (0 is unknown)");
+      }
+    }
+    if (p.clock_corner.has_value() != p.odr_error.has_value()) {
+      refuse("<clock_corner> and <odr_error> go together; one of them is missing");
+    }
+    if (p.clock_corner) {
+      const std::int32_t c = *p.clock_corner;
+      const double e = *p.odr_error;
+      if (c < -1 || c > 1) {
+        refuse("<clock_corner> is " + std::to_string(c) + ", not -1, 0 or +1");
+      }
+      if (!std::isfinite(e) || e < 0.0 || !(e < 1.0)) {
+        refuse("<odr_error> is not a finite magnitude in [0, 1)");
+      }
+      // Exists only for the clock T1 test, tests/regression/quad/L06/gz/test_sensor_clock.py (decision 0019, ruling on
+      // Q6): with it set, a clock corner is accepted with the truth gyro or the zeroed sample. Never set outside that test;
+      // tests/regression/quad/L06/tools/test_world_sensors.py checks that no other file names it.
+      if (!p.model_gyro && std::getenv("MARV_GZ_TEST_CLOCK_CORNER_ANY_GYRO") == nullptr) {
+        refuse("<clock_corner> needs <gyro_source>model</gyro_source> (the clock error is the IMU's ODR error)");
+      }
+      host_ns_ = realised_host_step_ns(host_ns_, c, e);
+      clock_ = true;
+      clock_corner_ = c;
+      odr_error_ = e;
+    }
+    sensors_ = p.model_gyro || p.rotor_speed.has_value() || clock_;
+  }
+
+  // The adapter of a world with a sensor element (decision 0019), the source's model path and record 6.
+  void start_sensors(marv_plant* plant, const Parsed& p) {
+    marv_plant_rotor_speed_config rotor{};
+    if (p.rotor_speed) {
+      rotor = *p.rotor_speed;
+      rotor.pole_count = p.plant.pole_count;
+    }
+    AdapterConfig ac;
+    ac.t_tick_nominal_s = t_tick_s_;
+    ac.imu = p.imu_model ? &p.imu_model->cfg : nullptr;
+    ac.rotor_speed = p.rotor_speed ? &rotor : nullptr;
+    // t_true = n_true / (m * 1e9), rounded once: at c = 0, and without the element, the same rational as t_tick_s_.
+    ac.t_tick_true_s = clock_ ? static_cast<double>(host_ns_) / (static_cast<double>(m_) * kNanosecondsPerSecond) : 0.0;
+    adapter_ = std::make_unique<Adapter>(plant, source_, ac);
+    if (adapter_->imu_attach_status() != MARV_PLANT_OK) {
+      refuse(std::string("marv_plant_imu_attach: ") + marv_plant_status_str(adapter_->imu_attach_status()));
+    }
+    if (adapter_->rotor_speed_attach_status() != MARV_PLANT_OK) {
+      refuse(std::string("marv_plant_rotor_speed_attach: ") + marv_plant_status_str(adapter_->rotor_speed_attach_status()));
+    }
+    if (p.model_gyro) {
+      source_.use_model_gyro();
+    }
+    log_rotor_ = p.rotor_speed.has_value();
+
+    LogBuffer& b = sensors_record_;
+    b.u8(static_cast<std::uint8_t>(LogRecord::kSensors));
+    b.u8(static_cast<std::uint8_t>(p.model_gyro   ? LogGyroSource::kModel
+                                   : p.truth_gyro ? LogGyroSource::kTruth
+                                                  : LogGyroSource::kNone));
+    b.u8(log_rotor_ ? 1 : 0);
+    b.u8(clock_ ? 1 : 0);
+    b.u8(static_cast<std::uint8_t>(static_cast<std::int8_t>(clock_corner_)));
+    b.f64(odr_error_);
+    b.u64(host_ns_);
+    b.f64(adapter_->t_tick_s());
+    b.u64(p.seed);
+    b.u32(kImuNoiseStreamId);
+    b.u64(kImuCounterBase);
+    const ImuModel imu = p.imu_model.value_or(ImuModel{});
+    b.u32(imu.cfg.latency_samples);
+    for (const marv_plant_imu_axis_config* a : {&imu.cfg.gyro, &imu.cfg.accel}) {
+      b.f64(a->noise_density);
+      b.f64(a->bias_instability);
+      b.f64(a->lsb);
+      b.f64(a->full_scale);
+      for (const double v : a->turn_on_bias) {
+        b.f64(v);
+      }
+    }
+    b.f64(imu.gyro_bound);
+    b.f64(imu.accel_bound);
+    for (const std::int8_t s : imu.signs) {
+      b.u8(static_cast<std::uint8_t>(s));
+    }
+    b.bytes(imu.profile_sha256.data(), imu.profile_sha256.size());
+    b.u32(rotor.pole_count);
+    b.u32(rotor.latency_ticks);
+    b.u32(rotor.exponent_bits);
+    b.u32(rotor.mantissa_bits);
+    b.f64(rotor.period_unit_s);
   }
 
   void open_log() {
@@ -706,6 +1067,9 @@ class Lockstep final : public gzs::System,
     if (!log_.open(*log_path_, log_params_.m, log_params_.num_us, log_params_.den, log_params_.seed, GZ_SIM_VERSION_FULL,
                    error)) {
       refuse(error);
+    }
+    if (sensors_ && !log_.write(sensors_record_)) {
+      refuse("cannot write the log");
     }
   }
 
@@ -773,6 +1137,15 @@ class Lockstep final : public gzs::System,
   bool vel_cmd_pending_ = false;
   bool keep_vel_cmd_ = false;
   bool log_truth_ = false;
+  // Decision 0019: the host step in ns (m * tick_ns, or n_true with <clock_corner>), whether any sensor element is present,
+  // the clock element's values, and record 6 (built in Configure, written after the header).
+  std::uint64_t host_ns_ = 0;
+  bool sensors_ = false;
+  bool clock_ = false;
+  std::int32_t clock_corner_ = 0;
+  double odr_error_ = 0.0;
+  bool log_rotor_ = false;
+  LogBuffer sensors_record_;
   std::optional<std::string> log_path_;
   struct LogParams {
     std::uint32_t m, num_us, den;
