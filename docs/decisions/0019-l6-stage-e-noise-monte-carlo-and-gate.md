@@ -267,6 +267,43 @@ call").
   nightly under the existing rule. Timings are taken at load < 1.5 only.
 - No frozen file changed.
 
+**7. C4: the noise term W, `tools/sim/l6_noise_term.py`** (the noise suite memo §1; rulings: NT-2, Bonferroni inside the
+run, frozen extremes).
+- **The model:** the T4e linear design model, built from `l6_ff_eval.setup` and `linear_response` and equal to it bit for
+  bit:
+  - latency 1, the low-pass, the 12 notches at ω_hover;
+  - the PID with its D low-pass, FF+lag linearised;
+  - the motor lag, and the ZOH plant at t_nom/(1 + e).
+  - The FF is linearised in the controller only; the plant has no ω×Jω (ruling 6).
+- **σ per truth channel:** σ_c² = (σ_d² + LSB²/12)·Σh̄² + K_rw²·τ0·ΣH̄², with σ_d, LSB and K_rw from the profile's
+  loaders.
+  - It is computed exactly per dt phase: four phase-class impulse runs plus the tick-0 seed path, with the step sums by
+    recursion.
+  - It is the max over the J/τ grid and the frozen operating points (FF at |ω| = 0 and at the band peak P, every sign
+    pattern).
+  - `sigma_series` gives σ_c(n) per checked execution; `sigma` gives its max.
+- **W:** W_c = z·σ_c, with z = Φ⁻¹(1 − (1 − `noise_term_confidence`)/(2·N·M_s)). N comes from the register's seed rule,
+  and M_s (the predicate's checked points) is passed in by the caller, never chosen.
+- **Tests** (`tests/regression/quad/L06/tools/test_l6_noise_term.py`, 6 tests; the file's own work about 3 s, plus the
+  shared `rate_lead_design` fixture):
+  - the T4e model equals `l6_ff_eval.linear_response` bit for bit, on 3 axes × 5 members; control: latency 0 differs;
+  - σ from the formula equals the direct one-injection-per-tick computation within a first-order rounding bound (N·u·Q,
+    Higham §4.2): at most 0.045 of the bound. Controls: swapped dt phases give 6.3e9× the bound; a dropped seed path
+    gives 7.4e14×;
+  - the coupled FF path is checked the same way, at 0.097 of its bound;
+  - σ_d × 1.1 gives W × 1.092, and latency + 1 also raises W;
+  - z reproduces 3.506 / 3.761 at M = 1 and 5.893 / 6.054 at M = 120000.
+  - A scratch Monte Carlo (1000 runs, not committed) gives σ̂/σ = 1.035 (white) and 0.987 (random walk), inside the χ²
+    band [0.938, 1.063].
+- **Findings** (scratch runs, for C6/C7):
+  - The prefilter's seed from the first noisy sample dominates σ early in a run.
+  - step_roll over the full grid: σ = 3.823e-4 rad/s, W = 2.04e-3 rad/s (M_s 4822).
+  - acro, roll, card member: σ(14750), at the T4e binding execution, is 3.22e-4 rad/s, so z·σ(n) = 1.9e-3 rad/s. The
+    max over the run is 3.33e-3 at execution 539 (the seed path), so a constant W would be 1.96e-2. On a 3×3 grid the
+    constant W reaches 34.4 mrad/s, above acro's T4e margin of 25.1. How W is applied, constant or per point, is put to
+    Luis.
+- No frozen file changed.
+
 ## Evidence
 
 Each item's checks are listed with it as it lands.
