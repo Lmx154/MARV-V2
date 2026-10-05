@@ -725,7 +725,54 @@ tools_tests() {
       skip+=(--ignore "${f}")
     done
   fi
-  uv run pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools -q ${skip[@]+"${skip[@]}"}
+  local guard=()
+  if [[ "${MARV_CI_MODE:-per-push}" != full ]]; then
+    guard=(-p pytest_file_time_guard)
+  fi
+  PYTHONPATH=tools/ci uv run pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools -q ${guard[@]+"${guard[@]}"} ${skip[@]+"${skip[@]}"}
+}
+
+# S9 for pytest (decision 0014 fifth round item 6; closed in quad L6 stage (e), decision 0019 ruling 12 and the owner ruling
+# S9 (a)): per push, the tools step loads tools/ci/pytest_file_time_guard.py, which measures every tools-test file's alone
+# wall time (shared session fixtures charged in full to every file that uses them) against per_push_check_time_max, read
+# from design/budget.yaml. The guard FAILS the step only under ci/local_ci.sh, which passes MARV_LOCAL_CI=1 into every job
+# container (S9 was always measured in the local CI image and local CI is the definition of verified); everywhere else, in
+# particular on GitHub Actions, it prints the per-file table and any over-limit files and leaves the exit status alone. It
+# does not key on GITHUB_ACTIONS.
+# Positive check: the guard passes on a short real file with the register limit. Negative control: the planted test
+# (tests/regression/quad/L06/controls/test_per_push_pytest_overrun.py, outside every normal collection) sleeps three times
+# the limit; MARV_PER_PUSH_CHECK_TIME_MAX_OVERRIDE=1 (used only here, as the CTest control does) makes that seconds. The
+# control sets MARV_LOCAL_CI=1 itself, so it proves the guard's detection in both settings: the session must fail through
+# the guard, naming the planted file.
+per_push_pytest_guard_applied() {
+  local log status=0
+  log="$(mktemp)"
+  PYTHONPATH=tools/ci uv run pytest tests/regression/quad/L00/tools/test_check_claude_md.py -q -p pytest_file_time_guard >"${log}" 2>&1 || status=$?
+  cat "${log}"
+  if [[ ${status} -ne 0 ]] || ! grep -q 'FILE-TIME-GUARD PASSED' "${log}"; then
+    echo "positive check failed: the guard does not pass a short file under the register limit"
+    rm -f "${log}"
+    return 1
+  fi
+  rm -f "${log}"
+}
+
+per_push_pytest_control() {
+  local log status=0 planted=tests/regression/quad/L06/controls/test_per_push_pytest_overrun.py
+  log="$(mktemp)"
+  MARV_LOCAL_CI=1 MARV_PER_PUSH_CHECK_TIME_MAX_OVERRIDE=1 PYTHONPATH=tools/ci uv run pytest "${planted}" -q -p pytest_file_time_guard >"${log}" 2>&1 || status=$?
+  cat "${log}"
+  if [[ ${status} -eq 0 ]]; then
+    echo "control passed: a test file that overruns the limit does not fail the guard"
+    rm -f "${log}"
+    return 1
+  fi
+  if ! grep -q 'FILE-TIME-GUARD FAILED' "${log}" || ! grep -q "> 1 s  ${planted}" "${log}"; then
+    echo "control failed, but not through the guard naming the planted file"
+    rm -f "${log}"
+    return 1
+  fi
+  rm -f "${log}"
 }
 
 step "uv sync --frozen" uv sync --frozen
@@ -733,6 +780,9 @@ step "L4: T3 oracle regenerates rate_t3_golden.txt and rate_t3_envelope.txt from
 step "L5: T3 oracle regenerates attitude_t3_golden.txt, attitude_t3_envelope.txt and attitude_t3_q.txt from their inputs, matching reference/SHA256SUMS" att_t3_reference_reproduces
 step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools; the nightly list only in MARV_CI_MODE=full)" \
   tools_tests
+if [[ "${MARV_CI_MODE:-per-push}" != full ]]; then
+  step "per-push pytest guard (positive check: a short tools-test file passes the per-file time guard)" per_push_pytest_guard_applied
+fi
 step "G8: CLAUDE.md keeps the ACTIVE-spec, number, UNKNOWN and CI-gate sections" g8_check
 step "L1: the committed vehicle card, its sensor profile and the design budget lint clean (sigma policy)" l1_card_lint
 step "L1: plant known-answer reference reproduces plant_ref_expected.txt from plant_ref_inputs.txt" plant_ref_reproduces
@@ -777,6 +827,7 @@ step "L1 negative control (the core 2.1 example card without sigma must fail the
 step "L1 negative control (a card with sigma = 0 on a published entry must fail the parameter set build)" l1_flatten_control
 step "L1 negative control (a Python without PyYAML must fail the configure)" l1_pyyaml_control
 step "per-push timeout negative control (a planted test that overruns the limit must fail ctest as a timeout)" per_push_timeout_control
+step "per-push pytest negative control (a planted test file that sleeps three times the limit must fail the per-file time guard)" per_push_pytest_control
 step "L1 negative control (perturbed plant reference inputs must not reproduce the committed expected file)" plant_ref_control
 step "L4 negative control (a perturbed T3 input, kp one ulp up, must fail the SHA256SUMS check)" t3_reference_control
 step "L5 negative control (a perturbed T3 input, att_kp one ulp up, must fail the SHA256SUMS check)" att_t3_reference_control

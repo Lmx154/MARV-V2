@@ -89,7 +89,7 @@ run_job() {
   started="${SECONDS}"
   echo "##### job ${name}: docker run ${image} $*"
   docker run --name "${container}" --cpus "${RUNNER_CPUS}" --memory "${mem_bytes}" --memory-swap "${mem_bytes}" \
-    -e MARV_CI_BASE_REF -e MARV_CI_MODE -v "${clone}":/src -w /src "${image}" "$@" || true
+    -e MARV_CI_BASE_REF -e MARV_CI_MODE -e MARV_LOCAL_CI=1 -v "${clone}":/src -w /src "${image}" "$@" || true
   # docker run exits 125 without creating the container when it cannot start it (bad option, missing image); then
   # there is nothing to inspect and the job is a failure, not an abort of this script.
   if oom="$(docker inspect -f '{{.State.OOMKilled}}' "${container}" 2>/dev/null)"; then
