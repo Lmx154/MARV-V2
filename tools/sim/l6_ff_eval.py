@@ -55,6 +55,16 @@ Nonlinear model (T3). Per tick T_s (scenario tick, 625/4 us), m = 1 (one tick pe
      step); the rigid body J w' = tau - w x (J w) (Euler's equations in principal axes, J the plant's diagonal) by RK4,
      RK_SUBSTEPS steps per tick, from rest; the rotors start at rest (acro.yaml gives no rotor speeds).
   The judged rate w_a(n) is the truth body rate at execution n's tick (the T4 test's gyro sample, truth gyro).
+  Hooks of stage (e) (decision 0019, the noise suite memo section 2, commit C5), each off by default, and off this
+  evaluation's runs are unchanged (the committed records reproduce byte for byte):
+    bias         a gyro bias per axis (rad/s), added to the sample after the latency and before the chain (the plant IMU
+                 model's order, sim/plant/src/imu_model.hpp); the chain is seeded with the first sample at tick 0
+                 (rate_group.cpp seed_first_sample; at rest without a bias that is the zero state above);
+    clock_error  e, the IMU's relative clock error: the plant's tick is t_nom / (1 + e), the firmware's stamps and the
+                 chain's coefficients stay nominal (decision 0019 item 2: fw/ never sees e);
+    torque       per axis and execution, a torque (N m) added to the request before allocate (rate_group.cpp finish:
+                 request = the law's torque + added), as the L4 chirp's.
+  step_plan adapts an L4 step scenario (run_l4.plan) to the plan and setpoints simulate reads.
 
 Predicate (test_t4_acro.py, recovery): per axis, |w_a(n)| <= Z_a(n) + F_a + E_a(n) at every execution n of the recovery
 window (run_l4.acro_phases), run_l4.recovery_evaluation. E_a = 0: E is the difference of two gz runs (m = 1, m = 2), which
@@ -261,11 +271,12 @@ def exec_dts(plan):
     return [(plan.stamp_us(k) - plan.stamp_us(k - 1)) * MICROSECOND for k in range(1, plan.end_execution + 1)]
 
 
-def simulate(law, sensor, plant, plan, sps, thrust, substeps=RK_SUBSTEPS):
-    """The nonlinear model (module docstring). Returns (w per axis per execution, flagged executions per axis)."""
+def simulate(law, sensor, plant, plan, sps, thrust, substeps=RK_SUBSTEPS, bias=None, clock_error=0.0, torque=None):
+    """The nonlinear model (module docstring; bias, clock_error and torque are its stage (e) hooks, off by default).
+    Returns (w per axis per execution, flagged executions per axis)."""
     d_div = plan.divisor
     n_exec = plan.end_execution + 1
-    h = float(plan.tick_s)
+    h = float(plan.tick_s) / (1 + clock_error) if clock_error else float(plan.tick_s)
     jx, jy, jz = plant.inertia
     cx, cy, cz = ((jz - jy), (jx - jz), (jy - jx)) if plant.coupling else (0.0, 0.0, 0.0)
     decay = math.exp(-h / plant.tau)
@@ -337,9 +348,14 @@ def simulate(law, sensor, plant, plan, sps, thrust, substeps=RK_SUBSTEPS):
             sample = delay.pop(0)
         else:
             sample = w
+        if bias is not None:
+            sample = [x + b for x, b in zip(sample, bias)]
         y = [0.0, 0.0, 0.0]
         for a in range(3):
             v = sample[a]
+            if j == 0:
+                for s in chain[a]:
+                    s[0] = s[1] = s[2] = s[3] = v
             for (b0, b1, b2, a1, a2), s in zip(stages, chain[a]):
                 o = b0 * v + b1 * s[0] + b2 * s[1] - a1 * s[2] - a2 * s[3]
                 s[1] = s[0]
@@ -387,6 +403,8 @@ def simulate(law, sensor, plant, plan, sps, thrust, substeps=RK_SUBSTEPS):
                         u[a] = u[a] + (g[a] + tau_m * gdot[a])
                     g_prev = list(g)
             y_prev = list(y)
+            if torque is not None:
+                u = [u[a] + torque[a][n] for a in range(3)]
             # mixer allocate (mixer.hpp)
             tx, ty, tz = u
             av = [row[1] * tx + row[2] * ty for row in mm]
@@ -582,6 +600,43 @@ def plan_params(fixture):
         if run_l4.SEGMENT_T_US.match(name):
             params[name] = entry["value"]
     return params
+
+
+@dataclasses.dataclass(frozen=True)
+class StepPlan:
+    """An L4 step plan (run_l4.plan) as simulate reads a plan: executions 0 .. the window's last, the plan's divisor,
+    tick, stamps and thrust request."""
+    plan: object
+
+    @property
+    def divisor(self):
+        return self.plan.divisor
+
+    @property
+    def tick_s(self):
+        return self.plan.tick_s
+
+    @property
+    def thrust_n(self):
+        return self.plan.thrust_n
+
+    @property
+    def end_execution(self):
+        return self.plan.window.stop - 1
+
+    def stamp_us(self, k):
+        return self.plan.stamp_us(k)
+
+
+def step_plan(fixture, scenario):
+    """(StepPlan, setpoints per axis per execution) of the L4 step scenario file `scenario` on the parameters `fixture`:
+    the composition's one segment, the step rate on the stepped axis at the stamps >= l4_seg1_t_us and 0 elsewhere
+    (run_l4.Plan.overrides; the composition applies a segment from its stamp on)."""
+    p = run_l4.plan(run_l4.l4s.load(scenario), fixture, CARD)
+    sp = StepPlan(p)
+    sps = [[p.rate_rad_s if a == p.axis_index and p.stamp_us(k) >= p.seg_t_us else 0.0
+            for k in range(sp.end_execution + 1)] for a in range(3)]
+    return sp, sps
 
 
 def card_plant(card, inertia, tau):

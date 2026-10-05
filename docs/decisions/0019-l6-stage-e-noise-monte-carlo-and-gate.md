@@ -304,6 +304,45 @@ run, frozen extremes).
     Luis.
 - No frozen file changed.
 
+**8. C5: the nonlinear bias delta** (ruling 6: "(nonlinear model with the bias) − (nonlinear model without it), added
+to the linear envelope. The coupling itself never enters the envelope.").
+- **Hooks in `tools/sim/l6_ff_eval.py`**, all off by default (`simulate(..., bias=None, clock_error=0.0, torque=None)`):
+  - a gyro bias added after the latency, with the chain seeded from the first sample;
+  - the plant tick t_nom/(1 + e);
+  - a torque before allocation;
+  - `StepPlan` / `step_plan` for the L4 steps.
+  - With the hooks off, `ff_eval/card_worst.txt` and `sweep.txt` reproduce byte-identical (`cmp`).
+  - The chirp plan adapter is left to C6: it needs build parameters the fixture lacks.
+- **`tools/sim/l6_bias_delta.py`** (new):
+  - the corners, with the bias = sign × the profile's turn-on bound by `imu_corner_config`'s rule, and the clock error
+    realised as in 0012's question E entry;
+  - a 3-axis model with an L4 mode and an L5 mode (the oracle's AngleMode and `recovery_model.law` plus the yaw-rate
+    term, over `simulate`'s inner loop);
+  - `l4_delta` and `l5_delta` = NL(corner) − NL(nominal), signed.
+  - **Lead decision:** δ is computed with DShot quantisation off. Q already covers quantisation, and the stateless rounding
+    in `simulate` is not the firmware's, since the diffuser is live (0017).
+- **Reproduction**, bit for bit:
+  - the L4 mode equals `simulate` on acro (T4e, PID + FF + lag, coupling), with the hooks off and with all of them on;
+  - the L5 design mode equals `recovery_model.member_run` (tumble and inverted starts, the card member and a box corner),
+    and the T3 golden θ/ω and yaw lock (step_roll, yaw_release).
+  - Nonlinear against the design plant on L5 step_roll: w 1.69e-3 against its rule 3.25e-3, and φ 1.04e-4 against
+    2.66e-4. The J × 1.1 control misses by about 30×.
+- **Checks** (`tests/regression/quad/L06/tools/test_l6_bias_delta.py`, 15 tests, each metric check with a negative
+  control: J × 1.1, att_kp × 1.1, FF on, sticks one execution late):
+  - L4, FF off: the bias acts exactly as a −b offset on the setpoint from the seed execution (0 exactly; FF on differs by
+    4.57e-3 rad/s);
+  - the L4 hold at hover against the linear −b·s(n): 1.0e-6 rad/s against a one-tick rule of 3.5e-6. The rule is
+    INFERRED: the nonlinear plant holds each tick's torque and lags the rotor speed, so it cannot equal the linear
+    model to rounding;
+  - L5: the identity (bias b against a rate reference −b) holds exactly. The offset δ_err − b/att_kp is −4.5e-9 / −4.95e-9
+    (roll / yaw), within the derived bound 5.41e-9;
+  - accel-only corners give δ = 0 at L4 and L5 (full model, FF on), and flipping the gyro x sign changes δ.
+- **Findings:**
+  - the clock-only δ on L4 step_roll is 3.9e-4 rad/s on roll;
+  - the realised e at m = 1 is −70.3950441888891 / +70.40495650893823 ppm;
+  - t_nom/(1 + e) differs from the plugin's host step by 1 ulp at c = −1.
+- No frozen file changed.
+
 ## Evidence
 
 Each item's checks are listed with it as it lands.
