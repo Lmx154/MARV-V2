@@ -65,6 +65,21 @@ CI enforces these whether or not anyone reads this file (core §7.4):
 - Full CI, the definition of verified: `ci/local_ci.sh [--commit <rev>] [core|gz-l2|gz-l4|gz-l5 ...]` (fresh clone of a
   commit, the same containers as Actions, as root, under the runner's 4 CPUs and memory limit; a local pass must predict
   an Actions pass). Goldens are regenerated only inside these images.
+- Hover demonstration in Gazebo (gz-sim 8 on PATH; quad §4 L2 and L5; the checks are frozen, and CI's gz-l2 and gz-l5
+  jobs run them). The ACTIVE spine has no altitude or position loop: hover is the card's hover command (L2) and level
+  attitude at thrust m·g (L5); altitude drift is allowed (decision 0005 item 9). Run reports land in `<dir>`.
+
+  ```sh
+  cmake --preset host-gz && cmake --build --preset host-gz                        # the L2 plugin
+  uv run python tools/sim/run_scenario.py --card vehicles/uzh_neurobem_5in.yaml \
+      --scenario scenarios/quad/L02/hover.yaml --sequence --mode test --hover lo --out-dir <dir>   # or --hover hi
+  uv run pytest tests/regression/quad/L02/gz/test_analytic.py -k hover             # the frozen L2 hover check
+  cmake --preset host-gz-l5 && cmake --build --preset host-gz-l5                  # the L5 plugin
+  uv run python tools/refdata/refdata.py ensure quad/L05/t3 --procs 4              # the T3 reference (decision 0011)
+  uv run python tools/sim/run_l5.py --card vehicles/uzh_neurobem_5in.yaml \
+      --scenario scenarios/quad/L05/step_roll.yaml --out-dir <dir> --m 1           # level hold at m·g, then a roll step
+  uv run pytest tests/regression/quad/L05/gz/test_truth_plumbing.py tests/regression/quad/L05/gz/test_t4_steps.py
+  ```
 
 ## Code conventions (core §3)
 
