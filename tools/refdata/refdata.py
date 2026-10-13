@@ -33,11 +33,19 @@ class RefDataError(RuntimeError):
 
 
 class RefSet:
-    def __init__(self, source, inputs, generator, procs):
+    """inputs: files of the source directory; shared: repository-relative input files kept elsewhere (copied in by name);
+    depends: repository-relative files the generator reads in place (stamped, not copied)."""
+
+    def __init__(self, source, inputs, generator, procs, shared=(), depends=()):
         self.source = REPO / source
         self.inputs = inputs
         self.generator = generator
         self.procs = procs
+        self.shared = tuple(REPO / p for p in shared)
+        self.depends = tuple(depends)
+
+    def input_paths(self):
+        return [(name, self.source / name) for name in self.inputs] + [(p.name, p) for p in self.shared]
 
 
 REGISTRY = {
@@ -52,6 +60,27 @@ REGISTRY = {
         ["attitude_t3_inputs.txt", "attitude_t3_q_inputs.txt"],
         "attitude_t3_oracle.py",
         procs=True,
+    ),
+    "quad/L06/t4e": RefSet(
+        "tests/regression/quad/L06/t4e/reference",
+        ["t4e_inputs.txt"],
+        "t4e_reference.py",
+        procs=True,
+        shared=["tests/regression/quad/L04/t3/reference/rate_t3_inputs.txt",
+                "tests/regression/quad/L05/t3/reference/attitude_t3_inputs.txt",
+                "tests/regression/quad/L05/t3/reference/attitude_t3_q_inputs.txt"],
+        depends=["tools/sim/l6_t4e_model.py", "tools/sim/l6_noise_term.py", "tools/sim/l6_ff_eval.py",
+                 "tools/sim/run_l4.py", "tools/sim/run_l5.py", "tools/sim/l4_scenario.py", "tools/sim/l5_scenario.py",
+                 "tests/regression/quad/L04/t3/reference/rate_t3_oracle.py",
+                 "tests/regression/quad/L05/t3/reference/attitude_t3_oracle.py",
+                 "tests/regression/quad/L05/gz/recovery_model.py", "vehicles/uzh_neurobem_5in.yaml",
+                 "scenarios/quad/L04/step_roll.yaml", "scenarios/quad/L04/step_pitch.yaml",
+                 "scenarios/quad/L04/step_yaw.yaml", "scenarios/quad/L04/acro.yaml",
+                 "scenarios/quad/L05/step_roll.yaml", "scenarios/quad/L05/step_pitch.yaml",
+                 "scenarios/quad/L05/yaw_release.yaml", "scenarios/quad/L05/yaw_fallback.yaml",
+                 "scenarios/quad/L05/recover_inverted.yaml", "scenarios/quad/L05/recover_tumble.yaml",
+                 "scenarios/quad/L05/recover_inverted_exact.yaml",
+                 "fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml"],
     ),
 }
 
@@ -97,6 +126,8 @@ def stamp_of(ref):
     h = hashlib.sha256()
     for name in [*ref.inputs, ref.generator]:
         h.update(f"{name} {sha256_of(ref.source / name)}\n".encode())
+    for path in [*ref.shared, *(REPO / p for p in ref.depends)]:
+        h.update(f"{path.relative_to(REPO)} {sha256_of(path)}\n".encode())
     return h.hexdigest() + "\n"
 
 
@@ -128,8 +159,8 @@ def reference_dir(set_id, out=None, procs=None, force=False):
     sums = read_sums(ref)
     with locked(out / f"{set_id}.lock"):
         target.mkdir(parents=True, exist_ok=True)
-        for name in ref.inputs:
-            copy_atomic(ref.source / name, target / name)
+        for name, path in ref.input_paths():
+            copy_atomic(path, target / name)
         stamp = stamp_of(ref)
         stamp_path = target / STAMP
         current = stamp_path.is_file() and stamp_path.read_text() == stamp
@@ -139,8 +170,8 @@ def reference_dir(set_id, out=None, procs=None, force=False):
         shutil.rmtree(work, ignore_errors=True)
         work.mkdir(parents=True)
         try:
-            for name in ref.inputs:
-                shutil.copyfile(ref.source / name, work / name)
+            for name, path in ref.input_paths():
+                shutil.copyfile(path, work / name)
             command = [sys.executable, str(ref.source / ref.generator), "--dir", str(work)]
             if ref.procs:
                 command += ["--procs", str(procs or os.cpu_count() or 1)]

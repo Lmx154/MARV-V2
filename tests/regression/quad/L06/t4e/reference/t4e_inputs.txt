@@ -1,0 +1,15 @@
+# The T4e inputs of the refdata set quad/L06/t4e (t4e_reference.py --refresh-inputs; hex floats are exact):
+# latency_samples of the sensor profile; omega_hover = sqrt(m G / (4 k)) of the card at standard gravity
+# (gyro_chain_design.chain_design); gyro_sigma_d, gyro_lsb and gyro_k_rw at the nominal tick
+# (l6_noise_term.noise_inputs); rate_ff_filter_tau from the product parameter table; the rest design/budget.yaml.
+latency_samples 1
+omega_hover 0x1.1325d17b727c4p+10  # 1100.5909107797643
+gyro_sigma_d 0x1.ebc07021654d4p-9  # 0.0037517678144448428
+gyro_lsb 0x1.17316af4717a7p-13  # 0.00013312961494998702
+gyro_k_rw 0x1.54b2117b459a5p-14  # 8.122815591025139e-05
+rate_ff_filter_tau 0x1.936d340000000p-7  # 0.012311602011322975
+noise_term_confidence 0x1.fae147ae147aep-1  # 0.99
+t4_pass_probability_tracking 0x1.ccccccccccccdp-1  # 0.9
+t4_confidence_tracking 0x1.ccccccccccccdp-1  # 0.9
+t4_pass_probability_safety 0x1.e666666666666p-1  # 0.95
+t4_confidence_safety 0x1.e666666666666p-1  # 0.95

@@ -757,6 +757,61 @@ per_push_pytest_guard_applied() {
   rm -f "${log}"
 }
 
+# L6 stage (e) T4e reference set (decision 0019, C6a): tests/regression/quad/L06/t4e/reference/t4e_reference.py writes the
+# T4e band, H, TOL, Q and noise term per scenario from t4e_inputs.txt and the L4 and L5 T3 fixtures; regenerated and checked
+# against SHA256SUMS as the T3 sets (decision 0011). The whole set (about 2 h on 2 processes) runs in the full mode only; per
+# push, tests/regression/quad/L06/tools/test_t4e_refdata.py regenerates one file against its SHA256SUMS line.
+t4e_reference_dir=tests/regression/quad/L06/t4e/reference
+t4e_procs=4
+
+t4e_reference_reproduces() {
+  uv run python "${refdata}" ensure quad/L06/t4e --force --procs "${t4e_procs}"
+}
+
+# The L4 step_roll file regenerated with rate_kp_roll one float32 ulp up (in the L4 and the L5 fixture alike: the generator
+# refuses fixtures that differ) must fail the SHA256SUMS check, naming l4_step_roll.txt (the other files are not
+# generated, so they are reported missing).
+t4e_reference_control() {
+  local dir log f
+  dir="$(mktemp -d)"
+  log="$(mktemp)"
+  cp "${t4e_reference_dir}/t4e_inputs.txt" tests/regression/quad/L05/t3/reference/attitude_t3_q_inputs.txt "${dir}/"
+  for f in "${t3_reference_dir}/rate_t3_inputs.txt" tests/regression/quad/L05/t3/reference/attitude_t3_inputs.txt; do
+    uv run python - "${f}" "${dir}/$(basename "${f}")" <<'PY'
+import struct
+import sys
+
+out = []
+for line in open(sys.argv[1]):
+    if line.startswith("rate_kp_roll "):
+        x = float.fromhex(line.split()[1])
+        bits = struct.unpack("<I", struct.pack("<f", x))[0] + 1
+        line = f"rate_kp_roll {struct.unpack('<f', struct.pack('<I', bits))[0].hex()}\n"
+    out.append(line)
+open(sys.argv[2], "w").write("".join(out))
+PY
+  done
+  if cmp -s "${t3_reference_dir}/rate_t3_inputs.txt" "${dir}/rate_t3_inputs.txt"; then
+    echo "control setup failed: the perturbation did not change the inputs"
+    rm -rf "${dir}" "${log}"
+    return 1
+  fi
+  uv run python "${t4e_reference_dir}/t4e_reference.py" --dir "${dir}" --procs "${t4e_procs}" --only l4_step_roll \
+    || { rm -rf "${dir}" "${log}"; return 1; }
+  if uv run python "${refdata}" verify quad/L06/t4e --dir "${dir}" 2>"${log}"; then
+    echo "control passed the SHA256SUMS check from a perturbed input: the reproduction check cannot fail"
+    rm -rf "${dir}" "${log}"
+    return 1
+  fi
+  cat "${log}"
+  if ! grep -q "l4_step_roll.txt: sha256" "${log}"; then
+    echo "control failed, but not on l4_step_roll.txt"
+    rm -rf "${dir}" "${log}"
+    return 1
+  fi
+  rm -rf "${dir}" "${log}"
+}
+
 per_push_pytest_control() {
   local log status=0 planted=tests/regression/quad/L06/controls/test_per_push_pytest_overrun.py
   log="$(mktemp)"
@@ -778,6 +833,9 @@ per_push_pytest_control() {
 step "uv sync --frozen" uv sync --frozen
 step "L4: T3 oracle regenerates rate_t3_golden.txt and rate_t3_envelope.txt from rate_t3_inputs.txt, matching reference/SHA256SUMS" t3_reference_reproduces
 step "L5: T3 oracle regenerates attitude_t3_golden.txt, attitude_t3_envelope.txt and attitude_t3_q.txt from their inputs, matching reference/SHA256SUMS" att_t3_reference_reproduces
+if [[ "${MARV_CI_MODE:-per-push}" == full ]]; then
+  step "L6: T4e reference set regenerates every file from t4e_inputs.txt and the T3 fixtures, matching reference/SHA256SUMS (full mode)" t4e_reference_reproduces
+fi
 step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools; the nightly list only in MARV_CI_MODE=full)" \
   tools_tests
 if [[ "${MARV_CI_MODE:-per-push}" != full ]]; then
@@ -831,6 +889,7 @@ step "per-push pytest negative control (a planted test file that sleeps three ti
 step "L1 negative control (perturbed plant reference inputs must not reproduce the committed expected file)" plant_ref_control
 step "L4 negative control (a perturbed T3 input, kp one ulp up, must fail the SHA256SUMS check)" t3_reference_control
 step "L5 negative control (a perturbed T3 input, att_kp one ulp up, must fail the SHA256SUMS check)" att_t3_reference_control
+step "L6 negative control (the T4e set's l4_step_roll from perturbed T3 fixtures, rate_kp_roll one ulp up, must fail the SHA256SUMS check)" t4e_reference_control
 step "L5 negative control (a perturbed rate-bypass input, kp one ulp up, must not reproduce the acro identity golden)" rate_bypass_golden_control
 step "product parameters negative control (a committed table with one value changed must fail the byte-for-byte comparison)" product_table_control
 step "G3 negative control (unflagged SIL library exporting marv_truth_state_set must fail the export check)" g3_truth_unflagged_control
