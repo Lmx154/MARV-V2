@@ -1,356 +1,154 @@
-# Handoff: quad L6 stages (a), (b) and (c) closed (decisions 0012–0015)
+# Handoff: quad L6, stage (e) in progress (decision 0019); stages (a)–(d) closed
 
-2026-10-03. Written for the next agent working in this repository. This file records state; it adds no scope. The
-specs remain the only planning documents (core §0 rule 5).
+2026-10-05. Written for the next tech lead, from git and the records, not session memory. This file states where things
+are and adds no scope. The ACTIVE specs and decisions 0009–0019 are the authority. Update this file in the same change as
+every decision record and every stage close (Luis, 2026-09-30).
 
-**Update rule (Luis, 2026-09-30):** "From here on, update it at every stage close and every decision, not only at
-layer end." Rewrite this file in the same change as every decision record and every L6 stage close.
+## Read first
+- `CLAUDE.md`: the ACTIVE-spec rule, the number rule, the UNKNOWN rule (stop and ask), the frozen-test rule, gates
+  G1–G8. "Verified" means `ci/local_ci.sh` passed on the exact commit.
+- `docs/spec/10-quad-flight-software.md` §4 "L6": the stages (a)–(e) and the pass bar. The (e) noise-term line was
+  replaced with Luis's approved wording (0019 item 5).
+- `docs/decisions/0019-l6-stage-e-noise-monte-carlo-and-gate.md` in full: Luis's rulings for (e), quoted verbatim in two
+  rounds, and items 1–8 as built.
+- Background, as needed:
+  - 0012: stage (a) noise model, corners, question E;
+  - 0013: stage (b) gyro chain;
+  - 0014: stage (c) PI × lead with D, the FF (inert);
+  - 0015: R2 starts from a steady tumble;
+  - 0016: gz first read;
+  - 0017: stage (d) DShot diffuser, live;
+  - 0009: the strict-xfail gate file.
 
-## Read first, in this order
+## Recovery inspection (2026-10-13)
+Luis's brief, verbatim: "The project is currently unusable. Your objective is to restore the smallest possible working
+demonstration: a simulated quadrotor achieving stable hover." Finding: not the case at `b48e202`. On Luis's host the
+documented host-debug build and ctest pass (661 of 661), the `host-gz` and `host-gz-l5` plugins build from HEAD, the
+frozen L2 hover check passes (`test_analytic.py -k hover`: 13 passed, 0 skipped) and the frozen L5 attitude checks pass
+(`test_truth_plumbing.py` and `test_t4_steps.py`: 21 passed, 0 skipped); Actions is green on `b48e202` for its push run
+and for every nightly full run from 2026-10-05 to 2026-10-13. The hover demonstration is the existing L2 hover scenario
+and the L5 level hold at m·g (CLAUDE.md, Commands); the ACTIVE spine has no altitude or position loop, so nothing else
+is a hover, and no new test was added (Luis, 2026-10-13, chose to rely on the frozen tests). What was wrong was local
+only: `.venv` had been created by a CI container run against the repository directory (INFERRED from its
+`uv = 0.12.20`), so it was root-owned and its entry points carried the container's path (`#!/src/.venv/bin/python`):
+`uv run pytest` could not spawn, while `.venv/bin/python -m pytest` ran. Fixed: Luis ran `chown`, then
+`rm -rf .venv && uv sync --frozen`. The three plugin builds predated `5fc37b6` and `d361d54` (rebuilt), and C6a sat
+uncommitted (now on `l6-c6a-wip`). No code changed. What remains broken is unchanged: the known failing items under
+"Open items".
 
-1. `CLAUDE.md`: the rules CI enforces (ACTIVE-spec rule, number rule, UNKNOWN rule, gates G1–G8), commands,
-   conventions. **Verified means `ci/local_ci.sh`** (fresh clone, the Actions containers, as root, under the measured
-   runner limits).
-2. `docs/spec/00-core-contracts.md` (ACTIVE): §2 numbers and provenance, §3 conventions, §4 firmware boundary, §5
-   sensor profiles, §7 testing, freezing, and §7.5 (convergence rule, flight rate groups).
-3. `docs/spec/10-quad-flight-software.md` (ACTIVE): §4 the spine. **§4 "L6 — Sensor models, the gyro chain and the D
-   term"** is the current layer: Builds, stages (a)–(e) and the pass bar, all approved by Luis (0009). §6.2 QF-3 now
-   includes `Ms_max`; QF-7 names the notch harmonics.
-4. `docs/spec/20-ground-segment.md` and `30-rocket.md` are PARKED: read them for context, never implement from them.
-5. `docs/decisions/0001`–`0012`. **0012** is L6 stage (a): every owner ruling of 2026-10-01 verbatim (datasheet, crystal, clock model, offsets, A–D, licence, Bonferroni), the build P1–P7 and its evidence. **0011** moves the T3 references to generator + inputs + `SHA256SUMS`. **0009 opens L6**: Luis's L6 decisions verbatim, D1–D7 (D term), F1–F3 (ω×Jω), the
-   new register entries and the gate file. 0010 is the L5 chirp-cache memory fix (frozen edit, approved). 0005 and
-   0006 hold the L4 and L5 choices: read them whole before touching the rate loop, the attitude loop, their gains or
-   any L04/L05 test.
+## Git state (2026-10-05)
+- `master` = `origin/master` = `b48e202` (C5). Everything committed on master is pushed, each commit after a full local
+  CI pass on that exact commit.
+- Stage (e) commits on master, in order:
+  - `dd003e4`: 0019 opens the stage; `r2_ff_diagnosis/regenerate.sh` pinned to `4a76755`;
+  - `5fc37b6`, `d361d54`, `dbaa70e`: W1, the plugin's IMU model, rotor-speed telemetry and clock corners, the sensor
+    replay, the L4/L5 driver passthrough, and the accel-tie test;
+  - `c5af152`: `noise_term_confidence` = 0.99 and the spec line;
+  - `7033721`: the S9 pytest guard;
+  - `0b8cdb7`: C4, `tools/sim/l6_noise_term.py`;
+  - `b48e202`: C5, `tools/sim/l6_bias_delta.py` plus the hooks in `l6_ff_eval.py`.
+- Local branches:
+  - `recovery/hover-demo` (2026-10-13, from `b48e202`): the recovery inspection's docs-only commits (this file and
+    the CLAUDE.md Commands section). Luis merges it.
+  - `l6-c6a-wip` (`14e3c3a`, from `b48e202`): C6a as found in the working tree on 2026-10-13, see "C6a" below.
+  - `l6-0018-c1` (`7ea4d29`, never pushed): the held 0018, c1 back-calculation anti-windup. Kept until Luis rules on the
+    R2 package. It loses yaw trim under sustained roll/pitch saturation, and its L5 rate-bypass golden is unresolved.
+  - `quad-l6-spec` (`3158fb9`, checked out in a stale worktree under an old session's /tmp scratchpad): an old CI-limits
+    commit, already on master's history. Leave it.
+  - `quad-l5` (`e9bfaae`): merged L5 history. `l6-t3-storage-state` (`602e9ed`, its remote is gone): it carries the
+    datasheets; Luis deletes it.
+- Stash: only `stash@{0}` (an old quad-l0 WIP). Not ours, don't touch it.
+- `datasheets/`: present and gitignored (7 PDFs).
 
-Luis (the owner) makes the final calls. Numbers you cannot source are tagged `UNKNOWN` and you stop to ask.
+## C6a, stopped part-way (Luis, 2026-10-05); parked on `l6-c6a-wip` (`14e3c3a`, 2026-10-13). Not reviewed, not CI'd.
+C6a was the `quad/L06/t4e` reference set: the T4e envelopes plus the noise σ per point and its max, per (e) scenario,
+stored per 0011.
+- `tools/sim/l6_t4e_model.py` (new): the T4e linear model, including the L5 model with the attitude Jacobian frozen at
+  kp and 0.
+- `tests/regression/quad/L06/t4e/reference/` (new): `t4e_reference.py` (the generator), `t4e_inputs.txt`, `SHA256SUMS`.
+  `__pycache__/` there is junk.
+- `tests/regression/quad/L06/tools/test_l6_t4e_model.py` and `test_t4e_refdata.py` (new): the model checks, and the per-push
+  regeneration of one file against its SHA256SUMS.
+- `tools/refdata/refdata.py` (modified): adds the `shared`/`depends` inputs for the new set.
+- `ci/run_ci.sh` (modified): the full set (about 2 h at 2 processes) in full mode only.
+- The `refdata ensure quad/L06/t4e --procs 2` run was killed after 47 min. Whether SHA256SUMS is complete or correct is
+  UNKNOWN.
+- The next lead decides: finish C6a from these files, or discard them and recut it. Its packet: 0019 rulings plus the
+  memo `~/marv-e-round-2026-10-04/e_noise/design.md` §3 and §5.
 
-## Luis's instructions (verbatim)
+## Saved outside the repo (evidence and drafts, not committed)
+- `~/marv-e-round-2026-10-04/`:
+  - `e_round/`: the architect's (e) decision round;
+  - `e_w1/`: the W1 design memo;
+  - `e_noise/design.md`: the noise suite memo, with the C4–C7 plan;
+  - `close_notes.md`;
+  - `r2yaw2.tar.gz`: the R2 model that reproduces gz to 0.010 rad/s;
+  - `r2witness.tar.gz`: the R2 in-range witness, reviewed PASS;
+  - `r2study.tar.gz`: the residual study, candidates (i)–(iii);
+  - `awvar.tar.gz`: the anti-windup variants V1–V3 and the trim analysis;
+  - `c1.tar.gz` (3.6 GB, raw gz logs): the c1 design. Trim it once its evidence is committed;
+  - `acronoise.tar.gz`: acro's margin under noise.
+- `~/marv-r2yaw-2026-10-04/r2yaw.tar.gz`: the first R2 yaw analysis.
+- `~/marv-handover-2026-10-03/`: the stage (c) handover copy.
+- `~/marv-handover-2026-10-05/`: this handoff, the git state, the C6a diff and a tar of the untracked files.
 
-2026-09-30:
+## Open items, all Luis's unless marked
+- **R2 package** (sent 2026-10-05; he asked for the nine-heading shape; not yet ruled). Five questions:
+  1. anti-windup: freeze (recommended) / V2 / c1;
+  2. may the allocator raise the collective in a recovery? The witness needs ΣT up to 17.2 N; today the thrust request is
+     m·g (0015);
+  3. candidate (i), the rotor-lag-inverting allocation, as the study's base (a spec change);
+  4. commit the witness, 0011 style;
+  5. keep or delete `l6-0018-c1`.
+  - R2 fails under every realisable law: the floor is 1072 violations, with FF on and (i) and no anti-windup.
+- **W per point or constant** (asked; not ruled). On the card member, acro's σ at the binding execution is 10.3× smaller
+  than the run's max. The constant W reaches 34.4 mrad/s on a 3×3 grid, against acro's T4e margin of 25.1 mrad/s. The
+  per-point W is about 1.9 mrad/s. Lead recommendation: per point.
+- **The gz re-measure** (ruling 7): only when Luis says the host is quiet (load < 1.5). It fixes the shard count, and C7
+  waits for it.
+- **Remaining (e) builds:**
+  - C6a: see above;
+  - C6b: the T3 corner scan (27-row table), the L5 and chirp plan adapters;
+  - C6c: the nightly σ̂ χ² check with the new register entry `noise_sigma_bound_confidence` = 0.99 and a planted control;
+  - C7: the noise suite on the T4e envelopes, in new files, with the decision-24 fine-control guard.
+- **Known failing items** (strict xfail while `tests/regression/quad/L06/XFAIL_GATE_CLOSED` is absent):
+  - L4 acro: FF on passes by 5.72 mrad/s at T4c; under noise and bias it fails at T4c; T4e is about +17 at the worst
+    corner (INFERRED);
+  - L5 R2: 2431 violations with FF on;
+  - L5 R1X α: passes with FF on.
+- **The FF switch-on and the gate:** one atomic commit sets `rate_ff_enable` 0 → 1, creates the gate file and adds a
+  per-push FF-iff-gate check. It lands last, only when every item passes in both the frozen T4c tests and the T4e noise
+  suite. If any fails: no gate, no per-item gates, the record goes to Luis.
+- **Still owed to Luis:**
+  - the CI split with measured times;
+  - the T4 seed and corner counts with their cost. Estimated so far: tracking 22 and safety 59 seeds, about 3.1 h serial
+    gz time for full confirmation, before the wiring re-measure.
 
-> Order: T3 storage migration first (with its decision record), then stage (a),
-> so no L6 reference data ever gets committed.
->
-> Before either: rewrite docs/handoff.md to match master now. From here on,
-> update it at every stage close and every decision, not only at layer end.
-
-2026-10-01, on stage (a) (the S1/S3/S4/S9 answers of 2026-09-30 are superseded where these differ):
-
-> 1. **Datasheet.** Cite DS-000577 rev 1.0. Both ACTIVE specs still cite DS-000489, in the core §5 table and the quad
->    §5.5 FIFO packet line. Log this as a spec gap in the stage (a) record. Check core §5's ICM-45686 figures and the
->    20-byte FIFO packet against DS-000577, then send me the two-line spec fix to approve. If any figure differs, keep
->    both values and mark them UNVERIFIED.
-> 2. **Crystal.** Use the worst-case linear sum, ±65 ppm: ±30 tolerance, ±30 stability and ±5 first-year aging, from
->    the ABM8-272-T3 spec. Don't use RSS. Datasheet limits are bounds, not σ, and no source says the terms are
->    independent. Record that the aging term covers the first year only, and that these are the Pico 2 test setup's
->    values until the MARV V2 BOM crystal is known.
-> 3. **Clock model.** Yes, apply the error only against the plant's clock. With CLKIN, the IMU's ODR and hal_time_us
->    share one error e, so draw e once per run, never separately for each. Keep the ±1.25 % / ±1 % internal-oscillator
->    figures (DS-000577 §3.3.2) in the profile as the non-CLKIN case, but don't fly them. "The ODR follows CLKIN
->    exactly" stays INFERRED until a committed test or measurement shows it. Exercise e at the corners −65, 0 and +65
->    ppm, not as a sampled distribution.
-> 4. **S2 and S5–S8.** That list is lost, so don't reconstruct it. Check stage (a)'s pass-bar lines against core §5's
->    profile fields, and send me only the questions stage (a) is actually blocked on, each one answerable in one word.
-
-Still standing from 2026-09-30: S3, "labelled scenario values, each with a written rationale, flagged in every run
-report; replaced by my bench dataset later"; S4, the IMU is clocked from the MCU via CLKIN on GPIO18 (EMB-2, single
-master clock); S9, "60 s is fine as the per-push threshold; record it as a labelled convenience value" (a check longer
-than that runs nightly, 0009 second message item 4). The datasheet PDFs stay local in `datasheets/` (gitignored); cite
-them by document number and revision.
-
-Sources for stage (a):
-- **ICM-45686:** DS-000577 rev 1.0 (07/25/2024).
-  - CLKIN accepts 20–40 kHz (§4.14).
-  - Internal clock: ±1.25 % initial and ±1 % over temperature with the gyro active (§3.3.2).
-- **Pico 2:** RP-008299-DS, release 5. It names the crystal, Abracon ABM8-272-T3, but gives no ppm.
-- **ABM8-272-T3:** Abracon Drawing #456603, rev IR, 2023-11-16.
-  - 12.000 MHz; ±30 ppm tolerance at +25 °C.
-  - ±30 ppm stability over −40…+85 °C.
-  - ±5 ppm aging, first year, 25 ± 3 °C.
-
-## Next steps, in Luis's order
-
-1. **Done, stage (b)'s first item (0013):** the per-push limit is enforced as the CTest TIMEOUT of every per-push check,
-   read from `per_push_check_time_max`; the reference-set steps are exempt. Two CI steps check it: a positive check
-   and a planted-overrun control. The slowest check is the Allan test, 10.0 s in debug (6× under the limit). Stage (a)
-   is closed (0012), and its tests under `tests/regression/quad/L06/` are frozen.
-2. **Stage (b), the gyro chain: closed and pushed (`1159d5c`, decision 0013).** Stage (c) starts from a worst-corner
-   PM of 35.5° at today's L4 gains with the chain in the loop.
-3. **Stage (c), the D term and ω×Jω (decision 0014).** Luis's eight decisions are in 0014.
-   - PI × lead meets PM 45° and Ms 2 with the chain; N* is set by Ms at the flown ESC.
-   - The FF is lag-compensated, built inert, and goes live at (e) with the gate file. FF-on evidence is reported in (c).
-   - J corners are the physical 3-D ones.
-   - R2's setup change (steady-tumble rotor speeds) gets its own record, after the lower-bound proof is committed and
-     reviewed.
-   - The spec lines (the FF Builds bullet, the combined D + FF noise line) are approved in Luis's wording.
-   - Built: commits 1–2 (`539855e`, `69c62f2`, local) and commit 3 (the atomic switch, uncommitted). Every frozen
-     file commit 3 changes is listed in 0014, "Frozen files changed by stage (c)".
-   - **FF-on report runs (0014, W4; `tests/regression/quad/L06/results/ff_on/`):** acro FAIL → PASS (roll margin
-     6.07 mrad/s, a knife edge); R1X FAIL → PASS; **R2 FAIL → FAIL** (13923 → 10398 violations, worst w_y +1.975,
-     DShot at both range ends). Diagnosed (0014, W4): mainly the gz step-0 zero-rate read, kicked by D and FF; then yaw
-     saturation with the integrator freeze.
-   - **Close round (0014, fourth round, 2026-10-03).** Luis's order:
-     1. answer three sent-back lead rulings (the chain divisor check, the chirp reference, the shared notch speed);
-     2. S9: share the configuration-set design (B), then move what is still over 60 s to nightly (A), after
-        confirming that a per-push check pins the generated gains;
-     3. commit 3, with no tag;
-     4. core CI on that exact commit;
-     5. push on his go-ahead;
-     6. 0016, the gz first gyro read returns the starting rates (approved; its own commit);
-     7. stage (d) under 0017 (rulings saved for 0017).
-     0015 is approved as built, subject to a seven-point checklist confirmed in 0015.
-   - **Fifth round (0014, 2026-10-03).** Luis's order:
-     1. the divisor check becomes f_c < f_s/(2D) with D ≥ 1, and the frozen `fault_test.cpp` edit is made net-stricter;
-     2. three new tests: the attitude Ms over the set, the rate-loop stability certificate, and the per-motor mixes
-        (plus a test that rate_lead with the lead off reproduces rate.py's chirp reference);
-     3. the generated product parameter table, committed and frozen under `tests/regression/quad/L06/`, compared byte
-        for byte on every push;
-     4. two output-identical speed-ups, then anything still over 60 s moves to nightly (no design cache);
-     5. full local CI, commit 3, core CI, push on his go-ahead;
-     6. then 0016 and stage (d).
-     **State (2026-10-03):**
-     - Items 1–4 are built (0014: "Divisor (b), as built", "Fifth round, items 2–5" and "item 6 (S9)").
-     - Full local CI passes on snapshot `b4c9e16`: core, gz-l2, gz-l4, gz-l5. The per-push tools step is 1013 passed and
-       1 skipped in 274 s.
-     - Luis answered the last open items (0014, sixth round): the chirp check uses option (i); `test_attitude_t3.py`
-       goes nightly; the extra divisor frozen line is accepted.
-
-## Handover (2026-10-03): stage (c) closed
-
-**Stage (c) approved: Luis, 2026-10-03** (0014, "Stage (c) close" and "Approval"; the four lead decisions accepted,
-the W4 diagnosis scripts to be committed with 0016).
-
-**Git state.**
-- `master`: `539855e` (commit 1), `69c62f2` (commit 2), `7ecfe8b` (commit 3, the atomic switch), then one docs-only
-  commit (the close section, the approval, this handoff). Push approved by Luis, with no tag; `origin/master` was
-  `1159d5c` before it. Actions on the pushed head `af25f5e` (run 37155376129): core, gz-l2, gz-l4, gz-l5 all pass.
-- Verified: full local CI (core, gz-l2, gz-l4, gz-l5) on snapshot `b4c9e16`; core on `7ecfe8b` (1578 s); the
-  regression-change check on the docs-only commit. `b4c9e16` → `7ecfe8b` changes nothing the gz jobs collect or build.
-- Safety copy `~/marv-handover-2026-10-03/` holds the scratch evidence for 0016 (`r2ff/`) and stage (d)
-  (`stage_d_draft.md`, `stage_d_owner_2026-10-03.md`); the rest of it is now in `7ecfe8b`.
-- Local branches `l6-t3-storage-state` (datasheets; Luis deletes it), `quad-l5` and `quad-l6-spec` are untouched.
-
-**Remaining steps, in order:**
-1. **Done: 0016** (`4a76755`, pushed; approved by Luis 2026-10-04 on green local CI and Actions run 37164572071).
-2. **Stage (d), 0017** (`docs/decisions/0017-l6-stage-d-dshot-error-diffusion.md`; Luis's rulings verbatim there).
-   - P1: `DshotDiffuser<T>` in `fw/mixer`, not live, with 14 T1 tests in `L06/dshot_diffusion/`. δ_max = 2^-14 step
-     (derived, attained). Reviewer PASS.
-   - Pending Luis: the motor-speed line text (in 0017).
-   - P1 pushed (`4bff7af`, local CI green).
-   - P2, the live switch, built: the diffuser is in `RateGroupStep`. Q falls by roughly ×300–2600, the gz hover limit
-     cycle is gone, the fine controls fail by more, no strict xfail passes, and the chirp admission set is unchanged.
-     Q-dependent records are regenerated (0017 lists 18 frozen files). Pushed (`432daca`); P1 and P2 approved by Luis
-     (2026-10-04).
-   - **Stage (d) closed: approved by Luis, 2026-10-04** (0017, "Stage (d) close" and "Approval"). Pushed: `4bff7af`,
-     `432daca`, `43a23a2` and the docs-only close commit.
-3. **Stage (e) is open: decision 0019** (`docs/decisions/0019-l6-stage-e-noise-monte-carlo-and-gate.md`). It holds
-   Luis's rulings of 2026-10-04, verbatim: NT-2, `noise_term_confidence` 0.99, the gz truth state, bias corners as a
-   nonlinear delta, PP-A, 22/59 seeds, the clock corners inside the T3 search, question E outward, exact ties only, the
-   S9 pytest guard, the gate commit last, and the approved F1 spec line.
-   - **0018 (c1) is held, not on master:** local branch `l6-0018-c1`, commit `7ea4d29`, not pushed. Luis is choosing
-     between c1, a variant that does not bleed an axis clipped by another's demand, and keeping the freeze. When an
-     anti-windup change lands: the L5 rate-bypass golden is re-pinned to that commit (ruling (a), with the quad-L4-pass
-     golden as its control), and `l6_ff_eval.py` follows.
-   - **Running (analysis, no repo writes):** the trim loss at a realistic trim and the anti-windup variants. Done and
-     saved in `~/marv-e-round-2026-10-04/`:
-     - the R2 witness: in range, with the collective free to about 17 N; reviewed, PASS;
-     - the residual study: candidate (i), the rotor-lag-inverting allocation, gives 1340 violations and acro about
-       94 mrad/s.
-     Luis's three questions on the study (the collective, candidate (i), committing the witness) are pending; they come
-     back with the R2 package.
-   - **Landed on master:** `dd003e4` (0019 opens; the regenerate pin, pushed). W1 C1, the plugin's IMU, rotor and clock
-     wiring (0019 item 2), is in the next commit; its realised clock values are in 0012's question E entry.
-   - **Next:** W1 C2 (the sensor replay tool, test b) and C3 (the L4/L5 driver passthrough, the accel tie test, and the
-     gz times re-measured). Pending Luis: the five R2 questions (anti-windup: freeze recommended; the collective; (i) as
-     the study's base; commit the witness; keep the branch).
-   - **Master, in order (original plan):** the `r2_ff_diagnosis` regenerate pin (0019, item 1); then the (e)
-     infrastructure in its own
-     commits:
-     - the plugin's IMU, rotor and clock wiring;
-     - the noise suite;
-     - the T3 corner scan;
-     - the Monte Carlo job;
-     - the S9 pytest guard;
-     - the register entry and the spec line.
-     The gate commit comes last.
-
-**For stage (e), recorded with no decision yet (Luis, 2026-10-03).**
-- **R2 fails even with FF on.** Measured with 0016: FF off 14420 violations (worst w_x +2.349 rad/s), FF on 2391 (worst
-  w_z +0.237 rad/s, attitude inside), matching W4's 2416 prediction; the cause left is yaw saturation and the integrator
-  freeze (INFERRED). Bring Luis these numbers and the options. He will not choose between "model the
-  allocation and the freeze in the envelope" and "rule R2 yaw-limited" until he sees them.
-- **Acro FF-on passes by only 6.07 mrad/s, at the card plant, with no noise.** Stage (e) adds noise and 59 safety seeds.
-  Before (e) starts, bring Luis an estimate of the margin under noise from the T3 design model, so it is known whether
-  (e) can pass as designed.
-
-**Not in any file (the outgoing lead's notes).**
-- **Check first:** that `datasheets/` is still present and untracked (it vanished once on a branch switch; restore
-  with `git restore --source=l6-t3-storage-state --worktree datasheets`).
-- **Timing is the fragile part.** `test_r1x_coupling.py` is at 58.9 s alone, with 1.1 s of margin. Host load inflates
-  every number (one run read 332 s), so measure with load < 1.5. The code-index daemon can spike to 100 % CPU.
-- **Acro FF-on margin is 6.1 mrad/s.** It will be a knife edge at stage (e).
-- **R2's next blocker after 0016** is yaw saturation plus the yaw integrator freeze, which the linear design model
-  lacks. Luis expects the numbers for that choice: model the allocation and freeze in the design model, or rule R2
-  yaw-limited.
-- **The T3 oracles** (`rate_t3_oracle.py:340`, `attitude_t3_oracle.py:1699`) still check the old f_s/2 cutoff bound.
-  It is consistent at D = 2, frozen, not changed.
-- **Stage (d)'s record number** is 0017. Its architect draft is in the safety copy (`stage_d_draft.md`).
-- **Subagent permission denials:** never route around one; show the prompt to Luis.
-4. Still owed to Luis from 0009: the final CI split with measured times, and the T4 confirmation seed count with its
-   cost. Add to it the T4 turn-on-corner count (nominal plus each scenario's worst T3 corner) and its cost (0012).
-5. **Stage (c), carried:**
-   - Re-run `L05/results/step_cause/step_cause.py` at N = 1 when D7 regenerates L5, under stage (c)'s record (Luis,
-     2026-10-01). Today's `cause.txt` describes att_loop_ratio 2 (H = 10372) from before `0533044`.
-   - The per-sample noise convention σ_d = N·√(f_s/2) (0012) feeds the D-path noise budget.
-
-## L6 stage (a) in one paragraph (decision 0012)
-
-The profile drives an opt-in IMU model in `marv_plant`. Each sample is the truth delayed by L samples, plus a bias
-random walk from the turn-on corner, plus white noise, quantised to the 20-bit FIFO step and saturated with a flag per
-axis. The noise comes from counter-mode SplitMix64 streams with Box–Muller normals; `log`, `sin` and `cos` are vendored
-from musl 1.2.5 (MIT, Arm MIT, Sun fdlibm notices; `THIRD_PARTY_NOTICES.md`).
-- The clock error e enters once, as the adapter's true tick t_nom/(1 + e). `fw/` never sees it.
-- `tools/card/gen_imu_config.py` generates the config from the profile, refusing UNKNOWN.
-- The Allan check derives its own record (13.2 M samples) and runs per push in about 4 s.
-- There is no generated reference data for stage (a), so nothing went into `refdata`.
-
-## T3 reference storage (decision 0011, approved 2026-10-01)
-
-- **What moved:** five files are no longer committed: `L04/t3/reference/rate_t3_{golden,envelope}.txt` and
-  `L05/t3/reference/attitude_t3_{golden,envelope,q}.txt`. Each reference dir holds `SHA256SUMS` instead.
-- **How they are made:** `tools/refdata/refdata.py ensure <id>` generates into `build/reference` (or
-  `$MARV_REFERENCE_DIR`) and checks every hash. ctest gets them through a fixture setup test, the Python consumers
-  through `refdata.reference_dir`.
-  - L5 takes about 2 min at `--procs 4` and peaks at 0.26 GiB. The first local ctest or pytest run on a fresh tree
-    generates it.
-- **Changing a golden:** regenerate in the image, update `SHA256SUMS`, write a decision record.
-
-## Pre-L8 gate and hardware list (Luis, 2026-10-01, decision 0014)
-
-- **Gate:** before L8, measure J with its σ (S0, pendulum), then re-run the L4 acro check over the measured band,
-  both with FF on and with FF off; FF flies only if it helps over the measured band (at the physical J corners FF can
-  make things worse than PID: 5.14 → 9.46 rad/s on pitch at corner 11). The pilot doesn't fly until it passes there. Today the acro item closes at the card plant only, and its excess at the
-  physical J corners is recorded in 0014.
-- **Hardware list:** measure J (S0) and the motor τ_m on the bench. That shrinks the band box and raises the achievable
-  crossover by rule. The closed-loop time constant of about 0.161 s at the J+ corner is the "sluggish" question again.
-- **The hover-rotor tumble** (the collision or prop-strike case, `scenarios/quad/L05/recover_tumble_prop_strike.yaml`,
-  decision 0015) is run and reported, and has **no pass bar until L8**. Propose one at L8, from an absolute recovery
-  requirement rather than the linear envelope.
-- **Finding:** the ESC clock error is the largest single limit on crossover. A crystal ESC would roughly double it.
-  This is not a requirement, since the flown ESC would fail it (Luis, decision 7).
-- **B3 candidate (INFERRED, an idea only):** estimate each ESC's clock scale in flight from the gyro's harmonic peaks,
-  which tightens ε without new hardware.
-
-## Known failing items (safety)
-
-All three have the same cause class and the same gating. **L6 cannot close until all three pass, and all must pass before L8
-(pilot in the loop).** Each is a strict pytest xfail (`raises=AssertionError`, strict) whose condition is
-"`tests/regression/quad/L06/XFAIL_GATE_CLOSED` does not exist" (0009). Stage (e) creates the file; from then on each is
-a normal test and must pass, and an unexpected pass fails CI. Do not re-seed envelopes from wound-up state and do not
-tune bounds (0005 decision 12, 0006 decisions 5 and 15).
-
-1. **L4 acro, combined full-stick segment** (0005 decision 12). `tests/regression/quad/L04/gz/test_t4_acro.py`,
-   evidence `tests/regression/quad/L04/results/acro_cause/`. The PI baseline (ω_c 8.3 rad/s) cannot reject ω×Jω.
-2. **L5 R2, inverted and tumbling at rate_max on all axes** (0006 decision 15). `tests/regression/quad/L05/gz/
-   test_t4_recovery.py`, evidence `tests/regression/quad/L05/results/recovery_cause/`. |ω×Jω| at the first execution
-   is 41/44/33 % of τ_held. The vehicle recovers, but leaves the envelope by up to 0.80 rad and 5.3 rad/s.
-
-   Since decision 0015 R2 starts from a steady tumble (c* 8.917 N); it is proven infeasible from the old hover start
-   (0014, c3 and c6).
-3. **L5 R1X, the exact-180° α envelope predicate only** (0014, third round, item 3). It is a strict xfail on the same gate
-   file. From the singular start, Gazebo takes a mixed-axis branch whose ω×Jω lag the coupling-free envelope can't
-   follow; the tighter stage (c) envelope exposes it. R1X's other assertions stay normal tests.
-
-All three must pass at stage (e), with the lag-compensated FF live (0014). With FF on through the harness (0014, W4),
-items 1 and 3 pass and item 2 (R2) still fails (diagnosis in 0014, W4; awaiting Luis).
-
-## Current state
-
-- **Tags.** `quad-L5-pass` on `5ac1cf4` (placed on the first commit green in Actions, per 0009; not re-checked here, `gh` is not installed). Earlier: `quad-L4-pass` `daac5d9`, `quad-L3-pass`
-  `dcaf2fb`, `quad-L2-pass` `320cf18`, `quad-L1-pass` `b8ed690`, `quad-L0-pass` `6cca7ec`.
-- **Since the L5 handoff** (`33ac37b`):
-  - `b966588`: L5 chirp tests keep one axis's runs in memory (0010). `gz_l5` peak 18.33 GiB → 7.37 GiB, same results.
-  - `5ac1cf4`: CI split into parallel jobs `core`, `gz-l2`, `gz-l4`, `gz-l5`; nightly cron and `workflow_dispatch` run
-    them with `MARV_CI_MODE=full` (where stage (e)'s Monte Carlo will hook in; today both modes run the same steps);
-    a PEAK-MEM line per step; `ci/local_ci.sh` runs the same jobs as root under the runner's limits.
-  - `7d5a663`: the L6 spec section, the register entries (`Ms_max` 2.0, `d_path_noise_budget` 0.5,
-    `t4_pass_probability_{tracking,safety}` 0.90/0.95, `t4_confidence_{tracking,safety}` 0.90/0.95,
-    `allan_check_confidence` 0.99), the `L06/param_ids` manifest and the gate-file condition (0009).
-  - `3cf3e98` (pushed 2026-10-01, no tag): the T3 reference storage migration (0011) and the handoff. Its gz-l5 job
-    generated the L5 reference set itself on a fresh clone and passed.
-  - The next commit on `master`: L6 stage (a) (0012) and the two spec fixes it carries.
-  - `3158fb9`: `local_ci.sh` limits from the measured runner (4 CPUs, 16765378560 B RAM, 1025118208 B headroom, no
-    swap locally), sampler and docker-start guards.
-- **L6 progress.** Opened: spec, register and gate (0009). Stage (a) is closed (0012). Stage (b) is built and verified,
-  and awaits Luis's close (0013). Stages (c)–(e) are open.
-- **Measured wall-clock** (marv-ci-gz, before the split): L02 gz about 1.7 min, `gz_l4` 2 min 21 s, `gz_l5` about
-  9 min (548 s before 0010, 539 s after); the L05 T3 oracle about 50 s on the host, 2 min 20 s in marv-ci.
-- **Expected results with stage (b).** ctest 610/610 (debug and release); core tools tests 963 passed,
-  1 skipped (pre-existing); L04 gz 40 passed, 1 xfailed; L05 gz 63 passed, 1 xfailed.
-- **Local leftovers.** Branches `quad-l5`, `quad-l5-p9b`, `worktree-agent-*` are merged into `master`; worktrees under
-  `.claude/worktrees/` can be removed.
-
-## How to verify
-
-```
-uv sync --frozen
-cmake --preset host-debug && cmake --build --preset host-debug && ctest --preset host-debug
-cmake --preset m33 && cmake --build --preset m33
-ci/local_ci.sh [--commit <rev>] [core|gz-l2|gz-l4|gz-l5 ...]     # the definition of verified
-```
-
-Set `MARV_CI_BASE_REF` to the push range base to exercise the regression-change check as Actions does. `local_ci.sh`
-tests a fresh clone of a commit, so uncommitted files are not tested. `test_truth_gyro.py` (L04 gz) needs
-`build/host-gz` as well as `build/host-gz-l4`, or it skips; a skip in the gz image is a failure.
-
-## Findings that shape L6
-
-- **DShot quantisation at hover** (`L05/results/step_cause/`): hover sits at DShot 765; one step is 4.56 mN per motor,
-  a request dead band of ±8.0e-4 / ±6.0e-4 / ±1.8e-4 N·m (roll/pitch/yaw), a ±0.006 rad attitude limit cycle. Q
-  absorbs it at T4 (0006 decision 19). T4 angle steps catch gross failures only; delay and gain errors are enforced
-  at T3. Stage (d) evaluates DShot error diffusion (it changes L3 output: its own decision record).
-- **The roll/pitch chirp** carries about 2.5° of measurement uncertainty from that limit cycle (0006 decision 20); yaw
-  is clean (0.085°).
-- **Regeneration at L6.** Gains, the T3 fixtures (`--refresh-inputs`, `--refresh-q-inputs`), golden/envelope/Q, step
-  and yaw scenario execution counts and the chirp scenarios (`uv run python tools/sim/gen_l5_chirp.py`) all regenerate
-  by rule; tests assert rule properties and fail loudly when a committed value is stale.
-
-## Carried forward (not L6 unless the spec or Luis says so)
-
-- **From L5 (0006 "Carried forward").** L8: yaw deadband (0 today) with real sticks; only test compositions may carry
-  `TRUTH_STATE`. L9: re-check the attitude rate against EMB-3 with measured WCET (decision 21). `run_l4` passes
-  `rotor_speed_rad_s` through but `l4_scenario` does not accept it yet (0007). The recovery envelope's T3 rounding term
-  is borrowed (INFERRED). The runner fills the L2 separatrix field with the state's own value for recovery scenarios.
-  The plugin applies initial rates one host step late (0003 item 11).
-- **From L4 (0005).** QF-8 open until motor τ σ exists; the replay fidelity gate is DShot-quantised; the composition's
-  extended parameter set relies on link order (L9); the step predicate cannot resolve an envelope shift below about
-  15 ms.
-- **Snapshot-style frozen tests in L00–L03** (listed for Luis; unchanged): L01 `test_flatten_report.py`, L01
-  `test_card_lint.py:482`, L02 `test_run_scenario.py:358, 385-395`, L03 `test_mixer_params.py`, L00
-  `test_lint_g1.py:98-104`. Not `test_gen_sdf_plant_config.py` (pinned by 0007).
-- **Spec gaps** are logged in 0005, 0006 and 0009.
-- **S9 is unenforced for pytest** (Luis, 2026-10-03). The 60 s per-push limit is enforced only as a CTest TIMEOUT. CI
-  runs the tools tests as one pytest session, so no per-file limit applies. Close this at the next CI change. Until
-  then, measure per file in the CI image.
-- **Known, accepted gate limits.** G1 and G3 do not cover `sim/gz` (review only). `ci/run_ci.sh` does not run the L02
-  pytest suites; `run_ci_gz.sh l2` does.
-
-## Working notes
-
-- **Result files (Luis, 2026-10-01, optional going forward).** New result files print a "produced at <commit>" line
-  in their header, so a stale hash explains itself without a record. Old files stay as they are.
-
-- **Numeric literals.** Every literal under `fw/` other than 0, 1, 2 and ½ fails CI. Cited constants go in
-  `constants.hpp` with `Citation:` and `Kind:`. Test numbers are derived or labelled `scenario test value` with a
-  reason.
-- **New product-set parameters.** Add them to the layer's `tests/regression/quad/Lnn/param_ids` manifest (0004).
-- **Goldens.** Regenerated only inside the image, with the command recorded next to them; CI reproduces them byte for
-  byte with a perturbed-input control.
-- **Gazebo tests.** One scenario per gz process (`run_gz_process`), `gz sim --force-version 8`. Protobuf "already
-  exists" lines are noise. Keep parsed logs out of long-lived caches (0010).
-- **Parallel workers.** Worktrees start from `master`; fast-forward them to the working branch first. Size packets to
-  finish inside a worker's turn budget.
-- **Replays.** L4 (`tests/regression/quad/L04/replay/`) and L5 (`results/{step,recovery}_cause/`) re-execute the
-  firmware on logged samples and must match DShot bit for bit.
-- **Scope.** Keep changes to the layer and stage being executed. Prefer fixing harness or setup limitations over
-  adding tolerance terms, and after any new term re-confirm the fine negative controls (0006 decision 24).
+## Rules and rulings the next lead must not break
+- Never loosen a frozen test or a product check. Every change under `tests/regression/` needs a decision record in the
+  same change, naming each full path (`tools/ci/check_regression_changes.py`).
+- Records whose tests reproduce them byte for byte are regenerated by their own generator. If any data line changes,
+  stop.
+- Code or test commits: `ci/local_ci.sh` on the exact commit, then push. Docs-only commits: the regression-change check
+  is enough. If anything is red after a push, fix forward; never rewrite pushed history. No tags without Luis.
+- One writer to the repo at a time. Numbers: cited, sourced, derived with their rule, or labelled; UNKNOWN means stop
+  and ask.
+- Reports to Luis:
+  - built from the records and git;
+  - results first, numbers with units;
+  - quote in full anything he must approve;
+  - every question answerable in one word, with a recommendation.
+- (e) rulings, 0019 verbatim:
+  - NT-2, Bonferroni inside the run, with the point count taken from the predicate;
+  - predicates judge the gz truth state;
+  - the bias delta comes from the nonlinear model; the coupling never enters the envelope;
+  - per push, PP-A: seed 1 at the nominal corner; nightly and before every stage close and tag, 22/59 seeds ×
+    {nominal, worst corner};
+  - clock corners inside the T3 search, and the Gazebo step rounded outward (0012 question E);
+  - exact ties only, each with a per-push bit-identity test;
+  - frozen extremes for the time-varying scenarios, checked by the nightly σ̂ check;
+  - the decision-24 fine controls must still fail, else stop;
+  - S9 for pytest is enforced under local CI and only reported on Actions. Watch `test_r2_lower_bound.py`: 57.4–58.3 s
+    alone against 60 s.
+- Actions times are noisy (runner speed varies about 2×). Measure S9 and timings in the local CI image at load < 1.5.
+- Luis's machine is shared: his games load the CPU. Check `uptime` before any timing.
