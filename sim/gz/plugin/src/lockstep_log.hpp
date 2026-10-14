@@ -38,9 +38,15 @@
 //              4 being padding, zero) of the state passed to marv_truth_state_set before that tick's marv_sil_tick. The
 //              trailer's counts do not include it. A log of a run without the element has no type 5 record and is the
 //              log it was before the element existed.
-//   7 ROTOR    only with <rotor_speed_model>, after that tick's TICK record and after its TRUTH record if any: u64
-//              tick; the 20 bytes of the marv_rotor_speed_meas passed to marv_sil_tick_with_rotor_speed (f32 omega [4],
-//              u32 flags). The trailer's counts do not include it.
+//   8 VERTICAL only with the plugin's <vertical_source>truth</vertical_source> (decision 0020), directly after that tick's
+//              TRUTH record (the element needs <attitude_source>truth</attitude_source>): u64 tick (the tick field of the
+//              marv_truth_vertical passed, which is that tick's); f32 z_ned_m; f32 vz_ned_m_s; u32 flags; the fields of
+//              the state passed to marv_truth_vertical_set before that tick's marv_sil_tick (fw/sil/include/
+//              marv_truth_vertical.h). The trailer's counts do not include it. A log of a run without the element has no
+//              type 8 record and is the log it was before the element existed.
+//   7 ROTOR    only with <rotor_speed_model>, after that tick's TICK record and after its TRUTH and VERTICAL records if
+//              any: u64 tick; the 20 bytes of the marv_rotor_speed_meas passed to marv_sil_tick_with_rotor_speed (f32
+//              omega [4], u32 flags). The trailer's counts do not include it.
 //   3 APPLIED  doubles: the wrench applied to gz, W_bar in ENU, force [3], torque [3].
 //
 //   4 TRAILER  written when the plugin is destroyed: u64 step records, u64 tick records, u64 applied records. A file
@@ -57,7 +63,7 @@
 
 namespace marv::gz {
 
-enum class LogRecord : std::uint8_t { kStep = 1, kTick, kApplied, kTrailer, kTruth, kSensors, kRotor };
+enum class LogRecord : std::uint8_t { kStep = 1, kTick, kApplied, kTrailer, kTruth, kSensors, kRotor, kVertical };
 // Record 6's gyro_source byte.
 enum class LogGyroSource : std::uint8_t { kNone = 0, kTruth, kModel };
 

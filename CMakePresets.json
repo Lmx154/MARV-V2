@@ -47,6 +47,16 @@
       }
     },
     {
+      "name": "host-gz-l11",
+      "inherits": "host-gz",
+      "displayName": "Host, Debug, gz-sim 8 plugin on the l11_vertical_scripted composition",
+      "binaryDir": "${sourceDir}/build/host-gz-l11",
+      "cacheVariables": {
+        "MARV_GZ_SIL": "marv_sil_l11_vertical_scripted",
+        "MARV_GZ_PARAMS": "marv_params_l11_vertical_scripted"
+      }
+    },
+    {
       "name": "host-release",
       "inherits": "base",
       "displayName": "Host, Release",
@@ -81,6 +91,7 @@
     { "name": "host-gz", "configurePreset": "host-gz" },
     { "name": "host-gz-l4", "configurePreset": "host-gz-l4" },
     { "name": "host-gz-l5", "configurePreset": "host-gz-l5" },
+    { "name": "host-gz-l11", "configurePreset": "host-gz-l11" },
     { "name": "host-gz-release", "configurePreset": "host-gz-release" },
     { "name": "m33", "configurePreset": "m33" }
   ],

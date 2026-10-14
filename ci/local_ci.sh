@@ -3,7 +3,7 @@
 # containers, as root, under the GitHub runner's CPU and memory limits, so that a local pass predicts an Actions pass.
 #
 # Usage: ci/local_ci.sh [--commit <rev>] [job ...]
-#   jobs: core, gz-l2, gz-l4, gz-l5 (default: all four, in that order, sequentially)
+#   jobs: core, gz-l2, gz-l4, gz-l5, gz-l11 (default: all five, in that order, sequentially)
 #   --commit: the commit to check, default HEAD. The commit is cloned fresh (git clone, tags included), so uncommitted
 #             and untracked files are not tested, exactly as on Actions.
 # Environment: MARV_CI_BASE_REF (passed to the core job, as ci.yml does), MARV_CI_MODE (per-push or full).
@@ -22,7 +22,7 @@ HEADROOM_BYTES="${MARV_LOCAL_CI_HEADROOM_BYTES:-1025118208}"
 set -euo pipefail
 
 usage() {
-  echo "usage: ci/local_ci.sh [--commit <rev>] [core|gz-l2|gz-l4|gz-l5 ...]" >&2
+  echo "usage: ci/local_ci.sh [--commit <rev>] [core|gz-l2|gz-l4|gz-l5|gz-l11 ...]" >&2
   exit 2
 }
 
@@ -35,14 +35,14 @@ while (($# > 0)); do
       commit="$2"
       shift 2
       ;;
-    core | gz-l2 | gz-l4 | gz-l5)
+    core | gz-l2 | gz-l4 | gz-l5 | gz-l11)
       jobs+=("$1")
       shift
       ;;
     *) usage ;;
   esac
 done
-((${#jobs[@]} > 0)) || jobs=(core gz-l2 gz-l4 gz-l5)
+((${#jobs[@]} > 0)) || jobs=(core gz-l2 gz-l4 gz-l5 gz-l11)
 
 mem_bytes=$((RUNNER_RAM_BYTES - HEADROOM_BYTES))
 mem_gib="$(awk -v b="${mem_bytes}" 'BEGIN { printf "%.2f", b / 1073741824 }')"
@@ -121,7 +121,7 @@ for job in "${jobs[@]}"; do
       build_ci
       run_job core marv-ci ci/run_ci.sh || failed=1
       ;;
-    gz-l2 | gz-l4 | gz-l5)
+    gz-l2 | gz-l4 | gz-l5 | gz-l11)
       build_ci_gz
       run_job "${job}" marv-ci-gz ci/run_ci_gz.sh "${job#gz-}" || failed=1
       ;;

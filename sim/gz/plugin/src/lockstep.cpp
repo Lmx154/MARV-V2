@@ -59,8 +59,12 @@
 #include "marv_plant.h"
 #include "marv_sil.h"
 #include "marv_truth.h"
+#include "marv_truth_vertical.h"
 #ifdef MARV_GZ_TRUTH_STATE
 #include "marv/gz/truth_attitude.hpp"
+#endif
+#ifdef MARV_GZ_TRUTH_VERTICAL
+#include "marv/gz/truth_vertical.hpp"
 #endif
 
 namespace gzs = ::gz::sim;
@@ -131,6 +135,7 @@ struct Parsed {
   std::optional<std::string> log_path;
   bool truth_gyro = false;
   bool truth_attitude = false;
+  bool truth_vertical = false;
   bool model_gyro = false;
   std::optional<ImuModel> imu_model;
   std::optional<marv_plant_rotor_speed_config> rotor_speed;
@@ -449,6 +454,12 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
         refuse("<attitude_source> is '" + trim(text_of(e)) + "', not 'truth'");
       }
       p.truth_attitude = true;
+    } else if (name == "vertical_source") {
+      once(name);
+      if (trim(text_of(e)) != "truth") {
+        refuse("<vertical_source> is '" + trim(text_of(e)) + "', not 'truth'");
+      }
+      p.truth_vertical = true;
     } else if (name == "log_path") {
       once(name);
       const std::string t = trim(text_of(e));
@@ -531,15 +542,18 @@ std::uint64_t realised_host_step_ns(std::uint64_t n, std::int32_t corner, double
 // <rotor_speed_model>, its rotor-speed sample): the three- and four-argument forms below pass them to the SIL through
 // RotorSilCommandSource (marv_sil_tick, or marv_sil_tick_with_rotor_speed with a rotor sample), wrapped by the truth-
 // attitude source with <attitude_source>, and keep both samples. Without that element only the two-argument form runs.
+// With the optional <vertical_source> (which needs <attitude_source> and a SIL library built with TRUTH_VERTICAL;
+// decision 0020) the truth-vertical source wraps the truth-attitude one, and the marv_truth_vertical passed for every
+// tick is kept as well.
 class RecordingSource final : public CommandSource {
  public:
   bool dshot(std::uint64_t tick, Dshot& out) override {
     bool ok = false;
 #ifdef MARV_GZ_TRUTH_STATE
     if (use_attitude_) {
-      ok = attitude_.dshot(tick, out);
+      ok = truth_chain(false).dshot(tick, out);
       if (ok) {
-        truths_.push_back(attitude_.state());
+        keep_truths(false);
       }
     } else
 #endif
@@ -560,9 +574,9 @@ class RecordingSource final : public CommandSource {
     bool ok = false;
 #ifdef MARV_GZ_TRUTH_STATE
     if (use_attitude_) {
-      ok = attitude_model_.dshot(tick, imu, rotor, out);
+      ok = truth_chain(true).dshot(tick, imu, rotor, out);
       if (ok) {
-        truths_.push_back(attitude_model_.state());
+        keep_truths(true);
       }
     } else
 #endif
@@ -587,6 +601,12 @@ class RecordingSource final : public CommandSource {
       return std::string("marv_truth_state_set: ") +
              marv_sil_status_str(static_cast<marv_sil_status>(attitude_.truth_status()));
     }
+#ifdef MARV_GZ_TRUTH_VERTICAL
+    if (use_vertical_ && (use_model_ ? vertical_model_ : vertical_).truth_status() != MARV_SIL_OK) {
+      return std::string("marv_truth_vertical_set: ") + marv_sil_status_str(static_cast<marv_sil_status>(
+                                                            (use_model_ ? vertical_model_ : vertical_).truth_status()));
+    }
+#endif
 #endif
     if (use_model_) {
       return std::string("marv_sil_tick (model IMU): ") +
@@ -602,6 +622,11 @@ class RecordingSource final : public CommandSource {
     use_attitude_ = true;
 #endif
   }
+  void use_truth_vertical() {
+#if defined(MARV_GZ_TRUTH_STATE) && defined(MARV_GZ_TRUTH_VERTICAL)
+    use_vertical_ = true;
+#endif
+  }
   void set_body(const marv_plant_body& body) {
     truth_.set_body(body);
 #ifdef MARV_GZ_TRUTH_STATE
@@ -609,6 +634,11 @@ class RecordingSource final : public CommandSource {
     if (use_model_) {
       attitude_model_.set_body(body);
     }
+#ifdef MARV_GZ_TRUTH_VERTICAL
+    if (use_vertical_) {
+      (use_model_ ? vertical_model_ : vertical_).set_body(body);
+    }
+#endif
 #endif
   }
   void begin_step() {
@@ -616,13 +646,37 @@ class RecordingSource final : public CommandSource {
     imus_.clear();
     truths_.clear();
     rotors_.clear();
+    verticals_.clear();
   }
   const std::vector<std::uint64_t>& stamps() const { return stamps_; }
   const std::vector<marv_imu_meas>& imus() const { return imus_; }
   const std::vector<marv_truth_state>& truths() const { return truths_; }
   const std::vector<marv_rotor_speed_meas>& rotors() const { return rotors_; }
+  const std::vector<marv_truth_vertical>& verticals() const { return verticals_; }
 
  private:
+#ifdef MARV_GZ_TRUTH_STATE
+  // The outermost truth source over the gyro source (`model`: the model-gyro one): the truth-vertical source with
+  // <vertical_source>, which wraps the truth-attitude one, else the truth-attitude one.
+  CommandSource& truth_chain(bool model) {
+#ifdef MARV_GZ_TRUTH_VERTICAL
+    if (use_vertical_) {
+      return model ? vertical_model_ : vertical_;
+    }
+#endif
+    return model ? attitude_model_ : attitude_;
+  }
+  // After a call of truth_chain(model) that succeeded: keeps the states it passed.
+  void keep_truths(bool model) {
+    truths_.push_back((model ? attitude_model_ : attitude_).state());
+#ifdef MARV_GZ_TRUTH_VERTICAL
+    if (use_vertical_) {
+      verticals_.push_back((model ? vertical_model_ : vertical_).state());
+    }
+#endif
+  }
+#endif
+
   SilCommandSource inner_;
   truth::TruthGyroSilCommandSource truth_;
   RotorSilCommandSource model_;
@@ -630,6 +684,11 @@ class RecordingSource final : public CommandSource {
   truth::TruthAttitude attitude_{truth_};
   truth::TruthAttitude attitude_model_{model_};
   bool use_attitude_ = false;
+#ifdef MARV_GZ_TRUTH_VERTICAL
+  truth::TruthVertical vertical_{attitude_};
+  truth::TruthVertical vertical_model_{attitude_model_};
+  bool use_vertical_ = false;
+#endif
 #endif
   bool use_truth_ = false;
   bool use_model_ = false;
@@ -637,6 +696,7 @@ class RecordingSource final : public CommandSource {
   std::vector<marv_imu_meas> imus_;
   std::vector<marv_truth_state> truths_;
   std::vector<marv_rotor_speed_meas> rotors_;
+  std::vector<marv_truth_vertical> verticals_;
 };
 
 std::atomic<bool> g_configured{false};
@@ -676,6 +736,15 @@ class Lockstep final : public gzs::System,
     if (p.truth_attitude) {
       refuse("<attitude_source> needs a SIL library with marv_truth_state_set (built with TRUTH_STATE, target property "
              "MARV_SIL_TRUTH_STATE); the linked one has none");
+    }
+#endif
+    if (p.truth_vertical && !p.truth_attitude) {
+      refuse("<vertical_source> needs <attitude_source>truth</attitude_source>");
+    }
+#ifndef MARV_GZ_TRUTH_VERTICAL
+    if (p.truth_vertical) {
+      refuse("<vertical_source> needs a SIL library with marv_truth_vertical_set (built with TRUTH_VERTICAL, target "
+             "property MARV_SIL_TRUTH_VERTICAL); the linked one has none");
     }
 #endif
     m_ = p.m;
@@ -771,6 +840,10 @@ class Lockstep final : public gzs::System,
     if (p.truth_attitude) {
       source_.use_truth_attitude();
       log_truth_ = true;
+    }
+    if (p.truth_vertical) {
+      source_.use_truth_vertical();
+      log_vertical_ = true;
     }
 
     log_path_ = p.log_path;
@@ -877,6 +950,14 @@ class Lockstep final : public gzs::System,
         b.u8(static_cast<std::uint8_t>(LogRecord::kTruth));
         b.u64(t.tick);
         b.bytes(&source_.truths()[j], sizeof(marv_truth_state));  // the state passed before this tick's marv_sil_tick
+      }
+      if (log_vertical_) {
+        const marv_truth_vertical& v = source_.verticals()[j];  // the state passed before this tick's marv_sil_tick
+        b.u8(static_cast<std::uint8_t>(LogRecord::kVertical));
+        b.u64(v.tick);
+        b.u32(std::bit_cast<std::uint32_t>(v.z_ned_m));
+        b.u32(std::bit_cast<std::uint32_t>(v.vz_ned_m_s));
+        b.u32(v.flags);
       }
       if (log_rotor_) {
         b.u8(static_cast<std::uint8_t>(LogRecord::kRotor));
@@ -1137,6 +1218,7 @@ class Lockstep final : public gzs::System,
   bool vel_cmd_pending_ = false;
   bool keep_vel_cmd_ = false;
   bool log_truth_ = false;
+  bool log_vertical_ = false;
   // Decision 0019: the host step in ns (m * tick_ns, or n_true with <clock_corner>), whether any sensor element is present,
   // the clock element's values, and record 6 (built in Configure, written after the header).
   std::uint64_t host_ns_ = 0;

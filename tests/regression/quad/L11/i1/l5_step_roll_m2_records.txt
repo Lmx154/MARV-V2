@@ -1,0 +1,18 @@
+# I1 of decision 0020 (section 2): the records of an L5 lockstep log, everything after the header (the header carries the
+# gz-sim version string, the one field that varies with the gz installation; it holds no commit hash and no path), as the
+# plugin wrote them before <vertical_source> existed. Checked by tests/regression/quad/L11/gz/test_i1_l5_log.py, which runs
+# the same scenario on the host-gz-l5 build and recomputes the hash.
+# Scenario: scenarios/quad/L05/step_roll.yaml at m = 2, its committed seed 1, through tools/sim/run_l5.py run_step.
+# Produced from the plugin source of commit e08179e (before the element), built in a scratch tree, on the host (Ubuntu
+# 24.04, g++ 13.3.0-6ubuntu2~24.04.1, gz-sim 8.15.0, the versions of ci/Dockerfile and ci/Dockerfile.gz): recorded on the host,
+# reproduced in marv-ci-gz (the closing lines). Commands, from the repository root:
+#   git archive e08179e | tar -x -C <head>
+#   (cd <head> && cmake --preset host-gz-l5 -DMARV_PYTHON=<repo>/.venv/bin/python && cmake --build build/host-gz-l5 --target marv_gz_lockstep)
+#   .venv/bin/python -c "import sys, hashlib; from pathlib import Path; sys.path[:0] = ['tools/sim', 'tools/card']; import run_l5; s = run_l5.run_step(Path('vehicles/uzh_neurobem_5in.yaml'), Path('scenarios/quad/L05/step_roll.yaml'), 2, Path('<out>'), Path('<head>/build/host-gz-l5/sim/gz/plugin')); r = s.run.log['raw_records']; print(hashlib.sha256(r).hexdigest(), len(r))"
+# Two runs gave the same bytes; the same run on the plugin with the element (built without MARV_GZ_TRUTH_VERTICAL) gave a
+# byte-identical log file (sha256 90351e8a397f4033ce5bb680bf0c56f93320fd918ae9d89ec682215525a6bd95, 36691901 bytes), as did
+# the source of cfc7689 (the earlier S3 commit, same files on the L5 path).
+# Reproduced in marv-ci-gz (2026-10-14): the plugin of this change, host-gz-l5 configuration, built and run in the image
+# as the user under /tmp with the command above: the same records_sha256 and records_bytes.
+records_sha256: b349360679f68b868ae7ee349aa420bc857ad999ee68c9d2d82ef9b9a63c0cfe
+records_bytes: 36691855

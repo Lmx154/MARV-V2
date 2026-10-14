@@ -45,3 +45,9 @@ marv_apply_flags(marv_gz_lockstep)
 set(marv_gz_sil_truth_state "$<BOOL:$<TARGET_PROPERTY:${MARV_GZ_SIL},MARV_SIL_TRUTH_STATE>>")
 target_link_libraries(marv_gz_lockstep PRIVATE "$<${marv_gz_sil_truth_state}:marv_gz_truth_attitude>")
 target_compile_definitions(marv_gz_lockstep PRIVATE "$<${marv_gz_sil_truth_state}:MARV_GZ_TRUTH_STATE=1>")
+# The truth-vertical source (quad L11, decision 0020 section 1, item c), the same way: linked only when the SIL library
+# has marv_truth_vertical_set (target property MARV_SIL_TRUTH_VERTICAL, marv_add_sil_library TRUTH_VERTICAL). Without it
+# the plugin refuses the <vertical_source> element at run time.
+set(marv_gz_sil_truth_vertical "$<BOOL:$<TARGET_PROPERTY:${MARV_GZ_SIL},MARV_SIL_TRUTH_VERTICAL>>")
+target_link_libraries(marv_gz_lockstep PRIVATE "$<${marv_gz_sil_truth_vertical}:marv_gz_truth_vertical>")
+target_compile_definitions(marv_gz_lockstep PRIVATE "$<${marv_gz_sil_truth_vertical}:MARV_GZ_TRUTH_VERTICAL=1>")

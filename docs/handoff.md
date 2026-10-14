@@ -64,8 +64,8 @@ uncommitted (now on `l6-c6a-wip`). No code changed. What remains broken is uncha
   log type 8, the L5 byte-identity check; S6 T3 oracle, golden, envelopes (0011 storage); S7 scenarios, runner, T4 gz
   tests and controls, a `gz-l11` job; S8 close. Estimate 11.5 working days (not a commitment). S1 landed (full local CI green on 253b620). S2 landed (reviewed PASS). S3 landed (reviewed PASS: the generator,
   the budget entry, the design site in design/scenario_values.yaml, the L11 manifest, the regenerated product table).
-  S4 landed (reviewed PASS: the composition, its register, SIL library and 37 T1 tests). Next: S5 (plugin element,
-  adapter, log record 8, the host-gz-l11 preset and CI group, the L5 byte-identity guard), in progress.
+  S4 landed (reviewed PASS: the composition, its register, SIL library and 37 T1 tests). S5 landed (reviewed PASS: the plugin element, adapter, log record 8, the host-gz-l11 preset, the l11 CI group and
+  gz-l11 job, the I1 guard). Next: S6 (S6a-1, the vertical T3 oracle and golden, in progress).
 - Coupling: stage (e)'s FF switch-on commit must also keep L11 green (INFERRED low risk). The R2 collective question is
   untouched by L11 (no recovery scenario).
 - The packet, the survey and the architect's full decision: `~/marv-handover-2026-10-13/altitude/`.
@@ -140,7 +140,7 @@ stored per 0011.
   per-point W is about 1.9 mrad/s. Lead recommendation: per point.
 - **The gz re-measure** (ruling 7): only when Luis says the host is quiet (load < 1.5). It fixes the shard count, and C7
   waits for it.
-- **L11 (lead):** S5–S8 as listed above; S1–S4 landed.
+- **L11 (lead):** S6–S8 as listed above; S1–S5 landed. Local CI now has five jobs (gz-l11 added).
 - **Remaining (e) builds:**
   - C6a: see above;
   - C6b: the T3 corner scan (27-row table), the L5 and chirp plan adapters;

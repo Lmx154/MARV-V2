@@ -137,6 +137,22 @@ vertical estimator layer and a §6.1 pilot mode are each a separate decision.
     thrust disturbance, the torque pulse per axis, group order and subset, freshness panics, the fallback, and T11 a
     planted clamp proving the anti-windup wiring; the id-prefix script with two controls). Nine mutations each caught
     after T11. Reviewed PASS against §1, §4, §5.
+  - S5, the Gazebo-side truth vertical feed: the plugin's `<vertical_source>truth</vertical_source>` (refused for any
+    other value, without `<attitude_source>truth</attitude_source>`, or when the plugin is built without
+    MARV_GZ_TRUTH_VERTICAL, derived from the SIL library's MARV_SIL_TRUTH_VERTICAL property as the truth_state define
+    is); the adapter `marv::truth::TruthVertical` (sim/gz/adapter), the chain TruthVertical(TruthAttitude(gyro)),
+    VALID iff both float casts of the plant's down position and velocity are finite; log record 8 VERTICAL
+    {tick, z, vz, flags} directly after the tick's TICK and TRUTH records, only with the element, read by
+    tools/sim/lockstep_log.py (must follow its tick's TRUTH record) and refused explicitly by sensor_replay; the run
+    report's one conditional line; the preset `host-gz-l11`, the CI group `l11` (builds host-gz-l5 and host-gz-l11)
+    and the Actions job `gz-l11`; `ci/local_ci.sh` and CLAUDE.md's job list gain gz-l11. Tests:
+    tests/regression/quad/L11/gz (13: the accepted element with one record 8 per tick equal to the float casts of the
+    logged body state and the hover DShot at the reference, two planted refusals with good-world controls, and the I1
+    guard) and tests/regression/quad/L11/unit/truth_vertical_source (the adapter, 5). I1 evidence:
+    tests/regression/quad/L11/i1/l5_step_roll_m2_records.txt records the SHA-256 of the L5 step_roll m = 2 seed-1 log's
+    records (36,691,855 B) with the exact command; recorded on the host from the pre-S5 plugin and reproduced in the
+    marv-ci-gz image; the L5 log is byte-identical with the plugin built from HEAD before S5 and after it. Reviewed PASS
+    against §1 (Truth feed) and I1.
 
 ## Evidence
 

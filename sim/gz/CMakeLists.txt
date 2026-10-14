@@ -21,6 +21,16 @@ target_link_libraries(marv_gz_truth_attitude PUBLIC marv_gz_adapter)
 set_target_properties(marv_gz_truth_attitude PROPERTIES POSITION_INDEPENDENT_CODE ON)
 marv_apply_flags(marv_gz_truth_attitude)
 
+# The truth-vertical source (quad L11, decision 0020 section 1, item c), in the truth-attitude source's form: the plugin
+# links it only when its SIL library has marv_truth_vertical_set (target property MARV_SIL_TRUTH_VERTICAL), which is
+# resolved by whatever links this library.
+add_library(marv_gz_truth_vertical STATIC adapter/src/truth_vertical.cpp)
+target_include_directories(marv_gz_truth_vertical PUBLIC adapter/include)
+target_include_directories(marv_gz_truth_vertical PUBLIC "${PROJECT_SOURCE_DIR}/fw/sil/include")
+target_link_libraries(marv_gz_truth_vertical PUBLIC marv_gz_adapter)
+set_target_properties(marv_gz_truth_vertical PROPERTIES POSITION_INDEPENDENT_CODE ON)
+marv_apply_flags(marv_gz_truth_vertical)
+
 # The SIL-2 replay of the plugin's sensor path (decision 0019, W1 C2): marv_plant and the generated IMU header only, so it
 # is built in every host build, not only with MARV_GZ.
 add_subdirectory(sensor_replay)

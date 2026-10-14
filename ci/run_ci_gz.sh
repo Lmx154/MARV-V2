@@ -145,9 +145,23 @@ gz_sensors_l5() {
   pytest_no_skips tests/regression/quad/L06/gz_compositions/test_l5_sensors.py
 }
 
-# Usage: ci/run_ci_gz.sh [l2|l4|l5]. No argument runs every step (l2, l4, l5 in order). The Actions jobs gz-l2, gz-l4 and
-# gz-l5 run one group each, in parallel on separate runners, so a group must not depend on another group's build: gz_build
-# is in l2 and in l4 (test_truth_gyro.py runs on the host-gz build).
+# The L11 plugin: the same plugin source on the l11_vertical_scripted composition (MARV_GZ_SIL =
+# marv_sil_l11_vertical_scripted, a TRUTH_STATE and TRUTH_VERTICAL library), decision 0020 section 5 "CI cost".
+gz_build_l11() {
+  uv sync --frozen || return 1
+  cmake --preset host-gz-l11 && cmake --build --preset host-gz-l11
+}
+
+# The L11 gz suite: the <vertical_source> element and record 8 on the host-gz-l11 build, its planted refusals (one on the
+# host-gz-l5 build) and the I1 guard (an L5 log on the host-gz-l5 build has no record 8 and its recorded records hash).
+gz_l11() {
+  pytest_no_skips tests/regression/quad/L11/gz
+}
+
+# Usage: ci/run_ci_gz.sh [l2|l4|l5|l11]. No argument runs every step (l2, l4, l5, l11 in order). The Actions jobs gz-l2,
+# gz-l4, gz-l5 and gz-l11 run one group each, in parallel on separate runners, so a group must not depend on another
+# group's build: gz_build is in l2 and in l4 (test_truth_gyro.py runs on the host-gz build), gz_build_l5 in l5 and in l11
+# (the L11 suite's refusal and I1 tests run on the host-gz-l5 build).
 group_l2() {
   step gz_toolchain gz_toolchain
   step gz_build gz_build
@@ -173,17 +187,25 @@ group_l5() {
   step gz_sensors_l5 gz_sensors_l5
 }
 
+group_l11() {
+  step gz_build_l5 gz_build_l5
+  step gz_build_l11 gz_build_l11
+  step gz_l11 gz_l11
+}
+
 case "${1:-all}" in
   l2) group_l2 ;;
   l4) group_l4 ;;
   l5) group_l5 ;;
+  l11) group_l11 ;;
   all)
     group_l2
     group_l4
     group_l5
+    group_l11
     ;;
   *)
-    echo "usage: ci/run_ci_gz.sh [l2|l4|l5]" >&2
+    echo "usage: ci/run_ci_gz.sh [l2|l4|l5|l11]" >&2
     exit 2
     ;;
 esac

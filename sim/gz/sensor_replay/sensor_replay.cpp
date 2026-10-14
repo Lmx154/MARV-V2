@@ -247,7 +247,7 @@ bool read_file(const std::string& path, std::vector<std::uint8_t>& out) {
 
 // The log, with the structure the plugin writes (lockstep_log.hpp) checked: record 6 first; per host step one STEP, m
 // TICKs numbered step * m + i, each followed by its TRUTH (skipped) if any and its ROTOR iff rotor_speed is 1, then one
-// APPLIED; a trailer last whose counts are the records read.
+// APPLIED; a trailer last whose counts are the records read. A VERTICAL record (<vertical_source>) is refused.
 bool read_log(const std::vector<std::uint8_t>& data, Log& log, std::string& error) {
   Reader r(data);
   std::array<char, kMagic.size()> magic{};
@@ -344,6 +344,11 @@ bool read_log(const std::vector<std::uint8_t>& data, Log& log, std::string& erro
         prev->rotor.emplace();
         r.bytes(prev->rotor->data(), prev->rotor->size());
         break;
+      case LogRecord::kVertical:
+        return fail(error,
+                    "a VERTICAL record (record 8, <vertical_source>truth</vertical_source>): the replay does not replay "
+                    "the truth vertical feed",
+                    at);
       case LogRecord::kApplied:
         if (!step_open || log.steps.back().ticks.size() != log.m || (rotor && !prev->rotor)) {
           return fail(error, "an APPLIED record before the step's m ticks (and their ROTOR records)", at);

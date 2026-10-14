@@ -550,6 +550,7 @@ def _run_block(r, ver):
         f"  log sha256: {r.log_sha256}",
         f"  log records: steps {len(r.log['steps'])}, ticks {len(r.log['ticks'])}, applied {len(r.log['applied'])}; "
         f"trailer {_fmt_value(trailer)}",
+        *(["  vertical source: truth (<vertical_source>, decision 0020)"] if any(isinstance(t, dict) and "vertical" in t for t in r.log.get("ticks", ())) else []),
         f"  stale steps: {st['stale']} of {st['steps']} (raw gz read bitwise equal to the previous step's while the "
         f"applied wrench was nonzero; 0003 item 11); unchanged with a zero wrench: {st['unchanged_zero_wrench']}",
         f"  last fresh step: index {last if last is not None else 'none'}, time {stale_time}",

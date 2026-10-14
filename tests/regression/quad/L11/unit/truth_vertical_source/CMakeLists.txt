@@ -1,0 +1,12 @@
+# The truth-vertical source (sim/gz, marv::truth, decision 0020 section 1, item c): the marv_truth_vertical it fills from
+# marv_plant_body, its hold over a host step's m ticks, and the hand-over before each marv_sil_tick, seen through the
+# motor outputs of the truth-vertical test composition (../truth_vertical). The adapter has no Gazebo header, so the test
+# builds without gz. marv_sil_init succeeds once per process, so the SIL cases run in a forked child.
+add_executable(unit_truth_vertical_source truth_vertical_source_test.cpp)
+target_include_directories(unit_truth_vertical_source PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/../truth_vertical/composition/include")
+target_link_libraries(unit_truth_vertical_source PRIVATE
+  marv_gz_truth_vertical marv_gz_adapter marv_plant marv_sil_l11_truth_vertical_test marv_types
+  marv_params_l0_generated GTest::gtest_main)
+marv_apply_flags(unit_truth_vertical_source)
+marv_frozen_suite(unit_truth_vertical_source)
