@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.28)
 
+# Compiler cache: used as the compiler launcher when ccache is found (the CI images carry it, ci/Dockerfile), off when
+# absent. Set before project(), so every tree (host, m33, gz) uses it. A launcher does not change what is compiled.
+find_program(MARV_CCACHE ccache)
+if(MARV_CCACHE)
+  set(CMAKE_C_COMPILER_LAUNCHER "${MARV_CCACHE}")
+  set(CMAKE_CXX_COMPILER_LAUNCHER "${MARV_CCACHE}")
+endif()
+
 project(marv VERSION 0.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)

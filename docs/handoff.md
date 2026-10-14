@@ -47,12 +47,24 @@ selection; the full suite runs only on the merge into `master` (pull request int
 - Development check, warm trees: docs 0.8 s; `fw/vertical` ~22 s + G1; `tools/sim/l6_noise_term.py` ~21 s (was the
   whole L06 tools dir, 293 s). G1 needs `clang-tidy-18` on the host (not installed on Luis's host: `lint_g1.py:217`).
 - Not yet run: the full merge gate (`ci/local_ci.sh`) on this branch's head.
+- Committed and pushed as `91f843c` (Luis: "commit and push"). Then Luis, 2026-10-14, verbatim, on the merge-run
+  speed-ups (a compiler cache, one Gazebo build instead of four, cached reference data, parallel Python and ctest, the
+  one-ulp control on one file): "this leads me to believe that we're not taking advantage of low hanging fruit for
+  optimization. i need you to do this, so that even the full suite runs faster" (decision 0022). Done, uncommitted: a
+  complete reference-data stamp and cached reference sets (4 T3 steps cold 383 s, warm 186 s); the one-ulp controls
+  generate only the golden and envelope they check, and their verdicts are cached (188 s miss, 0.8 s hit); pytest-xdist
+  (4 workers, one file each) for the merge-run tools tests (1000 → 765 s) and the gz suites (L5 T4 695 → 514 s);
+  ccache + a persistent CI cache volume (`marv-ci-cache`; `--no-cache` for a from-scratch proof) + Docker layer
+  caching on Actions + `ci/local_ci.sh --parallel N` (ccache alone: core 2296 → 2129 s, compilation is small); the
+  card flatten cache (`tools/card/flatten_cached.py`: the four sets are one 50 s run, then 0.5 s per tree). The
+  `--skip-q` oracle option was withdrawn (two frozen L06 results record the oracle's sha256). The Actions workflow
+  changes are unrun until the first push to master; first thing to check there.
 - Open for Luis (trims that change what runs; each needs his word and goes into a decision record): (1) the L5 T3
-  one-ulp control on one output file, not the whole set (−~4 min whenever L5 is touched and at the merge); (2) the L5
+  one-ulp control on one output file: done under the redirect above (decision 0022 items 3–4); (2) the L5
   gz T4 suite (740 s): steps in development checks, chirps/yaw/recovery only in the full run; (3) consolidate the twin
   truth-channel C++ suites (L05 TruthState / L11 TruthVertical), the three scenario-schema pytest files and the three
-  param-prefix scripts (about 50 fewer entries, little time); (4) merge-run speed (ccache, one Gazebo tree for the four
-  plugin variants, cached references, pytest-xdist: ~70 → ~25 min).
+  param-prefix scripts (about 50 fewer entries, little time); (4) merge-run speed: being done under the redirect above
+  (the four Gazebo plugin trees stay separate builds and share the compiler cache).
 
 ## Stop point (Luis, 2026-10-14 01:2x: "find a spot to stop at quickly and commit. then write in the handoff")
 - Branch `quad-l11` (from `recovery/hover-demo`, from `master` = `b48e202`). Commits, oldest first: `c5d7da5` S0 (spec +

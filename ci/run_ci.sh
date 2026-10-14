@@ -372,11 +372,44 @@ plant_ref_control() {
 }
 
 # T3 reference data is not committed (decision 0011): tools/refdata/refdata.py regenerates it from the committed inputs into
-# ${MARV_REFERENCE_DIR:-build/reference} and checks it against the committed SHA256SUMS. The reproduction steps below
-# regenerate (--force) and the ctest fixtures of the T3 suites then read that same directory. The L5 generator runs on the
-# runner's 4 CPUs (ci/local_ci.sh RUNNER_CPUS); the output does not depend on the number of processes.
+# $MARV_REFERENCE_DIR, else $MARV_CACHE_DIR/reference, else build/reference, and checks it against the committed SHA256SUMS. The
+# reproduction steps below regenerate (--force) and the ctest fixtures of the T3 suites then read that same directory. With
+# MARV_CACHE_DIR set (the persistent CI cache) they do not force: refdata.py reuses an entry whose stamp (the generator, its
+# inputs, its import closure, the repository files it reads, uv.lock, the interpreter) is current and whose files match
+# SHA256SUMS, and regenerates otherwise, so the entry exists only because the generator produced the committed hashes from
+# exactly the stamped files. The L5 generator runs on the runner's 4 CPUs (ci/local_ci.sh RUNNER_CPUS); the output does not
+# depend on the number of processes.
 refdata="tools/refdata/refdata.py"
+refdata_force=(--force)
+if [[ -n "${MARV_CACHE_DIR:-}" ]]; then
+  refdata_force=()
+fi
 t3_reference_dir=tests/regression/quad/L04/t3/reference
+
+# The verdict of a T3 negative control is a function of the set's stamp, the perturbed input, tools/refdata and the text of the
+# control itself, so with MARV_CACHE_DIR set a verified failure is recorded and not re-run while that key is unchanged
+# (tools/refdata/refdata.py control-key). Without MARV_CACHE_DIR a control always runs. t3_control_cached <set> <control>
+# <perturbed inputs> <function>... returns 0 on a hit; t3_control_store <set> <control> <verify log> records a verified failure
+# (only called once the control has behaved as required).
+t3_control_key=""
+t3_control_cached() {
+  local set="$1" name="$2" inputs="$3" text record
+  shift 3
+  t3_control_key=""
+  [[ -n "${MARV_CACHE_DIR:-}" ]] || return 1
+  text="$(mktemp)"
+  declare -f "$@" t3_control_cached t3_control_store >"${text}"
+  t3_control_key="$(uv run python "${refdata}" control-key "${set}" --input "${inputs}" --text "${text}")" \
+    || { rm -f "${text}"; t3_control_key=""; return 1; }
+  rm -f "${text}"
+  record="$(uv run python "${refdata}" control-lookup "${set}" "${name}" "${t3_control_key}")" || return 1
+  echo "control verdict cached for key ${t3_control_key} (recorded failure: ${record})"
+}
+
+t3_control_store() {
+  [[ -n "${MARV_CACHE_DIR:-}" && -n "${t3_control_key}" ]] || return 0
+  uv run python "${refdata}" control-store "$1" "$2" "${t3_control_key}" --log "$3"
+}
 
 t3_oracle_run() {
   local dir="$1"
@@ -384,7 +417,7 @@ t3_oracle_run() {
 }
 
 t3_reference_reproduces() {
-  uv run python "${refdata}" ensure quad/L04/t3 --force
+  uv run python "${refdata}" ensure quad/L04/t3 ${refdata_force[@]+"${refdata_force[@]}"}
 }
 
 # The same run with rate_kp_roll one float32 ulp up must fail the SHA256SUMS check, naming rate_t3_golden.txt.
@@ -410,6 +443,10 @@ PY
     rm -rf "${dir}" "${log}"
     return 1
   fi
+  if t3_control_cached quad/L04/t3 "${FUNCNAME[0]}" "${dir}/rate_t3_inputs.txt" t3_reference_control t3_oracle_run; then
+    rm -rf "${dir}" "${log}"
+    return 0
+  fi
   t3_oracle_run "${dir}" || { rm -rf "${dir}" "${log}"; return 1; }
   if uv run python "${refdata}" verify quad/L04/t3 --dir "${dir}" 2>"${log}"; then
     echo "control passed the SHA256SUMS check from a perturbed input: the reproduction check cannot fail"
@@ -422,6 +459,7 @@ PY
     rm -rf "${dir}" "${log}"
     return 1
   fi
+  t3_control_store quad/L04/t3 "${FUNCNAME[0]}" "${log}"
   rm -rf "${dir}" "${log}"
 }
 
@@ -605,7 +643,7 @@ att_t3_oracle_run() {
 }
 
 att_t3_reference_reproduces() {
-  uv run python "${refdata}" ensure quad/L05/t3 --force --procs "${att_t3_procs}"
+  uv run python "${refdata}" ensure quad/L05/t3 ${refdata_force[@]+"${refdata_force[@]}"} --procs "${att_t3_procs}"
 }
 
 # The same run with att_kp one float32 ulp up must fail the SHA256SUMS check, naming attitude_t3_golden.txt and
@@ -633,6 +671,10 @@ PY
     rm -rf "${dir}" "${log}"
     return 1
   fi
+  if t3_control_cached quad/L05/t3 "${FUNCNAME[0]}" "${dir}/attitude_t3_inputs.txt" att_t3_reference_control att_t3_oracle_run; then
+    rm -rf "${dir}" "${log}"
+    return 0
+  fi
   att_t3_oracle_run "${dir}" || { rm -rf "${dir}" "${log}"; return 1; }
   if uv run python "${refdata}" verify quad/L05/t3 --dir "${dir}" 2>"${log}"; then
     echo "control passed the SHA256SUMS check from a perturbed input: the reproduction check cannot fail"
@@ -647,6 +689,7 @@ PY
       return 1
     fi
   done
+  t3_control_store quad/L05/t3 "${FUNCNAME[0]}" "${log}"
   rm -rf "${dir}" "${log}"
 }
 
@@ -788,6 +831,18 @@ tools_tests() {
   local guard=()
   if [[ "${MARV_CI_MODE:-per-push}" != full ]]; then
     guard=(-p pytest_file_time_guard)
+  else
+    # Decision 0022 item 5: workers in the merge run, one file per worker (module fixtures run once). The count is nproc capped
+    # at 4 (the runner's CPUs, RUNNER_CPUS in ci/local_ci.sh; docker --cpus does not lower nproc); MARV_PYTEST_WORKERS overrides
+    # it, 0 = serial. Per push stays serial: the time guard measures alone time in-process and cannot run under workers.
+    local workers="${MARV_PYTEST_WORKERS:-}" cpus
+    if [[ -z "${workers}" ]]; then
+      cpus="$(nproc)"
+      workers=$((cpus < 4 ? cpus : 4))
+    fi
+    if ((workers > 0)); then
+      guard=(-n "${workers}" --dist loadfile)
+    fi
   fi
   local paths=(tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools tests/regression/quad/L11/tools tests/tools)
   if [[ -n "${MARV_PYTEST_PATHS:-}" ]]; then

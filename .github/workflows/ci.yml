@@ -14,6 +14,15 @@ on:
 env:
   MARV_CI_MODE: full
 
+# Caches. Each job restores and saves one host directory, mounted at /cache in the container (MARV_CACHE_DIR=/cache; the
+# compiler cache is /cache/ccache, ci/Dockerfile). The key carries the hashes of what changes the compiler, the image and
+# the Python environment plus the commit, so every run saves; restore-keys fall back to the newest cache of the same job
+# and the same hashes (ccache validates every entry by content, so a cache of an older commit is safe). The save step
+# runs on failure too: a failed build still filled the compiler cache. One key per job name, so the jobs do not race on a
+# key. The two Docker images are built with buildx and the gha layer cache (one scope per image); the gz image is
+# FROM marv-ci, which the docker-container builder cannot see in the local image store, so marv-ci is pushed to a local
+# registry service and passed as the named context (docs.docker.com/build/ci/github-actions/named-contexts).
+
 jobs:
   core:
     runs-on: ubuntu-24.04
@@ -26,17 +35,46 @@ jobs:
           nproc
           free -b
           head -3 /proc/meminfo
+      - name: Create the cache directory
+        run: mkdir -p "${{ runner.temp }}/marv-cache"
+      - name: Restore the cache directory
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/marv-cache
+          key: ${{ runner.os }}-marv-cache-core-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-marv-cache-core-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
       - name: Build CI image
-        run: docker build -t marv-ci -f ci/Dockerfile .
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: marv-ci
+          load: true
+          cache-from: type=gha,scope=marv-ci
+          cache-to: type=gha,scope=marv-ci,mode=max
       - name: Run CI
         env:
           # Pull request: check against the target branch. Push: check the whole pushed range (the commit before the
           # push), except when the push creates the branch (before is all zeros). Schedule and dispatch: empty, no check.
           MARV_CI_BASE_REF: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || (github.event.before != '0000000000000000000000000000000000000000' && github.event.before || '') }}
-        run: docker run --rm -e MARV_CI_BASE_REF -e MARV_CI_MODE -v "$PWD":/src -w /src marv-ci ci/run_ci.sh
+        run: docker run --rm -e MARV_CI_BASE_REF -e MARV_CI_MODE -e MARV_CACHE_DIR=/cache -v "$PWD":/src -v "${{ runner.temp }}/marv-cache":/cache -w /src marv-ci bash -c 'git config --global --add safe.directory /src; ccache -z >/dev/null 2>&1 || true; "$@"; s=$?; echo "##### ccache -s"; ccache -s || true; exit "$s"' bash ci/run_ci.sh
+      - name: Save the cache directory
+        if: ${{ always() }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/marv-cache
+          key: ${{ runner.os }}-marv-cache-core-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
 
   gz-l2:
     runs-on: ubuntu-24.04
+    services:
+      registry:
+        image: registry:3
+        ports:
+          - 5000:5000
     steps:
       - uses: actions/checkout@v4
       - name: Runner resources
@@ -44,15 +82,56 @@ jobs:
           nproc
           free -b
           head -3 /proc/meminfo
+      - name: Create the cache directory
+        run: mkdir -p "${{ runner.temp }}/marv-cache"
+      - name: Restore the cache directory
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/marv-cache
+          key: ${{ runner.os }}-marv-cache-gz-l2-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-marv-cache-gz-l2-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          # network=host: the builder reaches the registry service on localhost:5000.
+          driver-opts: network=host
       - name: Build CI image
-        run: docker build -t marv-ci -f ci/Dockerfile .
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: localhost:5000/marv-ci:latest
+          push: true
+          cache-from: type=gha,scope=marv-ci
+          cache-to: type=gha,scope=marv-ci,mode=max
       - name: Build Gazebo CI image
-        run: docker build -t marv-ci-gz -f ci/Dockerfile.gz .
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ci/Dockerfile.gz
+          build-contexts: |
+            marv-ci=docker-image://localhost:5000/marv-ci:latest
+          tags: marv-ci-gz
+          load: true
+          cache-from: type=gha,scope=marv-ci-gz
+          cache-to: type=gha,scope=marv-ci-gz,mode=max
       - name: Run Gazebo CI (group l2)
-        run: docker run --rm -e MARV_CI_MODE -v "$PWD":/src -w /src marv-ci-gz ci/run_ci_gz.sh l2
+        run: docker run --rm -e MARV_CI_MODE -e MARV_CACHE_DIR=/cache -v "$PWD":/src -v "${{ runner.temp }}/marv-cache":/cache -w /src marv-ci-gz bash -c 'git config --global --add safe.directory /src; ccache -z >/dev/null 2>&1 || true; "$@"; s=$?; echo "##### ccache -s"; ccache -s || true; exit "$s"' bash ci/run_ci_gz.sh l2
+      - name: Save the cache directory
+        if: ${{ always() }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/marv-cache
+          key: ${{ runner.os }}-marv-cache-gz-l2-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
 
   gz-l4:
     runs-on: ubuntu-24.04
+    services:
+      registry:
+        image: registry:3
+        ports:
+          - 5000:5000
     steps:
       - uses: actions/checkout@v4
       - name: Runner resources
@@ -60,15 +139,56 @@ jobs:
           nproc
           free -b
           head -3 /proc/meminfo
+      - name: Create the cache directory
+        run: mkdir -p "${{ runner.temp }}/marv-cache"
+      - name: Restore the cache directory
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/marv-cache
+          key: ${{ runner.os }}-marv-cache-gz-l4-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-marv-cache-gz-l4-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          # network=host: the builder reaches the registry service on localhost:5000.
+          driver-opts: network=host
       - name: Build CI image
-        run: docker build -t marv-ci -f ci/Dockerfile .
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: localhost:5000/marv-ci:latest
+          push: true
+          cache-from: type=gha,scope=marv-ci
+          cache-to: type=gha,scope=marv-ci,mode=max
       - name: Build Gazebo CI image
-        run: docker build -t marv-ci-gz -f ci/Dockerfile.gz .
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ci/Dockerfile.gz
+          build-contexts: |
+            marv-ci=docker-image://localhost:5000/marv-ci:latest
+          tags: marv-ci-gz
+          load: true
+          cache-from: type=gha,scope=marv-ci-gz
+          cache-to: type=gha,scope=marv-ci-gz,mode=max
       - name: Run Gazebo CI (group l4)
-        run: docker run --rm -e MARV_CI_MODE -v "$PWD":/src -w /src marv-ci-gz ci/run_ci_gz.sh l4
+        run: docker run --rm -e MARV_CI_MODE -e MARV_CACHE_DIR=/cache -v "$PWD":/src -v "${{ runner.temp }}/marv-cache":/cache -w /src marv-ci-gz bash -c 'git config --global --add safe.directory /src; ccache -z >/dev/null 2>&1 || true; "$@"; s=$?; echo "##### ccache -s"; ccache -s || true; exit "$s"' bash ci/run_ci_gz.sh l4
+      - name: Save the cache directory
+        if: ${{ always() }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/marv-cache
+          key: ${{ runner.os }}-marv-cache-gz-l4-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
 
   gz-l5:
     runs-on: ubuntu-24.04
+    services:
+      registry:
+        image: registry:3
+        ports:
+          - 5000:5000
     steps:
       - uses: actions/checkout@v4
       - name: Runner resources
@@ -76,15 +196,56 @@ jobs:
           nproc
           free -b
           head -3 /proc/meminfo
+      - name: Create the cache directory
+        run: mkdir -p "${{ runner.temp }}/marv-cache"
+      - name: Restore the cache directory
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/marv-cache
+          key: ${{ runner.os }}-marv-cache-gz-l5-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-marv-cache-gz-l5-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          # network=host: the builder reaches the registry service on localhost:5000.
+          driver-opts: network=host
       - name: Build CI image
-        run: docker build -t marv-ci -f ci/Dockerfile .
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: localhost:5000/marv-ci:latest
+          push: true
+          cache-from: type=gha,scope=marv-ci
+          cache-to: type=gha,scope=marv-ci,mode=max
       - name: Build Gazebo CI image
-        run: docker build -t marv-ci-gz -f ci/Dockerfile.gz .
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ci/Dockerfile.gz
+          build-contexts: |
+            marv-ci=docker-image://localhost:5000/marv-ci:latest
+          tags: marv-ci-gz
+          load: true
+          cache-from: type=gha,scope=marv-ci-gz
+          cache-to: type=gha,scope=marv-ci-gz,mode=max
       - name: Run Gazebo CI (group l5)
-        run: docker run --rm -e MARV_CI_MODE -v "$PWD":/src -w /src marv-ci-gz ci/run_ci_gz.sh l5
+        run: docker run --rm -e MARV_CI_MODE -e MARV_CACHE_DIR=/cache -v "$PWD":/src -v "${{ runner.temp }}/marv-cache":/cache -w /src marv-ci-gz bash -c 'git config --global --add safe.directory /src; ccache -z >/dev/null 2>&1 || true; "$@"; s=$?; echo "##### ccache -s"; ccache -s || true; exit "$s"' bash ci/run_ci_gz.sh l5
+      - name: Save the cache directory
+        if: ${{ always() }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/marv-cache
+          key: ${{ runner.os }}-marv-cache-gz-l5-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
 
   gz-l11:
     runs-on: ubuntu-24.04
+    services:
+      registry:
+        image: registry:3
+        ports:
+          - 5000:5000
     steps:
       - uses: actions/checkout@v4
       - name: Runner resources
@@ -92,9 +253,45 @@ jobs:
           nproc
           free -b
           head -3 /proc/meminfo
+      - name: Create the cache directory
+        run: mkdir -p "${{ runner.temp }}/marv-cache"
+      - name: Restore the cache directory
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/marv-cache
+          key: ${{ runner.os }}-marv-cache-gz-l11-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-marv-cache-gz-l11-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          # network=host: the builder reaches the registry service on localhost:5000.
+          driver-opts: network=host
       - name: Build CI image
-        run: docker build -t marv-ci -f ci/Dockerfile .
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: localhost:5000/marv-ci:latest
+          push: true
+          cache-from: type=gha,scope=marv-ci
+          cache-to: type=gha,scope=marv-ci,mode=max
       - name: Build Gazebo CI image
-        run: docker build -t marv-ci-gz -f ci/Dockerfile.gz .
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ci/Dockerfile.gz
+          build-contexts: |
+            marv-ci=docker-image://localhost:5000/marv-ci:latest
+          tags: marv-ci-gz
+          load: true
+          cache-from: type=gha,scope=marv-ci-gz
+          cache-to: type=gha,scope=marv-ci-gz,mode=max
       - name: Run Gazebo CI (group l11)
-        run: docker run --rm -e MARV_CI_MODE -v "$PWD":/src -w /src marv-ci-gz ci/run_ci_gz.sh l11
+        run: docker run --rm -e MARV_CI_MODE -e MARV_CACHE_DIR=/cache -v "$PWD":/src -v "${{ runner.temp }}/marv-cache":/cache -w /src marv-ci-gz bash -c 'git config --global --add safe.directory /src; ccache -z >/dev/null 2>&1 || true; "$@"; s=$?; echo "##### ccache -s"; ccache -s || true; exit "$s"' bash ci/run_ci_gz.sh l11
+      - name: Save the cache directory
+        if: ${{ always() }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/marv-cache
+          key: ${{ runner.os }}-marv-cache-gz-l11-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}

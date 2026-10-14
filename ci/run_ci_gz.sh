@@ -64,11 +64,21 @@ gz_build() {
   cmake --preset host-gz && cmake --build --preset host-gz
 }
 
+# Decision 0022 item 5: workers in both modes, one file per worker (module fixtures run once; every gz run has its own transport
+# partition and temporary directory). The count is nproc capped at 4 (the runner's CPUs, RUNNER_CPUS in ci/local_ci.sh);
+# MARV_PYTEST_WORKERS overrides it, 0 = serial.
 pytest_no_skips() {
-  local log
+  local log workers="${MARV_PYTEST_WORKERS:-}" cpus par=()
+  if [[ -z "${workers}" ]]; then
+    cpus="$(nproc)"
+    workers=$((cpus < 4 ? cpus : 4))
+  fi
+  if ((workers > 0)); then
+    par=(-n "${workers}" --dist loadfile)
+  fi
   log="$(mktemp)"
   uv sync --frozen || return 1
-  if ! uv run pytest "$@" -q -rs 2>&1 | tee "${log}"; then
+  if ! uv run pytest "$@" -q -rs ${par[@]+"${par[@]}"} 2>&1 | tee "${log}"; then
     rm -f "${log}"
     return 1
   fi
@@ -131,7 +141,8 @@ gz_build_l5() {
 }
 
 # The L5 T4 suite reads the T3 envelope and Q files, which are generated, not committed (decision 0011): tools/refdata
-# regenerates them into build/reference and checks them against reference/SHA256SUMS. 4 = the runner's CPUs (ci/local_ci.sh).
+# regenerates them into build/reference (with MARV_CACHE_DIR set: into $MARV_CACHE_DIR/reference, reused when the stamp is
+# current and the files match) and checks them against reference/SHA256SUMS. 4 = the runner's CPUs (ci/local_ci.sh).
 gz_reference_l5() {
   uv run python tools/refdata/refdata.py ensure quad/L05/t3 --procs 4
 }

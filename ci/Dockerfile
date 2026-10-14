@@ -17,6 +17,7 @@ RUN apt-get update \
         git=1:2.43.0-1ubuntu7.3 \
         clang-tidy-18=1:18.1.3-1ubuntu1 \
         cmake=3.28.3-1build7 \
+        ccache=4.9.1-1 \
         ninja-build=1.11.1-2 \
         python3.12=3.12.3-1ubuntu0.17 \
     && rm -rf /var/lib/apt/lists/*
@@ -31,5 +32,23 @@ RUN curl -fsSL -o /tmp/uv.tar.gz \
 
 ENV UV_PYTHON=python3.12 \
     UV_PYTHON_DOWNLOADS=never
+
+# Compiler cache (CMakeLists.txt uses ccache as the compiler launcher when it is found). The persistent directory is
+# /cache, mounted by ci/local_ci.sh (the named volume marv-ci-cache) and by ci.yml (the actions/cache directory), with
+# MARV_CACHE_DIR=/cache; the compiler cache is /cache/ccache.
+# CCACHE_BASEDIR=/src: the clone is always at /src, so paths under it are rewritten relative to the compile directory
+# for hashing, and the -I paths of the sibling build trees (build/host-debug, build/host-gz-l4, ...) hash alike.
+# CCACHE_NOHASHDIR: the build directory is not hashed with -g, so Debug objects hit across build trees; the cost is a
+# comp_dir in the debug info that names the tree that filled the cache, irrelevant to a CI build.
+# CCACHE_COMPILERCHECK=content: the compiler is identified by the hash of its binary, not its mtime (every image build
+# gives the files new mtimes).
+# CCACHE_MAXSIZE=2G: a labelled choice, one job's cache directory, well below the 10 GB Actions cache quota that the
+# five jobs share.
+ENV MARV_CACHE_DIR=/cache \
+    CCACHE_DIR=/cache/ccache \
+    CCACHE_BASEDIR=/src \
+    CCACHE_NOHASHDIR=true \
+    CCACHE_COMPILERCHECK=content \
+    CCACHE_MAXSIZE=2G
 
 WORKDIR /src

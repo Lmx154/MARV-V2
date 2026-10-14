@@ -105,7 +105,8 @@ endfunction()
 #                         [EXTRA_REGISTER <register.yaml>] [PRODUCT_TABLE])
 #
 # A parameter set (marv_add_param_set) whose sources are a vehicle card and the design-budget register: a build-time
-# custom command runs tools/card/flatten.py (lints first; a lint finding fails the build) into
+# custom command runs tools/card/flatten.py through tools/card/flatten_cached.py (lints first; a lint finding fails the build; the
+# wrapper is flatten.py itself unless $MARV_CACHE_DIR is set, then a content-keyed cache of its outputs) into
 # ${CMAKE_BINARY_DIR}/generated/<name>/flatten/ and marv_add_param_set consumes its outputs: the flattened card and
 # register plus the L3 mixer parameters (idle_speed, mixer_m<i>_*; tools/card/mixer.py). With SCENARIO the
 # scenario-values register is linted and flattened too (--scenario/--out-scenario) and joins the CARD files, and the
@@ -175,7 +176,7 @@ function(marv_add_card_param_set name)
 
   add_custom_command(
     OUTPUT "${flat_card}" "${flat_register}" "${flat_mixer}" ${scenario_outputs} ${rate_outputs} ${attitude_outputs} ${gyro_chain_outputs} ${vertical_outputs}
-    COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/card/flatten.py"
+    COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/card/flatten_cached.py"
             --card "${ARG_CARD}" --budget "${ARG_BUDGET}"
             --out-card "${flat_card}" --out-register "${flat_register}" --out-mixer "${flat_mixer}"
             ${scenario_args} ${rate_args} ${attitude_args} ${gyro_chain_args} ${vertical_args}

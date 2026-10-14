@@ -7,7 +7,7 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest"]
+dev = ["pytest", "pytest-xdist"]
 
 [tool.uv]
 package = false
