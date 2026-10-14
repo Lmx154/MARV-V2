@@ -1,0 +1,108 @@
+# L11 vertical-scripted composition (fw/compositions/l11_vertical_scripted) scenario parameters (decision 0020 section 4,
+# "Composition parameters"): the hover feed-forward T_h of the vertical loop, a piecewise-constant script (capacity 8
+# segments, L5's, fixed by the entries below; each segment is a stamp, the shaped sticks s_r, s_p, s_psi in [-1, 1] of
+# decision 0006 D and the height reference z_ref, NED with z down), a constant thrust disturbance switched on at a stamp
+# (added to the vertical loop's thrust request before the mixer) and a torque disturbance pulse on one axis (0 roll,
+# 1 pitch, 2 yaw; added to the rate loop's torque before the mixer for a duration from a stamp; decision 0020 section 4
+# generalises l5_dist_yaw_nm of decision 0006 F). vert_hover_thrust_n is the per-run value by run_l4.hover_thrust's
+# rule (decision 0020 section 4: card mass times the WGS 84 normal gravity at the scenario site); its neutral default
+# is refused at init (the vertical loop's configuration needs T_h > 0), so every run sets it.
+# Every entry is method scenario, sigma choice (core 2.1): set per run by the scenario through sil_override; the
+# default is the neutral value (no hover thrust, no segments, no disturbance). None is a vehicle number.
+
+vert_hover_thrust_n:
+  {type: f32, value: 0.0, unit: "N", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg_count:
+  {type: i32, value: 0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg1_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg1_roll:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg1_pitch:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg1_yaw:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg1_z_ref_m:
+  {type: f32, value: 0.0, unit: "m", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg2_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg2_roll:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg2_pitch:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg2_yaw:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg2_z_ref_m:
+  {type: f32, value: 0.0, unit: "m", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg3_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg3_roll:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg3_pitch:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg3_yaw:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg3_z_ref_m:
+  {type: f32, value: 0.0, unit: "m", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg4_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg4_roll:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg4_pitch:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg4_yaw:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg4_z_ref_m:
+  {type: f32, value: 0.0, unit: "m", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg5_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg5_roll:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg5_pitch:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg5_yaw:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg5_z_ref_m:
+  {type: f32, value: 0.0, unit: "m", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg6_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg6_roll:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg6_pitch:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg6_yaw:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg6_z_ref_m:
+  {type: f32, value: 0.0, unit: "m", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg7_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg7_roll:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg7_pitch:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg7_yaw:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg7_z_ref_m:
+  {type: f32, value: 0.0, unit: "m", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg8_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg8_roll:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg8_pitch:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg8_yaw:
+  {type: f32, value: 0.0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_seg8_z_ref_m:
+  {type: f32, value: 0.0, unit: "m", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_dist_thrust_n:
+  {type: f32, value: 0.0, unit: "N", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_dist_thrust_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_dist_torque_axis:
+  {type: i32, value: 0, unit: "1", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_dist_torque_nm:
+  {type: f32, value: 0.0, unit: "N*m", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_dist_torque_t_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}
+l11_dist_torque_dur_us:
+  {type: i32, value: 0, unit: "us", method: scenario, source: "l11_vertical_scripted default: the neutral value, set per run by the scenario through sil_override (fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml)", sigma: choice}

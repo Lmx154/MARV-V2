@@ -262,3 +262,11 @@ marv_add_card_param_set(marv_params_l4_rate_scripted CARD "${MARV_VEHICLE_CARD}"
 marv_add_card_param_set(marv_params_l5_attitude_scripted CARD "${MARV_VEHICLE_CARD}" BUDGET "${MARV_DESIGN_BUDGET}"
   SCENARIO "${MARV_SCENARIO_VALUES}"
   EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml")
+
+# The L11 vertical-scripted composition's parameter set: the product set (card, budget, mixer, rate, attitude, vertical,
+# scenario values) followed by the composition's own register (hover thrust, stick and height script, thrust
+# disturbance, torque pulse; neutral defaults). marv_attitude, marv_rate and marv_mixer read the product ids, which this
+# set keeps.
+marv_add_card_param_set(marv_params_l11_vertical_scripted CARD "${MARV_VEHICLE_CARD}" BUDGET "${MARV_DESIGN_BUDGET}"
+  SCENARIO "${MARV_SCENARIO_VALUES}"
+  EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml")

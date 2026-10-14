@@ -118,6 +118,25 @@ vertical estimator layer and a §6.1 pilot mode are each a separate decision.
     `tests/regression/quad/L06/results/ff_eval/card_worst.txt` and
     `tests/regression/quad/L06/results/ff_eval/sweep.txt`; in each only the two hash lines differ and no data line
     changed (the local CI core job on the first S3 commit failed exactly on the byte-for-byte check of the first).
+  - S4, the composition: `fw/compositions/l11_vertical_scripted/` (L5's composition with the vertical loop in place of
+    the constant thrust: per tick the attitude group, then the vertical group on every rate tick × `vert_loop_ratio`
+    — z_ref from the stamped segment script, `VerticalLaw::execute`, plus the thrust disturbance from its stamp —
+    then the rate group with the torque pulse as the added torque and the thrust request, `record_allocation` on the
+    request that went to the mixer, `hal_actuators_write`); `VerticalConfig` from vert_kp_z, vert_kp_v, vert_ki_v,
+    the period by attitude.cpp's rule and `vert_hover_thrust_n`, validated with hal_panic; the truth vertical state
+    latched and checked for freshness as the attitude is (decision 0006 B); the law's fault flag is not acted on (L5
+    does not act on the attitude law's either): the fallback T_h is the behaviour. Register (scenario, sigma choice,
+    neutral defaults, sil_override): vert_hover_thrust_n (N; the neutral 0 makes init panic, so every run sets it),
+    l11_seg_count and l11_seg1..8 {t_us, roll, pitch, yaw, z_ref_m} (z_ref is 0 before the first segment, L5's
+    sticks-zero rule), l11_dist_thrust_n/t_us, l11_dist_torque_axis/nm/t_us/dur_us. The SIL library
+    `marv_sil_l11_vertical_scripted` (sim/l11_vertical_scripted/, TRUTH_STATE TRUTH_VERTICAL, params
+    marv_params_l11_vertical_scripted) exports marv_sil_* plus both setters; L5's library is byte-identical on fresh
+    builds; the product table unchanged. Tests `tests/regression/quad/L11/unit/composition/` (37 frozen entries: 34
+    gtest incl. parameter validation — non-finite values are refused by the SIL parameter interface before init, the
+    truthful treatment — hover equality with the mixer-plus-diffuser reference of {T_h, 0}, sign, script stamps, the
+    thrust disturbance, the torque pulse per axis, group order and subset, freshness panics, the fallback, and T11 a
+    planted clamp proving the anti-windup wiring; the id-prefix script with two controls). Nine mutations each caught
+    after T11. Reviewed PASS against §1, §4, §5.
 
 ## Evidence
 
