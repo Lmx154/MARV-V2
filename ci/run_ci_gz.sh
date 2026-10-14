@@ -7,7 +7,8 @@ export UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}"
 # shellcheck source=ci/peakmem.sh
 source ci/peakmem.sh
 
-# MARV_CI_MODE: per-push (default) or full (nightly and workflow_dispatch). The multi-seed Monte Carlo of L6 stage e hooks
+# MARV_CI_MODE: per-push (default; the development check, ci/dev_check.sh) or full (the merge gate: every Actions run and
+# ci/local_ci.sh, core 7.6). The multi-seed Monte Carlo of L6 stage e hooks
 # in here when it exists; nothing reads the mode yet (owner decision: per push = frozen T4 at committed seeds).
 echo "MARV_CI_MODE=${MARV_CI_MODE:-per-push}"
 

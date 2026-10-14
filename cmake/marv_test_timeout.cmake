@@ -9,7 +9,7 @@
 # No preset sets it.
 #
 # How the timeout reaches each registration path:
-#   - gtest_discover_tests: its two callers, marv_frozen_suite (tests/regression/CMakeLists.txt) and tests/unit, pass
+#   - gtest_discover_tests: its one caller, marv_frozen_suite (tests/regression/CMakeLists.txt), passes
 #     PROPERTIES TIMEOUT ${MARV_PER_PUSH_CHECK_TIME_MAX}, so each discovered test carries it.
 #   - add_test (scripts, binaries, the reference-set steps): marv_apply_per_push_timeout, deferred to the end of the top
 #     level directory, sets TIMEOUT on every test registered by then that has none.

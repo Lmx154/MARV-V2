@@ -362,10 +362,10 @@ contact:
 
 | Level | What runs | Cost | When |
 | --- | --- | --- | --- |
-| **T1 unit** | single functions and modules, host-free, against analytic answers | ms | every commit |
-| **T2 replay** | recorded sensor streams replayed through the firmware; outputs compared bit-exact with golden vectors | ms | every commit |
-| **T3 design-model closed loop** | controller against its linear design model: step response, margins | ms | every commit |
-| **T4 host SIL** | full vehicle with firmware in lockstep, headless (Gazebo for the quad, RocketPy for the rocket) | seconds per scenario | smoke set every commit; Monte Carlo nightly |
+| **T1 unit** | single functions and modules, host-free, against analytic answers | ms | when affected (§7.6) |
+| **T2 replay** | recorded sensor streams replayed through the firmware; outputs compared bit-exact with golden vectors | ms | when affected (§7.6) |
+| **T3 design-model closed loop** | controller against its linear design model: step response, margins | ms | when affected (§7.6) |
+| **T4 host SIL** | full vehicle with firmware in lockstep, headless (Gazebo for the quad, RocketPy for the rocket) | seconds per scenario | when affected; Monte Carlo in the full run (§7.6) |
 | **T5 pilot SIL** | Gazebo GUI with a human | real time | by hand, never in CI |
 | **T6 HIL** | the real RP2354B, lockstep over USB | real time | before every flight campaign |
 | **T7 flight** | the vehicle | — | logs update the card and validate the simulator |
@@ -390,7 +390,7 @@ Each product is built as a stack of **layers**. For each layer the product spec 
 Mechanics:
 
 1. Frozen tests live in `tests/regression/<product>/Lnn/` (two digits: `L00` … `L10`).
-2. Every frozen suite runs on every merge; a merge is blocked if any is red.
+2. Every frozen suite runs on every merge into `master` (the full run, §7.6); a merge is blocked if any is red.
 3. **Every metric test has a negative control:** a deliberate perturbation (e.g. gains × 1.1, one tick of added
    delay) that must break it. A test that cannot fail is caught by its control. Each control is a CI step that
    passes only if the controlled test fails.
@@ -440,6 +440,53 @@ halving sequence that produced it, go in the run report. No step or rate is pick
 group's rate (the group it takes its input from), unless that fails EMB-3 schedulability. Only then does the
 convergence rule above choose a lower rate, with the halving sequence in the run report. Until L9 measures worst-case
 execution times, the check uses the product spec's CPU estimates; L9 re-checks it with the measured values.
+
+### 7.6 Which tests run when
+
+Luis, 2026-10-14: "only even run the entire thing if we are sure that the blast radius of the changes made affected
+everything, else only run tests in locations that were possibly affected", and "keep the full runs as a safety net and
+as a CI that is only ever run when we are finally going to merge to master". Three tiers:
+
+1. **Smoke**, `ci/smoke.sh`: one test that fails if any link of the flight chain is broken. Today it is the L11
+   composition through the SIL ABI: card-derived parameters, gyro chain, rate, attitude, vertical, mixer, DShot. It has
+   no plant, no Gazebo and no m33 build. It stays one test: when a layer adds a link it does not exercise, the smoke
+   moves to that layer's composition instead of growing.
+2. **Affected**, `ci/dev_check.sh`: the smoke plus every test the change can reach, as `ci/affected.py` computes it
+   from the diff against `master` and the map `ci/blast_radius.yaml`. A change to a root that everything depends on
+   (prim, types, HAL, parameters, the SIL layer, the card inputs, the build and the CI definition) selects the full
+   suite. **A changed path that no rule maps also selects the full suite**, so a stale map costs time, never coverage.
+   This is the check for a development commit or a push to a working branch.
+3. **Full**, `ci/local_ci.sh` and Actions: every frozen suite, every control, every gate. It runs only for the merge
+   into `master` (a pull request into `master` or a push to `master`) and on demand. There is no nightly run.
+
+"Verified" means the affected tier passed for a development commit, and the full run passed on the merge head for a
+merge. The map is part of the suite: a change that adds a source directory, a test group or a CI step updates
+`ci/blast_radius.yaml` in the same change. `ci/affected.py --check-manifest`, run by every development check and by the
+full run, fails a CI step no rule selects and a dependency the map misses that the host-debug include paths, the Python
+imports or a test's file reads show. Dependencies it cannot see (a test that launches another layer's binary, flags
+built at run time) are written into the map by hand; the full run at the merge is their safety net.
+
+### 7.7 Adding, consolidating and trimming tests
+
+Luis, 2026-10-14: "do not create tests for every single feature anymore [...] things that are simple can and should
+be tested but [...] letting them accumulate to some monster test suite without trimming it or consolidating it should
+not be allowed at all."
+
+1. **A test needs a reason.** A new test traces to a pass-bar line, an opening's contract (§7.2 item 4), a guardrail
+   (§7.4), or a defect that was found (it names the defect). A simple function may get one known-answer T1 test when
+   that is the cheapest proof. Nothing else gets a test.
+2. **Prove it is not covered already.** The change names the existing test that would fail if the property broke. If
+   one exists, nothing is added.
+3. **Extend before adding.** A new case goes into the existing test of the same property (a parameter, a row). A new
+   file, test binary or CI step says in the change why an existing one cannot hold it.
+4. **Consolidate at every freeze.** Closing a layer includes a pass over its suite and every suite it reopened:
+   duplicates merged, tests a higher-level test already covers removed, sweeps cut to their representative points.
+   The decision record (§7.3) lists each removal and the test that still covers it. A layer is not passed without it.
+5. **Cost is part of the bar.** The change that adds a test reports the smoke and affected run times before and after.
+   A test whose run time exceeds `per_push_check_time_max` runs only in the full run.
+6. **Trimming is not loosening.** Removing a test whose property another test still covers is allowed with its
+   record. Weakening a threshold or a tolerance is not (§7.3).
+7. **A negative control follows its test.** It runs whenever its test is selected and is removed with it.
 
 ---
 

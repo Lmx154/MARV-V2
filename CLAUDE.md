@@ -51,8 +51,13 @@ CI enforces these whether or not anyone reads this file (core §7.4):
 
 ## Frozen tests and decisions
 
-- Frozen suites live in `tests/regression/quad/Lnn/`. All of them run on every change to `master` (a pull request
-  or a push; CI checks the whole pushed range).
+- Frozen suites live in `tests/regression/quad/Lnn/`. All of them run in the full run, which happens only on the merge
+  into `master` (a pull request or a push; CI checks the whole pushed range) (core §7.6).
+- Development is checked by the smoke test plus the tests the change can reach (`ci/dev_check.sh`), never by a full
+  run. A path no rule in `ci/blast_radius.yaml` maps selects the full suite; add the rule in the same change.
+- Before adding a test, apply core §7.7: it traces to a pass-bar line, a contract, a guardrail or a found defect; name
+  the existing test that would already catch the break (if one does, add nothing); extend an existing test before
+  adding a file. Closing a layer includes consolidating its suite.
 - Modifying or deleting anything under `tests/regression/` needs a decision record, `docs/decisions/NNNN-<slug>.md`,
   in the same change (core §7.3). Never loosen a test to make it pass.
 - Every metric test has a negative control that must break it (core §7.2).
@@ -62,7 +67,9 @@ CI enforces these whether or not anyone reads this file (core §7.4):
 - `uv sync --frozen` first (the parameter generator runs from `.venv`).
 - Build and test: `cmake --preset host-debug && cmake --build --preset host-debug && ctest --preset host-debug`
   (also `host-release`); target compile check: `cmake --preset m33 && cmake --build --preset m33`.
-- Full CI, the definition of verified: `ci/local_ci.sh [--commit <rev>] [core|gz-l2|gz-l4|gz-l5|gz-l11 ...]` (fresh clone of a
+- Development check, the definition of verified for a commit: `ci/dev_check.sh` (the smoke test `ci/smoke.sh`, then
+  what `uv run python ci/affected.py` selects from the diff against `master`, in your own incremental build trees).
+- Merge gate, the definition of verified for a merge into `master`: `ci/local_ci.sh [--commit <rev>] [core|gz-l2|gz-l4|gz-l5|gz-l11 ...]` (fresh clone of a
   commit, the same containers as Actions, as root, under the runner's 4 CPUs and memory limit; a local pass must predict
   an Actions pass). Goldens are regenerated only inside these images.
 - Hover demonstration in Gazebo (gz-sim 8 on PATH; quad §4 L2 and L5; the checks are frozen, and CI's gz-l2 and gz-l5

@@ -1,21 +1,18 @@
 name: ci
 
-# Per push and pull request: the core job and the four Gazebo groups, in parallel. Nightly (schedule) and workflow_dispatch:
-# the same jobs with MARV_CI_MODE=full, where the multi-seed Monte Carlo of L6 stage e will hook in (it does not exist
-# yet, so full runs the same steps today). A tag is made only after a full run is green (owner decision).
+# The merge gate (core 7.6): the full suite runs only on the merge into master, a pull request into master or a push to
+# master, and on demand (workflow_dispatch). Development is checked by ci/dev_check.sh (the smoke test plus the
+# blast-radius selection), not here. Every run is MARV_CI_MODE=full. No schedule: a nightly run would re-test an
+# unchanged master (Luis, 2026-10-14).
 on:
   push:
     branches: [master]
   pull_request:
     branches: [master]
-  schedule:
-    # 03:17 UTC daily: a choice (scenario value). Off the hour because GitHub delays scheduled runs under the high load
-    # at the start of every hour (docs.github.com, "Events that trigger workflows", schedule).
-    - cron: '17 3 * * *'
   workflow_dispatch:
 
 env:
-  MARV_CI_MODE: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'full' || 'per-push' }}
+  MARV_CI_MODE: full
 
 jobs:
   core:

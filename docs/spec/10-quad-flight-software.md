@@ -107,7 +107,7 @@ factor (generated variants of one template, or the `set_physics` service at star
 
 | ID | Requirement | Rule or test |
 | --- | --- | --- |
-| SIM-2 | Determinism. | Same (firmware commit, card, scenario, seed, versions) → bit-identical run on the same machine. Checked at L2; a sample reruns nightly. |
+| SIM-2 | Determinism. | Same (firmware commit, card, scenario, seed, versions) → bit-identical run on the same machine. Checked at L2; a sample reruns in the full run (core §7.6). |
 | SIM-3 | Throughput, defined by a rule. | Required real-time factor per core = (simulated seconds in the largest planned batch) / (time window × cores), from the batch plan in the budget register. Measured at L2. If headless Gazebo misses it: decision record (options: profile the plugin, re-derive rates by SIM-7, more parallel processes, or a second host with parity tests per core §6). |
 | SIM-4 | Validated against flight logs. | Branch B1. |
 | SIM-5 | Provenance. | Core §2; the run report lists every `UNVERIFIED` entry. |
@@ -322,8 +322,8 @@ Built after L5 and beside L6 (it needs nothing from L6); numbered L11 because L0
       least `noise_term_confidence`. The fine negative controls of 0006 decision 24 still fail with the noise term in
       place.
   - (e) T4: the L4 and L5 scenarios rerun with noise and filters and still meet QF-2 and QF-3.
-    - Per push: every scenario at its committed seed.
-    - Nightly and before the tag: the confirmation seeds.
+    - When affected (core §7.6): every scenario at its committed seed.
+    - In the full run (core §7.6) and before the tag: the confirmation seeds.
     - Both known failing items pass.
 - **Freezes:** each stage's lines when that stage closes. **This is where "sluggish" gets explained instead of
   guessed at:** every source of phase lag is now measured.

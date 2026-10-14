@@ -20,6 +20,40 @@ every decision record and every stage close (Luis, 2026-09-30).
   - 0017: stage (d) DShot diffuser, live;
   - 0009: the strict-xfail gate file.
 
+## Test-suite redirect (Luis, 2026-10-14), the current focus; branch `test-blast-radius` from `quad-l11`
+Verbatim: "I need you to start creating new rules for testing. We have created testing hell in this repo. adding basic
+functionality and running the entire test suite is not a sustainable way of developing anything. I need you to split up
+the test suite such that we have one unified test that is fast instead of testing literally everything. one test that
+is reliant on everything working else it fails. leave the test suite robust but only even run the entire thing if we
+are sure that the blast radius of the changes made affected everything, else only run tests in locations that were
+possibly affected. Also, in the creation of new tests be extremely careful. do not create tests for every single
+feature anymore this is an absolute waste of time. things that are simple can and should be tested but the act of
+continuing the entire repo without updating the tests and letting them accumulate to some monster test suite without
+trimming it or consolidating it should not be allowed at all. I need this to be your focus, trim the testing suite.
+make blast radius based testing instead of just one massive run at the end of everything, because this is making
+development impossible. It would be palatable if it was just slowing things down, but it has become a problem."
+This supersedes the per-push half of the CI consolidation proposal below; L11 S6+ stays paused.
+Luis, 2026-10-14, follow-up verbatim: "keep the full runs as a safety net and as a CI that is only ever run when we are
+finally going to merge to master". So: development pushes and local checks run the smoke test plus the blast-radius
+selection; the full suite runs only on the merge into `master` (pull request into `master` or push to `master`).
+- Built (uncommitted on `test-blast-radius` until Luis says commit): core §7.6/§7.7, CLAUDE.md, decision 0021;
+  `ci/smoke.sh` (the L11 composition through the SIL ABI, 37 entries, 0.4–0.9 s warm); `ci/affected.py` +
+  `ci/blast_radius.yaml` (fail-safe: an unmapped path or a root selects everything; Python per file by import closure;
+  `--check-manifest` cross-checks the map against compile_commands.json, Python imports and test file reads);
+  `ci/dev_check.sh` (smoke, map check, selected core steps, selected gz groups, in the working tree's own build trees);
+  run_ci.sh hooks `MARV_CI_ONLY`/`MARV_CTEST_LABELS`/`MARV_PYTEST_PATHS`, ctest in parallel, the duplicate frozen pass
+  removed; every regression test labelled `Lnn`; Actions and `ci/local_ci.sh` full-only, no schedule; `tests/unit`
+  (1 + 1 = 2) deleted. Evidence in 0021.
+- Development check, warm trees: docs 0.8 s; `fw/vertical` ~22 s + G1; `tools/sim/l6_noise_term.py` ~21 s (was the
+  whole L06 tools dir, 293 s). G1 needs `clang-tidy-18` on the host (not installed on Luis's host: `lint_g1.py:217`).
+- Not yet run: the full merge gate (`ci/local_ci.sh`) on this branch's head.
+- Open for Luis (trims that change what runs; each needs his word and goes into a decision record): (1) the L5 T3
+  one-ulp control on one output file, not the whole set (−~4 min whenever L5 is touched and at the merge); (2) the L5
+  gz T4 suite (740 s): steps in development checks, chirps/yaw/recovery only in the full run; (3) consolidate the twin
+  truth-channel C++ suites (L05 TruthState / L11 TruthVertical), the three scenario-schema pytest files and the three
+  param-prefix scripts (about 50 fewer entries, little time); (4) merge-run speed (ccache, one Gazebo tree for the four
+  plugin variants, cached references, pytest-xdist: ~70 → ~25 min).
+
 ## Stop point (Luis, 2026-10-14 01:2x: "find a spot to stop at quickly and commit. then write in the handoff")
 - Branch `quad-l11` (from `recovery/hover-demo`, from `master` = `b48e202`). Commits, oldest first: `c5d7da5` S0 (spec +
   0020), `253b620` S1, `50b5ff6` S2, `21ba942` S3, `e08179e` S4, `63cf5ae` S5 (amended: the report guard), `aeec084`

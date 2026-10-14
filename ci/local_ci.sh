@@ -6,7 +6,8 @@
 #   jobs: core, gz-l2, gz-l4, gz-l5, gz-l11 (default: all five, in that order, sequentially)
 #   --commit: the commit to check, default HEAD. The commit is cloned fresh (git clone, tags included), so uncommitted
 #             and untracked files are not tested, exactly as on Actions.
-# Environment: MARV_CI_BASE_REF (passed to the core job, as ci.yml does), MARV_CI_MODE (per-push or full).
+# Environment: MARV_CI_BASE_REF (passed to the core job, as ci.yml does), MARV_CI_MODE (default full: this is the merge
+# gate, core 7.6, and ci.yml runs every job in full mode).
 #
 # Runner limits, measured. Source: ci/runner_resources/run-36803301740-core.txt, the raw output of the "Runner
 # resources" step of ci.yml on Actions run 36803301740 (job core, ubuntu-24.04 image 20260920.314.1), logged before the
@@ -20,6 +21,7 @@ RUNNER_RAM_BYTES="${MARV_LOCAL_CI_RUNNER_RAM_BYTES:-16765378560}"
 HEADROOM_BYTES="${MARV_LOCAL_CI_HEADROOM_BYTES:-1025118208}"
 
 set -euo pipefail
+export MARV_CI_MODE="${MARV_CI_MODE:-full}"
 
 usage() {
   echo "usage: ci/local_ci.sh [--commit <rev>] [core|gz-l2|gz-l4|gz-l5|gz-l11 ...]" >&2

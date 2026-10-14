@@ -7,14 +7,29 @@ export UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}"
 # shellcheck source=ci/peakmem.sh
 source ci/peakmem.sh
 
-# MARV_CI_MODE: per-push (default) or full (nightly and workflow_dispatch). The multi-seed Monte Carlo of L6 stage e hooks
+# MARV_CI_MODE: per-push (default; the development check, ci/dev_check.sh) or full (the merge gate: every Actions run and
+# ci/local_ci.sh, core 7.6). The multi-seed Monte Carlo of L6 stage e hooks
 # in here when it exists (owner decision: per push = frozen T4 at committed seeds). Today the mode selects the tools tests
 # only: per push skips nightly_tools_tests, full runs them.
 echo "MARV_CI_MODE=${MARV_CI_MODE:-per-push}"
 
+# Selection hooks (all unset or empty = today's behaviour; the selector in ci/dev_check.sh sets them):
+#   MARV_CI_ONLY       comma-separated step ids; only those steps run, the others print SKIP. A step id is the function name
+#                      given to step, except host_preset, whose id carries its preset (host_preset:host-debug,
+#                      host_preset:host-release). The uv sync --frozen step always runs.
+#   MARV_CTEST_LABELS  comma-separated ctest labels (L04,L11); host_preset runs only the ctest entries carrying one of them.
+#   MARV_PYTEST_PATHS  space-separated pytest paths; tools_tests runs those instead of its literal list.
 step() {
-  local name="$1"
+  local name="$1" id
   shift
+  id="$1"
+  if [[ "${id}" == host_preset ]]; then
+    id="host_preset:$2"
+  fi
+  if [[ -n "${MARV_CI_ONLY:-}" && "$1" != uv && ",${MARV_CI_ONLY}," != *",${id},"* ]]; then
+    echo "SKIP (not selected): ${name}"
+    return 0
+  fi
   echo "=== ${name}"
   peakmem_start
   if "$@"; then
@@ -28,21 +43,18 @@ step() {
 }
 
 host_preset() {
+  local label_args=()
+  if [[ -n "${MARV_CTEST_LABELS:-}" ]]; then
+    label_args=(-L "^(${MARV_CTEST_LABELS//,/|})\$")
+  fi
   cmake --preset "$1" \
     && cmake --build --preset "$1" \
-    && ctest --preset "$1"
+    && { [[ "$1" != host-release ]] || { printf 'frozen tests found: '; ctest --preset "$1" -N -L frozen | tail -1; }; } \
+    && ctest --preset "$1" --parallel "$(nproc)" ${label_args[@]+"${label_args[@]}"}
 }
 
 m33_build() {
   cmake --preset m33 && cmake --build --preset m33
-}
-
-frozen_suites() {
-  local listing count
-  listing="$(ctest --preset host-release -L frozen -N)"
-  count="$(printf '%s\n' "${listing}" | sed -n 's/^Total Tests: *//p')"
-  echo "frozen tests found: ${count}"
-  ctest --preset host-release -L frozen
 }
 
 regression_change_check() {
@@ -777,7 +789,18 @@ tools_tests() {
   if [[ "${MARV_CI_MODE:-per-push}" != full ]]; then
     guard=(-p pytest_file_time_guard)
   fi
-  PYTHONPATH=tools/ci uv run pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools tests/regression/quad/L11/tools -q ${guard[@]+"${guard[@]}"} ${skip[@]+"${skip[@]}"}
+  local paths=(tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools tests/regression/quad/L11/tools tests/tools)
+  if [[ -n "${MARV_PYTEST_PATHS:-}" ]]; then
+    read -r -a paths <<<"${MARV_PYTEST_PATHS}"
+  fi
+  PYTHONPATH=tools/ci uv run pytest "${paths[@]}" -q ${guard[@]+"${guard[@]}"} ${skip[@]+"${skip[@]}"}
+}
+
+# Core 7.6: the blast-radius map stays in step with this script, ci/run_ci_gz.sh and the repository. A step no rule
+# selects and that is not merge-only fails here, so a new step cannot silently drop out of the development check. It
+# runs after host-debug's configure: its C++ cross-check reads build/host-debug/compile_commands.json.
+blast_radius_manifest() {
+  uv run python ci/affected.py --check-manifest
 }
 
 # S9 for pytest (decision 0014 fifth round item 6; closed in quad L6 stage (e), decision 0019 ruling 12 and the owner ruling
@@ -826,7 +849,7 @@ per_push_pytest_control() {
 step "uv sync --frozen" uv sync --frozen
 step "L4: T3 oracle regenerates rate_t3_golden.txt and rate_t3_envelope.txt from rate_t3_inputs.txt, matching reference/SHA256SUMS" t3_reference_reproduces
 step "L5: T3 oracle regenerates attitude_t3_golden.txt, attitude_t3_envelope.txt and attitude_t3_q.txt from their inputs, matching reference/SHA256SUMS" att_t3_reference_reproduces
-step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools tests/regression/quad/L11/tools; the nightly list only in MARV_CI_MODE=full)" \
+step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools tests/regression/quad/L11/tools tests/tools; the nightly list only in MARV_CI_MODE=full)" \
   tools_tests
 if [[ "${MARV_CI_MODE:-per-push}" != full ]]; then
   step "per-push pytest guard (positive check: a short tools-test file passes the per-file time guard)" per_push_pytest_guard_applied
@@ -840,6 +863,7 @@ if [[ -n "${MARV_CI_BASE_REF:-}" ]]; then
   step "regression change check against ${MARV_CI_BASE_REF}" regression_change_check
 fi
 step "host-debug: configure, build, ctest" host_preset host-debug
+step "core 7.6: ci/blast_radius.yaml maps every CI step, pytest path and gz group, cross-checked against the host-debug build and the Python imports" blast_radius_manifest
 step "product parameters: the host-debug generated table equals the committed tests/regression/quad/L06/product_params table byte for byte" product_table_host
 step "L1: the run report of the product parameter set (card, budget, provenance)" l1_report
 step "G1: no unexplained numeric literals under fw/ (clang-tidy, token scan, NOLINT check)" g1_lint
@@ -849,7 +873,6 @@ step "G3: no flight translation unit has a harness include directory (host)" g3_
 step "G3: the SIL libraries export only marv_sil_* (nm -D)" g3_host_exports
 step "per-push timeout: every ctest test of host-debug carries TIMEOUT = per_push_check_time_max (reference-set steps exempt)" per_push_timeout_applied
 step "host-release: configure, build, ctest" host_preset host-release
-step "frozen suites (ctest -L frozen)" frozen_suites
 step "m33: configure, build" m33_build
 step "product parameters: the m33 (flight) generated table equals the committed table byte for byte" product_table_m33
 step "G3: no truth or harness symbol in any m33 flight library (arm-none-eabi-nm -C)" g3_m33_symbols
