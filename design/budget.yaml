@@ -111,6 +111,19 @@ inertia_robustness_band:
     differ by up to about 47 %. B1 replay narrows the band later.
   used_by: [QF-2, QF-3, rate-loop gain design]
 
+thrust_gain_robustness_band:
+  value: 0.5
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    Relative half-width of the band over which the vertical loop (L11) must meet QF-3: the loop-gain factor
+    r = (k_true / k_card) (m_card / m_true), with the thrust-coefficient ratio in [(1 - 0.5), (1 + 0.5)] and the
+    normalised mass on the card's open-conflict hull (vehicles/uzh_neurobem_5in.yaml, mass.conflict). Luis's choice
+    (2026-10-13, decision 0020): the card's thrust_coeff is INFERRED with sigma UNKNOWN, so the same class as
+    inertia_robustness_band. B1 replay narrows the band later.
+  used_by: [QF-3, vertical-loop gain design]
+
 Ms_max:
   value: 2.0
   unit: "1"

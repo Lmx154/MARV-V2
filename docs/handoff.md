@@ -62,8 +62,9 @@ uncommitted (now on `l6-c6a-wip`). No code changed. What remains broken is uncha
   `fw/vertical` law; S3 `tools/card/vertical.py` and the budget entry with its `L11/param_ids` claim (changes the frozen
   L06 product_params table: the record names it); S4 composition `l11_vertical_scripted`; S5 plugin element, adapter,
   log type 8, the L5 byte-identity check; S6 T3 oracle, golden, envelopes (0011 storage); S7 scenarios, runner, T4 gz
-  tests and controls, a `gz-l11` job; S8 close. Estimate 11.5 working days (not a commitment). S1 landed (reviewed PASS; full local CI on its commit). S2 landed (reviewed PASS). Next: S3 (S3a-1, the
-  generator, in progress; the design site joins design/scenario_values.yaml as two labelled scenario values).
+  tests and controls, a `gz-l11` job; S8 close. Estimate 11.5 working days (not a commitment). S1 landed (full local CI green on 253b620). S2 landed (reviewed PASS). S3 landed (reviewed PASS: the generator,
+  the budget entry, the design site in design/scenario_values.yaml, the L11 manifest, the regenerated product table).
+  Next: S4, the composition `l11_vertical_scripted`.
 - Coupling: stage (e)'s FF switch-on commit must also keep L11 green (INFERRED low risk). The R2 collective question is
   untouched by L11 (no recovery scenario).
 - The packet, the survey and the architect's full decision: `~/marv-handover-2026-10-13/altitude/`.
@@ -138,7 +139,7 @@ stored per 0011.
   per-point W is about 1.9 mrad/s. Lead recommendation: per point.
 - **The gz re-measure** (ruling 7): only when Luis says the host is quiet (load < 1.5). It fixes the shard count, and C7
   waits for it.
-- **L11 (lead):** S3–S8 as listed above; S1 and S2 landed.
+- **L11 (lead):** S4–S8 as listed above; S1–S3 landed.
 - **Remaining (e) builds:**
   - C6a: see above;
   - C6b: the T3 corner scan (27-row table), the L5 and chirp plan adapters;

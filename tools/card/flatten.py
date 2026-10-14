@@ -3,7 +3,8 @@
 
   flatten.py --card <card> --budget <budget> --out-card <file> --out-register <file> [--out-mixer <file>]
              [--scenario <file> --out-scenario <file>] [--out-rate <file>] [--out-attitude <file>]
-             [--out-gyro-chain <file>] [--out-rate-lead <file>] [--out-attitude-lead <file>] [--procs <n>] [--root <repo>]
+             [--out-gyro-chain <file>] [--out-rate-lead <file>] [--out-attitude-lead <file>] [--out-vertical <file>]
+             [--procs <n>] [--root <repo>]
 
 The card and the budget are linted first (lint.py's checks, which use schema.py); on any finding nothing is written
 and the exit status is 1. Otherwise two params_gen source files are written, deterministically and byte-stable:
@@ -70,6 +71,12 @@ rate loop is designed in memory for it, once for both flags. The sensor profile 
 --procs <n> (default tools/card/cpu_quota.py usable_cpus()) is the worker count of rate_lead's N search; the outputs do not
 depend on it. rate.py and attitude.py stay the L4/L5 PI reference. When rate_lead.py or attitude_lead.py refuses, nothing is
 written and the exit status is 1. Without the flags the other outputs are byte-identical.
+
+--out-vertical <file> (optional, needs --scenario) adds a params_gen --card file: vert_kp_v, vert_ki_v, vert_kp_z and
+vert_loop_ratio (= 1, the parent-rate rule of core 7.5) (vertical.py, decision 0020: the L11 vertical-velocity PI by
+rate.py's rule and the height P by attitude.py's rule), and next to it the derivation report <file stem>_report.txt. The
+budget must carry thrust_gain_robustness_band and the scenario register the site. When vertical.py refuses, nothing is
+written and the exit status is 1. Without the flag the other outputs are byte-identical.
 """
 
 from __future__ import annotations
@@ -90,6 +97,7 @@ import mixer
 import rate
 import rate_lead
 import schema
+import vertical
 
 FORWARD = ("unit", "method", "source", "sigma", "lock", "shape", "status", "conflict", "check")
 SPIN_SIGN = {"ccw": 1, "cw": -1}
@@ -213,6 +221,7 @@ def main(argv=None):
     ap.add_argument("--out-gyro-chain")
     ap.add_argument("--out-rate-lead")
     ap.add_argument("--out-attitude-lead")
+    ap.add_argument("--out-vertical")
     ap.add_argument("--procs", type=int, default=cpu_quota.usable_cpus(),
                     help="worker processes of rate_lead's N search (the outputs do not depend on it)")
     ap.add_argument("--root", default=str(lint.ROOT), help="repository root (resolves sensor_profile)")
@@ -231,6 +240,8 @@ def main(argv=None):
         ap.error("--out-rate-lead needs --scenario (the rate loop period and maximum rates are scenario values)")
     if args.out_attitude_lead and not args.scenario:
         ap.error("--out-attitude-lead needs --scenario (the loop period is a scenario value)")
+    if args.out_vertical and not args.scenario:
+        ap.error("--out-vertical needs --scenario (the loop period and the site are scenario values)")
     if args.out_rate_lead and args.out_rate:
         ap.error("--out-rate-lead and --out-rate write the same parameters")
     if args.out_attitude_lead and args.out_attitude:
@@ -297,6 +308,16 @@ def main(argv=None):
                 lead_attitude_report = attitude_lead.report_lines(att, today, lead)
         except (gpc.GenError, gcd.DesignError) as e:
             for line in getattr(e, "lines", None) or [str(e)]:
+                print(line, file=sys.stderr)
+            return 1
+
+    vertical_entries = None
+    if args.out_vertical:
+        try:
+            vertical_entries, vertical_report, _ = vertical.vertical_entries(
+                card, budget, schema.load_yaml(args.scenario), args.card, _rel(args.card, args.root))
+        except gpc.GenError as e:
+            for line in e.lines:
                 print(line, file=sys.stderr)
             return 1
 
@@ -406,6 +427,17 @@ def main(argv=None):
         gyro_chain_design_path = Path(args.out_gyro_chain).with_name(Path(args.out_gyro_chain).stem + "_design.hpp")
         outputs.append((str(gyro_chain_design_path),
                         gyro_chain_params.design_header_text(gyro_chain_design, _rel(args.card, args.root))))
+    if vertical_entries is not None:
+        vertical_header = [
+            f"params_gen input for the L11 vertical loop, computed from vehicle card {_rel(args.card, args.root)}, the "
+            "design budget and the scenario register by tools/card/vertical.py through tools/card/flatten.py. Generated; "
+            "do not edit.",
+            "vert_kp_v, vert_ki_v, vert_kp_z and vert_loop_ratio (decision 0020); the derivation is in the report next "
+            "to this file.",
+        ]
+        outputs.append((args.out_vertical, render(vertical_header, vertical_entries)))
+        vertical_report_path = Path(args.out_vertical).with_name(Path(args.out_vertical).stem + "_report.txt")
+        outputs.append((str(vertical_report_path), "\n".join(vertical_report) + "\n"))
     for path, text in outputs:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_text(text, encoding="utf-8", newline="\n")

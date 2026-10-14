@@ -118,3 +118,29 @@ rate_ff_enable:
     tests/regression/quad/L06/XFAIL_GATE_CLOSED (decision 0014, owner decision 2: "FF goes live at stage (e), with the
     gate file"). Stage (c)'s FF-on evidence switches it through the test harness (sil_override), not here.
   used_by: [rate loop feed-forward]
+
+site_latitude_rad:
+  value: 0.82
+  unit: rad
+  method: scenario
+  sigma: choice
+  rationale: >-
+    Geodetic latitude of the design site (the NED origin), the site at which the L11 vertical-loop generator evaluates
+    the hover thrust m g(phi, h0) and the gravity height gradient (decision 0020). The value the committed scenario files
+    carry (scenarios/quad/L02/hover.yaml: a mid-latitude site off the equator and the poles, so the latitude term of g is
+    exercised; the same value as the L1 fixture, tests/regression/quad/L01/unit/plant_card/hover_card_test.cpp,
+    kScenarioLat).
+  used_by: [L11 vertical-loop gain design, hover thrust]
+
+site_height_m:
+  value: 500.0
+  unit: m
+  method: scenario
+  sigma: choice
+  rationale: >-
+    Height h0 of the design site (the NED origin) above the WGS 84 ellipsoid, the site at which the L11 vertical-loop
+    generator evaluates the hover thrust m g(phi, h0) and the gravity height gradient (decision 0020). The value the
+    committed scenario files carry (scenarios/quad/L02/hover.yaml: the same height as the L1 fixture,
+    tests/regression/quad/L01/unit/plant_card/hover_card_test.cpp, kScenarioHeight; a plausible flying-site height,
+    not vehicle data).
+  used_by: [L11 vertical-loop gain design, hover thrust]

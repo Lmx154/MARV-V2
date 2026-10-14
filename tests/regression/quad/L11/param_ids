@@ -1,0 +1,10 @@
+# Product-set parameter ids added by quad L11 (decision 0020; decision 0004 manifest rule). One id per line.
+# thrust_gain_robustness_band is a design-budget entry, site_latitude_rad and site_height_m are scenario-values entries
+# (all flattened by flatten.py like every numeric register entry); vert_* come from tools/card/vertical.py (--out-vertical).
+thrust_gain_robustness_band
+site_latitude_rad
+site_height_m
+vert_kp_v
+vert_ki_v
+vert_kp_z
+vert_loop_ratio

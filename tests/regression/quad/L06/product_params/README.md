@@ -12,9 +12,15 @@ generates (host-debug and m33), and runs a planted-change control against that c
 
 Regenerate it inside the CI image (goldens are regenerated only there) and copy the build's table over this one:
 
-    docker run --rm --cpus 4 --memory 15740260352 --memory-swap 15740260352 -v "$PWD":/src -w /src marv-ci bash -lc \
-      'uv sync --frozen -q && cmake --preset host-debug && cmake --build --preset host-debug --target marv_params_generated \
-       && cp build/host-debug/generated/marv_params/marv_params_product_table.txt tests/regression/quad/L06/product_params/'
+    docker build -q -t marv-ci -f ci/Dockerfile . && docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+      -e UV_CACHE_DIR=/tmp/uv-cache -e UV_PROJECT_ENVIRONMENT=/tmp/venv -v "$PWD":/src -w /src marv-ci bash -lc \
+      'uv sync --frozen -q && cmake -G Ninja -S /src -B /tmp/build -DMARV_TARGET=host -DCMAKE_BUILD_TYPE=Debug \
+       -DMARV_PYTHON=/tmp/venv/bin/python && cmake --build /tmp/build --target marv_params_generated \
+       && cp /tmp/build/generated/marv_params/marv_params_product_table.txt /src/tests/regression/quad/L06/product_params/'
+
+The container runs as the calling user with its virtual environment and build tree under `/tmp` (inside the container), so it
+leaves no root-owned file in `.venv/` or `build/` of the mounted repository. The configuration is the `host-debug` preset's
+(`MARV_TARGET=host`, `CMAKE_BUILD_TYPE=Debug`).
 
 Changing this file (or a card, budget, scenario or `tools/card/` input that changes it) needs a decision record,
 `docs/decisions/NNNN-<slug>.md`, in the same change (core 7.3).

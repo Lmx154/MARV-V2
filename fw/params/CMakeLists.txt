@@ -116,7 +116,8 @@ endfunction()
 # parameters (gyro_lpf_cutoff_hz, gyro_notch_q_h1..h3, gyro_notch_omega_min; tools/card/gyro_chain_params.py,
 # --out-gyro-chain) with their report (<name>_gyro_chain_report.txt) and the header of the chain's relative tracking error
 # (<name>_gyro_chain_design.hpp, the target property MARV_GYRO_CHAIN_DESIGN_HEADER of <name>_generated; for tests, not
-# parameters). The command depends on
+# parameters), and the L11 vertical-loop parameters (vert_kp_v, vert_ki_v, vert_kp_z, vert_loop_ratio; tools/card/vertical.py,
+# --out-vertical, decision 0020) with their report (<name>_vertical_report.txt). The command depends on
 # the card, the sensor profile the card names, the budget, the scenario register and tools/card/*.py.
 # PRODUCT_TABLE (with SCENARIO) also writes ${CMAKE_BINARY_DIR}/generated/<name>/<name>_product_table.txt, the readable
 # table of every record, whose header names the repository-relative card, sensor profile, budget and scenario register;
@@ -137,6 +138,8 @@ function(marv_add_card_param_set name)
   set(attitude_outputs)
   set(gyro_chain_args)
   set(gyro_chain_outputs)
+  set(vertical_args)
+  set(vertical_outputs)
   if(ARG_SCENARIO)
     cmake_path(ABSOLUTE_PATH ARG_SCENARIO BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
     set(flat_scenario "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_scenario.yaml")
@@ -156,6 +159,10 @@ function(marv_add_card_param_set name)
     set(gyro_chain_args --out-gyro-chain "${flat_gyro_chain}")
     set(flat_gyro_chain_design "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_gyro_chain_design.hpp")
     set(gyro_chain_outputs "${flat_gyro_chain}" "${flat_gyro_chain_report}" "${flat_gyro_chain_design}")
+    set(flat_vertical "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_vertical.yaml")
+    set(flat_vertical_report "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_vertical_report.txt")
+    set(vertical_args --out-vertical "${flat_vertical}")
+    set(vertical_outputs "${flat_vertical}" "${flat_vertical_report}")
   endif()
 
   marv_card_profile_file(profile_file ${name} "${ARG_CARD}")
@@ -167,11 +174,11 @@ function(marv_add_card_param_set name)
   file(GLOB marv_card_tools CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/tools/card/*.py")
 
   add_custom_command(
-    OUTPUT "${flat_card}" "${flat_register}" "${flat_mixer}" ${scenario_outputs} ${rate_outputs} ${attitude_outputs} ${gyro_chain_outputs}
+    OUTPUT "${flat_card}" "${flat_register}" "${flat_mixer}" ${scenario_outputs} ${rate_outputs} ${attitude_outputs} ${gyro_chain_outputs} ${vertical_outputs}
     COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/card/flatten.py"
             --card "${ARG_CARD}" --budget "${ARG_BUDGET}"
             --out-card "${flat_card}" --out-register "${flat_register}" --out-mixer "${flat_mixer}"
-            ${scenario_args} ${rate_args} ${attitude_args} ${gyro_chain_args}
+            ${scenario_args} ${rate_args} ${attitude_args} ${gyro_chain_args} ${vertical_args}
             --root "${PROJECT_SOURCE_DIR}"
     DEPENDS "${ARG_CARD}" "${profile_file}" "${ARG_BUDGET}" ${scenario_depends} ${marv_card_tools}
     COMMENT "Linting and flattening the vehicle card and design budget (${name})"
@@ -191,7 +198,7 @@ function(marv_add_card_param_set name)
     set(table_args TABLE "${CMAKE_BINARY_DIR}/generated/${name}/${name}_product_table.txt" TABLE_INPUTS ${table_inputs})
   endif()
 
-  marv_add_param_set(${name} CARD "${flat_card}" "${flat_mixer}" ${scenario_outputs} ${flat_rate} ${flat_attitude} ${flat_gyro_chain} REGISTER "${flat_register}" ${ARG_EXTRA_REGISTER} ${table_args})
+  marv_add_param_set(${name} CARD "${flat_card}" "${flat_mixer}" ${scenario_outputs} ${flat_rate} ${flat_attitude} ${flat_gyro_chain} ${flat_vertical} REGISTER "${flat_register}" ${ARG_EXTRA_REGISTER} ${table_args})
   if(ARG_SCENARIO)
     set_target_properties(${name}_generated PROPERTIES MARV_GYRO_CHAIN_DESIGN_HEADER "${flat_gyro_chain_design}")
   endif()

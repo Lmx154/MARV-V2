@@ -417,7 +417,7 @@ PY
 # (fw/params/CMakeLists.txt, tools/gen/params_gen.py --out-table) must equal the committed one byte for byte.
 product_table_name=marv_params_product_table.txt
 product_table_committed=tests/regression/quad/L06/product_params/${product_table_name}
-product_table_regen='docker run ... marv-ci bash -lc "uv sync --frozen -q && cmake --preset host-debug && cmake --build --preset host-debug --target marv_params_generated" and copy build/host-debug/generated/marv_params/'"${product_table_name}"' over '"${product_table_committed}"' (see tests/regression/quad/L06/product_params/README.md); a change needs a decision record'
+product_table_regen='the safe command of tests/regression/quad/L06/product_params/README.md (docker run marv-ci as your user with UV_PROJECT_ENVIRONMENT=/tmp/venv, a build in /tmp/build, --target marv_params_generated) and copy the generated '"${product_table_name}"' over '"${product_table_committed}"' (a change needs a decision record)'
 
 # product_table_compare <generated table> <committed table>
 product_table_compare() {
