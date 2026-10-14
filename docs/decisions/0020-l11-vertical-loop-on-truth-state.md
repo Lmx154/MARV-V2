@@ -153,6 +153,16 @@ vertical estimator layer and a §6.1 pilot mode are each a separate decision.
     records (36,691,855 B) with the exact command; recorded on the host from the pre-S5 plugin and reproduced in the
     marv-ci-gz image; the L5 log is byte-identical with the plugin built from HEAD before S5 and after it. Reviewed PASS
     against §1 (Truth feed) and I1.
+    Amended before its push: the run report's conditional line (tools/sim/run_scenario.py) iterated the L4 runner's
+    tick summary, a `range`, and raised in every L04 gz test (the batch run's gz-l4 job caught it); the line now
+    checks only dict ticks. Verified: core, gz-l2, gz-l5, gz-l11 on the batch head before the amend and gz-l4 on the
+    amended commit; the only difference between the two is that guard.
+  - Paused (Luis, 2026-10-14, verbatim: "STOP testing stop creating tests and start consolidating the suite"):
+    S6 and S7. S6a-1 (the vertical T3 oracle, `tests/regression/quad/L11/t3/reference/`, its inputs and SHA256SUMS,
+    the refdata registry entry) is built and parked uncommitted in the working tree; the C++ T3 test, the
+    envelopes, Q and the T4 gz suite are not started. The layer therefore has no T3 golden or T4 test yet and
+    cannot be declared passed; the loop itself (S1–S5) flies in SIL: the L11 composition holds height to the
+    millimetre under the demonstration's shoves (handoff, "Recovery inspection").
 
 ## Evidence
 

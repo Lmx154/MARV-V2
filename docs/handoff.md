@@ -1,4 +1,4 @@
-# Handoff: quad L6, stage (e) in progress (decision 0019); stages (a)–(d) closed; L11 opened (decision 0020)
+# Handoff: quad L6 stage (e) in progress (0019); L11 S1–S5 built, S6+ paused (0020); stopped 2026-10-14 01:30
 
 2026-10-05. Written for the next tech lead, from git and the records, not session memory. This file states where things
 are and adds no scope. The ACTIVE specs and decisions 0009–0019 are the authority. Update this file in the same change as
@@ -19,6 +19,30 @@ every decision record and every stage close (Luis, 2026-09-30).
   - 0016: gz first read;
   - 0017: stage (d) DShot diffuser, live;
   - 0009: the strict-xfail gate file.
+
+## Stop point (Luis, 2026-10-14 01:2x: "find a spot to stop at quickly and commit. then write in the handoff")
+- Branch `quad-l11` (from `recovery/hover-demo`, from `master` = `b48e202`). Commits, oldest first: `c5d7da5` S0 (spec +
+  0020), `253b620` S1, `50b5ff6` S2, `21ba942` S3, `e08179e` S4, `63cf5ae` S5 (amended: the report guard), `aeec084`
+  S6a-1 parked, then the docs commit that carries this section. Verified: S1, S2, S3 each by a full `ci/local_ci.sh`
+  on the exact commit; S4+S5 as one batch — core, gz-l2, gz-l5 and gz-l11 on `534498d` (S5 before the amend) and
+  gz-l4 on `63cf5ae` (PASS, 1002 s, 2026-10-14 01:26). S6a-1 is inert (no consumer) and is not CI'd on its own.
+- `origin/quad-l11`: pushed through S3 at 01:05; the rest pushed at the end of this session if gz-l4 is green (the
+  commit list on origin is the record). `master` untouched. Luis merges `recovery/hover-demo` then `quad-l11`
+  (fast-forward chain) when he wants them.
+- Working tree clean at the stop. Nothing is running. The demo kit, the L11 demo world and screenshots, the altitude
+  packet/survey/decision and the CI timing logs are in `~/marv-handover-2026-10-13/` (the batch CI logs with
+  per-step timestamps: `~/marv-handover-2026-10-13/ci/`).
+- Local CI: `ci/local_ci.sh [--commit <rev>] [core|gz-l2|gz-l4|gz-l5|gz-l11 ...]`, five jobs, ~75 min of job time; run
+  per push batch on the batch head, in parallel lanes (three fit the 16-core host), not per commit.
+- To resume L11: S6a-2 (the C++ T3 test against `build/reference/quad/L11/t3/vertical_t3_golden.txt`; notes from the
+  engineer who stopped: the hover_thrust_n fixture check needs a bound, not equality — the rule uses the card's double
+  values and rounds one ulp off the f32-rebuilt value; thrust_offset_n has no table source to recompute from; L05's
+  T3 test does not compare its fixture with the table; `ci/run_ci.sh:257` and decision 0013:401 name the two exempt
+  reference steps), then S6b (envelopes, Q, the coupled-plant shove), S7 (scenarios, `run_l11.py`, the T4 gz suite
+  in the gz-l11 job), S8 (close). All of it is test work, which Luis stopped; it resumes only on his word.
+- Open for Luis: the CI consolidation Tier 2 rulings (section "CI consolidation"); the L11 pass bar (the spec's T3/T4
+  items are unbuilt while S6/S7 are paused: the layer cannot be declared passed or frozen); the R2 package and C6a
+  (unchanged, see below); the gz 10 packages that shadow Harmonic's render engine (the demo uses an LD_PRELOAD shim).
 
 ## Recovery inspection (2026-10-13)
 Luis's brief, verbatim: "The project is currently unusable. Your objective is to restore the smallest possible working
@@ -69,6 +93,76 @@ uncommitted (now on `l6-c6a-wip`). No code changed. What remains broken is uncha
 - Coupling: stage (e)'s FF switch-on commit must also keep L11 green (INFERRED low risk). The R2 collective question is
   untouched by L11 (no recovery scenario).
 - The packet, the survey and the architect's full decision: `~/marv-handover-2026-10-13/altitude/`.
+- **2026-10-14, 00:28, Luis, verbatim:** "push whatever is done and verified and validated. it is insane that the
+  tests take so long. i need you to start consolidating the test suite to run only tests that test unified
+  functionality and do it fast. we can't possibly be stuck in testing hell all this time we need to start developing
+  and finxing things NOW. STOP testing stop creating tests and start consolidating the suite. do that or just manage
+  the testing suite in a much more efficient manner because this is unacceptable we will never get anything done at
+  this rate,"
+  - Done on that: S1–S3 pushed to origin/quad-l11 after their full local CI; S4 and S5 verified as one batch (three
+    parallel lanes) and pushed; the per-commit full-CI loop is dropped — one `ci/local_ci.sh` run per push batch, on
+    the batch head, only the jobs a change can touch, in parallel lanes. S6/S7 test work stopped (above).
+  - The loop as built flies: the L11 composition on the host-gz-l11 plugin in the Gazebo demo world
+    (`~/marv-handover-2026-10-13/demo/demo_altitude_hold_L11.sdf`): undisturbed 19 s at z = 0.00 mm, tilt 0.00°; each of
+    six 0.02 N·m / 0.2 s roll shoves tilts it 8–9°, is levelled in 0.7–1.0 s, costs 2–4 mm of height and is back at the
+    reference within 3.5 s; after all six z = +0.0 mm, −0.01 mm/s. The L5 hover lost 59 mm per shove for good.
+  - The CI consolidation proposal, measured on the batch run, is the next section; Tier 1 needs no test change.
+
+## CI consolidation (owner request 2026-10-14): where the time goes, and the proposal
+
+Measured on the S4+S5 batch (commit 534498d), three lanes in parallel on the 16-core host, the containers at the
+Actions limits (4 CPUs each), per-step timestamps. Solo runs are about 20 % faster.
+
+## Where a full run goes (five jobs, ~75 min of job time; Actions wall = the longest job)
+| Job | Step | s | What it is |
+| --- | --- | --- | --- |
+| core | host-debug: configure, build, ctest | 472 | full Debug build (294 targets, -Werror) + 745 ctest entries |
+| core | host-release: configure, build, ctest | 460 | the same again in Release |
+| core | tools tests (71 pytest files) | 303 | per-push tools tests; 6 slow files already nightly-only |
+| core | L5 T3 oracle regeneration | 268 | regenerated every run (decision 0011) |
+| core | frozen suites (ctest -L frozen) | 36 | the 744 frozen entries run a second time |
+| core | m33: configure, build | 322 | the target build from scratch |
+| core | L5 T3 one-ulp negative control | 309 | regenerates the whole L5 set again with a perturbed input |
+| core | the other 31 controls + every gate check | ~60 | planted manifests/targets, nm, token scans |
+| gz-l2 | gz_build | 423 | the plugin tree from scratch |
+| gz-l2 | gz_sensors + gz_analytic + smoke/tools | ~150 | the tests |
+| gz-l4 | gz_build_l4 | 410 | the plugin tree from scratch, again (different SIL library) |
+| gz-l4 | gz_l4 | 116 | the tests |
+| gz-l5 | gz_build_l5 | 409 | the plugin tree from scratch, again |
+| gz-l5 | gz_reference_l5 | 290 | the L5 T3 reference regenerated a second time |
+| gz-l5 | gz_l5 | 606 | the L5 T4 suite (steps, chirps, yaw, recovery) |
+| gz-l11 | build l5 + build l11 + 13 tests | ~900 | two plugin trees from scratch, then the L11 gz tests |
+
+Per full run (job time, contended): builds ≈ 2,900 s (Debug, Release, m33, four or five plugin trees); the L5 T3
+reference ≈ 870 s (regenerated in core, regenerated again by its control, regenerated again in gz-l5); tests
+proper ≈ 1,350 s (745 ctest entries 2×, 71 pytest files, the gz suites); everything else ≈ 100 s.
+
+## Tier 1 — no test changes, no decision record (CI scripts only); expected full run 70 → ~25 min wall, local batch ~15 min
+1. ccache in both images with a persistent cache (local: a volume under ~/.cache; Actions: actions/cache keyed on the
+   compiler and the lockfiles). Every from-scratch build above becomes 30–90 s when the change is small.
+2. One Gazebo job instead of four: the plugin's own objects are identical across l2/l4/l5/l11; only the linked SIL
+   library differs. Build all four plugin variants in one tree (MARV_GZ_SIL becomes a per-target list) and run the four
+   test groups sequentially in one job: 4 × 7 min of builds → one build; the L5 reference regenerated once.
+3. Cache build/reference across runs (refdata's stamp already skips regeneration when the inputs are unchanged): the
+   two 270–290 s regenerations drop to 0 s unless an input changed. The one-ulp control (309 s) stays per push unless
+   Luis rules it nightly (Tier 2, item 9).
+4. pytest-xdist for the tools tests (4 workers): 303 s → ~100 s; the per-file time guard keeps its meaning (it measures
+   alone time).
+5. Drop the duplicated `frozen suites` ctest pass (36 s): host-debug's ctest already ran every frozen entry.
+
+## Tier 2 — test-semantics changes, needs Luis's ruling and a decision record (core 7.2, 7.3)
+6. host-release: build only per push (catches -O2 compile differences), run its ctest nightly: −7 min per push.
+7. The L5 T4 gz suite (606 s): keep the step tests per push, move chirps/yaw/recovery to nightly; same for L4's
+   chirps. Per-push gz time ≈ 4 min of tests instead of 15. Nightly keeps the full set (MARV_CI_MODE=full exists).
+8. Negative controls: keep every control, but run the ones that only exercise checker scripts as pytest cases of the
+   checker (several already have both forms) — only the controls that need a planted build stay as CI steps.
+
+9. The L5 T3 one-ulp control (309 s per push): run it nightly, or keep it per push but on one output file (the
+   SHA check fails on the first mismatching file; generating all three is not needed to prove it).
+
+## What this does not change
+- No frozen test is loosened or deleted; the full set still runs nightly and before every stage close and tag.
+- "Verified" stays `ci/local_ci.sh` on the pushed head — once per push batch, not once per commit.
 
 ## Git state (2026-10-05)
 - `master` = `origin/master` = `b48e202` (C5). Everything committed on master is pushed, each commit after a full local
@@ -140,7 +234,8 @@ stored per 0011.
   per-point W is about 1.9 mrad/s. Lead recommendation: per point.
 - **The gz re-measure** (ruling 7): only when Luis says the host is quiet (load < 1.5). It fixes the shard count, and C7
   waits for it.
-- **L11 (lead):** S6–S8 as listed above; S1–S5 landed. Local CI now has five jobs (gz-l11 added).
+- **L11 (lead):** paused after S5 by Luis (2026-10-14); S6a-1 parked uncommitted; S6a-2, S6b, S7, S8 not started.
+  Resume only on his word. Local CI has five jobs (gz-l11 added).
 - **Remaining (e) builds:**
   - C6a: see above;
   - C6b: the T3 corner scan (27-row table), the L5 and chirp plan adapters;
