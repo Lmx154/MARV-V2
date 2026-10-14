@@ -72,6 +72,19 @@ vertical estimator layer and a §6.1 pilot mode are each a separate decision.
     cases), the L11 tools directory joining the per-push tools step. L5's SIL library exports are unchanged (the same
     eight symbols). Reviewed PASS against I1 and I2. Noticed, deferred to the stage that first uses it on the target:
     `fw/types/src/instantiate.cpp` does not instantiate `VerticalState<float>` for m33 yet.
+  - S2, the law: `fw/vertical` (`VerticalConfig<T>` {kp_z, kp_v, ki_v, period, hover_thrust} with `validate`;
+    `VerticalLaw<T>` with `init(cfg, mixer_cfg)`, `execute(state, z_ref) -> {thrust_request, e_z, e_v, fault}`,
+    `record_allocation`, `reset`, accessors), the law e_z = z_ref − z, v_sp = k_z e_z, e_v = v_sp − v_z,
+    I_n = I_(n−1) + (freeze ? 0 : k_i e_v,(n−1) T), T_req = T_h − (k_v e_v + I_n) (below the reference ⇒ more thrust);
+    the law never clamps (the mixer owns the limits); anti-windup = decision 0005 item 4 on the collective: freeze iff
+    |T_req − T_ach| exceeds the thrust row of the rate loop's rounding bound (γ_n + ε)(|B̂||M̂||v|)_thrust — B̂'s thrust
+    row is 1 per motor (rate::effectiveness), so it is the column sums of |M̂| from the mixer configuration — AND e_v
+    drives further into the limit; invalid state (valid bit clear, non-finite z, v_z, z_ref, output or integrator) ⇒
+    exactly T_h, integrator and freeze reset, a fault latch cleared by `init` only (the rate and attitude loops'
+    pattern). 22 frozen T1 tests under `tests/regression/quad/L11/unit/vertical/` (hand-computed executions, sign,
+    both clamp sides, the rounding case, the torque part of the bound, the fault cases incl. overflow, validate,
+    reset/init, no-clamp); m33 builds the library. Reviewed PASS against I3–I5 after two corrections (the bound form,
+    the overflow tests). Not yet: parameters, composition, generator (S3, S4).
 
 ## Evidence
 
