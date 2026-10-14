@@ -1,4 +1,4 @@
-# Handoff: quad L6, stage (e) in progress (decision 0019); stages (a)–(d) closed
+# Handoff: quad L6, stage (e) in progress (decision 0019); stages (a)–(d) closed; L11 opened (decision 0020)
 
 2026-10-05. Written for the next tech lead, from git and the records, not session memory. This file states where things
 are and adds no scope. The ACTIVE specs and decisions 0009–0019 are the authority. Update this file in the same change as
@@ -35,6 +35,37 @@ only: `.venv` had been created by a CI container run against the repository dire
 `rm -rf .venv && uv sync --frozen`. The three plugin builds predated `5fc37b6` and `d361d54` (rebuilt), and C6a sat
 uncommitted (now on `l6-c6a-wip`). No code changed. What remains broken is unchanged: the known failing items under
 "Open items".
+- Luis asked to see the hover in the Gazebo GUI. Two things hid it, neither in the flight code: (1) gz-sim 8's GUI opens
+  `/usr/lib/x86_64-linux-gnu/libgz-rendering-ogre2.so`, which the gz 10 packages (libgz-rendering10-ogre2, installed
+  2026-10-08) own, so the 3D view died with "Found no render engine plugins in [gz-rendering-ogre2]"; headless runs never
+  render, so CI and the tests were untouched; (2) the generated worlds are headless by design: no `<visual>` and only the
+  Physics system listed, so the GUI gets no scene. A demo kit outside the repository (`~/marv-handover-2026-10-13/demo/`)
+  adds visuals (the Fuel "X3 UAV" meshes at the card's rotor positions, a stand-in until Q-D1's Chameleon mesh), the
+  SceneBroadcaster, RTF 1 and an LD_PRELOAD shim for the render engine. Luis (2026-10-13): no `--view` option in the
+  repository for now; the X3 stand-in is fine. The permanent GUI fix is his: remove the gz 10 rendering packages or keep
+  the shim.
+- What the demo showed, measured from the plugin's logs and the live pose topic: L5 holds attitude as specified (a 0.2 s
+  roll shove of 0.02 N·m tilts it 8–9° and it is level again in 0.7–0.95 s); nothing holds altitude: each shove leaves
+  about 0.1 m/s of descent for good (no drag at v0), and the fixed-thrust hover is an unstable equilibrium in height
+  because the plant evaluates g at the current height (marv_plant.h:83–84) while `l5_thrust_n` is m·g(h0): measured
+  +0.63 mm/s² at z = +205 m = the free-air gradient 3.086e-6 s⁻² × 205 m, time constant 569 s. The recover_inverted
+  scenario acquires 6.9 m/s of descent during the 0.7 s flip and keeps it. Luis chose to scope an altitude loop; see
+  the next section.
+
+## L11, the vertical loop on truth state: opened (decision 0020, 2026-10-13)
+- Luis ruled on the architect's proposal (0020, his eight answers verbatim): a new layer L11, truth-fed and SIL-only,
+  built in parallel with L6 stage (e); the spec text as proposed; `thrust_gain_robustness_band` = 0.5 (his labelled
+  choice); no climb/descent clamp; the T4 roll shove is 0.02 N·m for 0.2 s (labelled scenario value); the spec's
+  "T/W ≈ 4.5" is marked UNVERIFIED against the card's 6.47.
+- Stages, one commit each with full local CI (0020, "The proposal as ruled", section 7): S0 spec + record (this commit,
+  docs-only); S1 truth channel (`marv_truth_vertical`, TRUTH_VERTICAL library option, G3 rule and controls, T1); S2
+  `fw/vertical` law; S3 `tools/card/vertical.py` and the budget entry with its `L11/param_ids` claim (changes the frozen
+  L06 product_params table: the record names it); S4 composition `l11_vertical_scripted`; S5 plugin element, adapter,
+  log type 8, the L5 byte-identity check; S6 T3 oracle, golden, envelopes (0011 storage); S7 scenarios, runner, T4 gz
+  tests and controls, a `gz-l11` job; S8 close. Estimate 11.5 working days (not a commitment). Next: S1.
+- Coupling: stage (e)'s FF switch-on commit must also keep L11 green (INFERRED low risk). The R2 collective question is
+  untouched by L11 (no recovery scenario).
+- The packet, the survey and the architect's full decision: `~/marv-handover-2026-10-13/altitude/`.
 
 ## Git state (2026-10-05)
 - `master` = `origin/master` = `b48e202` (C5). Everything committed on master is pushed, each commit after a full local
@@ -106,6 +137,7 @@ stored per 0011.
   per-point W is about 1.9 mrad/s. Lead recommendation: per point.
 - **The gz re-measure** (ruling 7): only when Luis says the host is quiet (load < 1.5). It fixes the shard count, and C7
   waits for it.
+- **L11 (lead):** S1–S8 as listed above; the first code commit is S1.
 - **Remaining (e) builds:**
   - C6a: see above;
   - C6b: the T3 corner scan (27-row table), the L5 and chirp plan adapters;
