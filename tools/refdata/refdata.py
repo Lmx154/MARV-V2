@@ -53,6 +53,12 @@ REGISTRY = {
         "attitude_t3_oracle.py",
         procs=True,
     ),
+    "quad/L11/t3": RefSet(
+        "tests/regression/quad/L11/t3/reference",
+        ["vertical_t3_inputs.txt"],
+        "vertical_t3_oracle.py",
+        procs=True,
+    ),
 }
 
 

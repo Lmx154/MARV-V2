@@ -1,0 +1,23 @@
+# The L11 T3 fixture: the f32 values the oracle and the T3 test use (hex floats are exact). Every key but the
+# last two equals the parameter table of marv_params_l11_vertical_scripted of 2026-10-14, quad L11 S6
+# (vertical_t3_oracle.py --refresh-inputs from param_defaults.cpp). hover_thrust_n and thrust_offset_n
+# are per-run scenario values derived at refresh, not table entries, at the design site of design/scenario_values.yaml:
+# hover_thrust_n = f32(m_card g(phi, h0)) by tools/sim/run_l4.py hover_thrust (the composition's vert_hover_thrust_n),
+# thrust_offset_n = f32((m_card - m_conflict) g(phi, h0)), the card's mass conflict (decision 0020 section 4; the
+# composition's l11_dist_thrust_n). The T3 test reads this file, not the live parameters.
+rate_loop_divisor 2
+tick_period_num_us 625
+tick_period_den 4
+vert_loop_ratio 1
+vert_kp_v 0x1.325e880000000p+2  # 4.78701973
+vert_ki_v 0x1.a014840000000p+3  # 13.0025043
+vert_kp_z 0x1.bbf8bc0000000p+0  # 1.73426414
+site_latitude_rad 0x1.a3d70a0000000p-1  # 0.819999993
+site_height_m 0x1.f400000000000p+8  # 500
+mass 0x1.8b43960000000p-1  # 0.772000015
+rotor_thrust_coeff 0x1.a36fb20000000p-20  # 1.56252202e-06
+rotor_speed_min 0x1.2c00000000000p+7  # 150
+rotor_speed_max 0x1.5e00000000000p+11  # 2800
+motor_tau 0x1.0e56040000000p-5  # 0.0329999998
+hover_thrust_n 0x1.e4845a0000000p+2  # 7.5705781
+thrust_offset_n 0x1.91ac100000000p-3  # 0.196128964
