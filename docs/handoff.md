@@ -46,7 +46,10 @@ selection; the full suite runs only on the merge into `master` (pull request int
   (1 + 1 = 2) deleted. Evidence in 0021.
 - Development check, warm trees: docs 0.8 s; `fw/vertical` ~22 s + G1; `tools/sim/l6_noise_term.py` ~21 s (was the
   whole L06 tools dir, 293 s). G1 needs `clang-tidy-18` on the host (not installed on Luis's host: `lint_g1.py:217`).
-- Not yet run: the full merge gate (`ci/local_ci.sh`) on this branch's head.
+- Merge gate on `b4feda5` (decision 0022 with 0021 under it): all five jobs PASS. Job times empty cache / warm: core
+  1283 / 615 s, gz-l2 186 / 133, gz-l4 193 / 189, gz-l5 537 / 532, gz-l11 28 / 22; sum ~37 / ~25 min against ~75 min
+  before. What is left: the tools tests (533 of warm core's 615 s) and the L5 gz T4 suite (466 s); trims (2) and (3)
+  below are the next cuts, and they need Luis's word.
 - Committed and pushed as `91f843c` (Luis: "commit and push"). Then Luis, 2026-10-14, verbatim, on the merge-run
   speed-ups (a compiler cache, one Gazebo build instead of four, cached reference data, parallel Python and ctest, the
   one-ulp control on one file): "this leads me to believe that we're not taking advantage of low hanging fruit for

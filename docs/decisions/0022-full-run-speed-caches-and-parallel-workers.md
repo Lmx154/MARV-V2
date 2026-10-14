@@ -89,7 +89,17 @@ No file under `tests/regression/` changes.
   host-debug, host-release and m33. A closure module, the card or the sensor profile changes the key; a truncated or
   bit-flipped entry is rejected and regenerated; a planted lint finding fails all four commands. The cost is
   `rate_lead.margins` (3007 calls of a pure-Python frequency sweep, 175 of 275 s serial), left unchanged.
-- Timings of the cold and warm full runs with every item: added as they are measured.
+- The merge gate with every item, `ci/local_ci.sh` on `b4feda5` (Luis's host, each job alone under the runner's 4 CPUs
+  and memory), all jobs PASS. Job times, empty cache (`--no-cache` for core; the gz jobs on the empty volume of the
+  first run, `1b2d23b`, whose gz content is the same) / warm: core 1283 / 615 s; gz-l2 186 / 133 s; gz-l4 193 / 189 s;
+  gz-l5 537 / 532 s; gz-l11 28 / 22 s. Sum about 37 min / 25 min against about 75 min before (decision 0021); the
+  longest job, which is the wall time on Actions where jobs run side by side, is core: about 21 / 10 min. Warm core:
+  the tools tests are 533 of the 615 s (with 4 workers in the container: 599 s against 635 s serial; the tests start
+  process pools of their own), host-debug 30 s, host-release 13 s, both T3 controls cached. Empty-cache core: L5 T3
+  generation 233 s and the L5 control 231 s, host-debug 81 s (391 s before items 1 and 6), host-release 89 s (416 s).
+- Found by the gate: the flatten cache refused a card outside the repository, which the frozen
+  `L01/tools/test_flatten_report.py::test_cmake_build_fails_when_the_card_fails_the_linter` builds on purpose; any run
+  the cache cannot key now runs `flatten.py` uncached.
 
 ## Approval
 
