@@ -1,0 +1,8 @@
+{
+  global:
+    marv_sil_*;
+    marv_truth_state_set;
+    marv_truth_vertical_set;
+  local:
+    *;
+};

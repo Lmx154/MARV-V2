@@ -19,7 +19,11 @@ never be skipped silently.
   exports   nm -D --defined-only over every SIL shared library. A library whose manifest entry has "truth_state" absent
             or false (every product library) exports only marv_sil_* symbols. A library with "truth_state": true (built
             with marv_add_sil_library TRUTH_STATE, test only) exports marv_sil_* symbols and exactly marv_truth_state_set,
-            and must export marv_truth_state_set: a flag without the export is a G3-ERROR
+            and must export marv_truth_state_set: a flag without the export is a G3-ERROR. The same holds for the key
+            "truth_vertical" (built with marv_add_sil_library TRUTH_VERTICAL, test only) and marv_truth_vertical_set. The
+            allowed exports of a SIL library are marv_sil_*, plus marv_truth_state_set if and only if truth_state, plus
+            marv_truth_vertical_set if and only if truth_vertical; a library flagged truth_vertical that does not export
+            marv_truth_vertical_set, and a non-boolean truth_vertical, are G3-ERRORs
 
 Exit status: 0 clean, 1 violations, 2 vacuous run (nothing to check) or tool failure. Diagnostics start with
 G3-SYMBOL, G3-INCLUDE or G3-EXPORT; a vacuous or failed run prints G3-VACUOUS or G3-ERROR.
@@ -48,6 +52,7 @@ OBJECT_TYPE = "OBJECT_LIBRARY"
 INTERFACE_TYPE = "INTERFACE_LIBRARY"
 SIL_EXPORT = re.compile(r"^marv_sil_[A-Za-z0-9_]+$")
 TRUTH_EXPORT = "marv_truth_state_set"
+TRUTH_VERTICAL_EXPORT = "marv_truth_vertical_set"
 
 _NM_SYMBOL = re.compile(r"^(?:[0-9A-Fa-f]+|\s*)\s([A-Za-z?-])\s(.+)$")
 _NM_MEMBER = re.compile(r"^(.+):$")
@@ -101,9 +106,9 @@ def non_sil_exports(symbols: list[tuple[str, str, str]]) -> list[str]:
     return [name for _, _, name in symbols if not SIL_EXPORT.match(name)]
 
 
-def non_truth_exports(symbols: list[tuple[str, str, str]]) -> list[str]:
-    """Exports of a truth_state library that are neither marv_sil_* nor marv_truth_state_set."""
-    return [name for _, _, name in symbols if not SIL_EXPORT.match(name) and name != TRUTH_EXPORT]
+def non_truth_exports(symbols: list[tuple[str, str, str]], allowed: tuple[str, ...] = (TRUTH_EXPORT,)) -> list[str]:
+    """Exports of a truth library that are neither marv_sil_* nor one of the allowed truth setters."""
+    return [name for _, _, name in symbols if not SIL_EXPORT.match(name) and name not in allowed]
 
 
 def _option_values(args: list[str], options: tuple[str, ...]) -> list[str]:
@@ -321,14 +326,27 @@ def check_exports(manifest: dict, nm: str) -> int:
         truth_state = lib.get("truth_state", False)
         if not isinstance(truth_state, bool):
             raise G3Error(f"SIL library {lib['name']}: 'truth_state' is {truth_state!r}, not a boolean")
-        if truth_state:
-            if TRUTH_EXPORT not in [name for _, _, name in symbols]:
-                raise G3Error(f"SIL library {lib['name']} ({lib['file']}) is flagged truth_state but does not export "
-                              f"{TRUTH_EXPORT}")
-            for name in non_truth_exports(symbols):
+        truth_vertical = lib.get("truth_vertical", False)
+        if not isinstance(truth_vertical, bool):
+            raise G3Error(f"SIL library {lib['name']}: 'truth_vertical' is {truth_vertical!r}, not a boolean")
+        exported = [name for _, _, name in symbols]
+        if truth_state and TRUTH_EXPORT not in exported:
+            raise G3Error(f"SIL library {lib['name']} ({lib['file']}) is flagged truth_state but does not export "
+                          f"{TRUTH_EXPORT}")
+        if truth_vertical and TRUTH_VERTICAL_EXPORT not in exported:
+            raise G3Error(f"SIL library {lib['name']} ({lib['file']}) is flagged truth_vertical but does not export "
+                          f"{TRUTH_VERTICAL_EXPORT}")
+        if truth_state or truth_vertical:
+            allowed = (TRUTH_EXPORT,) * truth_state + (TRUTH_VERTICAL_EXPORT,) * truth_vertical
+            if truth_state and not truth_vertical:
+                wording = f"neither marv_sil_* nor {TRUTH_EXPORT}"
+            elif truth_vertical and not truth_state:
+                wording = f"neither marv_sil_* nor {TRUTH_VERTICAL_EXPORT}"
+            else:
+                wording = f"neither marv_sil_* nor {TRUTH_EXPORT} nor {TRUTH_VERTICAL_EXPORT}"
+            for name in non_truth_exports(symbols, allowed):
                 violations += 1
-                print(f"G3-EXPORT {lib['name']} ({lib['file']}): exports '{name}', which is neither marv_sil_* "
-                      f"nor {TRUTH_EXPORT}")
+                print(f"G3-EXPORT {lib['name']} ({lib['file']}): exports '{name}', which is {wording}")
         else:
             for name in non_sil_exports(symbols):
                 violations += 1

@@ -59,6 +59,19 @@ vertical estimator layer and a §6.1 pilot mode are each a separate decision.
   it changes (decision 0004 manifest rule; the L06 product_params table is frozen, so that commit names it here).
 - No file under `tests/regression/` changes in this commit.
 - Stages (one commit each, full `ci/local_ci.sh` per commit; appended as they land): S0 this record and the spec text.
+  - S1, the truth vertical channel and its gate: `fw/types/include/marv/types/vertical_state.hpp` (`VerticalState<T>`);
+    `fw/sil/include/marv_truth_vertical.h`, `fw/sil/src/truth_vertical.cpp` (`marv_truth_vertical`,
+    `marv_truth_vertical_set`, the attitude channel's status codes and valid-bit rule), the export maps
+    `fw/sil/marv_sil_truth_vertical.map` and `marv_sil_truth_state_vertical.map`, the `TRUTH_VERTICAL` option of
+    `marv_add_sil_library` (fw/sil/CMakeLists.txt) and the manifest flag `truth_vertical` (cmake/flight_targets.cmake);
+    `tools/ci/check_g3.py`'s exports rule: allowed exports are marv_sil_*, plus marv_truth_state_set iff truth_state,
+    plus marv_truth_vertical_set iff truth_vertical, which a flagged library must export (G3-ERROR otherwise); three
+    controls under `tests/regression/quad/L11/controls/` as ci/run_ci.sh steps (unflagged export, planted extra
+    export, flagged without the export); T1 tests under `tests/regression/quad/L11/unit/truth_vertical/` (20, frozen,
+    with a harness-side stub composition) and `tests/regression/quad/L11/tools/test_check_g3_truth_vertical.py` (38
+    cases), the L11 tools directory joining the per-push tools step. L5's SIL library exports are unchanged (the same
+    eight symbols). Reviewed PASS against I1 and I2. Noticed, deferred to the stage that first uses it on the target:
+    `fw/types/src/instantiate.cpp` does not instantiate `VerticalState<float>` for m33 yet.
 
 ## Evidence
 

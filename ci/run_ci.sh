@@ -704,6 +704,54 @@ g3_truth_planted_control() {
     exports --manifest build/host-debug/tests/regression/quad/L05/controls/g3_control_truth_planted.json --nm nm
 }
 
+g3_truth_vertical_unflagged_control() {
+  g3_control host-debug g3_truth_vertical_unflagged_export G3-EXPORT "exports 'marv_truth_vertical_set'" \
+    exports --manifest build/host-debug/tests/regression/quad/L11/controls/g3_control_truth_vertical_unflagged.json --nm nm
+}
+
+g3_truth_vertical_planted_control() {
+  g3_control host-debug g3_truth_vertical_planted_export G3-EXPORT "exports 'marv_truth_vertical_planted'" \
+    exports --manifest build/host-debug/tests/regression/quad/L11/controls/g3_control_truth_vertical_planted.json --nm nm
+}
+
+# A flag without the export is a tool-level error (exit status 2, G3-ERROR), not a violation (exit status 1), so g3_control
+# does not fit: builds the planted target, requires exit status 2, a first line G3-ERROR naming the missing export, and
+# no other G3 diagnostic.
+g3_truth_vertical_missing_control() {
+  local target=g3_truth_vertical_missing_export log status=0 build_log
+  build_log="$(mktemp)"
+  if ! cmake --build --preset host-debug --target "${target}" >"${build_log}" 2>&1; then
+    cat "${build_log}"
+    echo "control target ${target} did not build"
+    rm -f "${build_log}"
+    return 1
+  fi
+  rm -f "${build_log}"
+  log="$(mktemp)"
+  g3_check exports --manifest build/host-debug/tests/regression/quad/L11/controls/g3_control_truth_vertical_missing.json \
+    --nm nm >"${log}" 2>&1 || status=$?
+  cat "${log}"
+  if [[ ${status} -ne 2 ]]; then
+    echo "control did not fail as a G3 tool error (exit ${status}): the truth_vertical flag without the export is not rejected"
+    rm -f "${log}"
+    return 1
+  fi
+  if ! grep -q "^G3-ERROR " "${log}" || ! grep -qF -- "does not export marv_truth_vertical_set" "${log}"; then
+    echo "control failed, but not with a G3-ERROR diagnostic naming marv_truth_vertical_set"
+    rm -f "${log}"
+    return 1
+  fi
+  local other
+  for other in G3-SYMBOL G3-INCLUDE G3-EXPORT G3-VACUOUS; do
+    if grep -q "^${other}" "${log}"; then
+      echo "control failed with an unintended ${other} diagnostic"
+      rm -f "${log}"
+      return 1
+    fi
+  done
+  rm -f "${log}"
+}
+
 # Tools tests that run in the full mode only (nightly and workflow_dispatch), not per push: the files whose alone time exceeds the
 # 60 s per-push limit (owner ruling of 2026-10-03). Each time is the file run alone in the CI image (docker run --cpus 4 --memory
 # 15740260352 on a quiet host, load < 1.5) after the S9 speed-ups, the session fixtures included. The per-push files closest
@@ -729,7 +777,7 @@ tools_tests() {
   if [[ "${MARV_CI_MODE:-per-push}" != full ]]; then
     guard=(-p pytest_file_time_guard)
   fi
-  PYTHONPATH=tools/ci uv run pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools -q ${guard[@]+"${guard[@]}"} ${skip[@]+"${skip[@]}"}
+  PYTHONPATH=tools/ci uv run pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools tests/regression/quad/L11/tools -q ${guard[@]+"${guard[@]}"} ${skip[@]+"${skip[@]}"}
 }
 
 # S9 for pytest (decision 0014 fifth round item 6; closed in quad L6 stage (e), decision 0019 ruling 12 and the owner ruling
@@ -778,7 +826,7 @@ per_push_pytest_control() {
 step "uv sync --frozen" uv sync --frozen
 step "L4: T3 oracle regenerates rate_t3_golden.txt and rate_t3_envelope.txt from rate_t3_inputs.txt, matching reference/SHA256SUMS" t3_reference_reproduces
 step "L5: T3 oracle regenerates attitude_t3_golden.txt, attitude_t3_envelope.txt and attitude_t3_q.txt from their inputs, matching reference/SHA256SUMS" att_t3_reference_reproduces
-step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools; the nightly list only in MARV_CI_MODE=full)" \
+step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools tests/regression/quad/L11/tools; the nightly list only in MARV_CI_MODE=full)" \
   tools_tests
 if [[ "${MARV_CI_MODE:-per-push}" != full ]]; then
   step "per-push pytest guard (positive check: a short tools-test file passes the per-file time guard)" per_push_pytest_guard_applied
@@ -835,5 +883,8 @@ step "L5 negative control (a perturbed rate-bypass input, kp one ulp up, must no
 step "product parameters negative control (a committed table with one value changed must fail the byte-for-byte comparison)" product_table_control
 step "G3 negative control (unflagged SIL library exporting marv_truth_state_set must fail the export check)" g3_truth_unflagged_control
 step "G3 negative control (truth_state library also exporting marv_truth_planted must fail the export check)" g3_truth_planted_control
+step "G3 negative control (unflagged SIL library exporting marv_truth_vertical_set must fail the export check)" g3_truth_vertical_unflagged_control
+step "G3 negative control (truth_vertical library also exporting marv_truth_vertical_planted must fail the export check)" g3_truth_vertical_planted_control
+step "G3 negative control (truth_vertical flag without the marv_truth_vertical_set export must be a G3-ERROR)" g3_truth_vertical_missing_control
 
 echo "ALL STEPS PASSED"

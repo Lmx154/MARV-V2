@@ -1,9 +1,11 @@
 # G3 target manifest (core section 7.4, row G3).
 #
 # marv_write_g3_manifest(<file> [FLIGHT <target>...] [SIL <target>...])
-#   Writes <file> at generate time. JSON: {"flight_targets": [...], "sil_libraries": [{"name", "file", "truth_state"}]}.
+#   Writes <file> at generate time. JSON: {"flight_targets": [...], "sil_libraries": [{"name", "file", "truth_state",
+#   "truth_vertical"}]}.
 #   "truth_state" is true iff the target property MARV_SIL_TRUTH_STATE (marv_add_sil_library TRUTH_STATE) is set when
-#   the manifest is written; it selects the export rule of tools/ci/check_g3.py.
+#   the manifest is written; "truth_vertical" likewise for MARV_SIL_TRUTH_VERTICAL (marv_add_sil_library
+#   TRUTH_VERTICAL). They select the export rule of tools/ci/check_g3.py.
 #   A flight entry always has "name" and "type" (the CMake TYPE property); by type it also has
 #     STATIC/SHARED/MODULE_LIBRARY, EXECUTABLE  "file" (linked file), "objects"
 #     OBJECT_LIBRARY                            "objects"
@@ -105,8 +107,14 @@ function(marv_write_g3_manifest file)
     else()
       set(truth_json "false")
     endif()
+    get_target_property(truth_vertical ${tgt} MARV_SIL_TRUTH_VERTICAL)
+    if(truth_vertical)
+      set(truth_vertical_json "true")
+    else()
+      set(truth_vertical_json "false")
+    endif()
     list(APPEND sil_entries
-      "    {\"name\": \"${tgt}\", \"file\": \"$<TARGET_FILE:${tgt}>\", \"truth_state\": ${truth_json}}")
+      "    {\"name\": \"${tgt}\", \"file\": \"$<TARGET_FILE:${tgt}>\", \"truth_state\": ${truth_json}, \"truth_vertical\": ${truth_vertical_json}}")
   endforeach()
   list(JOIN flight_entries ",\n" flight_json)
   list(JOIN sil_entries ",\n" sil_json)

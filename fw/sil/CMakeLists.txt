@@ -1,6 +1,6 @@
 add_library(marv_sil INTERFACE)
 
-# marv_add_sil_library(<name> COMPOSITION <static-lib-target> [PARAMS <param-set>] [TRUTH_STATE])
+# marv_add_sil_library(<name> COMPOSITION <static-lib-target> [PARAMS <param-set>] [TRUTH_STATE] [TRUTH_VERTICAL])
 #
 # Host only. Builds the SIL entry as the shared library <name>: fw/sil sources, the composition, marv_hal_sim and
 # the runtime of the parameter set PARAMS (marv_add_param_set; default marv_params, the product set), which must be the
@@ -14,8 +14,15 @@ add_library(marv_sil INTERFACE)
 # the state to marv::composition::attitude_input (declared by the composition's own marv/composition.hpp; a composition
 # without it fails the build), links with marv_sil_truth.map (marv_sil_* and exactly marv_truth_state_set) and sets the
 # target property MARV_SIL_TRUTH_STATE to TRUE. Without the option nothing changes.
+#
+# TRUTH_VERTICAL (test only; decision 0020 section 1, item c) adds src/truth_vertical.cpp, which exports
+# marv_truth_vertical_set and hands the state to marv::composition::vertical_input (declared by the composition's own
+# marv/composition.hpp; a composition without it fails the build), links with marv_sil_truth_vertical.map (marv_sil_*
+# and exactly marv_truth_vertical_set) or, together with TRUTH_STATE, marv_sil_truth_state_vertical.map (marv_sil_* and
+# exactly marv_truth_state_set and marv_truth_vertical_set), and sets the target property MARV_SIL_TRUTH_VERTICAL to
+# TRUE. Without the option nothing changes.
 function(marv_add_sil_library name)
-  cmake_parse_arguments(ARG "TRUTH_STATE" "COMPOSITION;PARAMS" "" ${ARGN})
+  cmake_parse_arguments(ARG "TRUTH_STATE;TRUTH_VERTICAL" "COMPOSITION;PARAMS" "" ${ARGN})
   if(NOT ARG_PARAMS)
     set(ARG_PARAMS marv_params)
   endif()
@@ -51,6 +58,15 @@ function(marv_add_sil_library name)
     set_target_properties(${name} PROPERTIES MARV_SIL_TRUTH_STATE TRUE)
   else()
     set(version_script "${sil_dir}/marv_sil.map")
+  endif()
+  if(ARG_TRUTH_VERTICAL)
+    if(ARG_TRUTH_STATE)
+      set(version_script "${sil_dir}/marv_sil_truth_state_vertical.map")
+    else()
+      set(version_script "${sil_dir}/marv_sil_truth_vertical.map")
+    endif()
+    target_sources(${name} PRIVATE "${sil_dir}/src/truth_vertical.cpp")
+    set_target_properties(${name} PROPERTIES MARV_SIL_TRUTH_VERTICAL TRUE)
   endif()
   target_link_options(${name} PRIVATE "LINKER:--version-script=${version_script}")
   set_property(TARGET ${name} APPEND PROPERTY LINK_DEPENDS "${version_script}")
