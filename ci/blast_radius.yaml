@@ -344,6 +344,13 @@ rules:
     gz_groups: [l5, l11]
     why: "run_l5 and l5_scenario are imported by the L05 and L06 tools tests, the L05 and L11 gz suites and the L05 T3 oracle"
 
+  - paths: [tools/sim/l5_scenario.py]
+    ctest_labels: []
+    run_ci_steps: [tools_tests]
+    pytest_paths: [tests/regression/quad/L04/tools]
+    gz_groups: []
+    why: "l5_scenario is one of the three schemas of the shared refusal tests (L04/tools/test_scenario_schema.py)"
+
   - paths: [tools/sim/gen_l5_chirp.py]
     ctest_labels: []
     run_ci_steps: []
@@ -410,6 +417,13 @@ rules:
       - tests/regression/quad/L11/tools
     gz_groups: []
     why: "the G3 checker, every G3 gate step and control, and the L00/L05/L11 tools tests of its rules"
+
+  - paths: [tools/ci/check_param_ids.py]
+    ctest_labels: [L04, L05, L11]
+    run_ci_steps: ["@host"]
+    pytest_paths: []
+    gz_groups: []
+    why: "the composition parameter-id check run by the L04, L05 and L11 composition ctest entries (decision 0024)"
 
   - paths: [tools/ci/check_regression_changes.py]
     ctest_labels: []
@@ -729,6 +743,13 @@ rules:
     pytest_paths: []
     gz_groups: []
     why: "the L05 C++ tests"
+
+  - paths: [tests/regression/quad/common/**]
+    ctest_labels: [L05, L11]
+    run_ci_steps: ["@host"]
+    pytest_paths: []
+    gz_groups: []
+    why: "the truth-channel T1 header shared by the L05 truth_state and L11 truth_vertical tests (decision 0024)"
 
   - paths: [tests/regression/quad/L05/unit/rate_bypass/**]
     ctest_labels: [L05]

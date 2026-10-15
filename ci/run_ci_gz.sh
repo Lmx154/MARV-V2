@@ -8,8 +8,10 @@ export UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}"
 source ci/peakmem.sh
 
 # MARV_CI_MODE: per-push (default; the development check, ci/dev_check.sh) or full (the merge gate: every Actions run and
-# ci/local_ci.sh, core 7.6). The multi-seed Monte Carlo of L6 stage e hooks
-# in here when it exists; nothing reads the mode yet (owner decision: per push = frozen T4 at committed seeds).
+# ci/local_ci.sh, core 7.6). In full mode every gz step runs everything. In any other mode gz_l4 and gz_l5 hold back the
+# long files of gz_held_back (below) unless the diff against the development check's base (MARV_CI_BASE_REF, exported by
+# ci/dev_check.sh) touches the file or a non-test_*.py file of its directory; with no base they run everything. The
+# multi-seed Monte Carlo of L6 stage e hooks in here when it exists (owner decision: per push = frozen T4 at committed seeds).
 echo "MARV_CI_MODE=${MARV_CI_MODE:-per-push}"
 
 step() {
@@ -90,6 +92,58 @@ pytest_no_skips() {
   rm -f "${log}"
 }
 
+# The long T4 files that the development check holds back (owner decision 2026-10-15); the merge run (MARV_CI_MODE=full) runs
+# them all. The list is defined here only.
+gz_held_back=(
+  tests/regression/quad/L05/gz/test_t4_chirp.py
+  tests/regression/quad/L05/gz/test_t4_yaw.py
+  tests/regression/quad/L05/gz/test_t4_recovery.py
+  tests/regression/quad/L04/gz/test_t4_chirp.py
+)
+
+# Run a gz test directory. Outside full mode the held-back files of that directory get --ignore, except a file the diff
+# against MARV_CI_BASE_REF touches itself or whose directory has a touched non-test_*.py file (conftest.py, helpers).
+# MARV_CI_BASE_REF unset or unusable: no ignores. One line names what was held back and why.
+pytest_gz_dir() {
+  local dir="$1" mode="${MARV_CI_MODE:-per-push}" base="${MARV_CI_BASE_REF:-}"
+  local ignore=() held=() f c d changed=() touched listing
+  if [[ "${mode}" == full ]]; then
+    echo "held back in ${dir}: none (MARV_CI_MODE=full)"
+  elif [[ -z "${base}" ]]; then
+    echo "held back in ${dir}: none (MARV_CI_BASE_REF unset, no base to diff against: running everything)"
+  elif ! listing="$(uv run python -c '
+import sys
+sys.path.insert(0, "ci")
+import affected
+print("\n".join(affected.changed_paths(affected.resolve_base(sys.argv[1]), None)))' "${base}")"; then
+    echo "held back in ${dir}: none (cannot list the diff against ${base}: running everything)"
+  else
+    mapfile -t changed <<<"${listing}"
+    for f in "${gz_held_back[@]}"; do
+      [[ "${f}" == "${dir}"/* ]] || continue
+      d="${f%/*}"
+      touched=""
+      for c in ${changed[@]+"${changed[@]}"}; do
+        if [[ "${c}" == "${f}" ]]; then
+          touched="${c}"
+        elif [[ "${c}" == "${d}"/* && "${c##*/}" != test_*.py ]]; then
+          touched="${c}"
+        fi
+      done
+      if [[ -z "${touched}" ]]; then
+        ignore+=("--ignore=${f}")
+        held+=("${f}")
+      fi
+    done
+    if ((${#held[@]} > 0)); then
+      echo "held back in ${dir} (MARV_CI_MODE=${mode}, not touched by the diff against ${base}; the full run runs them): ${held[*]}"
+    else
+      echo "held back in ${dir}: none (every held-back file here is touched by the diff against ${base}, or none is held back here)"
+    fi
+  fi
+  pytest_no_skips "${dir}" ${ignore[@]+"${ignore[@]}"}
+}
+
 gz_plugin_smoke() {
   pytest_no_skips tests/regression/quad/L02/gz/test_plugin_smoke.py
 }
@@ -124,7 +178,7 @@ gz_build_l4() {
 
 # test_truth_gyro.py runs on the host-gz build (the L2 rotation world); test_t4_steps.py on the host-gz-l4 build.
 gz_l4() {
-  pytest_no_skips tests/regression/quad/L04/gz
+  pytest_gz_dir tests/regression/quad/L04/gz
 }
 
 # The plugin's sensor elements on the host-gz-l4 build (decision 0019, W1 C3): run_l4's sensors passthrough (the world
@@ -149,7 +203,7 @@ gz_reference_l5() {
 
 # The L5 T4 suite (angle steps, truth plumbing, chirp, yaw release and fallback, recovery) on the host-gz-l5 build.
 gz_l5() {
-  pytest_no_skips tests/regression/quad/L05/gz
+  pytest_gz_dir tests/regression/quad/L05/gz
 }
 
 # The same on the host-gz-l5 build (decision 0019, W1 C3): run_l5's sensors passthrough and test e.

@@ -24,10 +24,10 @@ marv_frozen_suite(unit_l5_composition)
 set(l5_product_manifest "$<TARGET_PROPERTY:marv_params_generated,MARV_PARAM_MANIFEST>")
 set(l5_extended_manifest "$<TARGET_PROPERTY:marv_params_l5_attitude_scripted_generated,MARV_PARAM_MANIFEST>")
 add_test(NAME l5_composition_param_prefix
-  COMMAND "${MARV_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/check_param_prefix.py"
+  COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/ci/check_param_ids.py"
           "${l5_product_manifest}" "${l5_extended_manifest}")
 add_test(NAME l5_composition_param_prefix_negative_control
-  COMMAND "${MARV_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/check_param_prefix.py"
+  COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/ci/check_param_ids.py"
           "${l5_extended_manifest}" "${l5_product_manifest}")
 set_tests_properties(l5_composition_param_prefix l5_composition_param_prefix_negative_control PROPERTIES LABELS frozen)
 set_tests_properties(l5_composition_param_prefix_negative_control PROPERTIES WILL_FAIL TRUE)

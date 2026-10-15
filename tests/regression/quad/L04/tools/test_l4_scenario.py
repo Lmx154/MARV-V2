@@ -101,17 +101,6 @@ def test_committed_step_scenarios_are_valid(axis):
     assert doc["step"]["rate_rad_s"]["label"] == "derived" and doc["step"]["horizon_tau_ref"]["label"] == "derived"
 
 
-def test_valid_base_passes():
-    assert findings(raw()) == []
-
-
-@pytest.mark.parametrize("field", l4s.TOP_FIELDS)
-def test_missing_field_refused(field):
-    doc = raw()
-    del doc[field]
-    assert any(field in f for f in findings(doc))
-
-
 @pytest.mark.parametrize("field", l4s.STEP_FIELDS)
 def test_missing_step_field_refused(field):
     doc = raw()
@@ -119,14 +108,10 @@ def test_missing_step_field_refused(field):
     assert any(f"step.{field}" in f for f in findings(doc))
 
 
-def test_unknown_fields_and_stem_mismatch_refused():
-    doc = raw()
-    doc["duration_ticks"] = {"value": 4, "unit": "1", "label": "scenario", "rationale": "x"}
-    assert any("duration_ticks: unknown field" in f for f in findings(doc))
+def test_unknown_step_field_refused():
     doc = raw()
     doc["step"]["amplitude"] = {"value": 1.0, "unit": "1", "label": "scenario", "rationale": "x"}
     assert any("step.amplitude: unknown field" in f for f in findings(doc))
-    assert any("file stem" in f for f in l4s.validate(raw(), "step_pitch.yaml", REGISTER))
 
 
 def test_unlabelled_number_refused():
@@ -136,8 +121,6 @@ def test_unlabelled_number_refused():
 
 
 @pytest.mark.parametrize("mutate, text", [
-    (lambda d: d["site_height_m"].pop("rationale"), "needs a non-empty rationale"),
-    (lambda d: d["m_sequence"].pop("rule"), "needs a non-empty rule"),
     (lambda d: d["seed"].update(label="guess"), "is not one of"),
     (lambda d: d["step"]["settle_s"].update(rationale="two\nlines"), "must be one line"),
 ])
@@ -147,10 +130,7 @@ def test_label_and_rationale_rules(mutate, text):
     assert any(text in f for f in findings(doc))
 
 
-def test_tick_must_be_the_registers_and_derived():
-    doc = raw()
-    doc["tick_period_num_us"]["value"] = 626
-    assert any("differs from the scenario-values register" in f for f in findings(doc))
+def test_tick_must_be_derived():
     doc = raw()
     doc["tick_period_den"].update(label="scenario", rationale="x")
     doc["tick_period_den"].pop("rule")
@@ -171,24 +151,13 @@ def test_rate_must_be_the_registers_rate_max_and_derived(axis):
     assert any(f"no entry 'rate_max_{axis}'" in f for f in findings(raw(axis), axis, reg))
 
 
-@pytest.mark.parametrize("bad", [[4, 2, 1], [1, 2], [2], [2, 2]])
-def test_m_sequence_must_be_two_then_one(bad):
-    doc = raw()
-    doc["m_sequence"]["value"] = bad
-    assert any("m_sequence" in f for f in findings(doc))
-
-
 @pytest.mark.parametrize("path, value, text", [
     (("initial_state", "body_rates_frd_rad_s"), [0.0, 0.0, 1e-9], "must be zero"),
-    (("initial_state", "attitude_q_wxyz"), [-1.0, 0.0, 0.0, 0.0], "canonical sign"),
-    (("initial_state", "attitude_q_wxyz"), [1.0, 1e-3, 0.0, 0.0], "exceeds"),
     (("initial_state", "velocity_ned_m_s"), [1.0, 0.0], "list of 3"),
     (("step", "axis"), "yawn", "must be one of"),
     (("step", "settle_s"), 0.0, "> 0"),
     (("step", "settle_s"), math.inf, "> 0"),
     (("step", "horizon_tau_ref"), -10, "> 0"),
-    (("site_latitude_rad"), 2.0, "pi/2"),
-    (("seed"), -1, ">= 0"),
 ])
 def test_value_rules(path, value, text):
     doc = raw()
@@ -197,15 +166,6 @@ def test_value_rules(path, value, text):
         node = node[key]
     node["value"] = value
     assert any(text in f for f in findings(doc)), findings(doc)
-
-
-def test_load_refuses_duplicate_keys_and_a_missing_file(tmp_path):
-    p = tmp_path / "step_roll.yaml"
-    p.write_text((SCEN_DIR / "step_roll.yaml").read_text() + "seed:\n  value: 2\n", encoding="utf-8")
-    with pytest.raises(scn.ScenarioError):
-        l4s.load(p)
-    with pytest.raises(scn.ScenarioError):
-        l4s.load(tmp_path / "absent.yaml")
 
 
 # ---- the plan ------------------------------------------------------------------------------------------------------

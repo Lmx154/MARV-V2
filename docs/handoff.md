@@ -67,12 +67,20 @@ selection; the full suite runs only on the merge into `master` (pull request int
   next run failed core on four L6 ctest timeouts under the parallel ctest of 0021: decision 0023 runs `AllanT1.*` and
   `Tracking.*` alone (RUN_SERIAL). The local merge gate missed both: its image was cached, and its CPUs are about 2.5x
   faster per test than Actions'.
-- Open for Luis (trims that change what runs; each needs his word and goes into a decision record): (1) the L5 T3
-  one-ulp control on one output file: done under the redirect above (decision 0022 items 3–4); (2) the L5
-  gz T4 suite (740 s): steps in development checks, chirps/yaw/recovery only in the full run; (3) consolidate the twin
-  truth-channel C++ suites (L05 TruthState / L11 TruthVertical), the three scenario-schema pytest files and the three
-  param-prefix scripts (about 50 fewer entries, little time); (4) merge-run speed: being done under the redirect above
-  (the four Gazebo plugin trees stay separate builds and share the compiler cache).
+- 2026-10-15, Luis, verbatim, choosing among (A) finish L11, (B) L6 stage (e), (C) the open trims (2) and (3) below:
+  "C. Continue the test trims". Branch `test-trims` from `master` = `5e58f24`. L11 S6+ and L6 (e) stay paused.
+  Measured serial on the host (load < 1.5 after the builds, 2026-10-15): L5 gz steps 69 s, chirp 250, yaw 70,
+  recovery 104, truth_plumbing 13; L4 gz steps 44, chirp 101, acro 29, truth_gyro 4. Luis's rulings (multiple choice,
+  2026-10-15): trim (2) "L5 + L4 chirp" (L5 chirp/yaw/recovery and L4 chirp only in the full run, or when the file
+  itself changes; core §7.6 gets one sentence); truth suites "Shared header, 2 binaries" (after the lead found one
+  binary cannot link both SIL libraries; 41 entries stay); schemas and param scripts "Both". Built, uncommitted, as
+  decision 0024: the gz hold-back in `ci/run_ci_gz.sh` (dev L4 105 → 44 s, L5 71 s), the truth-channel header
+  (811 → 561 lines, 41 entries), the shared schema file (182 → 154 entries), one `tools/ci/check_param_ids.py`.
+- The trims that changed what runs, each on Luis's word with a decision record: (1) the L5 T3 one-ulp control on one
+  output file: decision 0022 items 3–4; (2) the L5 gz T4 chirps/yaw/recovery and the L4 chirp held back from the
+  development check: decision 0024; (3) the twin truth-channel suites, the scenario-schema cases and the param scripts
+  consolidated: decision 0024; (4) merge-run speed: decision 0022 (the four Gazebo plugin trees stay separate builds
+  and share the compiler cache). None is open.
 
 ## Stop point (Luis, 2026-10-14 01:2x: "find a spot to stop at quickly and commit. then write in the handoff")
 - Branch `quad-l11` (from `recovery/hover-demo`, from `master` = `b48e202`). Commits, oldest first: `c5d7da5` S0 (spec +
@@ -336,3 +344,5 @@ stored per 0011.
     alone against 60 s.
 - Actions times are noisy (runner speed varies about 2×). Measure S9 and timings in the local CI image at load < 1.5.
 - Luis's machine is shared: his games load the CPU. Check `uptime` before any timing.
+- A tool a check needs is missing on the host (e.g. `clang-tidy-18` for G1): tell Luis at once, ask him to install it;
+  do not work around it (Luis, 2026-10-15: "next time you need something installed that is critical let me know").

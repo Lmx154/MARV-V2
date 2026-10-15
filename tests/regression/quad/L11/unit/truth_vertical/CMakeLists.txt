@@ -11,7 +11,7 @@ marv_add_sil_library(marv_sil_l11_truth_vertical_test
   COMPOSITION marv_l11_truth_vertical_composition PARAMS marv_params_l0 TRUTH_VERTICAL)
 
 add_executable(unit_truth_vertical truth_vertical_test.cpp)
-target_include_directories(unit_truth_vertical PRIVATE composition/include)
+target_include_directories(unit_truth_vertical PRIVATE composition/include ${CMAKE_CURRENT_SOURCE_DIR}/../../../common)
 target_link_libraries(unit_truth_vertical PRIVATE
   marv_sil_l11_truth_vertical_test marv_types marv_params_l0_generated GTest::gtest_main)
 marv_apply_flags(unit_truth_vertical)

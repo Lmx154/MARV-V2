@@ -38,6 +38,9 @@ print(sys.argv[2].join(v) if isinstance(v, list) else str(v).lower())' "$1" "${2
 }
 
 full="$(field full)"
+# The base the selection used (empty when it could not be resolved); ci/run_ci_gz.sh reads it to hold back the long gz files.
+MARV_CI_BASE_REF="$(field base)"
+export MARV_CI_BASE_REF
 labels="$(field ctest_labels ,)"
 steps="$(field run_ci_steps ,)"
 pytest_paths="$(field pytest_paths ' ')"

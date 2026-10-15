@@ -17,13 +17,13 @@ marv_frozen_suite(unit_l11_composition)
 set(l11_product_manifest "$<TARGET_PROPERTY:marv_params_generated,MARV_PARAM_MANIFEST>")
 set(l11_extended_manifest "$<TARGET_PROPERTY:marv_params_l11_vertical_scripted_generated,MARV_PARAM_MANIFEST>")
 add_test(NAME l11_composition_param_ids
-  COMMAND "${MARV_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/check_param_ids.py"
+  COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/ci/check_param_ids.py"
           "${l11_product_manifest}" "${l11_extended_manifest}" l11_ vert_)
 add_test(NAME l11_composition_param_ids_negative_control_swapped
-  COMMAND "${MARV_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/check_param_ids.py"
+  COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/ci/check_param_ids.py"
           "${l11_extended_manifest}" "${l11_product_manifest}" l11_ vert_)
 add_test(NAME l11_composition_param_ids_negative_control_prefix
-  COMMAND "${MARV_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/check_param_ids.py"
+  COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/ci/check_param_ids.py"
           "${l11_product_manifest}" "${l11_extended_manifest}" l5_)
 set_tests_properties(l11_composition_param_ids l11_composition_param_ids_negative_control_swapped
   l11_composition_param_ids_negative_control_prefix PROPERTIES LABELS frozen)

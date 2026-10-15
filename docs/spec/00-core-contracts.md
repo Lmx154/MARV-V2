@@ -455,7 +455,9 @@ as a CI that is only ever run when we are finally going to merge to master". Thr
    from the diff against `master` and the map `ci/blast_radius.yaml`. A change to a root that everything depends on
    (prim, types, HAL, parameters, the SIL layer, the card inputs, the build and the CI definition) selects the full
    suite. **A changed path that no rule maps also selects the full suite**, so a stale map costs time, never coverage.
-   This is the check for a development commit or a push to a working branch.
+   This is the check for a development commit or a push to a working branch. One exception, by the owner's ruling
+   (decision 0024): the long Gazebo T4 files listed in `ci/run_ci_gz.sh` (L5 chirp, yaw and recovery; L4 chirp) run
+   in this tier only when the change touches the file itself or a helper beside it; the full run always runs them.
 3. **Full**, `ci/local_ci.sh` and Actions: every frozen suite, every control, every gate. It runs only for the merge
    into `master` (a pull request into `master` or a push to `master`) and on demand. There is no nightly run.
 

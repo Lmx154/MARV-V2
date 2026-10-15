@@ -9,7 +9,7 @@ marv_apply_flags(marv_l05_truth_composition FIRMWARE)
 marv_add_sil_library(marv_sil_l05_truth_test COMPOSITION marv_l05_truth_composition PARAMS marv_params_l0 TRUTH_STATE)
 
 add_executable(unit_truth_state truth_state_test.cpp)
-target_include_directories(unit_truth_state PRIVATE composition/include)
+target_include_directories(unit_truth_state PRIVATE composition/include ${CMAKE_CURRENT_SOURCE_DIR}/../../../common)
 target_link_libraries(unit_truth_state PRIVATE
   marv_sil_l05_truth_test marv_types marv_params_l0_generated GTest::gtest_main)
 marv_apply_flags(unit_truth_state)

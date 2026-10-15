@@ -81,50 +81,10 @@ def test_determinism_command_gives_thrust_and_all_three_torques_with_the_card():
     assert sum(t) > 0 and roll != 0 and pitch != 0 and yaw != 0
 
 
-def test_valid_base_passes():
-    for name in NAMES:
-        assert findings(raw(name), name) == []
-
-
 def mutate(name, fn):
     doc = copy.deepcopy(raw(name))
     fn(doc)
     return findings(doc, name)
-
-
-@pytest.mark.parametrize("field", scenario.TOP_FIELDS)
-def test_missing_field_refused(field):
-    out = mutate("free_fall", lambda d: d.pop(field))
-    assert any(field in f for f in out)
-
-
-@pytest.mark.parametrize("field", scenario.STATE_FIELDS)
-def test_missing_state_field_refused(field):
-    out = mutate("free_fall", lambda d: d["initial_state"].pop(field))
-    assert any(field in f and "missing" in f for f in out)
-
-
-def test_unlabelled_number_refused():
-    out = mutate("free_fall", lambda d: d.update(site_height_m=500.0))
-    assert any("unlabelled number" in f and "site_height_m" in f for f in out)
-    out = mutate("free_fall", lambda d: d["initial_state"].update(velocity_ned_m_s=[0.0, 0.0, 0.0]))
-    assert any("unlabelled number" in f for f in out)
-    out = mutate("free_fall", lambda d: d["site_height_m"].update(extra_note=3))
-    assert any("unlabelled number" in f for f in out)
-
-
-@pytest.mark.parametrize("mutation, text", [
-    (lambda d: d["site_height_m"].pop("label"), "missing field 'label'"),
-    (lambda d: d["site_height_m"].update(label="guess"), "not one of"),
-    (lambda d: d["site_height_m"].pop("rationale"), "needs a non-empty rationale"),
-    (lambda d: d["site_height_m"].update(rationale="two\nlines"), "one line"),
-    (lambda d: d["site_height_m"].pop("unit"), "missing field 'unit'"),
-    (lambda d: d["m_sequence"].pop("rule"), "needs a non-empty rule"),
-    (lambda d: d["m_sequence"].update(bogus="x"), "unknown entry field"),
-])
-def test_label_and_rationale_rules(mutation, text):
-    out = mutate("free_fall", mutation)
-    assert any(text in f for f in out), out
 
 
 @pytest.mark.parametrize("bad", [1, 2, 47, 2048, 4096, -1, 100.5, 1e3, True, "1000", None])
@@ -173,30 +133,6 @@ def test_duration_must_be_a_multiple_of_every_m():
     assert any("duration_ticks" in f for f in mutate("free_fall", lambda d: d["duration_ticks"].update(value=1.5)))
 
 
-def test_scalar_fields_refused():
-    assert any("site_latitude_rad" in f for f in mutate("free_fall", lambda d: d["site_latitude_rad"].update(value=2.0)))
-    assert any("seed" in f for f in mutate("free_fall", lambda d: d["seed"].update(value=-1)))
-    assert any("seed" in f for f in mutate("free_fall", lambda d: d["seed"].update(value=1.0)))
-    assert any("tick_period_den" in f for f in mutate("free_fall", lambda d: d["tick_period_den"].update(value=0)))
-    assert any("tick_period_num_us" in f
-               for f in mutate("free_fall", lambda d: d["tick_period_num_us"].update(value=625.0)))
-
-
-def test_unknown_field_and_stem_mismatch_refused():
-    assert any("unknown field" in f for f in mutate("free_fall", lambda d: d.update(extra=1)))
-    doc = raw("free_fall")
-    assert any("file stem" in f for f in findings(doc, "rotation"))
-
-
-def test_attitude_rules():
-    def put(q):
-        return lambda d: d["initial_state"]["attitude_q_wxyz"].update(value=q)
-    assert any("not a unit" in f or "|q|^2" in f for f in mutate("free_fall", put([1.0, 0.1, 0.0, 0.0])))
-    assert any("w = " in f for f in mutate("free_fall", put([-1.0, 0.0, 0.0, 0.0])))
-    assert any("attitude_q_wxyz" in f for f in mutate("free_fall", put([1.0, 0.0, 0.0])))
-    assert mutate("free_fall", put([0.0, 1.0, 0.0, 0.0])) == []
-
-
 def rates(w):
     return lambda d: d["initial_state"]["body_rates_frd_rad_s"].update(value=w)
 
@@ -229,15 +165,6 @@ def test_separatrix_mu_both_sides_and_extremes():
     assert scenario.separatrix_mu(INERTIA, [0.0, 1.0, 0.0]) == pytest.approx(1.0)
     assert scenario.separatrix_mu(INERTIA, [1.0, 0.0, 0.0]) == pytest.approx(0.0, abs=1e-12)
     assert 0.0 < scenario.separatrix_mu(INERTIA, [2.0, 3.0, -5.0]) < 1.0
-
-
-def test_load_refuses_duplicate_keys_and_a_missing_file(tmp_path):
-    p = tmp_path / "free_fall.yaml"
-    p.write_text("scenario: free_fall\nscenario: free_fall\n", encoding="utf-8")
-    with pytest.raises(scenario.ScenarioError):
-        scenario.load(p, CARD)
-    with pytest.raises(scenario.ScenarioError):
-        scenario.load(tmp_path / "absent.yaml", CARD)
 
 
 def test_iterations():
