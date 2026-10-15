@@ -1,4 +1,4 @@
-# 0020: quad L11, the vertical loop on truth state (opened)
+# 0020: quad L11, the vertical loop on truth state (closed: passed on Luis's approval, 2026-10-15; tag `quad-L11-pass` by Luis)
 
 The ACTIVE spine had no layer producing the thrust that L3 consumes (quad §4 L3 opening): L5's collective is the
 per-run scenario value `l5_thrust_n` = m·g(h0) (fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml:9-10),
@@ -270,6 +270,108 @@ vertical estimator layer and a §6.1 pilot mode are each a separate decision.
     (4 workers, one file each), each sequence about 12 s; with 9 tests the directory took 100.6 s (22 passed) in the
     development check of 2026-10-15. No oracle, fixture, scenario, runner, `fw/` or generator change.
 
+## Close (S8, 2026-10-15)
+
+Luis approves the close (Approval, below, unchanged) and tags the commit. Counts: `ctest --preset host-debug -N -L L11` lists 89
+entries (before and after the consolidation); pytest collection is 52 in `tests/regression/quad/L11/tools` (55 before the
+consolidation) and 22 in `tests/regression/quad/L11/gz`. Result: `ci/dev_check.sh` of 2026-10-15 on the S6–S7 tree (`ade460b`),
+exit 0, which selected everything (`ci/affected.py`: `ci/blast_radius.yaml`, `ci/run_ci.sh` and `ci/run_ci_gz.sh` differ from
+`master`): ctest 749/749 in host-debug and host-release, tools tests 1107 passed, gz l11 22 passed in 100.6 s, gz l4 and gz l5
+ALL STEPS PASSED. The merge gate (`ci/local_ci.sh`) has not run on this head.
+
+### Pass bar to tests (quad §4 L11 "Pass bar" and §5 above)
+
+| Pass-bar line | Tests (count) | CI step | Result |
+| --- | --- | --- | --- |
+| T1 the law, the anti-windup, the invalid-state fallback | `tests/regression/quad/L11/unit/vertical/vertical_test.cpp` (22 ctest: L11Vertical 15, L11VerticalConfig 2, L11VerticalInvalid 5); `tests/regression/quad/L11/unit/composition/composition_test.cpp` (34: fallback, T11 anti-windup, order, freshness, script, hover, sign, disturbance, pulse, parameters) | `host_preset` (debug, release); `ci/smoke.sh:26` runs the composition's 37 entries | pass |
+| T1 contract tests on the truth channel | `tests/regression/quad/L11/unit/truth_vertical/truth_vertical_test.cpp` (20, with `tests/regression/quad/common/truth_channel_t1.hpp`); `tests/regression/quad/L11/unit/truth_vertical_source/truth_vertical_source_test.cpp` (5); gz: `test_vertical_feed.py` (7), `test_vertical_refusals.py` (4), `test_i1_l5_log.py` (2) | `host_preset`; `gz_l11` (`ci/run_ci_gz.sh:231`) | pass |
+| T1 G3 controls for the export | `tests/regression/quad/L11/controls/g3_truth_vertical_{unflagged,planted,missing}.cpp`; `tests/regression/quad/L11/tools/test_check_g3_truth_vertical.py` (26) | `g3_truth_vertical_unflagged_control`, `_planted_control`, `_missing_control` (`ci/run_ci.sh:1026-1028`); `tools_tests` | pass |
+| T1 composition order, stale-latch panic, id prefix | `composition_test.cpp` (L11CompositionGroups 2, L11CompositionFreshness 5); `l11_composition_param_ids` and its 2 controls (`tools/ci/check_param_ids.py`) | `host_preset` | pass |
+| T3 QF-3 (`PM_min`, `Ms_max`) over the box with the gravity gradient | `tests/regression/quad/L11/tools/test_vertical_design.py` (14: D1 margins, D2 17×17 grid, D3 tightness, D4 Jury, D5 rule 7) and `test_vertical_generator.py` (12) | `tools_tests` (`ci/run_ci.sh:968`) | pass |
+| T3 controls: gains × 1.1, one added tick, loop disabled | `test_vertical_design.py` C1 (the pair 1.1 k_v, 1.21 k_i), C2/C3 (k_i, k_z × 1.1), C4 (one tick), C5 (loop disabled, Jury and the pole e^{√γT}); `test_vertical_generator.py` (loop disabled, sign flip) | `tools_tests` | pass |
+| T3 height step and thrust offset against the design model | `tests/regression/quad/L11/t3/t3_test.cpp` (L11T3Reference 1, L11T3Step 3 incl. the k_v, k_i, k_z × 1.1 and one-tick controls); the oracle and its inputs reproduced from `tests/regression/quad/L11/t3/reference/SHA256SUMS` | `host_preset`; `vert_t3_reference_reproduces` (`ci/run_ci.sh:967`) and `vert_t3_reference_control` (`:1021`) | pass |
+| T4 height step, thrust offset, roll shove inside the envelope ± (E + F + Q), return to the reference | `tests/regression/quad/L11/gz/test_t4_vertical.py` (9: 3 predicates, 1 binding test, loop disabled on (ii) and (iii), `vert_kp_z` × 1.1 on all three) | `gz_l11` (held back from the development check by `ci/run_ci_gz.sh:102`; it ran in this check because the branch adds it) | pass (slack to the widened band, S7b: height_step −7.7e-3 m, thrust_offset −1.6e-4 m, roll_shove −1.5e-5 m) |
+| The loop disabled fails | `test_t4_vertical.py` `test_control_loop_disabled_fails_the_predicate[thrust_offset, roll_shove]` | `gz_l11` | pass (fails as required) |
+| The L4 and L5 suites still green | ctest L04, L05 (in the 749); gz l4 and gz l5 groups | `host_preset`; `gz_l4`, `gz_l5` | pass (ALL STEPS PASSED) |
+
+### The band condition (§4 "thrust_gain_robustness_band")
+
+`thrust_gain_robustness_band` = 0.5 (`design/budget.yaml:114-115`) lies inside the admissible r interval
+[0.5, 3.2209806638985086] of `build/host-debug/generated/marv_params/flatten/marv_params_vertical_report.txt:56-60`: lowest r 0.5
+(the next grid point 0.47880164034928685 fails), highest r 3.2209806638985086 (3.363585661014858 fails), r = 1 passes, "r box
+inside True" for the box r in [0.5, 1.5398936]. PM_worst is 45.000003° (f32 gains; 45.000001° in double) against PM_min 45° at the
+corner (r_lo, τ_hi): the gains are sized to the box by the rule, so the low edge of the interval is the design point, not
+slack.
+
+### Deviations from the literal pass-bar text
+
+- T3 control "k_v × 1.1" is the pair (1.1 k_v, 1.21 k_i): k_v alone adds phase at the binding corner and cannot break the margin
+  (S3; `test_vertical_design.py` C1 prints k_v alone, not asserted). k_i and k_z × 1.1, and the unchanged "gains × 1.1" of §4,
+  are controls as written.
+- T4: `vert_kp_v` × 1.1 passes all three scripts (same reason) and the one added tick is a firmware delay the harness cannot
+  inject: both are T3-enforced (S7b; L5's precedent, decision 0006 items 19 and 24). `vert_ki_v` × 1.1 fails (ii) and (iii) but
+  is not committed, because `vert_kp_z` × 1.1 already fails every script (S7b, §7.7).
+- `test_t4_vertical.py` is held back from the development check (S7b; `ci/run_ci_gz.sh:97-103`, 123.6 s alone before two controls
+  were dropped, over `per_push_check_time_max`); the full run always runs it.
+
+### Open items carried past the close
+
+- Card mass 0.772 kg against 0.752 kg, UNVERIFIED, two sources: owner B1 (log replay). The band's lower end `m_min` and the
+  thrust-offset scenario (ii) both use it.
+- `thrust_coeff` σ UNKNOWN and INFERRED, and the σ of the three derived gains UNKNOWN: owner B1.
+- T/W ≈ 4.5 (quad §6.3.4 row 1, unsourced) against the card's T_max/(m·g) = 6.47, both kept, UNVERIFIED: owner B1.
+- EMB-3 cost of the vertical group ("a few tens of flops", the lead's estimate): owner L9, which re-checks with measured WCET.
+- Coupling with the ω×Jω feed-forward, INFERRED until L11 runs with FF on: owner L6 stage (e), whose switch-on commit must keep
+  L11 green.
+- `VerticalState<float>` m33 instantiation: `fw/types/src/instantiate.cpp:11-12` instantiates `ActuatorOutput` and
+  `AttitudeState<float>` only, there is no `VerticalState` line. The m33 build does not need one: `fw/vertical` and
+  `fw/compositions/l11_vertical_scripted` are in the m33 build (`CMakeLists.txt:37, 44`; `build/m33/fw/vertical/libmarv_vertical.a`
+  and `build/m33/fw/compositions/l11_vertical_scripted/libmarv_composition_l11_vertical_scripted.a` exist), `VerticalState` is a
+  plain template with no member function (`fw/types/include/marv/types/vertical_state.hpp:12-18`) and its `static_assert` (`:20`)
+  instantiates it in every translation unit that includes the header, and `fw/vertical/src/vertical.cpp:6` instantiates
+  `VerticalLaw<float>`. The explicit line (L5's pattern) stays deferred, as S1 noted, to the stage that first uses it on the target; no
+  ACTIVE layer does yet (L11 is SIL-only and nothing flies with it, §6).
+
+### Consolidation (core §7.7 item 4)
+
+Nothing is loosened: every removed test is listed with a test that still fails on the same planted break, in every context the
+removed test ran in. All five candidates were evaluated; the two files changed under `tests/regression/` are
+`tests/regression/quad/L11/tools/test_vertical_generator.py` and `tests/regression/quad/L11/tools/test_vertical_design.py`, plus
+the helper `tests/regression/quad/L11/gz/l11_gz.py`.
+
+| Candidate | Verdict |
+| --- | --- |
+| (a) `tests/regression/quad/L11/gz/l11_gz.py` duplicated `build_parameters` and `add_vertical` of `tools/sim/run_l11.py` | Merged. `l11_gz.py` takes `add_vertical` and `VERTICAL_ELEMENT` from `run_l11` and builds its parameter table from `run_l11.build_parameters` (the L11 build) or `run_l5.build_parameters` (the L5 build) plus `read_param_defaults`; its two copies are deleted (−8 lines net). No test changes behaviour: the five worlds (`world()` for L11, hover-scaled, without the attitude source, L5 without and with the vertical element) and both parameter tables are byte-identical before and after. |
+| (b) `gz/test_vertical_feed.py`, `gz/test_vertical_refusals.py` | Kept (owner/lead ruling): they run in the development check, `test_t4_vertical.py` (which subsumes part of the feed check) does not. |
+| (c) `unit/truth_vertical_source/truth_vertical_source_test.cpp` against `gz/test_vertical_feed.py` | Kept. The unit test holds assertions the Gazebo run cannot produce: a non-finite body clears the valid bit and hands over an invalid state (2 tests), a set with the wrong tick is refused and the SIL does not run, the held state across 3 ticks with its stamp and hash, bitwise casts of −0.0 and 1e-30. The feed test covers what the unit test cannot: the plugin element, record 8 beside TRUTH, the real plant's states. Different levels, and the unit test runs in the development check for an adapter change without a Gazebo build. |
+| (d) `test_vertical_generator.py` against `test_vertical_design.py` | Three tests removed, one trimmed, see below. |
+| (e) `unit/composition/composition_test.cpp` against `ci/smoke.sh` and `unit/vertical/vertical_test.cpp` | Kept. The smoke is not a copy of the composition's entries: `ci/smoke.sh:26` runs them (`-R '^(L11Composition|l11_composition_param_ids)'`, 37 entries), so removing them removes the smoke (core §7.6 item 1). Against `vertical_test.cpp` they overlap only in sign and the freeze (T11); the law tests cover the rounding bound, the torque part, the fault cases and the configuration refusals, the composition tests the wiring (script stamps, group order, freshness, disturbance, pulse, parameter interface), and neither catches the other's breaks. |
+
+Removed from `test_vertical_generator.py` (15 → 12 collected items; the directory 55 → 52):
+
+| Removed | Still covers it | Planted break (tools/card/vertical.py in a scratch copy of the tree, never in the repository) |
+| --- | --- | --- |
+| `test_outer_loop_every_corner_meets_pm_min_minus_delta_num_ms_max_and_jury_on_the_f32_gain` | `test_vertical_design.py` D1 (independent model PM and Ms at the five corners, each equal to the generator's row within 2^-30) and D4 (independent Jury radius equal to the row within 2^-16) | outer row PM −1e-3 rad: D1 fails (the removed test did not); Ms × 1.01: D1; Jury radius 2.0: D4 |
+| the PM and Ms half of `test_inner_loop_every_corner_meets_pm_min_minus_delta_num_and_ms_max_on_the_f32_gains`; the test is kept as `test_the_inner_loop_is_jury_stable_and_rule_7_holds_at_every_corner` with its Jury (`rad < 1`) and rule 7 assertions | D1 | inner row PM −1e-3 rad: D1 and D3 fail; Ms × 1.01: D1. Inner Jury radius 2.0 is caught only by the kept test (in HEAD, only by the old one) |
+| `test_the_height_gain_is_tight_against_its_bracket_and_every_later_history_point_fails_the_guard` | `test_vertical_design.py` D3 height (independent feasibility and guard); it gained the assertions `bracket_width == hi - lo` and `stepped_down == (steps > 0)`, the only two the removed test held that D3 did not | emitted k_z 1% low: D3 and D1 fail; outer guard dropped: D1, D2, D3, C1–C4; `stepped_down` inverted: D3 only (absorbed assertion); recorded `bracket_width` doubled: D3 |
+| `test_the_velocity_gain_pair_is_tight_against_its_bracket_and_every_later_history_point_fails_the_guard` | D3 velocity, with the same two absorbed assertions | emitted k_v 1% low: D1, D2, D3, C1–C4; inner guard dropped: D3; `stepped_down` inverted: D3 only |
+
+Contexts: both files are in `tests/regression/quad/L11/tools`, run together by `tools_tests` (`ci/run_ci.sh:907`) in the development
+check (rule `tests/regression/quad/L11/tools/**`, `ci/blast_radius.yaml:909-913`) and in the full run; neither is in
+`nightly_tools_tests` (`ci/run_ci.sh:875-882`) and nothing else invokes either file alone, so the covering tests ran in every
+context the removed ones did. Kept after the same probe, because only they catch the break: the loop-disabled test of the
+generator (`VerticalLoop.stable` always true, the generator's own predicate: only that test fails; D/C5 use their own model), the
+sign-flip and convergence tests, the three refusals, `flatten --out-vertical` and the ids test. Development check on the
+consolidated tree (`ci/dev_check.sh`, 27 min 43 s): exit 0, 81 steps PASS and none FAIL, ctest 749/749 in host-debug and
+host-release (L11: 89 before and after), tools tests 1104 (1107 before, minus the 3 removed), gz l11 22 passed in 101.4 s, every gz
+group ALL STEPS PASSED. Time: the directory is 20.8 s
+(55 tests) before and 21.2 s (52) after, since the cost is the two fixtures; the saving is lines (−105) and maintenance, not seconds.
+
+### What remains for the layer to pass (core §7.2)
+
+Luis's approval of this close (Approval, below); the full local merge gate `ci/local_ci.sh` on the head; the merge into `master`;
+Actions green on it; the commit tagged `quad-L11-pass` by Luis.
+
 ## Evidence
 
 - The demonstration of 2026-10-13 on Luis's host (the demo worlds, builder, shim and raw pose traces are in
@@ -290,6 +392,11 @@ vertical estimator layer and a §6.1 pilot mode are each a separate decision.
 ## Approval
 
 Luis's rulings of 2026-10-13, quoted above in full, and his push of this commit (core §7.3).
+
+The close (S8): Luis, 2026-10-15, verbatim, on the lead's list "1. Your approval to declare L11 passed. 2. The full
+local merge gate (`ci/local_ci.sh`, all five jobs). 3. The merge into `master` and a green Actions run. 4. Your
+`quad-L11-pass` tag.": "go ahead with 1,2,3". The approval holds on the merge gate passing on the closing commit; the
+layer is passed (core §7.2) when that commit is green on `master` and tagged by Luis.
 
 ## The proposal as ruled (architect, 2026-10-13; label L11, band 0.5, no clamp, shove 0.02 N·m for 0.2 s)
 

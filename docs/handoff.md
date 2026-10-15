@@ -1,4 +1,4 @@
-# Handoff: L11 S6+ resumed (Luis, 2026-10-15: "continue with A"); L6 stage (e) paused (0019); test trims done (0021–0024)
+# Handoff: L11 closing (S8, approved 2026-10-15; merge gate, merge, tag pending); L6 stage (e) paused (0019); test trims done (0021–0024)
 
 2026-10-05. Written for the next tech lead, from git and the records, not session memory. This file states where things
 are and adds no scope. The ACTIVE specs and decisions 0009–0019 are the authority. Update this file in the same change as
@@ -312,6 +312,9 @@ stored per 0011.
   `--golden-only`, 4.5 s); its effect on the Actions core and gz-l11 jobs is measured at the next merge gate. Left: S8
   (close: consolidate the L11 suite, e.g. `l11_gz.py` duplicates `run_l11`'s helpers; the results record; Luis's
   approval). Local CI has five jobs (gz-l11 added).
+  S8a (consolidation, the close section of 0020) built 2026-10-15; Luis approved the close, the merge gate and the merge
+  ("go ahead with 1,2,3"); the tag `quad-L11-pass` is his. Next target after the merge: Luis's choice between L7 (the
+  attitude estimator; lead's recommendation) and L6 (e) (the architect's R2 safety predicate first, decision 0025).
 - **Remaining (e) builds:**
   - C6a: see above;
   - C6b: the T3 corner scan (27-row table), the L5 and chirp plan adapters;

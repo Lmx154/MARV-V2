@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "tools" / "sim"))
 import gen_world  # noqa: E402
 import l5_scenario as l5s  # noqa: E402
 import run_l5  # noqa: E402
+import run_l11  # noqa: E402
 import run_scenario  # noqa: E402
 
 l4 = run_l5.l4
@@ -29,7 +30,7 @@ SOURCE = ROOT / "scenarios" / "quad" / "L05" / "step_roll.yaml"
 PLUGIN_DIR_L11 = ROOT / "build" / "host-gz-l11" / "sim" / "gz" / "plugin"
 PLUGIN_DIR_L5 = run_l5.DEFAULT_PLUGIN_DIR
 L11_PARAMS = "marv_params_l11_vertical_scripted"
-VERTICAL_ELEMENT = "<vertical_source>truth</vertical_source>"
+VERTICAL_ELEMENT = run_l11.VERTICAL_ELEMENT
 M = 2  # step_roll's first m (its m_sequence [2, 1])
 ITERATIONS = 64  # labelled harness value: host steps of a short run, enough for the falling start to move z and v_z
 TIMEOUT_S = 180
@@ -41,21 +42,10 @@ NEEDS_LIBRARY = ("<vertical_source> needs a SIL library with marv_truth_vertical
 
 
 def build_parameters(plugin_dir, name):
-    """The parameter table (name -> value) of the build that holds plugin_dir; asserts that its MARV_GZ_PARAMS is `name`
-    (run_l5.build_parameters' rule for another composition)."""
-    for d in [Path(plugin_dir).resolve(), *Path(plugin_dir).resolve().parents]:
-        cache = d / "CMakeCache.txt"
-        if cache.exists():
-            m = l4.CACHE_PARAMS.search(cache.read_text(encoding="utf-8", errors="replace"))
-            assert m and m.group(1) == name, f"{cache}: MARV_GZ_PARAMS is not {name!r}"
-            return l4.read_param_defaults(d / "generated" / name / "marv" / "params" / "param_defaults.cpp")
-    raise AssertionError(f"{plugin_dir}: no CMakeCache.txt above the plugin directory")
-
-
-def add_vertical(text):
-    blocks = l4.PLUGIN_BLOCK.findall(text)
-    assert len(blocks) == 1, f"the world holds {len(blocks)} marv_gz_lockstep plugin elements, expected 1"
-    return text.replace(blocks[0], blocks[0].replace("</plugin>", f"  {VERTICAL_ELEMENT}\n</plugin>"), 1)
+    """The parameter table (name -> value) of the build that holds plugin_dir; `name` is that build's MARV_GZ_PARAMS (the
+    runners' build_parameters refuse any other build)."""
+    _, defaults = (run_l11 if name == L11_PARAMS else run_l5).build_parameters(plugin_dir)
+    return l4.read_param_defaults(defaults)
 
 
 def z_ref_m():
@@ -80,7 +70,7 @@ def world(tmp, log, *, l11=True, attitude=True, vertical=True, hover_scale=1):
                      "l11_seg1_z_ref_m": (l4.F32, repr(z_ref_m()))}
     else:
         overrides = p.overrides()
-    return run_l5.world_edit(overrides, add_vertical if vertical else None, attitude_source=attitude)(text)
+    return run_l5.world_edit(overrides, run_l11.add_vertical if vertical else None, attitude_source=attitude)(text)
 
 
 def run(text, tmp, plugin_dir, iterations=ITERATIONS):

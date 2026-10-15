@@ -588,6 +588,7 @@ def test_d3_the_height_gain_is_tight_against_the_recorded_bracket_and_every_hist
     assert r32(o["history"][len(o["history"]) - 1 - steps]) == kz, "the emitted gain is the history point steps_back from the end"
     assert outer_feasible(real, lo) and not outer_feasible(real, hi), "the recorded bracket is (feasible, infeasible)"
     assert hi - lo <= 2 * ulp, "the bracket is wider than 2 f32 steps"
+    assert o["bracket_width"] == hi - lo and o["stepped_down"] == (steps > 0), "the recorded width and step-down flag"
     above = [h for h in o["history"][len(o["history"]) - steps:]]
     assert len(above) == steps
     for h in above:
@@ -611,6 +612,7 @@ def test_d3_the_velocity_pair_is_tight_against_the_recorded_bracket_and_every_hi
     (kv_lo, ki_lo), (kv_hi, ki_hi) = design_pair(real, lo), design_pair(real, hi)
     assert inner_feasible(real, kv_lo, ki_lo) and not inner_feasible(real, kv_hi, ki_hi)
     assert kv_hi - kv_lo <= 2 * (f32_up(kv) - kv) and ki_hi - ki_lo <= 2 * (f32_up(ki) - ki), "the bracket is wider than 2 steps"
+    assert i["bracket_width"] == hi - lo and i["stepped_down"] == (steps > 0), "the recorded width and step-down flag"
     for w in hist[len(hist) - steps:]:
         assert inner_guard_fails(real, *f32_pair(w)), w
     assert not inner_guard_fails(real, kv, ki)

@@ -2,9 +2,10 @@
 
 The generator's own tests: the nominal run on the committed card and scenario register with a budget that carries
 thrust_gain_robustness_band = 0.5 (Luis's ruling 5 of decision 0020; the budget entry itself lands with stage S3a-2, so
-the tests add it to a temporary copy of the committed budget), its per-corner margins on the f32 gains, the tightness of
-the emitted gains, the sign and convergence of the lifted closed loop, the gravity-gradient instability with the loop
-disabled, three refusals, and flatten --out-vertical. The independent T3 design test is stage S3b's.
+the tests add it to a temporary copy of the committed budget), the inner loop's Jury radius and rule 7 at the corners, the
+sign and convergence of the lifted closed loop, the gravity-gradient instability with the loop disabled, three refusals,
+and flatten --out-vertical. The corner margins and the tightness of the gains are the independent T3 design test's
+(test_vertical_design.py).
 
 Tolerances (derived, not tuned): a product of 2^K matrices formed by K squarings in double carries a relative error of at
 most about 2^K n u (each squaring doubles the error and adds n u, n = 5 states, u = 2^-52), so 2^K n u bounds the rounding
@@ -13,7 +14,6 @@ of the step response and of the free gravity-gradient motion below.
 
 import copy
 import math
-import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -54,12 +54,6 @@ def real(tmp_path_factory):
             "entries": dict(entries), "order": [n for n, _ in entries], "report": report, "res": res}
 
 
-def up32(x):
-    """The next float32 above the float32 x."""
-    bits = struct.unpack("<I", struct.pack("<f", x))[0]
-    return struct.unpack("<f", struct.pack("<I", bits + 1))[0]
-
-
 def closed(res, corner, k):
     """(A_cl, b_cl) of the lifted closed height loop at a corner: v_sp = k (z_ref - z), input z_ref."""
     _, jt, tau = next(c for c in res["corners"] if c[0] == corner)
@@ -95,86 +89,13 @@ def test_the_four_ids_in_order_with_finite_positive_f32_exact_gains(real):
             real["entries"]["vert_kp_z"]["value"]) == (res["inner"]["kv"], res["inner"]["ki"], res["outer"]["k32"])
 
 
-def test_inner_loop_every_corner_meets_pm_min_minus_delta_num_and_ms_max_on_the_f32_gains(real):
-    res = real["res"]
-    i, inner = res["inputs"], res["inner"]
-    assert [r[0] for r in inner["rows"]] == list(CORNERS)
-    for name, pm, wc, why, ms, _ in inner["rows"]:
-        assert pm is not None and wc is not None, (name, why)
-        assert pm >= i["PM_min"] - inner["delta_num"], name
-        assert ms <= i["Ms_max"], name
+def test_the_inner_loop_is_jury_stable_and_rule_7_holds_at_every_corner(real):
+    """The corner margins of both loops and the tightness of the gains are checked, against an independent model, by
+    test_vertical_design.py (d1, d3, d4); what only the generator's own results show is kept here."""
+    inner = real["res"]["inner"]
+    assert [name for name, _ in inner["jury"]] == list(CORNERS)
     assert all(rad is not None and rad < 1 for _, rad in inner["jury"])
     assert all(c < 0.5 for _, c in inner["conditions"])
-
-
-def test_outer_loop_every_corner_meets_pm_min_minus_delta_num_ms_max_and_jury_on_the_f32_gain(real):
-    res = real["res"]
-    i, outer = res["inputs"], res["outer"]
-    assert [r[0] for r in outer["rows"]] == list(CORNERS)
-    for name, pm, theta, radius, why, ms, _ in outer["rows"]:
-        assert pm is not None and theta is not None, (name, why)
-        assert pm >= i["PM_min"] - outer["delta_num"], name
-        assert ms <= i["Ms_max"], name
-        assert radius is not None and radius < 1, name
-
-
-# ---- tightness --------------------------------------------------------------------------------------------------------
-
-
-def test_the_height_gain_is_tight_against_its_bracket_and_every_later_history_point_fails_the_guard(real):
-    """L05's form (test_attitude_design.py tightness and guard tests): the recorded bracket's feasible end is feasible and
-    its infeasible end is not, the bracket is resolved to at most 2 f32 steps of k_z, and the emitted k_z is
-    f32(history[-1 - steps_back]) with every later history point failing the guard (PM_worst >= PM_min + delta_num,
-    Ms_worst <= Ms_max, Jury at every corner, on its f32 gain), so nothing larger passed."""
-    res = real["res"]
-    i, outer, loops = res["inputs"], res["outer"], res["loops"]
-    lo, hi = outer["bracket"]
-    k32 = outer["k32"]
-    assert vertical.outer_ok(loops, lo, i["PM_min"], i["Ms_max"])
-    assert not vertical.outer_ok(loops, hi, i["PM_min"], i["Ms_max"])
-    assert hi - lo == outer["bracket_width"] and hi - lo <= 2 * (up32(k32) - k32)
-    history, steps = outer["history"], outer["steps_back"]
-    assert outer["stepped_down"] == (steps > 0)
-    assert rate.r32(history[len(history) - 1 - steps]) == k32
-    for h in history[len(history) - steps:]:
-        pm, ms, rows = vertical.outer_rows(loops, rate.r32(h))
-        jury = all(r[3] is not None for r in rows)
-        assert not (pm >= i["PM_min"] + outer["delta_num"] and ms <= i["Ms_max"] and jury), h
-
-
-def test_the_velocity_gain_pair_is_tight_against_its_bracket_and_every_later_history_point_fails_the_guard(real):
-    """The same three properties for the pair (one f32 pair per crossover w): the bracket's feasible end is feasible and its
-    infeasible end is not (double gains), the gains at the two ends differ by at most 2 f32 steps of the emitted gains,
-    and the emitted pair is that of history[-1 - steps_back] with every later history point's f32 pair failing the guard
-    (PM_worst >= PM_min + delta_num, Ms_worst <= Ms_max)."""
-    res = real["res"]
-    i, inner, T = res["inputs"], res["inner"], res["T"]
-    m, plants = i["mass"], inner["plants"]
-    pc = rate.plant_constants(i["tau"], T)
-
-    def gains(omega):
-        return rate.design_gains(omega, inner["a"], T, pc)
-
-    def pair(omega):
-        kp, ki = gains(omega)
-        return rate.r32(m * kp), rate.r32(m * ki)
-
-    lo, hi = inner["bracket"]
-    kv, ki = inner["kv"], inner["ki"]
-    assert vertical.inner_ok(*gains(lo), plants, i["PM_min"], i["Ms_max"])
-    assert not vertical.inner_ok(*gains(hi), plants, i["PM_min"], i["Ms_max"])
-    assert hi - lo == inner["bracket_width"]
-    (kp_lo, ki_lo), (kp_hi, ki_hi) = gains(lo), gains(hi)
-    assert m * (kp_hi - kp_lo) <= 2 * (up32(kv) - kv) and m * (ki_hi - ki_lo) <= 2 * (up32(ki) - ki)
-    history, steps = inner["history"], inner["steps_back"]
-    assert inner["stepped_down"] == (steps > 0)
-    assert pair(history[len(history) - 1 - steps]) == (kv, ki)
-    for h in history[len(history) - steps:]:
-        kv32, ki32 = pair(h)
-        rows = vertical.inner_rows(kv32 / m, ki32 / m, plants)
-        passes = all(r[1] is not None for r in rows) and (min(r[1] for r in rows) >= i["PM_min"] + inner["delta_num"]
-                                                           and max(r[4] for r in rows) <= i["Ms_max"])
-        assert not passes, h
 
 
 # ---- sign, convergence and the gravity gradient -------------------------------------------------------------------------
