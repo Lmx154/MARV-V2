@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates=20260601~24.04.1 \
-        curl=8.5.0-2ubuntu10.15 \
+        curl=8.5.0-2ubuntu10.16 \
         g++=4:13.2.0-7ubuntu1 \
         g++-13=13.3.0-6ubuntu2~24.04.1 \
         gcc-arm-none-eabi=15:13.2.rel1-2 \
