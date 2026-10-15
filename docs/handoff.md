@@ -62,6 +62,11 @@ selection; the full suite runs only on the merge into `master` (pull request int
   card flatten cache (`tools/card/flatten_cached.py`: the four sets are one 50 s run, then 0.5 s per tree). The
   `--skip-q` oracle option was withdrawn (two frozen L06 results record the oracle's sha256). The Actions workflow
   changes are unrun until the first push to master; first thing to check there.
+- 2026-10-15: merged into `master` (Luis: "merge into master"), fast-forward `b48e202..1d1176f`. The first Actions run
+  failed building the image (curl pinned at 10.15, libcurl4t64 moved to 10.16): fixed by `e4e93cb` (curl 10.16). The
+  next run failed core on four L6 ctest timeouts under the parallel ctest of 0021: decision 0023 runs `AllanT1.*` and
+  `Tracking.*` alone (RUN_SERIAL). The local merge gate missed both: its image was cached, and its CPUs are about 2.5x
+  faster per test than Actions'.
 - Open for Luis (trims that change what runs; each needs his word and goes into a decision record): (1) the L5 T3
   one-ulp control on one output file: done under the redirect above (decision 0022 items 3–4); (2) the L5
   gz T4 suite (740 s): steps in development checks, chirps/yaw/recovery only in the full run; (3) consolidate the twin

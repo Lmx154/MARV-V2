@@ -51,4 +51,6 @@ target_include_directories(unit_l6_allan_check PRIVATE
 target_link_libraries(unit_l6_allan_check PRIVATE
   marv_plant marv_plant_noise marv_imu_profile_config marv_prim marv_types GTest::gtest_main)
 marv_apply_flags(unit_l6_allan_check)
-marv_frozen_suite(unit_l6_allan_check)
+# RUN_SERIAL: CPU-bound for seconds per test; run alone so a parallel ctest cannot push it past the per-push limit
+# (decision 0023).
+marv_frozen_suite(unit_l6_allan_check RUN_SERIAL TRUE)

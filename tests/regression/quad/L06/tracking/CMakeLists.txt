@@ -15,4 +15,6 @@ target_link_libraries(unit_l6_tracking PRIVATE
   marv_gyro_chain marv_plant marv_plant_noise marv_musl_math marv_imu_profile_config marv_types marv_prim marv_params_runtime marv_hal_sim
   GTest::gtest_main)
 marv_apply_flags(unit_l6_tracking)
-marv_frozen_suite(unit_l6_tracking)
+# RUN_SERIAL: CPU-bound for seconds per test; run alone so a parallel ctest cannot push it past the per-push limit
+# (decision 0023).
+marv_frozen_suite(unit_l6_tracking RUN_SERIAL TRUE)
