@@ -1,4 +1,4 @@
-# Handoff: quad L6 stage (e) in progress (0019); L11 S1–S5 built, S6+ paused (0020); stopped 2026-10-14 01:30
+# Handoff: L11 S6+ resumed (Luis, 2026-10-15: "continue with A"); L6 stage (e) paused (0019); test trims done (0021–0024)
 
 2026-10-05. Written for the next tech lead, from git and the records, not session memory. This file states where things
 are and adds no scope. The ACTIVE specs and decisions 0009–0019 are the authority. Update this file in the same change as
@@ -45,7 +45,7 @@ selection; the full suite runs only on the merge into `master` (pull request int
   removed; every regression test labelled `Lnn`; Actions and `ci/local_ci.sh` full-only, no schedule; `tests/unit`
   (1 + 1 = 2) deleted. Evidence in 0021.
 - Development check, warm trees: docs 0.8 s; `fw/vertical` ~22 s + G1; `tools/sim/l6_noise_term.py` ~21 s (was the
-  whole L06 tools dir, 293 s). G1 needs `clang-tidy-18` on the host (not installed on Luis's host: `lint_g1.py:217`).
+  whole L06 tools dir, 293 s). G1 needs `clang-tidy-18` on the host (installed, 18.1.3; G1 clean on 2026-10-15).
 - Merge gate on `b4feda5` (decision 0022 with 0021 under it): all five jobs PASS. Job times empty cache / warm: core
   1283 / 615 s, gz-l2 186 / 133, gz-l4 193 / 189, gz-l5 537 / 532, gz-l11 28 / 22; sum ~37 / ~25 min against ~75 min
   before. What is left: the tools tests (533 of warm core's 615 s) and the L5 gz T4 suite (466 s); trims (2) and (3)
@@ -101,7 +101,7 @@ selection; the full suite runs only on the merge into `master` (pull request int
 - Local CI: `ci/local_ci.sh [--commit <rev>] [core|gz-l2|gz-l4|gz-l5|gz-l11 ...]`, five jobs, ~75 min of job time; run
   per push batch on the batch head, in parallel lanes, not per commit. `--parallel 2` at most: each lane takes a
   14.66 GiB memory limit and the host has 33.5 GB (local_ci refuses 3, 2026-10-15).
-- To resume L11: S6a-2 (the C++ T3 test against `build/reference/quad/L11/t3/vertical_t3_golden.txt`; notes from the
+- (Superseded 2026-10-15: S6–S7 built, see "Open items".) To resume L11: S6a-2 (the C++ T3 test against `build/reference/quad/L11/t3/vertical_t3_golden.txt`; notes from the
   engineer who stopped: the hover_thrust_n fixture check needs a bound, not equality — the rule uses the card's double
   values and rounds one ulp off the f32-rebuilt value; thrust_offset_n has no table source to recompute from; L05's
   T3 test does not compare its fixture with the table; `ci/run_ci.sh:257` and decision 0013:401 name the two exempt
@@ -288,21 +288,30 @@ stored per 0011.
 - `~/marv-handover-2026-10-05/`: this handoff, the git state, the C6a diff and a tar of the untracked files.
 
 ## Open items, all Luis's unless marked
-- **R2 package** (sent 2026-10-05; he asked for the nine-heading shape; not yet ruled). Five questions:
-  1. anti-windup: freeze (recommended) / V2 / c1;
-  2. may the allocator raise the collective in a recovery? The witness needs ΣT up to 17.2 N; today the thrust request is
-     m·g (0015);
-  3. candidate (i), the rotor-lag-inverting allocation, as the study's base (a spec change);
-  4. commit the witness, 0011 style;
-  5. keep or delete `l6-0018-c1`.
-  - R2 fails under every realisable law: the floor is 1072 violations, with FF on and (i) and no anti-windup.
+- **R2 package: ruled 2026-10-15, decision 0025** (Luis: "keep your recommendations for R2 just so we can continue").
+  R2 becomes a safety predicate (recovers to level, rates bounded, by a card-derived deadline; the envelope comparison
+  run-and-report), designed by the architect and its spec line quoted to Luis before it is built; freeze anti-windup; no
+  collective raise; no candidate (i); the witness dropped (lost); `l6-0018-c1` deleted by Luis (2026-10-15, was `7ea4d29`).
+- **Lost off-repo evidence (2026-10-15):** `~/marv-e-round-2026-10-04/` and `~/marv-r2yaw-2026-10-04/` no longer exist;
+  the section "Saved outside the repo" below is history, not a resource (0025, Evidence).
+- **Gazebo 10 packages** removed by Luis (2026-10-15, `sudo apt remove libgz-rendering10-ogre2`: 29 Gazebo 10 / Jetty
+  packages, none of Harmonic). `libgz-rendering-ogre2.so` is gone, so gz-sim 8's GUI no longer needs the demo kit's
+  LD_PRELOAD shim (not yet re-tried with the GUI). `gz-sim10-cli` remains (harmless).
+- Branches `quad-l5` (merged) and `l6-t3-storage-state` (its six datasheets byte-identical to the local `datasheets/`)
+  deleted by Luis (2026-10-15).
 - **W per point or constant** (asked; not ruled). On the card member, acro's σ at the binding execution is 10.3× smaller
   than the run's max. The constant W reaches 34.4 mrad/s on a 3×3 grid, against acro's T4e margin of 25.1 mrad/s. The
   per-point W is about 1.9 mrad/s. Lead recommendation: per point.
 - **The gz re-measure** (ruling 7): only when Luis says the host is quiet (load < 1.5). It fixes the shard count, and C7
   waits for it.
-- **L11 (lead):** paused after S5 by Luis (2026-10-14); S6a-1 parked uncommitted; S6a-2, S6b, S7, S8 not started.
-  Resume only on his word. Local CI has five jobs (gz-l11 added).
+- **L11 (lead):** resumed 2026-10-15 (Luis: "continue with A"), branch `quad-l11-s6`. S6a-2, S6b-1/2/3, S7a, S7b built
+  and reviewed (each bullet in 0020 "What changed"): the C++ T3 golden test and its controls; the T3 envelopes (height
+  step, thrust offset, the coupled roll shove) and Q; the L11 scenarios, `tools/sim/run_l11.py`; the T4 gz file
+  `tests/regression/quad/L11/gz/test_t4_vertical.py` (held back from the development check, ~100 s; full run and when
+  touched). The L11 reference set takes 5 min 38 s cold at 4 processes (cached by its stamp; the one-ulp control uses
+  `--golden-only`, 4.5 s); its effect on the Actions core and gz-l11 jobs is measured at the next merge gate. Left: S8
+  (close: consolidate the L11 suite, e.g. `l11_gz.py` duplicates `run_l11`'s helpers; the results record; Luis's
+  approval). Local CI has five jobs (gz-l11 added).
 - **Remaining (e) builds:**
   - C6a: see above;
   - C6b: the T3 corner scan (27-row table), the L5 and chirp plan adapters;

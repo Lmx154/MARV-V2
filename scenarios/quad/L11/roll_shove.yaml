@@ -1,0 +1,100 @@
+# Quad L11 scenario 'roll_shove' (docs/spec/10-quad-flight-software.md section 4 L11, T4; docs/decisions/0020 section 5 "T4").
+# Disturbance (iii): a roll torque pulse of 0.02 N*m for 0.2 s added to the rate loop's torque request before the mixer; the tilt costs height, the vertical loop wins it back (T4 table row (iii)).
+# Flown by the l11_vertical_scripted composition (angle mode, the attitude law, the rate loop in bypass, the vertical loop) on
+# truth gyro, truth attitude and truth vertical state: a truth-fed, perfect-model run, not a validation run (core section 6).
+# The run starts at the hover trim (the rotors at the card's hover speed, level, at rest, z = z_ref = 0) at vertical execution 0,
+# the T3 oracle's seed execution n = 0 (tests/regression/quad/L11/t3/reference/vertical_t3_oracle.py): oracle execution n is
+# the run's vertical execution n, and execution 1 (stamp 312 us) is where the oracle's step, offset or pulse starts. The
+# script's values are those of the oracle's envelope 'roll_shove' in vertical_t3_envelope.txt (z_ref_m, thrust_disturbance_n,
+# torque_pulse_*, count). Schema and checks: tools/sim/l11_scenario.py. Every number is a labelled scenario value or a derived
+# value. Frames NED / FRD, SI.
+scenario: roll_shove
+site_latitude_rad:
+  value: 0.82
+  unit: rad
+  label: scenario
+  rationale: "the L2 hover site (scenarios/quad/L02/hover.yaml): mid-latitude, so the latitude term of g is exercised; the design site of design/scenario_values.yaml"
+site_height_m:
+  value: 500.0
+  unit: m
+  label: scenario
+  rationale: "the L2 hover site height (scenarios/quad/L02/hover.yaml); a plausible flying site height, not vehicle data; the design site of design/scenario_values.yaml"
+seed:
+  value: 1
+  unit: "1"
+  label: scenario
+  rationale: "RESERVED at v0: marv_plant v0 and the composition draw no random numbers, so the value has no effect; it completes the run identity (firmware, card, scenario, seed)"
+tick_period_num_us:
+  value: 625
+  unit: us
+  label: derived
+  rule: "design/scenario_values.yaml tick_period_num_us; the rate loop checks each execution's spacing against the period built from it, so the runner refuses a world tick that differs from the build's"
+tick_period_den:
+  value: 4
+  unit: "1"
+  label: derived
+  rule: "design/scenario_values.yaml tick_period_den, as tick_period_num_us"
+m_sequence:
+  value: [2, 1]
+  unit: "1"
+  label: derived
+  rule: "decision 0005 'T4 envelope widening' as at L4 and L5: E = |y(m=1) - y(m=2)|; both divide the vertical divisor rate_loop_divisor * vert_loop_ratio = 2, so every vertical sample is fresh"
+initial_state:
+  position_ned_m:
+    value: [0.0, 0.0, 0.0]
+    unit: m
+    label: scenario
+    rationale: "the NED origin, the site itself: z = 0 = z_ref before the script, the oracle's initial z; the generated world has no ground and no contact"
+  attitude_q_wxyz:
+    value: [1.0, 0.0, 0.0, 0.0]
+    unit: "1"
+    label: scenario
+    rationale: "level, the identity quaternion (canonical sign w >= 0)"
+  velocity_ned_m_s:
+    value: [1.0, 0.0, 0.0]
+    unit: m/s
+    label: scenario
+    rationale: "north at 1 m/s, as L5 step_roll, so every host step moves the link and every read is fresh (docs/decisions/0003 item 11; INFERRED, the run report's stale count shows it per run); marv_plant v0 has no drag or position-dependent force and g depends on height only, so the translation does not act on z or the rotation, and the oracle's v = 0 is the vertical velocity"
+  body_rates_frd_rad_s:
+    value: [0.0, 0.0, 0.0]
+    unit: rad/s
+    label: scenario
+    rationale: "starts at rest: the T3 envelope is the design-model response from the hover trim and at rest"
+  rotor_speed_rad_s:
+    value: hover
+    unit: rad/s
+    label: derived
+    rule: "the card's hover rotor speed per motor, sqrt(T_i / k), T_i the firmware mixer allocation at m g(phi, h0) and zero torque (tools/sim/run_l5.py hover_rotor_speeds): the oracle's initial state is the hover trim, w = sqrt(T_h / (4 k)), I = 0"
+thrust:
+  value: hover
+  unit: "1"
+  label: derived
+  rule: "vert_hover_thrust_n is the float32 of m g(phi, h0), the card's mass and tools/sim/hover.py normal_gravity (tools/sim/run_l4.py hover_thrust): the oracle's hover_thrust_n of vertical_t3_inputs.txt"
+script:
+  segments: []
+  torque_pulse:
+    axis:
+      value: roll
+      unit: "1"
+      label: scenario
+      rationale: "roll, the demonstration's gz wrench axis; the oracle's SHOVE_AXIS = 0"
+    torque_nm:
+      value: 0.02
+      unit: N*m
+      label: scenario
+      rationale: "the demonstration's roll shove, 0.02 N*m (decision 0020 Owner decisions 7: 'Roll-shove disturbance for T4: the demonstration's 0.02 N*m for 0.2 s as a labelled scenario value?' - 'Yes'); the oracle's SHOVE_TORQUE_NM; added to the rate loop's torque request before the mixer (actuator-side, like 0006 F's yaw disturbance)"
+    duration_s:
+      value: 0.2
+      unit: s
+      label: scenario
+      rationale: "the demonstration's pulse length, 0.2 s (decision 0020 Owner decisions 7); the oracle's SHOVE_DURATION_S"
+    start_vertical_execution:
+      value: 1
+      unit: "1"
+      label: derived
+      rule: "the oracle's SHOVE_EXECUTION = 1, torque_pulse_t0_us of envelope 'roll_shove' = the stamp of vertical execution 1 (312 us): the start convention of the other two scripts"
+  end_vertical_execution:
+    value: 45482
+    unit: "1"
+    label: derived
+    rule: "count - 1 of the recorded envelope 'roll_shove' (vertical_t3_envelope.txt channel z, count 45483 executions 0..45482; segment_seconds 14.213020643218112): the run ends with the envelope"

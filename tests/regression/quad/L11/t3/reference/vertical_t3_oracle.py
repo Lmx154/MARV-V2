@@ -4,17 +4,19 @@
 
 Path: tests/regression/quad/L11/t3/reference/vertical_t3_oracle.py. Plain Python (stdlib), importing tools/sim/hover.py (WGS 84
 normal gravity, the plant's g), tools/sim/reference.py (its analytic height gradient) and L5's oracle
-(tests/regression/quad/L05/t3/reference/attitude_t3_oracle.py: its method constants and its error-tracking number E); no code
-shared with the C++ vertical library (fw/vertical) or the gain generator (tools/card/vertical.py). Reads
-vertical_t3_inputs.txt (beside this script, or in --dir) and writes vertical_t3_golden.txt there:
+(tests/regression/quad/L05/t3/reference/attitude_t3_oracle.py: its method constants, its error-tracking number E and, for the roll
+shove, its attitude law, angle mode, mixer and quaternion kinematics); no code shared with the C++ vertical library (fw/vertical) or
+the gain generator (tools/card/vertical.py). Reads vertical_t3_inputs.txt (beside this script, or in --dir) and, for the roll shove,
+L5's attitude_t3_inputs.txt and attitude_t3_q_inputs.txt (in L5's reference directory), and writes vertical_t3_golden.txt,
+vertical_t3_envelope.txt and vertical_t3_q.txt there (--golden-only: the golden alone):
 
-    uv run python tests/regression/quad/L11/t3/reference/vertical_t3_oracle.py [--dir DIR] [--procs N]
+    uv run python tests/regression/quad/L11/t3/reference/vertical_t3_oracle.py [--dir DIR] [--procs N] [--golden-only]
     uv run python tests/regression/quad/L11/t3/reference/vertical_t3_oracle.py --refresh-inputs \
         build/<preset>/generated/marv_params_l11_vertical_scripted/marv/params/param_defaults.cpp
 
 --refresh-inputs rewrites vertical_t3_inputs.txt from the built parameter table of marv_params_l11_vertical_scripted and stops;
 it needs the repository (tools/sim/run_l4.py hover_thrust, the card, design/scenario_values.yaml). The file is the T3 fixture;
-the golden is a function of it. --procs spreads the tolerance's jobs over worker processes; the output does not depend on it
+the golden is a function of it. --procs spreads the tolerance's jobs, the envelope members and the Q members over worker processes; the output does not depend on it
 (every job is computed whole by one process and the results are combined in a fixed order).
 
 What the golden is. The float firmware path of the vertical loop (fw/vertical/include/marv/vertical/vertical_law.hpp execute, as
@@ -99,11 +101,92 @@ Kinematics (core 7.5; L5's check): the golden is integrated with KIN_SUBSTEPS su
 the largest change of each channel between the two is recorded and must be below that channel's tolerance, else the oracle
 refuses.
 
+Box envelopes (vertical_t3_envelope.txt; decision 0020 section 5 "T3 envelopes (recorded; used at T4)", L5's method:
+attitude_t3_oracle.py write_envelope, tests/regression/quad/L05/t3/README.md "Band envelopes"). The box is decision 0020
+section 4's: tau in tau (1 +- tau_robustness_band) and the loop-gain factor r = (k_true / k_card)(m_card / m_true) in
+[r_lo, r_hi], r_lo = (1 - b_k) min R, r_hi = (1 + b_k) max R, b_k = thrust_gain_robustness_band, R = {1} and m_card / m_c for
+every open conflict m_c of the card's mass (r_lo = 0.5, r_hi = 1.5 / 0.974093 on the committed card), read from design/budget.yaml
+and vehicles/uzh_neurobem_5in.yaml and equal to the box tools/card/vertical.py designs against. Each member is a point of L5's
+17 x 17 grid (l5.grid_members, which contains the corners and the 9 x 9 grid) over (s, t) in [-1, 1]^2 -> tau = tau (1 + b_tau s),
+r = r_lo + (r_hi - r_lo)(t + 1) / 2. A member is the design plant above with the motor lag tau and the thrust deviation about
+the hover trim scaled by r, T = T_h + r (4 k w^2 - T_h): every member starts at the same exact initial state (the hover trim,
+v = 0, z = 0, I = 0), a gain error is not a thrust error (the thrust offset is the thrust_offset script), and the linearised
+member is Lin's plant with r the loop gain. The law is the golden's in double with the f32 gains (no rounding injections), driven
+by the exact script, never re-seeded; the nominal member (tau, r = 1) reproduces the golden's z to the bit. The oracle refuses
+unless T_cmd of every member stays within [T_min, T_max] (the mixer passes the request unchanged: the script is linear over the
+box). The segment starts at the golden's length and doubles (MAX_DOUBLINGS) until, for each of the two golden scripts, the end value (the largest
+|z_ref - z| over the envelope at the last execution) is below F = tolerance_z of the script's golden + the envelope's
+halving_max_change + the script's kinematics_change_z (L5's stop test; E >= 0 adds to the T4 tolerance). The golden's own length
+is not changed by it. The file (every line, in order):
+  '#' header: what the file is; the box (tau_robustness_band, thrust_gain_robustness_band, r_lo, r_hi); segment_seconds,
+              segment_executions (H, the envelope has H + 1 executions), doublings (of the envelope's segment from the golden's),
+              grid (members); per script 'name z: end E < F F' (the settle check, parsed by T4 as L5's 'theta' line) and
+              'name F terms: tolerance_z, halving, kinematics_change_z' (the three terms of F);
+  scenario <name>; step_execution 1; z_ref_m and thrust_disturbance_n the script's from the step on (as in the golden);
+  t_cmd_min_n, t_cmd_max_n the range of T_cmd over all members and executions (inside [T_min, T_max]);
+  channel z first <first> count <count> halving_max_change <change>, 'min_max', then count lines 'lo hi': the plant's z (m, NED,
+              at the start of the execution's tick, as the golden's z) minimum and maximum over the 17 x 17 members at executions
+              first .. first + count - 1, rounded outward to 7 significant digits; halving_max_change the largest change of any
+              execution's minimum or maximum from the 9 x 9 grid to the 17 x 17 grid.
+The channel is z only: T4's predicate is on z (decision 0020 section 5), and L5 records the angle, not the rate, for its tilt
+scripts.
+
+Roll shove (T4 scenario (iii); an envelope without a golden). Decision 0020 section 5 "T3 envelopes": "The roll shove uses a coupled
+plant: per-rotor speed lags, f_i = k w_i^2, the mixer in double, 0006's quaternion kinematics without w x J w, and the vertical
+channel with T R33. Duration doubles until the envelope's end value is below the T4 tolerance." Script: from the exact hover trim,
+level, at rest, z_ref = 0, no thrust disturbance, a roll torque pulse of SHOVE_TORQUE_NM for SHOVE_DURATION_S (section 5 "T4",
+Owner decisions 7) added to the rate loop's torque request before the mixer (actuator-side, as the composition adds torque_pulse,
+l11_dist_torque_*), starting at the stamp t0 = floor(D num / den) us of vertical execution SHOVE_EXECUTION (the steps of the other
+scripts start there) and acting on the rate ticks whose stamp is in [t0, t0 + dur) (the composition's test; torque_pulse_t0_us and
+torque_pulse_dur_us in the file are the values for l11_dist_torque_t_us and _dur_us). The box is the same (tau, r) box and grid;
+the inertia J is the card's value (its band is not part of the box, lead's ruling). A member is the CoupledPlant: the four rotor
+speeds each lag their own command first order (the Plant's closed forms with the member's tau), f_i = k w_i^2, the torque
+sum_i geo_i f_i with the card's rotor geometry and yaw reaction (L5's Quantiser.geo) on J w' with no w x J w, the quaternion
+q <- q (x) exp(dphi / 2) from the exact per-axis angle increments of each sub-step (L5's qmul and quat_exp, renormalised per
+tick), and v' = g - (1 - r) T_h / m - (r / m) R33 sum_i f_i, R33 = 1 - 2 (q_x^2 + q_y^2) held over a sub-step: r scales the
+thrust deviation of the vertical channel as for the other scripts (at level it is the Plant's), the attitude torques are the
+card's. Around it, per tick in the composition's order: the attitude group (L5's attitude_law on the plant's quaternion, against
+angle mode's level set point: L5's AngleMode with zero sticks, locked at the initial heading, returns a constant, so it is called
+once), the vertical group (member_run's law, the plant's z and v at the start of the tick), the gyro chain's low-pass on the
+plant's rates every tick, and the rate group (the rate loop in bypass with its filtered D term, the same lines as L5's
+Member.attitude_step: L5 has no function for the chain and the law apart from that class, whose plant is its own; the notches are
+bypassed as there, the sample carries no rotor speed), the pulse added to the roll torque, L5's Quantiser.allocate (mixer::allocate
+in double) at the collective T_cmd, w_c,i = sqrt(f_i / k) (no DShot quantisation: the T4 term Q). The attitude, rate, mixer and
+inertia values are L5's fixtures' (equal to the L11 parameter table's, the same product set; the oracle refuses when a key both
+fixtures hold differs). The oracle refuses unless T_cmd stays within [T_min, T_max] and the mixer never scales or clamps an
+allocation at any member (the script is linear over the box). The shove has no T3 golden, so the tolerance_z term of its F is 0
+and its kinematics term is the largest change of the nominal member's z between KIN_SUBSTEPS and twice as many sub-steps; its
+segment starts at the golden's length and doubles on its own (its header line), the other scripts' segment is not changed by
+it. Its block adds, after thrust_disturbance_n, torque_pulse_axis, torque_pulse_nm, torque_pulse_t0_us, torque_pulse_dur_us and,
+after t_cmd_max_n, rotor_cmd_min_n and rotor_cmd_max_n, the range of the four rotor thrust commands f_i (N) over all members and
+rate executions (inside [k idle^2, k w_max^2], the DShot range of T4's clean-run predicate).
+
+Quantisation term Q (vertical_t3_q.txt; decision 0020 section 5 "T4": "Q = the box maximum of quantised - unquantised trajectory
+through the live diffuser (0006:697-699; 0017)"; L5's method: attitude_t3_oracle.py q_script and write_q, tests/regression/quad/L05/
+t3/README.md "The quantisation term Q"). Per script, channel z: the maximum over the vertical executions of |z quantised - z
+unquantised| of one box member, then the maximum over the members at the box corners and the nominal (s = t = 0, the box centre)
+and over the 9 x 9 grid that contains them; q is the grid maximum where it exceeds the corner maximum (rule grid), else the corner
+maximum. The unquantised member is the envelope's (member_run, shove_member_run), over the envelope's own segment length. The
+quantised member puts L5's Quantiser (Actuator below: mixer::allocate in double at the vertical law's collective T_cmd, then
+mixer::DshotDiffuser, decision 0017, with every carry 0 at the start of the run, once per rate execution, in float32 as the
+firmware runs it, then marv_plant's ESC map DShot -> omega) between the law and the plant: the rotor speed command of each motor is
+the ESC map's of its DShot value, held until the next rate execution, and the plant's rotor lag and thrust k w^2 follow. The two
+vertical scripts have a zero torque request, so each motor's thrust command is T_cmd / 4 (the four are one) and the collective
+plant takes the one speed; the roll shove runs the coupled cascade with the actuator in place of w_c,i = sqrt(f_i / k). L5's
+Quantiser takes the thrust of the plant's own k omega^2 (the card's double coefficient); here the design plant's coefficient is
+the fixture's, so Q is the quantisation alone. The file (every line, in order): '#' header; '# dshot_range_allowed <d_lo> 2047';
+hover_dshot_real and hover_dshot_rounded (the DShot value of the stateless rounding at the hover trim T_h, facts of L5's
+q_hover_facts); per script 'scenario <name>', segment_executions (H, the envelope's), saturated_executions (0: the run is
+refused otherwise), dshot_min and dshot_max (over all members and rate executions) and 'channel z q <q> rule <grid|corners>
+q_corners <> q_grid <> at_s <> at_t <> at_execution <>' (T4 reads the value after 'q' as L5's parse_q does; q in m).
+
 Refusals (exit non-zero, nothing written): a missing input; a configuration vertical::validate refuses (gains >= 0, T > 0,
 T_h > 0, no k_i without k_v); a non-positive tick or ratio; an inexact float period product; T_h outside [T_min, T_max]; a
 gravity gradient that is not positive and finite; a closed loop that is not strictly stable at kappa = 1 or at a frozen kappa;
-T_cmd leaving [T_min, T_max]; a non-zero bound at the seed execution; a kinematics change not below the tolerance; no settled
-end value within MAX_DOUBLINGS doublings.
+T_cmd leaving [T_min, T_max] (the golden, or any box member); a roll-shove allocation the mixer scales or clamps; a key that
+differs between the vertical fixture and L5's; a non-zero bound at the seed execution; a kinematics change not below the tolerance; no settled
+end value within MAX_DOUBLINGS doublings (the golden, or the envelopes); a quantised member that leaves [T_min, T_max], whose
+allocation the mixer scales or clamps, or whose DShot value reaches a bound of the diffuser's range [d_lo, 2047] (Q).
 """
 import argparse
 import importlib.util
@@ -122,6 +205,10 @@ _L5_PATH = os.path.join(ROOT, "tests", "regression", "quad", "L05", "t3", "refer
 _spec = importlib.util.spec_from_file_location("l5_attitude_t3_oracle", _L5_PATH)
 l5 = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(l5)
+# L5's fixtures, which the roll shove's cascade reads: the product parameter values of the rate loop, the gyro chain, the attitude
+# law and the mixer (equal to the L11 parameter table's, the same product set) and the card's plant side (rotor geometry).
+_L5_INPUTS = os.path.join(ROOT, "tests", "regression", "quad", "L05", "t3", "reference", "attitude_t3_inputs.txt")
+_L5_Q_INPUTS = os.path.join(ROOT, "tests", "regression", "quad", "L05", "t3", "reference", "attitude_t3_q_inputs.txt")
 
 E = l5.E
 r32 = l5.r32
@@ -143,7 +230,17 @@ Z_STEP_M = 1.0  # height step, m, applied as a climb (z_ref = -Z_STEP_M, NED). R
 #                 stay linear: the oracle refuses unless T_cmd stays within [T_min, T_max] over the whole run (a descent of
 #                 this size asks T_h - k_v k_z Z_STEP_M at its first execution, below T_min on the committed gains).
 
+# The roll shove (T4 scenario (iii)): decision 0020 section 5 "T4" table, "0.02 N*m for 0.2 s, the demonstration's values" and
+# Owner decisions 7 (Luis, 2026-10-13: "Roll-shove disturbance for T4: the demonstration's 0.02 N·m for 0.2 s as a labelled
+# scenario value?" - "Yes"); the roll axis, like the demonstration's gz wrench.
+SHOVE_TORQUE_NM = 0.02  # roll torque pulse, N*m, added to the rate loop's torque request before the mixer
+SHOVE_DURATION_S = 0.2  # pulse length, s
+SHOVE_AXIS = 0          # roll (the composition's l11_dist_torque_axis: 0 roll, 1 pitch, 2 yaw)
+SHOVE_EXECUTION = 1     # the pulse starts at the stamp of vertical execution 1, as the other scripts' steps (script(): the seed
+#                         execution 0 has no disturbance); the system starts at its trim, so the start only shifts the response in time
+
 SCRIPTS = ("height_step", "thrust_offset")
+SHOVE = "roll_shove"  # an envelope script without a golden
 CHANNELS = ("t_req", "z", "v")
 INJECTION_NODES = ("e_z", "e_v", "I", "u", "t_req", "dist")
 COEF_NODES = ("kp_z", "kp_v", "ki_v", "hover_thrust", "period")
@@ -314,6 +411,8 @@ def script(name, n, su):
         return 0.0, 0.0
     if name == "height_step":
         return -Z_STEP_M, 0.0
+    if name == SHOVE:
+        return 0.0, 0.0
     return 0.0, su.d
 
 
@@ -324,11 +423,11 @@ class Plant:
     """The collective rotor speed w, v and z (NED) of the design plant (module docstring), stepped one tick of m_sub sub-steps
     with the rotor command held."""
 
-    def __init__(self, su, m_sub):
+    def __init__(self, su, m_sub, tau=None, gain=1.0):
         self.su = su
         self.m_sub = m_sub
         s = su.tick_s / m_sub
-        tau = su.tau
+        tau = su.tau if tau is None else tau
         self.s = s
         self.decay = math.exp(-s / tau)
         e1 = -math.expm1(-s / tau)
@@ -337,7 +436,8 @@ class Plant:
         self.i2 = tau / 2 * e2                # int_0^s exp(-2t/tau) dt
         self.j1 = tau * (s - tau * e1)        # int_0^s int_0^t exp(-r/tau) dr dt
         self.j2 = tau / 2 * (s - tau / 2 * e2)  # int_0^s int_0^t exp(-2r/tau) dr dt
-        self.a = 4 * su.k / su.mass
+        self.a = 4 * su.k / su.mass * gain
+        self.bias = (1 - gain) * su.t_h / su.mass  # the trim's share of the thrust the gain does not scale (0 at gain 1)
         self.w = su.w_hover
         self.v = 0.0
         self.z = 0.0
@@ -346,7 +446,7 @@ class Plant:
         su, s, a = self.su, self.s, self.a
         cc = w_c * w_c
         for _ in range(self.m_sub):
-            g = hover.normal_gravity(su.phi, su.h0 - self.z)
+            g = hover.normal_gravity(su.phi, su.h0 - self.z) - self.bias
             dw = self.w - w_c
             lin = 2 * w_c * dw
             sq = dw * dw
@@ -596,6 +696,305 @@ def settle(su, procs):
     sys.exit(f"the end value of the error channel does not settle within {MAX_DOUBLINGS} doublings: {history[-1]!r}")
 
 
+# ---- the T3 box envelopes (recorded, for T4) -----------------------------------------------------------------------------------
+
+
+class Box:
+    """The robustness box of decision 0020 section 4: tau in tau (1 +- b_tau), b_tau = tau_robustness_band (design/budget.yaml),
+    and the loop-gain factor r = (k_true / k_card)(m_card / m_true) in [r_lo, r_hi], r_lo = (1 - b_k) min R, r_hi = (1 + b_k)
+    max R, b_k = thrust_gain_robustness_band (design/budget.yaml), R = {1} and m_card / m_c for every open conflict m_c of the
+    card's mass (vehicles/uzh_neurobem_5in.yaml): the box tools/card/vertical.py designs against, read here from the same two
+    files and recomputed by this rule."""
+
+    def __init__(self):
+        import yaml  # noqa: PLC0415
+
+        budget = yaml.safe_load(open(os.path.join(ROOT, "design", "budget.yaml")))
+        card = yaml.safe_load(open(os.path.join(ROOT, "vehicles", "uzh_neurobem_5in.yaml")))
+        mass = float(card["mass"]["value"])
+        conflicts = [float(c["value"]) for c in card["mass"].get("conflict", []) or [] if c.get("state") == "open"]
+        self.b_tau = float(budget["tau_robustness_band"]["value"])
+        self.b_k = float(budget["thrust_gain_robustness_band"]["value"])
+        if not (mass > 0 and all(m > 0 for m in conflicts) and 0 <= self.b_tau < 1 and 0 <= self.b_k < 1):
+            sys.exit("the box inputs are out of their domain (mass and conflicts > 0, bands in [0, 1))")
+        ratios = [1.0] + [mass / m for m in conflicts]
+        self.r_lo = (1 - self.b_k) * min(ratios)
+        self.r_hi = (1 + self.b_k) * max(ratios)
+
+    def member(self, s, t):
+        """(tau factor, r) of the grid point (s, t) in [-1, 1]^2, the end points exact."""
+        u = (t + 1) / 2
+        return 1 + self.b_tau * s, (1 - u) * self.r_lo + u * self.r_hi
+
+
+def member_run(su, name, h_seg, tau, r, quant=None, divisor=1):
+    """(z per vertical execution, T_cmd range) of one box member: the design plant with the motor lag tau and the thrust
+    deviation about the hover trim scaled by r (T = T_h + r (4 k w^2 - T_h), so every member starts at the same exact trim and the
+    linearised plant is the one of Lin at kappa = 1 with r the loop gain), the law in double with the f32 gains and no
+    rounding, driven by the exact script. It stops at the first command outside the zero-torque collective range. With `quant`
+    (an Actuator, the term Q) the rotor command is the actuator's on every rate tick (every `divisor` ticks, after the
+    vertical law of the same tick) at zero torque request: each motor's thrust command is T_cmd / 4, allocated, diffused and
+    quantised, and the four are one by the symmetric mixer, so one speed commands the collective w."""
+    plant = Plant(su, KIN_SUBSTEPS, tau, r)
+    integ = e_prev = 0.0
+    w_c = su.w_hover
+    cmd_lo = cmd_hi = su.t_h
+    out = []
+    for j in range((1 + h_seg) * su.D):
+        if j % su.D == 0:
+            z_ref, d = script(name, j // su.D, su)
+            z, v = plant.z, plant.v
+            e_v = su.kp_z * (z_ref - z) - v
+            integ = integ + su.ki_v * e_prev * su.period_s
+            t_cmd = su.t_h - (su.kp_v * e_v + integ) + d
+            out.append(z)
+            e_prev = e_v
+            cmd_lo, cmd_hi = min(cmd_lo, t_cmd), max(cmd_hi, t_cmd)
+            if not su.t_min <= t_cmd <= su.t_max:
+                break
+            w_c = math.sqrt(t_cmd / (4 * su.k))
+        if quant is not None and j % divisor == 0:
+            quant.c = t_cmd
+            f, scaled = quant.allocate(0.0, 0.0, 0.0)
+            quant.saturated += scaled
+            speeds = quant.speeds(f)
+            if len(set(speeds)) != 1:
+                sys.exit(f"{name}: the four motors' quantised speeds differ at zero torque: the mixer is not symmetric")
+            w_c = speeds[0]
+        plant.step(w_c)
+    return out, (cmd_lo, cmd_hi)
+
+
+class Cascade:
+    """What the roll shove's members share (module docstring, "Roll shove"): L5's fixtures, read and checked against the vertical
+    fixture; L5's setup (the gyro low-pass coefficients, the attitude configuration), the rate gains, the D filter coefficient
+    and the inertia per axis; L5's mixer (Quantiser.allocate: the mixer in double) with the card's rotor geometry; angle mode's
+    level set point (its output with zero sticks, locked at the initial heading, does not depend on the state); the pulse in
+    stamps."""
+
+    def __init__(self, su):
+        p, p5, q5 = su.p, l5.read_inputs(_L5_INPUTS), l5.read_q_inputs(_L5_Q_INPUTS)
+        for key in ("rate_loop_divisor", "tick_period_num_us", "tick_period_den", "motor_tau"):
+            if p5[key] != p[key]:
+                sys.exit(f"{key} differs between the vertical fixture ({p[key]!r}) and L5's ({p5[key]!r})")
+        for key, ours in (("rotor_thrust_coeff", "rotor_thrust_coeff"), ("idle_speed", "rotor_speed_min"),
+                          ("rotor_speed_max", "rotor_speed_max")):
+            if q5[key] != p[ours]:
+                sys.exit(f"{key} differs between L5's mixer fixture ({q5[key]!r}) and the vertical fixture ({p[ours]!r})")
+        su5 = l5.Setup(p5)
+        self.q5 = q5
+        self.cfg, self.lpf, self.period_s = su5.cfg, su5.lpf, su5.period_s
+        self.divisor, self.att_divisor = su5.divisor, su5.divisor * su5.ratio
+        names = l5.AXES
+        self.kp = [p5[f"rate_kp_{a}"] for a in names]
+        self.ki = [p5[f"rate_ki_{a}"] for a in names]
+        self.kd = [p5[f"rate_kd_{a}"] for a in names]
+        self.alpha = [l5.d_alpha(self.period_s, p5[f"rate_d_filter_tau_{a}"])[0] for a in names]
+        self.inertia = [p5[l5.INERTIA[a]] for a in names]
+        self.mixer = l5.Quantiser(q5, SHOVE_AXIS)
+        self.geo = self.mixer.geo
+        level = tuple(E(c) for c in (1.0, 0.0, 0.0, 0.0))
+        self.q_sp, self.yaw_cmd = l5.AngleMode(self.cfg).execute((0.0, 0.0, 0.0), 0, level, tuple(E(0.0) for _ in range(3)))
+        self.t0_us = (SHOVE_EXECUTION * su.D * p["tick_period_num_us"]) // p["tick_period_den"]
+        self.dur_us = round(SHOVE_DURATION_S / MICROSECOND)
+
+
+class CoupledPlant(Plant):
+    """The coupled design plant of the roll shove (decision 0020 section 5 "T3 envelopes"): the Plant's constants for the motor lag
+    tau, with four rotor speeds w_i, each lagging its own command first order (closed form over a held command), f_i = k w_i^2,
+    the body rates and the quaternion (J w' = sum_i geo_i f_i with the card's rotor geometry, no w x J w; q <- q (x) exp(dphi / 2)
+    from the exact per-axis angle increments of each sub-step, L5's kinematics) and the vertical channel with the thrust along
+    -z_body, v' = g - b - (r / m) R33 sum_i f_i, R33 = 1 - 2 (q_x^2 + q_y^2) held over a sub-step; b = (1 - r) T_h / m as in
+    Plant (at level and r = 1 this is Plant)."""
+
+    def __init__(self, su, co, m_sub, tau, gain):
+        super().__init__(su, m_sub, tau, gain)
+        self.co, self.gain = co, gain
+        self.rotor = [su.w_hover] * 4
+        self.rate = [0.0] * 3
+        self.q = (1.0, 0.0, 0.0, 0.0)
+
+    def step(self, w_c):
+        su, co, s = self.su, self.co, self.s
+        for _ in range(self.m_sub):
+            q = self.q
+            r33 = 1 - 2 * (q[1] * q[1] + q[2] * q[2])
+            g = hover.normal_gravity(su.phi, su.h0 - self.z) - self.bias
+            sum1 = sum2 = 0.0
+            t1, t2 = [0.0] * 3, [0.0] * 3
+            for i in range(4):
+                c = w_c[i]
+                dw = self.rotor[i] - c
+                lin = 2 * c * dw
+                sq = dw * dw
+                f1 = su.k * (c * c * s + lin * self.i1 + sq * self.i2)
+                f2 = su.k * (c * c * s * s / 2 + lin * self.j1 + sq * self.j2)
+                sum1 += f1
+                sum2 += f2
+                for ax in range(3):
+                    t1[ax] += co.geo[i][ax] * f1
+                    t2[ax] += co.geo[i][ax] * f2
+                self.rotor[i] = c + dw * self.decay
+            ratio = self.gain / su.mass * r33
+            dv = g * s - ratio * sum1
+            dz = self.v * s + g * s * s / 2 - ratio * sum2
+            angle = tuple(self.rate[ax] * s + t2[ax] / co.inertia[ax] for ax in range(3))
+            self.rate = [self.rate[ax] + t1[ax] / co.inertia[ax] for ax in range(3)]
+            self.z += dz
+            self.v += dv
+            self.q = l5.qmul(self.q, l5.quat_exp(angle))
+        norm = math.sqrt(sum(c * c for c in self.q))
+        self.q = tuple(c / norm for c in self.q)
+
+
+def shove_member_run(su, co, h_seg, tau, r, m_sub=KIN_SUBSTEPS, quant=None):
+    """(z per vertical execution, T_cmd range, range of the four rotor thrust commands) of one box member of the roll shove: the
+    cascade in the composition's per-tick order (fw/compositions/l11_vertical_scripted/src/l11_vertical_scripted.cpp tick) around
+    the CoupledPlant, all in double with the f32 gains, from the exact trim. Attitude group (L5's attitude_law on the quaternion
+    against angle mode's level set point), vertical group (member_run's law), the gyro chain on the plant's rates every tick, rate
+    group (the rate loop in bypass with its filtered D term, the roll pulse added to the torque request, the mixer's allocation at
+    the collective T_cmd, w_c,i = sqrt(f_i / k)). The rate group's lines are Member.attitude_step's of L5's oracle (the chain
+    and the rate law: L5 has no function for them apart from that class, which holds its own single-axis plant); the notches are
+    bypassed as there (no rotor speed in the sample). It stops at the first command outside the zero-torque collective range
+    (the series is then short) or at the first allocation the mixer scales or clamps (the rotor range is then None). With `quant`
+    (an Actuator, the term Q) the allocation is the actuator's, with its diffuser carries, and the rotor speed commands are the
+    ESC map's of the diffused DShot values (no w_c,i = sqrt(f_i / k))."""
+    plant = CoupledPlant(su, co, m_sub, tau, r)
+    b0, b1, b2, a1, a2 = co.lpf
+    x1, x2, y1, y2, y = ([0.0] * 3 for _ in range(5))
+    i_int, e_prev_r, y_prev, d_f, u = ([0.0] * 3 for _ in range(5))
+    r_hold = (0.0, 0.0, 0.0)
+    integ = e_prev = 0.0
+    t_cmd = su.t_h
+    w_c = [su.w_hover] * 4
+    cmd_lo = cmd_hi = su.t_h
+    f_lo, f_hi = math.inf, -math.inf
+    num, den = su.p["tick_period_num_us"], su.p["tick_period_den"]
+    out = []
+    for j in range((1 + h_seg) * su.D):
+        if j % co.att_divisor == 0:
+            r_hold = tuple(c.v for c in l5.attitude_law(co.cfg, tuple(E(c) for c in plant.q), co.q_sp, co.yaw_cmd))
+        if j % su.D == 0:
+            z_ref, d = script(SHOVE, j // su.D, su)
+            z, v = plant.z, plant.v
+            e_v = su.kp_z * (z_ref - z) - v
+            integ = integ + su.ki_v * e_prev * su.period_s
+            t_cmd = su.t_h - (su.kp_v * e_v + integ) + d
+            out.append(z)
+            e_prev = e_v
+            cmd_lo, cmd_hi = min(cmd_lo, t_cmd), max(cmd_hi, t_cmd)
+            if not su.t_min <= t_cmd <= su.t_max:
+                break
+        for i in range(3):
+            x = plant.rate[i]
+            y[i] = b0 * x + b1 * x1[i] + b2 * x2[i] - a1 * y1[i] - a2 * y2[i]
+            x2[i], x1[i], y2[i], y1[i] = x1[i], x, y1[i], y[i]
+        if j % co.divisor == 0:
+            stamp = (j * num) // den
+            pulse = SHOVE_TORQUE_NM if co.t0_us <= stamp < co.t0_us + co.dur_us else 0.0
+            for i in range(3):
+                i_int[i] += co.ki[i] * co.period_s * e_prev_r[i]
+                e = r_hold[i] - y[i]
+                d_raw = -co.kd[i] * (y[i] - y_prev[i]) / co.period_s
+                d_f[i] = d_f[i] + co.alpha[i] * (d_raw - d_f[i]) if co.alpha[i] != 1.0 else d_raw
+                u[i] = co.kp[i] * e + i_int[i] + d_f[i]
+                e_prev_r[i], y_prev[i] = e, y[i]
+            req = list(u)
+            req[SHOVE_AXIS] += pulse
+            mixer = co.mixer if quant is None else quant
+            mixer.c = t_cmd
+            f, scaled = mixer.allocate(*req)
+            if scaled:
+                return out, (cmd_lo, cmd_hi), None
+            f_lo, f_hi = min(f_lo, *f), max(f_hi, *f)
+            w_c = [math.sqrt(fi / su.k) for fi in f] if quant is None else quant.speeds(f)
+        plant.step(w_c)
+    return out, (cmd_lo, cmd_hi), (f_lo, f_hi)
+
+
+_MEMBER = {}
+
+
+def _member_job(job):
+    _, s, t, coarse = job
+    su, box, name = _MEMBER["su"], _MEMBER["box"], _MEMBER["name"]
+    tau_factor, r = box.member(s, t)
+    if name == SHOVE:
+        series, cmd, rotor = shove_member_run(su, _MEMBER["co"], _MEMBER["h"], su.tau * tau_factor, r)
+    else:
+        series, cmd = member_run(su, name, _MEMBER["h"], su.tau * tau_factor, r)
+        rotor = (math.inf, -math.inf)
+    return coarse, series, cmd, rotor
+
+
+def box_envelope(su, box, co, name, h_seg, procs):
+    """(Envelope of z over the 17 x 17 box grid and its 9 x 9 subset, the range of T_cmd over all members, the range of the
+    rotor thrust commands over all members (the roll shove only))."""
+    env = l5.Envelope(1 + h_seg)
+    cmd_lo, cmd_hi, f_lo, f_hi = math.inf, -math.inf, math.inf, -math.inf
+    _MEMBER.update(su=su, box=box, co=co, name=name, h=h_seg)
+    members = l5.grid_members()
+
+    def collect(results):
+        nonlocal cmd_lo, cmd_hi, f_lo, f_hi
+        for coarse, series, cmd, rotor in results:
+            if rotor is None:
+                sys.exit(f"{name}: the mixer scales or clamps a box member's allocation: the script is not linear over the box")
+            cmd_lo, cmd_hi = _add_member(su, name, h_seg, env, coarse, series, cmd, cmd_lo, cmd_hi)
+            f_lo, f_hi = min(f_lo, rotor[0]), max(f_hi, rotor[1])
+
+    if procs > 1:
+        import multiprocessing  # noqa: PLC0415
+
+        with multiprocessing.get_context("fork").Pool(procs) as pool:
+            collect(pool.imap(_member_job, members, chunksize=1))
+    else:
+        collect(map(_member_job, members))
+    return env, (cmd_lo, cmd_hi), (f_lo, f_hi)
+
+
+def _add_member(su, name, h_seg, env, coarse, series, cmd, cmd_lo, cmd_hi):
+    if len(series) != 1 + h_seg or not su.t_min <= cmd[0] or not cmd[1] <= su.t_max:
+        sys.exit(f"{name}: a box member's thrust command leaves the zero-torque collective range "
+                 f"[{su.t_min!r}, {su.t_max!r}] N: the script is not linear over the box")
+    env.add(series, coarse)
+    return min(cmd_lo, cmd[0]), max(cmd_hi, cmd[1])
+
+
+def shove_kinematics(su, co, h_seg):
+    """The roll shove's kinematics halving change: the largest change of z of the nominal member (tau, r = 1) between KIN_SUBSTEPS
+    and twice as many sub-steps per tick (the golden's check for the scripts that have one)."""
+    coarse = shove_member_run(su, co, h_seg, su.tau, 1.0)[0]
+    fine = shove_member_run(su, co, h_seg, su.tau, 1.0, 2 * KIN_SUBSTEPS)[0]
+    return max_diff(coarse, fine)
+
+
+def settle_envelope(su, box, co, golden, procs, names=SCRIPTS):
+    """The envelopes of `names` at the golden's segment length, doubled (core 7.5) until every script's end value, the largest
+    |z_ref - z| over the envelope at the last execution, is below F = the script's T3 tolerance + the envelope's last-halving
+    change + the script's kinematics halving change (E >= 0 adds to the T4 tolerance, so a value below F is below E + F). The
+    roll shove has no golden, so no T3 tolerance (its term is 0); its kinematics change is shove_kinematics'."""
+    dur = golden["dur_s"]
+    for k in range(MAX_DOUBLINGS + 1):
+        h = math.ceil(dur / su.period_s)
+        res = {"h": h, "dur_s": dur, "doublings": k, "scripts": {}, "checks": []}
+        for name in names:
+            env, cmd, rotor = box_envelope(su, box, co, name, h, procs)
+            z_ref = script(name, h, su)[0]
+            end = max(abs(z_ref - env.lo[-1]), abs(z_ref - env.hi[-1]))
+            if name == SHOVE:
+                terms = (0.0, env.halving_change(), shove_kinematics(su, co, h))
+            else:
+                g = golden["scripts"][name]
+                terms = (g["tol"][1], env.halving_change(), g["kin"][1])
+            res["scripts"][name] = {"env": env, "cmd": cmd, "rotor": rotor}
+            res["checks"].append((name, end, sum(terms), terms))
+        if all(end < f_val for _, end, f_val, _ in res["checks"]):
+            return res
+        dur *= 2
+    sys.exit(f"the envelopes do not settle within {MAX_DOUBLINGS} doublings of the segment length: {res['checks']!r}")
+
+
 def fmt(v):
     return f"{v:.10g}"
 
@@ -653,11 +1052,181 @@ def write_golden(su, res, path):
         f.write("\n".join(lines) + "\n")
 
 
+def write_envelope(su, box, co, res, shove, path):
+    lines = [
+        "# T3 box envelopes of the L11 vertical loop (decision 0020 section 5 'T3 envelopes'): pointwise min / max over the tau x",
+        "# loop-gain r box (17 x 17 grid, which contains the corners and the 9 x 9 grid) of the design-model response of each",
+        "# script, f32 nominal gains, driven by the exact script from the exact initial state. Written by vertical_t3_oracle.py;",
+        "# its docstring defines every line. Values are rounded outward to 7 significant digits. halving_max_change is the",
+        "# largest change of any point from the 9 x 9 grid to the 17 x 17 grid. A channel lists 'lo hi' for the executions first ..",
+        "# first + count - 1.",
+        f"# box tau_robustness_band {box.b_tau!r}  thrust_gain_robustness_band {box.b_k!r}  r_lo {box.r_lo!r}  r_hi {box.r_hi!r}",
+        f"# segment_seconds {res['dur_s']!r}  segment_executions {res['h']}  doublings {res['doublings']}  "
+        f"grid {len(l5.grid_members())}",
+        "# settle check (the segment length doubles until every end value is below F = T3 tolerance + halving + kinematics):",
+    ]
+    for name, end, f_val, terms in res["checks"]:
+        lines.append(f"#   {name} z: end {end!r} < F {f_val!r}")
+        lines.append(f"#   {name} F terms: tolerance_z {terms[0]!r} halving {terms[1]!r} kinematics_change_z {terms[2]!r}")
+    lines.append(f"# {SHOVE} (no golden, so its own segment, started at the golden's length and doubled alone; its tolerance_z is 0): "
+                 f"segment_seconds {shove['dur_s']!r}  segment_executions {shove['h']}  doublings {shove['doublings']}")
+    for name, end, f_val, terms in shove["checks"]:
+        lines.append(f"#   {name} z: end {end!r} < F {f_val!r}")
+        lines.append(f"#   {name} F terms: tolerance_z {terms[0]!r} halving {terms[1]!r} kinematics_change_z {terms[2]!r}")
+    for name, source in [(n, res) for n in SCRIPTS] + [(SHOVE, shove)]:
+        d = source["scripts"][name]
+        env = d["env"]
+        lines.append(f"scenario {name}")
+        lines.append("step_execution 1")
+        lines.append(f"z_ref_m {script(name, 1, su)[0]!r}")
+        lines.append(f"thrust_disturbance_n {script(name, 1, su)[1]!r}")
+        if name == SHOVE:
+            lines.append(f"torque_pulse_axis {SHOVE_AXIS}")
+            lines.append(f"torque_pulse_nm {SHOVE_TORQUE_NM!r}")
+            lines.append(f"torque_pulse_t0_us {co.t0_us}")
+            lines.append(f"torque_pulse_dur_us {co.dur_us}")
+        lines.append(f"t_cmd_min_n {d['cmd'][0]!r}")
+        lines.append(f"t_cmd_max_n {d['cmd'][1]!r}")
+        if name == SHOVE:
+            lines.append(f"rotor_cmd_min_n {d['rotor'][0]!r}")
+            lines.append(f"rotor_cmd_max_n {d['rotor'][1]!r}")
+        start, rows = l5.channel_lines(env)
+        lines.append(f"channel z first {start} count {len(rows)} halving_max_change {env.halving_change()!r}")
+        lines.append("min_max")
+        lines.extend(rows)
+    with open(path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+
+# ---- the DShot quantisation term Q of the T4 tolerance (decision 0020 section 5 "T4"; decision 0017) ----------------------------
+
+
+class Actuator(l5.Quantiser):
+    """L5's Quantiser as the live actuator, diffusion on (decision 0017), with the commands the vertical oracle's plants take:
+    `speeds(f)` is marv_plant's ESC map (sim/plant/src/plant_model.hpp Model::omega_cmd, as Quantiser.torque evaluates it:
+    linear in omega over DShot 48 .. 2047 on the card's speed range; DShot 0 is never produced, every value is clamped to at
+    least d_lo) of the diffused DShot values of the thrust commands f. The design plants' thrust coefficient is the
+    fixture's k and the rotor speed is what the ESC map commands, so Q is the effect of the quantisation alone (L5's torque
+    path evaluates the plant's k omega^2 with the card's double k; the f32 and double coefficients differ by 3e-8, a
+    plant gain error that the box factor r covers). It records the DShot range seen and counts every value that reaches a
+    bound of [d_lo, d_max] (the clamps of the diffuser); `saturated` (Quantiser's) counts the allocations the mixer scales
+    or clamps."""
+
+    def __init__(self, q, axis):
+        super().__init__(q, axis)
+        self.seen_lo, self.seen_hi, self.hits = math.inf, -math.inf, 0
+
+    def clamp(self, d):
+        if not self.d_lo <= d <= self.d_max:
+            self.hits += 1
+        return super().clamp(d)
+
+    def dshot(self, f):
+        out = super().dshot(f)
+        self.seen_lo, self.seen_hi = min(self.seen_lo, *out), max(self.seen_hi, *out)
+        return out
+
+    def speeds(self, f):
+        span = float(l5.DSHOT_THROTTLE_MAX - l5.DSHOT_THROTTLE_MIN)
+        return [self.p_min + (self.p_max - self.p_min) * (float(d - l5.DSHOT_THROTTLE_MIN) / span) for d in self.dshot(f)]
+
+
+def _q_member(job):
+    """Worker: (index, s, t, max |quantised - unquantised| of z with its execution, series complete, saturated count, DShot
+    range) of one member of the 9 x 9 grid; one actuator (fresh carries) per run."""
+    index, s, t = job
+    su, box, co, name, h = (_MEMBER[k] for k in ("su", "box", "co", "name", "h"))
+    tau_factor, r = box.member(s, t)
+    tau = su.tau * tau_factor
+    act = Actuator(co.q5, SHOVE_AXIS)
+    if name == SHOVE:
+        unq, quantised = (shove_member_run(su, co, h, tau, r), shove_member_run(su, co, h, tau, r, quant=act))
+        act.saturated += unq[2] is None or quantised[2] is None
+        unq, quantised = unq[0], quantised[0]
+    else:
+        unq = member_run(su, name, h, tau, r)[0]
+        quantised = member_run(su, name, h, tau, r, act, co.divisor)[0]
+    best, at = 0.0, 0
+    for i, (x, y) in enumerate(zip(unq, quantised)):
+        if abs(y - x) > best:
+            best, at = abs(y - x), i
+    complete = len(unq) == len(quantised) == 1 + h
+    return index, s, t, best, at, complete, act.saturated + act.hits, (act.seen_lo, act.seen_hi)
+
+
+def q_script(su, box, co, name, h_seg, procs):
+    """Q of one script (channel z): the maximum over the time of |quantised - unquantised| of the member's z, at the corners of
+    the box plus its nominal (the centre) and over the 9 x 9 grid that contains them; L5's q_script selection. Returns the
+    corners, the grid, the one used, the saturation count and the DShot range over the members."""
+    jobs = [(i, s, t) for i, s, t, coarse in l5.grid_members() if coarse]
+    _MEMBER.update(su=su, box=box, co=co, name=name, h=h_seg)
+    if procs > 1:
+        import multiprocessing  # noqa: PLC0415
+
+        with multiprocessing.get_context("fork").Pool(procs) as pool:
+            results = pool.map(_q_member, jobs, chunksize=1)
+    else:
+        results = [_q_member(j) for j in jobs]
+    if not all(r[5] for r in results):
+        sys.exit(f"{name}: a member's run left the zero-torque collective range or the mixer's allocation was scaled: the "
+                 "script is not linear over the box")
+    saturated = sum(r[6] for r in results)
+    if saturated:
+        sys.exit(f"{name}: the quantised runs saturate the DShot range or the mixer ({saturated} events): Q is not defined here")
+    best_c = best_g = (0.0, None)
+    for _, s, t, v, at, _, _, _ in results:
+        if v > best_g[0] or best_g[1] is None:
+            best_g = (v, (s, t, at))
+        if ((abs(s) == 1.0 and abs(t) == 1.0) or (s == 0.0 and t == 0.0)) and (v > best_c[0] or best_c[1] is None):
+            best_c = (v, (s, t, at))
+    grid_bound = best_g[0] > best_c[0]
+    return {"corners": best_c, "grid": best_g, "used": best_g if grid_bound else best_c, "rule": "grid" if grid_bound else "corners",
+            "saturated": saturated, "dshot": (min(r[7][0] for r in results), max(r[7][1] for r in results))}
+
+
+def write_q(su, box, co, segments, path, procs):
+    """`segments` {script: segment executions H} (the envelopes' own lengths)."""
+    lines = [
+        "# T3 quantisation term Q of the L11 T4 tolerance (decision 0020 section 5 'T4': the box maximum of quantised -",
+        "# unquantised trajectory through the live diffuser; decision 0017): per script, channel z, the maximum over the time of",
+        "# |quantised - unquantised| of the design-model z (m), where the quantised model inserts the actuator (mixer allocation at",
+        "# the vertical law's collective T_cmd, the DShot diffuser of decision 0017 as the firmware runs it once per rate",
+        "# execution, marv_plant's ESC map DShot -> omega, the rotor lags and thrust of the design plant) between the law and the",
+        "# plant. The vertical scripts run at zero torque request (each motor T_cmd / 4); the roll shove runs the coupled cascade.",
+        "# Evaluated at the corners of the tau x r box plus the nominal (q_corners), and over the 9 x 9 grid that contains them",
+        "# (q_grid); q is q_grid where the grid exceeds the corners (rule grid), else q_corners (rule corners). Written by",
+        "# vertical_t3_oracle.py from L5's attitude_t3_q_inputs.txt; its docstring defines every line. Rule: fw/mixer/include/",
+        "# marv/mixer/mixer.hpp allocate and DshotDiffuser, sim/plant/src/plant_model.hpp Model::omega_cmd. at = the member",
+        "# (s, t) and vertical execution. dshot_min / dshot_max: the DShot values over all members and rate executions, inside",
+        "# the diffuser's range [d_lo, 2047] (the run is refused otherwise).",
+    ]
+    q5 = dict(co.q5, l5_thrust_n=su.t_h)
+    facts = l5.q_hover_facts(q5)
+    probe = Actuator(co.q5, SHOVE_AXIS)
+    lines.append(f"# dshot_range_allowed {probe.d_lo} {l5.DSHOT_THROTTLE_MAX}")
+    lines.append(f"hover_dshot_real {facts['hover_dshot_real']!r}")
+    lines.append(f"hover_dshot_rounded {facts['hover_dshot_rounded']}")
+    for name in SCRIPTS + (SHOVE,):
+        r = q_script(su, box, co, name, segments[name], procs)
+        c = r["used"]
+        lines.append(f"scenario {name}")
+        lines.append(f"segment_executions {segments[name]}")
+        lines.append(f"saturated_executions {r['saturated']}")
+        lines.append(f"dshot_min {r['dshot'][0]}")
+        lines.append(f"dshot_max {r['dshot'][1]}")
+        lines.append(f"channel z q {c[0]!r} rule {r['rule']} q_corners {r['corners'][0]!r} q_grid {r['grid'][0]!r} "
+                     f"at_s {c[1][0]!r} at_t {c[1][1]!r} at_execution {c[1][2]}")
+    with open(path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default=HERE, help="directory of vertical_t3_inputs.txt and of the output")
     ap.add_argument("--refresh-inputs", metavar="PARAM_DEFAULTS_CPP")
-    ap.add_argument("--procs", type=int, default=1, help="worker processes of the tolerance (the output does not depend on it)")
+    ap.add_argument("--procs", type=int, default=1, help="worker processes of the tolerance, the envelopes and Q (the output does not "
+                    "depend on it)")
+    ap.add_argument("--golden-only", action="store_true", help="write vertical_t3_golden.txt only (no envelope, no Q)")
     args = ap.parse_args()
     inputs_path = os.path.join(args.dir, "vertical_t3_inputs.txt")
     if args.refresh_inputs:
@@ -666,6 +1235,16 @@ def main():
     su = Setup(read_inputs(inputs_path))
     res = settle(su, max(args.procs, 1))
     write_golden(su, res, os.path.join(args.dir, "vertical_t3_golden.txt"))
+    if args.golden_only:
+        return
+    box = Box()
+    co = Cascade(su)
+    envelopes = settle_envelope(su, box, co, res, max(args.procs, 1))
+    shove = settle_envelope(su, box, co, res, max(args.procs, 1), (SHOVE,))
+    write_envelope(su, box, co, envelopes, shove, os.path.join(args.dir, "vertical_t3_envelope.txt"))
+    segments = {name: envelopes["h"] for name in SCRIPTS}
+    segments[SHOVE] = shove["h"]
+    write_q(su, box, co, segments, os.path.join(args.dir, "vertical_t3_q.txt"), max(args.procs, 1))
 
 
 if __name__ == "__main__":

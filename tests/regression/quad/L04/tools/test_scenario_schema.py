@@ -1,5 +1,7 @@
-"""The refusal cases shared by the three scenario schemas (tools/sim/scenario.py, l4_scenario.py, l5_scenario.py), one
-file; it consolidates the duplicates of L02/tools/test_scenario.py, test_l4_scenario.py and test_l5_scenario.py.
+"""The refusal cases shared by the scenario schemas (tools/sim/scenario.py, l4_scenario.py, l5_scenario.py, l11_scenario.py),
+one file; it consolidates the duplicates of L02/tools/test_scenario.py, test_l4_scenario.py and test_l5_scenario.py. L11
+validates its fields shared with L5 by L5's own validator, so only the families that touch what is L11's (the base, the
+top-level fields) run on it; the committed L11 files are bound to the oracle by the L11 T4 tests.
 Each test is one case family on one schema and loops over that schema's cases; a failure names every case that did
 not refuse (or was refused with another message).
 """
@@ -17,6 +19,7 @@ sys.path.insert(0, str(ROOT / "tools" / "card"))
 sys.path.insert(0, str(ROOT / "tools" / "sim"))
 import l4_scenario as l4s  # noqa: E402
 import l5_scenario as l5s  # noqa: E402
+import l11_scenario as l11s  # noqa: E402
 import scenario  # noqa: E402
 import schema  # noqa: E402
 
@@ -37,8 +40,13 @@ SCHEMAS = {
     "L05": SimpleNamespace(
         dir=ROOT / "scenarios" / "quad" / "L05", names=("step_roll",), top_fields=l5s.TOP_FIELDS,
         validate=lambda doc, stem: l5s.validate(doc, f"{stem}.yaml", L5_REGISTER), load=l5s.load),
+    "L11": SimpleNamespace(
+        dir=ROOT / "scenarios" / "quad" / "L11", names=("height_step", "thrust_offset", "roll_shove"),
+        top_fields=l11s.TOP_FIELDS,
+        validate=lambda doc, stem: l11s.validate(doc, f"{stem}.yaml", L5_REGISTER), load=l11s.load),
 }
-ALL = tuple(SCHEMAS)
+ALL = ("L02", "L04", "L05")
+WITH_L11 = ALL + ("L11",)
 
 
 def raw(sid, name=None):
@@ -81,16 +89,17 @@ def setter(path, value):
     return fn
 
 
-@pytest.mark.parametrize("sid", ALL)
+@pytest.mark.parametrize("sid", WITH_L11)
 def test_valid_base_is_accepted(sid):
     bad = [n for n in SCHEMAS[sid].names if SCHEMAS[sid].validate(raw(sid, n), n) != []]
     assert not bad, bad
 
 
-MISSING_TOP = {"L02": SCHEMAS["L02"].top_fields, "L04": SCHEMAS["L04"].top_fields, "L05": ("script",)}
+MISSING_TOP = {"L02": SCHEMAS["L02"].top_fields, "L04": SCHEMAS["L04"].top_fields, "L05": ("script",),
+               "L11": ("script",)}
 
 
-@pytest.mark.parametrize("sid", ALL)
+@pytest.mark.parametrize("sid", WITH_L11)
 def test_missing_top_field_refused(sid):
     bad = run(sid, [(f, lambda d, f=f: d.pop(f), (f"{f}: missing field",)) for f in MISSING_TOP[sid]])
     assert not bad, bad
@@ -102,10 +111,10 @@ def test_missing_state_field_refused_l02():
     assert not bad, bad
 
 
-UNKNOWN_TOP = {"L02": ("extra", 1), "L04": ("duration_ticks", entry(4)), "L05": ("step", {})}
+UNKNOWN_TOP = {"L02": ("extra", 1), "L04": ("duration_ticks", entry(4)), "L05": ("step", {}), "L11": ("step", {})}
 
 
-@pytest.mark.parametrize("sid", ALL)
+@pytest.mark.parametrize("sid", WITH_L11)
 def test_unknown_top_field_refused(sid):
     key, value = UNKNOWN_TOP[sid]
     bad = run(sid, [(key, lambda d: d.update({key: copy.deepcopy(value)}), (f"{key}: unknown field",))])

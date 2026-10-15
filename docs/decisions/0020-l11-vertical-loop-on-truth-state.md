@@ -163,6 +163,112 @@ vertical estimator layer and a §6.1 pilot mode are each a separate decision.
     envelopes, Q and the T4 gz suite are not started. The layer therefore has no T3 golden or T4 test yet and
     cannot be declared passed; the loop itself (S1–S5) flies in SIL: the L11 composition holds height to the
     millimetre under the demonstration's shoves (handoff, "Recovery inspection").
+  - S6a-2, the C++ T3 golden of the vertical loop (§5 "T3 golden (core)"): files under `tests/regression/`:
+    `tests/regression/quad/L11/t3/t3_test.cpp` (new: the float `VerticalLaw::execute` path, configured from
+    `reference/vertical_t3_inputs.txt`, closed with the design plant in double in the oracle's per-tick order, compared
+    per execution on t_req, z and v with the golden's recorded tolerance for the height step and the thrust offset; the
+    fixture's table keys, every key but `hover_thrust_n` and `thrust_offset_n`, must equal the built defaults of
+    `marv_params_l11_vertical_scripted`, with an inline one-ulp control; the controls k_v, k_i, k_z × 1.1 each and one
+    added tick must leave the tolerance), `tests/regression/quad/L11/t3/CMakeLists.txt` (new: the executable, the
+    `quad/L11/t3` reference set fixture, label L11 through `marv_frozen_suite`) and
+    `tests/regression/quad/L11/CMakeLists.txt` (modified: `add_subdirectory(t3)`). Outside `tests/regression/`:
+    `ci/run_ci.sh` gains the steps `vert_t3_reference_reproduces` and `vert_t3_reference_control` (vert_kp_v one f32 ulp
+    up must fail the SHA256SUMS check naming `vertical_t3_golden.txt`, cached as L5's), and `ci/blast_radius.yaml` maps the
+    new files, the oracle and its fixture to L11. No oracle, fixture, SHA256SUMS, `fw/` or generator change.
+  - S6b-1, the T3 box envelopes of the two vertical scripts (§5 "T3 envelopes"; the roll shove's coupled envelope and Q
+    are later packets): `tests/regression/quad/L11/t3/reference/vertical_t3_oracle.py` gains `Box` (the §4 box, read from
+    `design/budget.yaml` and the card by the rule `tools/card/vertical.py` uses: τ(1 ± `tau_robustness_band`), r ∈ [(1 −
+    b_k) min R, (1 + b_k) max R] = [0.5, 1.5398936]), the member plant (the golden's `Plant` with the lag τ and the thrust
+    deviation about the hover trim scaled by r; at r = 1 the golden's bits; every member starts at the same exact trim, because §4 defines r as a
+    loop-gain factor and a trim error is scenario (ii), the thrust offset; lead's ruling, 2026-10-15), the 17 × 17 grid and `Envelope` of L5's
+    oracle, and writes `vertical_t3_envelope.txt` beside the golden (channel `z` per script, L5's file format, its
+    docstring defines every line; the segment starts at the golden's length and doubles until the end value is below F =
+    T3 tolerance + halving change + kinematics change); `tests/regression/quad/L11/t3/reference/SHA256SUMS` gains the
+    envelope's line. `vertical_t3_golden.txt` is byte-identical (SHA-256 8b475411…2afdcd62f before and after; run length
+    unchanged), `vertical_t3_inputs.txt` is not touched, so the refdata registry entry is unchanged.
+  - S6b-2, the roll shove's coupled T3 envelope (§5 "T3 envelopes"; Q is a later packet):
+    `tests/regression/quad/L11/t3/reference/vertical_t3_oracle.py` gains the third script `roll_shove` in
+    `vertical_t3_envelope.txt` (channel `z`, S6b-1's format, its docstring defines the added lines): `Cascade` (L5's fixtures
+    `attitude_t3_inputs.txt` and `attitude_t3_q_inputs.txt`, read from L5's reference directory; every key they share with
+    `vertical_t3_inputs.txt` is checked equal, and their rate, attitude and mixer values equal the L11 parameter table's), `CoupledPlant`
+    (four rotor speeds with their own first-order lags, f_i = kω_i², the card's rotor geometry on J ω' with no ω×Jω, 0006's
+    quaternion kinematics, the vertical channel with T·R33; at level and r = 1 it is the golden's Plant to 2e-17) and
+    `shove_member_run` (the composition's per-tick order: L5's `attitude_law` and `AngleMode` and `Quantiser.allocate`
+    imported, the chain and rate-law lines those of L5's `Member.attitude_step`, because L5's oracle has no function for them
+    apart from that class and its own single-axis plant). Scenario: the roll pulse 0.02 N·m for 0.2 s (Owner decisions 7)
+    added to the rate loop's torque request before the mixer from the stamp of vertical execution 1 (312 µs: the start
+    convention of the other two scripts, no separate labelled source exists; the response is the same shifted in time because
+    the vehicle starts at its trim), the §4 box and grid with J at the card's value and r scaling the vertical thrust deviation
+    only. The roll shove has no golden, so the tolerance_z term of its F is 0 (it does not decide the run length: the end value
+    3.6e-8 m is below the halving change alone, 1.5e-5 m); its segment started at the golden's length and did not double.
+    `tests/regression/quad/L11/t3/reference/SHA256SUMS` carries the new envelope line; `vertical_t3_golden.txt` and the
+    `height_step` and `thrust_offset` blocks are byte-identical to S6b-1's, `vertical_t3_inputs.txt` is not touched. The
+    oracle now takes 205 s at `--procs 4` (S6b-1: 17 s), 3.4 times `per_push_check_time_max`: the lead's decision.
+  - S6b-3, the DShot quantisation term Q of the three T4 scripts (§5 "T4": "Q = the box maximum of quantised − unquantised
+    trajectory through the live diffuser"): `tests/regression/quad/L11/t3/reference/vertical_t3_oracle.py` writes
+    `vertical_t3_q.txt` beside the golden and the envelope (channel `z`, L5's `attitude_t3_q.txt` line format, so L5's
+    `parse_q` in `tests/regression/quad/L05/gz/test_t4_steps.py` reads it; the docstring defines every line) and
+    `tests/regression/quad/L11/t3/reference/SHA256SUMS` carries its line. Per script, per member of the 9 × 9 grid of S6b-1's
+    `Box`: the maximum over the executions of |z quantised − z unquantised| (the unquantised member is the envelope's, over the
+    envelope's own segment length), then L5's selection (`q_script`: the grid maximum where it exceeds the maximum over the
+    corners and the box centre, else the corner maximum). The quantised member is L5's `Quantiser` (imported; `Actuator` adds
+    the ESC-map speed command and the saturation counters): `mixer::allocate` at the law's collective T_cmd, the diffuser of
+    decision 0017 in float32 once per rate execution with the carries 0 at the start, marv_plant's ESC map, then the design
+    plant's lag and thrust; at zero torque (height step, thrust offset) every motor is T_cmd / 4, for the roll shove it is
+    S6b-2's coupled cascade with the actuator in place of w_c,i = sqrt(f_i / k). One departure from L5: the plant's thrust is the
+    fixture's k w², not the card's double k omega² (they differ by 3e-8 relative, a plant gain error that the box factor r
+    covers), so Q is the quantisation alone. The oracle refuses when a quantised member leaves [T_min, T_max], the mixer scales
+    or clamps an allocation, or a DShot value reaches a bound of [d_lo, 2047] = [48, 2047]; none does. Negative control
+    (one member, run in the working tree, not committed): the same quantiser without the diffusion gives Q 6.6e-6 m against
+    2.2e-8 m with it over the first 3000 executions. Q (m, used / corners / grid; rule; DShot range over the box):
+    height_step 2.620e-7 / 8.161e-8 / 2.620e-7, grid, 321 to 1160; thrust_offset 1.240e-7 / 1.240e-7 / 1.240e-7, corners, 758 to
+    776; roll_shove 4.849e-8 / 3.362e-8 / 4.849e-8, grid, 752 to 779. `q_allocation_only` is not written (L5 writes it only
+    when the allocation saturates; here that is a refusal). `vertical_t3_golden.txt` and `vertical_t3_envelope.txt` are
+    byte-identical (8b475411…2afdcd62f, d253d730…833ea64), `vertical_t3_inputs.txt` is not touched. `--golden-only` writes the
+    golden alone; `ci/run_ci.sh` `vert_t3_oracle_run` (used only by `vert_t3_reference_control`) passes it, so the one-ulp
+    control pays 4.5 s, not the full generation, and still requires the `vertical_t3_golden.txt: sha256` mismatch line (the
+    envelope and Q files are then reported `missing`, a line that does not match that pattern). Full generation at `--procs 4`:
+    5 min 38 s (S6b-2: 205 s); `--procs 2` and `--procs 4` give identical files (`--procs 1` would exceed 15 minutes).
+  - S7a, the T4 scenario files and runner of the three vertical scripts (§5 "T4"; the T4 tests are S7b):
+    `tools/sim/l11_scenario.py` (the L5 schema with the vertical script: `segments` {start_vertical_execution, z_ref_m},
+    `end_vertical_execution`, optional `thrust_disturbance` {thrust_n number or derived "mass_conflict", start} and
+    `torque_pulse` {axis, torque_nm, duration_s, start}; the fields shared with L5 are validated by L5's own validator),
+    `tools/sim/run_l11.py` (the plan on vertical executions, stamp floor(2n·625/4) µs; the run starts at the hover trim
+    with the rotors at hover speed and no settle phase, so the run's vertical execution n is the oracle's execution n;
+    m = 2 and 1; the L5 runner's log and report shape, record 8 per execution),
+    `scenarios/quad/L11/{height_step,thrust_offset,roll_shove}.yaml`: z_ref −1.0 m (the oracle's Z_STEP_M), the
+    mass-conflict thrust offset (derived, equal to `vertical_t3_inputs.txt` thrust_offset_n), the roll pulse 0.02 N·m
+    for 0.2 s, each starting at vertical execution 1 (312 µs), every run 45482 vertical executions (14.213 s, the
+    envelopes' count − 1). One frozen file changed: `tests/regression/quad/L04/tools/test_scenario_schema.py` (L11 joins
+    the shared schema test's base, missing-field and unknown-field families; no existing case changes; no L11-only case
+    family, core §7.7: the committed L11 files are bound to the oracle's envelope by the S7b T4 tests). No oracle,
+    fixture, `fw/` or generator change.
+  - S7b, the T4 tests of the vertical loop, their controls and the CI wiring (§5 "T4"): file under `tests/regression/`:
+    `tests/regression/quad/L11/gz/test_t4_vertical.py` (new, 9 tests; the form of L5's `test_t4_steps.py`). Per scenario one
+    [m = 2, m = 1] sequence (`tools/sim/run_l11.py`), cached per module so the checks and controls share runs; the predicate is
+    z at every vertical execution inside the recorded envelope (`vertical_t3_envelope.txt`, channel `z`) ± (E + F + Q), E per
+    execution from m = 1 against m = 2, F the header's, Q from `vertical_t3_q.txt`, with a clean run (complete trailer, a TRUTH
+    and a valid VERTICAL record per tick, no stale read), DShot in [idle, 2047] (L5's `dshot_idle_bound`) and the last
+    execution within E + F + Q of the final z_ref; one binding test (the three scenarios' z_ref, thrust offset, pulse axis,
+    N·m, start stamp and duration, step execution, end = count − 1 and hover thrust equal the envelope header and
+    `vertical_t3_inputs.txt`, the initial state is the hover trim, with a moved-pulse control). All 9 pass, slack worst
+    (negative = inside, the margin to the widened band) height_step −7.749680e-03 at n = 1, thrust_offset −1.563741e-04 at
+    n = 45482, roll_shove −1.495459e-05 at n = 3. Controls, tried once each on every scenario (scratch, then committed
+    only where they fail): loop disabled (`vert_kp_z`, `vert_kp_v`, `vert_ki_v` = 0 through `sil_override`; no composition
+    parameter disables the loop and none was added) fails (ii) (z −25.5 m at the end, 44768 violations) and (iii) (+0.18 m,
+    44283), committed; `vert_kp_z` × f32(1.1) fails all three (875, 855, 525 violations), committed; `vert_ki_v` × f32(1.1) fails
+    (ii) (949) and (iii) (786) and passes the height step (slack −5.159e-03); not committed (lead, core §7.7: `vert_kp_z` ×
+    1.1 already fails every script, so it is each script's fine control) and T3-enforced; `vert_kp_v` × f32(1.1) passes all three (slacks −7.750e-03, −1.445e-04, −1.476e-05), T3-enforced on every script
+    (the same reason as S3's replacement of the k_v × 1.1 control: alone it adds phase at the binding corner); the one added
+    tick is a firmware delay that the harness cannot inject, not tried at T4 and T3-enforced, as L5's (0006 decision 19/24).
+    Outside `tests/regression/`: `ci/run_ci_gz.sh` (group `l11` gains `gz_reference_l11`, `refdata ensure quad/L11/t3`, before
+    `gz_l11`; `gz_l11` runs through `pytest_gz_dir`; the file is on the held-back list: 123.6 s alone with 11 tests (before the lead dropped the two `vert_ki_v` controls), over
+    `per_push_check_time_max`, so the development check skips it unless the diff touches it or its directory's helpers, and the
+    full run runs it) and `ci/blast_radius.yaml` (the `tools/refdata/**` and `tests/regression/quad/L04/t3/reference/**` rules
+    gain gz group `l11`, because the new file imports refdata; `tests/regression/quad/L11/gz/**` was already mapped;
+    `ci/affected.py --check-manifest` OK). Times: the L11 gz directory 140.7 s serial, 125.5 s under `ci/run_ci_gz.sh l11`
+    (4 workers, one file each), each sequence about 12 s; with 9 tests the directory took 100.6 s (22 passed) in the
+    development check of 2026-10-15. No oracle, fixture, scenario, runner, `fw/` or generator change.
 
 ## Evidence
 

@@ -99,6 +99,7 @@ gz_held_back=(
   tests/regression/quad/L05/gz/test_t4_yaw.py
   tests/regression/quad/L05/gz/test_t4_recovery.py
   tests/regression/quad/L04/gz/test_t4_chirp.py
+  tests/regression/quad/L11/gz/test_t4_vertical.py
 )
 
 # Run a gz test directory. Outside full mode the held-back files of that directory get --ignore, except a file the diff
@@ -218,10 +219,17 @@ gz_build_l11() {
   cmake --preset host-gz-l11 && cmake --build --preset host-gz-l11
 }
 
+# The L11 T4 suite reads the T3 envelope and Q files of the vertical loop, which are generated, not committed (decision 0011), as
+# gz_reference_l5 above. 4 = the runner's CPUs (ci/local_ci.sh).
+gz_reference_l11() {
+  uv run python tools/refdata/refdata.py ensure quad/L11/t3 --procs 4
+}
+
 # The L11 gz suite: the <vertical_source> element and record 8 on the host-gz-l11 build, its planted refusals (one on the
-# host-gz-l5 build) and the I1 guard (an L5 log on the host-gz-l5 build has no record 8 and its recorded records hash).
+# host-gz-l5 build) and the I1 guard (an L5 log on the host-gz-l5 build has no record 8 and its recorded records hash), and
+# the T4 tests of the vertical loop (test_t4_vertical.py, held back from the development check as the long L05 files are).
 gz_l11() {
-  pytest_no_skips tests/regression/quad/L11/gz
+  pytest_gz_dir tests/regression/quad/L11/gz
 }
 
 # Usage: ci/run_ci_gz.sh [l2|l4|l5|l11]. No argument runs every step (l2, l4, l5, l11 in order). The Actions jobs gz-l2,
@@ -256,6 +264,7 @@ group_l5() {
 group_l11() {
   step gz_build_l5 gz_build_l5
   step gz_build_l11 gz_build_l11
+  step gz_reference_l11 gz_reference_l11
   step gz_l11 gz_l11
 }
 
