@@ -76,6 +76,10 @@ selection; the full suite runs only on the merge into `master` (pull request int
   binary cannot link both SIL libraries; 41 entries stay); schemas and param scripts "Both". Built, uncommitted, as
   decision 0024: the gz hold-back in `ci/run_ci_gz.sh` (dev L4 105 → 44 s, L5 71 s), the truth-channel header
   (811 → 561 lines, 41 entries), the shared schema file (182 → 154 entries), one `tools/ci/check_param_ids.py`.
+  Committed `4b8d157` (Luis: "commit and push"); local merge gate PASS on it (core 722 s, gz-l2 140, gz-l4 213,
+  gz-l5 554, gz-l11 22; full mode ran every held-back file: L5 gz 63 passed, 2 xfailed); merged into `master`
+  (Luis: "merge"), fast-forward `5e58f24..4b8d157`; Actions run 38762725188 on `master`: all five jobs success,
+  about 23 min wall. Trims done.
 - The trims that changed what runs, each on Luis's word with a decision record: (1) the L5 T3 one-ulp control on one
   output file: decision 0022 items 3–4; (2) the L5 gz T4 chirps/yaw/recovery and the L4 chirp held back from the
   development check: decision 0024; (3) the twin truth-channel suites, the scenario-schema cases and the param scripts
@@ -95,7 +99,8 @@ selection; the full suite runs only on the merge into `master` (pull request int
   packet/survey/decision and the CI timing logs are in `~/marv-handover-2026-10-13/` (the batch CI logs with
   per-step timestamps: `~/marv-handover-2026-10-13/ci/`).
 - Local CI: `ci/local_ci.sh [--commit <rev>] [core|gz-l2|gz-l4|gz-l5|gz-l11 ...]`, five jobs, ~75 min of job time; run
-  per push batch on the batch head, in parallel lanes (three fit the 16-core host), not per commit.
+  per push batch on the batch head, in parallel lanes, not per commit. `--parallel 2` at most: each lane takes a
+  14.66 GiB memory limit and the host has 33.5 GB (local_ci refuses 3, 2026-10-15).
 - To resume L11: S6a-2 (the C++ T3 test against `build/reference/quad/L11/t3/vertical_t3_golden.txt`; notes from the
   engineer who stopped: the hover_thrust_n fixture check needs a bound, not equality — the rule uses the card's double
   values and rounds one ulp off the f32-rebuilt value; thrust_offset_n has no table source to recompute from; L05's
