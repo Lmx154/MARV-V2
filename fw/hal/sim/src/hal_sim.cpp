@@ -44,6 +44,8 @@ void hal_motor_test_report(const MotorTestEvent& event) noexcept {
   ++g_state.event_count;
 }
 
+void hal_tick_stage(TickStage) noexcept {}
+
 void hal_actuators_write(std::span<const DshotValue> motor, std::span<const ServoUs> servo) noexcept {
   if (!g_state.in_tick) {
     hal_panic("hal_actuators_write outside a tick");

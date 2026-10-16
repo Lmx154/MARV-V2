@@ -14,6 +14,14 @@ namespace marv::hal_target {
 
 using ImuSink = void (*)(const ImuSample&) noexcept;
 
+// The composition's rate-group counters (rate executions, rate-loop timing faults), read in the interrupt after each
+// batch's samples, so the published counters are one consistent snapshot. Provided by the image (main.cpp).
+struct RateCounts {
+  std::uint64_t executions = 0;
+  std::uint32_t timing_faults = 0;
+};
+using RateCountsSource = RateCounts (*)() noexcept;
+
 struct ImuStats {
   std::uint64_t irqs = 0;            // INT1 handler entries
   std::uint64_t words = 0;           // FIFO words read
@@ -27,6 +35,7 @@ struct ImuStats {
   std::uint32_t empty_irqs = 0;      // handler entries that found no FIFO word
   std::uint64_t actuator_writes = 0; // hal_actuators_write calls
   std::uint64_t actuator_drops = 0;  // motor frames dropped because the previous one had not left (motor_output.hpp)
+  RateCounts rate{};                 // the composition's counters (RateCountsSource)
   TimeUs spacing_min_us = 0;         // smallest and largest t_us spacing since the previous imu_stats() (0: none)
   TimeUs spacing_max_us = 0;
   ImuSample last{};                  // the newest sample
@@ -40,9 +49,9 @@ struct ImuBoot {
 
 // Configures SPI1 and the LSM6DSV (WHO_AM_I check, software reset, ±2000 dps, ±16 g, 7.68 kHz high-performance, FIFO
 // continuous with both sensors batched at 7.68 kHz, watermark one sample on INT1), then enables the interrupt; from
-// then on every sample goes to `sink`, in the interrupt. hal_panic on any failure.
-// Call once, from main, after composition::init.
-ImuBoot imu_start(ImuSink sink) noexcept;
+// then on every sample goes to `sink`, in the interrupt, and `rate_counts` is read after each batch. hal_panic on any
+// failure. Call once, from main, after composition::init.
+ImuBoot imu_start(ImuSink sink, RateCountsSource rate_counts) noexcept;
 
 // The hal_actuators_write calls so far (hal_target.cpp). Called only from the tick's counter publication.
 [[nodiscard]] std::uint64_t actuator_writes() noexcept;

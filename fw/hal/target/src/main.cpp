@@ -1,12 +1,17 @@
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <span>
 
 #include <pico/stdio_usb.h>
 #include <pico/stdlib.h>
 
+#include "marv/composition.hpp"
 #include "marv/hal/hal.hpp"
 #include "marv/hal/motor_test.hpp"
 #include "marv/hal/tick.hpp"
+#include "marv/hal_target/bench_stats.hpp"
 #include "marv/hal_target/console.hpp"
 #include "marv/hal_target/dshot.hpp"
 #include "marv/hal_target/imu.hpp"
@@ -29,6 +34,39 @@ constexpr marv::hal_target::ImuSink kSink = &marv::composition::tick;
 constexpr const char* kTickMode = "quad_fc";
 #endif
 
+// Read by the IMU interrupt after each batch (imu.hpp).
+marv::hal_target::RateCounts rate_counts() noexcept {
+  const marv::composition::RateCounts c = marv::composition::rate_counts();
+  return marv::hal_target::RateCounts{c.executions, c.timing_faults};
+}
+
+#if defined(MARV_FC3V2_BENCH_ACCEPT_SPACING)
+// Bench only (fw/hal/target/CMakeLists.txt): rate_period_tolerance_us is set, through the parameter table, to the largest
+// value the rate loop accepts, (num - 1) / (2 den) for the tick period num / den us (rate_loop.hpp, validate_timing:
+// 2 den tol < num), so on spacings off the PLACEHOLDER tick period the rate law runs its accepted path and its execution
+// time is measured. Every other image loads the generated table unchanged.
+std::array<marv::ParamRecord, marv::kParamCount> g_bench_table{};
+
+std::span<const marv::ParamRecord, marv::kParamCount> param_table() {
+  using marv::ParamId;
+  const std::span<const marv::ParamRecord, marv::kParamCount> d = marv::param_defaults();
+  for (std::size_t i = 0; i < marv::kParamCount; ++i) {
+    g_bench_table[i] = d[i];
+  }
+  const std::int32_t num = d[static_cast<std::size_t>(ParamId::tick_period_num_us)].value.i32;
+  const std::int32_t den = d[static_cast<std::size_t>(ParamId::tick_period_den)].value.i32;
+  marv::ParamRecord& tol = g_bench_table[static_cast<std::size_t>(ParamId::rate_period_tolerance_us)];
+  tol.value.i32 = den > 0 ? (num - 1) / (2 * den) : tol.value.i32;
+  tol.origin = marv::ParamOrigin::Manual;
+  tol.source = "bench: MARV_FC3V2_BENCH_ACCEPT_SPACING, the largest tolerance the rate loop accepts, (num - 1) / (2 den)";
+  return std::span<const marv::ParamRecord, marv::kParamCount>{g_bench_table};
+}
+constexpr const char* kParamMode = "bench: rate_period_tolerance_us raised (MARV_FC3V2_BENCH_ACCEPT_SPACING)";
+#else
+std::span<const marv::ParamRecord, marv::kParamCount> param_table() { return marv::param_defaults(); }
+constexpr const char* kParamMode = "generated defaults";
+#endif
+
 // The console period: one second, so each line's counter differences are per-second figures.
 constexpr auto kPrintPeriodUs = static_cast<marv::TimeUs>(marv::prim::kMicrosecondsPerSecond);
 
@@ -42,7 +80,8 @@ marv::hal_target::ImuBoot imu_boot;
 void print_progress() {
   std::printf("marv_fc3v2 %s\n", MARV_FC3V2_VERSION);
   if (stage >= Stage::kParamsOk) {
-    std::printf("params ok\n");
+    std::printf("params ok: %s, rate_period_tolerance_us %ld\n", kParamMode,
+                static_cast<long>(marv::param_value<marv::ParamId::rate_period_tolerance_us>()));
   }
   if (stage >= Stage::kInitOk) {
     std::printf("init ok\n");
@@ -56,6 +95,9 @@ void print_progress() {
     std::printf("imu ok: LSM6DSV, SPI %lu Hz, FREQ_FINE %d (ODR %.1f Hz by DS13476 9.49), tick %s\n",
                 static_cast<unsigned long>(imu_boot.spi_hz), static_cast<int>(imu_boot.freq_fine),
                 imu_boot.odr_hz_by_trim, kTickMode);
+    std::printf("bench stats: %s\n", marv::hal_target::bench::kEnabled
+                                         ? "on (MARV_FC3V2_BENCH_STATS, DWT CYCCNT at clk_sys)"
+                                         : "off");
   }
 }
 
@@ -77,7 +119,7 @@ void print_stats(const marv::hal_target::ImuStats& now, const marv::hal_target::
       "imu dt=%lluus irq/s=%.1f words/s=%.1f samples/s=%.1f ticks/s=%.1f writes/s=%.1f motor_drops=%llu | total samples=%llu ovr=%lu "
       "spi=%lu partial=%lu clamp=%lu order=%lu empty=%lu | spacing=[%llu,%llu]us | t=%llu gyro=(%+.4f,%+.4f,%+.4f) "
       "accel=(%+.3f,%+.3f,%+.3f) temp=%.2fK flags=0x%03lx | motor_test console_refused=%lu forwarded=%lu accepted=%lu "
-      "refused=%lu stopped=%lu\n",
+      "refused=%lu stopped=%lu | rate executions/s=%.1f executions=%llu timing_faults=%lu\n",
       static_cast<unsigned long long>(dt_us), per_s(now.irqs, before.irqs), per_s(now.words, before.words),
       per_s(now.samples, before.samples), per_s(now.ticks, before.ticks),
       per_s(now.actuator_writes, before.actuator_writes), static_cast<unsigned long long>(now.actuator_drops),
@@ -90,8 +132,60 @@ void print_stats(const marv::hal_target::ImuStats& now, const marv::hal_target::
       static_cast<double>(s.accel_m_s2[0]), static_cast<double>(s.accel_m_s2[1]), static_cast<double>(s.accel_m_s2[2]),
       static_cast<double>(s.temp_k), static_cast<unsigned long>(s.flags), static_cast<unsigned long>(console_refused),
       static_cast<unsigned long>(console_forwarded), static_cast<unsigned long>(test.last.accepted),
-      static_cast<unsigned long>(test.last.refused), static_cast<unsigned long>(test.last.stopped));
+      static_cast<unsigned long>(test.last.refused), static_cast<unsigned long>(test.last.stopped),
+      per_s(now.rate.executions, before.rate.executions), static_cast<unsigned long long>(now.rate.executions),
+      static_cast<unsigned long>(now.rate.timing_faults));
 }
+
+#if defined(MARV_FC3V2_BENCH_STATS)
+constexpr std::array<const char*, marv::hal_target::bench::kTimed> kTimedNames{
+    "read", "decode", "filter", "rate", "mixer", "gate", "dshot", "publish", "bench", "irq", "account", "usb_irq"};
+
+void print_spacing(const char* name, const marv::hal_target::bench::Spacing& s) {
+  std::printf(" %s n=%llu sum=%llu min=%lu max=%lu", name, static_cast<unsigned long long>(s.count),
+              static_cast<unsigned long long>(s.sum), static_cast<unsigned long>(s.min),
+              static_cast<unsigned long>(s.max));
+}
+
+void print_axes(const char* name, const std::array<std::int64_t, marv::prim::kSpatialDim>& v) {
+  std::printf(" %s=(%lld,%lld,%lld)", name, static_cast<long long>(v[0]), static_cast<long long>(v[1]),
+              static_cast<long long>(v[2]));
+}
+
+// Two lines per second, cumulative since start except the window figures (bench_stats.hpp): the cycle counts per timed
+// quantity with the nonzero histogram buckets as bucket:count, the interrupt-entry spacing, and the still-bench sums.
+void print_bench(marv::TimeUs t) {
+  namespace bench = marv::hal_target::bench;
+  const bench::Snapshot& b = bench::snapshot();
+  std::printf("bench_stages t=%llu", static_cast<unsigned long long>(t));
+  for (std::size_t i = 0; i < bench::kTimed; ++i) {
+    const bench::Timing& x = b.timing[i];
+    std::printf(" | %s n=%llu max=%lu wmax=%lu h=", kTimedNames[i], static_cast<unsigned long long>(x.count),
+                static_cast<unsigned long>(x.max), static_cast<unsigned long>(x.window_max));
+    const char* sep = "";
+    for (std::size_t k = 0; k < bench::kBuckets; ++k) {
+      if (x.buckets[k] != 0) {
+        std::printf("%s%u:%lu", sep, static_cast<unsigned>(k), static_cast<unsigned long>(x.buckets[k]));
+        sep = ",";
+      }
+    }
+  }
+  std::printf(" |");
+  print_spacing("spacing", b.spacing);
+  print_spacing("| wspacing", b.window_spacing);
+  std::printf(" | max_batch=%lu usb_preemptions=%lu\n", static_cast<unsigned long>(b.max_batch),
+              static_cast<unsigned long>(b.usb_preemptions));
+  std::printf("bench_imu t=%llu n=%llu", static_cast<unsigned long long>(t),
+              static_cast<unsigned long long>(b.still_samples));
+  print_axes("gs", b.gyro_sum);
+  print_axes("gq", b.gyro_sq);
+  print_axes("as", b.accel_sum);
+  print_axes("aq", b.accel_sq);
+  std::printf("\n");
+}
+#else
+void print_bench(marv::TimeUs) {}
+#endif
 
 const char* refusal_text(marv::hal_target::LineRefusal r) {
   using marv::hal_target::LineRefusal;
@@ -192,12 +286,13 @@ void print_motor_test_events() {
 // counters once per second; console output never runs in the tick (decision 0027 item 6).
 int main() {
   stdio_init_all();
+  marv::hal_target::bench::start();
   print_progress();
-  if (!marv::params_init(marv::param_defaults())) {
+  if (!marv::params_init(param_table())) {
     marv::hal_panic("params_init rejected the default table");
   }
   stage = Stage::kParamsOk;
-  std::printf("params ok\n");
+  std::printf("params ok: %s\n", kParamMode);
   marv::composition::init();
   stage = Stage::kInitOk;
   std::printf("init ok\n");
@@ -210,7 +305,7 @@ int main() {
                                          marv::param_value<ParamId::tick_period_den>()));
   stage = Stage::kMotorsOk;
   std::printf("motors ok\n");
-  imu_boot = marv::hal_target::imu_start(kSink);
+  imu_boot = marv::hal_target::imu_start(kSink, &rate_counts);
   stage = Stage::kImuOk;
   print_progress();
 
@@ -236,6 +331,7 @@ int main() {
     if (t - t_before >= kPrintPeriodUs) {
       const marv::hal_target::ImuStats now = marv::hal_target::imu_stats();
       print_stats(now, before, t - t_before);
+      print_bench(t);
       before = now;
       t_before = t;
     }

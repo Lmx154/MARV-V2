@@ -27,6 +27,7 @@
 #include <parts/lsm6dsv.hpp>
 
 #include "marv/hal/hal.hpp"
+#include "marv/hal_target/bench_stats.hpp"
 #include "marv/hal_target/imu.hpp"
 #include "marv/hal_target/lsm6dsv_decode.hpp"
 #include "marv/hal_target/motor_output.hpp"
@@ -74,6 +75,7 @@ spi_inst_t* imu_spi() noexcept { return SPI_INSTANCE(MADFLIGHT_FC3V2_IMU_SPI); }
 
 // Owned by the interrupt once it is enabled (imu_start sets them up before).
 ImuSink g_sink = nullptr;
+RateCountsSource g_rate_counts = nullptr;
 Lsm6dsvAssembler g_assembler{kMounting, lsm6dsv_scales()};
 ImuStamper g_stamper{lsm6dsv::kOdrHz};
 std::array<FifoWord, kMaxWords> g_words{};
@@ -118,6 +120,7 @@ void write_reg(std::uint8_t reg, std::uint8_t value) noexcept {
 void publish() noexcept {
   g_acc.actuator_writes = actuator_writes();
   g_acc.actuator_drops = motor_frames_dropped();
+  g_acc.rate = g_rate_counts();
   const std::uint32_t q = g_seq.load(std::memory_order_relaxed);
   g_seq.store(q + 1, std::memory_order_relaxed);
   std::atomic_thread_fence(std::memory_order_release);
@@ -148,13 +151,19 @@ void deliver(ImuSample& s, TimeUs t) noexcept {
   }
   ++g_acc.samples;
   g_acc.last = s;
+  bench::stage(bench::Timed::Bench);
+  bench::still_sample(s);
+  bench::stage(bench::Timed::Decode);
   g_sink(s);
+  bench::stage(bench::Timed::Decode);
   ++g_acc.ticks;
 }
 
 // INT1 (FIFO watermark), level high. The stamping rule is lsm6dsv_decode.hpp's.
 void on_int1() {
+  bench::irq_begin();
   if ((gpio_get_irq_event_mask(kIntPin) & GPIO_IRQ_LEVEL_HIGH) == 0) {
+    bench::irq_end(0);
     return;
   }
   const TimeUs t_irq = hal_time_us();
@@ -179,12 +188,15 @@ void on_int1() {
                         (static_cast<std::size_t>(status2 & lsm6dsv::kFifoStatus2DiffFifo8) << lsm6dsv::kDiffFifo8Shift);
   if (n == 0) {
     ++g_acc.empty_irqs;
+    bench::stage(bench::Timed::Publish);
     publish();
+    bench::irq_end(0);
     return;
   }
   for (std::size_t i = 0; i < n; ++i) {
     read_regs(lsm6dsv::kRegFifoDataOutTag, g_words[i]);
   }
+  bench::stage(bench::Timed::Decode);
   g_acc.words += n;
 
   // The batch's sample count k first (on a copy of the assembler), then the samples, oldest first.
@@ -212,19 +224,22 @@ void on_int1() {
     }
   }
   g_acc.stamp_clamps = g_stamper.clamps();
+  bench::stage(bench::Timed::Publish);
   publish();
+  bench::irq_end(j);
 }
 
 }  // namespace
 
-ImuBoot imu_start(ImuSink sink) noexcept {
-  if (sink == nullptr) {
-    hal_panic("imu_start: no sink");
+ImuBoot imu_start(ImuSink sink, RateCountsSource rate_counts) noexcept {
+  if (sink == nullptr || rate_counts == nullptr) {
+    hal_panic("imu_start: no sink or no rate-counts source");
   }
   if (!valid(kMounting)) {
     hal_panic("FC3v2 board header: the IMU mounting map is not a signed permutation of the chip axes");
   }
   g_sink = sink;
+  g_rate_counts = rate_counts;
 
   ImuBoot boot;
   boot.spi_hz = spi_init(imu_spi(), lsm6dsv::kSpiClockMaxHz);

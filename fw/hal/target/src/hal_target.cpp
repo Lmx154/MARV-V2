@@ -11,6 +11,7 @@
 #include <tusb.h>
 
 #include "marv/hal/hal.hpp"
+#include "marv/hal_target/bench_stats.hpp"
 #include "marv/hal_target/imu.hpp"
 #include "marv/hal_target/motor_output.hpp"
 #include "marv/types/actuator.hpp"
@@ -59,10 +60,30 @@ std::uint64_t actuator_writes() noexcept { return g_actuator_writes; }
 
 }  // namespace hal_target
 
+// The bench image times the stage (bench_stats.hpp); every other image does nothing here.
+void hal_tick_stage(TickStage stage) noexcept {
+  using hal_target::bench::Timed;
+  switch (stage) {
+    case TickStage::Filter:
+      hal_target::bench::stage(Timed::Filter);
+      break;
+    case TickStage::Rate:
+      hal_target::bench::stage(Timed::Rate);
+      break;
+    case TickStage::Mixer:
+      hal_target::bench::stage(Timed::Mixer);
+      break;
+    case TickStage::Gate:
+      hal_target::bench::stage(Timed::Gate);
+      break;
+  }
+}
+
 // A write is counted and sends one DShot frame per motor (motor_output.hpp); quad_fc writes DshotValue::stop() on every
 // rate tick (M1 P9 ruling). The span sizes must equal the board's outputs, the four motor pads OUT0-OUT3 and no servo, as
 // hal_sim checks them against its bound latch.
 void hal_actuators_write(std::span<const DshotValue> motor, std::span<const ServoUs> servo) noexcept {
+  hal_target::bench::stage(hal_target::bench::Timed::Dshot);
   if (motor.size() != kQuadXMotors || !servo.empty()) {
     hal_panic("hal_actuators_write span size differs from the board's outputs");
   }

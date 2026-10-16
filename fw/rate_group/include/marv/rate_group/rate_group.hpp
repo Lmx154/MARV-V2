@@ -25,6 +25,7 @@
 // bypassed and the chain is its low-pass alone (the stage (c) T4 configuration, decision 0014).
 
 #include <array>
+#include <cstdint>
 
 #include "marv/gyro_chain/gyro_chain.hpp"
 #include "marv/mixer/mixer.hpp"
@@ -74,6 +75,10 @@ class RateGroupStep {
   // The sample held by the latest filter: what the tick's rate execution gets.
   [[nodiscard]] const ImuSample& rate_input() const noexcept { return filtered_; }
 
+  // Rate executions (execute and execute_bypass) since init, and the rate loop's timing faults (RateLoop).
+  [[nodiscard]] std::uint64_t execution_count() const noexcept { return executions_; }
+  [[nodiscard]] std::uint32_t timing_fault_count() const noexcept { return rate_.timing_fault_count(); }
+
  private:
   [[nodiscard]] Execution finish(const rate::RateOutput<float>& out, const prim::Vec3<float>& added,
                                  float thrust) noexcept;
@@ -83,6 +88,7 @@ class RateGroupStep {
   gyro_chain::GyroChain<float> chain_;
   ImuSample filtered_{};
   mixer::DshotDiffuser<float> diffuser_;
+  std::uint64_t executions_ = 0;
 };
 
 }  // namespace marv::rate_group

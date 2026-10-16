@@ -217,8 +217,11 @@ void tick(const ImuSample& s) noexcept {
     return;
   }
   static_cast<void>(g_step.execute(prim::Vec3<float>(), prim::Vec3<float>(), 0.0F));
+  hal_tick_stage(TickStage::Gate);
   update_motor_test(s.t_us);
   hal_actuators_write(gate_output(g_gate, g_run));
 }
+
+RateCounts rate_counts() noexcept { return RateCounts{g_step.execution_count(), g_step.timing_fault_count()}; }
 
 }  // namespace marv::composition
