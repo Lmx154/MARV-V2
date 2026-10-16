@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <span>
 
+#include "marv/hal/motor_test.hpp"
 #include "marv/types/actuator.hpp"
 #include "marv/types/rotor_speed_sample.hpp"
 #include "marv/types/time.hpp"
@@ -31,6 +32,16 @@ void begin_tick(Tick n) noexcept;
 // Stages the rotor-speed sample that hal_rotor_speed() returns from the next begin_tick on (its t_us is the tick's); it
 // replaces any earlier one. Never staged: every valid bit clear and every speed 0. pre: outside a tick (else hal_panic).
 void stage_rotor_speed(const std::array<float, kQuadXMotors>& omega_rad_s, std::uint32_t flags) noexcept;
+
+// Stages a console motor-test request and cancel signal (decision 0038), seen by hal_motor_test() from the next
+// begin_tick on: a request increments the request count and records the cancel count it follows; a cancel increments the
+// cancel count with its reason. pre: outside a tick (else hal_panic).
+void stage_motor_test_request(const MotorTestRequest& request) noexcept;
+void stage_motor_test_cancel(MotorTestCancel reason) noexcept;
+
+// The events the composition reported through hal_motor_test_report() since setup: how many, and the latest.
+[[nodiscard]] std::uint32_t motor_test_event_count() noexcept;
+[[nodiscard]] MotorTestEvent last_motor_test_event() noexcept;
 
 // Marks "outside a tick" so a later write panics.
 void end_tick() noexcept;

@@ -73,6 +73,7 @@ ignore:
   - .claude/**
   - tools/target/**   # bench-only scripts (flashing); never run by CI (decision 0027)
   - docs/**
+  - tests/regression/quad/L09/results/**   # bench logs (M1 P9, P11): evidence only, read by no test
   - LICENSE
   - THIRD_PARTY_NOTICES.md
   - datasheets/**

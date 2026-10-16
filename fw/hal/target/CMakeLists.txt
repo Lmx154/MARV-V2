@@ -2,7 +2,7 @@
 # Pico SDK, and marv_fc3v2 is the linked image. Added from fw/hal/CMakeLists.txt only when MARV_TARGET is m33. Only this
 # directory links Pico SDK targets: the library takes the SDK *_headers targets PRIVATE (they add include directories to
 # this library alone), the image links the full SDK libraries it needs.
-add_library(marv_hal_target STATIC src/hal_target.cpp src/lsm6dsv.cpp src/motor_output.cpp)
+add_library(marv_hal_target STATIC src/hal_target.cpp src/lsm6dsv.cpp src/motor_output.cpp src/motor_test.cpp)
 target_include_directories(marv_hal_target PUBLIC include)
 target_link_libraries(marv_hal_target
   PUBLIC marv_hal marv_types marv_dshot
@@ -36,7 +36,7 @@ add_executable(marv_fc3v2 src/main.cpp)
 target_compile_definitions(marv_fc3v2 PRIVATE MARV_FC3V2_VERSION="${MARV_FC3V2_VERSION}"
   $<$<BOOL:${MARV_FC3V2_COUNT_ONLY}>:MARV_FC3V2_COUNT_ONLY>)
 target_link_libraries(marv_fc3v2 PRIVATE
-  marv_hal_target marv_lsm6dsv_decode marv_composition_quad_fc marv_params_fc3v2_generated marv_params_fc3v2_runtime
+  marv_hal_target marv_lsm6dsv_decode marv_console_decode marv_composition_quad_fc marv_params_fc3v2_generated marv_params_fc3v2_runtime
   pico_stdlib hardware_spi hardware_pio)
 pico_enable_stdio_usb(marv_fc3v2 1)
 pico_enable_stdio_uart(marv_fc3v2 0)

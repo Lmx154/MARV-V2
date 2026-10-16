@@ -13,3 +13,10 @@ add_library(marv_dshot STATIC src/dshot.cpp)
 target_include_directories(marv_dshot PUBLIC include)
 target_link_libraries(marv_dshot PUBLIC marv_types marv_prim)
 marv_apply_flags(marv_dshot FIRMWARE)
+
+# The FC3v2 console's line parser (M1 P11): the motor test command and its unlock token. No Pico SDK, so it is added on every
+# target: the m33 image links it, the L09 T1 tests run it on the host.
+add_library(marv_console_decode STATIC src/console.cpp)
+target_include_directories(marv_console_decode PUBLIC include)
+target_link_libraries(marv_console_decode PUBLIC marv_hal marv_prim)
+marv_apply_flags(marv_console_decode FIRMWARE)

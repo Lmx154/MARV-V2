@@ -21,3 +21,10 @@ add_executable(unit_dshot dshot_test.cpp)
 target_link_libraries(unit_dshot PRIVATE marv_dshot marv_types GTest::gtest_main)
 marv_apply_flags(unit_dshot)
 marv_frozen_suite(unit_dshot)
+
+# The FC3v2 console line parser (fw/hal/target/decode, M1 P11, decision 0038): the motor test command with its PROPS-OFF
+# unlock token, stop, and the refusals, on the host.
+add_executable(unit_console console_test.cpp)
+target_link_libraries(unit_console PRIVATE marv_console_decode marv_types GTest::gtest_main)
+marv_apply_flags(unit_console)
+marv_frozen_suite(unit_console)
