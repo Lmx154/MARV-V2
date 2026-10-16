@@ -11,7 +11,9 @@ An entry is a YAML mapping. Canonical fields:
   source      non-empty text (cards and profiles; not budget entries, which carry a rationale)
   sigma       number, list of number | UNKNOWN, UNKNOWN, choice, or exact
   sigma_rule  required whenever any sigma component is numeric: "stated by <source>" or the derivation
-  status      list, subset of {UNVERIFIED, INFERRED}
+  status      list, subset of {UNVERIFIED, INFERRED, PLACEHOLDER}
+  placeholder {reason, replaced_by}: both non-empty text, required iff status holds PLACEHOLDER (core 2: a placeholder
+              carries its reason and the measurement or rule that will replace it); not on budget entries
   conflict    list of {value, unit, source, state: open|refuted, refuted_by (required iff refuted)}
   check       text: what will settle or confirm the entry
   lock        {by, on: YYYY-MM-DD, via: manual}; only on published, measured, datasheet, identified, derived
@@ -68,7 +70,9 @@ MEASURED_METHODS = ("published", "measured", "identified", "datasheet")
 LOCKABLE_METHODS = MEASURED_METHODS + ("derived",)
 CHOICE_METHODS = ("design-budget", "scenario")
 ALL_METHODS = MEASURED_METHODS + ("derived(<rule>)",) + CHOICE_METHODS
-STATUS_TAGS = ("UNVERIFIED", "INFERRED")
+STATUS_TAGS = ("UNVERIFIED", "INFERRED", "PLACEHOLDER")
+PLACEHOLDER = "PLACEHOLDER"
+PLACEHOLDER_FIELDS = ("reason", "replaced_by")
 SHAPES = ("frd3", "diag3", "range", "motors", "set")
 FIXED_SHAPE_LENGTH = {"frd3": 3, "diag3": 3}
 MOTOR_COUNT = 4
@@ -77,13 +81,14 @@ LOCK_FIELDS = ("by", "on", "via")
 CONFLICT_FIELDS = ("value", "unit", "source", "state", "refuted_by")
 
 CARD_FIELDS = (
-    "value", "unit", "method", "source", "sigma", "sigma_rule", "status", "conflict", "check", "lock", "shape", "note",
+    "value", "unit", "method", "source", "sigma", "sigma_rule", "status", "placeholder", "conflict", "check", "lock",
+    "shape", "note",
 )
 EXACT = "exact"
 MODEL_FIELDS = (
-    "model", "method", "source", "sigma", "sigma_rule", "status", "conflict", "check", "lock", "note",
+    "model", "method", "source", "sigma", "sigma_rule", "status", "placeholder", "conflict", "check", "lock", "note",
 )
-CATEGORICAL_FIELDS = ("value", "method", "source", "status", "conflict", "check", "lock", "note")
+CATEGORICAL_FIELDS = ("value", "method", "source", "status", "placeholder", "conflict", "check", "lock", "note")
 BUDGET_FIELDS = (
     "value", "unit", "method", "sigma", "rationale", "used_by", "status", "check", "note",
 )
@@ -175,6 +180,27 @@ def _check_status(entry, path, out, file):
     if bad:
         out.add(file, path, f"status: {bad} not in {', '.join(STATUS_TAGS)}")
     return status
+
+
+def _check_placeholder(entry, path, out, file, status):
+    tagged = PLACEHOLDER in status
+    ph = entry.get("placeholder")
+    if "placeholder" not in entry:
+        if tagged:
+            out.add(file, path, "placeholder: required when status holds PLACEHOLDER ({reason, replaced_by}: why the "
+                                "value is a placeholder and the measurement or rule that will replace it)")
+        return
+    if not tagged:
+        out.add(file, path, "placeholder: only allowed when status holds PLACEHOLDER")
+    if not isinstance(ph, dict):
+        out.add(file, path, "placeholder: must be a mapping {reason, replaced_by}")
+        return
+    for k in ph:
+        if k not in PLACEHOLDER_FIELDS:
+            out.add(file, path, f"placeholder: unknown field {k!r}")
+    for k in PLACEHOLDER_FIELDS:
+        if not is_text(ph.get(k)):
+            out.add(file, path, f"placeholder.{k}: missing or empty")
 
 
 def _check_value(entry, path, out, file, categories, motors):
@@ -402,6 +428,7 @@ def check_entry(entry, path, out, file, *, categories=None, models=None, motors=
     else:
         value_unknown, list_len = _check_value(entry, path, out, file, categories, motors)
     status = _check_status(entry, path, out, file)
+    _check_placeholder(entry, path, out, file, status)
     if not categorical and kind is not None:
         _check_sigma(entry, path, out, file, kind, value_unknown, list_len)
     if budget:
