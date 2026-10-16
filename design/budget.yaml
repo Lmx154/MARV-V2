@@ -280,3 +280,15 @@ noise_term_confidence:
     stream_independence_confidence nor normal_moments_confidence, nor t4_confidence_*, which set N. Luis's choice
     (2026-10-04, decision 0019, rulings 3 and 4).
   used_by: [quad L6 stage (e) T3 Monte Carlo (envelope noise term)]
+
+t4_settle_fraction:
+  value: 0.02
+  unit: "1"
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    T4 settle/bounded band (decision 0029): the fraction s of a segment's largest error that the error may still
+    have at the segment's last execution (predicate S) and may exceed its starting error by at any point (predicate
+    B). The 2 % settling criterion of Ogata, Modern Control Engineering, §5-3, which also gives 5 %. A test-harness
+    value, no firmware reads it. Luis's choice (2026-10-15, decision 0029, question 1: "1,2,3 all yes").
+  used_by: [quad L4, L5 and L11 T4 behaviour predicates]

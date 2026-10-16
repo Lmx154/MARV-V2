@@ -210,3 +210,76 @@ def test_freshness_input_checks():
         t4_rule.freshness([1.0, 2.0], [0.0])
     with pytest.raises(ValueError):
         t4_rule.freshness([1.0], [0.0])
+
+
+# T4 behaviour predicates S, B, T (docs/decisions/0029). Known answers by hand; no negative control (core 7.2 item 3).
+# Labelled scenario values: s = 0.02 (t4_settle_fraction), E = 0.001 (a stand-in |m1 - m2|), a segment of 4 executions.
+S_FRACTION = 0.02
+E_SIM = 0.001
+
+
+def seg(**quantities):
+    return {name: (unit, errors) for name, (unit, errors) in quantities.items()}
+
+
+def test_settles_at_the_boundary():
+    # Delta = 1.0 (rad group), bound = 0.02 * 1.0 + 0.001 = 0.021
+    on = seg(a=("rad", [1.0, 0.5, 0.1, 0.021]))
+    over = seg(a=("rad", [1.0, 0.5, 0.1, 0.0211]))
+    (c,) = t4_rule.settles(on, S_FRACTION, {"a": E_SIM})
+    assert c.ok and c.bound == pytest.approx(0.021)
+    (c,) = t4_rule.settles(over, S_FRACTION, {"a": E_SIM})
+    assert not c.ok
+    (c,) = t4_rule.settles(seg(a=("rad", [-1.0, -0.5, -0.1, -0.021])), S_FRACTION, {"a": E_SIM})
+    assert c.ok  # the sign of the error does not matter
+
+
+def test_delta_is_per_unit_group_not_per_quantity():
+    # roll and heading share rad (Delta = 2.0), the rate does not (Delta = 10.0 rad/s)
+    segment = seg(roll=("rad", [2.0, 0.0, 0.0, 0.04]),
+                  heading=("rad", [0.1, 0.0, 0.0, 0.0]),
+                  rate=("rad/s", [10.0, 0.0, 0.0, 0.2]))
+    E = {"roll": 0.0, "heading": 0.0, "rate": 0.0}
+    res = {c.name: c for c in t4_rule.settles(segment, S_FRACTION, E)}
+    assert res["roll"].bound == pytest.approx(0.04) and res["roll"].ok  # 0.02 * 2.0, not 0.02 * 0.1
+    assert res["heading"].bound == pytest.approx(0.04) and res["heading"].ok
+    assert res["rate"].bound == pytest.approx(0.2) and res["rate"].ok  # 0.02 * 10.0
+    tight = {c.name: c for c in t4_rule.settles(seg(a=("rad", [1.0, 0.0, 0.0, 0.0]),
+                                                     b=("rad", [0.0, 0.0, 0.0, 0.03])), S_FRACTION,
+                                                {"a": 0.0, "b": 0.0})}
+    assert tight["a"].ok and not tight["b"].ok  # b's own Delta is 0.03, but the group's is 1.0: bound 0.02
+
+
+def test_e_is_added_per_quantity():
+    segment = seg(a=("rad", [1.0, 0.0, 0.0, 0.03]), b=("rad", [1.0, 0.0, 0.0, 0.03]))
+    res = {c.name: c.ok for c in t4_rule.settles(segment, S_FRACTION, {"a": 0.0, "b": 0.011})}
+    assert res == {"a": False, "b": True}
+
+
+def test_bounded_passes_and_fails():
+    # first error 0.5, Delta = 1.0 (peak), bound on the excess = 0.02 + 0.001
+    ok = seg(a=("rad", [0.5, 0.9, 1.0, 0.5]))
+    (c,) = t4_rule.bounded(ok, S_FRACTION, {"a": E_SIM})
+    assert not c.ok and c.value == pytest.approx(0.5)  # grew by 0.5 > 0.021
+    flat = seg(a=("rad", [0.5, 0.51, 0.4, 0.5]))
+    (c,) = t4_rule.bounded(flat, S_FRACTION, {"a": E_SIM})
+    assert c.ok and c.value == pytest.approx(0.01) and c.bound == pytest.approx(0.02 * 0.51 + 0.001)
+    shrinking = seg(a=("rad", [1.0, 0.5, 0.2, 0.0]))
+    (c,) = t4_rule.bounded(shrinking, S_FRACTION, {"a": E_SIM})
+    assert c.ok and c.value == 0.0  # the excess of the first sample over itself
+
+
+def test_shrinks():
+    assert t4_rule.shrinks([1.0, 2.0, 0.5])
+    assert t4_rule.shrinks([-1.0, 0.3, -0.9])  # magnitudes
+    assert not t4_rule.shrinks([1.0, 0.1, 1.0])  # equal is not smaller
+    assert not t4_rule.shrinks([0.09, 5.0, 10.29])
+
+
+def test_predicates_reject_non_finite_and_empty_segments():
+    nan = float("nan")
+    assert not t4_rule.settles(seg(a=("rad", [1.0, nan, 0.0])), S_FRACTION, {"a": 1.0})[0].ok
+    assert not t4_rule.bounded(seg(a=("rad", [1.0, nan, 0.0])), S_FRACTION, {"a": 1.0})[0].ok
+    assert not t4_rule.shrinks([1.0, nan])
+    with pytest.raises(ValueError):
+        t4_rule.settles(seg(a=("rad", [])), S_FRACTION, {"a": 0.0})

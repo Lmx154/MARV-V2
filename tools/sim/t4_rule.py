@@ -164,3 +164,67 @@ def freshness(reads, times, t_settle=None):
     if t_settle is not None and (idx is None or times[idx] <= t_settle):
         reasons.append("no fresh read after the settling time")
     return Freshness(idx, stale, not reasons, tuple(reasons))
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# T4 behaviour predicates S, B and T (docs/decisions/0029; quad spec 4.1). Evaluated on the m = 1 run.
+#
+# A segment is {name: (unit, errors)}: errors[i] = q(n_i) - q_ref(n_i) at the segment's executions n_0..n_last, plain
+# floats. Delta is the largest |error| in the segment among the quantities of the same unit, so a roll angle and a
+# heading share a Delta and a rate does not. s is the register's t4_settle_fraction, read by the caller; E[name] is
+# the quantity's |m1 - m2| (SIM-7), >= 0. A predicate returns one Check per quantity. Non-finite input fails.
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Check:
+    name: str
+    ok: bool
+    value: float  # the error the predicate compared
+    bound: float  # what it was compared with
+
+
+def _peak(errors):
+    magnitudes = [abs(float(e)) for e in errors]
+    return math.nan if not all(math.isfinite(m) for m in magnitudes) else max(magnitudes)
+
+
+def _segment_deltas(segment):
+    deltas = {}
+    for name, (unit, errors) in segment.items():
+        if len(errors) == 0:
+            raise ValueError(f"segment quantity {name!r} has no executions")
+        peak = _peak(errors)
+        previous = deltas.get(unit, 0.0)
+        deltas[unit] = math.nan if math.isnan(peak) or math.isnan(previous) else max(previous, peak)
+    return deltas
+
+
+def _checked(name, value, bound):
+    ok = math.isfinite(value) and math.isfinite(bound) and value <= bound
+    return Check(name, ok, value, bound)
+
+
+def settles(segment, s, E):
+    """S: at the segment's last execution |error| <= s Delta + E, Delta per unit group."""
+    deltas = _segment_deltas(segment)
+    return [_checked(name, abs(float(errors[-1])), s * deltas[unit] + E[name])
+            for name, (unit, errors) in segment.items()]
+
+
+def bounded(segment, s, E):
+    """B: for a segment without a disturbance onset, |error(n)| <= |error(n_0)| + s Delta + E at every n. The value
+    reported is the largest excess |error(n)| - |error(n_0)|, so it is compared with s Delta + E."""
+    deltas = _segment_deltas(segment)
+    out = []
+    for name, (unit, errors) in segment.items():
+        first = abs(float(errors[0]))
+        excess = max(abs(float(e)) - first for e in errors) if math.isfinite(_peak(errors)) else math.nan
+        out.append(_checked(name, excess, s * deltas[unit] + E[name]))
+    return out
+
+
+def shrinks(errors):
+    """T: the stepped axis's |error| at the segment end is smaller than at its start. No number."""
+    first, last = abs(float(errors[0])), abs(float(errors[-1]))
+    return math.isfinite(first) and math.isfinite(last) and last < first
