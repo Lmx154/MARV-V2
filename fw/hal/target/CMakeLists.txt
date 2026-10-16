@@ -5,7 +5,15 @@
 add_library(marv_hal_target STATIC src/hal_target.cpp)
 target_link_libraries(marv_hal_target
   PUBLIC marv_hal marv_types
-  PRIVATE pico_base_headers pico_time_headers hardware_timer_headers hardware_sync_headers)
+  PRIVATE pico_base_headers pico_time_headers pico_sync_headers hardware_timer_headers hardware_sync_headers
+          hardware_gpio_headers hardware_irq_headers hardware_structs_headers)
+# hal_panic polls the TinyUSB device (the image's pico_stdio_usb brings the TinyUSB sources and the tusb_config.h). Only
+# the include directories and compile definitions of TinyUSB's own target are taken, not its sources: those are compiled
+# once, into the image.
+target_include_directories(marv_hal_target SYSTEM PRIVATE
+  $<TARGET_PROPERTY:tinyusb_common_base,INTERFACE_INCLUDE_DIRECTORIES>
+  $<TARGET_PROPERTY:pico_stdio_usb_headers,INTERFACE_INCLUDE_DIRECTORIES>)
+target_compile_definitions(marv_hal_target PRIVATE $<TARGET_PROPERTY:tinyusb_common_base,INTERFACE_COMPILE_DEFINITIONS>)
 marv_apply_flags(marv_hal_target FIRMWARE)
 
 # The version in the banner is the git description at configure time; "unknown" outside a git checkout.
