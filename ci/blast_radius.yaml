@@ -2,12 +2,22 @@
 # keeps it in step with ci/run_ci.sh, ci/run_ci_gz.sh and the repository.
 #
 # How a changed path is classified (ci/affected.py):
+#   0. It matches a glob under ignore_first (agent and editor files): it selects nothing, wherever it is.
 #   1. It matches a glob under full_roots: the change selects everything.
 #   2. Otherwise every rule whose `paths` match it contributes its selections (the union of all matching rules).
 #   3. Otherwise, if it matches a glob under ignore, it selects nothing (a rule match wins over ignore).
 #   4. Otherwise it is unmapped, and an unmapped path selects everything (fail-safe: a new file the map has not
 #      heard of is never silently skipped). A deleted or renamed path counts under its old and its new name.
 # When unsure, a rule selects more.
+#   5. A rule may carry `like: [paths]`: the rule also selects what each listed path selects (a CMakeLists.txt that
+#      selects what its directory's other files select).
+#   6. design/budget.yaml is classified at key level (section budget_register below) when ci/affected.py can diff it
+#      against the base; without the diff it is a full root (design/**).
+#
+# CMakeLists.txt: a <dir>/CMakeLists.txt selects what the rest of <dir> selects. In fw/prim, fw/types, fw/hal (and
+# fw/hal/sim), fw/params, fw/sil and tools/gen that is everything (the directory is a full root: every library, every
+# parameter set or every SIL library is built by it). The top-level CMakeLists.txt, CMakePresets.json, cmake/** and
+# tests/regression/CMakeLists.txt (the layer-label machinery of every test) stay full-suite on purpose.
 #
 # Globs match the whole repository-relative path. `*` and `?` do not cross `/`; `**/` matches any number of directories
 # (including none) and a trailing `**` matches the rest of the path.
@@ -39,10 +49,7 @@ full_roots:
   - fw/params/**
   - fw/sil/**
   - tools/gen/**
-  - tools/ci/CMakeLists.txt
   - tools/ci/pytest_file_time_guard.py
-  - vehicles/**
-  - sensors/**
   - design/**
   - CMakeLists.txt
   - CMakePresets.json
@@ -51,7 +58,7 @@ full_roots:
   - uv.lock
   - .github/**
   - tests/regression/CMakeLists.txt
-  - tests/regression/quad/L06/controls/**
+  - tests/regression/quad/L06/controls/test_per_push_pytest_overrun.py
   - ci/Dockerfile*
   - ci/run_ci.sh
   - ci/run_ci_gz.sh
@@ -61,6 +68,16 @@ full_roots:
   - ci/runner_resources/**
   - ci/blast_radius.yaml
   - ci/affected.py
+
+# Agent and editor files: they select nothing wherever they are, even inside a full root or under a rule's directory (an
+# editor's swap file beside fw/rate/src/rate.cpp is not a change to fw/rate). Checked before everything else.
+ignore_first:
+  - .serena/**
+  - .vscode/**
+  - .idea/**
+  - "**/*.swp"
+  - "**/*.swo"
+  - "**/*~"
 
 # Paths that select nothing.
 ignore:
@@ -144,6 +161,78 @@ step_groups:
     - att_t3_reference_reproduces
     - att_t3_reference_control
     - tools_tests
+
+# Card and profile files. A file matching `globs` that something consumes selects what `consumed_like` (the committed
+# card) selects, besides its own rule: ci/affected.py scans every tracked file that is not ignored, not in scan_exclude and
+# not the file itself for its path or its file name stem (whole word), in CMakeLists.txt and *.cmake files, fw/, tools/,
+# tests/, and in other cards and profiles that are themselves consumed (a profile is named by the card that uses it). A file
+# nothing consumes selects only the lint rule below. Without that scan (a caller that cannot make it) every such file counts
+# as consumed.
+card_files:
+  globs: [vehicles/**, sensors/profiles/**]
+  consumed_like: vehicles/uzh_neurobem_5in.yaml
+  scan_exclude: [ci/blast_radius.yaml, ci/affected.py, tests/tools/test_affected.py]
+
+# The design-budget register, design/budget.yaml, classified at key level. ci/affected.py diffs the file between the
+# base and the head, key by key, and a changed key selects its readers. A reader is a tracked file that names the key
+# (a whole-word scan of every tracked file that is not ignored and not a derived copy), selected exactly as if that file
+# had changed, plus the extra_readers below. A key with no scannable name (shorter than scan_min_name_length) or an
+# unreadable diff selects the full suite, and the reason is printed. Every byte change of the file also selects any_change
+# (what reads the whole file: its hash, the generated tables, its lint); a key that gains or loses its parameter, or
+# changes unit, sigma or method, also selects structural (the id manifests and the product tables).
+budget_register:
+  file: design/budget.yaml
+  # A key whose only changed fields are these is a text change: it selects any_change only.
+  text_fields: [rationale, used_by]
+  scan_min_name_length: 4
+  # Tracked files the scan does not read, on top of every `ignore` glob: copies of values that the tools reading the
+  # key regenerate (their readers are scanned), and the register files and this map themselves.
+  scan_exclude:
+    - design/**
+    - ci/blast_radius.yaml
+    - ci/affected.py
+    - tests/tools/test_affected.py
+    - tests/regression/quad/*/param_ids
+    - tests/regression/quad/L06/product_params/**
+    - tests/regression/quad/*/results/**/*.txt
+    - tests/regression/quad/*/results/**/SHA256SUMS
+  # Files that name a key without reading its value.
+  mentions:
+    - keys: [t4_settle_fraction]
+      paths: [tools/sim/t4_rule.py]
+      why: "t4_rule.py names the key in two comments; its caller reads the value (test_t4_steps and the other T4 tests)"
+  # Readers the scan cannot see.
+  extra_readers:
+    - keys: [t4_pass_probability_tracking, t4_pass_probability_safety, t4_confidence_tracking, t4_confidence_safety]
+      paths: [tools/sim/l6_noise_term.py]
+      why: "l6_noise_term.py reads f\"t4_pass_probability_{klass}\" and f\"t4_confidence_{klass}\""
+  any_change:
+    ctest_labels: [L11]
+    run_ci_steps:
+      - host_preset:host-debug
+      - m33_build
+      - product_table_host
+      - product_table_m33
+      - l1_card_lint
+      - l1_report
+      - tools_tests
+    pytest_paths:
+      - tests/regression/quad/L01/tools/test_card_lint.py
+      - tests/regression/quad/L01/tools/test_flatten_report.py
+      - tests/regression/quad/L06/tools/test_l6_ff_eval.py
+    gz_groups: []
+    why: "the register is a build input of every product parameter set: the generated tables are compared byte for byte (product_table_host, product_table_m33, built by host-debug and m33), the run report holds its hash, the card lint lints it, test_flatten_report checks every entry and its hash, and l6_ff_eval's card_worst.txt records its SHA-256; L11 is the label of the product set's composition smoke test (ci/smoke.sh)"
+  structural:
+    ctest_labels: [L04, L05, L11]
+    run_ci_steps: []
+    pytest_paths:
+      - tests/regression/quad/L01/tools/test_card_lint.py
+      - tests/regression/quad/L01/tools/test_flatten_report.py
+      - tests/regression/quad/L04/tools/test_rate_design.py
+      - tests/regression/quad/L04/tools/test_scenario_values.py
+      - tests/regression/quad/L05/tools/test_attitude_design.py
+    gz_groups: []
+    why: "an entry that becomes (or stops being) a parameter changes the product id set: the tests that read the param_ids manifests, and the L04, L05 and L11 composition param_ids checks (check_param_ids.py) that compare the product manifest with each composition's"
 
 rules:
   # ---------------------------------------------------------------- fw: the libraries
@@ -956,3 +1045,55 @@ rules:
     pytest_paths: [tests/regression/quad/L01/tools, tests/regression/quad/L04/tools, tests/regression/quad/L05/tools]
     gz_groups: []
     why: "param_ids manifests are read by the L01 flatten/lint tests, the L04/L05 design tests and the L11 composition test"
+
+  # ---------------------------------------------------------------- the vehicle card and the sensor profile
+  - paths: [vehicles/uzh_neurobem_5in.yaml, sensors/profiles/marv_v2_board_default.yaml]
+    ctest_labels: [L01, L02, L03, L04, L05, L06, L11]
+    run_ci_steps:
+      - "@card_gates"
+      - constants_check
+      - "@constants_controls"
+      - t3_reference_reproduces
+      - t3_reference_control
+      - vert_t3_reference_reproduces
+      - vert_t3_reference_control
+    pytest_paths:
+      - tests/regression/quad/L01/tools
+      - tests/regression/quad/L03/tools
+      - tests/regression/quad/L04/tools
+      - tests/regression/quad/L05/tools
+      - tests/regression/quad/L06/tools
+      - tests/regression/quad/L11/tools
+    gz_groups: [l2, l4, l5, l11]
+    why: "the committed card is the vehicle of every product and composition parameter set (MARV_VEHICLE_CARD in fw/params/CMakeLists.txt), of the plant card configuration and of every card test and T3/T4 suite; the profile is the one the card names (sensor_profile) and is read by the gyro-chain, rate-lead and IMU generators and the world sensors; L00 uses its own fixtures"
+
+  # Any card or profile that nothing consumes (card_files above) selects the card lint only; one that is consumed also
+  # selects what the committed card selects (card_files.consumed_like).
+  - paths: [vehicles/**, sensors/**]
+    ctest_labels: []
+    run_ci_steps: [l1_card_lint, tools_tests]
+    pytest_paths: [tests/regression/quad/L01/tools/test_card_lint.py]
+    gz_groups: []
+    why: "a card or profile no parameter set, test or suite names is linted by tools/card/lint.py and its tests, and nothing else reads it"
+
+  # ---------------------------------------------------------------- CMakeLists.txt of directories whose files are full roots or listed above
+  - paths: [tools/ci/CMakeLists.txt]
+    ctest_labels: [L00]
+    run_ci_steps: ["@host"]
+    pytest_paths: []
+    gz_groups: []
+    like:
+      - tools/ci/check_claude_md.py
+      - tools/ci/check_constants.py
+      - tools/ci/check_g3.py
+      - tools/ci/check_param_ids.py
+      - tools/ci/check_regression_changes.py
+      - tools/ci/lint_g1.py
+    why: "tools/ci/CMakeLists.txt is configured by the host tree and registers nothing today; the host build and the L00 tests configure it, and it selects what the CI checks of its directory select"
+
+  - paths: [tests/regression/quad/L06/controls/CMakeLists.txt]
+    ctest_labels: [L06]
+    run_ci_steps: ["@host"]
+    pytest_paths: []
+    gz_groups: []
+    why: "registers the per-push timeout control (per_push_timeout_planted) only when MARV_PER_PUSH_CHECK_TIME_MAX_OVERRIDE is set, which only the merge-only step per_push_timeout_control does; a configure error shows in host-debug"
