@@ -25,6 +25,10 @@ Arming inside `MotorGate` alone (not testable alone as M2's done-when asks). Tic
 3. A dead IMU halts the firmware through `hal_panic`; M1's "never halts after arming" covers spacing anomalies and missing samples, not a dead sensor.
 4. FIFO depth: DS13476 Rev 5 §6.10 gives "1.5 KB of data", not a sample count, so D is INFERRED until measured (INT1 masked, poll DIFF_FIFO_[8:0] until FIFO_OVR_IA; commit the script and log).
 
+## Evidence
+
+Survey of the M1 code (no receiver, manual-control, arming or failsafe code existed; the motor gate at `fw/compositions/quad_fc/src/quad_fc.cpp:48`); the line references above. The Betaflight 4.5.1 source read that closed Q5.1 and Q5.2 is in decision 0041.
+
 ## Approval
 
 Pending: the lead owns acceptance; items 1-4 and the three safety numbers are Luis's.

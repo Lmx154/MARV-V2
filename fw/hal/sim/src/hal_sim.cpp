@@ -16,6 +16,7 @@ struct State {
   std::span<ServoUs> servo_latch{};
   TimeUs now_us = 0;
   RotorSpeedSample rotor{};
+  ManualControl manual{};
   MotorTestPoll motor_test{};
   MotorTestEvent last_event{};
   std::uint32_t event_count = 0;
@@ -36,6 +37,8 @@ RotorSpeedSample hal_rotor_speed() noexcept {
   s.t_us = g_state.now_us;
   return s;
 }
+
+ManualControl hal_manual_control() noexcept { return g_state.manual; }
 
 MotorTestPoll hal_motor_test() noexcept { return g_state.motor_test; }
 
@@ -92,6 +95,16 @@ void stage_rotor_speed(const std::array<float, kQuadXMotors>& omega_rad_s, std::
   }
   g_state.rotor.omega_rad_s = omega_rad_s;
   g_state.rotor.flags = flags;
+}
+
+void stage_manual_control(const ManualControl& m) noexcept {
+  if (!g_state.configured) {
+    hal_panic("hal_sim::stage_manual_control before setup");
+  }
+  if (g_state.in_tick) {
+    hal_panic("hal_sim::stage_manual_control inside a tick");
+  }
+  g_state.manual = m;
 }
 
 void stage_motor_test_request(const MotorTestRequest& request) noexcept {

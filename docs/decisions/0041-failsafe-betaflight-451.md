@@ -19,6 +19,10 @@ AUTO: centre and `rx_min_usec`), `flight/failsafe.c:68` (`failsafe_recovery_dela
 the link state only goes down at the 1.5 s check (2026.6.2 `failsafe.c:162-164,198-202`, same logic). The arm-switch
 cycle is Betaflight's usual arming practice (INFERRED from its arming flow, not read) and is ruled here on its own.
 
+## Evidence
+
+The Betaflight 4.5.1 file:line references under Why (source read 2026-10-16, fetched from github.com/betaflight/betaflight at tag 4.5.1; the 2026.6.2 clone for the exact logic).
+
 ## Approval
 
 Luis, 2026-10-16, to "1. Match Betaflight 4.5.1 exactly (300 ms hold, immediate recovery before 1.5 s)? 2. Require the

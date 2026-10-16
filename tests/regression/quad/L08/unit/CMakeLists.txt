@@ -10,3 +10,9 @@ add_executable(unit_stick_rates stick_rates_test.cpp)
 target_link_libraries(unit_stick_rates PRIVATE marv_stick_rates GTest::gtest_main)
 marv_apply_flags(unit_stick_rates)
 marv_frozen_suite(unit_stick_rates)
+
+# The manual-control pull and its SIL staging (M2 P3, decision 0040 Q3).
+add_executable(unit_manual_control manual_control_test.cpp)
+target_link_libraries(unit_manual_control PRIVATE marv_hal_sim GTest::gtest_main)
+marv_apply_flags(unit_manual_control)
+marv_frozen_suite(unit_manual_control)
