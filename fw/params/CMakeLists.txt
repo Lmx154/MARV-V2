@@ -271,3 +271,12 @@ marv_add_card_param_set(marv_params_l5_attitude_scripted CARD "${MARV_VEHICLE_CA
 marv_add_card_param_set(marv_params_l11_vertical_scripted CARD "${MARV_VEHICLE_CARD}" BUDGET "${MARV_DESIGN_BUDGET}"
   SCENARIO "${MARV_SCENARIO_VALUES}"
   EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml")
+
+# The quad flight composition's parameter set for the FC3v2 target (M1): the product set (card, budget, mixer, rate,
+# attitude, vertical) with the target's own scenario-values register (tick 7.68 kHz, 3125/24 us; the SIL's register
+# design/scenario_values.yaml stays as it is) followed by the composition's own register (none yet). The card is
+# fixed to vehicles/uzh_neurobem_5in.yaml (not MARV_VEHICLE_CARD) until a later packet names the real airframe's.
+# marv_rate, marv_mixer and marv_rate_group read the product ids, which this set keeps.
+marv_add_card_param_set(marv_params_fc3v2 CARD "vehicles/uzh_neurobem_5in.yaml" BUDGET "${MARV_DESIGN_BUDGET}"
+  SCENARIO "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml"
+  EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml")

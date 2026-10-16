@@ -56,6 +56,7 @@ add_subdirectory(fw/compositions/l2_open_loop)
 add_subdirectory(fw/compositions/l4_rate_scripted)
 add_subdirectory(fw/compositions/l5_attitude_scripted)
 add_subdirectory(fw/compositions/l11_vertical_scripted)
+add_subdirectory(fw/compositions/quad_fc)
 add_subdirectory(tests/regression/quad/L00/controls)
 
 include(cmake/marv_test_timeout.cmake)

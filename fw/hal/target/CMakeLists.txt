@@ -25,13 +25,11 @@ if(NOT marv_describe_result EQUAL 0 OR MARV_FC3V2_VERSION STREQUAL "")
   set(MARV_FC3V2_VERSION unknown)
 endif()
 
-# The flight composition linked here is a link and size proxy until the M1 tick loop exists; the image links the
-# composition's flight library, not its SIL library.
+# The image links the quad flight composition's library; there is no tick loop until a later M1 packet.
 add_executable(marv_fc3v2 src/main.cpp)
 target_compile_definitions(marv_fc3v2 PRIVATE MARV_FC3V2_VERSION="${MARV_FC3V2_VERSION}")
 target_link_libraries(marv_fc3v2 PRIVATE
-  marv_hal_target marv_composition_l11_vertical_scripted marv_params_l11_vertical_scripted_generated
-  marv_params_l11_vertical_scripted_runtime pico_stdlib)
+  marv_hal_target marv_composition_quad_fc marv_params_fc3v2_generated marv_params_fc3v2_runtime pico_stdlib)
 pico_enable_stdio_usb(marv_fc3v2 1)
 pico_enable_stdio_uart(marv_fc3v2 0)
 marv_apply_flags(marv_fc3v2 FIRMWARE)
