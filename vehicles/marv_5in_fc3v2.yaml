@@ -1,0 +1,158 @@
+# Vehicle card: Luis's 5-inch quad on the madflight FC3v2 Rev-C (quad spec §4.0 M1, M4; core contracts 2.1). Schema and
+# sigma policy: tools/card/schema.py. Frames: FRD body, CM origin. Spin: ccw = counter-clockwise viewed from above.
+# Hardware (Luis, 2026-10-15): madflight FC3v2 Rev-C, Goku G55M 55A AM32 4-in-1 ESC, flight pack 4S1P 1600 mAh 120C LiPo,
+# 14.8 V nominal, 23.68 Wh (quad spec §4.0 M4). The card schema (tools/card/lint.py) has no pack field, so the pack is
+# recorded in this comment only and no tool reads it.
+# Physics: every entry is the published value of the UZH NeuroBEM 5-inch card (vehicles/uzh_neurobem_5in.yaml), carried
+# as a PLACEHOLDER until the M4 measurements replace it; rotors.speed_range is UNKNOWN (a motor limit, see its note).
+vehicle: marv_5in_fc3v2
+
+mass:
+  value: 0.772
+  unit: kg
+  method: published
+  source: "NeuroBEM dataset readme, https://rpg.ifi.uzh.ch/neuro_bem/Readme.html ('Our drone has a mass of 0.772 kg')"
+  sigma: 0.010
+  sigma_rule: "half the spread between the conflicting sources: |0.772 - 0.752| / 2"
+  status: [UNVERIFIED, PLACEHOLDER]
+  placeholder: &uzh_placeholder
+    reason: "other airframe (UZH NeuroBEM 5in): the published value of vehicles/uzh_neurobem_5in.yaml, not a measurement of this airframe"
+    replaced_by: "the M4 thrust stand and bifilar pendulum measurements (quad spec §4.0 M4)"
+  conflict:
+    - value: 0.752
+      unit: kg
+      source: "Bauersfeld et al., NeuroBEM, RSS 2021, arXiv:2106.08015v1 §IV-B ('total weight of 752 g')"
+      state: open
+    - value: 0.752
+      unit: kg
+      source: "uzh-rpg/agile_flight envsim/parameters/quads/blackbird.yaml @ 24f21c4 (mass)"
+      state: open
+  note: "the UZH card's mass entry with its open conflict"
+
+inertia_diag:
+  value: [0.0025, 0.0021, 0.0043]
+  shape: diag3
+  unit: kg m^2
+  method: published
+  source: "NeuroBEM dataset readme; uzh-rpg/agile_flight blackbird.yaml @ 24f21c4 (inertia) — agree"
+  sigma: UNKNOWN
+  status: [PLACEHOLDER]
+  placeholder: *uzh_placeholder
+  note: "source frame FLU; a diagonal inertia is unchanged by FLU→FRD (180° about x)"
+
+rotors:
+  layout: quad_x
+  thrust_coeff:
+    value: 1.562522e-6
+    unit: N/(rad/s)^2
+    method: published
+    source: "uzh-rpg/agile_flight envsim/parameters/quads/blackbird.yaml @ 24f21c4, thrust_map[0]"
+    sigma: UNKNOWN
+    status: [INFERRED, PLACEHOLDER]
+    placeholder: *uzh_placeholder
+    note: "reading thrust_map as [c2, c1, c0] of T = c2 ω² + c1 ω + c0 and its unit are inferred; the file states neither"
+  torque_ratio:
+    value: 0.022
+    unit: m
+    method: published
+    source: "blackbird.yaml @ 24f21c4, kappa ('# [Nm/N]')"
+    sigma: UNKNOWN
+    status: [PLACEHOLDER]
+    placeholder: *uzh_placeholder
+  speed_range:
+    value: UNKNOWN
+    unit: rad/s
+    method: measured
+    source: "not measured: this airframe's motors are not recorded and no rotor speed range is known for them (M4)"
+    sigma: UNKNOWN
+    note: "Not copied from the UZH card ([150, 2800] rad/s, blackbird.yaml motor_omega_min / motor_omega_max): flatten.py emits speed_range as rotor_speed_min / rotor_speed_max, mixer.py derives idle_speed from its minimum, and the firmware mixer uses all three as rotor speed limits (fw/mixer/src/mixer.cpp). A motor limit is a safety number (CLAUDE.md UNKNOWN rule), so it stays UNKNOWN until Luis sets it."
+  motor_lag:
+    model: first_order
+    tau:
+      value: 0.033
+      unit: s
+      method: published
+      source: "Bauersfeld et al. 2021 §V-D eq. (20) ('τ_Ω = 33 ms'); blackbird.yaml @ 24f21c4 motor_tau — agree"
+      sigma: UNKNOWN
+      status: [PLACEHOLDER]
+      placeholder: *uzh_placeholder
+  esc_map:
+    model: linear_in_omega
+    method: scenario
+    source: "the UZH card's scenario model (Luis, 2026-09-29): no source gives a DShot→rotor-speed map for this airframe's ESC and motors"
+    sigma: choice
+    status: [INFERRED, PLACEHOLDER]
+    placeholder:
+      reason: "other airframe (UZH NeuroBEM 5in): the UZH card's DShot→rotor-speed model; this airframe's map is unknown (AM32 version and settings UNKNOWN, Luis 2026-10-16)"
+      replaced_by: "the M4 thrust stand's DShot-to-thrust map at two pack voltages (quad spec §4.0 M4)"
+    note: "endpoints are the DShot throttle range (core §4) and rotors.speed_range, which is UNKNOWN on this card"
+  m1:
+    position:
+      value: [0.075, 0.10, 0.0]
+      shape: frd3
+      unit: m
+      method: "derived(FLU→FRD: y_FRD = −y_FLU, z_FRD = −z_FLU, from blackbird.yaml @ 24f21c4 tbm_*)"
+      source: "uzh-rpg/agile_flight blackbird.yaml @ 24f21c4, tbm_fr/tbm_bl/tbm_fl/tbm_br"
+      sigma: UNKNOWN
+      status: [PLACEHOLDER]
+      placeholder: *uzh_placeholder
+      note: "tbm_fr"
+    spin:
+      value: ccw
+      method: scenario
+      source: &spin_source "Luis, 2026-10-16, ruling '5. yes': PX4 quad-X, motors 1 and 2 CCW, 3 and 4 CW (docs/handoff.md, M1 rulings)"
+      check: &spin_check "the M1 motor test, props off, spins each logical motor alone; its direction is checked against the card by eye (core §3; quad spec §4.0 M1)"
+      note: &spin_note "set at the ESC (AM32 reverse setting), never inverted in firmware (core §3)"
+  m2:
+    position:
+      value: [-0.075, -0.10, 0.0]
+      shape: frd3
+      unit: m
+      method: "derived(FLU→FRD: y_FRD = −y_FLU, z_FRD = −z_FLU, from blackbird.yaml @ 24f21c4 tbm_*)"
+      source: "uzh-rpg/agile_flight blackbird.yaml @ 24f21c4, tbm_fr/tbm_bl/tbm_fl/tbm_br"
+      sigma: UNKNOWN
+      status: [PLACEHOLDER]
+      placeholder: *uzh_placeholder
+      note: "tbm_bl"
+    spin:
+      value: ccw
+      method: scenario
+      source: *spin_source
+      check: *spin_check
+      note: *spin_note
+  m3:
+    position:
+      value: [0.075, -0.10, 0.0]
+      shape: frd3
+      unit: m
+      method: "derived(FLU→FRD: y_FRD = −y_FLU, z_FRD = −z_FLU, from blackbird.yaml @ 24f21c4 tbm_*)"
+      source: "uzh-rpg/agile_flight blackbird.yaml @ 24f21c4, tbm_fr/tbm_bl/tbm_fl/tbm_br"
+      sigma: UNKNOWN
+      status: [PLACEHOLDER]
+      placeholder: *uzh_placeholder
+      note: "tbm_fl"
+    spin:
+      value: cw
+      method: scenario
+      source: *spin_source
+      check: *spin_check
+      note: *spin_note
+  m4:
+    position:
+      value: [-0.075, 0.10, 0.0]
+      shape: frd3
+      unit: m
+      method: "derived(FLU→FRD: y_FRD = −y_FLU, z_FRD = −z_FLU, from blackbird.yaml @ 24f21c4 tbm_*)"
+      source: "uzh-rpg/agile_flight blackbird.yaml @ 24f21c4, tbm_fr/tbm_bl/tbm_fl/tbm_br"
+      sigma: UNKNOWN
+      status: [PLACEHOLDER]
+      placeholder: *uzh_placeholder
+      note: "tbm_br"
+    spin:
+      value: cw
+      method: scenario
+      source: *spin_source
+      check: *spin_check
+      note: *spin_note
+
+sensor_profile: madflight_fc3v2_revc

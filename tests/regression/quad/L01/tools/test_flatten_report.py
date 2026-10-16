@@ -369,7 +369,8 @@ def expected_sets():
 def sections(text):
     out, title = {}, None
     for line in text.splitlines():
-        m = re.fullmatch(r"(UNVERIFIED|INFERRED|sigma UNKNOWN|value UNKNOWN|design-budget|locked) \((\d+)\)", line)
+        m = re.fullmatch(r"(UNVERIFIED|INFERRED|PLACEHOLDER|sigma UNKNOWN|value UNKNOWN|design-budget|locked) \((\d+)\)",
+                         line)
         if m:
             title = m.group(1)
             out[title] = []
@@ -500,6 +501,24 @@ def test_report_shows_a_locked_entry_with_by_on_via(copy_root):
     assert locked[0].startswith("  card:mass  lock by luis on 2026-09-29 via manual  source: ")
     assert "locked (1)" in text
     assert "locked (0)" in report.build_report(CARD, BUDGET, ROOT)
+
+
+def test_report_lists_every_placeholder_with_its_reason_and_replacement():
+    fc3v2 = ROOT / "vehicles" / "marv_5in_fc3v2.yaml"
+    docs = {"card": yaml.safe_load(fc3v2.read_text(encoding="utf-8")),
+            "profile": yaml.safe_load((ROOT / "sensors" / "profiles" / "madflight_fc3v2_revc.yaml").read_text(
+                encoding="utf-8"))}
+    want = {f"{label}:{path}": e["placeholder"] for label, doc in docs.items() for path, e in walk(doc)
+            if "PLACEHOLDER" in (e.get("status") or [])}
+    assert {"card:mass", "card:rotors.esc_map", "profile:classes.imu.entries.odr_error"} <= set(want)
+    text = report.build_report(fc3v2, BUDGET, ROOT)
+    assert f"PLACEHOLDER ({len(want)})" in text
+    got = {ln.split()[0]: ln for ln in sections(text)["PLACEHOLDER"]}
+    assert set(got) == set(want)
+    for key, ph in want.items():
+        assert got[key] == f"  {key}  reason: {' '.join(ph['reason'].split())}  replaced by: " \
+                           f"{' '.join(ph['replaced_by'].split())}"
+    assert "PLACEHOLDER (0)" in report.build_report(CARD, BUDGET, ROOT)
 
 
 def test_report_cli_writes_the_same_text(tmp_path, real_report):
