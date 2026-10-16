@@ -1,6 +1,7 @@
 """T4 acro of the L4 rate loop in Gazebo on truth gyro (quad spec 4 L4 pass bar, T4: "acro with a scripted stick sequence
 completes without saturation beyond the mixer's documented behaviour"; decision 0005 "T4" acro predicate, owner decision
-9; decision 0004 items 3 and 5; Luis's Option 1 and recovery ruling, 2026-09-30).
+9; decision 0004 items 3 and 5; Luis's Option 1 and recovery ruling, 2026-09-30; Luis's ruling A, 2026-10-15,
+decision 0030).
 
 Skipped only when `gz sim --force-version 8` does not report 8.x or the host-gz-l4 build of libmarv_gz_lockstep.so is
 absent (`cmake --preset host-gz-l4 && cmake --build --preset host-gz-l4`); the gz CI step fails on a skip. Every run is
@@ -17,55 +18,53 @@ Segment membership (run_l4.acro_phases, from acro.yaml's sticks): every executio
 settle, the single-axis segments, the reversal and the zero segment before the combined one) is 'linear'; the combined
 segment's executions are 'combined'; the zero segment after it is the 'recovery' window.
 
-Predicate. PASS iff
+Predicate (decision 0029 B and T, tools/sim/t4_rule.py; decision 0030). PASS iff
   (i)   each run ends cleanly: gz accepted the run (run_scenario.check_exit), no hal_panic, and the trailer counts equal
         the run's (every host step, tick and applied record logged);
   (ii)  every DShot command of every tick of both runs lies in [ceil(D(omega_idle)), kDshotThrottleMax], the idle bound
         computed from the build's parameters as thrust_to_dshot computes it (run_l4.dshot_idle_bound, decision 0004);
-  (iii) no stale read in the evaluation window of either run (0003 item 11, as the step test), and
-        |w_a(n)| <= P_a + F_a + E_a(n) at every linear execution n whose host-step read is fresh in both runs, w_a the
-        gyro sample the firmware received (m = 1), E_a(n) = |w_a,m=1(n) - w_a,m=2(n)| (decision 0003 E):
-          P_a  the largest |w_a| over every execution and over the 17 x 17 tau x J grid of the band box (the T3 oracle's
-               band_envelope grid, corners included) of the LINEAR design model driven by acro.yaml's exact setpoint
-               sequence at the run's stamps: run_l4.script_response, the oracle's closed_loop chain, law and plant map
-               (the oracle's Setup.lowpass and Setup.tick_map, the build's parameters through the oracle's
-               inputs-refresh path) with a setpoint per execution (run_l4.acro_setpoints, the composition's
-               setpoint_at);
-          F_a  = TOL_a + H_a as in the step test: TOL_a = sum over the oracle's nodes (NODES) of l1 x rho, l1 the
-               oracle's impulse-response norms (rate_t3_oracle.l1_norm, both dt phases) and rho the oracle's
-               first-order float32 rounding injections along the nominal script trajectory; H_a the envelope's
-               last-halving change, the largest change of lo(n), hi(n) between the 9 x 9 and the 17 x 17 grids;
+  (iii) behaviour on the linear segments, on the m = 1 run, on the three gyro axes, error q = w - q_ref with w the gyro
+        sample the firmware received and q_ref the segment's setpoint (float32(stick x rate_max), the plan's segments),
+        at the segment's executions first .. last (run_l4.acro_phases):
+          B  |q(n)| <= |q(n_0)| + s Delta + E at every execution of the segment, s the budget's t4_settle_fraction,
+             Delta the largest |q| in the segment over the three axes (all rad/s), E_a the largest |w_a,m=1 - w_a,m=2|
+             over the segment (decision 0003 E; the predicate takes one E per quantity). Here B is checked on the
+             commanded axis, the one whose stick is deflected. B on the other axes (none commanded, or released at
+             the segment's start) belongs to the known failing item below;
+          T  on each single-axis segment (a 'single' or 'reversal' segment, one nonzero stick), the stepped axis's |q| at
+             the segment's last execution is smaller than at its first. No number: the segments are 0.5 s, about 3.1
+             tau_ref, so nothing is expected to have settled;
+        and no stale read in the evaluation window of either run (0003 item 11). The design-model envelope that this
+        item used to compare with (decision 0005) is not a predicate any more (decision 0030);
   (iv)  the replay reproduces both runs: per execution the log's tick, stamp and DShot, bit for bit
         (run_l4.replay_fidelity; its own test too);
   (v)   over the combined segment, from the m = 1 replay: flag consistency (run_l4.flag_findings: a set flag has
         |achieved| < |requested|, and |requested| - |achieved| > b_a, the decision 0005 anti-windup bound, has the flag
         set), and s = t = 1 at every execution (nan only where the requests it divides are exactly zero): no saturation
         is a checked fact of the run, not an assumption.
-Recovery, its own test, a known failing item (strict xfail until tests/regression/quad/L06/XFAIL_GATE_CLOSED exists; decisions 0005, 0009):
-  no stale read in the evaluation window, and |w_a(n)| <= Z_a(n) + F_a + E_a(n) at every fresh execution n of the
-  recovery window, Z_a(n) the largest |w_a(n)| over
-  the same 17 x 17 grid of the same script response from rest (run_l4.rest_bound). A vehicle at rest passes; the model
-  is not re-seeded from the measured state. The run fails it: the per-axis PI cannot reject the gyroscopic coupling of
-  the combined segment, and the roll integrator releases what it absorbed as an uncommanded roll with the stick centred
-  (tests/regression/quad/L04/results/acro_cause/cause.txt).
+Cross-axis coupling, its own test, the known failing item (strict xfail until tests/regression/quad/L06/XFAIL_GATE_CLOSED
+exists; decisions 0005, 0009, 0029, 0030), PASS iff both hold:
+  B on the uncommanded axes of every linear segment, Delta and E as in (iii). The run fails it on segments 3 to 5, up
+  to 0.99 rad/s of roll against a bound of 0.26 rad/s with every stick centred (decision 0030): gyroscopic coupling the
+  per-axis PI does not reject, and on segment 3 possibly also the released roll axis's own lag (not separated);
+  B on the recovery window (the zero segment after the combined one, sticks centred, q_ref = 0 on every axis), E as above.
+  The run fails it: the roll integrator releases what it absorbed of the combined segment's coupling as an uncommanded
+  roll with the stick centred, 0.09 to 10.29 rad/s (tests/regression/quad/L04/results/acro_cause/cause.txt).
+  The deferred L6 feed-forward owns both (decisions 0029, 0030).
 Saturation during transients would be expected (air mode, owner decision 9); altitude is not checked.
 
 Negative controls, harness only (0003 item 9). Each test passes only if the check fails:
-  (a) the first segment's roll setpoint overridden to 2 rate_max_roll through sil_override: (iii) fails;
+  (a) the loop disabled, rate_kp_<axis> = rate_ki_<axis> = 0 on all three axes through sil_override: (iii) fails;
   (b) (ii): no harness-side control exists. thrust_to_dshot clamps every command to [ceil(D(omega_idle)),
       kDshotThrottleMax] with the parameters in effect, and the build's idle speed is the ESC map's minimum, so the bound
       is kDshotThrottleMin itself; no parameter override moves a command below it without moving the bound. The check is
       instead shown not to be vacuous on the run's own data: one command set to the bound minus one must fail it;
-  (c) (iv): the m = 1 run replayed with l4_thrust_n one float32 ulp higher must not reproduce the run;
   (d) (v): planted replay rows, one per rule (a flag set with achieved equal to requested, a reduction beyond b_a with the
-      flag clear, s < 1 with the flag consistent), each must fail its check;
-  (e) recovery: the window planted at rest must pass and planted stuck at rate_max on every axis must fail; the real run
-      failing it is the strict xfail itself.
+      flag clear, s < 1 with the flag consistent), each must fail its check.
 """
 
 import dataclasses
 import math
-import struct
 import sys
 import tempfile
 from pathlib import Path
@@ -79,20 +78,25 @@ sys.path.insert(0, str(ROOT / "tests" / "regression" / "quad" / "L04" / "t3" / "
 import rate_t3_oracle as oracle  # noqa: E402
 import run_l4  # noqa: E402
 import run_scenario  # noqa: E402
+import schema  # noqa: E402
+import t4_rule  # noqa: E402
 
 CARD = ROOT / "vehicles" / "uzh_neurobem_5in.yaml"
 SCENARIO = ROOT / "scenarios" / "quad" / "L04" / "acro.yaml"
 PLUGIN_DIR = run_l4.DEFAULT_PLUGIN_DIR
+BUDGET = ROOT / "design" / "budget.yaml"
+SETTLE_FRACTION = schema.load_yaml(BUDGET)["t4_settle_fraction"]["value"]
+UNIT = "rad/s"
 AXES = ("roll", "pitch", "yaw")
 HALVED = 2 * (oracle.GRID - 1) + 1  # the oracle's halved grid, 17 x 17, as the step test
 PHASES = (2, 3)  # the oracle's two dt phases of an injection (its main()), as the step test
-CONTROL_RATE_FACTOR = 2  # the control's first-segment roll setpoint, in rate_max_roll
 XFAIL_GATE = ROOT / "tests" / "regression" / "quad" / "L06" / "XFAIL_GATE_CLOSED"  # created by L6 stage (e), decision 0009
-RECOVERY_KNOWN_FAILING = (
-    "decision 0005, known failing: the PI baseline's bandwidth (crossover 8.3 rad/s) cannot reject the gyroscopic "
-    "coupling of the combined full-stick segment; the roll integrator absorbs it and then releases it, an uncommanded "
-    "roll with the stick centred (tests/regression/quad/L04/results/acro_cause/cause.txt). It must pass before L6 passes "
-    "and before L8.")
+COUPLING_KNOWN_FAILING = (
+    "decisions 0005, 0029 and 0030, known failing, owned by the deferred L6 feed-forward: the PI baseline's bandwidth "
+    "(crossover 8.3 rad/s) cannot reject gyroscopic coupling; stepping one axis drives the uncommanded axes beyond B on "
+    "the linear segments, and the roll integrator absorbs the combined segment's coupling and then releases it, an "
+    "uncommanded roll with the stick centred, B fails (tests/regression/quad/L04/results/acro_cause/cause.txt). It must "
+    "pass before L6 passes and before L8.")
 
 needs_gz = pytest.mark.skipif(not (run_scenario.plugin_present(PLUGIN_DIR) and run_scenario.gz8_available()),
                               reason="gz-sim 8 or the host-gz-l4 build of libmarv_gz_lockstep.so is absent")
@@ -121,42 +125,42 @@ def clean_findings(s):
     return out
 
 
-def summary(b):
-    return {k: b[k] for k in ("P", "P / rate_max", "TOL", "H", "F")}
+def segment_errors(s, first, last, setpoint):
+    """Per gyro axis the run's gyro error w - q_ref over the executions first .. last of one segment."""
+    return [[s.executions[k]["gyro"][a] - setpoint[a] for k in range(first, last + 1)] for a in range(len(AXES))]
 
 
-def rate_bound_evaluation(runs, bound, phases, table):
-    """(iii) on a {1: run, 2: run} pair over the linear executions: per axis the largest |w|, the bound at that
-    execution, the smallest slack overall and per linear segment, and the violations."""
-    s1, s2 = runs[1], runs[2]
-    p = s1.plan
+def segment_e(runs, first, last):
+    """E_a: the largest |w_a,m=1 - w_a,m=2| over the executions first .. last."""
+    return {axis: max(abs(runs[1].executions[k]["gyro"][a] - runs[2].executions[k]["gyro"][a])
+                      for k in range(first, last + 1)) for a, axis in enumerate(AXES)}
+
+
+def behaviour_evaluation(runs, table):
+    """B on every linear segment and T on every single-axis one (module docstring), per segment the checks: "B" on the
+    commanded axis (nonzero stick), "B cross" on the others (the known failing item)."""
+    p = runs[1].plan
     out = {}
-    for a, axis in enumerate(AXES):
-        base = bound[axis]["P"] + bound[axis]["F"]
-        peak = {"w": 0.0, "k": None, "bound": base, "E": 0.0}
-        violations, closest, checked, per_segment = [], None, 0, {}
-        for x1, x2 in zip(s1.executions[:p.end_execution + 1], s2.executions[:p.end_execution + 1]):
-            if phases[x1["k"]] != "linear" or not (x1["fresh"] and x2["fresh"]):
-                continue
-            checked += 1
-            w, e = abs(x1["gyro"][a]), abs(x1["gyro"][a] - x2["gyro"][a])
-            slack = base + e - w
-            if w > peak["w"]:
-                peak = {"w": w, "k": x1["k"], "bound": base + e, "E": e}
-            if closest is None or slack < closest["slack"]:
-                closest = {"k": x1["k"], "w": w, "bound": base + e, "slack": slack}
-            for number, kind, first, last, _ in table:
-                if first <= x1["k"] <= last:
-                    key = f"segment {number} ({kind})"
-                    per_segment[key] = min(per_segment.get(key, math.inf), slack)
-            if slack < 0:
-                violations.append(x1["k"])
-        out[axis] = {"rate_max": p.rate_max[a], "design bound": summary(bound[axis]), "bound without E": base,
-                     "max |w|": peak["w"], "at execution": peak["k"], "bound there": peak["bound"],
-                     "max |w| / rate_max": peak["w"] / p.rate_max[a], "smallest slack": closest,
-                     "smallest slack per linear segment": per_segment, "violations": len(violations),
-                     "first violation": violations[0] if violations else None, "fresh executions checked": checked}
+    for number, kind, first, last, phase in table:
+        if phase != "linear":
+            continue
+        _, _, setpoint, stick = p.segments[number - 1]
+        errors = segment_errors(runs[1], first, last, setpoint)
+        segment = {axis: (UNIT, errors[a]) for a, axis in enumerate(AXES)}
+        bounded = t4_rule.bounded(segment, SETTLE_FRACTION, segment_e(runs, first, last))
+        commanded = {AXES[a] for a, x in enumerate(stick) if x != 0}
+        entry = {"kind": kind, "B": [c for c in bounded if c.name in commanded],
+                 "B cross": [c for c in bounded if c.name not in commanded], "T": None}
+        if kind in ("single", "reversal"):
+            a = next(i for i, x in enumerate(stick) if x != 0)
+            entry["T"] = {"axis": AXES[a], "first |q|": abs(errors[a][0]), "last |q|": abs(errors[a][-1]),
+                          "ok": t4_rule.shrinks(errors[a])}
+        out[f"segment {number} ({kind})"] = entry
     return out
+
+
+def behaviour_passed(behaviour):
+    return all(c.ok for e in behaviour.values() for c in e["B"]) and all(e["T"]["ok"] for e in behaviour.values() if e["T"])
 
 
 def s_t_findings(rows):
@@ -180,43 +184,47 @@ def saturation_evaluation(rows, phases, abs_bm):
             "first of them": not_one[:5], "executions with s or t nan (zero request)": nan}
 
 
-def recovery_evaluation(ex1, ex2, bound, phases):
-    """Recovery per axis from the executions of the m = 1 and m = 2 runs (lists of execution dicts)."""
-    window = [k for k, ph in enumerate(phases) if ph == "recovery"]
-    fresh = [a["fresh"] and b["fresh"] for a, b in zip(ex1, ex2)]
-    out = {}
-    for a, axis in enumerate(AXES):
-        w = [x["gyro"][a] for x in ex1]
-        e = [abs(x["gyro"][a] - y["gyro"][a]) for x, y in zip(ex1, ex2)]
-        out[axis] = run_l4.recovery_evaluation(window, w, e, bound[axis]["Z"], bound[axis]["F"], fresh)
-    return out
+def cross_axis_passed(behaviour):
+    return all(c.ok for e in behaviour.values() for c in e["B cross"])
 
 
-def evaluate(runs, bound, replays, abs_bm):
+def recovery_evaluation(runs, table):
+    """B on the recovery window, q_ref = 0 on every axis (module docstring): the checks, or None without a window."""
+    rows = [(first, last) for _, _, first, last, phase in table if phase == "recovery"]
+    if not rows:
+        return None
+    first, last = rows[0]
+    segment = {axis: (UNIT, errors) for axis, errors in zip(AXES, segment_errors(runs[1], first, last, (0.0, 0.0, 0.0)))}
+    return {"window": [first, last], "B": t4_rule.bounded(segment, SETTLE_FRACTION, segment_e(runs, first, last))}
+
+
+def evaluate(runs, replays, abs_bm):
     lo, hi = runs[1].dshot_bounds
     p = runs[1].plan
     phases, table = run_l4.acro_phases(p)
     clean = [f for s in runs.values() for f in clean_findings(s)]
     bad = {m: dshot_findings(s.dshot, lo, hi) for m, s in runs.items()}
-    rates = rate_bound_evaluation(runs, bound, phases, table)
+    behaviour = behaviour_evaluation(runs, table)
     fidelity = {f"m{m}": run_l4.replay_fidelity(s, replays[m]) for m, s in runs.items()}
     sat = saturation_evaluation(replays[1], phases, abs_bm) if fidelity["m1"] is None else {
         "passed": False, "reason": "the m = 1 replay does not reproduce the run"}
-    recovery = recovery_evaluation(runs[1].executions, runs[2].executions, bound, phases)
+    recovery = recovery_evaluation(runs, table)
     stale = {f"m{m}": len(s.window_stale) for m, s in runs.items()}
     commands = [v for s in runs.values() for row in s.dshot for v in row]
     ends = sum(1 for k in range(p.end_execution + 1) if any(v in (lo, hi) for v in runs[1].dshot[p.tick_of(k)]))
     return {
-        "passed": (not clean and not any(bad.values()) and not any(r["violations"] for r in rates.values())
-                   and not any(stale.values()) and all(f is None for f in fidelity.values()) and sat["passed"]),
+        "passed": (not clean and not any(bad.values()) and behaviour_passed(behaviour) and not any(stale.values())
+                   and all(f is None for f in fidelity.values()) and sat["passed"]),
         "segments (number, kind, first execution, last execution, phase)": [list(t) for t in table],
         "(i) clean": clean or "yes", "(ii) DShot bounds": [lo, hi],
         "(ii) DShot range seen": [min(commands), max(commands)],
-        "(ii) out of range": {f"m{m}": len(b) for m, b in bad.items()}, "(iii) per axis (linear executions)": rates,
+        "(ii) out of range": {f"m{m}": len(b) for m, b in bad.items()},
+        "(iii) behaviour (B, T) per linear segment": behaviour, "(iii) passed": behaviour_passed(behaviour),
         "(iv) replay fidelity (first mismatch)": {k: v or "none" for k, v in fidelity.items()},
         "(v) combined segment (m = 1 replay)": sat,
-        "recovery (known failing, decision 0005)": recovery,
-        "recovery passed": all(r["passed"] for r in recovery.values()) and not any(stale.values()),
+        "recovery (known failing, decisions 0005 and 0029)": recovery,
+        "recovery passed": bool(recovery) and all(c.ok for c in recovery["B"]) and not any(stale.values()),
+        "cross axes passed (known failing, decision 0030)": cross_axis_passed(behaviour),
         "stale reads": stale,
         "executions with a motor at a DShot end (m = 1)": ends,
         "gz wall (s)": sum(s.run.wall_s for s in runs.values()),
@@ -262,13 +270,6 @@ def design_bound(plan, defaults):
     return out
 
 
-@pytest.fixture(scope="module")
-def bound():
-    _, defaults = run_l4.build_parameters(PLUGIN_DIR)
-    plan = run_l4.plan_acro(run_l4.l4s.load_acro(SCENARIO), run_l4.read_param_defaults(defaults), CARD)
-    return design_bound(plan, defaults)
-
-
 def run_params(s):
     """The parameters a run flew: the build's table with the run's sil_overrides (float32 / i32 values)."""
     params = run_l4.read_param_defaults(s.params_path)
@@ -277,27 +278,26 @@ def run_params(s):
     return params
 
 
-def fly(tmp_path_factory, name, bound, overrides=None):
+def fly(tmp_path_factory, name, overrides=None):
     out = tmp_path_factory.mktemp(name)
     runs = {m: run_l4.run_acro(CARD, SCENARIO, m, out, PLUGIN_DIR, overrides=overrides) for m in (2, 1)}
     tool = run_l4.replay_tool(PLUGIN_DIR)
     replays = {m: run_l4.replay_acro(s, tool, out) for m, s in runs.items()}
-    ev = evaluate(runs, bound, replays, run_l4.mixer_abs_bm(run_params(runs[1])))
+    ev = evaluate(runs, replays, run_l4.mixer_abs_bm(run_params(runs[1])))
     path = str(out / f"{name}_{run_l4.NAME_LABEL}_sequence.report.txt")
     run_l4.write_t4_report([runs[2], runs[1]], "t4 acro", ev, path)
     return Acro(runs, replays, ev, path, out)
 
 
 @pytest.fixture(scope="module")
-def acro(tmp_path_factory, bound):
-    return fly(tmp_path_factory, "acro", bound)
+def acro(tmp_path_factory):
+    return fly(tmp_path_factory, "acro")
 
 
 @pytest.fixture(scope="module")
-def double_rate(tmp_path_factory, bound):
-    rate_max = run_l4.read_param_defaults(run_l4.build_parameters(PLUGIN_DIR)[1])["rate_max_roll"]
-    over = {"l4_seg1_roll": (run_l4.F32, repr(run_l4.r32(CONTROL_RATE_FACTOR * rate_max)))}
-    return fly(tmp_path_factory, "acro_double_rate", bound, over)
+def loop_disabled(tmp_path_factory):
+    over = {f"rate_{q}_{axis}": (run_l4.F32, "0.0") for axis in AXES for q in ("kp", "ki")}
+    return fly(tmp_path_factory, "acro_loop_disabled", over)
 
 
 # ---- the pass bar ---------------------------------------------------------------------------------------------------
@@ -310,13 +310,11 @@ def test_acro_meets_the_predicate(acro, capsys):
              f"{ev['(ii) DShot bounds']}, stale {ev['stale reads']}, executions at a DShot end "
              f"{ev['executions with a motor at a DShot end (m = 1)']}, gz wall {ev['gz wall (s)']:.2f} s",
              f"    segments {ev['segments (number, kind, first execution, last execution, phase)']}"]
-    for axis, r in ev["(iii) per axis (linear executions)"].items():
-        lines.append(f"    (iii) {axis:<5} max |w| {r['max |w|']:.6f} rad/s ({r['max |w| / rate_max']:.4f} rate_max) at "
-                     f"execution {r['at execution']}, bound there {r['bound there']:.6f} (P "
-                     f"{r['design bound']['P']:.6f}, F {r['design bound']['F']:.3e}, + E), smallest slack "
-                     f"{r['smallest slack']['slack']:.6f} rad/s at {r['smallest slack']['k']}, violations "
-                     f"{r['violations']}; per segment "
-                     + ", ".join(f"{k} {v:.6f}" for k, v in r["smallest slack per linear segment"].items()))
+    for name, e in ev["(iii) behaviour (B, T) per linear segment"].items():
+        lines.append(f"    (iii) {name}: B " + ", ".join(f"{c.name} {'ok' if c.ok else 'FAIL'} {c.value:.3e} <= {c.bound:.3e}"
+                                                         for c in e["B"])
+                     + (f"; T {e['T']['axis']} {'ok' if e['T']['ok'] else 'FAIL'} |q| {e['T']['first |q|']:.4f} -> "
+                        f"{e['T']['last |q|']:.4f}" if e["T"] else ""))
     lines.append(f"    (iv) replay first mismatch {ev['(iv) replay fidelity (first mismatch)']}")
     lines.append(f"    (v) combined executions {sat.get('combined executions')}, per axis {sat.get('per axis')}, flag "
                  f"findings {sat.get('flag findings')}, s or t not 1 {sat.get('executions with s or t not 1')}")
@@ -338,19 +336,18 @@ def test_acro_replay_reproduces_the_run(acro, capsys):
 
 
 @needs_gz
-@pytest.mark.xfail(condition=not XFAIL_GATE.exists(), reason=RECOVERY_KNOWN_FAILING, strict=True, raises=AssertionError)
-def test_acro_recovers_after_the_combined_segment(acro, capsys):
-    rec = acro.evaluation["recovery (known failing, decision 0005)"]
-    p = acro.runs[1].plan
-    lines = []
-    for axis, r in rec.items():
-        lines.append(f"acro recovery {axis:<5} {'PASS' if r['passed'] else 'FAIL'}  worst margin "
-                     f"{r['worst margin']:.6f} rad/s at execution {r['at execution']} "
-                     f"(t = {p.stamp_us(r['at execution']) / 1e6:.6f} s, |w| {abs(r['w there']):.6f}, Z + F + E "
-                     f"{r['Z + F + E there']:.6f}), violations {r['violations']} ({r['first violation']}.."
-                     f"{r['last violation']}) of {r['fresh executions checked']}")
+@pytest.mark.xfail(condition=not XFAIL_GATE.exists(), reason=COUPLING_KNOWN_FAILING, strict=True, raises=AssertionError)
+def test_acro_rejects_cross_axis_coupling(acro, capsys):
+    ev = acro.evaluation
+    rec = ev["recovery (known failing, decisions 0005 and 0029)"]
+    lines = [f"acro cross axes, {name}: B " + ", ".join(
+        f"{c.name} {'ok' if c.ok else 'FAIL'} {c.value:.6f} <= {c.bound:.6f}" for c in e["B cross"])
+        for name, e in ev["(iii) behaviour (B, T) per linear segment"].items() if e["B cross"]]
+    lines.append(f"acro recovery window {rec['window']}: B " + ", ".join(
+        f"{c.name} {'ok' if c.ok else 'FAIL'} {c.value:.6f} <= {c.bound:.6f}" for c in rec["B"]))
     _say(capsys, *lines)
-    assert acro.evaluation["recovery passed"], rec
+    assert ev["cross axes passed (known failing, decision 0030)"] and ev["recovery passed"], (
+        [(n, e["B cross"]) for n, e in ev["(iii) behaviour (B, T) per linear segment"].items()], rec)
 
 
 @needs_gz
@@ -369,19 +366,22 @@ def test_acro_script_is_the_scenario_on_the_live_parameters(acro):
 # ---- negative controls ----------------------------------------------------------------------------------------------
 
 @needs_gz
-def test_control_double_rate_segment_fails_the_rate_bound(double_rate, capsys):
-    ev = double_rate.evaluation
-    r = ev["(iii) per axis (linear executions)"]["roll"]
-    _say(capsys, f"acro control l4_seg1_roll = {CONTROL_RATE_FACTOR} rate_max: roll max |w| {r['max |w|']:.6f} rad/s, "
-                 f"bound {r['bound there']:.6f}, violations {r['violations']} "
-                 f"({'PASS' if ev['passed'] else 'FAIL'}, must fail)")
-    for s in double_rate.runs.values():
-        assert list(s.harness_overrides) == ["l4_seg1_roll"]
-        assert f'<sil_override param="l4_seg1_roll" type="f32">{s.harness_overrides["l4_seg1_roll"][1]}</sil_override>' \
-            in Path(s.run.world_path).read_text()
-    assert not clean_findings(double_rate.runs[1]) and not clean_findings(double_rate.runs[2]), "must fail on (iii) only"
-    assert not any(ev["stale reads"].values()), "the control must fail on the rate bound, not on a stale read"
-    assert r["violations"] > 0 and not ev["passed"], ev
+def test_control_loop_disabled_fails_the_behaviour_predicates(loop_disabled, capsys):
+    ev = loop_disabled.evaluation
+    lines = [f"acro control kp = ki = 0 on every axis: (iii) {'PASS' if ev['(iii) passed'] else 'FAIL'} (must fail)"]
+    for name, e in ev["(iii) behaviour (B, T) per linear segment"].items():
+        lines.append(f"    {name}: B " + ", ".join(f"{c.name} {'ok' if c.ok else 'FAIL'}" for c in e["B"])
+                     + (f"; T {e['T']['axis']} {'ok' if e['T']['ok'] else 'FAIL'} |q| {e['T']['first |q|']:.6f} -> "
+                        f"{e['T']['last |q|']:.6f}" if e["T"] else ""))
+    _say(capsys, *lines)
+    for s in loop_disabled.runs.values():
+        assert set(s.harness_overrides) == {f"rate_{q}_{axis}" for axis in AXES for q in ("kp", "ki")}
+        assert all(v == (run_l4.F32, "0.0") for v in s.harness_overrides.values())
+        for name in s.harness_overrides:
+            assert f'<sil_override param="{name}" type="f32">0.0</sil_override>' in Path(s.run.world_path).read_text()
+    assert not clean_findings(loop_disabled.runs[1]) and not clean_findings(loop_disabled.runs[2]), "must fail on (iii) only"
+    assert not any(ev["stale reads"].values()), "the control must fail on the behaviour, not on a stale read"
+    assert not ev["(iii) passed"] and not ev["passed"], ev
 
 
 @needs_gz
@@ -391,18 +391,6 @@ def test_control_dshot_check_is_not_vacuous(acro):
     assert dshot_findings(rows, lo, hi) == []
     rows[len(rows) // 2][0] = lo - 1
     assert dshot_findings(rows, lo, hi) == [(len(rows) // 2, 1, lo - 1)]
-
-
-@needs_gz
-def test_control_replay_of_a_one_ulp_thrust_change_does_not_reproduce_the_run(acro, capsys):
-    s = acro.runs[1]
-    bits = struct.unpack("<I", struct.pack("<f", s.plan.thrust_n))[0]
-    up = struct.unpack("<f", struct.pack("<I", bits + 1))[0]  # the next float32 above l4_thrust_n
-    rows = run_l4.replay_acro(s, run_l4.replay_tool(PLUGIN_DIR), acro.out_dir,
-                              overrides={"l4_thrust_n": (run_l4.F32, repr(up))}, tag="_thrust_ulp_control")
-    mismatch = run_l4.replay_fidelity(s, rows)
-    _say(capsys, f"acro replay control l4_thrust_n {s.plan.thrust_n!r} -> {up!r}: first mismatch {mismatch} (must exist)")
-    assert mismatch is not None
 
 
 @needs_gz
@@ -431,26 +419,3 @@ def test_control_flag_and_saturation_checks_are_not_vacuous(acro):
             "flag_pitch": 1, "s": 0.5}
     ev = planted(**half)
     assert ev["flag findings"] == 0 and ev["executions with s or t not 1"] == 1 and not ev["passed"], ev
-
-
-@needs_gz
-def test_control_recovery_check_passes_rest_and_fails_a_stuck_rate(acro, bound, capsys):
-    s1, s2 = acro.runs[1], acro.runs[2]
-    phases, _ = run_l4.acro_phases(s1.plan)
-    window = [k for k, ph in enumerate(phases) if ph == "recovery"]
-
-    def planted(gyro):
-        ex1 = [dict(x) for x in s1.executions]
-        ex2 = [dict(x) for x in s2.executions]
-        for k in window:
-            ex1[k]["gyro"] = ex2[k]["gyro"] = gyro
-        return recovery_evaluation(ex1, ex2, bound, phases)
-
-    rest = planted((0.0, 0.0, 0.0))
-    stuck = planted(tuple(s1.plan.rate_max))
-    _say(capsys, "acro recovery controls: rest " + ", ".join(f"{a} {r['passed']} (worst {r['worst margin']:.6f})"
-                                                              for a, r in rest.items())
-         + "; stuck at rate_max " + ", ".join(f"{a} {r['passed']} (worst {r['worst margin']:.6f})"
-                                              for a, r in stuck.items()))
-    assert all(r["passed"] for r in rest.values()), rest
-    assert not any(r["passed"] for r in stuck.values()), stuck

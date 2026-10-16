@@ -330,10 +330,11 @@ or the budget register), the test level of each check (core §7.1), and what fre
   - T3: negative controls. Gains × 1.1 and one tick of added delay each move the golden metrics outside tolerance.
   - T4: in Gazebo, on truth gyro, per-axis steps settle by the deadline (S) and stay bounded (B) on all three axes, with
     s = `t4_settle_fraction`, and chirp injection measures margins with PM − U ≥ `PM_min`; no design-model envelope. The
-    control is the rate loop disabled (kp = ki = 0), which fails S and B (decision 0029).
+    control is the rate loop disabled (kp = ki = 0), which fails the predicate (decisions 0029, 0030).
   - T4: acro with a scripted stick sequence completes without saturation beyond the mixer's documented behaviour,
-    stays bounded (B) and shrinks the stepped axis's error (T) on its linear segments; no design-model envelope. The
-    acro recovery is the one known failing item (B fails it), owned by the deferred feed-forward (L6 stage (c)).
+    stays bounded (B) on the commanded axis and shrinks its error (T) on its linear segments; no design-model
+    envelope. The acro cross-axis coupling is the one known failing item: B on the uncommanded axes of the linear
+    segments and on the recovery window fails, owned by the deferred feed-forward (L6 stage (c), decision 0030).
 - **Freezes:** all of the above.
 
 ### L5 — Attitude loop on truth attitude
@@ -404,8 +405,8 @@ Built after L5 and beside L6 (it needs nothing from L6); numbered L11 because L0
   - (d) DShot error diffusion;
   - (e) close.
 
-  The L4 acro known failing item (the acro recovery, owned by the deferred feed-forward; R2 recovers in Gazebo and is
-  no longer one, decision 0029) stays a strict xfail until stage (e) creates
+  The L4 acro known failing item (the acro cross-axis coupling on the linear segments and in the recovery, owned by
+  the deferred feed-forward; R2 recovers in Gazebo and is no longer one, decisions 0029, 0030) stays a strict xfail until stage (e) creates
   `tests/regression/quad/L06/XFAIL_GATE_CLOSED` (decision 0009).
 - **Pass bar:**
   - (a) T1: the simulated IMU's Allan deviation matches the profile's noise density and bias instability.
