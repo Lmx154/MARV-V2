@@ -6,7 +6,8 @@
   test-harness value; as with `per_push_check_time_max` and the other `t4_*` entries it is claimed in a layer manifest.
 - `tests/regression/quad/L06/param_ids`: one line added, `t4_settle_fraction` (the L6 manifest holds the `t4_*` entries).
 - `tests/regression/quad/L06/product_params/marv_params_product_table.txt`: regenerated in the CI image (101 to 102
-  records, row 101 added, new schema hash). `tests/regression/quad/L06/results/ff_eval/{card_worst,sweep}.txt`: only the
+  records, row 101 added, new schema hash). `tests/regression/quad/L06/results/ff_eval/card_worst.txt` and
+  `tests/regression/quad/L06/results/ff_eval/sweep.txt`: only the
   `design/budget.yaml` sha256 input line changes.
 - `tools/sim/t4_rule.py`: adds `settles` (S), `bounded` (B) and `shrinks` (T) beside the L2 rule; nothing existing changes.
 - `tests/regression/quad/L02/tools/test_t4_rule.py`: six known-answer tests appended; no existing test is touched.
