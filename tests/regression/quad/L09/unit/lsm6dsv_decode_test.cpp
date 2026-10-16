@@ -178,5 +178,24 @@ TEST(Lsm6dsvDecode, StampBeforeOnePeriodHasElapsedIsNotNegative) {
   EXPECT_EQ(st.clamps(), 0U);
 }
 
+// D = FIFO depth / ODR (core EMB-6, decision 0040 Q2). Restated: 1.5 KB = 1536 bytes (DS13476 6.10, KB = 1024 INFERRED), a word
+// is 7 bytes (6.10.8), 1536 / 7 = 219 words, 2 words per gyroscope + accelerometer sample = 109 samples; the part's tick
+// period is 1953125 / 14649 us (fc3v2_scenario_values.yaml), so D = 109 x 1953125 / 14649 = 212890625 / 14649 = 14532.7 us,
+// rounded down to 14532.
+TEST(Lsm6dsvDecode, ReadDeadlineIsTheFifoDepthInSamplesTimesTheTickPeriodRoundedDown) {
+  EXPECT_EQ(kFifoDepthWords, 219U);
+  EXPECT_EQ(kFifoDepthSamples, 109U);
+  EXPECT_EQ(imu_read_deadline_us(1953125, 14649), 14532U);
+  EXPECT_EQ(imu_read_deadline_us(1000000, 7680), 14192U);  // the nominal 7.68 kHz: 109 x 130.208 us = 14192.7 us
+  EXPECT_EQ(imu_read_deadline_us(1, 1), 109U);              // exact: no rounding
+  EXPECT_EQ(imu_read_deadline_us(1, 2), 54U);               // 54.5 rounds down
+}
+
+TEST(Lsm6dsvDecode, ReadDeadlineOfAnInvalidPeriodIsZero) {
+  EXPECT_EQ(imu_read_deadline_us(0, 1), 0U);
+  EXPECT_EQ(imu_read_deadline_us(1, 0), 0U);
+  EXPECT_EQ(imu_read_deadline_us(-1, 1), 0U);
+}
+
 }  // namespace
 }  // namespace marv::hal_target

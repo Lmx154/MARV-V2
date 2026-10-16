@@ -58,7 +58,8 @@ struct TickPeriod {
 // then on every sample goes to `sink`, in the interrupt, and `rate_counts` is read after each batch. hal_panic on any
 // failure, and when the period `design_period` is not exactly the one this part's INTERNAL_FREQ_FINE gives (DS13476
 // §9.49, tick_period_from_trim): the rate design was then checked at the wrong period (decision 0014, Amendment
-// 2026-10-16). Call once, from main, after composition::init.
+// 2026-10-16). Last it arms the read-deadline alarm (D = FIFO depth / ODR, imu_read_deadline_us): from then on hal_panic
+// when no sample is delivered for D (decision 0040 Q2; lsm6dsv.cpp). Call once, from main, after composition::init.
 ImuBoot imu_start(ImuSink sink, RateCountsSource rate_counts, TickPeriod design_period) noexcept;
 
 // The hal_actuators_write calls so far (hal_target.cpp). Called only from the tick's counter publication.

@@ -32,6 +32,13 @@ namespace marv {
 // frames 0, before any).
 [[nodiscard]] ManualControl hal_manual_control() noexcept;
 
+// The IMU read-deadline misses since init, a pull read (decision 0040 Q2): a count of the IMU interrupt entries that found
+// the sensor FIFO overrun (samples lost because a read came later than FIFO depth / ODR, core EMB-6). The driver increments
+// it before it delivers that batch, so the tick of the batch's first sample already sees it. Cumulative and never reset;
+// the consumer latches it. Wait-free, callable from the tick. A sensor that delivers nothing for that long does not reach
+// the tick: the target halts through hal_panic. hal_sim: the count the host staged before the tick began (0 before any).
+[[nodiscard]] std::uint32_t hal_imu_deadline_misses() noexcept;
+
 // The composition's reply to the console: one event per accepted request, refused request or end of a test. May be
 // called in a tick; never blocks; the console prints it from the background loop.
 void hal_motor_test_report(const MotorTestEvent& event) noexcept;

@@ -17,6 +17,7 @@ struct State {
   TimeUs now_us = 0;
   RotorSpeedSample rotor{};
   ManualControl manual{};
+  std::uint32_t imu_deadline_misses = 0;
   MotorTestPoll motor_test{};
   MotorTestEvent last_event{};
   std::uint32_t event_count = 0;
@@ -39,6 +40,8 @@ RotorSpeedSample hal_rotor_speed() noexcept {
 }
 
 ManualControl hal_manual_control() noexcept { return g_state.manual; }
+
+std::uint32_t hal_imu_deadline_misses() noexcept { return g_state.imu_deadline_misses; }
 
 MotorTestPoll hal_motor_test() noexcept { return g_state.motor_test; }
 
@@ -105,6 +108,16 @@ void stage_manual_control(const ManualControl& m) noexcept {
     hal_panic("hal_sim::stage_manual_control inside a tick");
   }
   g_state.manual = m;
+}
+
+void stage_imu_deadline_misses(std::uint32_t count) noexcept {
+  if (!g_state.configured) {
+    hal_panic("hal_sim::stage_imu_deadline_misses before setup");
+  }
+  if (g_state.in_tick) {
+    hal_panic("hal_sim::stage_imu_deadline_misses inside a tick");
+  }
+  g_state.imu_deadline_misses = count;
 }
 
 void stage_motor_test_request(const MotorTestRequest& request) noexcept {

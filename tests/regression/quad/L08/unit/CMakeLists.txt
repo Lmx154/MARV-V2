@@ -25,3 +25,9 @@ target_link_libraries(unit_arming PRIVATE
   marv_arming marv_params_fc3v2_runtime marv_params_fc3v2_generated marv_hal_sim GTest::gtest_main)
 marv_apply_flags(unit_arming)
 marv_frozen_suite(unit_arming)
+
+# The IMU read-deadline miss count and its SIL staging (M2 P7, decision 0040 Q2).
+add_executable(unit_imu_deadline imu_deadline_test.cpp)
+target_link_libraries(unit_imu_deadline PRIVATE marv_hal_sim GTest::gtest_main)
+marv_apply_flags(unit_imu_deadline)
+marv_frozen_suite(unit_imu_deadline)
