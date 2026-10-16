@@ -37,6 +37,18 @@ pico_board_cmake_set(PICO_PLATFORM, rp2350)
 #define MADFLIGHT_FC3V2_IMU_CS_PIN 29
 #define MADFLIGHT_FC3V2_IMU_INT_PIN 27
 #define MADFLIGHT_FC3V2_IMU_CLKIN_PIN 26
+// IMU_INT (GPIO 27) is the LSM6DSV's INT1: INFERRED from madflight (MIT, github.com/qqqlab/madflight @ 1d5efa7),
+// whose LSM6DSV driver routes its data-ready interrupt to INT1_CTRL and reads it on pin_imu_int 27. The LSM6DSV has no
+// clock input; GPIO 26 is not driven.
+
+// --- IMU mounting: board FRD axis i = SIGN_i x LSM6DSV axis CHIP_AXIS_i (0 = x, 1 = y, 2 = z) ---
+// sensors/profiles/madflight_fc3v2_revc.yaml, mounting_axis_signs (-1, +1, -1), no permutation; INFERRED from madflight.
+#define MADFLIGHT_FC3V2_IMU_FRD_X_CHIP_AXIS 0
+#define MADFLIGHT_FC3V2_IMU_FRD_X_SIGN (-1)
+#define MADFLIGHT_FC3V2_IMU_FRD_Y_CHIP_AXIS 1
+#define MADFLIGHT_FC3V2_IMU_FRD_Y_SIGN 1
+#define MADFLIGHT_FC3V2_IMU_FRD_Z_CHIP_AXIS 2
+#define MADFLIGHT_FC3V2_IMU_FRD_Z_SIGN (-1)
 
 // --- Serial ports: SER0 (radio receiver), SER1 (GPS) ---
 #define MADFLIGHT_FC3V2_SER0_TX_PIN 0

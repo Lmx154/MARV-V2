@@ -11,6 +11,8 @@
 #include <tusb.h>
 
 #include "marv/hal/hal.hpp"
+#include "marv/hal_target/imu.hpp"
+#include "marv/types/actuator.hpp"
 
 namespace marv {
 namespace {
@@ -44,9 +46,26 @@ RotorSpeedSample hal_rotor_speed() noexcept {
   return s;
 }
 
-// Stub until the DShot packet: no motor output exists, so a write is a fault.
-void hal_actuators_write(std::span<const DshotValue>, std::span<const ServoUs>) noexcept {
-  hal_panic("hal_actuators_write: no motor output on the target yet");
+namespace hal_target {
+namespace {
+
+// Written only inside the tick (the IMU interrupt), read by its counter publication (lsm6dsv.cpp).
+std::uint64_t g_actuator_writes = 0;
+
+}  // namespace
+
+std::uint64_t actuator_writes() noexcept { return g_actuator_writes; }
+
+}  // namespace hal_target
+
+// No motor output exists until P10, which replaces this with the PIO DShot output: a write is counted and dropped
+// (quad_fc writes DshotValue::stop() on every rate tick, M1 P9 ruling). The span sizes must equal the board's outputs,
+// the four motor pads OUT0-OUT3 and no servo, as hal_sim checks them against its bound latch.
+void hal_actuators_write(std::span<const DshotValue> motor, std::span<const ServoUs> servo) noexcept {
+  if (motor.size() != kQuadXMotors || !servo.empty()) {
+    hal_panic("hal_actuators_write span size differs from the board's outputs");
+  }
+  ++hal_target::g_actuator_writes;
 }
 
 // With no motor output there is nothing for a panic to do to the motors. What panic does to them (cut, hold, idle) is

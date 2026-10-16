@@ -2,11 +2,13 @@
 # Pico SDK, and marv_fc3v2 is the linked image. Added from fw/hal/CMakeLists.txt only when MARV_TARGET is m33. Only this
 # directory links Pico SDK targets: the library takes the SDK *_headers targets PRIVATE (they add include directories to
 # this library alone), the image links the full SDK libraries it needs.
-add_library(marv_hal_target STATIC src/hal_target.cpp)
+add_library(marv_hal_target STATIC src/hal_target.cpp src/lsm6dsv.cpp)
+target_include_directories(marv_hal_target PUBLIC include)
 target_link_libraries(marv_hal_target
   PUBLIC marv_hal marv_types
-  PRIVATE pico_base_headers pico_time_headers pico_sync_headers hardware_timer_headers hardware_sync_headers
-          hardware_gpio_headers hardware_irq_headers hardware_structs_headers)
+  PRIVATE marv_lsm6dsv_decode
+          pico_base_headers pico_time_headers pico_sync_headers hardware_timer_headers hardware_sync_headers
+          hardware_gpio_headers hardware_irq_headers hardware_structs_headers hardware_spi_headers)
 # hal_panic polls the TinyUSB device (the image's pico_stdio_usb brings the TinyUSB sources and the tusb_config.h). Only
 # the include directories and compile definitions of TinyUSB's own target are taken, not its sources: those are compiled
 # once, into the image.
@@ -25,11 +27,16 @@ if(NOT marv_describe_result EQUAL 0 OR MARV_FC3V2_VERSION STREQUAL "")
   set(MARV_FC3V2_VERSION unknown)
 endif()
 
-# The image links the quad flight composition's library; there is no tick loop until a later M1 packet.
+# The image links the quad flight composition's library and ticks it from the IMU interrupt (M1 P9).
+# MARV_FC3V2_COUNT_ONLY (bench only, default OFF): the tick counts and stamps the samples without calling the
+# composition, so the driver runs alone; the default image ticks quad_fc.
+option(MARV_FC3V2_COUNT_ONLY "FC3v2 bench image whose IMU tick does not call the composition" OFF)
 add_executable(marv_fc3v2 src/main.cpp)
-target_compile_definitions(marv_fc3v2 PRIVATE MARV_FC3V2_VERSION="${MARV_FC3V2_VERSION}")
+target_compile_definitions(marv_fc3v2 PRIVATE MARV_FC3V2_VERSION="${MARV_FC3V2_VERSION}"
+  $<$<BOOL:${MARV_FC3V2_COUNT_ONLY}>:MARV_FC3V2_COUNT_ONLY>)
 target_link_libraries(marv_fc3v2 PRIVATE
-  marv_hal_target marv_composition_quad_fc marv_params_fc3v2_generated marv_params_fc3v2_runtime pico_stdlib)
+  marv_hal_target marv_lsm6dsv_decode marv_composition_quad_fc marv_params_fc3v2_generated marv_params_fc3v2_runtime
+  pico_stdlib hardware_spi)
 pico_enable_stdio_usb(marv_fc3v2 1)
 pico_enable_stdio_uart(marv_fc3v2 0)
 marv_apply_flags(marv_fc3v2 FIRMWARE)

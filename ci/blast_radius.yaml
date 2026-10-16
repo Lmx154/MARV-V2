@@ -168,6 +168,13 @@ rules:
     gz_groups: []
     why: "the Pico SDK pin and the board header are read only when MARV_TARGET is m33 (CMakeLists.txt); the host presets and the gz builds never include them"
 
+  - paths: [boards/parts/**]
+    ctest_labels: [L09]
+    run_ci_steps: ["@flight_gates"]
+    pytest_paths: []
+    gz_groups: []
+    why: "a part header (boards/parts/lsm6dsv.hpp) is included by marv_lsm6dsv_decode (fw/hal/target/decode), built on the host too and tested by the L09 decode test; boards/** adds the m33 steps"
+
   # ---------------------------------------------------------------- fw: the libraries
   - paths: [fw/sched/**]
     ctest_labels: [L00, L04, L05, L06, L09, L11]
