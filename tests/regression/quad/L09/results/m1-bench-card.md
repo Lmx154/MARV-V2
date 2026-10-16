@@ -29,6 +29,11 @@ If no motor turns at 100: retry at 150, then 200 (still ≤ cap). Note the lowes
 3. Firmware halt: start a 3 s test, halt the core over SWD
    (`openocd ... -c init -c "targets rp2350.cm0" -c halt`) → no more frames → AM32 signal-loss stop. Time it
    (expected well under 1 s; AM32 timeout INFERRED). This covers the stalled-tick case the P11 review flagged.
+3b. SWD halt with the watchdog (image with `watchdog_timeout_ms` 2048): start a 3 s test, halt the core as in 3.3 and
+   leave it halted → the motor stops about 2048 ms after the halt plus the boot to the first stop frame (the debugger
+   pause is off, so the halt does not pause the watchdog); the console reopens and shows `watchdog ok: 2048 ms, last
+   reset: watchdog`. Time it. `tools/target/flash.sh` disables the watchdog right after its halt, so flash with it, not
+   with a bare OpenOCD halt, when the next flash must not be reset mid-write.
 4. Panic: (needs a debugger call; optional) → stop frames, motor stops.
 
 Afterwards: disconnect the pack first, then USB. Commit the console log and these results (evidence rule).

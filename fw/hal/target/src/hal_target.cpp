@@ -14,6 +14,7 @@
 #include "marv/hal_target/bench_stats.hpp"
 #include "marv/hal_target/imu.hpp"
 #include "marv/hal_target/motor_output.hpp"
+#include "marv/hal_target/watchdog.hpp"
 #include "marv/types/actuator.hpp"
 
 namespace marv {
@@ -117,6 +118,9 @@ void hal_panic(const char* reason) noexcept {
   std::size_t part = 0;
   std::size_t sent = 0;
   for (;;) {
+    // The loop keeps the watchdog fed: the stop frames are already being sent, and a reset every timeout would restart
+    // the firmware and drop the USB session, so the PANIC message could not be read.
+    hal_target::watchdog_feed();
     hal_target::motor_output_panic_service();
     tud_int_handler(0);
     tud_task();

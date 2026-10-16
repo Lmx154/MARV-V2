@@ -17,6 +17,7 @@
 #include "marv/hal_target/imu.hpp"
 #include "marv/hal_target/motor_output.hpp"
 #include "marv/hal_target/motor_test.hpp"
+#include "marv/hal_target/watchdog.hpp"
 #include "marv/params/param.hpp"
 #include "marv/prim/constants.hpp"
 #include "marv/types/imu_sample.hpp"
@@ -26,7 +27,7 @@ namespace {
 
 #if defined(MARV_FC3V2_COUNT_ONLY)
 // The bench mode (fw/hal/target/CMakeLists.txt): the driver counts, stamps and checks every sample; nothing else runs.
-void count_only(const marv::ImuSample&) noexcept {}
+void count_only(const marv::ImuSample&) noexcept { marv::hal_target::watchdog_feed(); }
 constexpr marv::hal_target::ImuSink kSink = &count_only;
 constexpr const char* kTickMode = "count-only (MARV_FC3V2_COUNT_ONLY)";
 #else
@@ -34,9 +35,17 @@ constexpr marv::hal_target::ImuSink kSink = &marv::composition::tick;
 constexpr const char* kTickMode = "quad_fc";
 #endif
 
-// Read by the IMU interrupt after each batch (imu.hpp).
+// Read by the IMU interrupt after each batch (imu.hpp). The watchdog is fed here, and only when the rate executions have
+// advanced since the last feed: a stalled rate tick (or a stopped IMU interrupt) stops the executions and so trips the
+// watchdog (watchdog.hpp). The count-only image has no rate executions; its sink feeds instead.
+std::uint64_t g_fed_executions = 0;
+
 marv::hal_target::RateCounts rate_counts() noexcept {
   const marv::composition::RateCounts c = marv::composition::rate_counts();
+  if (c.executions != g_fed_executions) {
+    g_fed_executions = c.executions;
+    marv::hal_target::watchdog_feed();
+  }
   return marv::hal_target::RateCounts{c.executions, c.timing_faults};
 }
 
@@ -72,10 +81,11 @@ constexpr auto kPrintPeriodUs = static_cast<marv::TimeUs>(marv::prim::kMicroseco
 
 // How far boot got, printed at boot and again whenever a host opens the CDC port, so a host that attaches late still
 // reads it (the lines printed at boot are lost when no host has the port open).
-enum class Stage { kStart, kParamsOk, kInitOk, kMotorsOk, kImuOk };
+enum class Stage { kStart, kParamsOk, kInitOk, kMotorsOk, kImuOk, kWatchdogOk };
 Stage stage = Stage::kStart;
 marv::hal_target::MotorOutputBoot motor_boot;
 marv::hal_target::ImuBoot imu_boot;
+marv::hal_target::WatchdogBoot watchdog_boot;
 
 void print_progress() {
   std::printf("marv_fc3v2 %s\n", MARV_FC3V2_VERSION);
@@ -98,6 +108,10 @@ void print_progress() {
     std::printf("bench stats: %s\n", marv::hal_target::bench::kEnabled
                                          ? "on (MARV_FC3V2_BENCH_STATS, DWT CYCCNT at clk_sys)"
                                          : "off");
+  }
+  if (stage >= Stage::kWatchdogOk) {
+    std::printf("watchdog ok: %ld ms, last reset: %s\n", static_cast<long>(watchdog_boot.timeout_ms),
+                watchdog_boot.last_reset_by_watchdog ? "watchdog" : "other");
   }
 }
 
@@ -307,6 +321,10 @@ int main() {
   std::printf("motors ok\n");
   imu_boot = marv::hal_target::imu_start(kSink, &rate_counts);
   stage = Stage::kImuOk;
+  // Enabled last: the motor output sends stop frames and the IMU tick runs. The first feed is the rate execution that
+  // follows; until then the countdown started here covers it.
+  watchdog_boot = marv::hal_target::watchdog_start(marv::param_value<ParamId::watchdog_timeout_ms>());
+  stage = Stage::kWatchdogOk;
   print_progress();
 
   bool was_connected = false;

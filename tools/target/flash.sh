@@ -25,12 +25,18 @@ common=(-f interface/cmsis-dap.cfg -c "adapter serial $MARV_PROBE_SERIAL" -f tar
 # hardware/regs/{addressmap,psm,watchdog}.h (PSM_BASE + PSM_WDSEL_OFFSET, PSM_WDSEL_BITS & ~(ROSC|XOSC),
 # WATCHDOG_BASE + WATCHDOG_CTRL_OFFSET, WATCHDOG_CTRL_TRIGGER_BITS). The chip resets mid-command, so OpenOCD's
 # shutdown reports a failed access; that is expected.
+# The firmware enables the watchdog with the debugger pause off, so it keeps counting while the core is halted and
+# OpenOCD's reset restarts only the cores: a flash longer than the timeout would be
+# reset mid-write. Clear WATCHDOG CTRL ENABLE (WATCHDOG_BASE + WATCHDOG_CTRL_OFFSET, WATCHDOG_CTRL_ENABLE_BITS 0x40000000,
+# the same SDK headers) straight after the halt, before anything is probed or programmed.
+wdt_off=(-c "targets rp2350.cm0" -c "halt"
+         -c "write_memory 0x400d8000 32 [expr {[read_memory 0x400d8000 32 1] & ~0x40000000}]")
 reboot=(-c "targets rp2350.cm0" -c "halt"
         -c "write_memory 0x40018008 32 [expr {0x01ffffff & ~0xc}]"
         -c "write_memory 0x400d8000 32 [expr {[read_memory 0x400d8000 32 1] | 0x80000000}]"
         -c "shutdown")
 if (( probe_only )); then
-  log="$("$openocd" "${common[@]}" -c "init" -c "reset halt" -c "flash probe 0" "${reboot[@]}" 2>&1)" || true
+  log="$("$openocd" "${common[@]}" -c "init" "${wdt_off[@]}" -c "reset halt" -c "flash probe 0" "${reboot[@]}" 2>&1)" || true
   echo "$log"
   grep -q 'size = [0-9]* KiB' <<<"$log" || { echo "flash: no flash bank found" >&2; exit 1; }
   exit 0
@@ -38,6 +44,6 @@ fi
 
 [[ -f "$elf" ]] || { echo "flash: no image at $elf (cmake --build --preset m33)" >&2; exit 1; }
 echo "flash: image $elf sha256 $(sha256sum "$elf" | cut -d' ' -f1)"
-log="$("$openocd" "${common[@]}" -c "program $elf verify" "${reboot[@]}" 2>&1)" || true  # the reboot ends in an error
+log="$("$openocd" "${common[@]}" -c "init" "${wdt_off[@]}" -c "program $elf verify" "${reboot[@]}" 2>&1)" || true  # the reboot ends in an error
 echo "$log"
 grep -q '\*\* Verified OK \*\*' <<<"$log" || { echo "flash: verify did not pass" >&2; exit 1; }

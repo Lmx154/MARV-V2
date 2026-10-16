@@ -9,6 +9,12 @@
 motor_pad:
   {type: i32, value: [3, 0, 1, 2], shape: motors, unit: "1", method: scenario, source: "Measured 2026-10-16 on the bench (M1 P11 console motor test, props off, DShot 100, Luis observing; tests/regression/quad/L09/results/m1-bench-card.md): with the identity map OUT0 drove rear left (CCW), OUT1 front left (CW), OUT2 rear right (CW), OUT3 front right (CCW), so logical 1 (front right) is OUT3, 2 (rear left) OUT0, 3 (front left) OUT1, 4 (rear right) OUT2; every spin direction already matched quad-X", sigma: choice}
 
+# watchdog_timeout_ms (M1, the FC3v2 target image's RP2350 hardware watchdog): the time without a rate execution after
+# which the chip resets and the restarted firmware sends DShot stop frames (hal_target watchdog.cpp). Safety number: the
+# value Luis ruled on, never another. The target refuses a value outside 1 to the SDK's RP2350 maximum.
+watchdog_timeout_ms:
+  {type: i32, value: 2048, unit: "ms", method: scenario, source: "Luis 2026-10-16: 'yes use 2048. we can always change this later when we start refining.' (his ruling 'use the common practice watchdogs'); common practice: ArduPilot ChibiOS HAL, libraries/AP_HAL_ChibiOS/hwdef/common/watchdog.c:29 '#define STM32_WDG_TIMEOUT_MS 2048' (reset if the main loop stops); bench evidence: with core 0 halted the AM32 ESC held its last throttle >= 5 s (tests/regression/quad/L09/results/m1-bench-card.md step 3.3), so the motors must not depend on the ESC's signal-loss behaviour", sigma: choice}
+
 # The console motor test (M1 P11, decision 0038): the limits of the quad_fc gate's motor-test branch. Safety numbers: the
 # values Luis ruled on 2026-10-16 (answers "1. 500 2. 3 seconds 3. yes"; the duration raised to 20 s at the bench, "20s is
 # good."), never others. The gate refuses a request
