@@ -41,9 +41,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/marv-cache
-          key: ${{ runner.os }}-marv-cache-core-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
+          key: ${{ runner.os }}-marv-cache-core-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-marv-cache-core-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-
+            ${{ runner.os }}-marv-cache-core-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
       - name: Build CI image
@@ -66,7 +66,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/marv-cache
-          key: ${{ runner.os }}-marv-cache-core-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
+          key: ${{ runner.os }}-marv-cache-core-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}
 
   gz-l2:
     runs-on: ubuntu-24.04
@@ -88,9 +88,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/marv-cache
-          key: ${{ runner.os }}-marv-cache-gz-l2-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
+          key: ${{ runner.os }}-marv-cache-gz-l2-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-marv-cache-gz-l2-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-
+            ${{ runner.os }}-marv-cache-gz-l2-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
         with:
@@ -123,7 +123,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/marv-cache
-          key: ${{ runner.os }}-marv-cache-gz-l2-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
+          key: ${{ runner.os }}-marv-cache-gz-l2-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}
 
   gz-l4:
     runs-on: ubuntu-24.04
@@ -145,9 +145,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/marv-cache
-          key: ${{ runner.os }}-marv-cache-gz-l4-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
+          key: ${{ runner.os }}-marv-cache-gz-l4-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-marv-cache-gz-l4-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-
+            ${{ runner.os }}-marv-cache-gz-l4-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
         with:
@@ -180,7 +180,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/marv-cache
-          key: ${{ runner.os }}-marv-cache-gz-l4-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
+          key: ${{ runner.os }}-marv-cache-gz-l4-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}
 
   gz-l5:
     runs-on: ubuntu-24.04
@@ -202,9 +202,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/marv-cache
-          key: ${{ runner.os }}-marv-cache-gz-l5-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
+          key: ${{ runner.os }}-marv-cache-gz-l5-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-marv-cache-gz-l5-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-
+            ${{ runner.os }}-marv-cache-gz-l5-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
         with:
@@ -237,7 +237,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/marv-cache
-          key: ${{ runner.os }}-marv-cache-gz-l5-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
+          key: ${{ runner.os }}-marv-cache-gz-l5-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}
 
   gz-l11:
     runs-on: ubuntu-24.04
@@ -259,9 +259,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/marv-cache
-          key: ${{ runner.os }}-marv-cache-gz-l11-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
+          key: ${{ runner.os }}-marv-cache-gz-l11-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-marv-cache-gz-l11-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-
+            ${{ runner.os }}-marv-cache-gz-l11-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
         with:
@@ -294,4 +294,4 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/marv-cache
-          key: ${{ runner.os }}-marv-cache-gz-l11-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/toolchain-m33.cmake') }}-${{ github.sha }}
+          key: ${{ runner.os }}-marv-cache-gz-l11-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}

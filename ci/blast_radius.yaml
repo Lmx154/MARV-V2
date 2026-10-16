@@ -46,7 +46,13 @@ full_roots:
   - design/**
   - CMakeLists.txt
   - CMakePresets.json
-  - cmake/**
+  # cmake/pico_sdk.cmake has its own rule (the m33 build only); a new cmake/ file is unmapped, so it selects everything.
+  - cmake/flags.cmake
+  - cmake/flight_targets.cmake
+  - cmake/googletest.cmake
+  - cmake/marv_card_gen.cmake
+  - cmake/marv_test_timeout.cmake
+  - cmake/reference_data.cmake
   - pyproject.toml
   - uv.lock
   - .github/**
@@ -146,6 +152,21 @@ step_groups:
     - tools_tests
 
 rules:
+  # ---------------------------------------------------------------- the m33 build
+  - paths: [boards/**, cmake/pico_sdk.cmake]
+    ctest_labels: []
+    run_ci_steps:
+      - m33_build
+      - product_table_m33
+      - g3_m33_symbols
+      - g3_m33_includes
+      - pb2_negative_control
+      - g3_m33_symbol_control
+      - g3_m33_object_control
+    pytest_paths: []
+    gz_groups: []
+    why: "the Pico SDK pin and the board header are read only when MARV_TARGET is m33 (CMakeLists.txt); the host presets and the gz builds never include them"
+
   # ---------------------------------------------------------------- fw: the libraries
   - paths: [fw/sched/**]
     ctest_labels: [L00, L04, L05, L06, L11]

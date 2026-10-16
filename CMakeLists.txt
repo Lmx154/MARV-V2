@@ -8,18 +8,32 @@ if(MARV_CCACHE)
   set(CMAKE_CXX_COMPILER_LAUNCHER "${MARV_CCACHE}")
 endif()
 
-project(marv VERSION 0.0.0 LANGUAGES CXX)
-
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
 set(MARV_TARGET "host" CACHE STRING "Build target class: host or m33")
 set_property(CACHE MARV_TARGET PROPERTY STRINGS host m33)
 if(NOT MARV_TARGET STREQUAL "host" AND NOT MARV_TARGET STREQUAL "m33")
   message(FATAL_ERROR "MARV_TARGET must be host or m33, got '${MARV_TARGET}'")
 endif()
+
+# The m33 build uses the Pico SDK's toolchain, selected by including the SDK before project() (cmake/pico_sdk.cmake,
+# decision 0027); the host build is unchanged.
+if(MARV_TARGET STREQUAL "m33")
+  include(cmake/pico_sdk.cmake)
+  set(MARV_LANGUAGES C CXX ASM)
+else()
+  set(MARV_LANGUAGES CXX)
+endif()
+
+project(marv VERSION 0.0.0 LANGUAGES ${MARV_LANGUAGES})
+
+if(MARV_TARGET STREQUAL "m33")
+  marv_check_m33_toolchain()
+  pico_sdk_init()
+endif()
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(cmake/flags.cmake)
 include(cmake/flight_targets.cmake)
