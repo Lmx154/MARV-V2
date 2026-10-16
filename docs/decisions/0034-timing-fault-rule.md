@@ -55,3 +55,9 @@ header.
 Luis, 2026-10-16, verbatim: "P7 approved yes", to: a timing anomaly on the target is a counted fault (zero torque,
 latched, counted, re-anchor), never a halt; the L04 death cases become refused and counted with unchanged boundaries;
 SIL tolerance stays 1 µs. Board tolerance as a `PLACEHOLDER` until P12: Luis, 2026-10-16, "4. yes".
+
+Amendment, 2026-10-16 (M1 merge gate): `rate_period_tolerance_us` is a product-set id (design/rate_timing_register.yaml;
+product table row 102), so the frozen id manifest `tests/regression/quad/L04/param_ids` lists it; it was omitted when
+the parameter was added, and `tests/regression/quad/L01/tools/test_flatten_report.py::test_cmake_product_set_comes_from_the_card_and_writes_the_report`
+failed in `ci/local_ci.sh` (core). Not a loosening: the test's assertion is unchanged; the manifest records an id this
+decision added.
