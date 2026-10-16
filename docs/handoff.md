@@ -34,13 +34,18 @@ History is in git and `docs/decisions/`; the previous handoff is `git show 341e5
 1. **M0** (beside M1, one packet per bullet in §4.0 M0). First measure the baselines: an Actions full run and a
    one-module development check. Fold the Actions reference-cache fix (the L11 set regenerates cold every run; core
    45 min on `341e54d`, INFERRED cause) into M0.
-2. **M1** on the madflight FC3v2 Rev-C only (Luis, 2026-10-15): https://madflight.com/Board-FC3/, B package,
-   2 MB flash, no PSRAM; LSM6DSV on SPI1 (MISO 28, SCK 30, MOSI 31, CS 29, INT 27, CLKIN 26); motors GP6–9 to a
-   Goku G55M 55A AM32 4-in-1 ESC (all four motors connected); receiver SER0 GP0/1 (ELRS, not yet fitted); no GPS.
-   Flash over SWD with the Raspberry Pi Debug Probe (OpenOCD recipe in `~/Projects/CPP/sensor-test/tools/run_lab.sh`);
-   console over USB CDC, not the probe UART. Follow madflight's pin table, not Betaflight's (they differ). madflight
-   is MIT; its LSM6DSV driver (`src/imu/`) is a reference. Needs a decision first: the Pico SDK pin (version, how
-   fetched; `sensor-test` uses 2.3.0 from an unpinned clone) — architect, then Luis.
+2. **M1** on the madflight FC3v2 Rev-C (branch `m1-sdk`). Hardware verified 2026-10-16: RP2354B rev 3, 2048 KiB
+   W25Q16JV in package, clk_sys 150 MHz, clk_usb 48 MHz; SWD flashing (`tools/target/flash.sh`, Pico 2 debugprobe
+   900678EF479C3A0E, GP2 SWCLK / GP3 SWDIO) and the USB console work; a panic streams "PANIC: <msg>" over USB (P5).
+   Next packets (architect plan, 2026-10-16): P6 `quad_fc` composition with an always-disarmed motor gate, replacing
+   the L11 proxy; P7 timing-fault rule (counted fault, SIL tolerance unchanged; record + Luis); P8 LSM6DSV profile and
+   the airframe card (physics PLACEHOLDER until M4); P9 LSM6DSV driver and IRQ tick loop; P10 PIO DShot600; P11
+   console motor test; P12 M1 evidence (stage times, EMB-3, soak).
+   Luis's rulings, 2026-10-16, verbatim: panic motors "take option A" (panic keeps sending DShot stop frames);
+   motor test "1. 500 2. 3 seconds 3. yes 4. yes 5. yes 6. yes" = DShot cap 500, at most 3 s per command, unlock
+   token `PROPS-OFF` on the command line (any byte, `stop` or disconnect cancels), board timing tolerance
+   T_rate·odr_error + 2δ as a PLACEHOLDER until P12, PX4 quad-X spin (1, 2 CCW; 3, 4 CW), tick 7.68 kHz with
+   divisor 2. AM32 version and settings UNKNOWN (no passthrough yet; M4).
 
 ## Open for Luis
 - Branches merged into `master` and deletable: `ci-curl-pin`, `ci-heavy-serial`, `quad-l11`, `quad-l11-s6`,
