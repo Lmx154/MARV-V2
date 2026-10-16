@@ -72,10 +72,9 @@ def test_python_change_selects_test_files_and_other_changes_select_directories()
     universe = affected.repo_universe()
     universe["pytest_paths"] = affected.map_pytest_paths(mapping)
     index = affected.PythonIndex(ROOT, affected.repo_files(ROOT), universe)
-    noise = "tests/regression/quad/L06/tools/test_l6_noise_term.py"
-    r = affected.select(["tools/sim/l6_noise_term.py"], mapping, universe, pyindex=index)
-    # this file names the module in a string, so it is in the closure too
-    assert [p for p in r["pytest_paths"] if p.startswith("tests/regression")] == [noise]
+    ff_eval = "tests/regression/quad/L06/tools/test_l6_ff_eval.py"
+    r = affected.select(["tools/sim/l6_ff_eval.py"], mapping, universe, pyindex=index)
+    assert [p for p in r["pytest_paths"] if p.startswith("tests/regression")] == [ff_eval]
     # a scenario file is not Python: the rule's directories stay
     r = affected.select(["scenarios/quad/L04/acro.yaml"], mapping, universe, pyindex=index)
     assert "tests/regression/quad/L04/tools" in r["pytest_paths"]
