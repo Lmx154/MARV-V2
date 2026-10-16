@@ -40,7 +40,8 @@ enum class MotorTestReason : std::uint8_t {
   Duration,    // Refused: duration outside [1 ms, motor_test_duration_max_ms]
   Deadline,    // Stopped: the duration has passed (or the stamps could not be trusted to count it)
   Cancel,      // Stopped: a received byte or the command stop; Refused: cancelled before it started
-  Disconnect   // Stopped: the USB port was closed
+  Disconnect,  // Stopped: the USB port was closed
+  Armed        // Refused: the vehicle is armed (a motor test starts only from Disarmed, decision 0040 Q1)
 };
 
 struct MotorTestEvent {

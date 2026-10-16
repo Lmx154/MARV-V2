@@ -109,6 +109,39 @@ void print_progress() {
   }
 }
 
+const char* arming_text(marv::arming::ArmState s) {
+  using marv::arming::ArmState;
+  switch (s) {
+    case ArmState::Boot:
+      return "boot";
+    case ArmState::SwitchOff:
+      return "switch_off";
+    case ArmState::SwitchNotCycled:
+      return "switch_not_cycled";
+    case ArmState::ThrottleUp:
+      return "throttle_up";
+    case ArmState::ImuStale:
+      return "imu_stale";
+    case ArmState::ImuInvalid:
+      return "imu_invalid";
+    case ArmState::Saturated:
+      return "saturated";
+    case ArmState::NoLink:
+      return "no_link";
+    case ArmState::Failsafe:
+      return "failsafe";
+    case ArmState::MotorTest:
+      return "motor_test";
+    case ArmState::Armed:
+      return "armed";
+    case ArmState::ArmedHold:
+      return "armed_hold";
+    case ArmState::ArmedFailsafeCentred:
+      return "armed_failsafe_centred";
+  }
+  return "";
+}
+
 // Console counters, background loop only: lines refused by the parser, motor-test requests forwarded.
 std::uint32_t console_refused = 0;
 std::uint32_t console_forwarded = 0;
@@ -134,7 +167,7 @@ void print_stats(const marv::hal_target::ImuStats& now, const marv::hal_target::
       "accel=(%+.3f,%+.3f,%+.3f) temp=%.2fK flags=0x%03lx | motor_test console_refused=%lu forwarded=%lu accepted=%lu "
       "refused=%lu stopped=%lu | rate executions/s=%.1f executions=%llu timing_faults=%lu | rc frames/s=%.1f total=%lu "
       "link_frames=%lu bad_crc=%lu bad_length=%lu dropped_bytes=%lu uart_errors=%lu age_us=%lld roll=%+.3f pitch=%+.3f "
-      "throttle=%.3f yaw=%+.3f\n",
+      "throttle=%.3f yaw=%+.3f | arming=%s\n",
       static_cast<unsigned long long>(dt_us), per_s(now.irqs, before.irqs), per_s(now.words, before.words),
       per_s(now.samples, before.samples), per_s(now.ticks, before.ticks),
       per_s(now.actuator_writes, before.actuator_writes), static_cast<unsigned long long>(now.actuator_drops),
@@ -155,7 +188,8 @@ void print_stats(const marv::hal_target::ImuStats& now, const marv::hal_target::
       static_cast<unsigned long>(rc_now.counters.link_stats_frames), static_cast<unsigned long>(rc_now.counters.bad_crc),
       static_cast<unsigned long>(rc_now.counters.bad_length), static_cast<unsigned long>(rc_now.counters.dropped_bytes),
       static_cast<unsigned long>(rc_now.uart_errors), rc_age_us, static_cast<double>(rc.roll),
-      static_cast<double>(rc.pitch), static_cast<double>(rc.throttle), static_cast<double>(rc.yaw));
+      static_cast<double>(rc.pitch), static_cast<double>(rc.throttle), static_cast<double>(rc.yaw),
+      arming_text(marv::composition::arming_status()));
 }
 
 #if defined(MARV_FC3V2_BENCH_STATS)
@@ -244,6 +278,8 @@ const char* reason_text(marv::MotorTestReason r) {
       return "cancel";
     case MotorTestReason::Disconnect:
       return "disconnect";
+    case MotorTestReason::Armed:
+      return "the vehicle is armed";
   }
   return "";
 }

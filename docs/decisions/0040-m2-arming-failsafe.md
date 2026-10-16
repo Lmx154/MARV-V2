@@ -19,7 +19,7 @@ question above and the rejected alternatives below.
 
 I1 gate Armed iff machine armed; Armed and MotorTest exclusive; I2 every disarm writes stop on the same rate tick: `quad_fc_gate_test.cpp` extended (interleavings; the mutation "test while armed" fails). I3 each failsafe threshold on both sides at one rate tick; future stamp not valid; link quality changes no output: L08 T1. I4 first deadline miss disarms on that rate tick and arming stays refused until init: L08 T1, SIL. I5 no sample for D gives PANIC and stop frames: T1 of an SDK-free deadline tracker; TB with INT1 masked. I6 saturation refuses arming, never disarms: L08 T1.
 
-Frozen paths M2 touches (core §7.3; nothing removed or loosened, only test targets added): `tests/regression/quad/L08/unit/CMakeLists.txt` gains each M2 packet's T1 target (CRSF decode, manual-control pull, stick rates, the arming and failsafe machine); `tests/regression/quad/L09/unit/quad_fc_gate_test.cpp` and `tests/regression/quad/L09/unit/CMakeLists.txt` are extended for the gate's Armed state (P4). `tests/regression/quad/L09/unit/lsm6dsv_decode_test.cpp` gains the read-deadline D derivation tests (P7).
+Frozen paths M2 touches (core §7.3; nothing removed or loosened, only test targets added): `tests/regression/quad/L08/unit/CMakeLists.txt` gains each M2 packet's T1 target (CRSF decode, manual-control pull, stick rates, the arming and failsafe machine); `tests/regression/quad/L09/unit/quad_fc_gate_test.cpp` and `tests/regression/quad/L09/unit/CMakeLists.txt` are extended for the gate's Armed state and the controller reset on arming (P4, merged into `m2` with this record). `tests/regression/quad/L09/unit/lsm6dsv_decode_test.cpp` gains the read-deadline D derivation tests (P7).
 
 ## Rejected
 

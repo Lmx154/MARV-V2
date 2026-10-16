@@ -9,6 +9,11 @@
 // request outside the limits (motor 1..4, DShot value 48..motor_test_dshot_max, duration 1 ms..motor_test_duration_max_ms)
 // is refused and counted with every motor stopped, the test ends at its deadline in rate-tick stamps or at the first rate
 // tick after a cancel or a disconnect, and no write ever has two motors nonzero (invariant I1).
+//
+// The armed gate (M2 P4, decision 0040 Q1): the gate is Armed exactly when the arming machine is; disarmed (and in a
+// failsafe disarm, or on an IMU deadline miss) every rate tick writes stop, armed it writes the mixer's output for the
+// stick rates and the throttle; a motor test starts only from Disarmed (a request while armed is refused, reason Armed)
+// and arming is refused while a test runs.
 #include <gtest/gtest.h>
 
 #include <array>
@@ -28,6 +33,7 @@
 #include <marv/prim/vec.hpp>
 #include <marv/rate/rate_loop.hpp>
 #include <marv/rate_group/rate_group.hpp>
+#include <marv/stick_rates/stick_rates.hpp>
 #include <marv/types/actuator.hpp>
 #include <marv/types/imu_sample.hpp>
 
@@ -497,6 +503,402 @@ TEST_F(MotorTestGateTest, ANewRequestWhileOneRunsEndsItAndNeverOverlapsIt) {
   }
   const Out refused = request({1, kLuisDshotCap + 1, 100});
   expect_all_stop(refused);
+}
+
+// ---- The armed gate (M2 P4, decisions 0040 and 0041) ----
+
+// Luis's numbers as the test states them, independently of the parameter table (decision 0041 and the arm switch ruling:
+// channel 5, +1 armed and -1 disarmed; throttle minimum 1050 us; the failsafe times of Betaflight 4.5.1).
+constexpr std::size_t kLuisArmChannel = 5;
+constexpr TimeUs kLossUs = 100000;
+constexpr TimeUs kHoldUs = 300000;
+constexpr TimeUs kDisarmUs = 1500000;
+constexpr TimeUs kRecoveryUs = 500000;
+constexpr float kSwitchOn = 1.0F;
+constexpr float kSwitchOff = -1.0F;
+
+struct Sticks {
+  float roll = 0;
+  float pitch = 0;
+  float yaw = 0;
+  float throttle = 0;
+};
+
+class ArmedGateTest : public MotorTestGateTest {
+ protected:
+  struct RateOut {
+    Out out;
+    std::array<DshotValue, composition::kMotors> mixed{};  // the expected output if armed, from a beside rate group
+  };
+
+  void SetUp() override {
+    MotorTestGateTest::SetUp();
+    mixer_ = mixer::load_config();
+    ref_.init(rate::load_config(), mixer_, rate_group::load_chain_config());
+    rates_.roll = {param_value<ParamId::rates_centre_roll>(), param_value<ParamId::rate_max_roll>(),
+                   param_value<ParamId::rates_expo_roll>()};
+    rates_.pitch = {param_value<ParamId::rates_centre_pitch>(), param_value<ParamId::rate_max_pitch>(),
+                    param_value<ParamId::rates_expo_pitch>()};
+    rates_.yaw = {param_value<ParamId::rates_centre_yaw>(), param_value<ParamId::rate_max_yaw>(),
+                  param_value<ParamId::rates_expo_yaw>()};
+    frames_ = 0;
+  }
+
+  // One tick, as tick_once, with the beside rate group fed the same sample.
+  Out step_tick() {
+    motor_latch_.fill(sentinel());
+    hal_sim::begin_tick(n_);
+    ImuSample s = sample_of(kind_, n_);
+    s.gyro_rad_s = s.gyro_rad_s + bias_;
+    composition::tick(s);
+    ref_.filter(s, n_ % divisor_ == 0);
+    fresh_.filter(s, n_ % divisor_ == 0);
+    const bool armed = arming::is_armed(composition::arming_status());
+    if (armed && !was_armed_ && reset_ref_) {
+      ref_.reset_controller();  // as the composition does at the arming edge
+    }
+    was_armed_ = armed;
+    hal_sim::end_tick();
+    ++n_;
+    Out o;
+    o.motor = motor_latch_;
+    o.wrote = motor_latch_[0] != sentinel();
+    return o;
+  }
+
+  // The expected armed output for `want` (sticks as the pilot holds them), from the beside rate group: setpoint through
+  // the curve, thrust linear in the throttle between 4 f_min and 4 f_max of the mixer.
+  std::array<DshotValue, composition::kMotors> reference(const Sticks& want) {
+    const float t_min = static_cast<float>(composition::kMotors) * mixer::f_min(mixer_);
+    const float t_max = static_cast<float>(composition::kMotors) * mixer::f_max(mixer_);
+    const prim::Vec3<float> sp = stick_rates::rate_setpoint(rates_, prim::Vec3<float>(want.roll, want.pitch, want.yaw));
+    return ref_.execute(sp, prim::Vec3<float>(), t_min + want.throttle * (t_max - t_min)).dshot;
+  }
+
+  // Runs to the next rate tick, staging a new frame (stamp = that tick's time) if `pilot` is given, and steps it;
+  // `want` are the sticks the beside rate group is executed with (the armed output it would give).
+  RateOut rate_tick(const ManualControl* frame, const Sticks& want) {
+    while (n_ % divisor_ != 0) {
+      const Out o = step_tick();
+      EXPECT_FALSE(o.wrote) << "tick " << (n_ - 1);
+    }
+    if (frame != nullptr) {
+      ManualControl m = *frame;
+      m.t_us = hal_sim::stamp_us(period_, n_);
+      m.frames = ++frames_;
+      hal_sim::stage_manual_control(m);
+    }
+    RateOut r;
+    r.out = step_tick();
+    r.mixed = reference(want);
+    return r;
+  }
+
+  static ManualControl frame_of(const Sticks& k, float arm) {
+    ManualControl m;
+    m.roll = k.roll;
+    m.pitch = k.pitch;
+    m.yaw = k.yaw;
+    m.throttle = k.throttle;
+    m.channels[kLuisArmChannel - 1] = arm;
+    return m;
+  }
+
+  RateOut hold(const Sticks& k, float arm, const Sticks& want) {
+    const ManualControl m = frame_of(k, arm);
+    return rate_tick(&m, want);
+  }
+
+  // Valid link with the switch low and the throttle at minimum for longer than the recovery time.
+  void link_up() {
+    const TimeUs until = hal_sim::stamp_us(period_, n_) + kRecoveryUs + kRecoveryUs / 2;
+    while (hal_sim::stamp_us(period_, n_) <= until) {
+      expect_all_stop(hold({}, kSwitchOff, {}).out);
+    }
+    EXPECT_EQ(composition::arming_status(), arming::ArmState::SwitchOff);
+  }
+
+  // link_up, then the switch on: armed on that rate tick.
+  void arm() {
+    link_up();
+    const RateOut r = hold({}, kSwitchOn, {});
+    ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+    EXPECT_EQ(r.out.motor, r.mixed);
+  }
+
+  static bool is_armed_output(const Out& o) {
+    for (const DshotValue& m : o.motor) {
+      if (m == DshotValue::stop()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  mixer::MixerConfig<float> mixer_{};
+  rate_group::RateGroupStep ref_;
+  stick_rates::RatesConfig<float> rates_{};
+  std::uint32_t frames_ = 0;
+  Kind kind_ = Kind::Quiet;
+  prim::Vec3<float> bias_{};  // added to every sample's gyro
+  rate_group::RateGroupStep fresh_;
+  bool was_armed_ = false;
+  bool reset_ref_ = true;  // ref_ restarts its controller at the arming edge as the composition does
+};
+
+TEST_F(ArmedGateTest, TheArmChannelIsLuisFifth) {
+  EXPECT_EQ(param_value<ParamId::rc_channel_arm>(), static_cast<std::int32_t>(kLuisArmChannel));
+}
+
+TEST_F(ArmedGateTest, DisarmedWritesStopWithTheSticksAndTheThrottleUpAndTheSwitchNeverCycled) {
+  // The switch is on from boot (boot counts as preceded by on): no rising edge, so never armed.
+  const Sticks up{1.0F, -1.0F, 0.5F, 1.0F};
+  for (std::size_t k = 0; k < 4000; ++k) {
+    const RateOut r = hold(up, kSwitchOn, {});
+    expect_all_stop(r.out);
+  }
+  EXPECT_NE(composition::arming_status(), arming::ArmState::Armed);
+  // Switched off with the throttle up: still stop.
+  for (std::size_t k = 0; k < 50; ++k) {
+    expect_all_stop(hold(up, kSwitchOff, {}).out);
+  }
+  EXPECT_EQ(composition::arming_status(), arming::ArmState::ThrottleUp);
+}
+
+TEST_F(ArmedGateTest, ASwitchCycleArmsAndThenTheMixerOutputForTheSticksIsWrittenNotStop) {
+  link_up();
+  const RateOut idle = hold({}, kSwitchOn, {});
+  EXPECT_EQ(composition::arming_status(), arming::ArmState::Armed);
+  EXPECT_TRUE(is_armed_output(idle.out));
+  EXPECT_EQ(idle.out.motor, idle.mixed);
+  for (const DshotValue& m : idle.out.motor) {
+    EXPECT_GE(m.raw(), prim::kDshotThrottleMin);
+  }
+  const Sticks fly{0.5F, -0.25F, 0.75F, 0.5F};
+  RateOut r;
+  for (std::size_t k = 0; k < 20; ++k) {
+    r = hold(fly, kSwitchOn, fly);
+    EXPECT_EQ(r.out.motor, r.mixed) << k;
+  }
+  EXPECT_NE(r.out.motor, idle.out.motor);
+  // Full throttle gives more collective thrust than idle; the stick makes the motors differ.
+  const Sticks full{0.0F, 0.0F, 0.0F, 1.0F};
+  RateOut top;
+  for (std::size_t k = 0; k < 20; ++k) {
+    top = hold(full, kSwitchOn, full);
+    EXPECT_EQ(top.out.motor, top.mixed) << k;
+  }
+  std::uint32_t sum_idle = 0;
+  std::uint32_t sum_top = 0;
+  for (std::size_t i = 0; i < composition::kMotors; ++i) {
+    sum_idle += idle.out.motor[i].raw();
+    sum_top += top.out.motor[i].raw();
+  }
+  EXPECT_GT(sum_top, sum_idle);
+  EXPECT_NE(r.out.motor[0], r.out.motor[1]);
+  // The switch off disarms on that rate tick.
+  expect_all_stop(hold(fly, kSwitchOff, fly).out);
+  EXPECT_EQ(composition::arming_status(), arming::ArmState::SwitchOff);
+}
+
+TEST_F(ArmedGateTest, TheThrottleUpRefusesAndALateCycleArms) {
+  link_up();
+  const Sticks up{0.0F, 0.0F, 0.0F, 0.5F};
+  for (std::size_t k = 0; k < 10; ++k) {
+    expect_all_stop(hold(up, kSwitchOn, {}).out);
+    EXPECT_EQ(composition::arming_status(), arming::ArmState::ThrottleUp);
+  }
+  // Throttle down with the switch still on: the edge was spent.
+  for (std::size_t k = 0; k < 10; ++k) {
+    expect_all_stop(hold({}, kSwitchOn, {}).out);
+    EXPECT_EQ(composition::arming_status(), arming::ArmState::SwitchNotCycled);
+  }
+  expect_all_stop(hold({}, kSwitchOff, {}).out);
+  EXPECT_TRUE(is_armed_output(hold({}, kSwitchOn, {}).out));
+  EXPECT_EQ(composition::arming_status(), arming::ArmState::Armed);
+}
+
+TEST_F(ArmedGateTest, ALostLinkHoldsThenCentresThenWritesStopAtTheDisarmTimeOnThatRateTick) {
+  arm();
+  const Sticks fly{0.5F, 0.0F, 0.0F, 0.5F};
+  const RateOut last = hold(fly, kSwitchOn, fly);
+  ASSERT_EQ(last.out.motor, last.mixed);
+  const TimeUs t0 = hal_sim::stamp_us(period_, n_ - 1);
+  bool stopped = false;
+  std::size_t armed_ticks = 0;
+  for (std::size_t k = 0; k < 20000 && !stopped; ++k) {
+    const TimeUs now = hal_sim::stamp_us(period_, ((n_ + divisor_ - 1) / divisor_) * divisor_);
+    const TimeUs age = now - t0;
+    const Sticks want = age < kHoldUs ? fly : Sticks{};
+    const RateOut r = rate_tick(nullptr, want);
+    if (age < kDisarmUs) {
+      ASSERT_EQ(r.out.motor, r.mixed) << "age " << age;
+      EXPECT_EQ(composition::arming_status(), age < kLossUs ? arming::ArmState::Armed
+                                              : age < kHoldUs ? arming::ArmState::ArmedHold
+                                                              : arming::ArmState::ArmedFailsafeCentred)
+          << "age " << age;
+      ++armed_ticks;
+    } else {
+      expect_all_stop(r.out);
+      EXPECT_EQ(composition::arming_status(), arming::ArmState::Failsafe);
+      stopped = true;
+    }
+  }
+  EXPECT_TRUE(stopped);
+  EXPECT_GT(armed_ticks, 1000U);
+  // Still stop, with the switch on and no cycle, until the link is back long enough and the switch cycled.
+  for (std::size_t k = 0; k < 20; ++k) {
+    expect_all_stop(hold({}, kSwitchOn, {}).out);
+  }
+}
+
+TEST_F(ArmedGateTest, ADeadLinkFromTheStartNeverArms) {
+  for (std::size_t k = 0; k < 4000; ++k) {
+    expect_all_stop(rate_tick(nullptr, {}).out);
+  }
+  EXPECT_EQ(composition::arming_status(), arming::ArmState::NoLink);
+}
+
+TEST_F(ArmedGateTest, NonFiniteAndOutOfRangeSticksAndThrottleWhileArmedAreLimitedBeforeTheyReachTheRateLoop) {
+  arm();
+  constexpr float kNaN = std::numeric_limits<float>::quiet_NaN();
+  constexpr float kInf = std::numeric_limits<float>::infinity();
+  const Sticks bad{kNaN, 5.0F, -kInf, 7.0F};
+  const Sticks limited_to{0.0F, 1.0F, 0.0F, 1.0F};
+  for (std::size_t k = 0; k < 20; ++k) {
+    const RateOut r = hold(bad, kSwitchOn, limited_to);
+    ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+    EXPECT_EQ(r.out.motor, r.mixed) << k;
+  }
+  const Sticks neg{-3.0F, 0.0F, 0.0F, -2.0F};
+  const Sticks neg_limited{-1.0F, 0.0F, 0.0F, 0.0F};
+  for (std::size_t k = 0; k < 20; ++k) {
+    const RateOut r = hold(neg, kSwitchOn, neg_limited);
+    EXPECT_EQ(r.out.motor, r.mixed) << k;
+  }
+}
+
+TEST_F(ArmedGateTest, AMotorTestRequestWhileArmedIsRefusedAndCountedAndTheVehicleKeepsFlying) {
+  arm();
+  const Sticks fly{0.0F, 0.0F, 0.0F, 0.3F};
+  hold(fly, kSwitchOn, fly);
+  const std::uint32_t events = hal_sim::motor_test_event_count();
+  hal_sim::stage_motor_test_request({1, 100, 50});
+  const RateOut r = hold(fly, kSwitchOn, fly);
+  EXPECT_EQ(r.out.motor, r.mixed);
+  ASSERT_EQ(hal_sim::motor_test_event_count(), events + 1);
+  const MotorTestEvent e = hal_sim::last_motor_test_event();
+  EXPECT_EQ(e.kind, MotorTestEventKind::Refused);
+  EXPECT_EQ(e.reason, MotorTestReason::Armed);
+  EXPECT_EQ(e.refused, 1U);
+  EXPECT_EQ(e.accepted, 0U);
+  for (std::size_t k = 0; k < 200; ++k) {
+    const RateOut f = hold(fly, kSwitchOn, fly);
+    EXPECT_EQ(f.out.motor, f.mixed) << k;
+  }
+  EXPECT_EQ(hal_sim::motor_test_event_count(), events + 1);
+  // Disarmed, the same request is accepted and spins exactly its motor.
+  expect_all_stop(hold(fly, kSwitchOff, {}).out);
+  hal_sim::stage_motor_test_request({3, 100, 50});
+  expect_only(hold({}, kSwitchOff, {}).out, 2, 100);
+  EXPECT_EQ(hal_sim::last_motor_test_event().kind, MotorTestEventKind::Accepted);
+}
+
+TEST_F(ArmedGateTest, ArmingIsRefusedWhileAMotorTestRunsAndNeverTwoAtOnce) {
+  link_up();
+  hal_sim::stage_motor_test_request({2, 100, kLuisMaxDurationMs});
+  expect_only(hold({}, kSwitchOff, {}).out, 1, 100);
+  // The switch on (a rising edge) during the test: refused, the test keeps running, only motor 2 nonzero.
+  for (std::size_t k = 0; k < 50; ++k) {
+    const Out o = hold({}, kSwitchOn, {}).out;
+    expect_only(o, 1, 100);
+    EXPECT_EQ(composition::arming_status(), arming::ArmState::MotorTest);
+  }
+  hal_sim::stage_motor_test_cancel(MotorTestCancel::Cancel);
+  expect_all_stop(hold({}, kSwitchOn, {}).out);
+  EXPECT_EQ(hal_sim::last_motor_test_event().kind, MotorTestEventKind::Stopped);
+  // The test is over but the edge was spent: still stop, then a cycle arms.
+  for (std::size_t k = 0; k < 10; ++k) {
+    expect_all_stop(hold({}, kSwitchOn, {}).out);
+  }
+  EXPECT_EQ(composition::arming_status(), arming::ArmState::SwitchNotCycled);
+  expect_all_stop(hold({}, kSwitchOff, {}).out);
+  const RateOut r = hold({}, kSwitchOn, {});
+  EXPECT_EQ(composition::arming_status(), arming::ArmState::Armed);
+  EXPECT_EQ(r.out.motor, r.mixed);
+}
+
+TEST_F(ArmedGateTest, AnImuDeadlineMissDisarmsOnThatRateTickAndKeepsArmingRefused) {
+  arm();
+  const Sticks fly{0.0F, 0.0F, 0.0F, 0.3F};
+  for (std::size_t k = 0; k < 10; ++k) {
+    const RateOut r = hold(fly, kSwitchOn, fly);
+    EXPECT_EQ(r.out.motor, r.mixed);
+  }
+  hal_sim::stage_imu_deadline_misses(1);
+  const RateOut r = hold(fly, kSwitchOn, fly);
+  expect_all_stop(r.out);
+  EXPECT_EQ(composition::arming_status(), arming::ArmState::ImuStale);
+  // The ticks after the miss, and a full switch cycle with a good link: stop, still ImuStale.
+  for (std::size_t k = 0; k < 20; ++k) {
+    expect_all_stop(hold({}, kSwitchOff, {}).out);
+  }
+  for (std::size_t k = 0; k < 20; ++k) {
+    expect_all_stop(hold({}, kSwitchOn, {}).out);
+    EXPECT_EQ(composition::arming_status(), arming::ArmState::ImuStale);
+  }
+}
+
+TEST_F(ArmedGateTest, ASaturatedSampleSinceTheLastRateTickRefusesArmingAndNeverDisarms) {
+  link_up();
+  // The saturated sample is on the tick before the rate tick: it counts for that rate tick, whose own sample is fine.
+  while ((n_ + 1) % divisor_ != 0) {
+    step_tick();
+  }
+  kind_ = Kind::Saturated;
+  step_tick();
+  kind_ = Kind::Quiet;
+  expect_all_stop(hold({}, kSwitchOn, {}).out);
+  EXPECT_EQ(composition::arming_status(), arming::ArmState::Saturated);
+  expect_all_stop(hold({}, kSwitchOff, {}).out);
+  const RateOut r = hold({}, kSwitchOn, {});
+  EXPECT_EQ(composition::arming_status(), arming::ArmState::Armed);
+  EXPECT_EQ(r.out.motor, r.mixed);
+  // Armed, a saturated sample changes nothing.
+  while ((n_ + 1) % divisor_ != 0) {
+    step_tick();
+  }
+  kind_ = Kind::Saturated;
+  step_tick();
+  kind_ = Kind::Quiet;
+  const RateOut s2 = hold({}, kSwitchOn, {});
+  EXPECT_EQ(composition::arming_status(), arming::ArmState::Armed);
+  EXPECT_EQ(s2.out.motor, s2.mixed);
+}
+
+TEST_F(ArmedGateTest, ArmingStartsTheRateLoopFromZeroStateNotFromWhatWasAccumulatedWhileDisarmed) {
+  // A constant gyro bias while disarmed winds the rate loop's integrator (the beside group `ref_` runs as the composition
+  // would without the reset). The first armed output, sticks centred and throttle low, equals that of a freshly
+  // initialised rate group fed the same samples.
+  bias_ = prim::Vec3<float>(2.0F, -3.0F, 1.5F);
+  reset_ref_ = false;
+  link_up();
+  fresh_.init(rate::load_config(), mixer_, rate_group::load_chain_config());
+  const float t_min = static_cast<float>(composition::kMotors) * mixer::f_min(mixer_);
+  const ManualControl m = frame_of({}, kSwitchOn);
+  while (n_ % divisor_ != 0) {
+    step_tick();
+  }
+  ManualControl staged = m;
+  staged.t_us = hal_sim::stamp_us(period_, n_);
+  staged.frames = ++frames_;
+  hal_sim::stage_manual_control(staged);
+  const Out first = step_tick();
+  ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+  const auto fresh = fresh_.execute(prim::Vec3<float>(), prim::Vec3<float>(), t_min).dshot;
+  const auto wound = reference({});
+  EXPECT_NE(wound, fresh) << "the bias must have wound the integrator, or the test proves nothing";
+  EXPECT_EQ(first.motor, fresh);
 }
 
 }  // namespace

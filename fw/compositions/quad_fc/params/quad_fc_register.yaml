@@ -61,3 +61,8 @@ rc_channel_throttle:
   {type: i32, value: 3, unit: "1", method: scenario, source: "Luis 2026-10-16: the RadioMaster Pocket on ExpressLRS sends AETR, so throttle is channel 3", sigma: choice}
 rc_channel_yaw:
   {type: i32, value: 4, unit: "1", method: scenario, source: "Luis 2026-10-16: the RadioMaster Pocket on ExpressLRS sends AETR, so yaw is channel 4 (rudder)", sigma: choice}
+
+# The arm switch channel (M2 P4): the 1-based RC channel whose value the arming machine reads (arm_switch_threshold above
+# is its threshold). ManualControl.channels[rc_channel_arm - 1]; init panics outside 1..16 (the CRSF channel count).
+rc_channel_arm:
+  {type: i32, value: 5, unit: "1", method: scenario, source: "Luis 2026-10-16: 'arm switch : ch 5 at 100 is armed ch5 at -100 is disarmed'", sigma: choice}

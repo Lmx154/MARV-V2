@@ -72,6 +72,12 @@ class RateGroupStep {
   [[nodiscard]] Execution execute_bypass(const prim::Vec3<float>& reference, const prim::Vec3<float>& added,
                                          float thrust) noexcept;
 
+  // Restarts the rate loop's controller state (integrator, derivative and prefilter history, anti-windup freeze) at the
+  // next rate execution, which seeds from its gyro and applies no spacing check (RateLoop::reset); the fault latch and
+  // counters are kept. The gyro chain and the DShot diffuser's carry are untouched. Call between filter and execute of
+  // the tick whose execution must not apply state accumulated before it (the quad_fc composition: the arming edge).
+  void reset_controller() noexcept { rate_.reset(); }
+
   // The sample held by the latest filter: what the tick's rate execution gets.
   [[nodiscard]] const ImuSample& rate_input() const noexcept { return filtered_; }
 

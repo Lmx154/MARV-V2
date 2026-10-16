@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "marv/arming/arming.hpp"
 #include "marv/types/actuator.hpp"
 
 namespace marv::composition {
@@ -19,5 +20,10 @@ struct RateCounts {
   std::uint32_t timing_faults = 0;
 };
 [[nodiscard]] RateCounts rate_counts() noexcept;
+
+// The arming machine's state after the latest rate tick: Armed, ArmedHold and ArmedFailsafeCentred when armed, else the
+// cause of the latest disarm or the first refusing condition (arming.hpp); Boot before the first rate tick. A single
+// atomic read, callable from any context (the target's background loop prints it).
+[[nodiscard]] arming::ArmState arming_status() noexcept;
 
 }  // namespace marv::composition
