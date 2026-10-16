@@ -283,3 +283,78 @@ def test_predicates_reject_non_finite_and_empty_segments():
     assert not t4_rule.shrinks([1.0, nan])
     with pytest.raises(ValueError):
         t4_rule.settles(seg(a=("rad", [])), S_FRACTION, {"a": 0.0})
+
+
+# T4 roles (docs/decisions/0031): scenario_checks. Known answers by hand; s = 0.02, E = 0.001 as above.
+def roles(**quantities):
+    return {name: (unit, role, errors) for name, (unit, role, errors) in quantities.items()}
+
+
+def zero_e(segments, value=E_SIM):
+    return {seg: {name: value for name in q} for seg, q in segments.items()}
+
+
+def run_roles(segments, disturbed=frozenset()):
+    e = zero_e(segments)
+    return t4_rule.scenario_checks(segments, S_FRACTION, e, e, disturbed)
+
+
+def test_stepped_and_held_with_a_moving_unit_equal_settles_and_bounded():
+    q = {"seg": roles(a=("rad", t4_rule.STEPPED, [1.0, 0.5, 0.1, 0.02]), b=("rad", t4_rule.HELD, [0.0, 0.01, 0.0, 0.0]),
+                      w=("rad/s", t4_rule.STEPPED, [10.0, 5.0, 1.0, 0.1]))}
+    got = run_roles(q)["seg"]
+    plain = {n: (u, e) for n, (u, _, e) in q["seg"].items()}
+    e = {n: E_SIM for n in plain}
+    assert got["S"] == t4_rule.settles(plain, S_FRACTION, e)
+    assert got["B"] == t4_rule.bounded(plain, S_FRACTION, e)
+
+
+def test_driven_alone_gets_s_and_no_b():
+    q = {"seg": roles(a=("rad", t4_rule.DRIVEN, [0.0, 0.6, 0.3, 0.01]))}
+    got = run_roles(q)["seg"]
+    (c,) = got["S"]
+    assert c.ok and c.bound == pytest.approx(0.02 * 0.6 + E_SIM)  # 0.013
+    assert got["B"] == []
+
+
+def test_the_same_series_held_next_to_a_stepped_peak_fails_b():
+    q = {"seg": roles(a=("rad", t4_rule.HELD, [0.0, 0.6, 0.3, 0.01]), peak=("rad", t4_rule.STEPPED, [1.0, 0.5, 0.1, 0.0]))}
+    got = run_roles(q)["seg"]
+    (b,) = [c for c in got["B"] if c.name == "a"]
+    assert not b.ok and b.value == pytest.approx(0.6) and b.bound == pytest.approx(0.02 * 1.0 + E_SIM)
+
+
+def test_held_only_unit_takes_delta_from_another_segment():
+    q = {"hold": roles(tilt=("rad", t4_rule.HELD, [1.2e-14, 1.5e-14, 1.3e-14]), w=("rad/s", t4_rule.STEPPED, [1.0, 0.5, 0.0])),
+         "release": roles(tilt=("rad", t4_rule.HELD, [1.0e-14, 2.0e-14, 1.0e-14]),
+                          h=("rad", t4_rule.DRIVEN, [0.0, 0.6, 0.3, 0.01]), w=("rad/s", t4_rule.STEPPED, [0.5, 0.2, 0.0]))}
+    got = run_roles(q)
+    for c in got["hold"]["S"] + got["hold"]["B"]:
+        if c.name == "tilt":
+            assert c.ok and c.bound == pytest.approx(0.02 * 0.6 + E_SIM)
+    alone = {"hold": q["hold"]}
+    with pytest.raises(ValueError):
+        run_roles(alone)
+
+
+def test_disturbed_segment_gets_s_only():
+    q = {"seg": roles(a=("rad", t4_rule.STEPPED, [1.0, 2.0, 0.5, 0.0]))}
+    got = run_roles(q, disturbed={"seg"})["seg"]
+    assert got["B"] == [] and got["S"][0].ok
+    assert run_roles(q)["seg"]["B"][0].ok is False  # without the onset the growth to 2.0 fails B
+
+
+def test_driven_that_does_not_settle_fails_s():
+    q = {"seg": roles(a=("rad", t4_rule.DRIVEN, [0.0, 0.6, 1.25, 1.25]))}
+    (c,) = run_roles(q)["seg"]["S"]
+    assert not c.ok and c.value == pytest.approx(1.25) and c.bound == pytest.approx(0.02 * 1.25 + E_SIM)
+
+
+def test_roles_reject_an_unknown_role_and_non_finite_input():
+    with pytest.raises(ValueError):
+        run_roles({"seg": roles(a=("rad", "free", [1.0, 0.0]))})
+    nan = float("nan")
+    got = run_roles({"seg": roles(a=("rad", t4_rule.STEPPED, [1.0, nan, 0.0]))})["seg"]
+    assert not got["S"][0].ok and not got["B"][0].ok
+    with pytest.raises(ValueError):
+        run_roles({"seg": roles(a=("rad", t4_rule.STEPPED, []))})

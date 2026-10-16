@@ -228,3 +228,69 @@ def shrinks(errors):
     """T: the stepped axis's |error| at the segment end is smaller than at its start. No number."""
     first, last = abs(float(errors[0])), abs(float(errors[-1]))
     return math.isfinite(first) and math.isfinite(last) and last < first
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Roles (docs/decisions/0031): B applies only to what a scenario steps or holds. A role is static, read from the scenario
+# file and the documented firmware logic, never from run data.
+#   STEPPED  the error is nonzero at n_0 by a reference change or an initial offset.
+#   HELD     a constant reference, neither stepped nor driven.
+#   DRIVEN   the error is 0 at n_0 by construction but the scenario sets it moving: the rate of a stepped quantity, a
+#            quantity given a nonzero rate by the initial state, a reference set by a firmware event inside its own axis
+#            response (the heading relative to the yaw lock).
+# S applies to every quantity; B to STEPPED and HELD quantities of segments without a disturbance onset. Delta is 0029's
+# rule, except where every quantity of a unit in a segment is HELD: Delta is then the largest Delta of that unit over the
+# scenario's segments that have a STEPPED or DRIVEN quantity of that unit (a HELD quantity has no excursion of its own to
+# scale by); ValueError when there is none (the quantity is not checked).
+# ---------------------------------------------------------------------------------------------------------------------
+
+STEPPED, HELD, DRIVEN = "stepped", "held", "driven"
+ROLES = (STEPPED, HELD, DRIVEN)
+
+
+def _unit_deltas(segment):
+    """{unit: Delta} of a role segment, and the set of units that have a STEPPED or DRIVEN quantity."""
+    deltas, moving = {}, set()
+    for name, (unit, role, errors) in segment.items():
+        if role not in ROLES:
+            raise ValueError(f"quantity {name!r}: unknown role {role!r}")
+        if len(errors) == 0:
+            raise ValueError(f"segment quantity {name!r} has no executions")
+        peak = _peak(errors)
+        previous = deltas.get(unit, 0.0)
+        deltas[unit] = math.nan if math.isnan(peak) or math.isnan(previous) else max(previous, peak)
+        if role != HELD:
+            moving.add(unit)
+    return deltas, moving
+
+
+def scenario_checks(segments, s, E_end, E_max, disturbed=frozenset()):
+    """{segment: {"S": [Check], "B": [Check]}} for segments {segment: {name: (unit, role, errors)}}, s the register's
+    t4_settle_fraction, E_end[segment][name] the |m1 - m2| of the segment's last execution (S) and E_max[segment][name]
+    its largest over the segment (B). A segment in `disturbed` has a disturbance onset: S only."""
+    per = {seg: _unit_deltas(quantities) for seg, quantities in segments.items()}
+    scale = {}
+    for deltas, moving in per.values():
+        for unit in moving:
+            scale[unit] = max(scale.get(unit, 0.0), deltas[unit])
+    out = {}
+    for seg, quantities in segments.items():
+        deltas, moving = per[seg]
+        delta = {}
+        for unit in deltas:
+            if unit in moving:
+                delta[unit] = deltas[unit]
+            elif unit in scale:
+                delta[unit] = scale[unit]
+            else:
+                raise ValueError(f"segment {seg!r}: every {unit!r} quantity is HELD and no segment has a STEPPED or "
+                                 f"DRIVEN one to scale by")
+        checks = {"S": [], "B": []}
+        for name, (unit, role, errors) in quantities.items():
+            checks["S"].append(_checked(name, abs(float(errors[-1])), s * delta[unit] + E_end[seg][name]))
+            if role != DRIVEN and seg not in disturbed:
+                first = abs(float(errors[0]))
+                excess = max(abs(float(e)) - first for e in errors) if math.isfinite(_peak(errors)) else math.nan
+                checks["B"].append(_checked(name, excess, s * delta[unit] + E_max[seg][name]))
+        out[seg] = checks
+    return out

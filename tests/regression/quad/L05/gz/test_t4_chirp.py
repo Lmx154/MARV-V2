@@ -1,6 +1,6 @@
-"""T4 attitude-loop chirp in Gazebo on truth gyro and truth attitude (quad spec 4 L5 pass bar, T4; QF-3: phase margin >=
-PM_min; decision 0006 F "T4 attitude chirp"; owner decisions 20 and 21; decision 0005
-"T4 chirp margins").
+"""T4 attitude-loop chirp in Gazebo on truth gyro and truth attitude (quad spec 4 L5 pass bar, T4: chirp injection measures
+PM - U >= PM_min, no design-model envelope; QF-3: phase margin >= PM_min; decision 0006 F "T4 attitude chirp"; owner decisions
+20 and 21; decision 0005 "T4 chirp margins"; decision 0031).
 
 Skipped only as conftest.py says; the gz CI step fails on a skip. Every run is truth-fed, perfect-model
 (tools/sim/run_l5.py): not a validation run.
@@ -11,7 +11,7 @@ window; the chirp is added to the rate setpoint at every rate execution, sticks 
   yaw:          (m = 1, A_env), (m = 2, A_env), (m = 1, A_env/2), (m = 1, A_env, D/2).
   roll, pitch:  (m = 1, A_env/2^k) for k = 1..5 (owner decision 20: at A_env the vehicle tumbles, peak attitude error 2, and there
                 is no crossover); then, at the amplitude of the admitted k with the smallest PM, (m = 2) and (D/2).
-  control:      (m = 1, att_kp x c) at the margin run's amplitude.
+  control:      (m = 1, att_kp = 0) at the margin run's amplitude.
 
 Measurement. PM(run) = run_l5.chirp_margin: indirect closed-loop identification from the log alone (run_l5 section "T4 attitude
 chirp": y the attitude error variable the law multiplies by its gain, recomputed from the TRUTH quaternion; G_m = Y/D,
@@ -26,16 +26,16 @@ the fine control (att_kp x 1.1) on the design model at the same corner; the plat
 admitted runs with a crossover, and fewer fails. Every run is still flown and printed with its modelled shift.
 
 Predicate per axis. PASS iff no host step read in any window is stale (0003 item 11) and
-  PM - U >= PM_min   and   min_box PM_design - U <= PM <= max_box PM_design + U,
-PM_design at nominal and the four tau x J corners from tools/card/attitude_lead.py's loops in the stage (c) T4 configuration
-(run_l5.chirp_design_lead; the build's gains are checked equal to the design's), PM_min the budget's. The plateau's spread is
-inside U_A, so the decision's "min - U_A >= PM_min" is implied.
+  PM - U >= PM_min,
+PM_min the budget's. The plateau's spread is inside U_A, so the decision's "min - U_A >= PM_min" is implied. A run with no
+unique crossover in the band fails. The design range "inside the design PM range +- U" is not a predicate (decision 0031): it
+compared a Gazebo run with a design model far inside what Gazebo's own error allows.
 
 Duration (core 7.5). The scenario's duration_s is the converged one: |PM(D) - PM(D/2)| < E_H + U_A, both at D, at the margin run.
 
-Negative control (the metric control of core 7.2), on every axis. att_kp x c through a SIL override, c the smallest power of two
-for which the design-model PM at nominal tau and J (attitude.Loop.margin on the axis's effective gain) is below PM_min - U of the
-axis's own margin. Its measured PM (C with the control's gain, the margin run's amplitude) must fail the predicate with that U.
+Negative control (the metric control of core 7.2), on every axis: the loop disabled, att_kp = 0 through a SIL override at the
+margin run's amplitude, identified with the gain the run flew. It must fail the predicate (the measured loop has no unique
+crossover, |L| < 1 over the band).
 
 Cross-check (reported, not asserted): the measured nominal PM against the design nominal PM.
 """
@@ -51,7 +51,6 @@ ROOT = Path(__file__).resolve().parents[5]
 sys.path.insert(0, str(ROOT / "tools" / "card"))
 sys.path.insert(0, str(ROOT / "tools" / "sim"))
 import attitude  # noqa: E402
-import attitude_lead  # noqa: E402
 import l5_scenario as l5s  # noqa: E402
 import run_l5  # noqa: E402
 import run_scenario  # noqa: E402
@@ -63,7 +62,6 @@ l4 = run_l5.l4
 AXES = l5s.AXES
 GYRO_VALID_BIT = 6  # marv_sil.h MARV_IMU_GYRO_VALID: the enum position of GyroValid
 HALF = 0.5  # the amplitude of the U_A run, A/2
-FIRST_CONTROL_C = 2
 MARGIN_SCALE = {run_l5.plateau_name(k): 2.0 ** -k for k in run_l5.PLATEAU_K}
 
 
@@ -78,18 +76,15 @@ def deg(x):
     return None if x is None else math.degrees(x)
 
 
-def verdict(pm, u_terms, design_pms, pm_min):
+def verdict(pm, u_terms, pm_min):
     """The predicate of the module docstring on one measured PM (rad); pm None (no crossover in the band) fails."""
     e_h, u_a, u_d = u_terms
     u = e_h + u_a + u_d
-    lo, hi = min(design_pms) - u, max(design_pms) + u
     if pm is None:
         return {"passed": False, "reason": "no unique crossover in the band", "E_H + U_A + U_d (deg)": deg(u)}
     slack = pm - u - pm_min
-    in_range = lo <= pm <= hi
-    return {"passed": slack >= 0 and in_range, "PM (deg)": deg(pm), "E_H (deg)": deg(e_h), "U_A (deg)": deg(u_a),
-            "U_d (deg)": deg(u_d), "PM - E_H - U_A - U_d - PM_min (deg)": deg(slack), "range (deg)": [deg(lo), deg(hi)],
-            "in range": in_range}
+    return {"passed": slack >= 0, "PM (deg)": deg(pm), "E_H (deg)": deg(e_h), "U_A (deg)": deg(u_a),
+            "U_d (deg)": deg(u_d), "PM - E_H - U_A - U_d - PM_min (deg)": deg(slack)}
 
 
 def admission_table(admission, margins):
@@ -99,22 +94,6 @@ def admission_table(admission, margins):
             "runs": {n: {"PM (deg)": deg(margins[n]["pm"]), "model PM (deg)": deg(r["pm"]),
                          "modelled shift (deg)": deg(r["shift"]), "admitted": n in admission["admitted"]}
                      for n, r in admission["runs"].items()}}
-
-
-def control_c(result, axis, limit):
-    """The smallest power of two c >= 2 whose effective gain c k gives a nominal design-model PM below `limit` (rad), with
-    that PM and crossover (rad/s); attitude.Loop.margin on the axis's nominal stage (c) T4 loop (attitude_lead.build_loops)."""
-    n, t_a, k32, w32 = result["N"], result["T_a"], result["k32"], result["w32"]
-    loop = next(lp for a, name, lp in attitude_lead.build_loops(result["rate"], result["inner"], (axis,))
-                if a == axis and name == "nominal")
-    c = FIRST_CONTROL_C
-    while True:
-        theta, pm, why = loop.margin(attitude.axis_k(axis, l4.r32(c * k32), w32))
-        if theta is None:
-            raise AssertionError(f"gains x {c}: the design model has no unique crossover ({why}) before PM < limit")
-        if pm < limit:
-            return c, pm, theta / t_a
-        c *= 2
 
 
 # ---- fixtures -------------------------------------------------------------------------------------------------------
@@ -195,8 +174,7 @@ def measure(tmp_path_factory, axis):
     design = runs[m_run].design
     float_term = run_l5.float_input_term(runs[m_run], margins[m_run])
     conv = abs(terms["pm"] - pms["half_duration"])
-    ev = verdict(terms["pm"], (terms["E_H"], terms["U_A"], float_term["U_d"]), list(design["design_pm"][axis].values()),
-                 design["pm_min"])
+    ev = verdict(terms["pm"], (terms["E_H"], terms["U_A"], float_term["U_d"]), design["pm_min"])
     ev.update({
         "margin run": m_run, "amplitude scale of A_env": scales[m_run], "U_d terms": float_term,
         "PM per run (deg)": {n: deg(v) for n, v in pms.items()},
@@ -231,23 +209,21 @@ def chirp(tmp_path_factory, axis):
 @pytest.fixture(scope="module")
 def control(tmp_path_factory, axis, chirp):
     s1 = chirp.runs[chirp.margin_run]
-    result = s1.design["result"]
-    c, pm_design, wc_design = control_c(result, axis, s1.design["pm_min"] - chirp.u)
-    gain = l4.r32(c * result["k32"])
+    design = s1.design
     out = tmp_path_factory.mktemp(f"chirp_{axis}_control")
     s = run_l5.run_chirp(CARD, SCEN / f"chirp_{axis}.yaml", 1, out, PLUGIN_DIR, amp_scale=chirp.scales[chirp.margin_run],
-                         overrides={"att_kp": (l4.F32, repr(gain))})
+                         overrides={"att_kp": (l4.F32, "0.0")})
     r = run_l5.chirp_margin(s)
-    assert r["pm"] is not None, r["reason"]
-    float_term = run_l5.float_input_term(s, r)
-    design = s1.design
-    ev = verdict(r["pm"], (chirp.e_h, chirp.u_a, float_term["U_d"]), list(design["design_pm"][axis].values()),
-                 design["pm_min"])
-    ev.update({"U_d terms": float_term, "c": c, "control att_kp": gain, "design PM at nominal (deg)": deg(pm_design),
-               "design crossover (rad/s)": wc_design, "measured crossover (rad/s)": r["crossover"],
-               "stale reads in the window": len(s.window_stale)})
+    if r["pm"] is None:
+        ev = verdict(None, (chirp.e_h, chirp.u_a, 0.0), design["pm_min"])
+        ev.update({"reason": r["reason"], "stale reads in the window": len(s.window_stale)})
+    else:
+        float_term = run_l5.float_input_term(s, r)
+        ev = verdict(r["pm"], (chirp.e_h, chirp.u_a, float_term["U_d"]), design["pm_min"])
+        ev.update({"U_d terms": float_term, "measured crossover (rad/s)": r["crossover"], "reason": r["reason"],
+                   "stale reads in the window": len(s.window_stale)})
     run_l5.write_report([s.step], dict(ev, gz_wall_s=s.step.run.wall_s))
-    return {"run": s, "margin": r, "evaluation": ev, "c": c, "gain": gain}
+    return {"run": s, "margin": r, "evaluation": ev}
 
 
 # ---- the pass bar ---------------------------------------------------------------------------------------------------
@@ -256,8 +232,7 @@ def test_chirp_margin_meets_qf3(chirp, axis, capsys):
     ev = chirp.evaluation
     _say(capsys, f"{axis:<5} chirp {'PASS' if ev['passed'] else 'FAIL'}  PM {ev['PM (deg)']:.6f} deg (run {ev['margin run']}), "
                  f"E_H {ev['E_H (deg)']:.3e}, U_A {ev['U_A (deg)']:.6f}, U_d {ev['U_d (deg)']:.6f}, slack "
-                 f"{ev['PM - E_H - U_A - U_d - PM_min (deg)']:.6f} deg, range [{ev['range (deg)'][0]:.6f}, "
-                 f"{ev['range (deg)'][1]:.6f}], measured - design nominal "
+                 f"{ev['PM - E_H - U_A - U_d - PM_min (deg)']:.6f} deg, measured - design nominal "
                  f"{ev['measured - design nominal (deg)']:+.6f} deg, gz wall {chirp.wall_s:.2f} s",
          f"    runs (deg): {ev['PM per run (deg)']}", f"    no crossover: {ev['no crossover']}",
          f"    peak |y| (rad): {ev['peak |y| per run (rad)']}",
@@ -297,14 +272,14 @@ def test_chirp_runs_on_the_live_design_and_truth_sources(chirp, axis, live_param
 
 # ---- negative control -----------------------------------------------------------------------------------------------
 
-def test_control_gain_times_c_fails_the_predicate(control, chirp, axis, capsys):
+def test_control_att_kp_zero_fails_the_predicate(control, chirp, axis, capsys):
     ev = control["evaluation"]
-    _say(capsys, f"{axis:<5} control att_kp x {control['c']}: measured PM {ev.get('PM (deg)')} deg (design "
-                 f"{ev['design PM at nominal (deg)']:.6f}), crossover {ev['measured crossover (rad/s)']} rad/s, "
+    _say(capsys, f"{axis:<5} control att_kp = 0: measured PM {ev.get('PM (deg)')} deg, crossover "
+                 f"{ev.get('measured crossover (rad/s)')} rad/s, reason {ev['reason']!r}, "
                  f"{'PASS' if ev['passed'] else 'FAIL'} (must fail), gz wall {control['run'].step.run.wall_s:.2f} s")
     s = control["run"]
-    assert s.step.harness_overrides == {"att_kp": (l4.F32, repr(control["gain"]))}
-    assert s.k == attitude.axis_k(axis, control["gain"], s.design["result"]["w32"])
+    assert s.step.harness_overrides == {"att_kp": (l4.F32, "0.0")}
+    assert s.k == attitude.axis_k(axis, 0.0, s.design["result"]["w32"])
     assert run_scenario.complete_trailer(s.step.run.log, s.step.run.iterations, s.step.run.m)
     assert s.window_stale == [], "the control must fail on the margin, not on a stale read"
     assert not ev["passed"], ev

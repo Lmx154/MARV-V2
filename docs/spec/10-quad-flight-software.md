@@ -344,10 +344,11 @@ or the budget register), the test level of each check (core §7.1), and what fre
   only then at a rate chosen by SIM-7. Angle mode (self-levelling).
 - **Opening:** in: attitude setpoint (quaternion, body → NED); out: rate setpoint to L4.
 - **Pass bar:** T3 step response and margins; T4 angle-mode steps, the yaw scenario and the large-angle recoveries
-  (R1, R2, R1X) settle by the deadline (S) and stay bounded (B) on roll, pitch and heading (yaw: yaw rate, heading
-  relative to the lock and tilt; recoveries: tilt, |ω| and heading), with s = `t4_settle_fraction`, and chirp
-  injection measures PM − U ≥ `PM_min`; no design-model envelope; the control is the attitude loop disabled
-  (`att_kp` = 0), which fails (decision 0029). The L4 suite still green.
+  (R1, R2, R1X) settle by the deadline (S) on every checked quantity and stay bounded (B) on what the scenario steps or holds,
+  with s = `t4_settle_fraction` (steps: roll, pitch and heading; yaw: yaw rate, tilt and heading relative to the lock; recoveries: tilt, |ω| and heading;
+  roles in decision 0031: the heading after the yaw lock, R1/R1X |ω| and R2 heading are driven and get S only, the yaw tilt
+  is held), and chirp injection measures PM − U ≥ `PM_min`; no design-model envelope; the control is the attitude loop
+  disabled (`att_kp` = 0), which fails S (decisions 0029, 0031). The L4 suite still green.
 - **Freezes:** the new tests.
 
 ### L11 — Vertical loop on truth state
