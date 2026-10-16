@@ -417,7 +417,7 @@ rules:
 
   # ---------------------------------------------------------------- tools
   - paths: [tools/card/**]
-    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L09, L11]
+    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L08, L09, L11]
     run_ci_steps: ["@card_gates"]
     pytest_paths:
       - tests/regression/quad/L01/tools
@@ -434,7 +434,7 @@ rules:
       - tools/sim/prim_constants.py
       - tools/sim/reference.py
       - tools/sim/t4_rule.py
-    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L09, L11]
+    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L08, L09, L11]
     run_ci_steps: ["@card_gates"]
     pytest_paths:
       - tests/regression/quad/L01/tools
@@ -996,6 +996,13 @@ rules:
     why: "L06 tools tests and the committed L06 measurements they read"
 
   # ---------------------------------------------------------------- L11
+  - paths: [tests/regression/quad/L08/CMakeLists.txt, tests/regression/quad/L08/unit/**]
+    ctest_labels: [L08]
+    run_ci_steps: ["@host"]
+    pytest_paths: []
+    gz_groups: []
+    why: "the L08 CRSF decoder test is a host ctest entry"
+
   - paths: [tests/regression/quad/L09/CMakeLists.txt, tests/regression/quad/L09/unit/**]
     ctest_labels: [L09]
     run_ci_steps: ["@host"]
