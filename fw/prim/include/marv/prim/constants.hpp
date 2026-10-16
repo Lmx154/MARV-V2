@@ -38,6 +38,54 @@ inline constexpr unsigned kDshotT0hOfBitNum = 3;
 inline constexpr unsigned kDshotT1hOfBitNum = 6;
 inline constexpr unsigned kDshotBitFractionDen = 8;
 
+// CRSF frame construction. Citation: TBS CRSF spec (https://github.com/tbs-fpv/tbs-crsf-spec/blob/main/crsf.md), sections
+// "Frame Construction" / "Frame Details": a frame is sync byte, frame length, type, payload, CRC; the sync byte is the
+// serial sync byte 0xC8 or the broadcast device address 0x00 (or a device address); the frame length counts the bytes
+// after the sync and length bytes (type, payload, CRC), valid range 2 to 62, anything else is discarded; a frame is at
+// most 64 bytes including the sync and CRC bytes. Section "CRC": CRC8, polynomial x7 + x6 + x4 + x2 + x0 = 0xD5, over type
+// and payload.
+// Kind: standard.
+inline constexpr std::uint8_t kCrsfSyncSerial = 0xC8;
+inline constexpr std::uint8_t kCrsfAddrBroadcast = 0x00;
+inline constexpr std::size_t kCrsfFrameBytesMax = 64;
+inline constexpr std::uint8_t kCrsfLengthMin = 2;
+inline constexpr std::uint8_t kCrsfLengthMax = 62;
+inline constexpr std::uint8_t kCrsfCrc8Poly = 0xD5;
+
+// CRSF frame types. Citation: TBS CRSF spec (https://github.com/tbs-fpv/tbs-crsf-spec/blob/main/crsf.md), section
+// "Broadcast Frame Types": "0x14 Link Statistics" and "0x16 RC Channels Packed Payload".
+// Kind: standard.
+inline constexpr std::uint8_t kCrsfTypeLinkStatistics = 0x14;
+inline constexpr std::uint8_t kCrsfTypeRcChannelsPacked = 0x16;
+
+// CRSF 0x16 RC Channels Packed Payload. Citation: TBS CRSF spec
+// (https://github.com/tbs-fpv/tbs-crsf-spec/blob/main/crsf.md), section "0x16 RC Channels Packed Payload": "16 channels
+// packed into 22 bytes", the struct lists channel_01 .. channel_16 as 11-bit fields back to back (16 * 11 = 176 bits =
+// 22 bytes). The spec does not state the bit order; least significant bit first (little-endian bit packing) is that of
+// the struct as a C bit-field on a little-endian target and of the CRSF working group's example frame
+// (https://github.com/crsf-wg/crsf/wiki/CRSF_FRAMETYPE_RC_CHANNELS_PACKED: "LSB-first, little endian").
+// Kind: standard.
+inline constexpr std::size_t kCrsfRcChannels = 16;
+inline constexpr unsigned kCrsfRcChannelBits = 11;
+inline constexpr std::size_t kCrsfRcPayloadBytes = 22;
+
+// CRSF 0x14 Link Statistics payload layout. Citation: TBS CRSF spec
+// (https://github.com/tbs-fpv/tbs-crsf-spec/blob/main/crsf.md), section "0x14 Link Statistics": ten one-byte fields in this
+// order, the SNR fields being int8_t: up_rssi_ant1, up_rssi_ant2, up_link_quality, up_snr, active_antenna, rf_profile,
+// up_rf_power, down_rssi, down_link_quality, down_snr. The value is the byte offset into the payload.
+// Kind: standard.
+inline constexpr std::size_t kCrsfLsUpRssiAnt1 = 0;
+inline constexpr std::size_t kCrsfLsUpRssiAnt2 = 1;
+inline constexpr std::size_t kCrsfLsUpLinkQuality = 2;
+inline constexpr std::size_t kCrsfLsUpSnr = 3;
+inline constexpr std::size_t kCrsfLsActiveAntenna = 4;
+inline constexpr std::size_t kCrsfLsRfProfile = 5;
+inline constexpr std::size_t kCrsfLsUpRfPower = 6;
+inline constexpr std::size_t kCrsfLsDownRssi = 7;
+inline constexpr std::size_t kCrsfLsDownLinkQuality = 8;
+inline constexpr std::size_t kCrsfLsDownSnr = 9;
+inline constexpr std::size_t kCrsfLinkStatsPayloadBytes = 10;
+
 // Pi. Citation: the mathematical constant, the ratio of a circle's circumference to its diameter.
 // Kind: math.
 inline constexpr double kPi = 3.14159265358979323846;
