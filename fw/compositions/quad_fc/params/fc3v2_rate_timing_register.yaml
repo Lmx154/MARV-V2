@@ -1,0 +1,6 @@
+# Rate-loop spacing tolerance of the FC3v2 target set (marv_params_fc3v2), in params_gen input form
+# (tools/gen/params_gen.py), passed after the design-budget register so the id is the product set's
+# (design/rate_timing_register.yaml; fw/params/CMakeLists.txt, EXTRA_REGISTER; decision 0034).
+
+rate_period_tolerance_us:
+  {type: i32, value: 1, unit: "us", method: scenario, source: "PLACEHOLDER: the SIL value (design/rate_timing_register.yaml), because the target value cannot be formed yet. It is replaced by ceil(T_rate odr_error + 2 delta) in whole us, rounded up because a false refusal zeroes the torque (Luis, 2026-10-16, '4. yes'), when odr_error comes from the LSM6DSV sensor profile (M1 P8, not merged) and delta, the sample-stamp jitter, is measured on the board (M1 P12). Nothing spins on the target until then (the quad_fc motor gate is always disarmed); decision 0034", sigma: choice}

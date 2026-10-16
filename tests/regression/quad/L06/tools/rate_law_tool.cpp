@@ -23,10 +23,6 @@
 template class marv::rate::RateLoop<float>;
 template marv::rate::ConfigError marv::rate::validate<float>(const marv::rate::RateConfig<float>&) noexcept;
 
-namespace marv::rate::detail {
-[[noreturn]] void panic_period() noexcept { std::abort(); }
-}  // namespace marv::rate::detail
-
 int main() {
   using namespace marv;
   double kp = 0;

@@ -25,6 +25,7 @@
 // freeze_n is recorded by record_allocation from execution n's allocation and gates the increment applied at
 // execution n + 1, so the update has no lag.
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -48,9 +49,6 @@ enum TorqueAxis : std::size_t { kRollAxis, kPitchAxis, kYawAxis };
 
 inline constexpr std::size_t kTorqueAxes = prim::kSpatialDim;
 
-// The largest accepted |dt_n - T| in microseconds: the hal_sim truncation bound of a sample stamp.
-inline constexpr std::uint64_t kPeriodToleranceUs = 1;
-
 template <class T>
 struct RateConfig {
   prim::Vec3<T> kp{};       // N*m*s/rad, [roll, pitch, yaw]
@@ -67,9 +65,15 @@ struct RateConfig {
   std::array<T, kMotors> rotor_y{};   // m, FRD
   std::array<T, kMotors> yaw_sign{};  // s_i
   T torque_ratio{};                   // c_q, N*m per N
+  // The spacing check: tick period tick_period_num_us / tick_period_den µs, rate_loop_divisor ticks per execution,
+  // largest accepted |dt_n - T| period_tolerance_us µs.
+  std::int32_t tick_period_num_us{};
+  std::int32_t tick_period_den{};
+  std::int32_t rate_loop_divisor{};
+  std::int32_t period_tolerance_us{};
 };
 
-enum class ConfigError : std::uint8_t { None, NonFinite, NegativeGain, TauRef, Period, DFilter, Feedforward };
+enum class ConfigError : std::uint8_t { None, NonFinite, NegativeGain, TauRef, Period, DFilter, Feedforward, Timing };
 
 // The first violated rule, else None. Written with negated comparisons, so a NaN is rejected.
 template <class T>
@@ -114,6 +118,22 @@ template <class T>
   return ConfigError::None;
 }
 
+// Timing unless the tick numerator, denominator and divisor are at least 1, the tolerance is at least 0 and
+// 2 den tol < num (the tolerance below half a tick), so a missing sample is always outside the bound; else None.
+template <class T>
+[[nodiscard]] ConfigError validate_timing(const RateConfig<T>& c) noexcept {
+  if (c.tick_period_num_us < 1 || c.tick_period_den < 1 || c.rate_loop_divisor < 1 || c.period_tolerance_us < 0) {
+    return ConfigError::Timing;
+  }
+  const auto num = static_cast<std::uint64_t>(c.tick_period_num_us);
+  const auto den = static_cast<std::uint64_t>(c.tick_period_den);
+  const auto tol = static_cast<std::uint64_t>(c.period_tolerance_us);
+  if (2 * den * tol >= num) {
+    return ConfigError::Timing;
+  }
+  return ConfigError::None;
+}
+
 // B-hat, rows [thrust, roll, pitch, yaw], column = motor index.
 template <class T>
 [[nodiscard]] prim::Mat<T, kAxes, kMotors> effectiveness(const RateConfig<T>& c) noexcept {
@@ -133,21 +153,16 @@ struct RateOutput {
   bool fault_active = false;
   bool fault_latched = false;
   std::uint32_t fault_count = 0;
+  std::uint32_t timing_fault_count = 0;  // the faults of fault_count that are spacing faults
 };
-
-namespace detail {
-// hal_panic: the execution spacing differs from the design period by more than kPeriodToleranceUs.
-[[noreturn]] void panic_period() noexcept;
-}  // namespace detail
 
 template <class T>
 class RateLoop {
  public:
-  // pre: validate(cfg) == None and mixer::validate(mixer_cfg) == None. Clears all state, the fault latch and the
-  // fault counter.
+  // pre: validate(cfg), validate_timing(cfg) and mixer::validate(mixer_cfg) are None. Clears all state, the fault latch
+  // and the fault counters.
   void init(const RateConfig<T>& cfg, const mixer::MixerConfig<T>& mixer_cfg) noexcept {
     using std::abs;
-    using std::lround;
     cfg_ = cfg;
     const prim::Mat<T, kAxes, kMotors> b = effectiveness(cfg);
     for (std::size_t r = 0; r < kAxes; ++r) {
@@ -159,15 +174,17 @@ class RateLoop {
         abs_bm_(r, c) = sum;
       }
     }
-    // Twice the period in µs (half-µs resolution), so a period such as 312.5 µs (two 156.25 µs ticks) is checked
-    // exactly: |dt − T| > tol  ⇔  |2·dt − 2·T| > 2·tol, with 2·dt and 2·T integers.
-    two_period_us_ =
-        static_cast<std::uint64_t>(lround(2 * cfg.period * static_cast<T>(prim::kMicrosecondsPerSecond)));
+    // T = D num / den µs exactly: |dt − T| > tol  ⇔  |den·dt − D·num| > den·tol, all integers.
+    den_ = static_cast<std::uint64_t>(cfg.tick_period_den);
+    target_ = static_cast<std::uint64_t>(cfg.rate_loop_divisor) * static_cast<std::uint64_t>(cfg.tick_period_num_us);
+    slack_ = den_ * static_cast<std::uint64_t>(cfg.period_tolerance_us);
+    dt_max_ = std::numeric_limits<std::uint64_t>::max() / std::max<std::uint64_t>(den_, 1);
     ff_on_ = cfg.inertia[kRollAxis] > T(0) || cfg.inertia[kPitchAxis] > T(0) || cfg.inertia[kYawAxis] > T(0);
     reset_state();
     have_t_ = false;
     latched_ = false;
     count_ = 0;
+    timing_count_ = 0;
   }
 
   // The next execution is a first execution: it seeds the prefilter from the gyro and applies no dt check.
@@ -177,9 +194,10 @@ class RateLoop {
     have_t_ = false;
   }
 
-  // One rate-loop execution. Panics when the spacing to the previous execution differs from the design period by
-  // more than kPeriodToleranceUs. A failed check (gyro not valid or not finite, setpoint or torque not finite)
-  // resets the loop state, returns zero torque and sets fault_active for this execution.
+  // One rate-loop execution. A failed check (the spacing to the previous execution off the design period by more than
+  // period_tolerance_us, gyro not valid or not finite, setpoint or torque not finite) resets the loop state, returns
+  // zero torque and sets fault_active for this execution. A spacing fault is also counted in timing_fault_count, and
+  // the next execution's spacing is taken from this execution's stamp.
   [[nodiscard]] RateOutput<T> execute(const ImuSample& imu, const prim::Vec3<T>& setpoint) noexcept {
     return step<true>(imu, setpoint);
   }
@@ -223,6 +241,7 @@ class RateLoop {
   [[nodiscard]] bool seeding() const noexcept { return seed_; }
   [[nodiscard]] bool fault_latched() const noexcept { return latched_; }
   [[nodiscard]] std::uint32_t fault_count() const noexcept { return count_; }
+  [[nodiscard]] std::uint32_t timing_fault_count() const noexcept { return timing_count_; }
 
  private:
   template <bool kPrefilter>
@@ -230,18 +249,25 @@ class RateLoop {
     using std::exp;
     using std::isfinite;
     std::uint64_t dt_us = 0;
+    bool off_period = false;
     if (have_t_) {
       dt_us = imu.t_us - t_us_;
-      const std::uint64_t two_tol = 2 * kPeriodToleranceUs;
-      // A spacing too large to double (a stamp going backwards wraps to one) is outside the bound anyway.
-      const bool no_double = dt_us > std::numeric_limits<std::uint64_t>::max() / 2;
-      const std::uint64_t two_dt = no_double ? 0 : 2 * dt_us;
-      if (no_double || two_dt > two_period_us_ + two_tol || two_dt + two_tol < two_period_us_) {
-        detail::panic_period();
+      // A spacing whose den·dt overflows (a stamp going backwards wraps to one) is outside the bound.
+      if (dt_us > dt_max_) {
+        off_period = true;
+      } else {
+        const std::uint64_t scaled = den_ * dt_us;
+        off_period = (scaled > target_ ? scaled - target_ : target_ - scaled) > slack_;
       }
     }
     t_us_ = imu.t_us;
     have_t_ = true;
+    if (off_period) {
+      if (timing_count_ != std::numeric_limits<std::uint32_t>::max()) {
+        ++timing_count_;
+      }
+      return fault();
+    }
 
     prim::Vec3<T> y;
     bool ok = (imu.flags & imu_flag(ImuFlag::GyroValid)) != 0;
@@ -306,7 +332,7 @@ class RateLoop {
     }
     y_prev_ = y;
     freeze_ = {};
-    return RateOutput<T>{u, false, latched_, count_};
+    return RateOutput<T>{u, false, latched_, count_, timing_count_};
   }
 
   // J w, J diagonal.
@@ -333,12 +359,15 @@ class RateLoop {
     if (count_ != std::numeric_limits<std::uint32_t>::max()) {
       ++count_;
     }
-    return RateOutput<T>{prim::Vec3<T>(), true, true, count_};
+    return RateOutput<T>{prim::Vec3<T>(), true, true, count_, timing_count_};
   }
 
   RateConfig<T> cfg_{};
   prim::Mat<T, kAxes, kAxes> abs_bm_{};  // |B-hat| |M-hat|
-  std::uint64_t two_period_us_ = 0;
+  std::uint64_t den_ = 0;     // tick_period_den
+  std::uint64_t target_ = 0;  // D·num: den·T in µs
+  std::uint64_t slack_ = 0;   // den·tol
+  std::uint64_t dt_max_ = 0;  // the largest dt whose den·dt fits
   prim::Vec3<T> r_{};
   prim::Vec3<T> e_{};
   prim::Vec3<T> y_prev_{};
@@ -353,15 +382,17 @@ class RateLoop {
   bool seed_ = true;
   bool latched_ = false;
   std::uint32_t count_ = 0;
+  std::uint32_t timing_count_ = 0;
 };
 
 // The product parameter set's rate configuration: rate_{kp,ki,kd,tau_ref}_<axis>, the period
-// T = rate_loop_divisor * tick_period_num_us / tick_period_den microseconds in seconds, rotor_position_m<i>_{x,y},
+// T = rate_loop_divisor * tick_period_num_us / tick_period_den microseconds in seconds, the spacing check's
+// tick_period_num_us, tick_period_den, rate_loop_divisor and rate_period_tolerance_us, rotor_position_m<i>_{x,y},
 // rotor_yaw_sign_m<i> and rotor_torque_ratio. With rate_ff_enable == 1 also inertia_{xx,yy,zz}, motor_tau and
 // rate_ff_filter_tau (the feed-forward); any other value leaves them 0. Not validated. pre: params_init succeeded.
 [[nodiscard]] RateConfig<float> from_params() noexcept;
 
-// hal_panic naming the violated rule unless validate(c) == None.
+// hal_panic naming the violated rule unless validate(c) and validate_timing(c) are None.
 void require_valid(const RateConfig<float>& c) noexcept;
 
 // from_params, then require_valid: the firmware-facing init.

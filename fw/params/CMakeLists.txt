@@ -102,7 +102,7 @@ function(marv_card_profile_file out name card)
 endfunction()
 
 # marv_add_card_param_set(<name> CARD <card.yaml> BUDGET <budget.yaml> [SCENARIO <scenario_values.yaml>]
-#                         [EXTRA_REGISTER <register.yaml>] [PRODUCT_TABLE])
+#                         [EXTRA_REGISTER <register.yaml>...] [PRODUCT_TABLE])
 #
 # A parameter set (marv_add_param_set) whose sources are a vehicle card and the design-budget register: a build-time
 # custom command runs tools/card/flatten.py through tools/card/flatten_cached.py (lints first; a lint finding fails the build; the
@@ -121,12 +121,14 @@ endfunction()
 # --out-vertical, decision 0020) with their report (<name>_vertical_report.txt). The command depends on
 # the card, the sensor profile the card names, the budget, the scenario register and tools/card/*.py.
 # PRODUCT_TABLE (with SCENARIO) also writes ${CMAKE_BINARY_DIR}/generated/<name>/<name>_product_table.txt, the readable
-# table of every record, whose header names the repository-relative card, sensor profile, budget and scenario register;
+# table of every record, whose header names the repository-relative card, sensor profile, budget, scenario register and
+# extra registers;
 # CI compares it byte for byte with tests/regression/quad/L06/product_params/marv_params_product_table.txt.
-# EXTRA_REGISTER appends one more register file after the budget register, so every id of the set without it keeps its
-# value and the extra entries follow (a composition's own scenario parameters); without it the outputs are unchanged.
+# EXTRA_REGISTER appends register files, in the order given, after the budget register, so every id of the set without
+# them keeps its value and the extra entries follow (the rate-timing register, then a composition's own scenario
+# parameters); without it the outputs are unchanged.
 function(marv_add_card_param_set name)
-  cmake_parse_arguments(ARG "PRODUCT_TABLE" "CARD;BUDGET;SCENARIO;EXTRA_REGISTER" "" ${ARGN})
+  cmake_parse_arguments(ARG "PRODUCT_TABLE" "CARD;BUDGET;SCENARIO" "EXTRA_REGISTER" ${ARGN})
   cmake_path(ABSOLUTE_PATH ARG_CARD BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
   cmake_path(ABSOLUTE_PATH ARG_BUDGET BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ARG_CARD}")
@@ -191,7 +193,7 @@ function(marv_add_card_param_set name)
       message(FATAL_ERROR "marv_add_card_param_set(${name}): PRODUCT_TABLE needs SCENARIO")
     endif()
     set(table_inputs)
-    foreach(f IN ITEMS "${ARG_CARD}" "${profile_file}" "${ARG_BUDGET}" "${ARG_SCENARIO}")
+    foreach(f IN ITEMS "${ARG_CARD}" "${profile_file}" "${ARG_BUDGET}" "${ARG_SCENARIO}" ${ARG_EXTRA_REGISTER})
       file(RELATIVE_PATH f_rel "${PROJECT_SOURCE_DIR}" "${f}")
       list(APPEND table_inputs "${f_rel}")
     endforeach()
@@ -228,11 +230,16 @@ function(marv_add_card_report name)
     VERBATIM)
 endfunction()
 
-# The product parameter set: the vehicle card, the design-budget register and the scenario-values register. (The
-# INTERFACE library `marv_params` above is the include root that every set's <name>_generated links; this set's
-# targets are marv_params_generated and marv_params_runtime.)
+# The rate-loop spacing tolerance of the product set and of every SIL set built from it (decision 0034). Every set that
+# links marv_rate passes a rate-timing register first among its EXTRA_REGISTER files, so rate_period_tolerance_us has
+# the product id in each.
+set(MARV_RATE_TIMING_REGISTER "${PROJECT_SOURCE_DIR}/design/rate_timing_register.yaml")
+
+# The product parameter set: the vehicle card, the design-budget register, the scenario-values register and the
+# rate-timing register. (The INTERFACE library `marv_params` above is the include root that every set's
+# <name>_generated links; this set's targets are marv_params_generated and marv_params_runtime.)
 marv_add_card_param_set(marv_params CARD "${MARV_VEHICLE_CARD}" BUDGET "${MARV_DESIGN_BUDGET}"
-  SCENARIO "${MARV_SCENARIO_VALUES}" PRODUCT_TABLE)
+  SCENARIO "${MARV_SCENARIO_VALUES}" EXTRA_REGISTER "${MARV_RATE_TIMING_REGISTER}" PRODUCT_TABLE)
 
 # The L0 parameter set: built from the frozen L0 fixtures, whatever MARV_PARAM_*_FILES name. The L0 composition, the
 # null plant, the SIL test library and the L0 tests link it, so later layers can change the product's parameter
@@ -255,14 +262,16 @@ marv_add_param_set(marv_params_l2_open_loop
 # the product ids, which this set keeps.
 marv_add_card_param_set(marv_params_l4_rate_scripted CARD "${MARV_VEHICLE_CARD}" BUDGET "${MARV_DESIGN_BUDGET}"
   SCENARIO "${MARV_SCENARIO_VALUES}"
-  EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml")
+  EXTRA_REGISTER "${MARV_RATE_TIMING_REGISTER}"
+                 "${PROJECT_SOURCE_DIR}/fw/compositions/l4_rate_scripted/params/l4_rate_scripted_register.yaml")
 
 # The L5 attitude-scripted composition's parameter set: the product set (card, budget, mixer, rate, attitude, scenario
 # values) followed by the composition's own register (thrust, stick script, chirp, yaw disturbance; neutral defaults).
 # marv_attitude, marv_rate and marv_mixer read the product ids, which this set keeps.
 marv_add_card_param_set(marv_params_l5_attitude_scripted CARD "${MARV_VEHICLE_CARD}" BUDGET "${MARV_DESIGN_BUDGET}"
   SCENARIO "${MARV_SCENARIO_VALUES}"
-  EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml")
+  EXTRA_REGISTER "${MARV_RATE_TIMING_REGISTER}"
+                 "${PROJECT_SOURCE_DIR}/fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml")
 
 # The L11 vertical-scripted composition's parameter set: the product set (card, budget, mixer, rate, attitude, vertical,
 # scenario values) followed by the composition's own register (hover thrust, stick and height script, thrust
@@ -270,13 +279,16 @@ marv_add_card_param_set(marv_params_l5_attitude_scripted CARD "${MARV_VEHICLE_CA
 # set keeps.
 marv_add_card_param_set(marv_params_l11_vertical_scripted CARD "${MARV_VEHICLE_CARD}" BUDGET "${MARV_DESIGN_BUDGET}"
   SCENARIO "${MARV_SCENARIO_VALUES}"
-  EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml")
+  EXTRA_REGISTER "${MARV_RATE_TIMING_REGISTER}"
+                 "${PROJECT_SOURCE_DIR}/fw/compositions/l11_vertical_scripted/params/l11_vertical_scripted_register.yaml")
 
 # The quad flight composition's parameter set for the FC3v2 target (M1): the product set (card, budget, mixer, rate,
 # attitude, vertical) with the target's own scenario-values register (tick 7.68 kHz, 3125/24 us; the SIL's register
-# design/scenario_values.yaml stays as it is) followed by the composition's own register (none yet). The card is
+# design/scenario_values.yaml stays as it is) followed by the target's rate-timing register (a PLACEHOLDER tolerance,
+# decision 0034) and the composition's own register (none yet). The card is
 # fixed to vehicles/uzh_neurobem_5in.yaml (not MARV_VEHICLE_CARD) until a later packet names the real airframe's.
 # marv_rate, marv_mixer and marv_rate_group read the product ids, which this set keeps.
 marv_add_card_param_set(marv_params_fc3v2 CARD "vehicles/uzh_neurobem_5in.yaml" BUDGET "${MARV_DESIGN_BUDGET}"
   SCENARIO "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml"
-  EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml")
+  EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml"
+                 "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml")

@@ -1,7 +1,8 @@
 // The L4 rate loop (quad spec 4 L4): the law against hand-computed values and a double-precision oracle with dt jitter,
 // the reference-model prefilter and its bumpless seeding, D = 0 at a first execution, clamping anti-windup (each of
 // its three conditions, the rounding case with synthetic and with real L3 allocations), the fault handling, the dt
-// check and the configuration validation.
+// check (a spacing off the period is refused and counted, never a halt; decision 0034) and the configuration
+// validation.
 //
 // Numbers in this file are one of: derived (the rule is stated), or a "scenario test value" chosen for the scenario
 // and named with its reason. The card supplies the mixer and the rotor geometry; nothing here tunes to it.
@@ -45,6 +46,9 @@ constexpr float kInf = std::numeric_limits<float>::infinity();
 // count, and it makes dt = T a whole number of microseconds so the +-1 us jitter cases are exact.
 constexpr float kPeriodS = 0.001F;
 constexpr std::uint64_t kPeriodUs = 1000;
+// Scenario test value: the dt check's tolerance, 1 µs (the SIL rate_period_tolerance_us, the hal_sim stamp truncation
+// bound). With T = kPeriodUs / 1 µs per tick and one tick per execution, the check is |dt - T| > 1 µs.
+constexpr std::int32_t kToleranceUs = 1;
 // Scenario test value: the first sample stamp, nonzero so a stamp of 0 is not mistaken for "no stamp".
 constexpr std::uint64_t kT0Us = 5000;
 
@@ -128,6 +132,10 @@ RateConfig<float> config(const Card& c, const std::array<Gains, kA>& g) {
     r.tau_ref[a] = static_cast<float>(g[a].tau);
   }
   r.period = kPeriodS;
+  r.tick_period_num_us = static_cast<std::int32_t>(kPeriodUs);
+  r.tick_period_den = 1;
+  r.rate_loop_divisor = 1;
+  r.period_tolerance_us = kToleranceUs;
   return r;
 }
 
@@ -822,78 +830,171 @@ TEST(L4RateFaults, NegativeControlHealthyInputsNeverFault) {
 
 // ---- 6. the dt check ---------------------------------------------------------------------------------------------
 
-TEST(L4RateDtDeathTest, SpacingOutsideOneMicrosecondOfTheDesignPeriodPanics) {
+// A spacing outside the bound is refused and counted, never a halt (quad spec 4.0 M1, decision 0034): that execution
+// returns zero torque with the fault set, latched and counted (also as a timing fault) and the state reset; the next
+// spacing is taken from the refused stamp.
+void expect_refused(const RateOutput<float>& o, const RateLoop<float>& loop, std::uint32_t faults,
+                    std::uint32_t timing_faults, const char* name) {
+  EXPECT_TRUE(o.fault_active) << name;
+  EXPECT_TRUE(o.fault_latched) << name;
+  EXPECT_EQ(o.fault_count, faults) << name;
+  EXPECT_EQ(o.timing_fault_count, timing_faults) << name;
+  EXPECT_EQ(loop.timing_fault_count(), timing_faults) << name;
+  EXPECT_TRUE(loop.seeding()) << name;
+  for (std::size_t a = 0; a < kA; ++a) {
+    EXPECT_EQ(o.torque[a], 0.0F) << name << " axis " << a;
+    EXPECT_EQ(loop.integrator()[a], 0.0F) << name << " axis " << a;
+  }
+}
+
+TEST(L4RateDt, SpacingOutsideOneMicrosecondOfTheDesignPeriodIsRefusedAndCounted) {
   REQUIRE_CARD();
   const RateConfig<float> cfg = config(c, hand_gains());
-  const auto run = [&](std::int64_t jitter) {
+  struct Case {
+    const char* name;
+    std::int64_t jitter;
+    bool refused;
+  };
+  const auto t = static_cast<std::int64_t>(kPeriodUs);
+  // Inside the bound (-1, 0, +1 us): accepted, the negative control for the refused cases.
+  const std::array<Case, 8> cases{{{"-1 us", -1, false},
+                                   {"on time", 0, false},
+                                   {"+1 us", 1, false},
+                                   {"+2 us", 2, true},
+                                   {"-2 us", -2, true},
+                                   {"a repeated stamp", -t, true},
+                                   {"a dropped sample", t, true},
+                                   {"a stamp going backwards", -t - 1, true}}};
+  for (const Case& k : cases) {
     Rig rig;
     rig.init(c, cfg);
     (void)rig.step(all(0), all(0));
-    (void)rig.step(all(0), all(0), jitter);
-  };
-  // Inside the bound: no panic (negative control for the death cases).
-  run(-1);
-  run(0);
-  run(1);
-  EXPECT_DEATH(run(2), "more than 1 us");
-  EXPECT_DEATH(run(-2), "more than 1 us");
-  EXPECT_DEATH(run(-static_cast<std::int64_t>(kPeriodUs)), "more than 1 us");  // a repeated stamp
-  EXPECT_DEATH(run(static_cast<std::int64_t>(kPeriodUs)), "more than 1 us");   // a dropped sample
-  EXPECT_DEATH(run(-static_cast<std::int64_t>(kPeriodUs) - 1), "more than 1 us");  // stamp going backwards
+    const RateOutput<float> healthy = rig.step(all(0.5), all(2));
+    ASSERT_FALSE(healthy.fault_active) << k.name;
+    ASSERT_NE(healthy.torque[0], 0.0F) << k.name << ": a torque for the refusal to zero";
+    const RateOutput<float> o = rig.step(all(0.5), all(2), k.jitter);
+    if (!k.refused) {
+      EXPECT_FALSE(o.fault_active) << k.name;
+      EXPECT_EQ(o.fault_count, 0U) << k.name;
+      EXPECT_EQ(o.timing_fault_count, 0U) << k.name;
+      EXPECT_NE(o.torque[0], 0.0F) << k.name;
+      continue;
+    }
+    expect_refused(o, rig.loop, 1, 1, k.name);
+    // Re-anchored on the refused stamp: one period later is accepted (one bad spacing, one fault) and seeds.
+    const RateOutput<float> next = rig.step(all(0.5), all(2));
+    EXPECT_FALSE(next.fault_active) << k.name;
+    EXPECT_TRUE(next.fault_latched) << k.name;
+    EXPECT_EQ(next.fault_count, 1U) << k.name;
+    EXPECT_EQ(next.timing_fault_count, 1U) << k.name;
+    EXPECT_EQ(next.torque[0], 0.0F) << k.name << ": seeded";
+    EXPECT_FALSE(rig.loop.seeding()) << k.name;
+  }
 }
 
-// The flight period: two 156.25 µs ticks (the scenario register's 625/4 µs tick and divisor 2), T = 312.5 µs, with
-// the hal_sim stamps floor(N · 625/4) µs, whose two-tick spacing alternates 312 / 313 µs (quad §4 L0).
-TEST(L4RateDtDeathTest, HalfMicrosecondPeriodIsCheckedExactly) {
-  REQUIRE_CARD();
-  constexpr std::uint64_t kNum = 625;  // scenario test value: the tick numerator (µs), design/scenario_values.yaml
-  constexpr std::uint64_t kDen = 4;    // scenario test value: the tick denominator, design/scenario_values.yaml
-  constexpr std::uint64_t kDiv = 2;    // scenario test value: rate_loop_divisor, design/scenario_values.yaml
-  RateConfig<float> cfg = config(c, hand_gains());
-  cfg.period = static_cast<float>(static_cast<double>(kDiv * kNum) / static_cast<double>(kDen) / 1.0e6);
-  const auto stamp = [&](std::uint64_t tick) { return tick * kNum / kDen; };
-  // Real stamps over many executions: both spacings (312 and 313 µs, |dt − T| = 0.5 µs) pass.
+// The configuration with tick period num/den µs and divisor D (T = D num / den µs), the float period formed alike.
+RateConfig<float> with_tick(RateConfig<float> cfg, std::int32_t num, std::int32_t den, std::int32_t div) {
+  cfg.tick_period_num_us = num;
+  cfg.tick_period_den = den;
+  cfg.rate_loop_divisor = div;
+  cfg.period = static_cast<float>(static_cast<double>(div) * num / den / 1.0e6);
+  return cfg;
+}
+
+// Scenario test values: the SIL tick 625/4 µs (6.4 kHz) and divisor 2 (design/scenario_values.yaml), and the target
+// tick 3125/24 µs (7.68 kHz; Luis, 2026-10-16; fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml).
+constexpr std::int32_t kSilNum = 625;
+constexpr std::int32_t kSilDen = 4;
+constexpr std::int32_t kTargetNum = 3125;
+constexpr std::int32_t kTargetDen = 24;
+constexpr std::int32_t kDiv = 2;
+
+// T = D num / den µs is checked exactly. The hal_sim stamps floor(N num / den) µs make the D-tick spacing take the two
+// whole values around T (`pass`); both pass over many executions. A spacing one µs further out on either side (`refused`,
+// more than 1 µs from T) is refused and counted, whichever way T rounds to whole µs: an integer-µs check with T rounded
+// would accept one of them (the negative control for the rounding).
+void check_rational_period(const Card& c, std::int32_t num, std::int32_t den, std::array<std::uint64_t, 2> pass,
+                           std::array<std::uint64_t, 2> refused) {
+  const RateConfig<float> cfg = with_tick(config(c, hand_gains()), num, den, kDiv);
+  ASSERT_EQ(rate::validate_timing(cfg), rate::ConfigError::None);
+  const auto stamp = [&](std::uint64_t tick) {
+    return tick * static_cast<std::uint64_t>(num) / static_cast<std::uint64_t>(den);
+  };
+  const auto div = static_cast<std::uint64_t>(kDiv);
   {
     RateLoop<float> loop;
     loop.init(cfg, c.mixer);
-    bool saw312 = false;
-    bool saw313 = false;
+    std::array<bool, 2> saw{};
     for (std::uint64_t n = 0; n < 64; ++n) {  // scenario test value: 64 executions cover both spacings many times
       if (n > 0) {
-        const std::uint64_t d = stamp(n * kDiv) - stamp((n - 1) * kDiv);
-        saw312 = saw312 || d == 312;
-        saw313 = saw313 || d == 313;
+        const std::uint64_t d = stamp(n * div) - stamp((n - 1) * div);
+        saw[0] = saw[0] || d == pass[0];
+        saw[1] = saw[1] || d == pass[1];
       }
-      (void)loop.execute(Rig::sample(stamp(n * kDiv), all(0), imu_flag(ImuFlag::GyroValid)), all(0));
+      const RateOutput<float> o =
+          loop.execute(Rig::sample(stamp(n * div), all(0), imu_flag(ImuFlag::GyroValid)), all(0));
+      EXPECT_FALSE(o.fault_active) << num << "/" << den << " execution " << n;
     }
-    EXPECT_TRUE(saw312 && saw313);
+    EXPECT_TRUE(saw[0] && saw[1]) << num << "/" << den;
   }
-  // A spacing 1.5 µs from T (311 or 314 µs) is outside the bound and panics, whichever way T rounds to whole µs;
-  // an integer-µs check with T rounded to 313 (or 312) accepts one of them (negative control for the rounding).
-  const auto run = [&](std::uint64_t dt_us) {
+  const auto run = [&](std::uint64_t dt_us, bool want_refused) {
     RateLoop<float> loop;
     loop.init(cfg, c.mixer);
     (void)loop.execute(Rig::sample(kT0Us, all(0), imu_flag(ImuFlag::GyroValid)), all(0));
-    (void)loop.execute(Rig::sample(kT0Us + dt_us, all(0), imu_flag(ImuFlag::GyroValid)), all(0));
+    const RateOutput<float> o = loop.execute(Rig::sample(kT0Us + dt_us, all(0), imu_flag(ImuFlag::GyroValid)), all(0));
+    if (want_refused) {
+      expect_refused(o, loop, 1, 1, "refused spacing");
+    } else {
+      EXPECT_FALSE(o.fault_active) << num << "/" << den << " dt " << dt_us;
+      EXPECT_EQ(o.fault_count, 0U) << num << "/" << den << " dt " << dt_us;
+    }
   };
-  run(312);
-  run(313);
-  EXPECT_DEATH(run(311), "more than 1 us");
-  EXPECT_DEATH(run(314), "more than 1 us");
+  run(pass[0], false);
+  run(pass[1], false);
+  run(refused[0], true);
+  run(refused[1], true);
 }
 
-TEST(L4RateDtDeathTest, TheCheckContinuesThroughFaultExecutions) {
+TEST(L4RateDt, RationalPeriodsAreCheckedExactly) {
+  REQUIRE_CARD();
+  // T = 2 · 625/4 = 312.5 µs: the spacings 312 and 313 µs (|dt − T| = 0.5 µs) pass, 311 and 314 µs (1.5 µs) are refused.
+  check_rational_period(c, kSilNum, kSilDen, {312, 313}, {311, 314});
+  // T = 2 · 3125/24 = 260.41 µs: 260 and 261 µs (0.42 and 0.58 µs) pass, 259 and 262 µs (1.42 and 1.58 µs) are refused.
+  check_rational_period(c, kTargetNum, kTargetDen, {260, 261}, {259, 262});
+}
+
+TEST(L4RateDt, TheCheckContinuesThroughFaultExecutions) {
   REQUIRE_CARD();
   const RateConfig<float> cfg = config(c, hand_gains());
-  EXPECT_DEATH(
-      {
-        Rig rig;
-        rig.init(c, cfg);
-        (void)rig.step(all(0), all(0));
-        (void)rig.step(all(0), v3(kNaN, 0, 0));
-        (void)rig.step(all(0), all(0), 2);
-      },
-      "more than 1 us");
+  Rig rig;
+  rig.init(c, cfg);
+  (void)rig.step(all(0), all(0));
+  const RateOutput<float> bad = rig.step(all(0), v3(kNaN, 0, 0));
+  EXPECT_TRUE(bad.fault_active);
+  EXPECT_EQ(bad.timing_fault_count, 0U);
+  const RateOutput<float> late = rig.step(all(0), all(0), 2);
+  expect_refused(late, rig.loop, 2, 1, "+2 us after a fault execution");
+}
+
+// The tolerance stays below half a tick (2 den tol < num), so a missing sample is always refused: at 625/4 µs the
+// largest accepted tolerance is 78 µs (2 · 4 · 79 = 632 >= 625), at 3125/24 µs 65 µs (2 · 24 · 66 = 3168 >= 3125).
+TEST(L4RateConfigDeathTest, ATimingToleranceOfHalfATickOrMoreIsRefusedAtInit) {
+  REQUIRE_CARD();
+  struct Case {
+    std::int32_t num;
+    std::int32_t den;
+    std::int32_t accepted;
+    std::int32_t refused;
+  };
+  for (const Case& k : {Case{kSilNum, kSilDen, 78, 79}, Case{kTargetNum, kTargetDen, 65, 66}}) {
+    RateConfig<float> cfg = with_tick(config(c, hand_gains()), k.num, k.den, kDiv);
+    cfg.period_tolerance_us = k.accepted;
+    EXPECT_EQ(rate::validate_timing(cfg), rate::ConfigError::None) << k.num << "/" << k.den;
+    rate::require_valid(cfg);
+    cfg.period_tolerance_us = k.refused;
+    EXPECT_EQ(rate::validate_timing(cfg), rate::ConfigError::Timing) << k.num << "/" << k.den;
+    EXPECT_DEATH(rate::require_valid(cfg), "half a tick");
+  }
 }
 
 // ---- 7. configuration validation -----------------------------------------------------------------------------------
