@@ -18,7 +18,7 @@ History is in git and `docs/decisions/`; the previous handoff is `git show 341e5
 | M1 target bring-up | not started; nothing has run on the board; the `m33` preset links no image |
 | M2–M6 | not started |
 
-## This change (branch `realign-mvp` from `master` `341e54d`, pushed; not merged into `master`)
+## The realignment (merged into `master` at `6308a8e`; local merge gate PASS: core 695 s, gz-l2 139, gz-l4 218, gz-l5 555, gz-l11 116)
 - Decision 0026: the advisor findings, Luis's acceptance and realignment words, verbatim. M2 receiver: ELRS over CRSF
   with Betaflight 4.5's link-loss failsafe (Luis). M4 includes building or buying a thrust stand; pack 4S 1600 mAh.
 - Core spec §2 (`PLACEHOLDER`, the UNKNOWN split), §7.1 (TB bench level, T4 at merge, T6 deferred), §7.2 items 3 and
@@ -57,7 +57,7 @@ History is in git and `docs/decisions/`; the previous handoff is `git show 341e5
 - Carried from L11: the card mass conflict (0.772 vs 0.752 kg) and `thrust_coeff` σ, settled by M4's measurements.
 
 ## Git and host
-- `master` = `origin/master` = `341e54d`. One stash, `stash@{0}` (old quad-l0 WIP): not ours, leave it.
+- `master` = `origin/master` = the realignment plus this handoff; `realign-mvp` is merged (deletable). Tags up to `quad-L11-pass`. One stash, `stash@{0}` (old quad-l0 WIP): not ours, leave it.
 - `datasheets/` is present and gitignored. `~/marv-handover-2026-10-13/` holds the old demo kit, outside the repo.
 - gz-sim 8.15 on PATH; `clang-tidy-18` 18.1.3; no `gh` CLI (the Actions API is readable with `curl`).
 - Agent worktrees inside the checkout break `tests/regression/quad/L06/tools/test_world_sensors.py`; keep them out.
