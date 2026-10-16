@@ -24,10 +24,15 @@ namespace {
 
 constexpr unsigned kTxPin = MADFLIGHT_FC3V2_SER0_TX_PIN;
 constexpr unsigned kRxPin = MADFLIGHT_FC3V2_SER0_RX_PIN;
-// The writer runs below the IMU interrupt (PICO_HIGHEST_IRQ_PRIORITY, lsm6dsv.cpp), at the SDK default, so the IMU
-// interrupt preempts it and it never preempts the IMU interrupt or the reader.
-constexpr std::uint32_t kIrqPriority = PICO_DEFAULT_IRQ_PRIORITY;
+// The writer runs strictly below the IMU interrupt (PICO_HIGHEST_IRQ_PRIORITY, lsm6dsv.cpp), so the IMU interrupt preempts
+// it and it never preempts the IMU interrupt or the reader, and strictly above USB (PICO_DEFAULT_IRQ_PRIORITY), whose
+// interrupt the M1 bench measured at up to 1871.63 us (tests/regression/quad/L09/results/p12_bench/report.txt, run b),
+// longer than the 32-byte RX FIFO lasts at the baud rate. The value is halfway between the two in the SDK's priority
+// encoding (a larger value is a lower priority, hardware/irq.h), so it is a level the part implements whenever the
+// default is.
+constexpr std::uint32_t kIrqPriority = (PICO_HIGHEST_IRQ_PRIORITY + PICO_DEFAULT_IRQ_PRIORITY) / 2;
 static_assert(kIrqPriority > PICO_HIGHEST_IRQ_PRIORITY, "the receiver interrupt must be below the IMU interrupt");
+static_assert(kIrqPriority < PICO_DEFAULT_IRQ_PRIORITY, "the receiver interrupt must be above the USB interrupt");
 constexpr std::uint32_t kErrorBits =
     UART_UARTDR_OE_BITS | UART_UARTDR_BE_BITS | UART_UARTDR_PE_BITS | UART_UARTDR_FE_BITS;
 
