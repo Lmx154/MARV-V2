@@ -35,6 +35,19 @@ inline constexpr double kSecondsPerMinute = 60.0;
 // Kind: standard.
 inline constexpr double kMicrosecondsPerSecond = 1000000.0;
 
+// Degrees per half turn. Citation: BIPM SI Brochure, 9th ed. (2019), Table 8: the degree, 1° = (π/180) rad.
+// Kind: standard.
+inline constexpr double kDegreesPerHalfTurn = 180.0;
+
+// Standard acceleration of gravity g_n, m/s^2. Citation: 3rd CGPM (1901), declaration on the unit of mass and on the
+// definition of weight, conventional value of g_n = 980.665 cm/s^2 (BIPM SI Brochure, 9th ed. (2019), Appendix 1).
+// Kind: standard.
+inline constexpr double kStandardGravity = 9.80665;
+
+// Kelvin temperature at 0 °C. Citation: BIPM SI Brochure, 9th ed. (2019), section 2.3.1: t/°C = T/K - 273.15.
+// Kind: standard.
+inline constexpr double kKelvinAtZeroCelsius = 273.15;
+
 // WGS 84 normal-gravity constants. Citation for every entry below: NIMA TR8350.2, "Department of Defense World
 // Geodetic System 1984", 3rd ed., 4 July 1997, incl. Amendment 1 (3 January 2000) ("NIMA TR8350.2 3rd ed. Amdt 1
 // (2000)").
