@@ -82,7 +82,7 @@ below set resolution and termination only)
        - the per-axis f32 kp, ki, kd and T_f;
        - dt_n = float(dt_us)/float(1e6) per execution, with dt_us the stamp difference of the SIL (hal_sim stamp_us,
          fw/hal/sim/include/marv/hal_sim/hal_sim.hpp:21-23): at 625/4 us and D = 2 the executions alternate 312 and 313 us
-         (execution_dts; a pattern longer than 2 is refused). The board's scenario register has the rate_guard_mean_period entry
+         (execution_dts; a pattern longer than 2 is refused). The board's parameter set builds with --rate-guard mean_period
          (decision 0014, Amendment 2026-10-16): one phase at dt = D num/den, the part's mean period from its ODR trim,
          and no pattern refusal, because the board's stamps are the chip's clock read in whole microseconds, not a pattern;
        - alpha_n = 1 - exp(-dt_n/T_f) in float: the division and the subtraction rounded to f32 (computing in double then
@@ -183,9 +183,8 @@ CORNER_TOL_ULPS = 8               # triangle-inequality and duplicate tolerance,
 # (tests/regression/quad/L06/gyro_chain/support.hpp kLibmUlps, INFERRED from glibc's documented float maxima).
 LIBM_EXP_ULPS = 2
 MICRO_PER_UNIT = 1e6              # SI prefix: microseconds per second (fw prim::kMicrosecondsPerSecond)
-RATE_GUARD = "rate_guard_mean_period"  # scenario-register key (decision 0014, Amendment 2026-10-16), present in the board's only:
-# its presence makes the guard run at one dt = D num/den (the board's mean period), not at the stamp pattern; its value
-# is UNKNOWN (never a number: a numeric entry would become a parameter and shift the ids of every later one)
+RATE_GUARDS = ("exact", "mean_period")  # design(rate_guard=...), flatten.py --rate-guard (decision 0014, Amendment 2026-10-16):
+# exact = the SIL's stamp pattern (default); mean_period = one dt = D num/den, the board's mean period (marv_params_fc3v2 only)
 NOTCH_GRID_HALVINGS_MAX = 6       # no resolved notch grid by level 6 (65 speeds): refused (rule step 13)
 
 SIGN_PATTERNS = tuple(itertools.product((1, -1), repeat=3))  # the signs of w0 at rate_max (rule step 6)
@@ -904,7 +903,7 @@ def configuration_rows(model, chain, axes32, dts, procs, card_path):
     return {"level": level, "levels": levels, "rows": rows}
 
 
-def design(card, budget, scenario, profile, card_path, profile_path, procs=None):
+def design(card, budget, scenario, profile, card_path, profile_path, procs=None, rate_guard="exact"):
     """The whole rule: a dict of results (raises gpc.GenError when the card is refused). procs: worker processes of the
     N search and the f32 guard's step-down (default cpu_quota.usable_cpus()); the result does not depend on it (n_search,
     first_passing_guard)."""
@@ -919,7 +918,7 @@ def design(card, budget, scenario, profile, card_path, profile_path, procs=None)
     si, _, _ = gic.imu_config(profile_path)
     num, den = scenario["tick_period_num_us"]["value"], scenario["tick_period_den"]["value"]
     sigma_d = gic.derived_report(si, num, den)[0]["gyro"][4]
-    mean_guard = RATE_GUARD in scenario
+    mean_guard = rate_guard == "mean_period"
     if mean_guard:
         dts = [chain["divisor"] * num / den]
     else:
@@ -1253,10 +1252,13 @@ def main(argv=None):
     ap.add_argument("--profile", default=str(ROOT / "sensors" / "profiles" / "marv_v2_board_default.yaml"))
     ap.add_argument("--procs", type=int, default=cpu_quota.usable_cpus(),
                     help="worker processes of the N search (the output does not depend on it)")
+    ap.add_argument("--rate-guard", choices=RATE_GUARDS, default="exact",
+                    help="exact: the SIL's stamp pattern; mean_period: one dt = D num/den (the board, decision 0014 Amendment)")
     args = ap.parse_args(argv)
     try:
         card, budget, scenario, profile = load(args.card, args.budget, args.scenario, args.profile)
-        for line in report_lines(design(card, budget, scenario, profile, args.card, args.profile, args.procs)):
+        for line in report_lines(design(card, budget, scenario, profile, args.card, args.profile, args.procs,
+                                        args.rate_guard)):
             print(line)
     except (gpc.GenError, gcd.DesignError) as e:
         print(e, file=sys.stderr)

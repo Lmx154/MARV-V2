@@ -72,6 +72,7 @@ def parse(argv):
         ap.add_argument(f"--{name}")
     for role in OUT_FLAGS:
         ap.add_argument(f"--out-{role.replace('_', '-')}")
+    ap.add_argument("--rate-guard")
     ap.add_argument("--procs")
     ap.add_argument("--root")
     try:
@@ -115,6 +116,8 @@ def key_text(args):
         if value:
             lines.append(f"arg --{flag} {repo_rel(value)}")
             files.append(repo_rel(value))
+    if args.rate_guard:
+        lines.append(f"arg --rate-guard {args.rate_guard}")
     for role in OUT_FLAGS:
         value = getattr(args, f"out_{role}")
         if value:

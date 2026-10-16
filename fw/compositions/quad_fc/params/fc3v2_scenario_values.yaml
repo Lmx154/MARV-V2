@@ -1,7 +1,6 @@
 # FC3v2 target scenario-values register (quad spec 4.0 M1; used by the parameter set marv_params_fc3v2 only). The
 # product register design/scenario_values.yaml (which the SIL goldens depend on), copied so that the target's tick
-# period can differ from it; it differs in the tick period (this part's mean period from its ODR trim), the rate_guard_mean_period
-# entry and the rate-loop divisor's rationale text.
+# period can differ from it; it differs in the tick period (this part's mean period from its ODR trim) and in the rate-loop divisor's rationale text.
 # Same schema (tools/card/schema.py, lint.py --scenario).
 # Betaflight citations are to tag 4.5.2, commit 024f8e13d4e642eb6a380308685b9ea3aa3ef1a2.
 
@@ -17,7 +16,7 @@ tick_period_num_us:
     = -18 as this board reads it at start-up (console "FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49)",
     tests/regression/quad/L09/results/p12_bench/report.txt:6): T = 3906250 / 29298 = 1953125 / 14649 us = 133.33 us
     (7500.3 Hz), the fraction reduced by gcd 2. Luis, 2026-10-16, "1. yes" (decision 0014, Amendment 2026-10-16): the
-    rate loop's design is checked at this mean period (rate_guard_mean_period below), and imu_start refuses to run on a part whose
+    rate loop's design is checked at this mean period (marv_params_fc3v2's RATE_GUARD mean_period, fw/params/CMakeLists.txt), and imu_start refuses to run on a part whose
     trim gives another period (fw/hal/target/src/lsm6dsv.cpp), because the design would then have been checked at the
     wrong period. The INFERRED figure is the datasheet's rule; the measured mean spacing is 133.396 us
     (tests/regression/quad/L09/results/p12_bench/report.txt:67), 0.05 % above T.
@@ -35,27 +34,11 @@ tick_period_den:
     = -18 as this board reads it at start-up (console "FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49)",
     tests/regression/quad/L09/results/p12_bench/report.txt:6): T = 3906250 / 29298 = 1953125 / 14649 us = 133.33 us
     (7500.3 Hz), the fraction reduced by gcd 2. Luis, 2026-10-16, "1. yes" (decision 0014, Amendment 2026-10-16): the
-    rate loop's design is checked at this mean period (rate_guard_mean_period below), and imu_start refuses to run on a part whose
+    rate loop's design is checked at this mean period (marv_params_fc3v2's RATE_GUARD mean_period, fw/params/CMakeLists.txt), and imu_start refuses to run on a part whose
     trim gives another period (fw/hal/target/src/lsm6dsv.cpp), because the design would then have been checked at the
     wrong period. The INFERRED figure is the datasheet's rule; the measured mean spacing is 133.396 us
     (tests/regression/quad/L09/results/p12_bench/report.txt:67), 0.05 % above T.
   used_by: [rate-loop gain design, rate-loop period check]
-
-rate_guard_mean_period:
-  value: UNKNOWN
-  unit: "1"
-  method: scenario
-  sigma: choice
-  rationale: >-
-    A switch, not a number: tools/card/rate_lead.py's firmware-loop guard (rule step 8) checks the loop once, at the
-    mean dt = D num/den (the tick period above, times the divisor), instead of at the SIL's exact stamp pattern, and
-    does not refuse a stamp pattern longer than 2, when this entry is present in the scenario register; it is present in
-    this register only. The board's stamps are the chip's own clock read in whole microseconds (jitter, not a pattern:
-    266 or 267 us at 266.66 us), so no exact pattern exists to check. Luis, 2026-10-16, "1. yes" (decision 0014,
-    Amendment 2026-10-16). Its value is UNKNOWN on purpose and means nothing: the register schema takes only numbers,
-    and a number would become a parameter of this set, shifting every later parameter id off the product set's, which
-    the rate, mixer and rate-group libraries are compiled against (the flattener skips a value UNKNOWN).
-  used_by: [rate-loop gain design]
 
 rate_loop_divisor:
   value: 2
