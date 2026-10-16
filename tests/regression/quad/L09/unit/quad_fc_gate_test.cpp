@@ -208,10 +208,11 @@ TEST_F(QuadFcGateTest, OffPeriodStampsNeverHaltAndAreCountedTimingFaults) {
 
 // ---- The motor test ----
 
-// The limits Luis ruled on 2026-10-16 ("1. 500 2. 3 seconds 3. yes"), as numbers the test states independently of the
-// parameter table: the table must hold exactly these.
+// The limits Luis ruled on 2026-10-16 ("1. 500 2. 3 seconds 3. yes"; the duration raised to 20 s at the M1 bench,
+// "20s is good.", decision 0038 amendment), as numbers the test states independently of the parameter table: the
+// table must hold exactly these.
 constexpr std::uint32_t kLuisDshotCap = 500;
-constexpr std::uint32_t kLuisMaxDurationMs = 3000;
+constexpr std::uint32_t kLuisMaxDurationMs = 20000;
 constexpr std::uint32_t kMicrosPerMs = 1000;
 
 class MotorTestGateTest : public QuadFcGateTest {
@@ -349,7 +350,7 @@ TEST_F(MotorTestGateTest, ARequestOutsideTheLimitsIsRefusedAndCountedAndEveryMot
       {{5, 100, 100}, MotorTestReason::Motor, "motor 5"},
       {{kMax32, 100, 100}, MotorTestReason::Motor, "motor 2^32-1"},
       {{1, 100, 0}, MotorTestReason::Duration, "duration 0"},
-      {{1, 100, kLuisMaxDurationMs + 1}, MotorTestReason::Duration, "duration 3001 ms"},
+      {{1, 100, kLuisMaxDurationMs + 1}, MotorTestReason::Duration, "duration 20001 ms"},
       {{1, 100, kMax32}, MotorTestReason::Duration, "duration 2^32-1"},
   };
   std::uint32_t refused = 0;

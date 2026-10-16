@@ -32,3 +32,26 @@ If no motor turns at 100: retry at 150, then 200 (still ≤ cap). Note the lowes
 4. Panic: (needs a debugger call; optional) → stop frames, motor stops.
 
 Afterwards: disconnect the pack first, then USB. Commit the console log and these results (evidence rule).
+
+## Results, 2026-10-16 09:18–09:53 (Luis observing, 4S pack on, props off)
+
+Image `quad-L2-pass-147-gc52b42b` for steps 1–2, then `gc52b42b-dirty` (this commit's `motor_pad` and
+`motor_test_duration_max_ms`) for the map check and step 3. Console logs: `m1_bench_2026-10-16/`.
+
+1. ESC arming: **pass**. Luis: "yup, ESC arms. i can hear it make the arming tone it's 3 beeps that are descending".
+   The board did not reset on pack connect (its USB device node was not re-created). The console log of this step was
+   lost (logger stopped early).
+2. Motor survey at DShot 100 (`02`–`07`), identity map: OUT0 rear left CCW, OUT1 front left CW, OUT2 rear right CW,
+   OUT3 front right CCW (Luis). Every direction already matches quad-X, so no AM32 reverse. `motor_pad` set to
+   `[3, 0, 1, 2]`, flashed and confirmed in one sequence (`08`; Luis: "yes good to go"). All starts at 100.
+3. Stops (DShot 100, 20 s deadline; cap raised to 20 s, decision 0038 amendment):
+   1. Cancel (`09`): **pass**, stopped at the keystroke (`stopped: cancel`). The cancelling byte stays in the console
+      line buffer, so the next line was refused as "unknown command" (`10`, nothing spun; noticed, not changed).
+   2. Disconnect (`11`): **pass**, one continuous run that ended at the port close (`stopped: disconnect`).
+   3. SWD halt (`12`): **FAIL**. Core 0 halted 2.0 s into the test for 5 s, then watchdog reboot. The motor ran without
+      a break until the reboot (Luis: "it was one continuous go no stopping in between at any point"). With the core
+      halted the DShot PIO is stalled on its empty FIFO and all four pads read low (`13`: FDEBUG TXSTALL0 re-set
+      within 200 ms, FLEVEL 0, SM0 at 0, GPIO 6–9 low ×20). So the ESC held the last throttle for ≥ 5 s with no
+      signal (AM32 signal-loss behaviour INFERRED; version and settings unread). Blocks props-on (M4). Luis: both a
+      firmware watchdog and the AM32 setting.
+   4. Panic: not run.

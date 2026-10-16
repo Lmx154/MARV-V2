@@ -19,3 +19,5 @@ Quad spec §4.0 M1: with the props off, each logical motor is spun alone to fix 
 ## Approval
 
 Luis, 2026-10-16, verbatim: "1. 500 2. 3 seconds 3. yes" (cap 500; maximum duration of one command 3 s; the unlock form `motor_test <1-4> <dshot> <ms> PROPS-OFF` accepted, with any received byte, `stop` or a disconnect cancelling).
+
+Amendment, 2026-10-16 (M1 bench): `motor_test_duration_max_ms` raised from 3000 to 20000. Luis, verbatim: "for this check 3 seconds is way too short make it about 10 or even 20. so i can tell when you interrupt it clearly" and, offered 20 s, "20s is good." The DShot cap stays 500. Frozen path: `tests/regression/quad/L09/unit/quad_fc_gate_test.cpp` states the new ruling (`kLuisMaxDurationMs` 20000; the refused case becomes 20001 ms); the tests are otherwise unchanged.

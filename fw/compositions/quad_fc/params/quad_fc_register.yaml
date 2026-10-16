@@ -7,12 +7,13 @@
 # start-up refuses a table that is not a permutation. A motor's direction is set in the ESC, never inverted in firmware.
 
 motor_pad:
-  {type: i32, value: [0, 1, 2, 3], shape: motors, unit: "1", method: scenario, source: "PLACEHOLDER: the identity map (logical motor n on OUT(n-1)), because the wiring of the airframe's ESCs to the board's outputs is not recorded. It is replaced by the map the M1 console motor test (P11) establishes, with the props off, by spinning one motor at a time and reading the quad-X position and spin direction; nothing spins on the target until then (the quad_fc motor gate is always disarmed)", sigma: choice}
+  {type: i32, value: [3, 0, 1, 2], shape: motors, unit: "1", method: scenario, source: "Measured 2026-10-16 on the bench (M1 P11 console motor test, props off, DShot 100, Luis observing; tests/regression/quad/L09/results/m1-bench-card.md): with the identity map OUT0 drove rear left (CCW), OUT1 front left (CW), OUT2 rear right (CW), OUT3 front right (CCW), so logical 1 (front right) is OUT3, 2 (rear left) OUT0, 3 (front left) OUT1, 4 (rear right) OUT2; every spin direction already matched quad-X", sigma: choice}
 
 # The console motor test (M1 P11, decision 0038): the limits of the quad_fc gate's motor-test branch. Safety numbers: the
-# values Luis ruled on 2026-10-16 (answers "1. 500 2. 3 seconds 3. yes"), never others. The gate refuses a request
+# values Luis ruled on 2026-10-16 (answers "1. 500 2. 3 seconds 3. yes"; the duration raised to 20 s at the bench, "20s is
+# good."), never others. The gate refuses a request
 # outside them (stays all-stop, counts a refusal).
 motor_test_dshot_max:
   {type: i32, value: 500, unit: "1", method: scenario, source: "Luis 2026-10-16: the motor-test DShot cap is 500 (answer '1. 500' to the P11 questions); a request above it is refused; decision 0038", sigma: choice}
 motor_test_duration_max_ms:
-  {type: i32, value: 3000, unit: "ms", method: scenario, source: "Luis 2026-10-16: the maximum duration of one motor-test command is 3 seconds (answer '2. 3 seconds' to the P11 questions); a longer request is refused; decision 0038", sigma: choice}
+  {type: i32, value: 20000, unit: "ms", method: scenario, source: "Luis 2026-10-16 at the M1 bench: the maximum duration of one motor-test command is 20 s ('20s is good.', raised from his earlier '2. 3 seconds' so a stop check is clearly distinguishable from the deadline); a longer request is refused; decision 0038 amendment", sigma: choice}
