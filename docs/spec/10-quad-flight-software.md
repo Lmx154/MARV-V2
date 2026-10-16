@@ -193,13 +193,21 @@ adding more complex features gradually" (decision 0026).
   profile's bounds; a soak shows no FIFO overflow.
 
 **M2 — Receiver, arming and failsafe** (L8, MVP subset)
-- An ExpressLRS receiver on the board's receiver UART (Luis, 2026-10-15); the serial protocol, CRSF or ELRS's MAVLink
-  mode, is Luis's choice. The manual-control struct is a HAL pull;
+- An ExpressLRS receiver on the board's receiver UART, speaking CRSF (Luis, 2026-10-15: "yes use crsf"): RC channels
+  frame 0x16, link statistics 0x14, CRC8 polynomial 0xD5 ([TBS CRSF spec](https://github.com/tbs-fpv/tbs-crsf-spec/blob/main/crsf.md)).
+  The receiver's own failsafe is set to "No Pulses", so link loss means frames stop. ELRS's MAVLink mode can be added
+  later, with the ground segment, as a second backend behind the same struct. The manual-control struct is a HAL pull;
   the SIL harness injects stick scripts through the same pull, so scripted and piloted runs share one composition.
 - The rates curve (QF-1). Minimal arming (§6.1): arm switch, throttle at minimum, IMU alive and not saturated, and the
-  estimator valid once M3 lands. Disarm on receiver loss or a stale IMU (timeouts are safety numbers: ask).
-- *Done when:* T1 tests of the arming state machine pass; on the bench (TB) a receiver loss disarms within its
-  timeout, and arming is refused with the throttle up or the IMU stale.
+  estimator valid once M3 lands.
+- Link-loss failsafe: Betaflight 4.5's defaults, cited parameters (Luis, 2026-10-15: "yes keep betaflight failsafes";
+  [Betaflight Failsafe guide](https://www.betaflight.com/docs/wiki/guides/current/Failsafe)): the link is lost after
+  100 ms without a valid frame; the last stick values are held until 400 ms; then sticks centred and throttle at
+  minimum; at 1.5 s (`failsafe_delay`) the vehicle disarms (`failsafe_procedure` Drop); after a loss, control returns
+  only once the link has been valid for 0.5 s (`failsafe_recovery_delay`). A stale IMU disarms at once: the first
+  missed IMU read deadline (EMB-6) is the trigger, a derived rule with no tunable.
+- *Done when:* T1 tests of the arming and failsafe state machine pass; on the bench (TB) a receiver loss disarms at
+  its stated time, and arming is refused with the throttle up or the IMU stale.
 
 **M3 — Attitude estimator** (L7, MVP subset)
 - `marv_plant`'s specific force includes the contact force, so a vehicle at rest reads −g along z, as a real
@@ -209,8 +217,10 @@ adding more complex features gradually" (decision 0026).
   hand) replays (T2) within the attitude budget share; the L5 Gazebo hover predicate passes on the estimate.
 
 **M4 — First flight**
-- Measure what sets the gains: inertia (bifilar pendulum), the motor time constant and the DShot-to-thrust map at two
-  pack voltages (thrust stand), rotor inertia if the stand allows. Commit scripts and raw data; update the card;
+- Build or buy a thrust stand and a bifilar pendulum set-up (Luis has neither, 2026-10-15). Measure what sets the
+  gains: inertia (bifilar pendulum), the motor time constant and the DShot-to-thrust map at two pack voltages (thrust
+  stand), rotor inertia if the stand allows. The flight pack is Luis's 4S1P 1600 mAh 120C LiPo (14.8 V nominal,
+  23.68 Wh). Commit scripts and raw data; update the card;
   regenerate gains. A tethered first hover may use the current card.
 - A flight test card (pre-flight checks, tethered hover, free hover, angle, acro, abort criteria).
 - *Done when:* the T3 QF-3 margins pass on the updated card; tethered hover in angle mode, then free hover, then acro,

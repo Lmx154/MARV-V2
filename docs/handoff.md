@@ -11,7 +11,7 @@ History is in git and `docs/decisions/`; the previous handoff is `git show 341e5
 | Item | State |
 | --- | --- |
 | L0–L5 | passed, tagged `quad-L0-pass` … `quad-L5-pass` |
-| L11 vertical loop (truth state) | passed on `master` `341e54d`; tag `quad-L11-pass` pending (Luis) |
+| L11 vertical loop (truth state) | passed, tagged `quad-L11-pass` (`341e54d`) |
 | L6 sensors, gyro chain, D term | stages (a)–(d) closed; the rest deferred until after M4 |
 | Known failing items | L4 acro under noise, L5 R2, L5 R1X α: strict xfail, owned by the deferred L6 (e) |
 | M0 fast loop and test rules | not started |
@@ -19,15 +19,16 @@ History is in git and `docs/decisions/`; the previous handoff is `git show 341e5
 | M2–M6 | not started |
 
 ## This change (branch `realign-mvp` from `master` `341e54d`, pushed; not merged into `master`)
-- Decision 0026: the advisor findings, Luis's acceptance and realignment words, verbatim.
+- Decision 0026: the advisor findings, Luis's acceptance and realignment words, verbatim. M2 receiver: ELRS over CRSF
+  with Betaflight 4.5's link-loss failsafe (Luis). M4 includes building or buying a thrust stand; pack 4S 1600 mAh.
 - Core spec §2 (`PLACEHOLDER`, the UNKNOWN split), §7.1 (TB bench level, T4 at merge, T6 deferred), §7.2 items 3 and
   6 (controls only where a threshold decides; freeze requirements, not outputs), §7.3 (records only to loosen,
   delete or change a spec; the `golden regenerated:` commit line), §7.4.
 - Quad spec §0, §1, §4.0 (new: MVP order), §4.1 (the layers, unchanged apart from MVP-subset notes), §6.1 (minimal
   arming), §6.3 (B1 after M4).
 - `CLAUDE.md` rewritten for MVP first; this handoff; `ci/blast_radius.yaml` ignores `.claude/**`.
-- `.claude/agents/advisor-*.md`, `project-advisor.md` and `.claude/advisors/brief.md`: the advisor agents (commit or
-  drop: Luis).
+- `.claude/agents/advisor-*.md`, `project-advisor.md`, `.claude/advisors/brief.md`: the four advisors and the synthesizer
+  (Luis: "commit the advisor files"); run them when the direction needs re-auditing.
 
 ## Next
 1. **M0** (beside M1, one packet per bullet in §4.0 M0). First measure the baselines: an Actions full run and a
@@ -42,11 +43,6 @@ History is in git and `docs/decisions/`; the previous handoff is `git show 341e5
    fetched; `sensor-test` uses 2.3.0 from an unpinned clone) — architect, then Luis.
 
 ## Open for Luis
-- Merge `realign-mvp` into `master` (the merge gate, `ci/local_ci.sh`, runs first); whether the advisor agent files
-  in `.claude/` are committed.
-- The tag: `git tag quad-L11-pass 341e54d && git push origin quad-L11-pass`.
-- M2: CRSF or ELRS MAVLink mode (Luis prefers MAVLink unless CRSF allows more); the link-loss failsafe numbers.
-- M4: is a thrust stand and a bifilar pendulum set-up available, or is buying or building one part of M4?
 - Branches merged into `master` and deletable: `ci-curl-pin`, `ci-heavy-serial`, `quad-l11`, `quad-l11-s6`,
   `recovery/hover-demo`, `test-blast-radius`, `test-trims`, `quad-l6-spec`. `l6-c6a-wip` (`14e3c3a`, unmerged, the
   half-built L6 (e) reference set) waits for the L6 resume or is dropped.
