@@ -14,7 +14,7 @@ History is in git and `docs/decisions/`; the previous handoff is `git show 341e5
 | L11 vertical loop (truth state) | passed, tagged `quad-L11-pass` (`341e54d`) |
 | L6 sensors, gyro chain, D term | stages (a)–(d) closed; the rest deferred until after M4 |
 | Known failing items | L4 acro under noise, L5 R2, L5 R1X α: strict xfail, owned by the deferred L6 (e) |
-| M0 fast loop and test rules | not started |
+| M0 fast loop and test rules | code done, merged `e8b6c52` (decisions 0028–0033); done-when measurement open (Next 1) |
 | M1 target bring-up | not started; nothing has run on the board; the `m33` preset links no image |
 | M2–M6 | not started |
 
@@ -31,9 +31,12 @@ History is in git and `docs/decisions/`; the previous handoff is `git show 341e5
   (Luis: "commit the advisor files"); run them when the direction needs re-auditing.
 
 ## Next
-1. **M0** (beside M1, one packet per bullet in §4.0 M0). First measure the baselines: an Actions full run and a
-   one-module development check. Fold the Actions reference-cache fix (the L11 set regenerates cold every run; core
-   45 min on `341e54d`, INFERRED cause) into M0.
+1. **M0** done-when, open: T4 suites are behaviour predicates (L4 0030, L5 0031, L11 0032), L6 (e) studies deleted
+   (0033), the selection maps budget keys, cards and CMakeLists to consumers. Measured: one-module `fw/vertical` dev
+   check 47 s before and after (same selection); local gate on `e8b6c52` core 1050 s (overlapped a host build), gz-l2
+   215, gz-l4 212, gz-l5 392, gz-l11 97. Actions: `ec337e1` 20.8 min wall, `e8b6c52` 43.9 min (core 43.9, gz-l5 29.2)
+   with the L11 reference cache cold (INFERRED: P3 changed its SHA256SUMS). Next: a warm-cache run on the following
+   push, then the Actions reference-cache fix if the cold regeneration recurs.
 2. **M1** on the madflight FC3v2 Rev-C only (Luis, 2026-10-15): https://madflight.com/Board-FC3/, B package,
    2 MB flash, no PSRAM; LSM6DSV on SPI1 (MISO 28, SCK 30, MOSI 31, CS 29, INT 27, CLKIN 26); motors GP6–9 to a
    Goku G55M 55A AM32 4-in-1 ESC (all four motors connected); receiver SER0 GP0/1 (ELRS, not yet fitted); no GPS.
