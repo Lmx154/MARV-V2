@@ -693,24 +693,21 @@ PY
   rm -rf "${dir}" "${log}"
 }
 
-# L11 T3: vertical_t3_oracle.py reads vertical_t3_inputs.txt and writes vertical_t3_golden.txt, vertical_t3_envelope.txt and
-# vertical_t3_q.txt into --dir (decision 0020 section 5); regenerated and checked as for L4 and L5 (decision 0011). The control
-# runs it with --golden-only (the envelopes and Q do not depend on what the control perturbs and cost most of the run time).
+# L11 T3: vertical_t3_oracle.py reads vertical_t3_inputs.txt and writes vertical_t3_golden.txt into --dir (decision 0020 section
+# 5; the envelope and Q files are no longer generated, decision 0032); regenerated and checked as for L4 and L5 (decision 0011).
 vert_t3_reference_dir=tests/regression/quad/L11/t3/reference
 vert_t3_procs=4
 
 vert_t3_oracle_run() {
   local dir="$1"
-  uv run python "${vert_t3_reference_dir}/vertical_t3_oracle.py" --dir "${dir}" --procs "${vert_t3_procs}" --golden-only
+  uv run python "${vert_t3_reference_dir}/vertical_t3_oracle.py" --dir "${dir}" --procs "${vert_t3_procs}"
 }
 
 vert_t3_reference_reproduces() {
   uv run python "${refdata}" ensure quad/L11/t3 ${refdata_force[@]+"${refdata_force[@]}"} --procs "${vert_t3_procs}"
 }
 
-# The same golden-only run with vert_kp_v one float32 ulp up must fail the SHA256SUMS check, naming vertical_t3_golden.txt (the
-# check reports the envelope and Q files as missing; the grep requires the golden's sha256 mismatch line, which a missing file does
-# not produce).
+# The same run with vert_kp_v one float32 ulp up must fail the SHA256SUMS check, naming vertical_t3_golden.txt.
 vert_t3_reference_control() {
   local dir log
   dir="$(mktemp -d)"
@@ -963,7 +960,7 @@ per_push_pytest_control() {
 step "uv sync --frozen" uv sync --frozen
 step "L4: T3 oracle regenerates rate_t3_golden.txt and rate_t3_envelope.txt from rate_t3_inputs.txt, matching reference/SHA256SUMS" t3_reference_reproduces
 step "L5: T3 oracle regenerates attitude_t3_golden.txt, attitude_t3_envelope.txt and attitude_t3_q.txt from their inputs, matching reference/SHA256SUMS" att_t3_reference_reproduces
-step "L11: T3 oracle regenerates vertical_t3_golden.txt, vertical_t3_envelope.txt and vertical_t3_q.txt from vertical_t3_inputs.txt, matching reference/SHA256SUMS" vert_t3_reference_reproduces
+step "L11: T3 oracle regenerates vertical_t3_golden.txt from vertical_t3_inputs.txt, matching reference/SHA256SUMS" vert_t3_reference_reproduces
 step "tools tests (pytest tests/regression/quad/L00/tools tests/regression/quad/L01/tools tests/regression/quad/L03/tools tests/regression/quad/L04/tools tests/regression/quad/L05/tools tests/regression/quad/L06/tools tests/regression/quad/L11/tools tests/tools; the nightly list only in MARV_CI_MODE=full)" \
   tools_tests
 if [[ "${MARV_CI_MODE:-per-push}" != full ]]; then
@@ -1017,7 +1014,7 @@ step "per-push pytest negative control (a planted test file that sleeps three ti
 step "L1 negative control (perturbed plant reference inputs must not reproduce the committed expected file)" plant_ref_control
 step "L4 negative control (a perturbed T3 input, kp one ulp up, must fail the SHA256SUMS check)" t3_reference_control
 step "L5 negative control (a perturbed T3 input, att_kp one ulp up, must fail the SHA256SUMS check)" att_t3_reference_control
-step "L11 negative control (a perturbed T3 input, vert_kp_v one ulp up, golden only, must fail the SHA256SUMS check on vertical_t3_golden.txt)" vert_t3_reference_control
+step "L11 negative control (a perturbed T3 input, vert_kp_v one ulp up, must fail the SHA256SUMS check on vertical_t3_golden.txt)" vert_t3_reference_control
 step "L5 negative control (a perturbed rate-bypass input, kp one ulp up, must not reproduce the acro identity golden)" rate_bypass_golden_control
 step "product parameters negative control (a committed table with one value changed must fail the byte-for-byte comparison)" product_table_control
 step "G3 negative control (unflagged SIL library exporting marv_truth_state_set must fail the export check)" g3_truth_unflagged_control

@@ -371,7 +371,7 @@ Built after L5 and beside L6 (it needs nothing from L6); numbered L11 because L0
     thrust-offset responses against the design model; controls gains × 1.1, one tick of added delay, loop disabled.
   - T4: in Gazebo on truth state, on z, a height step settles by the deadline (S) and stays bounded (B), and a constant
     thrust offset and a roll-torque shove each settle (S), with s = `t4_settle_fraction`; no design-model envelope; the
-    control is all three vertical gains = 0, which fails (decision 0029). The L4 and L5 suites still green.
+    control is all three vertical gains = 0, which fails (decisions 0029, 0032). The L4 and L5 suites still green.
 - **Freezes:** the new tests.
 
 ### L6 — Sensor models, the gyro chain and the D term
