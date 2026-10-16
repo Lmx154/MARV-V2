@@ -65,12 +65,16 @@ A number in MARV V2 is exactly one of:
 - a **sourced parameter** (published, measured, identified, datasheet), with its uncertainty;
 - a **derived value**, produced by a stated rule from other numbers;
 - a **design-budget choice**, recorded in the register (§2.2) with its rationale;
-- a **scenario value**, labelled as such (site rules, pilot preference).
+- a **scenario value**, labelled as such (site rules, pilot preference);
+- a **placeholder**, labelled `PLACEHOLDER` with its reason and the measurement or rule that will replace it. A
+  placeholder may be committed and flown in simulation; it blocks a flight release, not a commit (decision 0026).
 
 Rules:
 
-1. **Unknown numbers are not guessed.** State the rule that will produce the number, or tag it `UNKNOWN` and stop to
-   ask. An `UNKNOWN` becomes an explicit task.
+1. **Unknown numbers are not guessed.** State the rule that will produce the number, or tag it `UNKNOWN`. A safety
+   number (arming, failsafe, pyro, motor and current limits, safety thresholds) stops the work to ask Luis. Any other
+   `UNKNOWN` may be carried as a `PLACEHOLDER` parameter so development continues; it becomes an explicit task
+   before the flight that depends on it.
 2. **Conflicting sources are both kept.** The entry is `UNVERIFIED` until data settles it. The losing value stays,
    marked refuted, with the log that refuted it.
 3. **A measurement is a source only if it is reproducible.** The script, its inputs and its raw output are committed.
@@ -365,10 +369,11 @@ contact:
 | **T1 unit** | single functions and modules, host-free, against analytic answers | ms | when affected (§7.6) |
 | **T2 replay** | recorded sensor streams replayed through the firmware; outputs compared bit-exact with golden vectors | ms | when affected (§7.6) |
 | **T3 design-model closed loop** | controller against its linear design model: step response, margins | ms | when affected (§7.6) |
-| **T4 host SIL** | full vehicle with firmware in lockstep, headless (Gazebo for the quad, RocketPy for the rocket) | seconds per scenario | when affected; Monte Carlo in the full run (§7.6) |
+| **T4 host SIL** | full vehicle with firmware in lockstep, headless (Gazebo for the quad, RocketPy for the rocket); behaviour predicates, not design-model envelopes (§7.2 item 3) | seconds per scenario | at the merge, and when the scenario file itself changes (§7.6) |
 | **T5 pilot SIL** | Gazebo GUI with a human | real time | by hand, never in CI |
-| **T6 HIL** | the real RP2354B, lockstep over USB | real time | before every flight campaign |
-| **T7 flight** | the vehicle | — | logs update the card and validate the simulator |
+| **TB bench** | the flashed target on the bench: stage timing, drivers, DShot, motor test (props off), arming and failsafe | minutes, by hand; the log and script are committed | after any change to the target, and before every flight |
+| **T6 HIL** | the real RP2354B, lockstep over USB | real time | deferred until after first flight (quad §4.0) |
+| **T7 flight** | the vehicle, tethered first; run from a flight test card | — | logs update the card and validate the simulator |
 
 **Placement rule.** A test runs at T4 only if it needs something only the host provides: the full nonlinear vehicle
 with the firmware in lockstep, contact, world geometry, or the host integration itself. Ask of every new test: could
@@ -391,27 +396,37 @@ Mechanics:
 
 1. Frozen tests live in `tests/regression/<product>/Lnn/` (two digits: `L00` … `L10`).
 2. Every frozen suite runs on every merge into `master` (the full run, §7.6); a merge is blocked if any is red.
-3. **Every metric test has a negative control:** a deliberate perturbation (e.g. gains × 1.1, one tick of added
-   delay) that must break it. A test that cannot fail is caught by its control. Each control is a CI step that
-   passes only if the controlled test fails.
+3. **Negative controls where a threshold decides.** Every T3 threshold test, every statistical check and every CI
+   gate has a negative control: a deliberate perturbation (e.g. gains × 1.1, one tick of added delay, a planted
+   literal) that must break it. Each control is a CI step that passes only if the controlled test fails. T4 scenario
+   tests are behaviour predicates (stays stable, recovers to level, rates bounded, inside a card-derived deadline),
+   each with one coarse control: the loop disabled. T4 does not compare against linear-model envelopes. Known-answer,
+   contract and golden tests need no control (decision 0026).
 4. **Every opening has contract tests on both sides.**
 5. A layer is passed when its suite is green on `master` and the commit is tagged `<product>-L<n>-pass` (e.g.
    `quad-L0-pass`).
-6. Passing a layer does not mean it will never be reopened. Integration can reveal problems below; the regression
+6. **Freeze requirements, not outputs.** A frozen test states a margin, a predicate or a contract. A golden of a
+   controller's output is compared within a stated tolerance, and is regenerated when the controller changes on
+   purpose (§7.3). Bit-exact goldens stay only where determinism is the property (the L0 trace hash, SIL vs HIL).
+7. Passing a layer does not mean it will never be reopened. Integration can reveal problems below; the regression
    suites then say at once whether a fix broke what already worked.
 
 ### 7.3 Changing a frozen test
 
-A change to anything under `tests/regression/` needs a decision record, `docs/decisions/NNNN-<slug>.md`, in the same
-change: what changed, why, the evidence, and Luis's approval. CI fails a change to a regression file that no decision
-record in the same change references. This stops "fixing" a failure by loosening its test.
+A decision record, `docs/decisions/NNNN-<slug>.md`, is needed when a change **loosens** a threshold, tolerance or
+predicate, **deletes** a frozen test, or **changes a spec**: what changed, why, the evidence, and Luis's approval.
+Regenerating a golden or an envelope whose thresholds are unchanged, because the controller changed on purpose, needs
+only a line in the commit message: `golden regenerated: <path or glob>: <cause>`. Records are at most one page; long
+evidence lives in committed results, linked. CI fails a change to a regression file that neither a record in the same
+change nor such a commit line covers (decision 0026). This stops "fixing" a failure by loosening its test.
 
 - A **change** is a pull request into `master`, or a push to `master`; CI checks the whole pushed range. Luis's
   approval is his approval of the pull request, or his push. Branch protection is not enforced (Luis, 2026-09-29:
   "just use master instead i don't feel like changing it and branch protection is not important since we;re the only
   ones messing with it").
 - Adding a layer's tests under `tests/regression/` in the change that freezes the layer needs no record.
-  Modifying or deleting a frozen file always does.
+  Loosening or deleting a frozen file always does; a regeneration with unchanged thresholds needs the commit line.
+  Until the check `tools/ci/check_regression_changes.py` accepts that line (quad §4.0, M0), CI still asks for a record.
 
 ### 7.4 Guardrails, enforced by CI
 
@@ -428,7 +443,8 @@ Rules in prose do not stop an agent or a deadline, so each of these is a CI chec
 | G7 | Only validated configurations fly. | Once the ground segment exists: the GCS flashes and uploads only (image, config) pairs with a passing report. |
 | G8 | Agents get the rules, and CI holds them to them. | `CLAUDE.md` states the number rule, the ACTIVE-spec rule, the `UNKNOWN` rule and these gates; CI fails if any of those sections is missing. CI enforces G1–G7 whether or not anyone reads it. |
 
-`CLAUDE.md` must also say: an agent that needs a number it cannot source tags it `UNKNOWN` and stops to ask.
+`CLAUDE.md` must also say: an agent that needs a number it cannot source tags it `UNKNOWN`; it stops to ask for a
+safety number and may otherwise carry a labelled `PLACEHOLDER` (§2 rule 1).
 
 ### 7.5 The convergence rule for steps and rates
 

@@ -64,6 +64,7 @@ full_roots:
 
 # Paths that select nothing.
 ignore:
+  - .claude/**
   - docs/**
   - LICENSE
   - THIRD_PARTY_NOTICES.md

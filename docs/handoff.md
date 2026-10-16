@@ -1,365 +1,74 @@
-# Handoff: L11 closing (S8, approved 2026-10-15; merge gate, merge, tag pending); L6 stage (e) paused (0019); test trims done (0021–0024)
+# Handoff: MVP realignment (decision 0026); next M0 beside M1
 
-2026-10-05. Written for the next tech lead, from git and the records, not session memory. This file states where things
-are and adds no scope. The ACTIVE specs and decisions 0009–0019 are the authority. Update this file in the same change as
-every decision record and every stage close (Luis, 2026-09-30).
+2026-10-15. A state file, not a history: at most 80 lines, rewritten (not appended) at every milestone boundary.
+History is in git and `docs/decisions/`; the previous handoff is `git show 341e54d:docs/handoff.md`.
 
 ## Read first
-- `CLAUDE.md`: the ACTIVE-spec rule, the number rule, the UNKNOWN rule (stop and ask), the frozen-test rule, gates
-  G1–G8. "Verified" means `ci/local_ci.sh` passed on the exact commit.
-- `docs/spec/10-quad-flight-software.md` §4 "L6": the stages (a)–(e) and the pass bar. The (e) noise-term line was
-  replaced with Luis's approved wording (0019 item 5).
-- `docs/decisions/0019-l6-stage-e-noise-monte-carlo-and-gate.md` in full: Luis's rulings for (e), quoted verbatim in two
-  rounds, and items 1–8 as built.
-- Background, as needed:
-  - 0012: stage (a) noise model, corners, question E;
-  - 0013: stage (b) gyro chain;
-  - 0014: stage (c) PI × lead with D, the FF (inert);
-  - 0015: R2 starts from a steady tumble;
-  - 0016: gz first read;
-  - 0017: stage (d) DShot diffuser, live;
-  - 0009: the strict-xfail gate file.
+- `CLAUDE.md`, then quad spec §4.0 (the MVP build order, M0–M6, and the deferred list), then the milestone you execute.
+- Nothing else by default. Decisions 0001–0025 are background, read only when a task touches their subject.
 
-## Test-suite redirect (Luis, 2026-10-14), the current focus; branch `test-blast-radius` from `quad-l11`
-Verbatim: "I need you to start creating new rules for testing. We have created testing hell in this repo. adding basic
-functionality and running the entire test suite is not a sustainable way of developing anything. I need you to split up
-the test suite such that we have one unified test that is fast instead of testing literally everything. one test that
-is reliant on everything working else it fails. leave the test suite robust but only even run the entire thing if we
-are sure that the blast radius of the changes made affected everything, else only run tests in locations that were
-possibly affected. Also, in the creation of new tests be extremely careful. do not create tests for every single
-feature anymore this is an absolute waste of time. things that are simple can and should be tested but the act of
-continuing the entire repo without updating the tests and letting them accumulate to some monster test suite without
-trimming it or consolidating it should not be allowed at all. I need this to be your focus, trim the testing suite.
-make blast radius based testing instead of just one massive run at the end of everything, because this is making
-development impossible. It would be palatable if it was just slowing things down, but it has become a problem."
-This supersedes the per-push half of the CI consolidation proposal below; L11 S6+ stays paused.
-Luis, 2026-10-14, follow-up verbatim: "keep the full runs as a safety net and as a CI that is only ever run when we are
-finally going to merge to master". So: development pushes and local checks run the smoke test plus the blast-radius
-selection; the full suite runs only on the merge into `master` (pull request into `master` or push to `master`).
-- Built (uncommitted on `test-blast-radius` until Luis says commit): core §7.6/§7.7, CLAUDE.md, decision 0021;
-  `ci/smoke.sh` (the L11 composition through the SIL ABI, 37 entries, 0.4–0.9 s warm); `ci/affected.py` +
-  `ci/blast_radius.yaml` (fail-safe: an unmapped path or a root selects everything; Python per file by import closure;
-  `--check-manifest` cross-checks the map against compile_commands.json, Python imports and test file reads);
-  `ci/dev_check.sh` (smoke, map check, selected core steps, selected gz groups, in the working tree's own build trees);
-  run_ci.sh hooks `MARV_CI_ONLY`/`MARV_CTEST_LABELS`/`MARV_PYTEST_PATHS`, ctest in parallel, the duplicate frozen pass
-  removed; every regression test labelled `Lnn`; Actions and `ci/local_ci.sh` full-only, no schedule; `tests/unit`
-  (1 + 1 = 2) deleted. Evidence in 0021.
-- Development check, warm trees: docs 0.8 s; `fw/vertical` ~22 s + G1; `tools/sim/l6_noise_term.py` ~21 s (was the
-  whole L06 tools dir, 293 s). G1 needs `clang-tidy-18` on the host (installed, 18.1.3; G1 clean on 2026-10-15).
-- Merge gate on `b4feda5` (decision 0022 with 0021 under it): all five jobs PASS. Job times empty cache / warm: core
-  1283 / 615 s, gz-l2 186 / 133, gz-l4 193 / 189, gz-l5 537 / 532, gz-l11 28 / 22; sum ~37 / ~25 min against ~75 min
-  before. What is left: the tools tests (533 of warm core's 615 s) and the L5 gz T4 suite (466 s); trims (2) and (3)
-  below are the next cuts, and they need Luis's word.
-- Committed and pushed as `91f843c` (Luis: "commit and push"). Then Luis, 2026-10-14, verbatim, on the merge-run
-  speed-ups (a compiler cache, one Gazebo build instead of four, cached reference data, parallel Python and ctest, the
-  one-ulp control on one file): "this leads me to believe that we're not taking advantage of low hanging fruit for
-  optimization. i need you to do this, so that even the full suite runs faster" (decision 0022). Done, uncommitted: a
-  complete reference-data stamp and cached reference sets (4 T3 steps cold 383 s, warm 186 s); the one-ulp controls
-  generate only the golden and envelope they check, and their verdicts are cached (188 s miss, 0.8 s hit); pytest-xdist
-  (4 workers, one file each) for the merge-run tools tests (1000 → 765 s) and the gz suites (L5 T4 695 → 514 s);
-  ccache + a persistent CI cache volume (`marv-ci-cache`; `--no-cache` for a from-scratch proof) + Docker layer
-  caching on Actions + `ci/local_ci.sh --parallel N` (ccache alone: core 2296 → 2129 s, compilation is small); the
-  card flatten cache (`tools/card/flatten_cached.py`: the four sets are one 50 s run, then 0.5 s per tree). The
-  `--skip-q` oracle option was withdrawn (two frozen L06 results record the oracle's sha256). The Actions workflow
-  changes are unrun until the first push to master; first thing to check there.
-- 2026-10-15: merged into `master` (Luis: "merge into master"), fast-forward `b48e202..1d1176f`. The first Actions run
-  failed building the image (curl pinned at 10.15, libcurl4t64 moved to 10.16): fixed by `e4e93cb` (curl 10.16). The
-  next run failed core on four L6 ctest timeouts under the parallel ctest of 0021: decision 0023 runs `AllanT1.*` and
-  `Tracking.*` alone (RUN_SERIAL). The local merge gate missed both: its image was cached, and its CPUs are about 2.5x
-  faster per test than Actions'.
-- 2026-10-15, Luis, verbatim, choosing among (A) finish L11, (B) L6 stage (e), (C) the open trims (2) and (3) below:
-  "C. Continue the test trims". Branch `test-trims` from `master` = `5e58f24`. L11 S6+ and L6 (e) stay paused.
-  Measured serial on the host (load < 1.5 after the builds, 2026-10-15): L5 gz steps 69 s, chirp 250, yaw 70,
-  recovery 104, truth_plumbing 13; L4 gz steps 44, chirp 101, acro 29, truth_gyro 4. Luis's rulings (multiple choice,
-  2026-10-15): trim (2) "L5 + L4 chirp" (L5 chirp/yaw/recovery and L4 chirp only in the full run, or when the file
-  itself changes; core §7.6 gets one sentence); truth suites "Shared header, 2 binaries" (after the lead found one
-  binary cannot link both SIL libraries; 41 entries stay); schemas and param scripts "Both". Built, uncommitted, as
-  decision 0024: the gz hold-back in `ci/run_ci_gz.sh` (dev L4 105 → 44 s, L5 71 s), the truth-channel header
-  (811 → 561 lines, 41 entries), the shared schema file (182 → 154 entries), one `tools/ci/check_param_ids.py`.
-  Committed `4b8d157` (Luis: "commit and push"); local merge gate PASS on it (core 722 s, gz-l2 140, gz-l4 213,
-  gz-l5 554, gz-l11 22; full mode ran every held-back file: L5 gz 63 passed, 2 xfailed); merged into `master`
-  (Luis: "merge"), fast-forward `5e58f24..4b8d157`; Actions run 38762725188 on `master`: all five jobs success,
-  about 23 min wall. Trims done.
-- The trims that changed what runs, each on Luis's word with a decision record: (1) the L5 T3 one-ulp control on one
-  output file: decision 0022 items 3–4; (2) the L5 gz T4 chirps/yaw/recovery and the L4 chirp held back from the
-  development check: decision 0024; (3) the twin truth-channel suites, the scenario-schema cases and the param scripts
-  consolidated: decision 0024; (4) merge-run speed: decision 0022 (the four Gazebo plugin trees stay separate builds
-  and share the compiler cache). None is open.
+## Where things are
+| Item | State |
+| --- | --- |
+| L0–L5 | passed, tagged `quad-L0-pass` … `quad-L5-pass` |
+| L11 vertical loop (truth state) | passed on `master` `341e54d`; tag `quad-L11-pass` pending (Luis) |
+| L6 sensors, gyro chain, D term | stages (a)–(d) closed; the rest deferred until after M4 |
+| Known failing items | L4 acro under noise, L5 R2, L5 R1X α: strict xfail, owned by the deferred L6 (e) |
+| M0 fast loop and test rules | not started |
+| M1 target bring-up | not started; nothing has run on the board; the `m33` preset links no image |
+| M2–M6 | not started |
 
-## Stop point (Luis, 2026-10-14 01:2x: "find a spot to stop at quickly and commit. then write in the handoff")
-- Branch `quad-l11` (from `recovery/hover-demo`, from `master` = `b48e202`). Commits, oldest first: `c5d7da5` S0 (spec +
-  0020), `253b620` S1, `50b5ff6` S2, `21ba942` S3, `e08179e` S4, `63cf5ae` S5 (amended: the report guard), `aeec084`
-  S6a-1 parked, then the docs commit that carries this section. Verified: S1, S2, S3 each by a full `ci/local_ci.sh`
-  on the exact commit; S4+S5 as one batch — core, gz-l2, gz-l5 and gz-l11 on `534498d` (S5 before the amend) and
-  gz-l4 on `63cf5ae` (PASS, 1002 s, 2026-10-14 01:26). S6a-1 is inert (no consumer) and is not CI'd on its own.
-- `origin/quad-l11`: pushed through S3 at 01:05; the rest pushed at the end of this session if gz-l4 is green (the
-  commit list on origin is the record). `master` untouched. Luis merges `recovery/hover-demo` then `quad-l11`
-  (fast-forward chain) when he wants them.
-- Working tree clean at the stop. Nothing is running. The demo kit, the L11 demo world and screenshots, the altitude
-  packet/survey/decision and the CI timing logs are in `~/marv-handover-2026-10-13/` (the batch CI logs with
-  per-step timestamps: `~/marv-handover-2026-10-13/ci/`).
-- Local CI: `ci/local_ci.sh [--commit <rev>] [core|gz-l2|gz-l4|gz-l5|gz-l11 ...]`, five jobs, ~75 min of job time; run
-  per push batch on the batch head, in parallel lanes, not per commit. `--parallel 2` at most: each lane takes a
-  14.66 GiB memory limit and the host has 33.5 GB (local_ci refuses 3, 2026-10-15).
-- (Superseded 2026-10-15: S6–S7 built, see "Open items".) To resume L11: S6a-2 (the C++ T3 test against `build/reference/quad/L11/t3/vertical_t3_golden.txt`; notes from the
-  engineer who stopped: the hover_thrust_n fixture check needs a bound, not equality — the rule uses the card's double
-  values and rounds one ulp off the f32-rebuilt value; thrust_offset_n has no table source to recompute from; L05's
-  T3 test does not compare its fixture with the table; `ci/run_ci.sh:257` and decision 0013:401 name the two exempt
-  reference steps), then S6b (envelopes, Q, the coupled-plant shove), S7 (scenarios, `run_l11.py`, the T4 gz suite
-  in the gz-l11 job), S8 (close). All of it is test work, which Luis stopped; it resumes only on his word.
-- Open for Luis: the CI consolidation Tier 2 rulings (section "CI consolidation"); the L11 pass bar (the spec's T3/T4
-  items are unbuilt while S6/S7 are paused: the layer cannot be declared passed or frozen); the R2 package and C6a
-  (unchanged, see below); the gz 10 packages that shadow Harmonic's render engine (the demo uses an LD_PRELOAD shim).
+## This change (branch `realign-mvp` from `master` `341e54d`, pushed; not merged into `master`)
+- Decision 0026: the advisor findings, Luis's acceptance and realignment words, verbatim.
+- Core spec §2 (`PLACEHOLDER`, the UNKNOWN split), §7.1 (TB bench level, T4 at merge, T6 deferred), §7.2 items 3 and
+  6 (controls only where a threshold decides; freeze requirements, not outputs), §7.3 (records only to loosen,
+  delete or change a spec; the `golden regenerated:` commit line), §7.4.
+- Quad spec §0, §1, §4.0 (new: MVP order), §4.1 (the layers, unchanged apart from MVP-subset notes), §6.1 (minimal
+  arming), §6.3 (B1 after M4).
+- `CLAUDE.md` rewritten for MVP first; this handoff; `ci/blast_radius.yaml` ignores `.claude/**`.
+- `.claude/agents/advisor-*.md`, `project-advisor.md` and `.claude/advisors/brief.md`: the advisor agents (commit or
+  drop: Luis).
 
-## Recovery inspection (2026-10-13)
-Luis's brief, verbatim: "The project is currently unusable. Your objective is to restore the smallest possible working
-demonstration: a simulated quadrotor achieving stable hover." Finding: not the case at `b48e202`. On Luis's host the
-documented host-debug build and ctest pass (661 of 661), the `host-gz` and `host-gz-l5` plugins build from HEAD, the
-frozen L2 hover check passes (`test_analytic.py -k hover`: 13 passed, 0 skipped) and the frozen L5 attitude checks pass
-(`test_truth_plumbing.py` and `test_t4_steps.py`: 21 passed, 0 skipped); Actions is green on `b48e202` for its push run
-and for every nightly full run from 2026-10-05 to 2026-10-13. The hover demonstration is the existing L2 hover scenario
-and the L5 level hold at m·g (CLAUDE.md, Commands); the ACTIVE spine has no altitude or position loop, so nothing else
-is a hover, and no new test was added (Luis, 2026-10-13, chose to rely on the frozen tests). What was wrong was local
-only: `.venv` had been created by a CI container run against the repository directory (INFERRED from its
-`uv = 0.12.20`), so it was root-owned and its entry points carried the container's path (`#!/src/.venv/bin/python`):
-`uv run pytest` could not spawn, while `.venv/bin/python -m pytest` ran. Fixed: Luis ran `chown`, then
-`rm -rf .venv && uv sync --frozen`. The three plugin builds predated `5fc37b6` and `d361d54` (rebuilt), and C6a sat
-uncommitted (now on `l6-c6a-wip`). No code changed. What remains broken is unchanged: the known failing items under
-"Open items".
-- Luis asked to see the hover in the Gazebo GUI. Two things hid it, neither in the flight code: (1) gz-sim 8's GUI opens
-  `/usr/lib/x86_64-linux-gnu/libgz-rendering-ogre2.so`, which the gz 10 packages (libgz-rendering10-ogre2, installed
-  2026-10-08) own, so the 3D view died with "Found no render engine plugins in [gz-rendering-ogre2]"; headless runs never
-  render, so CI and the tests were untouched; (2) the generated worlds are headless by design: no `<visual>` and only the
-  Physics system listed, so the GUI gets no scene. A demo kit outside the repository (`~/marv-handover-2026-10-13/demo/`)
-  adds visuals (the Fuel "X3 UAV" meshes at the card's rotor positions, a stand-in until Q-D1's Chameleon mesh), the
-  SceneBroadcaster, RTF 1 and an LD_PRELOAD shim for the render engine. Luis (2026-10-13): no `--view` option in the
-  repository for now; the X3 stand-in is fine. The permanent GUI fix is his: remove the gz 10 rendering packages or keep
-  the shim.
-- What the demo showed, measured from the plugin's logs and the live pose topic: L5 holds attitude as specified (a 0.2 s
-  roll shove of 0.02 N·m tilts it 8–9° and it is level again in 0.7–0.95 s); nothing holds altitude: each shove leaves
-  about 0.1 m/s of descent for good (no drag at v0), and the fixed-thrust hover is an unstable equilibrium in height
-  because the plant evaluates g at the current height (marv_plant.h:83–84) while `l5_thrust_n` is m·g(h0): measured
-  +0.63 mm/s² at z = +205 m = the free-air gradient 3.086e-6 s⁻² × 205 m, time constant 569 s. The recover_inverted
-  scenario acquires 6.9 m/s of descent during the 0.7 s flip and keeps it. Luis chose to scope an altitude loop; see
-  the next section.
+## Next
+1. **M0** (beside M1, one packet per bullet in §4.0 M0). First measure the baselines: an Actions full run and a
+   one-module development check. Fold the Actions reference-cache fix (the L11 set regenerates cold every run; core
+   45 min on `341e54d`, INFERRED cause) into M0.
+2. **M1** on the madflight FC3v2 Rev-C only (Luis, 2026-10-15): https://madflight.com/Board-FC3/, B package,
+   2 MB flash, no PSRAM; LSM6DSV on SPI1 (MISO 28, SCK 30, MOSI 31, CS 29, INT 27, CLKIN 26); motors GP6–9 to a
+   Goku G55M 55A AM32 4-in-1 ESC (all four motors connected); receiver SER0 GP0/1 (ELRS, not yet fitted); no GPS.
+   Flash over SWD with the Raspberry Pi Debug Probe (OpenOCD recipe in `~/Projects/CPP/sensor-test/tools/run_lab.sh`);
+   console over USB CDC, not the probe UART. Follow madflight's pin table, not Betaflight's (they differ). madflight
+   is MIT; its LSM6DSV driver (`src/imu/`) is a reference. Needs a decision first: the Pico SDK pin (version, how
+   fetched; `sensor-test` uses 2.3.0 from an unpinned clone) — architect, then Luis.
 
-## L11, the vertical loop on truth state: opened (decision 0020, 2026-10-13)
-- Luis ruled on the architect's proposal (0020, his eight answers verbatim): a new layer L11, truth-fed and SIL-only,
-  built in parallel with L6 stage (e); the spec text as proposed; `thrust_gain_robustness_band` = 0.5 (his labelled
-  choice); no climb/descent clamp; the T4 roll shove is 0.02 N·m for 0.2 s (labelled scenario value); the spec's
-  "T/W ≈ 4.5" is marked UNVERIFIED against the card's 6.47.
-- Stages, one commit each with full local CI (0020, "The proposal as ruled", section 7): S0 spec + record (this commit,
-  docs-only); S1 truth channel (`marv_truth_vertical`, TRUTH_VERTICAL library option, G3 rule and controls, T1); S2
-  `fw/vertical` law; S3 `tools/card/vertical.py` and the budget entry with its `L11/param_ids` claim (changes the frozen
-  L06 product_params table: the record names it); S4 composition `l11_vertical_scripted`; S5 plugin element, adapter,
-  log type 8, the L5 byte-identity check; S6 T3 oracle, golden, envelopes (0011 storage); S7 scenarios, runner, T4 gz
-  tests and controls, a `gz-l11` job; S8 close. Estimate 11.5 working days (not a commitment). S1 landed (full local CI green on 253b620). S2 landed (reviewed PASS). S3 landed (reviewed PASS: the generator,
-  the budget entry, the design site in design/scenario_values.yaml, the L11 manifest, the regenerated product table).
-  S4 landed (reviewed PASS: the composition, its register, SIL library and 37 T1 tests). S5 landed (reviewed PASS: the plugin element, adapter, log record 8, the host-gz-l11 preset, the l11 CI group and
-  gz-l11 job, the I1 guard). Next: S6 (S6a-1, the vertical T3 oracle and golden, in progress).
-- Coupling: stage (e)'s FF switch-on commit must also keep L11 green (INFERRED low risk). The R2 collective question is
-  untouched by L11 (no recovery scenario).
-- The packet, the survey and the architect's full decision: `~/marv-handover-2026-10-13/altitude/`.
-- **2026-10-14, 00:28, Luis, verbatim:** "push whatever is done and verified and validated. it is insane that the
-  tests take so long. i need you to start consolidating the test suite to run only tests that test unified
-  functionality and do it fast. we can't possibly be stuck in testing hell all this time we need to start developing
-  and finxing things NOW. STOP testing stop creating tests and start consolidating the suite. do that or just manage
-  the testing suite in a much more efficient manner because this is unacceptable we will never get anything done at
-  this rate,"
-  - Done on that: S1–S3 pushed to origin/quad-l11 after their full local CI; S4 and S5 verified as one batch (three
-    parallel lanes) and pushed; the per-commit full-CI loop is dropped — one `ci/local_ci.sh` run per push batch, on
-    the batch head, only the jobs a change can touch, in parallel lanes. S6/S7 test work stopped (above).
-  - The loop as built flies: the L11 composition on the host-gz-l11 plugin in the Gazebo demo world
-    (`~/marv-handover-2026-10-13/demo/demo_altitude_hold_L11.sdf`): undisturbed 19 s at z = 0.00 mm, tilt 0.00°; each of
-    six 0.02 N·m / 0.2 s roll shoves tilts it 8–9°, is levelled in 0.7–1.0 s, costs 2–4 mm of height and is back at the
-    reference within 3.5 s; after all six z = +0.0 mm, −0.01 mm/s. The L5 hover lost 59 mm per shove for good.
-  - The CI consolidation proposal, measured on the batch run, is the next section; Tier 1 needs no test change.
+## Open for Luis
+- Merge `realign-mvp` into `master` (the merge gate, `ci/local_ci.sh`, runs first); whether the advisor agent files
+  in `.claude/` are committed.
+- The tag: `git tag quad-L11-pass 341e54d && git push origin quad-L11-pass`.
+- M2: CRSF or ELRS MAVLink mode (Luis prefers MAVLink unless CRSF allows more); the link-loss failsafe numbers.
+- M4: is a thrust stand and a bifilar pendulum set-up available, or is buying or building one part of M4?
+- Branches merged into `master` and deletable: `ci-curl-pin`, `ci-heavy-serial`, `quad-l11`, `quad-l11-s6`,
+  `recovery/hover-demo`, `test-blast-radius`, `test-trims`, `quad-l6-spec`. `l6-c6a-wip` (`14e3c3a`, unmerged, the
+  half-built L6 (e) reference set) waits for the L6 resume or is dropped.
 
-## CI consolidation (owner request 2026-10-14): where the time goes, and the proposal
+## Known defects the advisors found (fix inside the milestone named)
+- M1: the rate loop and attitude law halt on a sample spacing off by more than 1 µs, and every composition halts
+  unless `hal_time_us()` equals the sample stamp (`rate_loop.hpp:52,230-241`; `l5_attitude_scripted.cpp:194`).
+- M3: `marv_plant` reports zero specific force at rest (`marv_plant.cpp:255-264`).
+- M4: rotor inertia is absent from plant and design model (yaw zero near crossover, INFERRED); the rate loop crosses
+  over at about 8–12 rad/s because of the ±50 % inertia and ±30 % motor-lag bands; measurement narrows them.
+- M5: four motors are compile-time (`actuator.hpp:16`, `mixer.hpp:28`, both C ABIs, `tools/card`).
+- Carried from L11: the card mass conflict (0.772 vs 0.752 kg) and `thrust_coeff` σ, settled by M4's measurements.
 
-Measured on the S4+S5 batch (commit 534498d), three lanes in parallel on the 16-core host, the containers at the
-Actions limits (4 CPUs each), per-step timestamps. Solo runs are about 20 % faster.
+## Git and host
+- `master` = `origin/master` = `341e54d`. One stash, `stash@{0}` (old quad-l0 WIP): not ours, leave it.
+- `datasheets/` is present and gitignored. `~/marv-handover-2026-10-13/` holds the old demo kit, outside the repo.
+- gz-sim 8.15 on PATH; `clang-tidy-18` 18.1.3; no `gh` CLI (the Actions API is readable with `curl`).
+- Agent worktrees inside the checkout break `tests/regression/quad/L06/tools/test_world_sensors.py`; keep them out.
 
-## Where a full run goes (five jobs, ~75 min of job time; Actions wall = the longest job)
-| Job | Step | s | What it is |
-| --- | --- | --- | --- |
-| core | host-debug: configure, build, ctest | 472 | full Debug build (294 targets, -Werror) + 745 ctest entries |
-| core | host-release: configure, build, ctest | 460 | the same again in Release |
-| core | tools tests (71 pytest files) | 303 | per-push tools tests; 6 slow files already nightly-only |
-| core | L5 T3 oracle regeneration | 268 | regenerated every run (decision 0011) |
-| core | frozen suites (ctest -L frozen) | 36 | the 744 frozen entries run a second time |
-| core | m33: configure, build | 322 | the target build from scratch |
-| core | L5 T3 one-ulp negative control | 309 | regenerates the whole L5 set again with a perturbed input |
-| core | the other 31 controls + every gate check | ~60 | planted manifests/targets, nm, token scans |
-| gz-l2 | gz_build | 423 | the plugin tree from scratch |
-| gz-l2 | gz_sensors + gz_analytic + smoke/tools | ~150 | the tests |
-| gz-l4 | gz_build_l4 | 410 | the plugin tree from scratch, again (different SIL library) |
-| gz-l4 | gz_l4 | 116 | the tests |
-| gz-l5 | gz_build_l5 | 409 | the plugin tree from scratch, again |
-| gz-l5 | gz_reference_l5 | 290 | the L5 T3 reference regenerated a second time |
-| gz-l5 | gz_l5 | 606 | the L5 T4 suite (steps, chirps, yaw, recovery) |
-| gz-l11 | build l5 + build l11 + 13 tests | ~900 | two plugin trees from scratch, then the L11 gz tests |
-
-Per full run (job time, contended): builds ≈ 2,900 s (Debug, Release, m33, four or five plugin trees); the L5 T3
-reference ≈ 870 s (regenerated in core, regenerated again by its control, regenerated again in gz-l5); tests
-proper ≈ 1,350 s (745 ctest entries 2×, 71 pytest files, the gz suites); everything else ≈ 100 s.
-
-## Tier 1 — no test changes, no decision record (CI scripts only); expected full run 70 → ~25 min wall, local batch ~15 min
-1. ccache in both images with a persistent cache (local: a volume under ~/.cache; Actions: actions/cache keyed on the
-   compiler and the lockfiles). Every from-scratch build above becomes 30–90 s when the change is small.
-2. One Gazebo job instead of four: the plugin's own objects are identical across l2/l4/l5/l11; only the linked SIL
-   library differs. Build all four plugin variants in one tree (MARV_GZ_SIL becomes a per-target list) and run the four
-   test groups sequentially in one job: 4 × 7 min of builds → one build; the L5 reference regenerated once.
-3. Cache build/reference across runs (refdata's stamp already skips regeneration when the inputs are unchanged): the
-   two 270–290 s regenerations drop to 0 s unless an input changed. The one-ulp control (309 s) stays per push unless
-   Luis rules it nightly (Tier 2, item 9).
-4. pytest-xdist for the tools tests (4 workers): 303 s → ~100 s; the per-file time guard keeps its meaning (it measures
-   alone time).
-5. Drop the duplicated `frozen suites` ctest pass (36 s): host-debug's ctest already ran every frozen entry.
-
-## Tier 2 — test-semantics changes, needs Luis's ruling and a decision record (core 7.2, 7.3)
-6. host-release: build only per push (catches -O2 compile differences), run its ctest nightly: −7 min per push.
-7. The L5 T4 gz suite (606 s): keep the step tests per push, move chirps/yaw/recovery to nightly; same for L4's
-   chirps. Per-push gz time ≈ 4 min of tests instead of 15. Nightly keeps the full set (MARV_CI_MODE=full exists).
-8. Negative controls: keep every control, but run the ones that only exercise checker scripts as pytest cases of the
-   checker (several already have both forms) — only the controls that need a planted build stay as CI steps.
-
-9. The L5 T3 one-ulp control (309 s per push): run it nightly, or keep it per push but on one output file (the
-   SHA check fails on the first mismatching file; generating all three is not needed to prove it).
-
-## What this does not change
-- No frozen test is loosened or deleted; the full set still runs nightly and before every stage close and tag.
-- "Verified" stays `ci/local_ci.sh` on the pushed head — once per push batch, not once per commit.
-
-## Git state (2026-10-05)
-- `master` = `origin/master` = `b48e202` (C5). Everything committed on master is pushed, each commit after a full local
-  CI pass on that exact commit.
-- Stage (e) commits on master, in order:
-  - `dd003e4`: 0019 opens the stage; `r2_ff_diagnosis/regenerate.sh` pinned to `4a76755`;
-  - `5fc37b6`, `d361d54`, `dbaa70e`: W1, the plugin's IMU model, rotor-speed telemetry and clock corners, the sensor
-    replay, the L4/L5 driver passthrough, and the accel-tie test;
-  - `c5af152`: `noise_term_confidence` = 0.99 and the spec line;
-  - `7033721`: the S9 pytest guard;
-  - `0b8cdb7`: C4, `tools/sim/l6_noise_term.py`;
-  - `b48e202`: C5, `tools/sim/l6_bias_delta.py` plus the hooks in `l6_ff_eval.py`.
-- Local branches:
-  - `recovery/hover-demo` (2026-10-13, from `b48e202`): the recovery inspection's docs-only commits (this file and
-    the CLAUDE.md Commands section). Luis merges it.
-  - `l6-c6a-wip` (`14e3c3a`, from `b48e202`): C6a as found in the working tree on 2026-10-13, see "C6a" below.
-  - `l6-0018-c1` (`7ea4d29`, never pushed): the held 0018, c1 back-calculation anti-windup. Kept until Luis rules on the
-    R2 package. It loses yaw trim under sustained roll/pitch saturation, and its L5 rate-bypass golden is unresolved.
-  - `quad-l6-spec` (`3158fb9`, checked out in a stale worktree under an old session's /tmp scratchpad): an old CI-limits
-    commit, already on master's history. Leave it.
-  - `quad-l5` (`e9bfaae`): merged L5 history. `l6-t3-storage-state` (`602e9ed`, its remote is gone): it carries the
-    datasheets; Luis deletes it.
-- Stash: only `stash@{0}` (an old quad-l0 WIP). Not ours, don't touch it.
-- `datasheets/`: present and gitignored (7 PDFs).
-
-## C6a, stopped part-way (Luis, 2026-10-05); parked on `l6-c6a-wip` (`14e3c3a`, 2026-10-13). Not reviewed, not CI'd.
-C6a was the `quad/L06/t4e` reference set: the T4e envelopes plus the noise σ per point and its max, per (e) scenario,
-stored per 0011.
-- `tools/sim/l6_t4e_model.py` (new): the T4e linear model, including the L5 model with the attitude Jacobian frozen at
-  kp and 0.
-- `tests/regression/quad/L06/t4e/reference/` (new): `t4e_reference.py` (the generator), `t4e_inputs.txt`, `SHA256SUMS`.
-  `__pycache__/` there is junk.
-- `tests/regression/quad/L06/tools/test_l6_t4e_model.py` and `test_t4e_refdata.py` (new): the model checks, and the per-push
-  regeneration of one file against its SHA256SUMS.
-- `tools/refdata/refdata.py` (modified): adds the `shared`/`depends` inputs for the new set.
-- `ci/run_ci.sh` (modified): the full set (about 2 h at 2 processes) in full mode only.
-- The `refdata ensure quad/L06/t4e --procs 2` run was killed after 47 min. Whether SHA256SUMS is complete or correct is
-  UNKNOWN.
-- The next lead decides: finish C6a from these files, or discard them and recut it. Its packet: 0019 rulings plus the
-  memo `~/marv-e-round-2026-10-04/e_noise/design.md` §3 and §5.
-
-## Saved outside the repo (evidence and drafts, not committed)
-- `~/marv-e-round-2026-10-04/`:
-  - `e_round/`: the architect's (e) decision round;
-  - `e_w1/`: the W1 design memo;
-  - `e_noise/design.md`: the noise suite memo, with the C4–C7 plan;
-  - `close_notes.md`;
-  - `r2yaw2.tar.gz`: the R2 model that reproduces gz to 0.010 rad/s;
-  - `r2witness.tar.gz`: the R2 in-range witness, reviewed PASS;
-  - `r2study.tar.gz`: the residual study, candidates (i)–(iii);
-  - `awvar.tar.gz`: the anti-windup variants V1–V3 and the trim analysis;
-  - `c1.tar.gz` (3.6 GB, raw gz logs): the c1 design. Trim it once its evidence is committed;
-  - `acronoise.tar.gz`: acro's margin under noise.
-- `~/marv-r2yaw-2026-10-04/r2yaw.tar.gz`: the first R2 yaw analysis.
-- `~/marv-handover-2026-10-03/`: the stage (c) handover copy.
-- `~/marv-handover-2026-10-05/`: this handoff, the git state, the C6a diff and a tar of the untracked files.
-
-## Open items, all Luis's unless marked
-- **R2 package: ruled 2026-10-15, decision 0025** (Luis: "keep your recommendations for R2 just so we can continue").
-  R2 becomes a safety predicate (recovers to level, rates bounded, by a card-derived deadline; the envelope comparison
-  run-and-report), designed by the architect and its spec line quoted to Luis before it is built; freeze anti-windup; no
-  collective raise; no candidate (i); the witness dropped (lost); `l6-0018-c1` deleted by Luis (2026-10-15, was `7ea4d29`).
-- **Lost off-repo evidence (2026-10-15):** `~/marv-e-round-2026-10-04/` and `~/marv-r2yaw-2026-10-04/` no longer exist;
-  the section "Saved outside the repo" below is history, not a resource (0025, Evidence).
-- **Gazebo 10 packages** removed by Luis (2026-10-15, `sudo apt remove libgz-rendering10-ogre2`: 29 Gazebo 10 / Jetty
-  packages, none of Harmonic). `libgz-rendering-ogre2.so` is gone, so gz-sim 8's GUI no longer needs the demo kit's
-  LD_PRELOAD shim (not yet re-tried with the GUI). `gz-sim10-cli` remains (harmless).
-- Branches `quad-l5` (merged) and `l6-t3-storage-state` (its six datasheets byte-identical to the local `datasheets/`)
-  deleted by Luis (2026-10-15).
-- **W per point or constant** (asked; not ruled). On the card member, acro's σ at the binding execution is 10.3× smaller
-  than the run's max. The constant W reaches 34.4 mrad/s on a 3×3 grid, against acro's T4e margin of 25.1 mrad/s. The
-  per-point W is about 1.9 mrad/s. Lead recommendation: per point.
-- **The gz re-measure** (ruling 7): only when Luis says the host is quiet (load < 1.5). It fixes the shard count, and C7
-  waits for it.
-- **L11 (lead):** resumed 2026-10-15 (Luis: "continue with A"), branch `quad-l11-s6`. S6a-2, S6b-1/2/3, S7a, S7b built
-  and reviewed (each bullet in 0020 "What changed"): the C++ T3 golden test and its controls; the T3 envelopes (height
-  step, thrust offset, the coupled roll shove) and Q; the L11 scenarios, `tools/sim/run_l11.py`; the T4 gz file
-  `tests/regression/quad/L11/gz/test_t4_vertical.py` (held back from the development check, ~100 s; full run and when
-  touched). The L11 reference set takes 5 min 38 s cold at 4 processes (cached by its stamp; the one-ulp control uses
-  `--golden-only`, 4.5 s); its effect on the Actions core and gz-l11 jobs is measured at the next merge gate. Left: S8
-  (close: consolidate the L11 suite, e.g. `l11_gz.py` duplicates `run_l11`'s helpers; the results record; Luis's
-  approval). Local CI has five jobs (gz-l11 added).
-  S8a (consolidation, the close section of 0020) built 2026-10-15; Luis approved the close, the merge gate and the merge
-  ("go ahead with 1,2,3"); the tag `quad-L11-pass` is his. Next target after the merge: Luis's choice between L7 (the
-  attitude estimator; lead's recommendation) and L6 (e) (the architect's R2 safety predicate first, decision 0025).
-- **Remaining (e) builds:**
-  - C6a: see above;
-  - C6b: the T3 corner scan (27-row table), the L5 and chirp plan adapters;
-  - C6c: the nightly σ̂ χ² check with the new register entry `noise_sigma_bound_confidence` = 0.99 and a planted control;
-  - C7: the noise suite on the T4e envelopes, in new files, with the decision-24 fine-control guard.
-- **Known failing items** (strict xfail while `tests/regression/quad/L06/XFAIL_GATE_CLOSED` is absent):
-  - L4 acro: FF on passes by 5.72 mrad/s at T4c; under noise and bias it fails at T4c; T4e is about +17 at the worst
-    corner (INFERRED);
-  - L5 R2: 2431 violations with FF on;
-  - L5 R1X α: passes with FF on.
-- **The FF switch-on and the gate:** one atomic commit sets `rate_ff_enable` 0 → 1, creates the gate file and adds a
-  per-push FF-iff-gate check. It lands last, only when every item passes in both the frozen T4c tests and the T4e noise
-  suite. If any fails: no gate, no per-item gates, the record goes to Luis.
-- **Still owed to Luis:**
-  - the CI split with measured times;
-  - the T4 seed and corner counts with their cost. Estimated so far: tracking 22 and safety 59 seeds, about 3.1 h serial
-    gz time for full confirmation, before the wiring re-measure.
-
-## Rules and rulings the next lead must not break
-- Never loosen a frozen test or a product check. Every change under `tests/regression/` needs a decision record in the
-  same change, naming each full path (`tools/ci/check_regression_changes.py`).
-- Records whose tests reproduce them byte for byte are regenerated by their own generator. If any data line changes,
-  stop.
-- Code or test commits: `ci/local_ci.sh` on the exact commit, then push. Docs-only commits: the regression-change check
-  is enough. If anything is red after a push, fix forward; never rewrite pushed history. No tags without Luis.
-- One writer to the repo at a time. Numbers: cited, sourced, derived with their rule, or labelled; UNKNOWN means stop
-  and ask.
-- Reports to Luis:
-  - built from the records and git;
-  - results first, numbers with units;
-  - quote in full anything he must approve;
-  - every question answerable in one word, with a recommendation.
-- (e) rulings, 0019 verbatim:
-  - NT-2, Bonferroni inside the run, with the point count taken from the predicate;
-  - predicates judge the gz truth state;
-  - the bias delta comes from the nonlinear model; the coupling never enters the envelope;
-  - per push, PP-A: seed 1 at the nominal corner; nightly and before every stage close and tag, 22/59 seeds ×
-    {nominal, worst corner};
-  - clock corners inside the T3 search, and the Gazebo step rounded outward (0012 question E);
-  - exact ties only, each with a per-push bit-identity test;
-  - frozen extremes for the time-varying scenarios, checked by the nightly σ̂ check;
-  - the decision-24 fine controls must still fail, else stop;
-  - S9 for pytest is enforced under local CI and only reported on Actions. Watch `test_r2_lower_bound.py`: 57.4–58.3 s
-    alone against 60 s.
-- Actions times are noisy (runner speed varies about 2×). Measure S9 and timings in the local CI image at load < 1.5.
-- Luis's machine is shared: his games load the CPU. Check `uptime` before any timing.
-- A tool a check needs is missing on the host (e.g. `clang-tidy-18` for G1): tell Luis at once, ask him to install it;
-  do not work around it (Luis, 2026-10-15: "next time you need something installed that is critical let me know").
+## Rules the next lead keeps
+- Commit, push, tag and merge only on Luis's word. Fix forward; never rewrite pushed history.
+- Verified: a commit by `ci/dev_check.sh`; a merge by `ci/local_ci.sh` on the exact commit (`--parallel 2` at most).
+- Reports to Luis: results first, numbers with units; every question answerable in one word, with a recommendation.
+- A tool a check needs is missing on the host: tell Luis at once; do not work around it.
+- Luis's machine is shared: check `uptime` before any timing.

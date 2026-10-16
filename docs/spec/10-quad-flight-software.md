@@ -7,8 +7,10 @@ Split 1, 2026-09-28.
 
 ## 0. Scope
 
-**Active now: the spine (§4).** Rate and attitude stabilization, Freestyle (acro, angle) flown in Gazebo, one IMU, one
-vehicle card (UZH NeuroBEM 5-inch), carried through to lockstep HIL on the RP2354B.
+**Active now: the MVP path (§4.0).** The simplest firmware that flies a quad on the MARV V2 board under onboard
+receiver control: rate and attitude stabilization, Freestyle (acro, angle), one IMU, minimal arming and failsafe, one
+vehicle card, then a second airframe by configuration. Everything else in the spine (§4) is built afterwards, one
+feature at a time, in the order Luis picks (decision 0026).
 
 **Parked branches (§6).** Each starts only after the spine passes, and becomes active only when Luis edits the table
 in §6:
@@ -33,8 +35,11 @@ A loop that needs real hardware in real time (HIL) runs at 1× by construction:
 - a gain change needs a new run in every condition it must hold for.
 
 So the everyday loop is **software-in-the-loop (SIL)**: the firmware compiled for the PC, driven by a virtual clock
-in lockstep with the physics, headless, as fast as the CPU allows, many runs in parallel. HIL stays as the gate
+in lockstep with the physics, headless, as fast as the CPU allows, many runs in parallel. HIL was planned as the gate
 before flight, not the place where tuning happens.
+
+Decision 0026 changes the gate: the first flights are gated by the bench (TB, core §7.1) and a flight test card,
+tethered first. HIL (L10) is deferred until after first flight; SIL stays the everyday loop.
 
 HIL with the real RP2354B can never run faster than real time: the MCU runs on its own crystal. Its job is to verify
 real timing on real silicon.
@@ -138,9 +143,98 @@ inertia (0.021667 / 0.021667 / 0.04) are exactly a solid cylinder of radius 0.2 
 
 ## 4. The spine
 
-Layers are built bottom-up. Each lists what it builds, the opening it exposes, its pass bar (written before building;
-thresholds from rules or the budget register), the test level of each check (core §7.1), and what freezes. Mechanics
-of freezing: core §7.2–7.3.
+### 4.0 Build order: MVP first
+
+Luis, 2026-10-15, verbatim: "we need a hard realignment because obviously this is not fast enough. i believe we should
+have just started simpler instead of tryign to implement everything from the get go, by getting the MVP working then
+adding more complex features gradually" (decision 0026).
+
+**Rules.**
+
+1. Build the milestones below in order. Each adds the least that makes its "done when" true; anything else goes on
+   the deferred list. M0 runs beside M1 and never blocks it.
+2. **A refinement never blocks hardware contact.** A sim-only improvement waits until after M4 unless a milestone's
+   "done when" cannot be met without it.
+3. A milestone's "done when" is its pass bar. It freezes only tests that check a requirement (margins, predicates,
+   contracts; core §7.2 item 6). A passed milestone is tagged `quad-M<n>-pass`.
+4. The layer sections L0–L11 below are the full, eventual definitions. A milestone builds only the subset it names;
+   the rest of a layer is deferred, not cancelled. L0–L5 and L11 are passed and tagged as they stand.
+5. Numbers a milestone needs and cannot source follow core §2 rule 1: safety numbers stop to ask, others may be
+   carried as `PLACEHOLDER` parameters until the flight that depends on them.
+
+**M0 — Fast loop and test-rule cleanup** (no flight code; beside M1)
+- `ci/blast_radius.yaml`: agent and editor files are ignored; the budget register, the vehicle cards and
+  `CMakeLists.txt` select the consumers of what changed instead of the full suite.
+- `tools/ci/check_regression_changes.py` accepts the `golden regenerated:` commit line (core §7.3).
+- The T4 design-model envelope comparisons and their fine T4 controls (gains × 1.1, one tick) in the L4, L5 and L11
+  Gazebo suites become behaviour predicates with the loop-disabled control (core §7.2 item 3), under a decision
+  record that lists each removal and what still covers it.
+- L6 stage (e)'s unbuilt items (the noise Monte Carlo, the R2 study, C6a) leave the merge run until L6 resumes.
+- *Done when:* the full run on Actions and the development check for a one-module `fw/` change are each measured
+  before and after, and both are faster; `ci/affected.py --check-manifest` passes.
+
+**M1 — Target bring-up** (L9, MVP subset)
+- `hal_target` on the Pico SDK; a linked ELF of the flight composition in the `m33` preset, its size reported.
+- The MVP board is the madflight FC3v2 Rev-C (Luis, 2026-10-15: "let's not mess around with the other pcb and just
+  focus on the madflight fc3v2 rev-c"): B package, LSM6DSV on SPI1, four motors on a Goku G55M 55A AM32 4-in-1 ESC,
+  flashed over SWD (debug probe), console and data over USB. Boards are configuration behind `hal_target`: one board
+  file (pins, buses, IMU part, package), checked at build time against its package's GPIO count. Luis's own board is
+  a later board file.
+- One driver for the board's IMU (LSM6DSV over SPI, FIFO read), producing the existing IMU sample struct, with an
+  LSM6DSV sensor profile sourced from its datasheet.
+- PIO DShot600 output. eRPM decode and the RPM notches wait for the L6 resume; the gyro chain runs its low-pass stages.
+- Single core unless EMB-3 fails with measured stage times; the core split (§5.2) and SRAM placement follow the
+  measurement, not the plan.
+- Flight timing never halts the firmware after arming: a sample spacing outside the IMU profile's clock bound, or a
+  missing sample, is a counted fault handled by the loop's fault path; `hal_time_us()` is defined for the target;
+  exact-stamp checks move into the SIL harness.
+- *Done when (TB):* the flashed image runs the rate loop at its rate and EMB-3 holds on measured stage times; props
+  off, each logical motor spins alone on its card pad in its card direction; still-bench IMU samples sit inside the
+  profile's bounds; a soak shows no FIFO overflow.
+
+**M2 — Receiver, arming and failsafe** (L8, MVP subset)
+- An ExpressLRS receiver on the board's receiver UART (Luis, 2026-10-15); the serial protocol, CRSF or ELRS's MAVLink
+  mode, is Luis's choice. The manual-control struct is a HAL pull;
+  the SIL harness injects stick scripts through the same pull, so scripted and piloted runs share one composition.
+- The rates curve (QF-1). Minimal arming (§6.1): arm switch, throttle at minimum, IMU alive and not saturated, and the
+  estimator valid once M3 lands. Disarm on receiver loss or a stale IMU (timeouts are safety numbers: ask).
+- *Done when:* T1 tests of the arming state machine pass; on the bench (TB) a receiver loss disarms within its
+  timeout, and arming is refused with the throttle up or the IMU stale.
+
+**M3 — Attitude estimator** (L7, MVP subset)
+- `marv_plant`'s specific force includes the contact force, so a vehicle at rest reads −g along z, as a real
+  accelerometer does.
+- Mahony on the IMU, with authority directly (shadow mode and its Monte Carlo are deferred).
+- *Done when:* T1 known-answer tests (at rest, constant rotation) pass; a committed bench log (still, then rotated by
+  hand) replays (T2) within the attitude budget share; the L5 Gazebo hover predicate passes on the estimate.
+
+**M4 — First flight**
+- Measure what sets the gains: inertia (bifilar pendulum), the motor time constant and the DShot-to-thrust map at two
+  pack voltages (thrust stand), rotor inertia if the stand allows. Commit scripts and raw data; update the card;
+  regenerate gains. A tethered first hover may use the current card.
+- A flight test card (pre-flight checks, tethered hover, free hover, angle, acro, abort criteria).
+- *Done when:* the T3 QF-3 margins pass on the updated card; tethered hover in angle mode, then free hover, then acro,
+  each with its log and card update committed.
+
+**M5 — Second airframe by configuration**
+- Only what that airframe needs: the motor count as a composition parameter if it has other than four motors; a card
+  `kind`; the ESC map separated from the allocator if its ESC differs.
+- *Done when:* it hovers with only card and parameter changes beyond those declared generalisations.
+
+**M6 — Rocket groundwork:** starts when Luis makes `30-rocket.md` ACTIVE.
+
+**Deferred until after M4** (resumed in the order Luis picks): the rest of L6 (c)–(e) (feed-forward, DShot diffusion,
+noise Monte Carlo, C6a); L7 shadow mode and its Monte Carlo; L8's Gazebo pilot and joystick bridge; the rest of L9
+(eRPM, core split, SRAM placement if timing holds without them); L10 HIL; an in-process `marv_plant` closed loop
+with truth dispersed inside the card's uncertainties, replacing Gazebo for development checks; plant fidelity (rotor
+inertia, battery and duty-mode ESC, rotor and body drag, IMU lever arm); vertical-loop tilt compensation; the
+branches of §6.3.
+
+### 4.1 The layers
+
+Each layer lists what it builds, the opening it exposes, its pass bar (written before building; thresholds from rules
+or the budget register), the test level of each check (core §7.1), and what freezes. Mechanics of freezing: core
+§7.2–7.3. §4.0 says which parts of L6–L10 the MVP builds; the rest of each is deferred.
 
 ### L0 — Foundations
 
@@ -262,6 +356,8 @@ Built after L5 and beside L6 (it needs nothing from L6); numbered L11 because L0
 
 ### L6 — Sensor models, the gyro chain and the D term
 
+*MVP subset in §4.0; the rest is deferred until after M4 (decision 0026).*
+
 - **Builds:**
   - `marv_plant`'s generic IMU class model driven by the profile (white noise, bias random walk, quantization,
     saturation, rate, latency, ODR error), drawing from seeded streams, one per sensor (core §5). Profile entries the
@@ -330,6 +426,8 @@ Built after L5 and beside L6 (it needs nothing from L6); numbered L11 because L0
 
 ### L7 — Attitude estimator: shadow, then authority
 
+*MVP subset in §4.0; the rest is deferred until after M4 (decision 0026).*
+
 - **Builds:** Mahony complementary filter, fed from the L6 sensor models; shadow mode first, then authority handoff.
 - **Opening:** attitude quaternion, body rates and a validity flag to L5.
 - **Pass bar:**
@@ -340,6 +438,8 @@ Built after L5 and beside L6 (it needs nothing from L6); numbered L11 because L0
 - **Freezes:** all of the above.
 
 ### L8 — Freestyle with a pilot
+
+*MVP subset in §4.0; the rest is deferred until after M4 (decision 0026).*
 
 - **Builds:** a minimal joystick bridge (a USB joystick on the PC, such as the radio in USB-joystick mode, read once
   per tick and injected into `hal_sim`'s manual-control input); the rates curve (QF-1); arming by a handset switch in
@@ -355,6 +455,8 @@ Built after L5 and beside L6 (it needs nothing from L6); numbered L11 because L0
 - **Freezes:** the scripted-stick scenario and the latency budget check.
 
 ### L9 — Target port
+
+*MVP subset in §4.0; the rest is deferred until after M4 (decision 0026).*
 
 - **Builds:** `hal_target`; one driver per sensor part on the confirmed board (core §2.3), each producing the same
   sample structs; PIO DShot600 with eRPM decode; the core split (§5.2); SRAM placement of the hot chain.
@@ -374,6 +476,8 @@ Built after L5 and beside L6 (it needs nothing from L6); numbered L11 because L0
 
 ### L10 — HIL lockstep
 
+*MVP subset in §4.0; the rest is deferred until after M4 (decision 0026).*
+
 - **Needs from the ground segment:** phases G0 and G1 (the interface schema and a codec carrying IF-9). Activate them
   when the spine reaches L9. The ground segment's trivial test codec (GS-3) is enough to start.
 - **Builds:** HIL mode on the target: tick-stamped sensor injection after the drivers, actuator output returned over
@@ -384,7 +488,7 @@ Built after L5 and beside L6 (it needs nothing from L6); numbered L11 because L0
   - The link-rate cap (core §4) is computed; if the IMU rate is decimated, the report says so.
 - **Freezes:** the SIL-vs-HIL comparison scenarios.
 
-**When L10 and L11 pass, the spine is done:** the rate and attitude stack, flying Freestyle, proven from unit tests to
+**When L10 and L11 pass, the full spine is done** (after the MVP path of §4.0): the rate and attitude stack, flying Freestyle, proven from unit tests to
 real silicon.
 
 ---
@@ -488,6 +592,10 @@ sensor fault (saturation, stuck, timeout) → HOLD / RTL / LAND / DISARM, by the
 The spine implements DISARMED, ARMED and FREESTYLE. Stabilized and Agile share one controller structure with different
 limits and trajectory generators, derived below.
 
+**Minimal arming (MVP, §4.0 M2).** The handset's arm switch in Freestyle, accepted only with the throttle at minimum,
+the IMU alive at its profile rate and not saturated, and the estimator valid. Receiver loss or a stale IMU disarms.
+Full arming below replaces it when B2 and the ground segment arrive.
+
 **Full arming (with B2 and the ground segment).** An explicit acknowledged command (IF-3), or the handset's arm
 switch in Freestyle. Succeeds only when every pre-arm check passes, each failure reported by name (IF-1):
 
@@ -565,7 +673,7 @@ the rule the toolbox's `mission.ts` applies to flight events.
 
 | Branch | Status | Starts after | Contents |
 | --- | --- | --- | --- |
-| B1 Plant realism and log replay | PARKED | spine L6 (may run beside L7–L10) | §6.3.1 |
+| B1 Plant realism and log replay | PARKED | first flight (§4.0 M4) | §6.3.1 |
 | B2 Mission | PARKED | spine done + ground segment G2 | QM, QA, QR, QX; navigation EKF; position control; trajectory generation |
 | B3 Self-calibration and INDI | PARKED | spine done + B1 | §6.3.3 |
 | B4 Vehicle zoo | PARKED | B1 | §6.3.4; activates guardrail G4 |
