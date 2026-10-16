@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[5]
 LINT = ROOT / "tools" / "card" / "lint.py"
 CARD = ROOT / "vehicles" / "uzh_neurobem_5in.yaml"
 PROFILE = ROOT / "sensors" / "profiles" / "marv_v2_board_default.yaml"
+FC3V2_CARD = ROOT / "vehicles" / "marv_5in_fc3v2.yaml"
+FC3V2_PROFILE = ROOT / "sensors" / "profiles" / "madflight_fc3v2_revc.yaml"
 BUDGET = ROOT / "design" / "budget.yaml"
 FIXTURES = ROOT / "tests" / "regression" / "quad" / "L01" / "fixtures" / "card"
 
@@ -69,9 +71,10 @@ def budget(tmp_path, mutate):
     return write(tmp_path, doc, "budget.yaml")
 
 
-# The three committed data files lint clean.
+# The committed data files lint clean.
 
-@pytest.mark.parametrize("flag,path", [("--card", CARD), ("--profile", PROFILE), ("--budget", BUDGET)])
+@pytest.mark.parametrize("flag,path", [("--card", CARD), ("--profile", PROFILE), ("--budget", BUDGET),
+                                       ("--card", FC3V2_CARD), ("--profile", FC3V2_PROFILE)])
 def test_committed_data_files_lint_clean(flag, path):
     r = run_lint(flag, path)
     assert (r.returncode, r.stdout, r.stderr) == (0, "", "")
@@ -334,6 +337,49 @@ def test_unknown_field_rejected(tmp_path):
 def test_bad_status_tag_rejected(tmp_path):
     p = card(tmp_path, lambda d: d["mass"].update(status=["UNVERIFIED", "MAYBE"]))
     reject("--card", p, "mass: status: ['MAYBE'] not in UNVERIFIED, INFERRED")
+
+
+# PLACEHOLDER (core 2): a status tag that carries its reason and what replaces it.
+
+PH = {"reason": "other airframe", "replaced_by": "the M4 measurement"}
+
+
+def _ph(entry, **ph):
+    entry["status"] = [*entry.get("status", []), "PLACEHOLDER"]
+    entry["placeholder"] = ph
+
+
+def test_placeholder_with_reason_and_replacement_accepted(tmp_path):
+    assert run_lint("--card", card(tmp_path, lambda d: _ph(d["mass"], **PH))).returncode == 0
+    assert run_lint("--card", card(tmp_path, lambda d: _ph(d["rotors"]["esc_map"], **PH))).returncode == 0
+    assert run_lint("--card", card(tmp_path, lambda d: _ph(d["rotors"]["m1"]["spin"], **PH))).returncode == 0
+    assert run_lint("--profile", profile(tmp_path, lambda d: _ph(
+        d["classes"]["imu"]["entries"]["odr_error"], **PH))).returncode == 0
+
+
+@pytest.mark.parametrize("ph,needle", [
+    ({"replaced_by": "the M4 measurement"}, "mass: placeholder.reason: missing or empty"),
+    ({"reason": " ", "replaced_by": "the M4 measurement"}, "mass: placeholder.reason: missing or empty"),
+    ({"reason": "other airframe"}, "mass: placeholder.replaced_by: missing or empty"),
+    (dict(PH, why="x"), "mass: placeholder: unknown field 'why'"),
+])
+def test_placeholder_without_reason_or_replacement_rejected(tmp_path, ph, needle):
+    reject("--card", card(tmp_path, lambda d: _ph(d["mass"], **ph)), needle)
+
+
+def test_placeholder_tag_and_mapping_go_together(tmp_path):
+    def tag_only(d):
+        d["mass"]["status"] = ["UNVERIFIED", "PLACEHOLDER"]
+    reject("--card", card(tmp_path, tag_only), "mass: placeholder: required when status holds PLACEHOLDER")
+    reject("--card", card(tmp_path, lambda d: d["mass"].update(placeholder=PH)),
+           "mass: placeholder: only allowed when status holds PLACEHOLDER")
+    reject("--card", card(tmp_path, lambda d: _ph(d["mass"]) or d["mass"].update(placeholder="other airframe")),
+           "mass: placeholder: must be a mapping {reason, replaced_by}")
+
+
+def test_budget_entry_cannot_be_a_placeholder(tmp_path):
+    reject("--budget", budget(tmp_path, lambda d: d["PM_min"].update(status=["PLACEHOLDER"], placeholder=PH)),
+           "PM_min: unknown field 'placeholder'")
 
 
 @pytest.mark.parametrize(
