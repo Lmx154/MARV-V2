@@ -239,7 +239,8 @@ noise Monte Carlo, C6a); L7 shadow mode and its Monte Carlo; L8's Gazebo pilot a
 (eRPM, core split, SRAM placement if timing holds without them); L10 HIL; an in-process `marv_plant` closed loop
 with truth dispersed inside the card's uncertainties, replacing Gazebo for development checks; plant fidelity (rotor
 inertia, battery and duty-mode ESC, rotor and body drag, IMU lever arm); vertical-loop tilt compensation; the
-branches of §6.3.
+RP2350 hardware watchdog (2048 ms, a recovery feature: the AM32 ESC already stops on a silent DShot line, decision
+0039; work on branch `m1-wdt`); the branches of §6.3.
 
 ### 4.1 The layers
 
