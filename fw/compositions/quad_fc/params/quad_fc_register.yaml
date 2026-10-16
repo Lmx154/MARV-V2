@@ -48,3 +48,16 @@ arm_switch_threshold:
   {type: f32, value: 0.390625, unit: "1", method: scenario, source: "Derived: arm at or above 1700 us, normalized (1700 us - 1500 us) / 512 us = 0.390625, under the receive contract aux x = (us - 1500) / 512 and throttle = (us - 988) / 1024, whose endpoints and centre are the CRSF channel values 172 -> 988 us, 992 -> 1500 us, 1811 -> 2012 us (TBS CRSF spec, RC channels). Luis 2026-10-16 gave channel 5 at +100 armed and -100 disarmed and did not object to arming above 1700 us (the lead's recommendation)", sigma: choice}
 arm_throttle_min:
   {type: f32, value: 0.060546875, unit: "1", method: scenario, source: "Derived: arming needs the throttle below 1050 us, normalized (1050 us - 988 us) / 1024 us = 0.060546875, under the receive contract throttle = (us - 988) / 1024 (CRSF 172 -> 988 us, 1811 -> 2012 us, TBS CRSF spec, RC channels). 1050 us is Betaflight's min_check default; Luis 2026-10-16: 'throttle at minimum is fine with the betaflight defaults'", sigma: choice}
+
+# The receiver channel map (M2 P5b, fw/hal/target/decode rc_input): the 1-based CRSF channel number (channel_01 = 1) that
+# carries each control. AETR order: Luis's RadioMaster Pocket on ExpressLRS, 2026-10-16 (throttle is channel 3, the arm
+# switch channel 5). Read once, at receiver start-up (hal_target); the start-up refuses a number outside 1 .. 16. Stick
+# signs are fixed in rc_input.hpp (INFERRED from the EdgeTX / Betaflight convention; checked on the bench per stick).
+rc_channel_roll:
+  {type: i32, value: 1, unit: "1", method: scenario, source: "Luis 2026-10-16: the RadioMaster Pocket on ExpressLRS sends AETR, so roll is channel 1 (aileron)", sigma: choice}
+rc_channel_pitch:
+  {type: i32, value: 2, unit: "1", method: scenario, source: "Luis 2026-10-16: the RadioMaster Pocket on ExpressLRS sends AETR, so pitch is channel 2 (elevator)", sigma: choice}
+rc_channel_throttle:
+  {type: i32, value: 3, unit: "1", method: scenario, source: "Luis 2026-10-16: the RadioMaster Pocket on ExpressLRS sends AETR, so throttle is channel 3", sigma: choice}
+rc_channel_yaw:
+  {type: i32, value: 4, unit: "1", method: scenario, source: "Luis 2026-10-16: the RadioMaster Pocket on ExpressLRS sends AETR, so yaw is channel 4 (rudder)", sigma: choice}

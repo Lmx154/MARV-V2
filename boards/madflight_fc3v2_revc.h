@@ -51,6 +51,9 @@ pico_board_cmake_set(PICO_PLATFORM, rp2350)
 #define MADFLIGHT_FC3V2_IMU_FRD_Z_SIGN (-1)
 
 // --- Serial ports: SER0 (radio receiver), SER1 (GPS) ---
+// SER0 is wired to the ExpressLRS receiver (Luis, 2026-10-16). GPIO 0 and 1 are UART0 TX and RX (the RP2350 GPIO function
+// table; pico-sdk boards/pico2.h: PICO_DEFAULT_UART 0, TX pin 0, RX pin 1).
+#define MADFLIGHT_FC3V2_SER0_UART 0
 #define MADFLIGHT_FC3V2_SER0_TX_PIN 0
 #define MADFLIGHT_FC3V2_SER0_RX_PIN 1
 #define MADFLIGHT_FC3V2_SER1_TX_PIN 4

@@ -22,8 +22,9 @@ target_link_libraries(marv_console_decode PUBLIC marv_hal marv_prim)
 marv_apply_flags(marv_console_decode FIRMWARE)
 
 # The CRSF frame decoder of the ELRS receiver link (M2 P5a): a streaming parser for the RC channels (0x16) and link statistics
-# (0x14) frames. No Pico SDK, so it is added on every target: the m33 image links it, the L08 T1 tests run it on the host.
-add_library(marv_crsf_decode STATIC src/crsf.cpp)
+# (0x14) frames, and (M2 P5b, rc_input) their conversion to ManualControl. No Pico SDK, so it is added on every target: the
+# m33 image links it, the L08 T1 tests run it on the host.
+add_library(marv_crsf_decode STATIC src/crsf.cpp src/rc_input.cpp)
 target_include_directories(marv_crsf_decode PUBLIC include)
-target_link_libraries(marv_crsf_decode PUBLIC marv_prim)
+target_link_libraries(marv_crsf_decode PUBLIC marv_prim marv_types)
 marv_apply_flags(marv_crsf_decode FIRMWARE)
