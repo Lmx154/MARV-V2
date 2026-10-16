@@ -6,6 +6,7 @@
 
 #include "marv/hal/motor_test.hpp"
 #include "marv/types/actuator.hpp"
+#include "marv/types/manual_control.hpp"
 #include "marv/types/rotor_speed_sample.hpp"
 #include "marv/types/time.hpp"
 
@@ -38,6 +39,11 @@ void stage_rotor_speed(const std::array<float, kQuadXMotors>& omega_rad_s, std::
 // cancel count with its reason. pre: outside a tick (else hal_panic).
 void stage_motor_test_request(const MotorTestRequest& request) noexcept;
 void stage_motor_test_cancel(MotorTestCancel reason) noexcept;
+
+// Stages the manual control that hal_manual_control() returns from the next begin_tick on, verbatim (t_us and frames
+// are the script's); it replaces any earlier one. Never staged: frames 0 and every field 0. pre: after setup and outside
+// a tick (else hal_panic).
+void stage_manual_control(const ManualControl& m) noexcept;
 
 // The events the composition reported through hal_motor_test_report() since setup: how many, and the latest.
 [[nodiscard]] std::uint32_t motor_test_event_count() noexcept;
