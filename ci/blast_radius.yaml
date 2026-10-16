@@ -308,6 +308,13 @@ rules:
     gz_groups: [l5, l11]
     why: "attitude is linked by the compositions l5 and l11"
 
+  - paths: [fw/stick_rates/**]
+    ctest_labels: [L08]
+    run_ci_steps: ["@host"]
+    pytest_paths: []
+    gz_groups: []
+    why: "stick_rates (the QF-1 rates curve) is linked by the L08 unit test only until the composition uses it (M2 P4)"
+
   - paths: [fw/vertical/**]
     ctest_labels: [L11]
     run_ci_steps: ["@flight_gates"]
@@ -1001,7 +1008,7 @@ rules:
     run_ci_steps: ["@host"]
     pytest_paths: []
     gz_groups: []
-    why: "the L08 CRSF decoder test is a host ctest entry"
+    why: "the L08 unit tests (the CRSF decoder, the QF-1 rates curve) are host ctest entries"
 
   - paths: [tests/regression/quad/L09/CMakeLists.txt, tests/regression/quad/L09/unit/**]
     ctest_labels: [L09]
