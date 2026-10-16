@@ -126,6 +126,13 @@ bool same_period(std::int64_t num_a, std::int64_t den_a, std::int64_t num_b, std
   return num_a >= 1 && den_a >= 1 && num_b >= 1 && den_b >= 1 && num_a * den_b == num_b * den_a;
 }
 
+TimeUs imu_read_deadline_us(std::int64_t period_num_us, std::int64_t period_den) noexcept {
+  if (period_num_us < 1 || period_den < 1) {
+    return 0;
+  }
+  return static_cast<TimeUs>((static_cast<std::int64_t>(kFifoDepthSamples) * period_num_us) / period_den);
+}
+
 TimeUs ImuStamper::stamp(TimeUs t_irq, std::size_t back) noexcept {
   const auto us_per_s = static_cast<std::uint64_t>(prim::kMicrosecondsPerSecond);
   const std::uint64_t step = (2 * static_cast<std::uint64_t>(back) * us_per_s + odr_hz_) / (2 * odr_hz_);

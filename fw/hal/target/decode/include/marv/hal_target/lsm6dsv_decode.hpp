@@ -101,6 +101,13 @@ struct TickPeriodUs {
 // cross products num_a x den_b and num_b x den_a below 2^63 (the trim period's terms reach about 1e10 x 3e4).
 [[nodiscard]] bool same_period(std::int64_t num_a, std::int64_t den_a, std::int64_t num_b, std::int64_t den_b) noexcept;
 
+// The IMU FIFO read deadline D (core EMB-6: FIFO depth / ODR; decision 0040 Q2), in whole microseconds, rounded down. The depth
+// in samples is floor(floor(kFifoBytes / kFifoWordBytes) / kFifoWordsPerSample) (INFERRED, boards/parts/lsm6dsv.hpp), the ODR
+// is the tick period num / den us: D = floor(depth x num / den). No parameter. 0 when num < 1 or den < 1; pre: depth x num < 2^63.
+inline constexpr std::uint32_t kFifoDepthWords = lsm6dsv::kFifoBytes / lsm6dsv::kFifoWordBytes;
+inline constexpr std::uint32_t kFifoDepthSamples = kFifoDepthWords / lsm6dsv::kFifoWordsPerSample;
+[[nodiscard]] TimeUs imu_read_deadline_us(std::int64_t period_num_us, std::int64_t period_den) noexcept;
+
 // The stamping rule (file comment).
 class ImuStamper {
  public:

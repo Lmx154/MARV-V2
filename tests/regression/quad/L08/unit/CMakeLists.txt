@@ -16,3 +16,9 @@ add_executable(unit_manual_control manual_control_test.cpp)
 target_link_libraries(unit_manual_control PRIVATE marv_hal_sim GTest::gtest_main)
 marv_apply_flags(unit_manual_control)
 marv_frozen_suite(unit_manual_control)
+
+# The IMU read-deadline miss count and its SIL staging (M2 P7, decision 0040 Q2).
+add_executable(unit_imu_deadline imu_deadline_test.cpp)
+target_link_libraries(unit_imu_deadline PRIVATE marv_hal_sim GTest::gtest_main)
+marv_apply_flags(unit_imu_deadline)
+marv_frozen_suite(unit_imu_deadline)

@@ -101,6 +101,14 @@ inline constexpr double kFreqFineStep = 0.0013;
 inline constexpr std::int32_t kFreqFineStepNum = 13;
 inline constexpr std::int32_t kFreqFineStepDen = 10000;
 
+// FIFO capacity, §6.10: "The LSM6DSV embeds 1.5 KB of data in FIFO" (up to 4.5 KB with compression, not used). INFERRED: the
+// datasheet gives bytes, not a sample count; KB is taken as 1024 bytes and a stored word as the 7 bytes read out (kFifoWordBytes),
+// the smaller capacity of the readings (6 data bytes per word would give more words). Replaced by a bench measurement: INT1
+// masked, DIFF_FIFO polled until FIFO_OVR_IA; script and log committed (decision 0040 Q2, open item 4).
+inline constexpr std::uint32_t kFifoBytes = 1536;
+// FIFO words per sample as this driver batches: one gyroscope and one accelerometer word at the same rate (FIFO_CTRL3).
+inline constexpr std::uint32_t kFifoWordsPerSample = 2;
+
 // Ton, gyroscope turn-on time, 30 ms typ., §4.2 Table 4, in µs.
 inline constexpr std::uint32_t kGyroTurnOnUs = 30000;
 

@@ -45,6 +45,10 @@ void stage_motor_test_cancel(MotorTestCancel reason) noexcept;
 // a tick (else hal_panic).
 void stage_manual_control(const ManualControl& m) noexcept;
 
+// Stages the count that hal_imu_deadline_misses() returns from the next begin_tick on, verbatim (a cumulative count, as the
+// target's); it replaces any earlier one. Never staged: 0. pre: after setup and outside a tick (else hal_panic).
+void stage_imu_deadline_misses(std::uint32_t count) noexcept;
+
 // The events the composition reported through hal_motor_test_report() since setup: how many, and the latest.
 [[nodiscard]] std::uint32_t motor_test_event_count() noexcept;
 [[nodiscard]] MotorTestEvent last_motor_test_event() noexcept;
