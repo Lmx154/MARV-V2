@@ -16,3 +16,10 @@ add_executable(unit_manual_control manual_control_test.cpp)
 target_link_libraries(unit_manual_control PRIVATE marv_hal_sim GTest::gtest_main)
 marv_apply_flags(unit_manual_control)
 marv_frozen_suite(unit_manual_control)
+
+# The CRSF-to-ManualControl conversion (fw/hal/target/decode rc_input, M2 P5b): the tick-to-microsecond formula, the stick
+# and throttle normalisation with its clamps, the signs, the AETR channel map and the link quality.
+add_executable(unit_rc_input rc_input_test.cpp)
+target_link_libraries(unit_rc_input PRIVATE marv_crsf_decode GTest::gtest_main)
+marv_apply_flags(unit_rc_input)
+marv_frozen_suite(unit_rc_input)

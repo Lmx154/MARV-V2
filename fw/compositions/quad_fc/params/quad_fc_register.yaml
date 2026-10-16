@@ -33,3 +33,16 @@ rates_expo_pitch:
   {type: f32, value: 0.0, unit: "1", method: scenario, source: "QF-1 pitch expo, pilot preference, a fraction in [0, 1] (Betaflight stores a percentage: rcExpo / 100). Betaflight 4.5.2, commit 024f8e13d4e642eb6a380308685b9ea3aa3ef1a2: src/main/fc/controlrate_profile.c:48-57 (rcExpo 0 per axis); the curve, src/main/fc/rc.c:209-217, is written as mathematics in fw/stick_rates/include/marv/stick_rates/stick_rates.hpp", sigma: choice}
 rates_expo_yaw:
   {type: f32, value: 0.0, unit: "1", method: scenario, source: "QF-1 yaw expo, pilot preference, a fraction in [0, 1] (Betaflight stores a percentage: rcExpo / 100). Betaflight 4.5.2, commit 024f8e13d4e642eb6a380308685b9ea3aa3ef1a2: src/main/fc/controlrate_profile.c:48-57 (rcExpo 0 per axis); the curve, src/main/fc/rc.c:209-217, is written as mathematics in fw/stick_rates/include/marv/stick_rates/stick_rates.hpp", sigma: choice}
+
+# The receiver channel map (M2 P5b, fw/hal/target/decode rc_input): the 1-based CRSF channel number (channel_01 = 1) that
+# carries each control. AETR order: Luis's RadioMaster Pocket on ExpressLRS, 2026-10-16 (throttle is channel 3, the arm
+# switch channel 5). Read once, at receiver start-up (hal_target); the start-up refuses a number outside 1 .. 16. Stick
+# signs are fixed in rc_input.hpp (INFERRED from the EdgeTX / Betaflight convention; checked on the bench per stick).
+rc_channel_roll:
+  {type: i32, value: 1, unit: "1", method: scenario, source: "Luis 2026-10-16: the RadioMaster Pocket on ExpressLRS sends AETR, so roll is channel 1 (aileron)", sigma: choice}
+rc_channel_pitch:
+  {type: i32, value: 2, unit: "1", method: scenario, source: "Luis 2026-10-16: the RadioMaster Pocket on ExpressLRS sends AETR, so pitch is channel 2 (elevator)", sigma: choice}
+rc_channel_throttle:
+  {type: i32, value: 3, unit: "1", method: scenario, source: "Luis 2026-10-16: the RadioMaster Pocket on ExpressLRS sends AETR, so throttle is channel 3", sigma: choice}
+rc_channel_yaw:
+  {type: i32, value: 4, unit: "1", method: scenario, source: "Luis 2026-10-16: the RadioMaster Pocket on ExpressLRS sends AETR, so yaw is channel 4 (rudder)", sigma: choice}
