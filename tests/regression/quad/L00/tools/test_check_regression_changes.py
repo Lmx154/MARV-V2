@@ -240,3 +240,49 @@ def test_base_is_merge_base(repo):
     repo.git("checkout", "-q", "feature")
     result = repo.run_checker()
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_commit_line_covers_modified_file(repo):
+    repo.write(FROZEN, "// frozen v2, regenerated\n")
+    repo.commit(f"retune\n\ngolden regenerated: {FROZEN}: controller gain changed on purpose")
+    result = repo.run_checker()
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert result.stdout.startswith("PASS")
+
+
+def test_commit_line_glob_covers_modified_files(repo):
+    repo.write(FROZEN, "// frozen v2\n")
+    repo.write(OTHER, "// other v2\n")
+    repo.commit("retune\n\ngolden regenerated: tests/regression/quad/**/*_test.cpp: new allocator")
+    result = repo.run_checker()
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_commit_line_glob_not_matching_fails(repo):
+    """Negative control: a glob that misses the file, or a line with no cause, must not cover it."""
+    repo.write(FROZEN, "// frozen v2\n")
+    repo.commit("retune\n\ngolden regenerated: tests/regression/quad/L01/**: wrong layer")
+    result = repo.run_checker()
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert f"{FROZEN}: frozen file" in result.stdout
+    assert "golden regenerated: <path or glob>: <cause>" in result.stdout
+    repo.write(OTHER, "// other v2\n")
+    repo.commit(f"retune\n\ngolden regenerated: {OTHER}:")
+    assert f"{OTHER}: frozen file" in repo.run_checker().stdout
+
+
+def test_commit_line_does_not_cover_deletion(repo):
+    (repo.root / FROZEN).unlink()
+    repo.commit(f"drop\n\ngolden regenerated: {FROZEN}: not a regeneration")
+    result = repo.run_checker()
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert f"{FROZEN}: frozen file" in result.stdout
+
+
+def test_commit_line_does_not_cover_rename(repo):
+    new = "tests/regression/quad/L00/renamed_test.cpp"
+    repo.git("mv", FROZEN, new)
+    repo.commit("rename\n\ngolden regenerated: tests/regression/**: not a regeneration")
+    result = repo.run_checker()
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert f"{FROZEN}: frozen file" in result.stdout

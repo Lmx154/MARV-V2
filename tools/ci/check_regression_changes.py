@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Fail a change to frozen regression tests that lacks a decision record (core 7.3)."""
+"""Fail a change to frozen regression tests that lacks cover (core 7.3, decision 0026).
+
+A modified, deleted or renamed file under tests/regression/ is covered by a decision record in the same change that
+references its path. A modified file is also covered by a commit-message line in the checked range,
+`golden regenerated: <path or glob>: <cause>`, for a golden or envelope regenerated with thresholds unchanged.
+Deleted and renamed files always need a record.
+"""
 
 import argparse
 import re
@@ -9,6 +15,7 @@ import sys
 REGRESSION_PREFIX = "tests/regression/"
 RECORD_RE = re.compile(r"^docs/decisions/(?!0000-)\d{4}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
 TEMPLATE = "docs/decisions/0000-template.md"
+REGEN_RE = re.compile(r"golden regenerated: ([^\s:]+): (\S.*)")
 HEADINGS = ("## What changed", "## Why", "## Evidence", "## Approval")
 
 
@@ -39,12 +46,48 @@ def references(text, path):
     return re.search(pattern, text) is not None
 
 
+def glob_to_regex(pattern):
+    """Translate a repo-relative path glob: `**` crosses directories, `*` and `?` stay within one."""
+    out = []
+    i = 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+        elif pattern.startswith("**", i):
+            out.append(".*")
+            i += 2
+        elif pattern[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif pattern[i] == "?":
+            out.append("[^/]")
+            i += 1
+        else:
+            out.append(re.escape(pattern[i]))
+            i += 1
+    return re.compile("".join(out))
+
+
+def regen_patterns(messages):
+    patterns = []
+    for line in messages.splitlines():
+        match = REGEN_RE.fullmatch(line.rstrip())
+        if match:
+            patterns.append(glob_to_regex(match.group(1)))
+    return patterns
+
+
 def check(base, head):
     merge_base = git("merge-base", base, head).strip()
     head_commit = git("rev-parse", "--verify", head + "^{commit}").strip()
     raw = git("diff", "--name-status", "-z", "-M", merge_base, head_commit)
 
+    messages = git("log", "--format=%B", f"{merge_base}..{head_commit}")
+    patterns = regen_patterns(messages)
+
     frozen_paths = []
+    regen_ok = set()
     record_paths = []
     for status, paths in parse_name_status(raw):
         path = paths[-1]
@@ -52,6 +95,8 @@ def check(base, head):
             record_paths.append(path)
         if status in "MTD" and path.startswith(REGRESSION_PREFIX):
             frozen_paths.append(path)
+            if status == "M":
+                regen_ok.add(path)
         elif status == "R" and paths[0].startswith(REGRESSION_PREFIX):
             frozen_paths.append(paths[0])
             if path.startswith(REGRESSION_PREFIX):
@@ -67,11 +112,18 @@ def check(base, head):
                 violations.append(f"{path}: decision record is missing heading '{heading}'")
 
     for path in frozen_paths:
-        if not any(references(text, path) for text in record_texts):
-            violations.append(
-                f"{path}: frozen file modified, deleted or renamed, but no decision "
-                f"record in this change references it"
-            )
+        if any(references(text, path) for text in record_texts):
+            continue
+        if path in regen_ok and any(pattern.fullmatch(path) for pattern in patterns):
+            continue
+        violations.append(
+            f"{path}: frozen file modified, deleted or renamed, but no decision "
+            f"record in this change references it and no commit-message line "
+            f"covers it; accepted cover is a decision record naming the path, or, "
+            f"for a modified file only, a commit line "
+            f"'golden regenerated: <path or glob>: <cause>' (deleted and renamed "
+            f"files need a record)"
+        )
 
     return frozen_paths, record_paths, violations
 

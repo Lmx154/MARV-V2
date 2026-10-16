@@ -63,7 +63,9 @@ History is in git and `docs/decisions/`; the previous handoff is `git show 341e5
 - Agent worktrees inside the checkout break `tests/regression/quad/L06/tools/test_world_sensors.py`; keep them out.
 
 ## Rules the next lead keeps
-- Commit, push, tag and merge only on Luis's word. Fix forward; never rewrite pushed history.
+- Standing permission (Luis, 2026-10-15, "yes you may commit and push"): commit and push each unit that passed review
+  and `ci/dev_check.sh`; merge into `master` at a milestone end after `ci/local_ci.sh` passes. Loosening a test, a spec
+  change and tags stay Luis's. Fix forward; never rewrite pushed history.
 - Verified: a commit by `ci/dev_check.sh`; a merge by `ci/local_ci.sh` on the exact commit (`--parallel 2` at most).
 - Reports to Luis: results first, numbers with units; every question answerable in one word, with a recommendation.
 - A tool a check needs is missing on the host: tell Luis at once; do not work around it.

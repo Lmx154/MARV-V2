@@ -425,8 +425,8 @@ change nor such a commit line covers (decision 0026). This stops "fixing" a fail
   "just use master instead i don't feel like changing it and branch protection is not important since we;re the only
   ones messing with it").
 - Adding a layer's tests under `tests/regression/` in the change that freezes the layer needs no record.
-  Loosening or deleting a frozen file always does; a regeneration with unchanged thresholds needs the commit line.
-  Until the check `tools/ci/check_regression_changes.py` accepts that line (quad §4.0, M0), CI still asks for a record.
+  Loosening or deleting a frozen file always does; a regeneration with unchanged thresholds needs the commit line,
+  which `tools/ci/check_regression_changes.py` accepts for modified files only (decision 0028).
 
 ### 7.4 Guardrails, enforced by CI
 

@@ -81,7 +81,7 @@ CI enforces these whether or not anyone reads this file (core §7.4):
   the existing test that would already catch the break (if one does, add nothing); extend before adding a file.
 - A decision record (`docs/decisions/NNNN-<slug>.md`, one page at most) is needed only to loosen a threshold or
   predicate, delete a frozen test, or change a spec. Regenerating a golden with unchanged thresholds needs only the
-  commit line `golden regenerated: <path>: <cause>` (core §7.3; CI accepts it once M0 lands). Never loosen a test to
+  commit line `golden regenerated: <path or glob>: <cause>` (core §7.3, decision 0028). Never loosen a test to
   make it pass.
 - The bench (TB) and flight logs are evidence: commit the script, the raw log and the card update.
 
