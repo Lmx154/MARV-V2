@@ -302,11 +302,11 @@ rules:
     why: "mixer is linked by the L03 and L09 tests, rate, rate_group, vertical and the compositions; L06 tools compile with fw/mixer/include"
 
   - paths: [fw/arming/**]
-    ctest_labels: [L08]
+    ctest_labels: [L08, L09]
     run_ci_steps: ["@host"]
     pytest_paths: []
     gz_groups: []
-    why: "arming is the pure arming and failsafe machine, tested by the L08 unit_arming host test; no composition links it yet"
+    why: "arming is the pure arming and failsafe machine, tested by the L08 unit_arming host test and linked by the quad_fc composition (the L09 gate test)"
 
   - paths: [fw/attitude/**]
     ctest_labels: [L05, L11]
@@ -316,11 +316,11 @@ rules:
     why: "attitude is linked by the compositions l5 and l11"
 
   - paths: [fw/stick_rates/**]
-    ctest_labels: [L08]
+    ctest_labels: [L08, L09]
     run_ci_steps: ["@host"]
     pytest_paths: []
     gz_groups: []
-    why: "stick_rates (the QF-1 rates curve) is linked by the L08 unit test only until the composition uses it (M2 P4)"
+    why: "stick_rates (the QF-1 rates curve) is linked by the L08 unit test and by the quad_fc composition (the L09 gate test)"
 
   - paths: [fw/vertical/**]
     ctest_labels: [L11]

@@ -49,7 +49,7 @@ target_compile_definitions(marv_fc3v2 PRIVATE MARV_FC3V2_VERSION="${MARV_FC3V2_V
   $<$<BOOL:${MARV_FC3V2_COUNT_ONLY}>:MARV_FC3V2_COUNT_ONLY>
   $<$<BOOL:${MARV_FC3V2_BENCH_ACCEPT_SPACING}>:MARV_FC3V2_BENCH_ACCEPT_SPACING>)
 target_link_libraries(marv_fc3v2 PRIVATE
-  marv_hal_target marv_lsm6dsv_decode marv_console_decode marv_composition_quad_fc marv_params_fc3v2_generated marv_params_fc3v2_runtime
+  marv_composition_quad_fc marv_hal_target marv_lsm6dsv_decode marv_console_decode marv_params_fc3v2_generated marv_params_fc3v2_runtime
   pico_stdlib hardware_spi hardware_pio)
 pico_enable_stdio_usb(marv_fc3v2 1)
 pico_enable_stdio_uart(marv_fc3v2 0)
