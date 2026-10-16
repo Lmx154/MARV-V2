@@ -20,3 +20,4 @@ rate_kd_yaw
 rate_tau_ref_roll
 rate_tau_ref_pitch
 rate_tau_ref_yaw
+rate_period_tolerance_us

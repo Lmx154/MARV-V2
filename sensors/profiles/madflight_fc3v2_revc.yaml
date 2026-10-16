@@ -1,0 +1,221 @@
+# Sensor profile: the madflight FC3v2 Rev-C board (quad spec §4.0 M1; core contracts 5, "Datasheet priors"). Figures are
+# recorded as the table states them, in the datasheet's units (conversion to SI belongs to the profile flattener). A "±"
+# figure is a datasheet tolerance recorded as its bound; it is not a 1-sigma, so sigma stays UNKNOWN.
+# IMU source: ST DS13476 Rev 5 (August 2023), https://www.st.com/resource/en/datasheet/lsm6dsv.pdf, fetched 2026-10-16
+# (sha256 b698bb20b0defb6c5c05c32afbdcb451c171d02311a884e6e49b0d97667fafb7). "Table 3" is §4.1 Table 3, Mechanical
+# characteristics, @ Vdd = 1.8 V, T = 25 °C; its typical figures are not guaranteed (footnote 1).
+profile: madflight_fc3v2_revc
+
+classes:
+  imu:
+    part: "STMicroelectronics LSM6DSV"
+    entries:
+      gyro_fsr:
+        value: 2000
+        unit: deg/s
+        method: datasheet
+        source: "DS13476 Rev 5, §4.1 Table 3 (G_FS); §9.19 Table 62 (FS_G_[3:0] = 0100)"
+        sigma: UNKNOWN
+        note: "The configured full scale, ±. The part offers ±125 / 250 / 500 / 1000 / 2000 / 4000 dps. ±2000 is the largest range for which Table 3 specifies the sensitivity tolerance (footnote 2) and the rate noise density (footnote 5); ±4000 also needs the OIS chain off (Table 62 footnote 1). Choice: the M1 P8 packet (gyro ±2000 dps). The ICM-45686 profile's ±4000 °/s follows that part's 20-bit FIFO format, which the LSM6DSV does not have (its FIFO words carry three 16-bit axes, fifo_word_bits)."
+      gyro_sensitivity:
+        value: 70
+        unit: mdeg/s/LSB
+        method: datasheet
+        source: "DS13476 Rev 5, §4.1 Table 3 (G_So, FS = ±2000 dps)"
+        sigma: UNKNOWN
+        note: "At the configured full scale gyro_fsr (±2000 dps). Sensitivity tolerance ±0.3 % at component level (Table 3 G_So%, for FS up to ±2000 dps), a bound, not a sigma; change vs. temperature ±0.007 %/°C from -40 to +85 °C (G_SoDr, characterisation on a limited number of samples, not production-tested, footnote 3)."
+      gyro_noise_density:
+        value: 2.8
+        unit: mdeg/s/sqrt(Hz)
+        method: datasheet
+        source: "DS13476 Rev 5, §4.1 Table 3 (Rn)"
+        sigma: UNKNOWN
+        status: [UNVERIFIED]
+        conflict:
+          - value: 5.17
+            unit: mdeg/s/sqrt(Hz)
+            source: "M1 P12 still bench, x axis: sd 119.83 mdps (tests/regression/quad/L09/results/p12_bench/report.txt:116) / sqrt(537 Hz), the bandwidth the profile prediction uses (report.txt:114)"
+            state: open
+          - value: 4.94
+            unit: mdeg/s/sqrt(Hz)
+            source: "M1 P12 still bench, y axis: sd 114.46 mdps (report.txt:117) / sqrt(537 Hz) (report.txt:114)"
+            state: open
+        note: "Table: '2.8 mdps/√Hz', high-performance mode, independent of ODR and FS up to ±2000 dps (footnote 5). Both kept, UNVERIFIED (Luis 2026-10-16, '4. yes'): x and y measure 1.85x and 1.76x the datasheet's typical; z (sd 83.42 mdps, 3.60 by the same rule) matches the first-order-LPF2 prediction of 83.8 mdps (report.txt:115, 118)."
+      gyro_zero_rate_offset:
+        value: 1
+        unit: deg/s
+        method: datasheet
+        source: "DS13476 Rev 5, §4.1 Table 3 (G_TyOff)"
+        sigma: UNKNOWN
+        note: "Table: '±1 dps', 'value after calibration' (footnote 4); the value is the ± typical figure, not a sigma. §4.6.2: the zero-rate level shifts after soldering or mechanical stress."
+      gyro_offset_tempco:
+        value: 0.006
+        unit: deg/s/degC
+        method: datasheet
+        source: "DS13476 Rev 5, §4.1 Table 3 (G_OffDr)"
+        sigma: UNKNOWN
+        note: "Table: '±0.006 dps/°C', -40 to +85 °C, characterisation on a limited number of samples, not production-tested (footnote 3); the ± tolerance, not a sigma."
+      accel_fsr:
+        value: 16
+        unit: g
+        method: datasheet
+        source: "DS13476 Rev 5, §4.1 Table 3 (LA_FS); FS_XL_[1:0] in CTRL8 (17h), §9.21"
+        sigma: UNKNOWN
+        note: "The configured full scale, ±. The part offers ±2 / 4 / 8 / 16 g; ±16 g is the largest, as the ICM-45686 profile takes that part's largest (±32 g). Choice: the M1 P8 packet."
+      accel_sensitivity:
+        value: 0.488
+        unit: mg/LSB
+        method: datasheet
+        source: "DS13476 Rev 5, §4.1 Table 3 (LA_So, FS = ±16 g)"
+        sigma: UNKNOWN
+        note: "At the configured full scale accel_fsr (±16 g). Table 3 states no accelerometer sensitivity tolerance (G_So% is the gyroscope's); change vs. temperature ±0.01 %/°C (LA_SoDr, footnote 3)."
+      accel_noise_density:
+        value: 60
+        unit: ug/sqrt(Hz)
+        method: datasheet
+        source: "DS13476 Rev 5, §4.1 Table 3 (An)"
+        sigma: UNKNOWN
+        note: "Table: '60 µg/√Hz' in high-performance mode for FS = ±2 g to ±16 g, independent of ODR and FS, valid with XL_DualC_EN = 0 in CTRL8 (footnote 7). One figure for every range, so a single value, not the ICM profile's set keyed by range."
+      accel_offset:
+        value: 12
+        unit: mg
+        method: datasheet
+        source: "DS13476 Rev 5, §4.1 Table 3 (LA_TyOff)"
+        sigma: UNKNOWN
+        note: "Table: '±12 mg', 'value after calibration' (footnote 4); the value is the ± typical figure. §4.6.2 describes the zero-g tolerance as 'the standard deviation of the range of zero-g levels of a group of sensors', while Table 3 writes it as a ± typical figure; read as written in the table, sigma stays UNKNOWN. §4.6.2: the offset shifts after soldering or mechanical stress."
+      accel_offset_tempco:
+        value: 0.07
+        unit: mg/degC
+        method: datasheet
+        source: "DS13476 Rev 5, §4.1 Table 3 (LA_OffDr)"
+        sigma: UNKNOWN
+        note: "Table: '±0.07 mg/°C', characterisation on a limited number of samples, not production-tested (footnote 3); the ± tolerance, not a sigma."
+      odr:
+        value: [7.5, 15, 30, 60, 120, 240, 480, 960, 1920, 3840, 7680]
+        shape: set
+        unit: Hz
+        method: datasheet
+        source: "DS13476 Rev 5, §4.1 Table 3 (G_ODR); §9.15 Table 54 (gyroscope ODR selection)"
+        sigma: UNKNOWN
+        note: "The gyroscope ODR set, keyed by ODR_G_[3:0] = 0010 … 1100 in order (Table 54); Table 3 writes the last three as 1.92 k, 3.84 k, 7.68 k. All are high-performance-mode ODRs (§6.4: OP_MODE_G_[2:0] = 000, the default, is valid from 7.5 Hz to 7.68 kHz); 7.5 to 240 Hz also run in low-power mode. The accelerometer's set (§9.14 Table 51) is the same plus 1.875 Hz in low-power mode. The nominal rates are exact: ODR_actual = 7680 Hz × (1 + 0.0013 × FREQ_FINE) / ODRcoeff (§9.49, Table 138), FREQ_FINE = 0 for the typical part."
+      odr_selected:
+        value: 7680
+        unit: Hz
+        method: scenario
+        source: "Luis, 2026-10-16, ruling '6. yes' (tick 7.68 kHz with divisor 2; docs/handoff.md, M1 rulings)"
+        sigma: choice
+        note: "Gyroscope and accelerometer ODR, one tick per sample (core §3). Valid in high-performance mode: DS13476 Rev 5 §9.15 Table 54, ODR_G_[3:0] = 1100 '7.68 kHz (high-performance mode)', and §9.14 Table 51, ODR_XL_[3:0] = 1100 '7.68 kHz (high-performance mode)'. Also available in high-accuracy ODR mode with HAODR_SEL_[1:0] = 00 (§6.5 Table 19). Not available in ODR-triggered mode, the part's only way to follow an external reference: 'the 1100 configuration of the ODR_XL_[3:0] bits ... and of the ODR_G_[3:0] bits ... cannot be used' (§6.6 note). At 7.68 kHz the samples are timed by the part's internal oscillator (odr_error). LPF2 cut-off at this ODR: 537 Hz (§6.7.2 Table 20)."
+      odr_error:
+        value: 510
+        unit: ppm
+        method: measured
+        source: "M1 P12 bench, this part (INTERNAL_FREQ_FINE -18): the IMU interrupt-entry spacing against hal_time_us, mean 133.395 to 133.396 us over 1.5 to 5.0 million samples per run (tests/regression/quad/L09/results/p12_bench/report.txt:21, :44, :67 and :90, from the raw logs beside it, read by tools/target/bench_stats.py), against the trim period 3906250/29298 = 133.328 us (DS13476 Rev 5 §9.49): +501 to +508 ppm, rounded up to 510 ppm. It includes the RP2354's own clock error, which hal_time_us shares."
+        sigma: UNKNOWN
+        status: [PLACEHOLDER]
+        placeholder:
+          reason: "One part, one still bench at about 300 K, runs of 200 to 660 s: a ± bound for the trim-corrected period on this part only. DS13476 Rev 5 states an ODR accuracy only for high-accuracy ODR mode (±1 % over temperature and supply, specified by design, §4.1 Table 3 HAODR, footnote 11), none for high-performance mode and no part-to-part figure; the board's rate design is checked at this part's trim period and imu_start refuses another part's trim (decision 0014, Amendment 2026-10-16)."
+          replaced_by: "the M1 P12b soak (script, inputs and raw log committed) and a temperature sweep of the same measurement, or a published figure for the high-performance mode"
+        note: "Unit ppm, as the ICM-45686 profile's odr_error (10000 ppm = the table's 1 %); the value is a ± bound, not a sigma. External clock: the LSM6DSV has no CLKIN pin (§3.1 Table 2). Its external-reference mode is ODR-triggered mode (§6.6: OP_MODE_G_[2:0] = 011, a reference signal on INT2, data generation aligned in frequency and phase to its edges; ODR_TRIG_NODR_[7:0] = 4 to 255 samples per reference period, §9.4 Table 31), and that mode excludes the 7.68 kHz setting (odr_selected). The board names GPIO26 IMU_CLKIN (https://madflight.com/Board-FC3/; madflight src/brd/madflight_FC3v2.h pin_imu_clkin 26); which LSM6DSV pin that net reaches on Rev-C is UNKNOWN (INT2 is INFERRED, as the only pin that takes a timing reference). Luis, 2026-10-16: the board timing tolerance is ceil(T_rate·odr_error + 2δ + 1 µs) in whole µs (fc3v2_rate_timing_register.yaml)."
+      latency_samples:
+        value: UNKNOWN
+        unit: "1"
+        method: datasheet
+        source: "DS13476 Rev 5, §6.7.2 Table 20 (gyroscope LPF2 cut-off per ODR) and §9.19 Table 63 (LPF1 + LPF2 bandwidth); no group delay or phase delay is published"
+        sigma: UNKNOWN
+        note: "A count of IMU samples, as in the ICM-45686 profile. The datasheet gives the -3 dB bandwidths of the UI chain only (537 Hz with LPF1 off at 7.68 kHz, Table 20; 14.4 to 407 Hz with LPF1 on, Table 63), not a delay. The filter path (LPF1 on or off, LPF1_G_BW_[2:0]) is the P9 driver's choice. The application note AN5922 (named on DS13476 page 1) was not read. A bench measurement or a published delay replaces it."
+      fifo_word_bits:
+        value: 16
+        unit: "1"
+        method: datasheet
+        source: "DS13476 Rev 5, §9.82 Table 211 / Table 212 (FIFO_DATA_OUT_X_H and _L: D[15:0]); Y and Z likewise (§9.83, §9.84)"
+        sigma: exact
+        note: "Bits per axis word (the unit '1' is a bit count), uncompressed (tags 0x01 gyroscope NC, 0x02 accelerometer NC, §9.81 Table 210), at the configured full scale (gyro_sensitivity, accel_sensitivity)."
+      fifo_word_bytes:
+        value: 7
+        unit: "1"
+        method: datasheet
+        source: "DS13476 Rev 5, §6.10.8 ('each FIFO word is composed of 7 bytes: one tag byte (FIFO_DATA_OUT_TAG (78h)) ... and 6 bytes of fixed data (79h to 7Eh)')"
+        sigma: exact
+        note: "A byte count. The tag byte holds TAG_SENSOR_[4:0] (which sensor, §9.81 Table 210: 0x01 gyroscope NC, 0x02 accelerometer NC, 0x03 temperature, 0x04 timestamp) and TAG_CNT_[1:0] (time slot). DIFF_FIFO_[8:0] (FIFO_STATUS1/2) counts words; FIFO_CTRL1 WTM_[7:0] sets the watermark in words (§9.5 Table 33)."
+      fifo_capacity:
+        value: 1.5
+        unit: KB
+        method: datasheet
+        source: "DS13476 Rev 5, §6.10 ('The LSM6DSV embeds 1.5 KB of data in FIFO (up to 4.5 KB with the compression feature enabled)')"
+        sigma: UNKNOWN
+        note: "Uncompressed, as the datasheet writes it; whether K means 1000 or 1024 bytes is not stated, so no word count is derived here. Up to 4.5 KB with compression (FIFO_COMPR_EN, FIFO_COMPR_RT_EN)."
+      temperature_sensitivity:
+        value: 256
+        unit: LSB/degC
+        method: datasheet
+        source: "DS13476 Rev 5, §4.3 Table 5 (TSen)"
+        sigma: UNKNOWN
+        note: "Typical (footnote 1); 16-bit temperature ADC (T_ADC_res)."
+      temperature_zero_point:
+        value: 25
+        unit: degC
+        method: datasheet
+        source: "DS13476 Rev 5, §4.3 Table 5 footnote 3 ('The output of the temperature sensor is 0 LSB (typ.) at 25°C')"
+        sigma: UNKNOWN
+        note: "The temperature at which the output reads 0 LSB, typical."
+      temperature_offset:
+        value: [-15, 15]
+        shape: range
+        unit: degC
+        method: datasheet
+        source: "DS13476 Rev 5, §4.3 Table 5 (Toff, min -15, max +15)"
+        sigma: [UNKNOWN, UNKNOWN]
+        note: "[min, max] of the temperature offset; limits, not sigmas."
+      temperature_odr:
+        value: 60
+        unit: Hz
+        method: datasheet
+        source: "DS13476 Rev 5, §4.3 Table 5 (TODR)"
+        sigma: UNKNOWN
+        note: "Typical refresh rate; equal to the accelerometer ODR only with the accelerometer in low-power mode and the gyroscope off (footnote 2)."
+      mounting_axis_signs:
+        value: [-1, 1, -1]
+        shape: frd3
+        unit: "1"
+        method: "derived(madflight's chip-to-board map composed: ImuGizmoLSM6DSV::getMotion6NED takes chip (x, y, z) to (x, -y, -z), then imu_align CW180 (Imu::update) takes (x, y, z) to (-x, -y, z); together (x, y, z) -> (-x, y, -z), for the gyroscope and, with madflight's opposite accelerometer sign undone, for the specific force)"
+        source: "madflight, github.com/qqqlab/madflight @ 1d5efa78332d57db47ed6856359a8005d6e245f0 (MIT): src/brd/madflight_FC3v2.h (imu_align CW180; 'board edge with pins is forward direction' on mag_align), src/imu/ImuGizmoLSM6DSV.h (getMotion6NED; 'LSM6DSV has NWU orientation'), src/imu/imu.cpp (Imu::update, the CW180 case)"
+        sigma: UNKNOWN
+        status: [INFERRED]
+        note: "Board FRD axis i = sign_i × LSM6DSV axis i, no permutation: x_FRD = -x_chip, y_FRD = +y_chip, z_FRD = -z_chip, a 180° rotation about the chip's y axis. FRD here is madflight's board frame (forward = the board edge with pins, per the comment on mag_align). INFERRED: madflight's code, not checked here; madflight_FC3v2.h's header comment names the ICM-45686 (imu_gizmo AUTO), so that CW180 was verified on the Rev-C LSM6DSV is not shown. The board-to-airframe mounting (which board edge points forward on Luis's airframe, which side up) is UNKNOWN. The tilt check of core §3 settles both."
+  high_g_accel:
+    part: "none fitted (madflight FC3v2 Rev-C)"
+    entries:
+      range:
+        value: UNKNOWN
+        unit: g
+        method: published
+        source: "https://madflight.com/Board-FC3/ (fetched 2026-10-16) lists no high-g accelerometer on the FC3 / FC3v2; madflight src/brd/madflight_FC3v2.h @ 1d5efa7 configures none"
+        sigma: UNKNOWN
+        note: "No part, so no figure. The class stays because tools/card/lint.py requires it; UNKNOWN so no consumer can use it. The MVP (M1–M4) reads no high-g accelerometer."
+  barometer:
+    part: "Bosch BMP580"
+    entries:
+      noise:
+        value: UNKNOWN
+        unit: Pa
+        method: datasheet
+        source: "BMP580 datasheet not read in M1 P8; the part is named by https://madflight.com/Board-FC3/ and madflight src/brd/madflight_FC3v2.h @ 1d5efa7 (bar_gizmo BMP580)"
+        sigma: UNKNOWN
+        note: "The MVP (M1–M4) reads no barometer; the BMP580 figures are sourced when a milestone needs them. The MARV V2 profile's BMP581 figures are another part and are not reused."
+  rotor_speed:
+    part: "Goku G55M 55A AM32 4-in-1 ESC (motors not recorded)"
+    entries:
+      pole_count:
+        value: UNKNOWN
+        unit: "1"
+        method: datasheet
+        source: "the airframe's motors are not recorded (Luis, 2026-10-15, names the ESC, not the motors)"
+        sigma: UNKNOWN
+        note: "eRPM decode and the RPM notches wait for the L6 resume (quad §4.0 M1)."
+      esc_clock_error:
+        value: UNKNOWN
+        unit: "%"
+        method: datasheet
+        source: "the ESC's MCU is not identified; AM32 version and settings UNKNOWN (Luis, 2026-10-16: no passthrough yet; M4)"
+        sigma: UNKNOWN
+        note: "Compared with design/budget.yaml esc_clock_error_max once known (lint.py --budget)."

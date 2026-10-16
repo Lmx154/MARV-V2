@@ -22,6 +22,22 @@ inline constexpr std::size_t kSpatialDim = 3;
 inline constexpr std::uint16_t kDshotThrottleMin = 48;
 inline constexpr std::uint16_t kDshotThrottleMax = 2047;
 
+// DShot frame layout and the DShot600 timing. Citation: Betaflight DShot notes
+// (https://github.com/betaflight/betaflight.com/blob/master/docs/development/API/Dshot.mdx): a frame is 16 bits
+// "SSSSSSSSSSSTCCCC", sent most significant bit first: 11 bits of throttle, 1 bit of telemetry request, 4 bits of CRC
+// = (value ^ (value >> 4) ^ (value >> 8)) & 0x0F over the 12 bits above it. DShot600: bitrate 600 kbit/s, bit period
+// 1.67 us, T0H 0.625 us and T1H 1.25 us (the high time of a 1 is double that of a 0), which are 3/8 and 6/8 of the bit
+// period; the frame lasts 16 bit periods (26.72 us).
+// Kind: standard.
+inline constexpr unsigned kDshotThrottleBits = 11;
+inline constexpr unsigned kDshotTelemetryBits = 1;
+inline constexpr unsigned kDshotCrcBits = 4;
+inline constexpr unsigned kDshotFrameBits = 16;
+inline constexpr std::uint32_t kDshot600BitRateHz = 600000;
+inline constexpr unsigned kDshotT0hOfBitNum = 3;
+inline constexpr unsigned kDshotT1hOfBitNum = 6;
+inline constexpr unsigned kDshotBitFractionDen = 8;
+
 // Pi. Citation: the mathematical constant, the ratio of a circle's circumference to its diameter.
 // Kind: math.
 inline constexpr double kPi = 3.14159265358979323846;
@@ -34,6 +50,29 @@ inline constexpr double kSecondsPerMinute = 60.0;
 // 10^6 microseconds).
 // Kind: standard.
 inline constexpr double kMicrosecondsPerSecond = 1000000.0;
+
+// Microseconds per millisecond. Citation: SI definition (the prefixes micro and milli are exactly 10^-6 and 10^-3, so one
+// millisecond is exactly 1000 microseconds).
+// Kind: standard.
+inline constexpr std::uint32_t kMicrosecondsPerMillisecond = 1000;
+
+// The radix of the decimal numeral system. Citation: the positional notation of the decimal digits 0-9, ten symbols
+// (ISO 80000-2:2019, 7.1, "decimal numeral system", base ten).
+// Kind: math.
+inline constexpr std::uint32_t kDecimalRadix = 10;
+
+// Degrees per half turn. Citation: BIPM SI Brochure, 9th ed. (2019), Table 8: the degree, 1° = (π/180) rad.
+// Kind: standard.
+inline constexpr double kDegreesPerHalfTurn = 180.0;
+
+// Standard acceleration of gravity g_n, m/s^2. Citation: 3rd CGPM (1901), declaration on the unit of mass and on the
+// definition of weight, conventional value of g_n = 980.665 cm/s^2 (BIPM SI Brochure, 9th ed. (2019), Appendix 1).
+// Kind: standard.
+inline constexpr double kStandardGravity = 9.80665;
+
+// Kelvin temperature at 0 °C. Citation: BIPM SI Brochure, 9th ed. (2019), section 2.3.1: t/°C = T/K - 273.15.
+// Kind: standard.
+inline constexpr double kKelvinAtZeroCelsius = 273.15;
 
 // WGS 84 normal-gravity constants. Citation for every entry below: NIMA TR8350.2, "Department of Defense World
 // Geodetic System 1984", 3rd ed., 4 July 1997, incl. Amendment 1 (3 January 2000) ("NIMA TR8350.2 3rd ed. Amdt 1

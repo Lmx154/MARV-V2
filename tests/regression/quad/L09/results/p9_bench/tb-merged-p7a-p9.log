@@ -1,0 +1,6 @@
+# Console excerpt (lines truncated at 330 characters by the capture), merged m1-sdk image P6+P7a+P8+P9 (91b00c4 build),
+# flashed with tools/target/flash.sh, read with tools/target/readcon.py /dev/ttyACM1 10, 2026-10-16, FC3v2 flat on the bench.
+imu dt=1000034us irq/s=7496.7 words/s=14993.5 samples/s=7496.7 ticks/s=7496.7 writes/s=3747.9 | total samples=89972 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[131,136]us | t=12069372 gyro=(-0.0024,+0.0049,-0.0037) accel=(-0.005,+0.038,-9.787) temp=299.61K flags=0x1c0
+imu dt=1000000us irq/s=7496.0 words/s=14992.0 samples/s=7496.0 ticks/s=7496.0 writes/s=3748.0 | total samples=97468 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[130,136]us | t=13069299 gyro=(-0.0037,+0.0061,-0.0037) accel=(-0.033,+0.062,-9.777) temp=299.61K flags=0x1c0
+imu dt=1000017us irq/s=7496.9 words/s=14993.7 samples/s=7496.9 ticks/s=7496.9 writes/s=3748.9 | total samples=104965 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[131,136]us | t=14069360 gyro=(-0.0037,+0.0037,-0.0037) accel=(-0.048,+0.057,-9.787) temp=299.61K flags=0x1c0
+imu dt=1000032us irq/s=7496.8 words/s=14993.5 samples/s=7496.8 ticks/s=7496.8 writes/s=3747.9 | total samples=112462 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[125,142]us | t=15069420 gyro=(-0.0024,+0.0061,-0.0012) accel=(+0.005,+0.033,-9.801) temp=299.60K flags=0x1c0

@@ -60,6 +60,11 @@ const Fixture* fixture() {
     f.mixer = mixer::from_params();
     f.geometry = rate::from_params();
     f.geometry.period = kPeriodS;
+    // The period check at the same period (decision 0034): kPeriodUs / 1 µs per tick, one tick per execution; the
+    // product's tolerance.
+    f.geometry.tick_period_num_us = static_cast<std::int32_t>(kPeriodUs);
+    f.geometry.tick_period_den = 1;
+    f.geometry.rate_loop_divisor = 1;
     // The inert law, built explicitly: from_params reads the product's D filter T_f (decision 0014, commit 3).
     const RateConfig<float> inert{};
     f.geometry.d_filter_tau = inert.d_filter_tau;

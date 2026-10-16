@@ -1,75 +1,73 @@
-# Handoff: MVP realignment (decision 0026); next M0 beside M1
+# Handoff: M0 accepted; M1 bench passed; P7b in progress, then the P12b soak and the M1 merge
 
-2026-10-15. A state file, not a history: at most 80 lines, rewritten (not appended) at every milestone boundary.
-History is in git and `docs/decisions/`; the previous handoff is `git show 341e54d:docs/handoff.md`.
+2026-10-16. A state file, not a history: at most 80 lines, rewritten (not appended) at every milestone boundary.
+History is in git and `docs/decisions/`; the previous handoff is `git show b641f6f:docs/handoff.md`.
 
 ## Read first
-- `CLAUDE.md`, then quad spec §4.0 (the MVP build order, M0–M6, and the deferred list), then the milestone you execute.
-- Nothing else by default. Decisions 0001–0025 are background, read only when a task touches their subject.
+- `CLAUDE.md`, then quad spec §4.0 (the MVP build order), then the milestone you execute. Decisions only when touched.
 
 ## Where things are
 | Item | State |
 | --- | --- |
-| L0–L5 | passed, tagged `quad-L0-pass` … `quad-L5-pass` |
-| L11 vertical loop (truth state) | passed, tagged `quad-L11-pass` (`341e54d`) |
-| L6 sensors, gyro chain, D term | stages (a)–(d) closed; the rest deferred until after M4 |
-| Known failing items | L4 acro under noise, L5 R2, L5 R1X α: strict xfail, owned by the deferred L6 (e) |
-| M0 fast loop and test rules | code done, merged `e8b6c52` (decisions 0028–0033); done-when measurement open (Next 1) |
-| M1 target bring-up | not started; nothing has run on the board; the `m33` preset links no image |
+| L0–L5, L11 | passed, tagged up to `quad-L11-pass` |
+| Known failing item | L4 acro cross-axis coupling (linear segments and recovery), strict xfail, owned by the deferred L6 FF (0030) |
+| M0 | merged into `master` at `e8b6c52` (decisions 0028–0033); accepted on the local gate (Luis 2026-10-16, "5. yes"); Actions warm run 23.1 vs 20.8 min, runner noise 15.9–29.2 |
+| M1 | branch `m1-sdk`, pushed; P1–P11, P12a and the powered bench done; P7b (branch `m1-p7b`) and P12b open |
 | M2–M6 | not started |
 
-## The realignment (merged into `master` at `6308a8e`; local merge gate PASS: core 695 s, gz-l2 139, gz-l4 218, gz-l5 555, gz-l11 116)
-- Decision 0026: the advisor findings, Luis's acceptance and realignment words, verbatim. M2 receiver: ELRS over CRSF
-  with Betaflight 4.5's link-loss failsafe (Luis). M4 includes building or buying a thrust stand; pack 4S 1600 mAh.
-- Core spec §2 (`PLACEHOLDER`, the UNKNOWN split), §7.1 (TB bench level, T4 at merge, T6 deferred), §7.2 items 3 and
-  6 (controls only where a threshold decides; freeze requirements, not outputs), §7.3 (records only to loosen,
-  delete or change a spec; the `golden regenerated:` commit line), §7.4.
-- Quad spec §0, §1, §4.0 (new: MVP order), §4.1 (the layers, unchanged apart from MVP-subset notes), §6.1 (minimal
-  arming), §6.3 (B1 after M4).
-- `CLAUDE.md` rewritten for MVP first; this handoff; `ci/blast_radius.yaml` ignores `.claude/**`.
-- `.claude/agents/advisor-*.md`, `project-advisor.md`, `.claude/advisors/brief.md`: the four advisors and the synthesizer
-  (Luis: "commit the advisor files"); run them when the direction needs re-auditing.
+## M1 on the board (madflight FC3v2 Rev-C; decisions 0027, 0034–0038)
+- RP2354B rev 3, 2048 KiB W25Q16JV in package, clk_sys 150 MHz. SWD via a Pico 2 debugprobe (serial
+  900678EF479C3A0E; GP2 SWCLK, GP3 SWDIO) with `tools/target/flash.sh` (reboots the whole chip so the USB console
+  re-enumerates); console `tools/target/readcon.py` / `sendcon.py` on `/dev/ttyACM1` or `ACM2` (`/dev/serial/by-id`).
+- Image: `quad_fc` (gyro chain → rate loop → mixer) behind a motor gate that writes DShot stop except during a motor
+  test; LSM6DSV IRQ tick at 7497 Hz (INTERNAL_FREQ_FINE −18; nominal 7680); PIO DShot600 (waveform captured, 0037);
+  a panic streams "PANIC: <msg>" over USB and keeps sending stop frames (Luis: "take option A"); console
+  `motor_test <1-4> <dshot> <ms> PROPS-OFF`, cap 500, at most 20 s (Luis: "1. 500 …"; "20s is good."; 0038 and its
+  amendment). `motor_pad` = [3, 0, 1, 2] (measured at the bench).
+- Runs from SRAM (copy_to_ram): EMB-3 passes, U = 0.539, R = 72.6 µs < 133.4 µs; from XIP flash it failed (U = 1.52).
+  Evidence: `tests/regression/quad/L09/results/p12_bench/report.txt`.
+- Every rate execution is a counted timing fault today: the board's tick period is still the 625/4 µs PLACEHOLDER
+  (P7b). Nothing halts (0034); the gate writes stop anyway.
+
+## Bench and ESC (2026-10-16, `tests/regression/quad/L09/results/m1-bench-card.md`)
+- Pass: ESC arming on stop frames, motor survey (all four directions match quad-X, AM32 reverse on ESC 1 and 4), the
+  map, cancel, disconnect, SWD halt (the AM32 ESC cuts the motor ~0.4 s after the DShot line goes silent, then resets).
+  Panic not run. Hardware watchdog deferred until after M4 as a recovery feature (decision 0039, branch `m1-wdt`).
+- AM32 v2.20 (FLYWOO_GOKU_F421) on all four; settings and EEPROM backups in `m1_bench_2026-10-16/am32/`. ESC access
+  without a linker: flash Betaflight 2026.6.2 MADFLIGHT_FC3 (built from source; 4-way passthrough is in the RP2350
+  port) over SWD, use am32.ca, reflash MARV. The build is not in the repo; rebuild it with `make CONFIG=MADFLIGHT_FC3`.
+- Airframe (Luis): Emax ECO II 2807-1700KV, HGLRC MY7 7-inch (335 mm wheelbase). The card still carries the UZH
+  5-inch physics as placeholders; `rotors.speed_range` = [0, 2991] rad/s (Luis: no cap, DShot's own range). The ESCs'
+  "Motor KV" setting reads 820, not 1700 (noticed, not changed).
+
+## Rulings 2026-10-16 (Luis: "1. yes … 3. yes 4. yes 5. yes")
+1. P7b: the board's rate design is guarded at the chip's mean tick period (from FREQ_FINE), SIL unchanged (0014
+   amendment, in progress on `m1-p7b`: register period 3906250/29298 µs, start-up panic on a different trim).
+2. Rotor speed range: done on the card. 3. Hard-bound the motor-test cap at 500 in code: after P7b lands.
+4. Gyro noise: both kept, UNVERIFIED (board profile). 5. M0 accepted on the local gate. 6. AM32: read (above).
 
 ## Next
-1. **M0** done-when, open: T4 suites are behaviour predicates (L4 0030, L5 0031, L11 0032), L6 (e) studies deleted
-   (0033), the selection maps budget keys, cards and CMakeLists to consumers. Measured: one-module `fw/vertical` dev
-   check 47 s before and after (same selection); local gate on `e8b6c52` core 1050 s (overlapped a host build), gz-l2
-   215, gz-l4 212, gz-l5 392, gz-l11 97. Actions: `ec337e1` 20.8 min wall, `e8b6c52` 43.9 min (core 43.9, gz-l5 29.2)
-   with the L11 reference cache cold (INFERRED: P3 changed its SHA256SUMS). Next: a warm-cache run on the following
-   push, then the Actions reference-cache fix if the cold regeneration recurs.
-2. **M1** on the madflight FC3v2 Rev-C only (Luis, 2026-10-15): https://madflight.com/Board-FC3/, B package,
-   2 MB flash, no PSRAM; LSM6DSV on SPI1 (MISO 28, SCK 30, MOSI 31, CS 29, INT 27, CLKIN 26); motors GP6–9 to a
-   Goku G55M 55A AM32 4-in-1 ESC (all four motors connected); receiver SER0 GP0/1 (ELRS, not yet fitted); no GPS.
-   Flash over SWD with the Raspberry Pi Debug Probe (OpenOCD recipe in `~/Projects/CPP/sensor-test/tools/run_lab.sh`);
-   console over USB CDC, not the probe UART. Follow madflight's pin table, not Betaflight's (they differ). madflight
-   is MIT; its LSM6DSV driver (`src/imu/`) is a reference. Needs a decision first: the Pico SDK pin (version, how
-   fetched; `sensor-test` uses 2.3.0 from an unpinned clone) — architect, then Luis.
+1. Review and merge P7b into `m1-sdk`, flash, then P12b: soak with 0 timing faults, δ measured (stamp entry jitter
+   0.76 µs in SRAM). Then the 500 cap constant, the M1 merge gate (`ci/local_ci.sh`) and the merge.
+2. Carried fixes: gyro saturation threshold (P9 review); guard a stuck IMU interrupt line (M2 stale-IMU failsafe);
+   the attitude law still halts on spacing (`attitude_law.hpp:56-82`, before M3 runs it on the board).
+3. The console line buffer keeps a cancelling keystroke, so the next command is refused (fails safe; noticed).
 
-## Open for Luis
-- Branches merged into `master` and deletable: `ci-curl-pin`, `ci-heavy-serial`, `quad-l11`, `quad-l11-s6`,
-  `recovery/hover-demo`, `test-blast-radius`, `test-trims`, `quad-l6-spec`. `l6-c6a-wip` (`14e3c3a`, unmerged, the
-  half-built L6 (e) reference set) waits for the L6 resume or is dropped.
-
-## Known defects the advisors found (fix inside the milestone named)
-- M1: the rate loop and attitude law halt on a sample spacing off by more than 1 µs, and every composition halts
-  unless `hal_time_us()` equals the sample stamp (`rate_loop.hpp:52,230-241`; `l5_attitude_scripted.cpp:194`).
+## Known defects (fix inside the milestone named)
 - M3: `marv_plant` reports zero specific force at rest (`marv_plant.cpp:255-264`).
-- M4: rotor inertia is absent from plant and design model (yaw zero near crossover, INFERRED); the rate loop crosses
-  over at about 8–12 rad/s because of the ±50 % inertia and ±30 % motor-lag bands; measurement narrows them.
-- M5: four motors are compile-time (`actuator.hpp:16`, `mixer.hpp:28`, both C ABIs, `tools/card`).
-- Carried from L11: the card mass conflict (0.772 vs 0.752 kg) and `thrust_coeff` σ, settled by M4's measurements.
+- M4: rotor inertia absent from plant and design model; rate crossover ~8–12 rad/s from the ±50 % / ±30 % bands.
+- M5: four motors are compile-time (`actuator.hpp:16`, `mixer.hpp:28`).
 
 ## Git and host
-- `master` = `origin/master` = the realignment plus this handoff; `realign-mvp` is merged (deletable). Tags up to `quad-L11-pass`. One stash, `stash@{0}` (old quad-l0 WIP): not ours, leave it.
-- `datasheets/` is present and gitignored. `~/marv-handover-2026-10-13/` holds the old demo kit, outside the repo.
-- gz-sim 8.15 on PATH; `clang-tidy-18` 18.1.3; no `gh` CLI (the Actions API is readable with `curl`).
-- Agent worktrees inside the checkout break `tests/regression/quad/L06/tools/test_world_sensors.py`; keep them out.
+- `master` = M0 (`b641f6f`). `m1-sdk` = M1 with `master` merged; worktrees in the session scratchpad (`wt-m1*`),
+  never inside the checkout (they break `test_world_sensors.py`). One stash, `stash@{0}`: not ours, leave it.
+- No `gh` CLI (read the Actions API with `curl`). Docker `marv-ci` regenerates the product table (README recipe; add
+  `-e CCACHE_DISABLE=1` when the container cannot write the ccache directory).
 
 ## Rules the next lead keeps
 - Standing permission (Luis, 2026-10-15, "yes you may commit and push"): commit and push each unit that passed review
   and `ci/dev_check.sh`; merge into `master` at a milestone end after `ci/local_ci.sh` passes. Loosening a test, a spec
   change and tags stay Luis's. Fix forward; never rewrite pushed history.
-- Verified: a commit by `ci/dev_check.sh`; a merge by `ci/local_ci.sh` on the exact commit (`--parallel 2` at most).
-- Reports to Luis: results first, numbers with units; every question answerable in one word, with a recommendation.
-- A tool a check needs is missing on the host: tell Luis at once; do not work around it.
-- Luis's machine is shared: check `uptime` before any timing.
+- Before every push: read the log's own exit line (not a wrapper's) and run `tools/ci/check_regression_changes.py`.
+- At most two development checks at once (a timing test timed out under three).
+- No ESC power or motor spin without Luis present.

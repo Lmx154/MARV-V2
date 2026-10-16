@@ -1,0 +1,60 @@
+[  1.228] marv_fc3v2 quad-L2-pass-134-g9006d4c-dirty
+[  1.229] params ok
+[  1.229] init ok
+[  1.229] motors ok: DShot600 on PIO 0, clk_sys 150000000 Hz, PIO divider 31 + 64/256 (derived, dshot.hpp)
+[  1.229] imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+[  1.229] imu dt=1000010us irq/s=7495.9 words/s=14991.9 samples/s=7495.9 ticks/s=7495.9 writes/s=3748.0 motor_drops=0 | total samples=67489 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[122,144]us | t=9070310 gyro=(+0.0049,+0.0061,-0.0037) accel=(-0.010,-0.029,-9.796) temp=299.25K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0
+[  1.229] imu dt=1000017us irq/s=7496.9 words/s=14993.7 samples/s=7496.9 ticks/s=7496.9 writes/s=3747.9 motor_drops=0 | total samples=74986 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[126,140]us | t=10070361 gyro=(-0.0012,+0.0061,-0.0024) accel=(+0.005,+0.010,-9.787) temp=299.23K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0
+[  1.229] > motor_test 1 100 500 PROPS-OFF
+[  2.729] motor_test accepted: motor 1 dshot 100 for 500 ms
+[  2.729] motor_test stopped: deadline (motor 1)
+[  2.729] imu dt=1000088us irq/s=7496.3 words/s=14992.7 samples/s=7496.3 ticks/s=7496.3 writes/s=3748.7 motor_drops=0 | total samples=82483 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[110,155]us | t=11070412 gyro=(-0.0024,+0.0024,-0.0037) accel=(+0.024,+0.048,-9.777) temp=299.29K flags=0x1c0 | motor_test console_refused=0 forwarded=1 accepted=1 refused=0 stopped=1
+[  2.729] > motor_test 1 600 500 PROPS-OFF
+[  3.930] motor_test refused: dshot value is below the throttle minimum or above the cap (motor 1 dshot 600 for 500 ms)
+[  3.930] imu dt=1000013us irq/s=7496.9 words/s=14993.8 samples/s=7496.9 ticks/s=7496.9 writes/s=3748.0 motor_drops=0 | total samples=89980 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[125,143]us | t=12070463 gyro=(-0.0012,+0.0061,-0.0024) accel=(-0.072,+0.010,-9.815) temp=299.26K flags=0x1c0 | motor_test console_refused=0 forwarded=2 accepted=1 refused=1 stopped=1
+[  3.930] > motor_test 1 100 500
+[  5.179] motor_test refused: the unlock token PROPS-OFF is missing (console)
+[  5.179] imu dt=1000081us irq/s=7496.4 words/s=14992.8 samples/s=7496.4 ticks/s=7496.4 writes/s=3748.7 motor_drops=0 | total samples=97477 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[125,142]us | t=13070514 gyro=(+0.0000,+0.0073,-0.0024) accel=(-0.005,+0.005,-9.820) temp=299.27K flags=0x1c0 | motor_test console_refused=1 forwarded=2 accepted=1 refused=1 stopped=1
+[  5.179] imu dt=1000017us irq/s=7496.9 words/s=14993.7 samples/s=7496.9 ticks/s=7496.9 writes/s=3747.9 motor_drops=0 | total samples=104974 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[121,146]us | t=14070565 gyro=(+0.0012,+0.0012,-0.0012) accel=(-0.024,+0.081,-9.772) temp=299.31K flags=0x1c0 | motor_test console_refused=1 forwarded=2 accepted=1 refused=1 stopped=1
+[  5.179] > motor_test 2 100 3000 PROPS-OFF
+[  5.682] motor_test accepted: motor 2 dshot 100 for 3000 ms
+[  5.682] > (raw) 'x'
+[  5.682] > (raw) '\n'
+[  7.229] motor_test stopped: cancel (motor 2)
+[  7.229] motor_test refused: unknown command (console)
+[  7.229] imu dt=1000000us irq/s=7497.0 words/s=14994.0 samples/s=7497.0 ticks/s=7497.0 writes/s=3749.0 motor_drops=0 | total samples=112471 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[118,149]us | t=15070617 gyro=(+0.0037,+0.0012,-0.0049) accel=(-0.005,+0.029,-9.815) temp=299.23K flags=0x1c0 | motor_test console_refused=2 forwarded=3 accepted=2 refused=1 stopped=2
+[  7.229] imu dt=1000008us irq/s=7495.9 words/s=14991.9 samples/s=7495.9 ticks/s=7495.9 writes/s=3748.0 motor_drops=0 | total samples=119967 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[120,147]us | t=16070534 gyro=(+0.0012,+0.0037,-0.0037) accel=(-0.029,+0.038,-9.782) temp=299.26K flags=0x1c0 | motor_test console_refused=2 forwarded=3 accepted=2 refused=1 stopped=2
+[  7.229] > motor_test 3 100 3000 PROPS-OFF
+[  7.732] motor_test accepted: motor 3 dshot 100 for 3000 ms
+[  7.732] > stop
+[  8.981] motor_test: stop received
+[  8.981] motor_test stopped: cancel (motor 3)
+[  8.981] imu dt=1000016us irq/s=7496.9 words/s=14993.8 samples/s=7496.9 ticks/s=7496.9 writes/s=3747.9 motor_drops=0 | total samples=127464 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[118,147]us | t=17070585 gyro=(-0.0012,+0.0037,-0.0037) accel=(-0.014,+0.000,-9.739) temp=299.27K flags=0x1c0 | motor_test console_refused=2 forwarded=4 accepted=3 refused=1 stopped=3
+[  8.981] > motor_test 4 100 3000 PROPS-OFF
+[  9.530] motor_test accepted: motor 4 dshot 100 for 3000 ms
+[  9.530] imu dt=1000087us irq/s=7496.3 words/s=14992.7 samples/s=7496.3 ticks/s=7496.3 writes/s=3748.7 motor_drops=0 | total samples=134961 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[117,150]us | t=18070636 gyro=(-0.0012,+0.0073,-0.0049) accel=(-0.010,+0.067,-9.777) temp=299.27K flags=0x1c0 | motor_test console_refused=2 forwarded=5 accepted=4 refused=1 stopped=3
+[  9.530] > (close port)
+[ 11.379] marv_fc3v2 quad-L2-pass-134-g9006d4c-dirty
+[ 11.379] params ok
+[ 11.379] init ok
+[ 11.379] motors ok: DShot600 on PIO 0, clk_sys 150000000 Hz, PIO divider 31 + 64/256 (derived, dshot.hpp)
+[ 11.379] imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+[ 11.379] motor_test stopped: disconnect (motor 4)
+[ 11.379] imu dt=1000013us irq/s=7496.9 words/s=14993.8 samples/s=7496.9 ticks/s=7496.9 writes/s=3748.0 motor_drops=0 | total samples=142458 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[125,142]us | t=19070687 gyro=(-0.0012,+0.0086,+0.0000) accel=(+0.010,+0.086,-9.811) temp=299.33K flags=0x1c0 | motor_test console_refused=2 forwarded=5 accepted=4 refused=1 stopped=4
+[ 11.379] imu dt=1000091us irq/s=7496.3 words/s=14992.6 samples/s=7496.3 ticks/s=7496.3 writes/s=3748.7 motor_drops=0 | total samples=149955 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[127,141]us | t=20070739 gyro=(-0.0012,+0.0037,-0.0024) accel=(+0.014,+0.086,-9.806) temp=299.29K flags=0x1c0 | motor_test console_refused=2 forwarded=5 accepted=4 refused=1 stopped=4
+[ 11.379] > motor_test 5 100 500 PROPS-OFF
+[ 12.580] motor_test refused: motor is not 1-4 (motor 5 dshot 100 for 500 ms)
+[ 12.580] imu dt=1000013us irq/s=7496.9 words/s=14993.8 samples/s=7496.9 ticks/s=7496.9 writes/s=3748.0 motor_drops=0 | total samples=157452 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[121,148]us | t=21070791 gyro=(-0.0061,+0.0061,-0.0037) accel=(-0.014,+0.033,-9.839) temp=299.29K flags=0x1c0 | motor_test console_refused=2 forwarded=6 accepted=4 refused=2 stopped=4
+[ 12.580] > motor_test 1 47 500 PROPS-OFF
+[ 13.780] motor_test refused: dshot value is below the throttle minimum or above the cap (motor 1 dshot 47 for 500 ms)
+[ 13.780] imu dt=1000086us irq/s=7496.4 words/s=14992.7 samples/s=7496.4 ticks/s=7496.4 writes/s=3748.7 motor_drops=0 | total samples=164949 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[123,145]us | t=22070842 gyro=(-0.0012,+0.0024,-0.0037) accel=(+0.029,+0.091,-9.849) temp=299.29K flags=0x1c0 | motor_test console_refused=2 forwarded=7 accepted=4 refused=3 stopped=4
+[ 13.780] > motor_test 1 100 3001 PROPS-OFF
+[ 14.980] motor_test refused: duration is outside the allowed range (1 ms to the maximum) (motor 1 dshot 100 for 3001 ms)
+[ 14.980] imu dt=1000016us irq/s=7496.9 words/s=14993.8 samples/s=7496.9 ticks/s=7496.9 writes/s=3747.9 motor_drops=0 | total samples=172446 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[121,146]us | t=23070894 gyro=(-0.0012,+0.0061,-0.0037) accel=(-0.043,+0.062,-9.835) temp=299.31K flags=0x1c0 | motor_test console_refused=2 forwarded=8 accepted=4 refused=4 stopped=4
+[ 14.980] > motor_test 1 100 3000 PROPS-OFF
+[ 18.580] motor_test accepted: motor 1 dshot 100 for 3000 ms
+[ 18.581] imu dt=1000086us irq/s=7496.4 words/s=14992.7 samples/s=7496.4 ticks/s=7496.4 writes/s=3748.7 motor_drops=0 | total samples=179943 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[116,150]us | t=24070946 gyro=(-0.0037,+0.0049,-0.0024) accel=(-0.010,+0.081,-9.763) temp=299.32K flags=0x1c0 | motor_test console_refused=2 forwarded=9 accepted=5 refused=4 stopped=4
+[ 18.581] imu dt=1000020us irq/s=7496.9 words/s=14993.7 samples/s=7496.9 ticks/s=7496.9 writes/s=3747.9 motor_drops=0 | total samples=187440 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[122,145]us | t=25070998 gyro=(+0.0000,+0.0012,-0.0024) accel=(+0.000,+0.120,-9.782) temp=299.30K flags=0x1c0 | motor_test console_refused=2 forwarded=9 accepted=5 refused=4 stopped=4
+[ 18.581] imu dt=1000087us irq/s=7496.3 words/s=14992.7 samples/s=7496.3 ticks/s=7496.3 writes/s=3748.7 motor_drops=0 | total samples=194937 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[119,148]us | t=26071050 gyro=(+0.0000,+0.0049,-0.0037) accel=(-0.033,+0.053,-9.830) temp=299.30K flags=0x1c0 | motor_test console_refused=2 forwarded=9 accepted=5 refused=4 stopped=4
+[ 18.581] motor_test stopped: deadline (motor 1)
+[ 18.581] imu dt=1000020us irq/s=7496.9 words/s=14993.7 samples/s=7496.9 ticks/s=7496.9 writes/s=3747.9 motor_drops=0 | total samples=202434 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[114,152]us | t=27071102 gyro=(-0.0024,+0.0037,-0.0024) accel=(+0.010,+0.110,-9.825) temp=299.26K flags=0x1c0 | motor_test console_refused=2 forwarded=9 accepted=5 refused=4 stopped=5

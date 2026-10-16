@@ -79,9 +79,11 @@ void RateGroupStep::init(const rate::RateConfig<float>& rate_cfg, const mixer::M
   chain_.init(chain_cfg);
   filtered_ = ImuSample{};
   diffuser_.init(mixer_cfg);
+  executions_ = 0;
 }
 
 void RateGroupStep::filter(const ImuSample& s, bool rate_due) noexcept {
+  hal_tick_stage(TickStage::Filter);
   if (rate_due) {
     chain_.update_notches(hal_rotor_speed());
   }
@@ -97,16 +99,20 @@ void RateGroupStep::filter(const ImuSample& s, bool rate_due) noexcept {
 
 Execution RateGroupStep::execute(const prim::Vec3<float>& setpoint, const prim::Vec3<float>& added,
                                  float thrust) noexcept {
+  hal_tick_stage(TickStage::Rate);
   return finish(rate_.execute(filtered_, setpoint), added, thrust);
 }
 
 Execution RateGroupStep::execute_bypass(const prim::Vec3<float>& reference, const prim::Vec3<float>& added,
                                         float thrust) noexcept {
+  hal_tick_stage(TickStage::Rate);
   return finish(rate_.execute_bypass(filtered_, reference), added, thrust);
 }
 
 Execution RateGroupStep::finish(const rate::RateOutput<float>& out, const prim::Vec3<float>& added,
                                 float thrust) noexcept {
+  hal_tick_stage(TickStage::Mixer);
+  ++executions_;
   Execution e;
   e.rate = out;
   e.request = out.torque + added;

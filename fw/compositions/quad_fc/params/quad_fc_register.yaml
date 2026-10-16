@@ -1,0 +1,19 @@
+# quad_fc composition (fw/compositions/quad_fc) parameters. The composition's rate setpoint and collective thrust are the
+# constants 0, so the tunables are the motor-test limits (P11) and the pad map (P10); the later packets' entries (arming)
+# append after the product ids (marv_add_card_param_set EXTRA_REGISTER).
+#
+# motor_pad (M1 P10, the FC3v2 board's wiring): the pad of each logical motor, a permutation of the board outputs
+# OUT0 .. OUT3 (GPIO 6 .. 9, boards/madflight_fc3v2_revc.h). Applied once, at motor output start-up (hal_target); the
+# start-up refuses a table that is not a permutation. A motor's direction is set in the ESC, never inverted in firmware.
+
+motor_pad:
+  {type: i32, value: [3, 0, 1, 2], shape: motors, unit: "1", method: scenario, source: "Measured 2026-10-16 on the bench (M1 P11 console motor test, props off, DShot 100, Luis observing; tests/regression/quad/L09/results/m1-bench-card.md): with the identity map OUT0 drove rear left (CCW), OUT1 front left (CW), OUT2 rear right (CW), OUT3 front right (CCW), so logical 1 (front right) is OUT3, 2 (rear left) OUT0, 3 (front left) OUT1, 4 (rear right) OUT2; every spin direction already matched quad-X", sigma: choice}
+
+# The console motor test (M1 P11, decision 0038): the limits of the quad_fc gate's motor-test branch. Safety numbers: the
+# values Luis ruled on 2026-10-16 (answers "1. 500 2. 3 seconds 3. yes"; the duration raised to 20 s at the bench, "20s is
+# good."), never others. The gate refuses a request
+# outside them (stays all-stop, counts a refusal).
+motor_test_dshot_max:
+  {type: i32, value: 500, unit: "1", method: scenario, source: "Luis 2026-10-16: the motor-test DShot cap is 500 (answer '1. 500' to the P11 questions); a request above it is refused; decision 0038", sigma: choice}
+motor_test_duration_max_ms:
+  {type: i32, value: 20000, unit: "ms", method: scenario, source: "Luis 2026-10-16 at the M1 bench: the maximum duration of one motor-test command is 20 s ('20s is good.', raised from his earlier '2. 3 seconds' so a stop check is clearly distinguishable from the deadline); a longer request is refused; decision 0038 amendment", sigma: choice}

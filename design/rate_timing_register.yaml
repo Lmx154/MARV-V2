@@ -1,0 +1,7 @@
+# Rate-loop spacing tolerance of the product parameter set (the SIL; marv_params and the SIL compositions' sets, which
+# keep its ids), in params_gen input form (tools/gen/params_gen.py), passed after the design-budget register so every
+# earlier id keeps its value (fw/params/CMakeLists.txt, EXTRA_REGISTER). The FC3v2 target set carries its own entry,
+# fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml (decision 0034).
+
+rate_period_tolerance_us:
+  {type: i32, value: 1, unit: "us", method: "derived(the hal_sim stamp truncation bound)", source: "hal_sim stamps tick N at floor(N tick_period_num_us / tick_period_den) us (fw/hal/sim stamp_us), so two stamps rate_loop_divisor ticks apart are within 1 us of the rate period; the bound of decision 0005 (Gains to firmware), formerly kPeriodToleranceUs in fw/rate; decision 0034", sigma: exact}

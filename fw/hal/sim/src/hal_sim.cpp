@@ -16,6 +16,9 @@ struct State {
   std::span<ServoUs> servo_latch{};
   TimeUs now_us = 0;
   RotorSpeedSample rotor{};
+  MotorTestPoll motor_test{};
+  MotorTestEvent last_event{};
+  std::uint32_t event_count = 0;
   Tick next_tick = 0;
   bool configured = false;
   bool in_tick = false;
@@ -33,6 +36,15 @@ RotorSpeedSample hal_rotor_speed() noexcept {
   s.t_us = g_state.now_us;
   return s;
 }
+
+MotorTestPoll hal_motor_test() noexcept { return g_state.motor_test; }
+
+void hal_motor_test_report(const MotorTestEvent& event) noexcept {
+  g_state.last_event = event;
+  ++g_state.event_count;
+}
+
+void hal_tick_stage(TickStage) noexcept {}
 
 void hal_actuators_write(std::span<const DshotValue> motor, std::span<const ServoUs> servo) noexcept {
   if (!g_state.in_tick) {
@@ -81,6 +93,33 @@ void stage_rotor_speed(const std::array<float, kQuadXMotors>& omega_rad_s, std::
   g_state.rotor.omega_rad_s = omega_rad_s;
   g_state.rotor.flags = flags;
 }
+
+void stage_motor_test_request(const MotorTestRequest& request) noexcept {
+  if (!g_state.configured) {
+    hal_panic("hal_sim::stage_motor_test_request before setup");
+  }
+  if (g_state.in_tick) {
+    hal_panic("hal_sim::stage_motor_test_request inside a tick");
+  }
+  ++g_state.motor_test.request_count;
+  g_state.motor_test.request_cancel_count = g_state.motor_test.cancel_count;
+  g_state.motor_test.request = request;
+}
+
+void stage_motor_test_cancel(MotorTestCancel reason) noexcept {
+  if (!g_state.configured) {
+    hal_panic("hal_sim::stage_motor_test_cancel before setup");
+  }
+  if (g_state.in_tick) {
+    hal_panic("hal_sim::stage_motor_test_cancel inside a tick");
+  }
+  ++g_state.motor_test.cancel_count;
+  g_state.motor_test.cancel_reason = reason;
+}
+
+std::uint32_t motor_test_event_count() noexcept { return g_state.event_count; }
+
+MotorTestEvent last_motor_test_event() noexcept { return g_state.last_event; }
 
 void begin_tick(Tick n) noexcept {
   if (!g_state.configured) {

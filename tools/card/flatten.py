@@ -68,6 +68,8 @@ with the gyro chain; tau_ref by rate.py rule step 9 with rate_lead's tau_cl; T_f
 same five parameters as --out-attitude (att_kp, att_yaw_weight, att_loop_ratio, att_yaw_alpha_min, att_yaw_t_cross) from
 attitude_lead.py on the stage (c) rate loop, and its report (which sets the new design against today's attitude.py one); the
 rate loop is designed in memory for it, once for both flags. The sensor profile the card names feeds the gyro chain.
+--rate-guard {exact,mean_period} (default exact; needs --out-rate-lead) selects rate_lead's firmware-loop guard: the SIL's exact stamp
+pattern, or one dt = D num/den, the board's mean period (decision 0014, Amendment 2026-10-16).
 --procs <n> (default tools/card/cpu_quota.py usable_cpus()) is the worker count of rate_lead's N search; the outputs do not
 depend on it. rate.py and attitude.py stay the L4/L5 PI reference. When rate_lead.py or attitude_lead.py refuses, nothing is
 written and the exit status is 1. Without the flags the other outputs are byte-identical.
@@ -222,6 +224,9 @@ def main(argv=None):
     ap.add_argument("--out-rate-lead")
     ap.add_argument("--out-attitude-lead")
     ap.add_argument("--out-vertical")
+    ap.add_argument("--rate-guard", choices=rate_lead.RATE_GUARDS, default="exact",
+                    help="rate_lead's firmware-loop guard: exact (the SIL stamp pattern) or mean_period (one dt = D num/den, "
+                         "the board's; decision 0014 Amendment 2026-10-16)")
     ap.add_argument("--procs", type=int, default=cpu_quota.usable_cpus(),
                     help="worker processes of rate_lead's N search (the outputs do not depend on it)")
     ap.add_argument("--root", default=str(lint.ROOT), help="repository root (resolves sensor_profile)")
@@ -242,6 +247,8 @@ def main(argv=None):
         ap.error("--out-attitude-lead needs --scenario (the loop period is a scenario value)")
     if args.out_vertical and not args.scenario:
         ap.error("--out-vertical needs --scenario (the loop period and the site are scenario values)")
+    if args.rate_guard != "exact" and not args.out_rate_lead:
+        ap.error("--rate-guard needs --out-rate-lead (it selects rate_lead's guard)")
     if args.out_rate_lead and args.out_rate:
         ap.error("--out-rate-lead and --out-rate write the same parameters")
     if args.out_attitude_lead and args.out_attitude:
@@ -296,7 +303,7 @@ def main(argv=None):
         try:
             scenario_doc = schema.load_yaml(args.scenario)
             lead = rate_lead.design(card, budget, scenario_doc, schema.load_yaml(profile_path), args.card, profile_path,
-                                    args.procs)
+                                    args.procs, args.rate_guard)
             if args.out_rate_lead:
                 lead_rate_entries = rate_lead.entries_from(lead)
                 lead_rate_report = rate_lead.report_lines(lead)

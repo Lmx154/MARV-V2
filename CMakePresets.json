@@ -77,11 +77,15 @@
     {
       "name": "m33",
       "inherits": "base",
-      "displayName": "Cortex-M33 (arm-none-eabi), compile-only",
-      "toolchainFile": "${sourceDir}/cmake/toolchain-m33.cmake",
+      "displayName": "Cortex-M33 (Pico SDK 2.3.1, RP2350 secure Arm)",
       "cacheVariables": {
         "MARV_TARGET": "m33",
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "PICO_PLATFORM": "rp2350-arm-s",
+        "PICO_BOARD": "madflight_fc3v2_revc",
+        "PICO_BOARD_HEADER_DIRS": "${sourceDir}/boards",
+        "PICO_HARD_FLOAT_ABI": "1",
+        "PICO_NO_PICOTOOL": "1"
       }
     }
   ],

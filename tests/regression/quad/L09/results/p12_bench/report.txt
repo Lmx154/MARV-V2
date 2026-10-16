@@ -1,0 +1,124 @@
+$ uv run python tools/target/bench_stats.py report tests/regression/quad/L09/results/p12_bench/run-a-bench-defaults.log.gz tests/regression/quad/L09/results/p12_bench/run-b-bench-accept-spacing.log.gz tests/regression/quad/L09/results/p12_bench/run-c-bench-accept-spacing-copy-to-ram.log.gz tests/regression/quad/L09/results/p12_bench/run-d-bench-accept-spacing-sram.log.gz --profile sensors/profiles/madflight_fc3v2_revc.yaml
+
+== run-a-bench-defaults.log.gz: 660 lines, device time 8.1 s to 667.2 s (659.1 s of lines), clk_sys 150000000 Hz
+   marv_fc3v2 quad-L2-pass-136-gb2f2e32-dirty
+   params ok: generated defaults, rate_period_tolerance_us 1
+   imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+   bench stats: on (MARV_FC3V2_BENCH_STATS, DWT CYCCNT at clk_sys)
+   stage     count        max cyc   max us   max (after the first line) us   p50 us  p99 us  p99.99 us  mean-bucket us
+   read        5001572        12530    83.53                          40.41    27.30   34.13     40.95        25.79
+   decode      5001572        18729   124.86                          55.01    34.13   47.78     54.61        28.58
+   filter      5001572        14424    96.16                          41.99    17.06   34.13     40.95        13.89
+   rate        2500788         3519    23.46                          14.66     8.53   11.94     13.65         7.30
+   mixer       2500788        19784   131.89                          54.09    40.95   47.78     54.61        36.78
+   gate        2500788         1677    11.18                           6.49     2.55    4.26      5.11         2.20
+   dshot       2500788         7340    48.93                          31.17    20.47   27.30     34.13        19.24
+   publish     5001572         3460    23.07                          14.78     6.82   11.94     13.65         6.68
+   bench       5001572         8621    57.47                          17.28     5.97   11.94     17.06         5.37
+   irq         5001572        77661   517.74                         188.12   136.53  163.83    191.14       111.11
+   account     5001571         4165    27.77                          14.82     4.26   10.23     13.65         4.57
+   usb_irq      396381        77907   519.38                         519.38     5.11  273.06    546.13        11.48
+   IMU interrupt-entry spacing (one sample each): n 5001566, mean 20009.4 cyc = 133.396 us, min 82.08 us, max 198.23 us; largest window (max - mean) 64.83 us, (mean - min) 51.32 us
+   max samples per interrupt 4, IMU interrupts begun inside the USBCTRL chain 104392
+   instrumentation inside the IMU interrupt: the bench stage (still sums) and the marks are inside irq; account follows irq; the default image has none of them
+   last counter line: imu dt=1000198us irq/s=7496.5 words/s=14993.0 samples/s=7496.5 ticks/s=7496.5 writes/s=3748.3 motor_drops=0 | total samples=5001384 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[86,189]us | t=667232091 gyro=(-0.0012,+0.0061,-0.0024) accel=(+0.014,+0.048,-9.820) temp=299.92K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3748.3 executions=2500692 timing_faults=2500691
+
+== run-b-bench-accept-spacing.log.gz: 128 lines, device time 6.3 s to 659.3 s (653.1 s of lines), clk_sys 150000000 Hz
+   marv_fc3v2 quad-L2-pass-136-gb2f2e32-dirty
+   params ok: bench: rate_period_tolerance_us raised (MARV_FC3V2_BENCH_ACCEPT_SPACING), rate_period_tolerance_us 78
+   imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+   bench stats: on (MARV_FC3V2_BENCH_STATS, DWT CYCCNT at clk_sys)
+   stage     count        max cyc   max us   max (after the first line) us   p50 us  p99 us  p99.99 us  mean-bucket us
+   read        4950239        13127    87.51                          39.91    27.30   34.13     40.95        25.11
+   decode      4950239        24603   164.02                          62.46    34.13   54.61     68.26        31.16
+   filter      4950239        14357    95.71                          29.26    11.94   20.47     27.30        10.81
+   rate        2475124        17081   113.87                          54.76    40.95   47.78     54.61        34.54
+   mixer       2475124        20352   135.68                          61.23    47.78   54.61     68.26        44.82
+   gate        2475124         1764    11.76                           5.29     2.13    3.41      5.11         1.87
+   dshot       2475124         7168    47.79                          27.39    20.47   20.47     23.89        17.23
+   publish     4950239         3444    22.96                          14.44     8.53   11.94     13.65         6.71
+   bench       4950239         6557    43.71                          13.43     4.26    8.53     11.94         3.70
+   irq         4950239        93530   623.53                         204.81   163.83  191.14    191.14       124.35
+   account     4950238         4168    27.79                          11.07     4.26    5.97     10.23         3.36
+   usb_irq      112920       280745  1871.63                        1871.63     6.82  546.13   1747.62        44.20
+   IMU interrupt-entry spacing (one sample each): n 4950229, mean 20009.5 cyc = 133.396 us, min 81.37 us, max 210.95 us; largest window (max - mean) 77.55 us, (mean - min) 52.02 us
+   max samples per interrupt 5, IMU interrupts begun inside the USBCTRL chain 272668
+   instrumentation inside the IMU interrupt: the bench stage (still sums) and the marks are inside irq; account follows irq; the default image has none of them
+   last counter line: imu dt=4838033us irq/s=7496.8 words/s=14993.7 samples/s=7496.8 ticks/s=7496.8 writes/s=3748.4 motor_drops=0 | total samples=4978416 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[78,209]us | t=664170651 gyro=(-0.0024,+0.0049,+0.0000) accel=(-0.019,-0.019,-9.753) temp=300.14K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3748.4 executions=2489208 timing_faults=2
+
+== run-c-bench-accept-spacing-copy-to-ram.log.gz: 200 lines, device time 4.1 s to 203.1 s (199.0 s of lines), clk_sys 150000000 Hz
+   marv_fc3v2 quad-L2-pass-136-gb2f2e32-dirty
+   params ok: bench: rate_period_tolerance_us raised (MARV_FC3V2_BENCH_ACCEPT_SPACING), rate_period_tolerance_us 78
+   imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+   bench stats: on (MARV_FC3V2_BENCH_STATS, DWT CYCCNT at clk_sys)
+   stage     count        max cyc   max us   max (after the first line) us   p50 us  p99 us  p99.99 us  mean-bucket us
+   read        1521830         3636    24.24                          24.24    23.89   23.89     27.30        22.21
+   decode      1521830         1461     9.74                           9.74    10.23   10.23     10.23         9.39
+   filter      1521830         1776    11.84                          10.65    10.23   11.94     11.94        10.24
+   rate         760915          814     5.43                           5.43     5.97    5.97      5.97         5.55
+   mixer        760915         1631    10.87                          10.87    11.94   11.94     11.94        11.09
+   gate         760915          104     0.69                           0.69     0.74    0.74      0.74         0.69
+   dshot        760915          371     2.47                           2.47     2.55    2.55      2.55         2.35
+   publish     1521830          233     1.55                           1.55     1.70    1.70      1.70         1.60
+   bench       1521830          383     2.55                           2.55     2.55    2.55      2.55         2.35
+   irq         1521830         9716    64.77                          64.77    47.78   68.26     68.26        52.91
+   account     1521829          581     3.87                           3.87     3.41    4.26      4.26         3.31
+   usb_irq        9656        10747    71.65                          71.65     2.98    3.41     81.91         2.78
+   IMU interrupt-entry spacing (one sample each): n 1521829, mean 20009.3 cyc = 133.395 us, min 88.93 us, max 134.15 us; largest window (max - mean) 0.76 us, (mean - min) 0.75 us
+   max samples per interrupt 1, IMU interrupts begun inside the USBCTRL chain 234
+   instrumentation inside the IMU interrupt: the bench stage (still sums) and the marks are inside irq; account follows irq; the default image has none of them
+   last counter line: imu dt=1000042us irq/s=7496.7 words/s=14993.4 samples/s=7496.7 ticks/s=7496.7 writes/s=3747.8 motor_drops=0 | total samples=1521824 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=203074063 gyro=(-0.0012,+0.0073,-0.0049) accel=(-0.024,+0.000,-9.787) temp=299.72K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.8 executions=760912 timing_faults=1
+
+== run-d-bench-accept-spacing-sram.log.gz: 660 lines, device time 8.1 s to 667.1 s (659.0 s of lines), clk_sys 150000000 Hz
+   marv_fc3v2 quad-L2-pass-136-gb2f2e32-dirty
+   params ok: bench: rate_period_tolerance_us raised (MARV_FC3V2_BENCH_ACCEPT_SPACING), rate_period_tolerance_us 78
+   imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+   bench stats: on (MARV_FC3V2_BENCH_STATS, DWT CYCCNT at clk_sys)
+   stage     count        max cyc   max us   max (after the first line) us   p50 us  p99 us  p99.99 us  mean-bucket us
+   read        5000288         3636    24.24                          24.24    23.89   23.89     27.30        22.21
+   decode      5000288         1462     9.75                           9.75    10.23   10.23     10.23         9.39
+   filter      5000288         1776    11.84                          10.65    10.23   11.94     11.94        10.24
+   rate        2500144          814     5.43                           5.43     5.97    5.97      5.97         5.55
+   mixer       2500144         1631    10.87                          10.87    11.94   11.94     11.94        11.09
+   gate        2500144          104     0.69                           0.69     0.74    0.74      0.74         0.69
+   dshot       2500144          371     2.47                           2.47     2.55    2.55      2.55         2.35
+   publish     5000288          233     1.55                           1.55     1.70    1.70      1.70         1.60
+   bench       5000288          383     2.55                           2.55     2.55    2.55      2.55         2.35
+   irq         5000288        10199    67.99                          67.99    47.78   68.26     68.26        52.91
+   account     5000287          581     3.87                           3.87     3.41    4.26      4.26         3.31
+   usb_irq       31983        10757    71.71                          71.71     2.98    3.41     81.91         2.79
+   IMU interrupt-entry spacing (one sample each): n 5000287, mean 20009.3 cyc = 133.395 us, min 94.49 us, max 134.15 us; largest window (max - mean) 0.76 us, (mean - min) 0.77 us
+   max samples per interrupt 1, IMU interrupts begun inside the USBCTRL chain 812
+   instrumentation inside the IMU interrupt: the bench stage (still sums) and the marks are inside irq; account follows irq; the default image has none of them
+   last counter line: imu dt=1000001us irq/s=7496.0 words/s=14992.0 samples/s=7496.0 ticks/s=7496.0 writes/s=3748.0 motor_drops=0 | total samples=5000280 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=667083395 gyro=(-0.0049,+0.0037,-0.0024) accel=(-0.010,+0.062,-9.825) temp=299.83K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3748.0 executions=2500140 timing_faults=1
+
+== EMB-3 (core 4.1: per core, utilization within n(2^(1/n) - 1) or exact response-time analysis, on measured worst cases)
+   run-a-bench-defaults.log.gz: T = 133.396 us (measured mean interrupt-entry spacing)
+     C = irq + account max (including start-up) = 545.51 us; U = C/T = 4.089 vs the n = 1 bound 1.000: FAIL (margin -308.9 % of T); RTA R = C + B = 610.34 us with B = 64.83 us vs D = T: FAIL (margin -476.94 us)
+     C = irq + account max (after the first line) = 202.94 us; U = C/T = 1.521 vs the n = 1 bound 1.000: FAIL (margin -52.1 % of T); RTA R = C + B = 267.77 us with B = 64.83 us vs D = T: FAIL (margin -134.37 us)
+     mean (histogram midpoints, not a worst case): 115.67 us per interrupt, 86.7 % of the core
+   run-b-bench-accept-spacing.log.gz: T = 133.396 us (measured mean interrupt-entry spacing)
+     C = irq + account max (including start-up) = 651.32 us; U = C/T = 4.883 vs the n = 1 bound 1.000: FAIL (margin -388.3 % of T); RTA R = C + B = 728.87 us with B = 77.55 us vs D = T: FAIL (margin -595.47 us)
+     C = irq + account max (after the first line) = 215.87 us; U = C/T = 1.618 vs the n = 1 bound 1.000: FAIL (margin -61.8 % of T); RTA R = C + B = 293.42 us with B = 77.55 us vs D = T: FAIL (margin -160.03 us)
+     mean (histogram midpoints, not a worst case): 127.72 us per interrupt, 95.7 % of the core
+   run-c-bench-accept-spacing-copy-to-ram.log.gz: T = 133.395 us (measured mean interrupt-entry spacing)
+     C = irq + account max (including start-up) = 68.65 us; U = C/T = 0.515 vs the n = 1 bound 1.000: PASS (margin +48.5 % of T); RTA R = C + B = 69.40 us with B = 0.76 us vs D = T: PASS (margin +63.99 us)
+     C = irq + account max (after the first line) = 68.65 us; U = C/T = 0.515 vs the n = 1 bound 1.000: PASS (margin +48.5 % of T); RTA R = C + B = 69.40 us with B = 0.76 us vs D = T: PASS (margin +63.99 us)
+     mean (histogram midpoints, not a worst case): 56.21 us per interrupt, 42.1 % of the core
+   run-d-bench-accept-spacing-sram.log.gz: T = 133.395 us (measured mean interrupt-entry spacing)
+     C = irq + account max (including start-up) = 71.87 us; U = C/T = 0.539 vs the n = 1 bound 1.000: PASS (margin +46.1 % of T); RTA R = C + B = 72.62 us with B = 0.76 us vs D = T: PASS (margin +60.77 us)
+     C = irq + account max (after the first line) = 71.87 us; U = C/T = 0.539 vs the n = 1 bound 1.000: PASS (margin +46.1 % of T); RTA R = C + B = 72.62 us with B = 0.76 us vs D = T: PASS (margin +60.77 us)
+     mean (histogram midpoints, not a worst case): 56.21 us per interrupt, 42.1 % of the core
+
+== Still bench IMU (4941176 samples between the first and the last bench_imu line, 659.1 s; FRD, after the board mounting map)
+   profile sensors/profiles/madflight_fc3v2_revc.yaml: gyro 2.8 mdps/rtHz x sqrt(537 Hz) = 64.9 mdps; accel 60 ug/rtHz x sqrt(3840 Hz) = 3.72 mg; offsets +-1 dps, +-12 mg; LSB 70 mdps, 0.488 mg (quantisation LSB/sqrt(12) = 20.2 mdps, 0.141 mg)
+   if the gyro LPF2 is first order: noise bandwidth pi/2 x 537 Hz = 844 Hz, sd 81.3 mdps; with the quantisation 83.8 mdps
+   gyro  x: mean    +33.80 mdps (offset   +33.80 vs +-1000: inside), sd  119.83 mdps (within 1 s windows  119.79) vs profile 64.89: ratio 1.85
+   gyro  y: mean   +364.41 mdps (offset  +364.41 vs +-1000: inside), sd  114.46 mdps (within 1 s windows  114.41) vs profile 64.89: ratio 1.76
+   gyro  z: mean   -155.26 mdps (offset  -155.26 vs +-1000: inside), sd   83.42 mdps (within 1 s windows   83.39) vs profile 64.89: ratio 1.29
+   accel x: mean     -0.58 mg (offset    -0.58 vs +-12: inside), sd    2.71 mg (within 1 s windows    2.71) vs profile 3.72: ratio 0.73
+   accel y: mean     +3.59 mg (offset    +3.59 vs +-12: inside), sd    3.15 mg (within 1 s windows    3.15) vs profile 3.72: ratio 0.85
+   accel z: mean   -998.71 mg (offset    +1.29 vs +-12: inside), sd    3.06 mg (within 1 s windows    3.06) vs profile 3.72: ratio 0.82
+   temperature (newest sample per line): 26.57 to 27.00 degC over the run
+   gyro  drift (mean of the last tenth - first tenth): (-1.44, +0.24, +1.16) mdps
+   accel drift (mean of the last tenth - first tenth): (-0.02, +0.01, -0.01) mg

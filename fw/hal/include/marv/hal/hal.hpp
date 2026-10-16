@@ -1,8 +1,10 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 
+#include "marv/hal/motor_test.hpp"
 #include "marv/types/actuator.hpp"
 #include "marv/types/rotor_speed_sample.hpp"
 #include "marv/types/time.hpp"
@@ -16,6 +18,23 @@ namespace marv {
 // hal_time_us(); with no sample supplied for the tick every valid bit is clear and every speed 0. hal_sim: the sample
 // the host staged before the tick began; before any tick, t_us 0.
 [[nodiscard]] RotorSpeedSample hal_rotor_speed() noexcept;
+
+// The console motor test's input, a pull read (decision 0038): the request and cancel counters and the latest request
+// (motor_test.hpp). Wait-free and consistent (one snapshot of both counters and the request), callable from the tick;
+// a cancel is visible to the next call after the console received it. hal_sim: what the host staged before the tick
+// began; all counts 0 before any.
+[[nodiscard]] MotorTestPoll hal_motor_test() noexcept;
+
+// The composition's reply to the console: one event per accepted request, refused request or end of a test. May be
+// called in a tick; never blocks; the console prints it from the background loop.
+void hal_motor_test_report(const MotorTestEvent& event) noexcept;
+
+// The stages of a tick, for the target's per-stage execution times (core §4.1 EMB-1 and EMB-3; quad spec §4.1 L9).
+enum class TickStage : std::uint8_t { Filter, Rate, Mixer, Gate };
+
+// Inside composition::tick: `stage` starts here and runs until the next call, the actuator write or the end of the
+// tick. Changes nothing the composition computes. hal_sim: no effect.
+void hal_tick_stage(TickStage stage) noexcept;
 
 // Only inside composition::tick, at most once per tick; span sizes must equal the bound latch sizes. Else hal_panic.
 void hal_actuators_write(std::span<const DshotValue> motor, std::span<const ServoUs> servo) noexcept;

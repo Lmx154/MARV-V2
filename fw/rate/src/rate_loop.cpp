@@ -41,19 +41,13 @@ const char* message(ConfigError e) noexcept {
       return "rate: a D filter time constant is negative";
     case ConfigError::Feedforward:
       return "rate: an inertia, the motor time constant or the feed-forward filter time constant is negative";
+    case ConfigError::Timing:
+      return "rate: the tick period or divisor is below 1, or rate_period_tolerance_us is not in [0, half a tick)";
   }
   return "rate: unknown configuration error";
 }
 
 }  // namespace
-
-namespace detail {
-
-void panic_period() noexcept {
-  hal_panic("rate: execution spacing differs from the design period by more than 1 us");
-}
-
-}  // namespace detail
 
 RateConfig<float> from_params() noexcept {
   RateConfig<float> c;
@@ -69,6 +63,10 @@ RateConfig<float> from_params() noexcept {
                           static_cast<float>(param_value<ParamId::tick_period_num_us>()) /
                           static_cast<float>(param_value<ParamId::tick_period_den>());
   c.period = period_us / static_cast<float>(prim::kMicrosecondsPerSecond);
+  c.tick_period_num_us = param_value<ParamId::tick_period_num_us>();
+  c.tick_period_den = param_value<ParamId::tick_period_den>();
+  c.rate_loop_divisor = param_value<ParamId::rate_loop_divisor>();
+  c.period_tolerance_us = param_value<ParamId::rate_period_tolerance_us>();
   load_geometry<ParamId::rotor_position_m1_x, ParamId::rotor_position_m1_y, ParamId::rotor_yaw_sign_m1,
                 ParamId::rotor_position_m2_x, ParamId::rotor_position_m2_y, ParamId::rotor_yaw_sign_m2,
                 ParamId::rotor_position_m3_x, ParamId::rotor_position_m3_y, ParamId::rotor_yaw_sign_m3,
@@ -85,7 +83,10 @@ RateConfig<float> from_params() noexcept {
 }
 
 void require_valid(const RateConfig<float>& c) noexcept {
-  const ConfigError e = validate(c);
+  ConfigError e = validate(c);
+  if (e == ConfigError::None) {
+    e = validate_timing(c);
+  }
   if (e != ConfigError::None) {
     hal_panic(message(e));
   }

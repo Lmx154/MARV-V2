@@ -1,0 +1,22 @@
+[  0.501] marv_fc3v2 quad-L2-pass-147-gc52b42b-dirty
+[  0.501] params ok: generated defaults, rate_period_tolerance_us 1
+[  0.501] init ok
+[  0.501] motors ok: DShot600 on PIO 0, clk_sys 150000000 Hz, PIO divider 31 + 64/256 (derived, dshot.hpp)
+[  0.501] imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+[  0.501] bench stats: off
+[  0.501] > motor_test 1 100 20000 PROPS-OFF
+[  3.543] motor_test refused: unknown command (console)
+[  3.543] imu dt=1000046us irq/s=7494.7 words/s=14989.3 samples/s=7494.7 ticks/s=7494.7 writes/s=3747.8 motor_drops=0 | total samples=2458425 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=328072947 gyro=(-0.0049,+0.0061,-0.0049) accel=(+0.000,-0.033,-9.782) temp=306.35K flags=0x1c0 | motor_test console_refused=1 forwarded=5 accepted=5 refused=0 stopped=5 | rate executions/s=3747.8 executions=1229213 timing_faults=1229212
+[  3.543] imu dt=1000000us irq/s=7495.0 words/s=14990.0 samples/s=7495.0 ticks/s=7495.0 writes/s=3747.0 motor_drops=0 | total samples=2465920 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=329072935 gyro=(+0.0024,+0.0037,+0.0012) accel=(-0.043,-0.062,-9.796) temp=306.40K flags=0x1c0 | motor_test console_refused=1 forwarded=5 accepted=5 refused=0 stopped=5 | rate executions/s=3747.0 executions=1232960 timing_faults=1232959
+[  3.543] imu dt=1000001us irq/s=7495.0 words/s=14990.0 samples/s=7495.0 ticks/s=7495.0 writes/s=3748.0 motor_drops=0 | total samples=2473415 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=330072924 gyro=(+0.0049,+0.0110,+0.0000) accel=(+0.024,-0.014,-9.782) temp=306.42K flags=0x1c0 | motor_test console_refused=1 forwarded=5 accepted=5 refused=0 stopped=5 | rate executions/s=3748.0 executions=1236708 timing_faults=1236707
+[  3.543] > (close port)
+[  7.891] marv_fc3v2 quad-L2-pass-147-gc52b42b-dirty
+[  7.891] params ok: generated defaults, rate_period_tolerance_us 1
+[  7.891] init ok
+[  7.891] motors ok: DShot600 on PIO 0, clk_sys 150000000 Hz, PIO divider 31 + 64/256 (derived, dshot.hpp)
+[  7.892] imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+[  7.892] bench stats: off
+[  7.892] imu dt=1000002us irq/s=7495.0 words/s=14990.0 samples/s=7495.0 ticks/s=7495.0 writes/s=3748.0 motor_drops=0 | total samples=2488405 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=332072901 gyro=(+0.0012,+0.0037,+0.0012) accel=(+0.010,-0.077,-9.820) temp=306.41K flags=0x1c0 | motor_test console_refused=1 forwarded=5 accepted=5 refused=0 stopped=5 | rate executions/s=3748.0 executions=1244203 timing_faults=1244202
+[  7.892] imu dt=1000000us irq/s=7495.0 words/s=14990.0 samples/s=7495.0 ticks/s=7495.0 writes/s=3747.0 motor_drops=0 | total samples=2495900 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=333072890 gyro=(-0.0012,+0.0049,-0.0024) accel=(+0.014,-0.077,-9.753) temp=306.40K flags=0x1c0 | motor_test console_refused=1 forwarded=5 accepted=5 refused=0 stopped=5 | rate executions/s=3747.0 executions=1247950 timing_faults=1247949
+[  7.892] imu dt=1000000us irq/s=7495.0 words/s=14990.0 samples/s=7495.0 ticks/s=7495.0 writes/s=3748.0 motor_drops=0 | total samples=2503395 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=334072879 gyro=(-0.0061,+0.0049,-0.0037) accel=(+0.033,+0.029,-9.801) temp=306.43K flags=0x1c0 | motor_test console_refused=1 forwarded=5 accepted=5 refused=0 stopped=5 | rate executions/s=3748.0 executions=1251698 timing_faults=1251697
+[  7.892] imu dt=1000050us irq/s=7495.6 words/s=14991.3 samples/s=7495.6 ticks/s=7495.6 writes/s=3747.8 motor_drops=0 | total samples=2510891 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=335073002 gyro=(-0.0037,+0.0037,+0.0000) accel=(-0.014,-0.010,-9.815) temp=306.42K flags=0x1c0 | motor_test console_refused=1 forwarded=5 accepted=5 refused=0 stopped=5 | rate executions/s=3747.8 executions=1255446 timing_faults=1255445

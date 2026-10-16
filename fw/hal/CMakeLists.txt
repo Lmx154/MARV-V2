@@ -1,3 +1,8 @@
 add_library(marv_hal INTERFACE)
 target_include_directories(marv_hal INTERFACE include)
 target_link_libraries(marv_hal INTERFACE marv_types)
+
+add_subdirectory(target/decode)
+if(MARV_TARGET STREQUAL "m33")
+  add_subdirectory(target)
+endif()

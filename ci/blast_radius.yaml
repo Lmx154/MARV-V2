@@ -32,7 +32,7 @@
 #   gz_groups      the groups of ci/run_ci_gz.sh: l2 l4 l5 l11.
 #
 # Dependency facts behind the rules (target_link_libraries and the readers of each file):
-#   libraries      sched -> compositions l0, l4, l5, l11. gyro_chain, rate, rate_group -> l4, l5, l11 and L06 (the rate_group
+#   libraries      sched -> compositions l0, l4, l5, l11, quad_fc (tested by L09). gyro_chain, rate, rate_group -> l4, l5, l11 and L06 (the rate_group
 #                  tests link sil_l4). mixer -> L03, L04, L05, L06, L11. attitude -> L05, L11. vertical -> L11.
 #   compositions   l0 -> L00 (and gz l4, l5: the L06 gz_compositions tests build marv_sil_l0 as a control). l2_open_loop -> L02,
 #                  L04 (truth_gyro), L06 (adapter); gz l2 and l4 (both build host-gz). l4_rate_scripted -> L04, L06.
@@ -53,7 +53,13 @@ full_roots:
   - design/**
   - CMakeLists.txt
   - CMakePresets.json
-  - cmake/**
+  # cmake/pico_sdk.cmake has its own rule (the m33 build only); a new cmake/ file is unmapped, so it selects everything.
+  - cmake/flags.cmake
+  - cmake/flight_targets.cmake
+  - cmake/googletest.cmake
+  - cmake/marv_card_gen.cmake
+  - cmake/marv_test_timeout.cmake
+  - cmake/reference_data.cmake
   - pyproject.toml
   - uv.lock
   - .github/**
@@ -82,7 +88,9 @@ ignore_first:
 # Paths that select nothing.
 ignore:
   - .claude/**
+  - tools/target/**   # bench-only scripts (flashing); never run by CI (decision 0027)
   - docs/**
+  - tests/regression/quad/L09/results/**   # bench logs (M1 P9, P11): evidence only, read by no test
   - LICENSE
   - THIRD_PARTY_NOTICES.md
   - datasheets/**
@@ -235,41 +243,63 @@ budget_register:
     why: "an entry that becomes (or stops being) a parameter changes the product id set: the tests that read the param_ids manifests, and the L04, L05 and L11 composition param_ids checks (check_param_ids.py) that compare the product manifest with each composition's"
 
 rules:
+  # ---------------------------------------------------------------- the m33 build
+  - paths: [boards/**, cmake/pico_sdk.cmake]
+    ctest_labels: []
+    run_ci_steps:
+      - m33_build
+      - product_table_m33
+      - g3_m33_symbols
+      - g3_m33_includes
+      - pb2_negative_control
+      - g3_m33_symbol_control
+      - g3_m33_object_control
+    pytest_paths: []
+    gz_groups: []
+    why: "the Pico SDK pin and the board header are read only when MARV_TARGET is m33 (CMakeLists.txt); the host presets and the gz builds never include them"
+
+  - paths: [boards/parts/**]
+    ctest_labels: [L09]
+    run_ci_steps: ["@flight_gates"]
+    pytest_paths: []
+    gz_groups: []
+    why: "a part header (boards/parts/lsm6dsv.hpp) is included by marv_lsm6dsv_decode (fw/hal/target/decode), built on the host too and tested by the L09 decode test; boards/** adds the m33 steps"
+
   # ---------------------------------------------------------------- fw: the libraries
   - paths: [fw/sched/**]
-    ctest_labels: [L00, L04, L05, L06, L11]
+    ctest_labels: [L00, L04, L05, L06, L09, L11]
     run_ci_steps: ["@flight_gates"]
     pytest_paths: []
     gz_groups: [l4, l5, l11]
-    why: "sched is linked by the compositions l0, l4, l5 and l11"
+    why: "sched is linked by the compositions l0, l4, l5, l11 and quad_fc"
 
   - paths: [fw/gyro_chain/**]
-    ctest_labels: [L04, L05, L06, L11]
+    ctest_labels: [L04, L05, L06, L09, L11]
     run_ci_steps: ["@flight_gates", tools_tests]
     pytest_paths: [tests/regression/quad/L06/tools]
     gz_groups: [l4, l5, l11]
-    why: "gyro_chain is linked by rate_group and the L04/L05/L06 T3 tests; L06 tools compile fw/gyro_chain/src"
+    why: "gyro_chain is linked by rate_group (so by the quad_fc L09 test) and the L04/L05/L06 T3 tests; L06 tools compile fw/gyro_chain/src"
 
   - paths: [fw/rate/**]
-    ctest_labels: [L04, L05, L06, L11]
+    ctest_labels: [L04, L05, L06, L09, L11]
     run_ci_steps: ["@flight_gates", tools_tests]
     pytest_paths: [tests/regression/quad/L06/tools]
     gz_groups: [l4, l5, l11]
-    why: "rate is linked by rate_group and the L04/L05 tests; L06 tools drive RateLoop"
+    why: "rate is linked by rate_group (so by the quad_fc L09 test) and the L04/L05 tests; L06 tools drive RateLoop"
 
   - paths: [fw/rate_group/**]
-    ctest_labels: [L04, L05, L06, L11]
+    ctest_labels: [L04, L05, L06, L09, L11]
     run_ci_steps: ["@flight_gates"]
     pytest_paths: []
     gz_groups: [l4, l5, l11]
-    why: "rate_group is linked by the compositions l4, l5 and l11 and by the L06 rate_group tests"
+    why: "rate_group is linked by the compositions l4, l5, l11 and quad_fc and by the L06 rate_group tests"
 
   - paths: [fw/mixer/**]
-    ctest_labels: [L03, L04, L05, L06, L11]
+    ctest_labels: [L03, L04, L05, L06, L09, L11]
     run_ci_steps: ["@flight_gates", tools_tests]
     pytest_paths: [tests/regression/quad/L06/tools]
     gz_groups: [l4, l5, l11]
-    why: "mixer is linked by the L03 tests, rate, rate_group, vertical and the compositions; L06 tools compile with fw/mixer/include"
+    why: "mixer is linked by the L03 and L09 tests, rate, rate_group, vertical and the compositions; L06 tools compile with fw/mixer/include"
 
   - paths: [fw/attitude/**]
     ctest_labels: [L05, L11]
@@ -320,6 +350,13 @@ rules:
     pytest_paths: []
     gz_groups: [l11]
     why: "l11_vertical_scripted is the L11 SIL"
+
+  - paths: [fw/compositions/quad_fc/**]
+    ctest_labels: [L09]
+    run_ci_steps: ["@flight_gates"]
+    pytest_paths: []
+    gz_groups: []
+    why: "quad_fc is the flight composition of the m33 image and is linked by the L09 gate test only; its register and its scenario-values register are read by the marv_params_fc3v2 set built by the same tests"
 
   # ---------------------------------------------------------------- sim
   - paths: [sim/plant/**]
@@ -380,7 +417,7 @@ rules:
 
   # ---------------------------------------------------------------- tools
   - paths: [tools/card/**]
-    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L11]
+    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L09, L11]
     run_ci_steps: ["@card_gates"]
     pytest_paths:
       - tests/regression/quad/L01/tools
@@ -397,7 +434,7 @@ rules:
       - tools/sim/prim_constants.py
       - tools/sim/reference.py
       - tools/sim/t4_rule.py
-    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L11]
+    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L09, L11]
     run_ci_steps: ["@card_gates"]
     pytest_paths:
       - tests/regression/quad/L01/tools
@@ -959,6 +996,13 @@ rules:
     why: "L06 tools tests and the committed L06 measurements they read"
 
   # ---------------------------------------------------------------- L11
+  - paths: [tests/regression/quad/L09/CMakeLists.txt, tests/regression/quad/L09/unit/**]
+    ctest_labels: [L09]
+    run_ci_steps: ["@host"]
+    pytest_paths: []
+    gz_groups: []
+    why: "the L09 quad_fc gate test is a host ctest entry"
+
   - paths:
       - tests/regression/quad/L11/CMakeLists.txt
       - tests/regression/quad/L11/unit/**

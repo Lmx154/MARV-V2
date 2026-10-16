@@ -1,0 +1,14 @@
+[  0.534] marv_fc3v2 quad-L2-pass-147-gc52b42b
+[  0.535] params ok: generated defaults, rate_period_tolerance_us 1
+[  0.535] init ok
+[  0.535] motors ok: DShot600 on PIO 0, clk_sys 150000000 Hz, PIO divider 31 + 64/256 (derived, dshot.hpp)
+[  0.535] imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+[  0.535] bench stats: off
+[  0.535] imu dt=1000049us irq/s=7495.6 words/s=14991.3 samples/s=7495.6 ticks/s=7495.6 writes/s=3747.8 motor_drops=0 | total samples=4407649 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=588075391 gyro=(-0.0012,+0.0098,+0.0000) accel=(+0.024,-0.024,-9.811) temp=303.85K flags=0x1c0 | motor_test console_refused=0 forwarded=4 accepted=2 refused=2 stopped=2 | rate executions/s=3747.8 executions=2203825 timing_faults=2203824
+[  0.535] > motor_test 1 100 3000 PROPS-OFF
+[  4.535] motor_test accepted: motor 1 dshot 100 for 3000 ms
+[  4.535] imu dt=1000049us irq/s=7495.6 words/s=14991.3 samples/s=7495.6 ticks/s=7495.6 writes/s=3747.8 motor_drops=0 | total samples=4415145 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=589075439 gyro=(+0.0037,-0.0049,-0.0073) accel=(-0.297,+1.192,-9.796) temp=303.87K flags=0x1c0 | motor_test console_refused=0 forwarded=5 accepted=3 refused=2 stopped=2 | rate executions/s=3747.8 executions=2207573 timing_faults=2207572
+[  4.535] imu dt=1000049us irq/s=7495.6 words/s=14991.3 samples/s=7495.6 ticks/s=7495.6 writes/s=3747.8 motor_drops=0 | total samples=4422641 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=590075488 gyro=(-0.0086,-0.0037,+0.0012) accel=(-1.010,-0.943,-10.332) temp=303.85K flags=0x1c0 | motor_test console_refused=0 forwarded=5 accepted=3 refused=2 stopped=2 | rate executions/s=3747.8 executions=2211321 timing_faults=2211320
+[  4.535] motor_test stopped: deadline (motor 1)
+[  4.535] imu dt=1000051us irq/s=7495.6 words/s=14991.2 samples/s=7495.6 ticks/s=7495.6 writes/s=3747.8 motor_drops=0 | total samples=4430137 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=591075538 gyro=(-0.0134,+0.0012,-0.0024) accel=(+0.067,+0.105,-9.734) temp=303.83K flags=0x1c0 | motor_test console_refused=0 forwarded=5 accepted=3 refused=2 stopped=3 | rate executions/s=3747.8 executions=2215069 timing_faults=2215068
+[  4.535] imu dt=1000049us irq/s=7495.6 words/s=14991.3 samples/s=7495.6 ticks/s=7495.6 writes/s=3747.8 motor_drops=0 | total samples=4437633 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=592075587 gyro=(-0.0024,-0.0012,-0.3457) accel=(+0.392,-0.450,-9.198) temp=303.89K flags=0x1c0 | motor_test console_refused=0 forwarded=5 accepted=3 refused=2 stopped=3 | rate executions/s=3747.8 executions=2218817 timing_faults=2218816

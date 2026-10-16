@@ -101,7 +101,8 @@ def test_real_constants_hpp_holds_its_literal_and_repo_sources_are_otherwise_cle
     # still find the L0 literals in it, in order.
     found = bad(constants.read_text())
     l0_literals = ["3", "48", "2047"]
-    assert [lit for lit in found if lit in l0_literals] == l0_literals
+    remaining = iter(found)
+    assert all(lit in remaining for lit in l0_literals), found  # in order; later constants may repeat a value
     for path in lint.fw_sources():
         if path != constants:
             assert bad(path.read_text()) == [], path

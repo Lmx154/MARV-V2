@@ -176,7 +176,8 @@ adding more complex features gradually" (decision 0026).
 **M1 — Target bring-up** (L9, MVP subset)
 - `hal_target` on the Pico SDK; a linked ELF of the flight composition in the `m33` preset, its size reported.
 - The MVP board is the madflight FC3v2 Rev-C (Luis, 2026-10-15: "let's not mess around with the other pcb and just
-  focus on the madflight fc3v2 rev-c"): B package, LSM6DSV on SPI1, four motors on a Goku G55M 55A AM32 4-in-1 ESC,
+  focus on the madflight fc3v2 rev-c"): RP2354B (chip marking 2354B0A4; its 2 MB in-package flash is the only
+  flash, Luis 2026-10-15), LSM6DSV on SPI1, four motors on a Goku G55M 55A AM32 4-in-1 ESC,
   flashed over SWD (debug probe), console and data over USB. Boards are configuration behind `hal_target`: one board
   file (pins, buses, IMU part, package), checked at build time against its package's GPIO count. Luis's own board is
   a later board file.
@@ -238,7 +239,8 @@ noise Monte Carlo, C6a); L7 shadow mode and its Monte Carlo; L8's Gazebo pilot a
 (eRPM, core split, SRAM placement if timing holds without them); L10 HIL; an in-process `marv_plant` closed loop
 with truth dispersed inside the card's uncertainties, replacing Gazebo for development checks; plant fidelity (rotor
 inertia, battery and duty-mode ESC, rotor and body drag, IMU lever arm); vertical-loop tilt compensation; the
-branches of §6.3.
+RP2350 hardware watchdog (2048 ms, a recovery feature: the AM32 ESC already stops on a silent DShot line, decision
+0039; work on branch `m1-wdt`); the branches of §6.3.
 
 ### 4.1 The layers
 

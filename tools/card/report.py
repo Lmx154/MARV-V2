@@ -14,6 +14,7 @@ It reads the files as given and does not lint them (flatten.py lints); a file th
 
 Lists, each entry as `<file>:<path>  source: <source>` (file is card, profile or budget): UNVERIFIED, INFERRED, sigma
 UNKNOWN (any component), value UNKNOWN, design-budget entries (value or UNKNOWN), locked entries (by, on, via). The
+PLACEHOLDER list (core 2) shows each entry as `<file>:<path>  reason: <reason>  replaced by: <replaced_by>`. The
 last line states the model: perfect-model (truth and firmware from the same card, not dispersed; core 6).
 """
 
@@ -106,6 +107,13 @@ def _lock_text(lock):
     return f"lock by {lock.get('by')} on {lock.get('on')} via {lock.get('via')}"
 
 
+def _placeholder_text(entry):
+    ph = entry.get("placeholder")
+    ph = ph if isinstance(ph, dict) else {}
+    return (f"reason: {' '.join(str(ph.get('reason')).split())}  "
+            f"replaced by: {' '.join(str(ph.get('replaced_by')).split())}")
+
+
 def build_report(card, budget, root=lint.ROOT):
     card_doc = schema.load_yaml(card)
     budget_doc = schema.load_yaml(budget)
@@ -135,6 +143,8 @@ def build_report(card, budget, root=lint.ROOT):
         "",
         *section("UNVERIFIED", where(status("UNVERIFIED"))),
         *section("INFERRED", where(status("INFERRED"))),
+        *section("PLACEHOLDER", where(
+            status(schema.PLACEHOLDER), lambda label, path, e: f"  {label}:{path}  {_placeholder_text(e)}")),
         *section("sigma UNKNOWN", where(_sigma_unknown)),
         *section("value UNKNOWN", where(lambda e: e.get("value") == schema.UNKNOWN)),
         *section("design-budget", [

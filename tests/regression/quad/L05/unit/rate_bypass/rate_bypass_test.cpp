@@ -5,7 +5,8 @@
 //         (control: the reference perturbed by one ulp at one execution).
 //   I-A3  the switch back is bumpless: execute after bypassed executions continues its prefilter from the last
 //         applied reference (control: the prefilter seeded from the gyro instead).
-//   I-A4  faults and the period check behave as in execute (control: a run without a fault must not satisfy the check).
+//   I-A4  faults and the period check behave as in execute (control: a run without a fault must not satisfy the check);
+//         a spacing off the period is refused and counted, never a halt (decision 0034).
 //
 // Numbers in this file are one of: read from the fixture files, derived (the rule is stated), or a "scenario test
 // value" named with its reason.
@@ -106,6 +107,9 @@ TEST(L5RateBypassAcro, NegativeControlKpOneUlpUpDoesNotReproduceTheGolden) {
 // Scenario test value: the design period T. One millisecond, a whole number of microseconds, so the +-1 us jitter
 // cases are exact (as the L04 unit suite).
 constexpr std::uint64_t kPeriodUs = 1000;
+// Scenario test value: the period check's tolerance, 1 µs (the SIL rate_period_tolerance_us, the hal_sim stamp
+// truncation bound). With T = kPeriodUs / 1 µs per tick and one tick per execution, the check is |dt - T| > 1 µs.
+constexpr std::int32_t kToleranceUs = 1;
 // Scenario test value: the first sample stamp, nonzero so a stamp of 0 is not mistaken for "no stamp".
 constexpr std::uint64_t kT0Us = 5000;
 // Scenario test values: gains as the L04 hand table (small numbers, per-axis scale so an axis mix-up shows), nonzero
@@ -127,6 +131,10 @@ RateConfig<float> test_config() {
     c.tau_ref[a] = kTauPeriods * period_s();
   }
   c.period = period_s();
+  c.tick_period_num_us = static_cast<std::int32_t>(kPeriodUs);
+  c.tick_period_den = 1;
+  c.rate_loop_divisor = 1;
+  c.period_tolerance_us = kToleranceUs;
   return c;
 }
 
@@ -394,21 +402,31 @@ TEST(L5RateBypassFaults, NegativeControlARunWithoutAFaultDoesNotSatisfyTheCheck)
   EXPECT_FALSE(fault_response_holds(Bad::None));
 }
 
-TEST(L5RateBypassDeathTest, SpacingOutsideOneMicrosecondOfTheDesignPeriodPanics) {
+TEST(L5RateBypassFaults, SpacingOutsideOneMicrosecondOfTheDesignPeriodIsRefusedAndCounted) {
   const RateConfig<float> cfg = test_config();
+  // The second execution's output and the loop's timing fault count.
   const auto run = [&](std::int64_t jitter) {
     Rig rig(cfg);
     (void)rig.loop.execute_bypass(rig.sample(V3(), 0), V3());
-    (void)rig.loop.execute_bypass(rig.sample(V3(), jitter), V3());
+    const RateOutput<float> o = rig.loop.execute_bypass(rig.sample(V3(), jitter), V3());
+    EXPECT_EQ(rig.loop.timing_fault_count(), o.timing_fault_count) << "jitter " << jitter;
+    return o;
   };
-  // Inside the bound: no panic (negative control for the death cases).
-  run(-1);
-  run(0);
-  run(1);
-  EXPECT_DEATH(run(2), "more than 1 us");
-  EXPECT_DEATH(run(-2), "more than 1 us");
-  EXPECT_DEATH(run(-static_cast<std::int64_t>(kPeriodUs)), "more than 1 us");  // a repeated stamp
-  EXPECT_DEATH(run(static_cast<std::int64_t>(kPeriodUs)), "more than 1 us");   // a dropped sample
+  // Inside the bound: accepted (negative control for the refused cases).
+  for (const std::int64_t jitter : {-1, 0, 1}) {
+    const RateOutput<float> o = run(jitter);
+    EXPECT_FALSE(o.fault_active) << "jitter " << jitter;
+    EXPECT_EQ(o.fault_count, 0U) << "jitter " << jitter;
+  }
+  const auto t = static_cast<std::int64_t>(kPeriodUs);
+  // +-2 us, a repeated stamp, a dropped sample: refused with zero torque, latched and counted as a timing fault.
+  for (const std::int64_t jitter : {std::int64_t{2}, std::int64_t{-2}, -t, t}) {
+    const RateOutput<float> o = run(jitter);
+    EXPECT_TRUE(bits_equal(o.torque, V3())) << "jitter " << jitter;
+    EXPECT_TRUE(o.fault_active && o.fault_latched) << "jitter " << jitter;
+    EXPECT_EQ(o.fault_count, 1U) << "jitter " << jitter;
+    EXPECT_EQ(o.timing_fault_count, 1U) << "jitter " << jitter;
+  }
 }
 
 }  // namespace
