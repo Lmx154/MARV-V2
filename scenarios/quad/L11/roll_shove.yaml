@@ -5,8 +5,8 @@
 # The run starts at the hover trim (the rotors at the card's hover speed, level, at rest, z = z_ref = 0) at vertical execution 0,
 # the T3 oracle's seed execution n = 0 (tests/regression/quad/L11/t3/reference/vertical_t3_oracle.py): oracle execution n is
 # the run's vertical execution n, and execution 1 (stamp 312 us) is where the oracle's step, offset or pulse starts. The
-# script's values are those of the oracle's envelope 'roll_shove' in vertical_t3_envelope.txt (z_ref_m, thrust_disturbance_n,
-# torque_pulse_*, count). Schema and checks: tools/sim/l11_scenario.py. Every number is a labelled scenario value or a derived
+# end execution is the T3 golden's segment_executions (vertical_t3_golden.txt header); the pulse starts at the golden's
+# step_execution (decision 0032). Schema and checks: tools/sim/l11_scenario.py. Every number is a labelled scenario value or a derived
 # value. Frames NED / FRD, SI.
 scenario: roll_shove
 site_latitude_rad:
@@ -59,7 +59,7 @@ initial_state:
     value: [0.0, 0.0, 0.0]
     unit: rad/s
     label: scenario
-    rationale: "starts at rest: the T3 envelope is the design-model response from the hover trim and at rest"
+    rationale: "starts at rest: the T3 golden is the design-model response from the hover trim and at rest"
   rotor_speed_rad_s:
     value: hover
     unit: rad/s
@@ -92,9 +92,9 @@ script:
       value: 1
       unit: "1"
       label: derived
-      rule: "the oracle's SHOVE_EXECUTION = 1, torque_pulse_t0_us of envelope 'roll_shove' = the stamp of vertical execution 1 (312 us): the start convention of the other two scripts"
+      rule: "the oracle's SHOVE_EXECUTION = 1 = the golden's step_execution, the stamp of vertical execution 1 (312 us): the start convention of the other two scripts"
   end_vertical_execution:
     value: 45482
     unit: "1"
     label: derived
-    rule: "count - 1 of the recorded envelope 'roll_shove' (vertical_t3_envelope.txt channel z, count 45483 executions 0..45482; segment_seconds 14.213020643218112): the run ends with the envelope"
+    rule: "segment_executions of the T3 golden header (vertical_t3_golden.txt, executions 0..45482; segment_seconds 14.213020643218112): the run ends at the golden's deadline, where tests/regression/quad/L11/gz/test_t4_vertical.py checks S (and B for the height step), decision 0032"

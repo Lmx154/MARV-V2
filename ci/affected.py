@@ -4,7 +4,8 @@
     uv run python ci/affected.py [--base REV] [--head REV] [--json] [--check-manifest]
 
 The map is ci/blast_radius.yaml (its header says how a path is classified). A changed path that matches no full root, no
-rule and no ignore glob selects everything (fail-safe). --check-manifest fails when the map has gone stale against
+rule and no ignore glob selects everything (fail-safe). design/budget.yaml is diffed key by key against the base and a
+changed key selects the files that name it. --check-manifest fails when the map has gone stale against
 ci/run_ci.sh, ci/run_ci_gz.sh and the repository.
 """
 
@@ -33,7 +34,14 @@ QUAD_TESTS = ROOT / "tests" / "regression" / "quad"
 ALWAYS_RUN_STEPS = {"uv"}
 SELECTION_KEYS = ("ctest_labels", "run_ci_steps", "pytest_paths", "gz_groups")
 RULE_KEYS = ("paths", "why") + SELECTION_KEYS
-TOP_KEYS = {"full_roots", "rules", "ignore", "merge_only_steps", "step_groups"}
+OPTIONAL_RULE_KEYS = ("like",)
+TOP_KEYS = {"full_roots", "rules", "ignore", "ignore_first", "merge_only_steps", "step_groups", "budget_register",
+            "card_files"}
+REGISTER_KEYS = {"file", "text_fields", "scan_min_name_length", "scan_exclude", "mentions", "extra_readers", "any_change",
+                 "structural"}
+REGISTER_SELECTIONS = ("any_change", "structural")
+SCHEMA_FIELDS = ("unit", "sigma", "method", "status", "check")
+TEXT_SUFFIX_SKIP = {".png", ".jpg", ".jpeg", ".gif", ".pdf", ".bin", ".so", ".o", ".a", ".gz", ".zip", ".npz", ".npy", ".ico"}
 
 
 # ------------------------------------------------------------------------------------------------ globs
@@ -141,6 +149,148 @@ def changed_paths(base_sha: str, head: str | None, root: Path = ROOT) -> list[st
     return sorted({p for p in names.split("\0") if p})
 
 
+# ------------------------------------------------------------------------------------------------ the register
+
+def file_at(rev: str | None, path: str, root: Path = ROOT) -> str | None:
+    """The text of `path` at `rev` (the working tree when rev is None), or None when the file is not there."""
+    if rev is None:
+        f = root / path
+        return f.read_text(encoding="utf-8") if f.is_file() else None
+    try:
+        return git(["show", f"{rev}:{path}"], root)
+    except RuntimeError:
+        return None
+
+
+def is_number(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def register_scan_candidates(cfg: dict, mapping: dict, tracked: list[str]) -> list[str]:
+    """The tracked files whose text names the keys of the register: not the register, not an ignored path, not a copy of values."""
+    skip = list(cfg.get("scan_exclude") or []) + list(mapping.get("ignore") or []) + list(mapping.get("ignore_first") or [])
+    return [p for p in tracked if p != cfg["file"] and Path(p).suffix not in TEXT_SUFFIX_SKIP and first_match(p, skip) is None]
+
+
+def key_regex(key: str) -> re.Pattern:
+    return re.compile(r"(?<![A-Za-z0-9_])" + re.escape(key) + r"(?![A-Za-z0-9_])")
+
+
+def register_readers(keys: list[str], cfg: dict, mapping: dict, tracked: list[str], root: Path = ROOT
+                     ) -> tuple[dict[str, list[str] | None], dict[str, str]]:
+    """key -> its reader files (None: not mappable), and why not. A reader is a candidate file that names the key as a whole
+    word, minus the `mentions`, plus the `extra_readers`."""
+    min_len = int(cfg.get("scan_min_name_length", 1))
+    mentions, extra = cfg.get("mentions") or [], cfg.get("extra_readers") or []
+    candidates = register_scan_candidates(cfg, mapping, tracked) if keys else []
+    texts: dict[str, str] = {}
+
+    def text(p: str) -> str:
+        if p not in texts:
+            try:
+                texts[p] = (root / p).read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                texts[p] = ""
+        return texts[p]
+
+    readers: dict[str, list[str] | None] = {}
+    unmapped: dict[str, str] = {}
+    for key in keys:
+        if len(key) < min_len:
+            readers[key] = None
+            unmapped[key] = (f"its name has {len(key)} character(s), fewer than scan_min_name_length {min_len}: a scan by name "
+                             f"cannot find its readers")
+            continue
+        rx = key_regex(key)
+        hits = {p for p in candidates if rx.search(text(p))}
+        hits = {p for p in hits if not any(key in m["keys"] and first_match(p, m["paths"]) for m in mentions)}
+        for e in extra:
+            if key in e["keys"]:
+                hits.update(e["paths"])
+        readers[key] = sorted(hits)
+    return readers, unmapped
+
+
+def consumed_card_files(mapping: dict, paths: list[str], tracked: list[str], root: Path = ROOT) -> set[str]:
+    """Those of `paths` (card or profile files) that some tracked file consumes: names the path or the file name stem as a
+    whole word, in a file that is not ignored or excluded; another card or profile only counts when it is itself consumed."""
+    cfg = mapping.get("card_files") or {}
+    skip = list(cfg.get("scan_exclude") or []) + list(mapping.get("ignore") or []) + list(mapping.get("ignore_first") or [])
+    candidates = [p for p in tracked if Path(p).suffix not in TEXT_SUFFIX_SKIP and first_match(p, skip) is None]
+    texts: dict[str, str] = {}
+
+    def text(p: str) -> str:
+        if p not in texts:
+            try:
+                texts[p] = (root / p).read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                texts[p] = ""
+        return texts[p]
+
+    def is_card(p: str) -> bool:
+        return first_match(p, cfg.get("globs") or []) is not None
+
+    memo: dict[str, bool] = {}
+
+    def consumed(path: str, visiting: tuple[str, ...]) -> bool:
+        if path in memo:
+            return memo[path]
+        rx = re.compile(r"(?<![A-Za-z0-9_])(?:" + re.escape(path) + "|" + re.escape(Path(path).stem) + r")(?![A-Za-z0-9_])")
+        result = False
+        for r in candidates:
+            if r == path or r in visiting or not rx.search(text(r)):
+                continue
+            if not is_card(r) or consumed(r, visiting + (path,)):
+                result = True
+                break
+        if not visiting:
+            memo[path] = result
+        return result
+
+    return {p for p in paths if consumed(p, ())}
+
+
+def register_change(mapping: dict, base_sha: str, head: str | None, changed: list[str], tracked: list[str],
+                    root: Path = ROOT) -> dict | None:
+    """The key-level diff of the design-budget register between base and head (the working tree when head is None), or None
+    when the map has no register section or the file did not change. Keys: file, keys (key -> added/removed/changed),
+    text_only (keys whose only changed fields are the text fields), structural (a parameter appeared, went or changed
+    schema), readers and unmapped (register_readers), errors (reasons the diff could not be made)."""
+    cfg = mapping.get("budget_register")
+    if not cfg or cfg["file"] not in changed:
+        return None
+    info = {"file": cfg["file"], "keys": {}, "text_only": [], "structural": False, "readers": {}, "unmapped": {}, "errors": []}
+    docs = []
+    for rev in (base_sha, head):
+        where = rev[:12] if rev else "the working tree"
+        text = file_at(rev, cfg["file"], root)
+        try:
+            doc = yaml.safe_load(text) if text is not None else {}
+        except yaml.YAMLError as e:
+            info["errors"].append(f"cannot parse the register at {where}: {str(e).splitlines()[0]}")
+            return info
+        doc = {} if doc is None else doc
+        if not isinstance(doc, dict) or any(not isinstance(v, dict) for v in doc.values()):
+            info["errors"].append(f"the register at {where} is not a mapping of entries")
+            return info
+        docs.append(doc)
+    old, new = docs
+    text_fields = set(cfg.get("text_fields") or [])
+    for key in sorted(set(old) | set(new)):
+        a, b = old.get(key), new.get(key)
+        if a == b:
+            continue
+        info["keys"][key] = "added" if a is None else "removed" if b is None else "changed"
+        if a is not None and b is not None and {f for f in set(a) | set(b) if a.get(f) != b.get(f)} <= text_fields:
+            info["text_only"].append(key)
+        has_a, has_b = a is not None and is_number(a.get("value")), b is not None and is_number(b.get("value"))
+        if has_a != has_b or (has_b and any(a.get(f) != b.get(f) for f in SCHEMA_FIELDS)):
+            info["structural"] = True
+    info["readers"], info["unmapped"] = register_readers(
+        [k for k in info["keys"] if k not in info["text_only"]], cfg, mapping, tracked, root)
+    return info
+
+
 # ------------------------------------------------------------------------------------------------ the map
 
 def load_map(path: Path = MAP_PATH) -> dict:
@@ -169,7 +319,10 @@ def map_pytest_paths(mapping: dict) -> list[str]:
 
 
 def classify(path: str, mapping: dict):
-    """('full', glob), ('rules', [rule, ...]), ('ignore', glob) or ('unmapped', None)."""
+    """('full', glob), ('rules', [rule, ...]), ('ignore', glob) or ('unmapped', None); ignore_first wins over all."""
+    g = first_match(path, mapping.get("ignore_first") or [])
+    if g is not None:
+        return "ignore", g
     g = first_match(path, mapping.get("full_roots") or [])
     if g is not None:
         return "full", g
@@ -183,27 +336,53 @@ def classify(path: str, mapping: dict):
 
 
 def select(changed: list[str], mapping: dict, universe: dict, base: str = "", forced_full: list[str] | None = None,
-           pyindex=None, per_push: bool = True, notes: list[str] | None = None) -> dict:
+           pyindex=None, per_push: bool = True, notes: list[str] | None = None, register: dict | None = None,
+           consumed: set[str] | None = None) -> dict:
     """The selection for a list of changed paths.
 
     With a PythonIndex, a changed Python file under tools/ or tests/regression/ contributes the test files whose import or
     spawn closure holds it instead of its rule's pytest directories (a directory stays when the closure analysis cannot
     resolve something in it). `notes` collects what the caller should tell the user.
+
+    `register` is register_change() of the design-budget register: when the register file is among the changed paths and
+    `register` describes it, the file selects its any_change selection, its structural selection when a parameter appeared
+    or went, and each changed key's readers, instead of the full root it is without that description. A rule's `like` paths
+    are selected as if they had changed too. A card or profile file (map section card_files) selects what the committed card
+    selects when it is in `consumed` (consumed_card_files; None: unknown, so consumed).
     """
     notes = notes if notes is not None else []
     full_reasons = list(forced_full or [])
     chosen = {k: set() for k in SELECTION_KEYS}
+    reg_cfg = mapping.get("budget_register") or {}
+    work: list[tuple[str, str]] = []
     for path in sorted(set(changed)):
+        if register and reg_cfg and path == reg_cfg.get("file") == register.get("file"):
+            expand_register(register, reg_cfg, mapping, chosen, full_reasons, work, notes)
+        else:
+            work.append((path, ""))
+            card_cfg = mapping.get("card_files") or {}
+            if card_cfg and first_match(path, card_cfg["globs"]) is not None and path != card_cfg["consumed_like"] \
+                    and (consumed is None or path in consumed):
+                work.append((card_cfg["consumed_like"], f" ({path} is consumed)"))
+    seen: set[str] = set()
+    i = 0
+    while i < len(work):
+        path, origin = work[i]
+        i += 1
+        if path in seen:
+            continue
+        seen.add(path)
         kind, what = classify(path, mapping)
         if kind == "full":
-            full_reasons.append(f"{path}: {what}")
+            full_reasons.append(f"{path}: {what}{origin}")
         elif kind == "unmapped":
-            full_reasons.append(f"{path}: unmapped")
+            full_reasons.append(f"{path}: unmapped{origin}")
         elif kind == "rules":
             file_level = pyindex.files_for(path) if pyindex and is_python_candidate(path) else None
             if pyindex and is_python_candidate(path) and file_level is None:
                 notes.append(f"{path}: closure analysis unavailable ({pyindex.why_not(path)}); pytest selected at directory level")
             for rule in what:
+                work.extend((p, f" (like {path})") for p in rule.get("like") or [])
                 for k, v in rule_selection(rule, mapping).items():
                     if k == "pytest_paths" and file_level is not None:
                         files, unresolved = file_level
@@ -235,6 +414,32 @@ def select(changed: list[str], mapping: dict, universe: dict, base: str = "", fo
     return result
 
 
+def expand_register(register: dict, cfg: dict, mapping: dict, chosen: dict, full_reasons: list[str],
+                    work: list[tuple[str, str]], notes: list[str]) -> None:
+    """Add what a described change of the register file selects: chosen (selections), full_reasons, work (reader paths)."""
+    file = cfg["file"]
+    for err in register.get("errors") or []:
+        full_reasons.append(f"{file}: {err}")
+    parts = ["any_change"] + (["structural"] if register.get("structural") else [])
+    for part in parts:
+        for k, v in rule_selection(cfg[part], mapping).items():
+            chosen[k].update(v)
+    keys = register.get("keys") or {}
+    text_only = [k for k in keys if k in (register.get("text_only") or [])]
+    if keys:
+        notes.append(f"{file}: changed keys " + ", ".join(
+            f"{k} ({keys[k]}{', text only' if k in text_only else ''})" for k in sorted(keys)))
+    for key in sorted(keys):
+        if key in text_only:
+            continue
+        readers = (register.get("readers") or {}).get(key)
+        if readers is None:
+            full_reasons.append(f"{file}: key {key}: {(register.get('unmapped') or {}).get(key, 'no readers known')}")
+            continue
+        notes.append(f"{file}: key {key} is read by {', '.join(readers) if readers else 'no tracked file'}")
+        work.extend((r, f" (reads budget key {key})") for r in readers)
+
+
 # ------------------------------------------------------------------------------------------------ the manifest check
 
 def check_manifest(mapping: dict, universe: dict, root: Path = ROOT) -> list[str]:
@@ -252,11 +457,18 @@ def check_manifest(mapping: dict, universe: dict, root: Path = ROOT) -> list[str
 
     selected_steps = set()
     selected_pytest = set()
-    for i, rule in enumerate(mapping.get("rules") or []):
-        name = f"rule {i} ({', '.join(rule.get('paths') or ['no paths'])})"
+    register_errors, pseudo_rules = check_register_section(mapping, root)
+    errors += register_errors + check_card_files_section(mapping, root)
+    for i, rule in enumerate((mapping.get("rules") or []) + pseudo_rules):
+        name = f"rule {i} ({', '.join(rule.get('paths') or ['no paths'])})" if "_name" not in rule else rule["_name"]
         for k in RULE_KEYS:
             if k not in rule:
                 errors.append(f"{name}: missing key {k}")
+        for k in sorted(set(rule) - set(RULE_KEYS) - set(OPTIONAL_RULE_KEYS) - {"_name"}):
+            errors.append(f"{name}: unknown key {k}")
+        for p in rule.get("like") or []:
+            if not (root / p).exists():
+                errors.append(f"{name}: like path '{p}' does not exist")
         if not rule.get("why"):
             errors.append(f"{name}: empty why")
         for k in SELECTION_KEYS + ("paths",):
@@ -302,10 +514,78 @@ def check_manifest(mapping: dict, universe: dict, root: Path = ROOT) -> list[str
         if any(d.glob("test_*.py")) and rel not in selected_pytest and rel not in gz_text:
             errors.append(f"tools-test directory {rel} is named by no rule and no gz group runs it")
 
-    for key in ("full_roots", "ignore"):
+    for key in ("full_roots", "ignore", "ignore_first"):
         for g in mapping.get(key) or []:
             glob_to_regex(g)
+    if not isinstance(mapping.get("ignore_first"), list) or not mapping.get("ignore_first"):
+        errors.append("ignore_first: missing or empty")
     return errors
+
+
+def check_card_files_section(mapping: dict, root: Path = ROOT) -> list[str]:
+    cfg = mapping.get("card_files")
+    if not isinstance(cfg, dict):
+        return ["card_files: section missing"]
+    errors = []
+    for k in sorted({"globs", "consumed_like", "scan_exclude"} - set(cfg)):
+        errors.append(f"card_files: missing key {k}")
+    for g in list(cfg.get("globs") or []) + list(cfg.get("scan_exclude") or []):
+        glob_to_regex(g)
+    like = cfg.get("consumed_like")
+    if not like or not (root / like).is_file():
+        errors.append(f"card_files: consumed_like '{like}' does not exist")
+    elif not any(like in (r.get("paths") or []) for r in mapping.get("rules") or []):
+        errors.append(f"card_files: consumed_like '{like}' has no rule of its own")
+    return errors
+
+
+def check_register_section(mapping: dict, root: Path = ROOT) -> tuple[list[str], list[dict]]:
+    """Errors in the budget_register section, and its two selections as rules (so the rule checks validate them)."""
+    reg = mapping.get("budget_register")
+    if reg is None:
+        return ["budget_register: section missing"], []
+    errors = []
+    if not isinstance(reg, dict):
+        return ["budget_register: not a mapping"], []
+    for k in sorted(REGISTER_KEYS - set(reg)):
+        errors.append(f"budget_register: missing key {k}")
+    for k in sorted(set(reg) - REGISTER_KEYS):
+        errors.append(f"budget_register: unknown key {k}")
+    file = reg.get("file")
+    keys: set[str] = set()
+    if not file or not (root / file).is_file():
+        errors.append(f"budget_register: file '{file}' does not exist")
+    else:
+        try:
+            keys = set(yaml.safe_load((root / file).read_text(encoding="utf-8")) or {})
+        except yaml.YAMLError as e:
+            errors.append(f"budget_register: {file} does not parse: {e}")
+    if not isinstance(reg.get("scan_min_name_length"), int):
+        errors.append("budget_register: scan_min_name_length is not an integer")
+    for g in list(reg.get("scan_exclude") or []):
+        glob_to_regex(g)
+    scan_keys = [k for k in keys if len(k) >= int(reg.get("scan_min_name_length") or 1)]
+    for section in ("mentions", "extra_readers"):
+        for j, entry in enumerate(reg.get(section) or []):
+            where = f"budget_register.{section}[{j}]"
+            for f in ("keys", "paths", "why"):
+                if not entry.get(f):
+                    errors.append(f"{where}: missing or empty {f}")
+            for key in entry.get("keys") or []:
+                if keys and key not in keys:
+                    errors.append(f"{where}: key '{key}' is not in {file}")
+            for pth in entry.get("paths") or []:
+                if section == "extra_readers" and not (root / pth).is_file():
+                    errors.append(f"{where}: path '{pth}' does not exist")
+                if section == "mentions" and not any(c in pth for c in "*?[") and (root / pth).is_file():
+                    text = (root / pth).read_text(encoding="utf-8", errors="ignore")
+                    if not any(key_regex(key).search(text) for key in entry.get("keys") or [] if key in scan_keys):
+                        errors.append(f"{where}: '{pth}' no longer names any of {entry.get('keys')}: remove the entry")
+    pseudo = []
+    for k in REGISTER_SELECTIONS:
+        if isinstance(reg.get(k), dict):
+            pseudo.append({**reg[k], "paths": [file or "?"], "_name": f"budget_register.{k}"})
+    return errors, pseudo
 
 
 def map_notes(mapping: dict, tracked: list[str]) -> list[str]:
@@ -335,12 +615,13 @@ UNKNOWN = "<?>"
 class Selector:
     """select() for one path, remembered."""
 
-    def __init__(self, mapping: dict, universe: dict, pyindex=None):
-        self.mapping, self.universe, self.pyindex, self.cache = mapping, universe, pyindex, {}
+    def __init__(self, mapping: dict, universe: dict, pyindex=None, consumed: set[str] | None = None):
+        self.mapping, self.universe, self.pyindex, self.consumed, self.cache = mapping, universe, pyindex, consumed, {}
 
     def __call__(self, path: str) -> dict:
         if path not in self.cache:
-            self.cache[path] = select([path], self.mapping, self.universe, pyindex=self.pyindex, per_push=False)
+            self.cache[path] = select([path], self.mapping, self.universe, pyindex=self.pyindex, per_push=False,
+                                      consumed=self.consumed)
         return self.cache[path]
 
 
@@ -791,6 +1072,81 @@ def cross_check_reads(select_one: Selector, tracked: list[str], universe: dict, 
     return errors
 
 
+# --- the register, the card and the profile
+
+def cross_check_register(mapping: dict, universe: dict, tracked: list[str], select_one: Selector, root: Path,
+                         gz_paths: dict[str, set[str]]) -> list[str]:
+    """Recompute from the files what the register section and the card rules must select; fail when they select less.
+
+    1. A file that builds a key's name from a prefix (`t4_confidence_{klass}`, `t4_confidence_*`) reads keys the whole-word
+       scan cannot see: it must be an extra reader, a mention or already a reader of that key.
+    2. Every test that reads a param_ids manifest is selected by a structural change of the register.
+    3. Every test that names a card or a sensor profile (its path or its name) is selected by that file's own selection."""
+    errors = []
+    reg = mapping.get("budget_register") or {}
+    if reg.get("file") and (root / reg["file"]).is_file():
+        keys = [k for k in (yaml.safe_load((root / reg["file"]).read_text(encoding="utf-8")) or {})
+                if len(k) >= int(reg.get("scan_min_name_length") or 1)]
+        candidates = register_scan_candidates(reg, mapping, tracked)
+        texts = {p: (root / p).read_text(encoding="utf-8", errors="ignore") for p in candidates}
+        readers, _ = register_readers(keys, reg, mapping, tracked, root)
+        for key in keys:
+            known = set(readers[key] or []) | {p for m in reg.get("mentions") or [] if key in m["keys"]
+                                               for p in candidates if first_match(p, m["paths"])}
+            for cut in [m.end() for m in re.finditer("_", key)]:
+                prefix = key[:cut]
+                if len(prefix) < 12:
+                    continue
+                rx = re.compile(r"(?<![A-Za-z0-9_])" + re.escape(prefix) + r"(?:\{|\*)")
+                for p, t in sorted(texts.items()):
+                    if p not in known and rx.search(t):
+                        errors.append(f"{p} builds the name of {key} from '{prefix}...': add it to budget_register extra_readers or mentions")
+        structural = select([reg["file"]], mapping, universe, per_push=False,
+                            register={"file": reg["file"], "structural": True, "keys": {}})
+        param_ids_word = re.compile(r"\bparam_ids\b(?!\.hpp)")
+        for p in tracked:
+            if not p.startswith("tests/regression/") or "/results/" in p or Path(p).suffix not in {".py", ".txt", ".cmake"} \
+                    or p.endswith("/param_ids"):
+                continue
+            need = reader_groups(p, universe, gz_paths)
+            if need and param_ids_word.search((root / p).read_text(encoding="utf-8", errors="ignore")):
+                missing = lacks(structural, need)
+                if missing:
+                    errors.append(f"budget_register structural → missing {missing} (reads param_ids at {p})")
+    cards = [p for p in tracked if p.startswith(("vehicles/", "sensors/profiles/")) and p.endswith(".yaml")]
+    for card in cards:
+        names = [card, Path(card).stem]
+        sel = select_one(card)
+        for p in tracked:
+            if not p.startswith("tests/regression/") or "/results/" in p or p == card or Path(p).suffix == ".md":
+                continue
+            need = reader_groups(p, universe, gz_paths)
+            if need is None:
+                continue
+            text = (root / p).read_text(encoding="utf-8", errors="ignore")
+            if any(n in text for n in names):
+                missing = lacks(sel, need)
+                if missing:
+                    errors.append(f"{card} → missing {missing} (named by {p})")
+        # a CMakeLists.txt, *.cmake, fw/, sim/ or tools/ file that names it makes it a build or tool input: it must select
+        # what the committed card selects, whatever rule the file has of its own
+        like = (mapping.get("card_files") or {}).get("consumed_like")
+        if like and card != like and not sel["full"]:
+            for p in tracked:
+                if p == card or not (p.endswith("CMakeLists.txt") or p.endswith(".cmake") or p.startswith(("fw/", "sim/", "tools/"))):
+                    continue
+                if first_match(p, mapping.get("ignore") or []) or p in ("ci/affected.py",):
+                    continue
+                if any(re.search(r"(?<![A-Za-z0-9_])" + re.escape(n) + r"(?![A-Za-z0-9_])", (root / p).read_text(encoding="utf-8", errors="ignore"))
+                       for n in names):
+                    want = select_one(like)
+                    short = [k for k in SELECTION_KEYS if not set(want[k]) <= set(sel[k])]
+                    if short and not want["full"]:
+                        errors.append(f"{card} → selects less than {like} for {short} (named by {p})")
+                    break
+    return errors
+
+
 def repo_files(root: Path = ROOT) -> list[str]:
     """Tracked files plus untracked files that are not ignored."""
     names = git(["ls-files", "-z"], root) + git(["ls-files", "--others", "--exclude-standard", "-z"], root)
@@ -799,11 +1155,14 @@ def repo_files(root: Path = ROOT) -> list[str]:
 
 def cross_checks(mapping: dict, universe: dict, root: Path = ROOT) -> tuple[list[str], list[str]]:
     tracked = repo_files(root)
-    select_one = Selector(mapping, universe, PythonIndex(root, tracked, universe))
+    cards = [p for p in tracked if first_match(p, (mapping.get("card_files") or {}).get("globs") or []) is not None]
+    select_one = Selector(mapping, universe, PythonIndex(root, tracked, universe),
+                          consumed_card_files(mapping, cards, tracked, root))
     gz_paths = parse_gz_test_paths((root / "ci" / "run_ci_gz.sh").read_text())
     errors, notes = cross_check_cxx(select_one, tracked, root / "build" / "host-debug" / "compile_commands.json", root)
     errors += cross_check_python(select_one, tracked, universe, root, gz_paths)
     errors += cross_check_reads(select_one, tracked, universe, root, gz_paths)
+    errors += cross_check_register(mapping, universe, tracked, select_one, root, gz_paths)
     return errors, notes
 
 
@@ -853,8 +1212,14 @@ def main(argv: list[str] | None = None) -> int:
     per_push = os.environ.get("MARV_CI_MODE", "per-push") != "full"
     try:
         base = resolve_base(args.base)
-        pyindex = PythonIndex(ROOT, repo_files(), universe)
-        result = select(changed_paths(base, args.head), mapping, universe, base, pyindex=pyindex, per_push=per_push, notes=notes)
+        tracked = repo_files()
+        pyindex = PythonIndex(ROOT, tracked, universe)
+        changed = changed_paths(base, args.head)
+        register = register_change(mapping, base, args.head, changed, tracked)
+        card_globs = (mapping.get("card_files") or {}).get("globs") or []
+        consumed = consumed_card_files(mapping, [p for p in changed if first_match(p, card_globs) is not None], tracked)
+        result = select(changed, mapping, universe, base, pyindex=pyindex, per_push=per_push, notes=notes, register=register,
+                        consumed=consumed)
     except RuntimeError as e:
         result = select([], mapping, universe, forced_full=[f"git: {e}"])
     if args.json:

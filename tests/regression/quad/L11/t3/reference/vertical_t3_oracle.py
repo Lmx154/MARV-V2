@@ -7,16 +7,16 @@ normal gravity, the plant's g), tools/sim/reference.py (its analytic height grad
 (tests/regression/quad/L05/t3/reference/attitude_t3_oracle.py: its method constants, its error-tracking number E and, for the roll
 shove, its attitude law, angle mode, mixer and quaternion kinematics); no code shared with the C++ vertical library (fw/vertical) or
 the gain generator (tools/card/vertical.py). Reads vertical_t3_inputs.txt (beside this script, or in --dir) and, for the roll shove,
-L5's attitude_t3_inputs.txt and attitude_t3_q_inputs.txt (in L5's reference directory), and writes vertical_t3_golden.txt,
-vertical_t3_envelope.txt and vertical_t3_q.txt there (--golden-only: the golden alone):
+L5's attitude_t3_inputs.txt and attitude_t3_q_inputs.txt (in L5's reference directory), and writes vertical_t3_golden.txt there
+(decision 0032: the box envelopes and Q below are no longer written; their code is kept, unreferenced from main):
 
-    uv run python tests/regression/quad/L11/t3/reference/vertical_t3_oracle.py [--dir DIR] [--procs N] [--golden-only]
+    uv run python tests/regression/quad/L11/t3/reference/vertical_t3_oracle.py [--dir DIR] [--procs N]
     uv run python tests/regression/quad/L11/t3/reference/vertical_t3_oracle.py --refresh-inputs \
         build/<preset>/generated/marv_params_l11_vertical_scripted/marv/params/param_defaults.cpp
 
 --refresh-inputs rewrites vertical_t3_inputs.txt from the built parameter table of marv_params_l11_vertical_scripted and stops;
 it needs the repository (tools/sim/run_l4.py hover_thrust, the card, design/scenario_values.yaml). The file is the T3 fixture;
-the golden is a function of it. --procs spreads the tolerance's jobs, the envelope members and the Q members over worker processes; the output does not depend on it
+the golden is a function of it. --procs spreads the tolerance's jobs over worker processes; the output does not depend on it
 (every job is computed whole by one process and the results are combined in a fixed order).
 
 What the golden is. The float firmware path of the vertical loop (fw/vertical/include/marv/vertical/vertical_law.hpp execute, as
@@ -1224,9 +1224,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default=HERE, help="directory of vertical_t3_inputs.txt and of the output")
     ap.add_argument("--refresh-inputs", metavar="PARAM_DEFAULTS_CPP")
-    ap.add_argument("--procs", type=int, default=1, help="worker processes of the tolerance, the envelopes and Q (the output does not "
-                    "depend on it)")
-    ap.add_argument("--golden-only", action="store_true", help="write vertical_t3_golden.txt only (no envelope, no Q)")
+    ap.add_argument("--procs", type=int, default=1, help="worker processes of the tolerance (the output does not depend on it)")
     args = ap.parse_args()
     inputs_path = os.path.join(args.dir, "vertical_t3_inputs.txt")
     if args.refresh_inputs:
@@ -1235,16 +1233,6 @@ def main():
     su = Setup(read_inputs(inputs_path))
     res = settle(su, max(args.procs, 1))
     write_golden(su, res, os.path.join(args.dir, "vertical_t3_golden.txt"))
-    if args.golden_only:
-        return
-    box = Box()
-    co = Cascade(su)
-    envelopes = settle_envelope(su, box, co, res, max(args.procs, 1))
-    shove = settle_envelope(su, box, co, res, max(args.procs, 1), (SHOVE,))
-    write_envelope(su, box, co, envelopes, shove, os.path.join(args.dir, "vertical_t3_envelope.txt"))
-    segments = {name: envelopes["h"] for name in SCRIPTS}
-    segments[SHOVE] = shove["h"]
-    write_q(su, box, co, segments, os.path.join(args.dir, "vertical_t3_q.txt"), max(args.procs, 1))
 
 
 if __name__ == "__main__":

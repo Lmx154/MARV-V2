@@ -164,3 +164,133 @@ def freshness(reads, times, t_settle=None):
     if t_settle is not None and (idx is None or times[idx] <= t_settle):
         reasons.append("no fresh read after the settling time")
     return Freshness(idx, stale, not reasons, tuple(reasons))
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# T4 behaviour predicates S, B and T (docs/decisions/0029; quad spec 4.1). Evaluated on the m = 1 run.
+#
+# A segment is {name: (unit, errors)}: errors[i] = q(n_i) - q_ref(n_i) at the segment's executions n_0..n_last, plain
+# floats. Delta is the largest |error| in the segment among the quantities of the same unit, so a roll angle and a
+# heading share a Delta and a rate does not. s is the register's t4_settle_fraction, read by the caller; E[name] is
+# the quantity's |m1 - m2| (SIM-7), >= 0. A predicate returns one Check per quantity. Non-finite input fails.
+# ---------------------------------------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Check:
+    name: str
+    ok: bool
+    value: float  # the error the predicate compared
+    bound: float  # what it was compared with
+
+
+def _peak(errors):
+    magnitudes = [abs(float(e)) for e in errors]
+    return math.nan if not all(math.isfinite(m) for m in magnitudes) else max(magnitudes)
+
+
+def _segment_deltas(segment):
+    deltas = {}
+    for name, (unit, errors) in segment.items():
+        if len(errors) == 0:
+            raise ValueError(f"segment quantity {name!r} has no executions")
+        peak = _peak(errors)
+        previous = deltas.get(unit, 0.0)
+        deltas[unit] = math.nan if math.isnan(peak) or math.isnan(previous) else max(previous, peak)
+    return deltas
+
+
+def _checked(name, value, bound):
+    ok = math.isfinite(value) and math.isfinite(bound) and value <= bound
+    return Check(name, ok, value, bound)
+
+
+def settles(segment, s, E):
+    """S: at the segment's last execution |error| <= s Delta + E, Delta per unit group."""
+    deltas = _segment_deltas(segment)
+    return [_checked(name, abs(float(errors[-1])), s * deltas[unit] + E[name])
+            for name, (unit, errors) in segment.items()]
+
+
+def bounded(segment, s, E):
+    """B: for a segment without a disturbance onset, |error(n)| <= |error(n_0)| + s Delta + E at every n. The value
+    reported is the largest excess |error(n)| - |error(n_0)|, so it is compared with s Delta + E."""
+    deltas = _segment_deltas(segment)
+    out = []
+    for name, (unit, errors) in segment.items():
+        first = abs(float(errors[0]))
+        excess = max(abs(float(e)) - first for e in errors) if math.isfinite(_peak(errors)) else math.nan
+        out.append(_checked(name, excess, s * deltas[unit] + E[name]))
+    return out
+
+
+def shrinks(errors):
+    """T: the stepped axis's |error| at the segment end is smaller than at its start. No number."""
+    first, last = abs(float(errors[0])), abs(float(errors[-1]))
+    return math.isfinite(first) and math.isfinite(last) and last < first
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Roles (docs/decisions/0031): B applies only to what a scenario steps or holds. A role is static, read from the scenario
+# file and the documented firmware logic, never from run data.
+#   STEPPED  the error is nonzero at n_0 by a reference change or an initial offset.
+#   HELD     a constant reference, neither stepped nor driven.
+#   DRIVEN   the error is 0 at n_0 by construction but the scenario sets it moving: the rate of a stepped quantity, a
+#            quantity given a nonzero rate by the initial state, a reference set by a firmware event inside its own axis
+#            response (the heading relative to the yaw lock).
+# S applies to every quantity; B to STEPPED and HELD quantities of segments without a disturbance onset. Delta is 0029's
+# rule, except where every quantity of a unit in a segment is HELD: Delta is then the largest Delta of that unit over the
+# scenario's segments that have a STEPPED or DRIVEN quantity of that unit (a HELD quantity has no excursion of its own to
+# scale by); ValueError when there is none (the quantity is not checked).
+# ---------------------------------------------------------------------------------------------------------------------
+
+STEPPED, HELD, DRIVEN = "stepped", "held", "driven"
+ROLES = (STEPPED, HELD, DRIVEN)
+
+
+def _unit_deltas(segment):
+    """{unit: Delta} of a role segment, and the set of units that have a STEPPED or DRIVEN quantity."""
+    deltas, moving = {}, set()
+    for name, (unit, role, errors) in segment.items():
+        if role not in ROLES:
+            raise ValueError(f"quantity {name!r}: unknown role {role!r}")
+        if len(errors) == 0:
+            raise ValueError(f"segment quantity {name!r} has no executions")
+        peak = _peak(errors)
+        previous = deltas.get(unit, 0.0)
+        deltas[unit] = math.nan if math.isnan(peak) or math.isnan(previous) else max(previous, peak)
+        if role != HELD:
+            moving.add(unit)
+    return deltas, moving
+
+
+def scenario_checks(segments, s, E_end, E_max, disturbed=frozenset()):
+    """{segment: {"S": [Check], "B": [Check]}} for segments {segment: {name: (unit, role, errors)}}, s the register's
+    t4_settle_fraction, E_end[segment][name] the |m1 - m2| of the segment's last execution (S) and E_max[segment][name]
+    its largest over the segment (B). A segment in `disturbed` has a disturbance onset: S only."""
+    per = {seg: _unit_deltas(quantities) for seg, quantities in segments.items()}
+    scale = {}
+    for deltas, moving in per.values():
+        for unit in moving:
+            scale[unit] = max(scale.get(unit, 0.0), deltas[unit])
+    out = {}
+    for seg, quantities in segments.items():
+        deltas, moving = per[seg]
+        delta = {}
+        for unit in deltas:
+            if unit in moving:
+                delta[unit] = deltas[unit]
+            elif unit in scale:
+                delta[unit] = scale[unit]
+            else:
+                raise ValueError(f"segment {seg!r}: every {unit!r} quantity is HELD and no segment has a STEPPED or "
+                                 f"DRIVEN one to scale by")
+        checks = {"S": [], "B": []}
+        for name, (unit, role, errors) in quantities.items():
+            checks["S"].append(_checked(name, abs(float(errors[-1])), s * delta[unit] + E_end[seg][name]))
+            if role != DRIVEN and seg not in disturbed:
+                first = abs(float(errors[0]))
+                excess = max(abs(float(e)) - first for e in errors) if math.isfinite(_peak(errors)) else math.nan
+                checks["B"].append(_checked(name, excess, s * delta[unit] + E_max[seg][name]))
+        out[seg] = checks
+    return out

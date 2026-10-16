@@ -1,75 +1,70 @@
-# Handoff: MVP realignment (decision 0026); next M0 beside M1
+# Handoff: M0 merged; M1 on the board, waiting for the powered bench session and three rulings
 
-2026-10-15. A state file, not a history: at most 80 lines, rewritten (not appended) at every milestone boundary.
-History is in git and `docs/decisions/`; the previous handoff is `git show 341e54d:docs/handoff.md`.
+2026-10-16. A state file, not a history: at most 80 lines, rewritten (not appended) at every milestone boundary.
+History is in git and `docs/decisions/`; the previous handoff is `git show b641f6f:docs/handoff.md`.
 
 ## Read first
-- `CLAUDE.md`, then quad spec §4.0 (the MVP build order, M0–M6, and the deferred list), then the milestone you execute.
-- Nothing else by default. Decisions 0001–0025 are background, read only when a task touches their subject.
+- `CLAUDE.md`, then quad spec §4.0 (the MVP build order), then the milestone you execute. Decisions only when touched.
 
 ## Where things are
 | Item | State |
 | --- | --- |
-| L0–L5 | passed, tagged `quad-L0-pass` … `quad-L5-pass` |
-| L11 vertical loop (truth state) | passed, tagged `quad-L11-pass` (`341e54d`) |
-| L6 sensors, gyro chain, D term | stages (a)–(d) closed; the rest deferred until after M4 |
-| Known failing items | L4 acro under noise, L5 R2, L5 R1X α: strict xfail, owned by the deferred L6 (e) |
-| M0 fast loop and test rules | not started |
-| M1 target bring-up | not started; nothing has run on the board; the `m33` preset links no image |
+| L0–L5, L11 | passed, tagged up to `quad-L11-pass` |
+| Known failing item | L4 acro cross-axis coupling (linear segments and recovery), strict xfail, owned by the deferred L6 FF (0030) |
+| M0 | merged into `master` at `e8b6c52` (decisions 0028–0033); done-when not met on Actions (Next 3) |
+| M1 | branch `m1-sdk`, pushed; P1–P11 and P12a done and on the board; P7b, the powered bench and P12b open |
 | M2–M6 | not started |
 
-## The realignment (merged into `master` at `6308a8e`; local merge gate PASS: core 695 s, gz-l2 139, gz-l4 218, gz-l5 555, gz-l11 116)
-- Decision 0026: the advisor findings, Luis's acceptance and realignment words, verbatim. M2 receiver: ELRS over CRSF
-  with Betaflight 4.5's link-loss failsafe (Luis). M4 includes building or buying a thrust stand; pack 4S 1600 mAh.
-- Core spec §2 (`PLACEHOLDER`, the UNKNOWN split), §7.1 (TB bench level, T4 at merge, T6 deferred), §7.2 items 3 and
-  6 (controls only where a threshold decides; freeze requirements, not outputs), §7.3 (records only to loosen,
-  delete or change a spec; the `golden regenerated:` commit line), §7.4.
-- Quad spec §0, §1, §4.0 (new: MVP order), §4.1 (the layers, unchanged apart from MVP-subset notes), §6.1 (minimal
-  arming), §6.3 (B1 after M4).
-- `CLAUDE.md` rewritten for MVP first; this handoff; `ci/blast_radius.yaml` ignores `.claude/**`.
-- `.claude/agents/advisor-*.md`, `project-advisor.md`, `.claude/advisors/brief.md`: the four advisors and the synthesizer
-  (Luis: "commit the advisor files"); run them when the direction needs re-auditing.
+## M1 on the board (madflight FC3v2 Rev-C; decisions 0027, 0034–0038)
+- RP2354B rev 3, 2048 KiB W25Q16JV in package, clk_sys 150 MHz. SWD via a Pico 2 debugprobe (serial
+  900678EF479C3A0E; GP2 SWCLK, GP3 SWDIO) with `tools/target/flash.sh` (reboots the whole chip so the USB console
+  re-enumerates); console `tools/target/readcon.py` / `sendcon.py` on `/dev/ttyACM1` or `ACM2` (`/dev/serial/by-id`).
+- Image: `quad_fc` (gyro chain → rate loop → mixer) behind a motor gate that writes DShot stop except during a motor
+  test; LSM6DSV IRQ tick at 7497 Hz (INTERNAL_FREQ_FINE −18; nominal 7680); PIO DShot600 (waveform captured, 0037);
+  a panic streams "PANIC: <msg>" over USB and keeps sending stop frames (Luis: "take option A"); console
+  `motor_test <1-4> <dshot> <ms> PROPS-OFF`, cap 500, at most 3 s (Luis: "1. 500 2. 3 seconds 3. yes"; 0038).
+- Runs from SRAM (copy_to_ram): EMB-3 passes, U = 0.539, R = 72.6 µs < 133.4 µs; from XIP flash it failed (U = 1.52).
+  Evidence: `tests/regression/quad/L09/results/p12_bench/report.txt`.
+- Every rate execution is a counted timing fault today: the board's tick period is still the 625/4 µs PLACEHOLDER
+  (P7b). Nothing halts (0034); the gate writes stop anyway.
+
+## Open for Luis (each one word)
+1. P7b, amends decision 0014: guard the board's rate design at the mean period instead of the exact SIL stamp pattern
+   (refused for patterns longer than 2), SIL guard unchanged, timing tolerance rounded up to whole µs; the period from
+   the chip's FREQ_FINE at start-up (7500.3 Hz here, not 7680). Recommended: yes.
+2. The airframe card's `rotors.speed_range` (motor limit; feeds rotor_speed_min/max and idle). UZH's [150, 2800] rad/s
+   was not copied. Needed before the airframe card feeds the board's parameter set.
+3. Hard-bound the motor-test cap at 500 in code (today a parameter with your provenance; init accepts up to 2047)?
+   Recommended: yes.
+4. Gyro still-bench noise x/y 120/114 mdps vs the datasheet's typical 64.9 (z matches if LPF2 is first order): keep both
+   as UNVERIFIED? Recommended: yes.
+5. M0's Actions criterion: runner noise (gz-l5 15.9–29.2 min across runs) hides the change. Accept M0 on the local gate
+   and the per-unit checks (P1: 3 min vs 24), or a later M0b on the slow core steps? Recommended: accept.
+6. AM32 version and settings: unread (no passthrough); needed by M4.
 
 ## Next
-1. **M0** (beside M1, one packet per bullet in §4.0 M0). First measure the baselines: an Actions full run and a
-   one-module development check. Fold the Actions reference-cache fix (the L11 set regenerates cold every run; core
-   45 min on `341e54d`, INFERRED cause) into M0.
-2. **M1** on the madflight FC3v2 Rev-C (branch `m1-sdk`). Hardware verified 2026-10-16: RP2354B rev 3, 2048 KiB
-   W25Q16JV in package, clk_sys 150 MHz, clk_usb 48 MHz; SWD flashing (`tools/target/flash.sh`, Pico 2 debugprobe
-   900678EF479C3A0E, GP2 SWCLK / GP3 SWDIO) and the USB console work; a panic streams "PANIC: <msg>" over USB (P5).
-   Next packets (architect plan, 2026-10-16): P6 `quad_fc` composition with an always-disarmed motor gate, replacing
-   the L11 proxy; P7 timing-fault rule (counted fault, SIL tolerance unchanged; record + Luis); P8 LSM6DSV profile and
-   the airframe card (physics PLACEHOLDER until M4); P9 LSM6DSV driver and IRQ tick loop; P10 PIO DShot600; P11
-   console motor test; P12 M1 evidence (stage times, EMB-3, soak).
-   Luis's rulings, 2026-10-16, verbatim: panic motors "take option A" (panic keeps sending DShot stop frames);
-   motor test "1. 500 2. 3 seconds 3. yes 4. yes 5. yes 6. yes" = DShot cap 500, at most 3 s per command, unlock
-   token `PROPS-OFF` on the command line (any byte, `stop` or disconnect cancels), board timing tolerance
-   T_rate·odr_error + 2δ as a PLACEHOLDER until P12, PX4 quad-X spin (1, 2 CCW; 3, 4 CW), tick 7.68 kHz with
-   divisor 2. AM32 version and settings UNKNOWN (no passthrough yet; M4).
+1. Powered bench with Luis, props off: `tests/regression/quad/L09/results/m1-bench-card.md` (ESC arming on stop
+   frames, motor survey → `motor_pad_m1..m4` and AM32 direction, cancel/disconnect/SWD-halt stops). Commit the log.
+2. P7b after ruling 1, then P12b: soak with 0 timing faults, δ measured (stamp entry jitter 0.76 µs in SRAM). Then the
+   M1 merge gate (`ci/local_ci.sh`) and merge.
+3. Carried fixes: gyro saturation threshold (P9 review); guard a stuck IMU interrupt line (M2 stale-IMU failsafe);
+   the attitude law still halts on spacing (`attitude_law.hpp:56-82`, before M3 runs it on the board).
 
-## Open for Luis
-- Branches merged into `master` and deletable: `ci-curl-pin`, `ci-heavy-serial`, `quad-l11`, `quad-l11-s6`,
-  `recovery/hover-demo`, `test-blast-radius`, `test-trims`, `quad-l6-spec`. `l6-c6a-wip` (`14e3c3a`, unmerged, the
-  half-built L6 (e) reference set) waits for the L6 resume or is dropped.
-
-## Known defects the advisors found (fix inside the milestone named)
-- M1: the rate loop and attitude law halt on a sample spacing off by more than 1 µs, and every composition halts
-  unless `hal_time_us()` equals the sample stamp (`rate_loop.hpp:52,230-241`; `l5_attitude_scripted.cpp:194`).
+## Known defects (fix inside the milestone named)
 - M3: `marv_plant` reports zero specific force at rest (`marv_plant.cpp:255-264`).
-- M4: rotor inertia is absent from plant and design model (yaw zero near crossover, INFERRED); the rate loop crosses
-  over at about 8–12 rad/s because of the ±50 % inertia and ±30 % motor-lag bands; measurement narrows them.
-- M5: four motors are compile-time (`actuator.hpp:16`, `mixer.hpp:28`, both C ABIs, `tools/card`).
-- Carried from L11: the card mass conflict (0.772 vs 0.752 kg) and `thrust_coeff` σ, settled by M4's measurements.
+- M4: rotor inertia absent from plant and design model; rate crossover ~8–12 rad/s from the ±50 % / ±30 % bands.
+- M5: four motors are compile-time (`actuator.hpp:16`, `mixer.hpp:28`).
 
 ## Git and host
-- `master` = `origin/master` = the realignment plus this handoff; `realign-mvp` is merged (deletable). Tags up to `quad-L11-pass`. One stash, `stash@{0}` (old quad-l0 WIP): not ours, leave it.
-- `datasheets/` is present and gitignored. `~/marv-handover-2026-10-13/` holds the old demo kit, outside the repo.
-- gz-sim 8.15 on PATH; `clang-tidy-18` 18.1.3; no `gh` CLI (the Actions API is readable with `curl`).
-- Agent worktrees inside the checkout break `tests/regression/quad/L06/tools/test_world_sensors.py`; keep them out.
+- `master` = M0 (`b641f6f`). `m1-sdk` = M1 with `master` merged; worktrees in the session scratchpad (`wt-m1*`),
+  never inside the checkout (they break `test_world_sensors.py`). One stash, `stash@{0}`: not ours, leave it.
+- No `gh` CLI (read the Actions API with `curl`). Docker `marv-ci` regenerates the product table (README recipe; add
+  `-e CCACHE_DISABLE=1` when the container cannot write the ccache directory).
 
 ## Rules the next lead keeps
-- Commit, push, tag and merge only on Luis's word. Fix forward; never rewrite pushed history.
-- Verified: a commit by `ci/dev_check.sh`; a merge by `ci/local_ci.sh` on the exact commit (`--parallel 2` at most).
-- Reports to Luis: results first, numbers with units; every question answerable in one word, with a recommendation.
-- A tool a check needs is missing on the host: tell Luis at once; do not work around it.
-- Luis's machine is shared: check `uptime` before any timing.
+- Standing permission (Luis, 2026-10-15, "yes you may commit and push"): commit and push each unit that passed review
+  and `ci/dev_check.sh`; merge into `master` at a milestone end after `ci/local_ci.sh` passes. Loosening a test, a spec
+  change and tags stay Luis's. Fix forward; never rewrite pushed history.
+- Before every push: read the log's own exit line (not a wrapper's) and run `tools/ci/check_regression_changes.py`.
+- At most two development checks at once (a timing test timed out under three).
+- No ESC power or motor spin without Luis present.

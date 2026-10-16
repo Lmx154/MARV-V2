@@ -329,8 +329,13 @@ or the budget register), the test level of each check (core §7.1), and what fre
   - T3: QF-2 reference-model tracking and QF-3 margins (`PM_min`) on the design model.
   - T3: margins still meet QF-3 with motor τ at the card's ±σ.
   - T3: negative controls. Gains × 1.1 and one tick of added delay each move the golden metrics outside tolerance.
-  - T4: in Gazebo, on truth gyro, per-axis steps meet QF-2, and chirp injection measures margins that meet QF-3.
-  - T4: acro with a scripted stick sequence completes without saturation beyond the mixer's documented behaviour.
+  - T4: in Gazebo, on truth gyro, per-axis steps settle by the deadline (S) and stay bounded (B) on all three axes, with
+    s = `t4_settle_fraction`, and chirp injection measures margins with PM − U ≥ `PM_min`; no design-model envelope. The
+    control is the rate loop disabled (kp = ki = 0), which fails the predicate (decisions 0029, 0030).
+  - T4: acro with a scripted stick sequence completes without saturation beyond the mixer's documented behaviour,
+    stays bounded (B) on the commanded axis and shrinks its error (T) on its linear segments; no design-model
+    envelope. The acro cross-axis coupling is the one known failing item: B on the uncommanded axes of the linear
+    segments and on the recovery window fails, owned by the deferred feed-forward (L6 stage (c), decision 0030).
 - **Freezes:** all of the above.
 
 ### L5 — Attitude loop on truth attitude
@@ -339,8 +344,12 @@ or the budget register), the test level of each check (core §7.1), and what fre
   same phase margin; it runs at the rate loop's rate unless that fails EMB-3 (core §7.5; §5.4 estimates until L9), and
   only then at a rate chosen by SIM-7. Angle mode (self-levelling).
 - **Opening:** in: attitude setpoint (quaternion, body → NED); out: rate setpoint to L4.
-- **Pass bar:** T3 step response and margins; T4 angle-mode steps and a large-angle recovery scenario; the L4 suite
-  still green.
+- **Pass bar:** T3 step response and margins; T4 angle-mode steps, the yaw scenario and the large-angle recoveries
+  (R1, R2, R1X) settle by the deadline (S) on every checked quantity and stay bounded (B) on what the scenario steps or holds,
+  with s = `t4_settle_fraction` (steps: roll, pitch and heading; yaw: yaw rate, tilt and heading relative to the lock; recoveries: tilt, |ω| and heading;
+  roles in decision 0031: the heading after the yaw lock, R1/R1X |ω| and R2 heading are driven and get S only, the yaw tilt
+  is held), and chirp injection measures PM − U ≥ `PM_min`; no design-model envelope; the control is the attitude loop
+  disabled (`att_kp` = 0), which fails S (decisions 0029, 0031). The L4 suite still green.
 - **Freezes:** the new tests.
 
 ### L11 — Vertical loop on truth state
@@ -361,8 +370,9 @@ Built after L5 and beside L6 (it needs nothing from L6); numbered L11 because L0
     G3 controls for its export.
   - T3: QF-3 (`PM_min`, `Ms_max`) over the robustness box with the gravity gradient in the model; height-step and
     thrust-offset responses against the design model; controls gains × 1.1, one tick of added delay, loop disabled.
-  - T4: in Gazebo on truth state, a height step, a constant thrust offset and a roll-torque shove each stay inside the
-    design-model envelope and return to the reference; the loop disabled fails. The L4 and L5 suites still green.
+  - T4: in Gazebo on truth state, on z, a height step settles by the deadline (S) and stays bounded (B), and a constant
+    thrust offset and a roll-torque shove each settle (S), with s = `t4_settle_fraction`; no design-model envelope; the
+    control is all three vertical gains = 0, which fails (decisions 0029, 0032). The L4 and L5 suites still green.
 - **Freezes:** the new tests.
 
 ### L6 — Sensor models, the gyro chain and the D term
@@ -397,7 +407,8 @@ Built after L5 and beside L6 (it needs nothing from L6); numbered L11 because L0
   - (d) DShot error diffusion;
   - (e) close.
 
-  The L4 acro and L5 R2 known failing items stay strict xfails until stage (e) creates
+  The L4 acro known failing item (the acro cross-axis coupling on the linear segments and in the recovery, owned by
+  the deferred feed-forward; R2 recovers in Gazebo and is no longer one, decisions 0029, 0030) stays a strict xfail until stage (e) creates
   `tests/regression/quad/L06/XFAIL_GATE_CLOSED` (decision 0009).
 - **Pass bar:**
   - (a) T1: the simulated IMU's Allan deviation matches the profile's noise density and bias instability.
@@ -431,7 +442,7 @@ Built after L5 and beside L6 (it needs nothing from L6); numbered L11 because L0
   - (e) T4: the L4 and L5 scenarios rerun with noise and filters and still meet QF-2 and QF-3.
     - When affected (core §7.6): every scenario at its committed seed.
     - In the full run (core §7.6) and before the tag: the confirmation seeds.
-    - Both known failing items pass.
+    - The L4 acro known failing item passes.
 - **Freezes:** each stage's lines when that stage closes. **This is where "sluggish" gets explained instead of
   guessed at:** every source of phase lag is now measured.
 

@@ -219,7 +219,7 @@ gz_build_l11() {
   cmake --preset host-gz-l11 && cmake --build --preset host-gz-l11
 }
 
-# The L11 T4 suite reads the T3 envelope and Q files of the vertical loop, which are generated, not committed (decision 0011), as
+# The L11 T4 suite reads the T3 golden header of the vertical loop, which is generated, not committed (decision 0011), as
 # gz_reference_l5 above. 4 = the runner's CPUs (ci/local_ci.sh).
 gz_reference_l11() {
   uv run python tools/refdata/refdata.py ensure quad/L11/t3 --procs 4
