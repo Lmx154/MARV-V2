@@ -548,9 +548,16 @@ class ArmedGateTest : public MotorTestGateTest {
   Out step_tick() {
     motor_latch_.fill(sentinel());
     hal_sim::begin_tick(n_);
-    const ImuSample s = sample_of(kind_, n_);
+    ImuSample s = sample_of(kind_, n_);
+    s.gyro_rad_s = s.gyro_rad_s + bias_;
     composition::tick(s);
     ref_.filter(s, n_ % divisor_ == 0);
+    fresh_.filter(s, n_ % divisor_ == 0);
+    const bool armed = arming::is_armed(composition::arming_status());
+    if (armed && !was_armed_ && reset_ref_) {
+      ref_.reset_controller();  // as the composition does at the arming edge
+    }
+    was_armed_ = armed;
     hal_sim::end_tick();
     ++n_;
     Out o;
@@ -633,6 +640,10 @@ class ArmedGateTest : public MotorTestGateTest {
   stick_rates::RatesConfig<float> rates_{};
   std::uint32_t frames_ = 0;
   Kind kind_ = Kind::Quiet;
+  prim::Vec3<float> bias_{};  // added to every sample's gyro
+  rate_group::RateGroupStep fresh_;
+  bool was_armed_ = false;
+  bool reset_ref_ = true;  // ref_ restarts its controller at the arming edge as the composition does
 };
 
 TEST_F(ArmedGateTest, TheArmChannelIsLuisFifth) {
@@ -863,6 +874,31 @@ TEST_F(ArmedGateTest, ASaturatedSampleSinceTheLastRateTickRefusesArmingAndNeverD
   const RateOut s2 = hold({}, kSwitchOn, {});
   EXPECT_EQ(composition::arming_status(), arming::ArmState::Armed);
   EXPECT_EQ(s2.out.motor, s2.mixed);
+}
+
+TEST_F(ArmedGateTest, ArmingStartsTheRateLoopFromZeroStateNotFromWhatWasAccumulatedWhileDisarmed) {
+  // A constant gyro bias while disarmed winds the rate loop's integrator (the beside group `ref_` runs as the composition
+  // would without the reset). The first armed output, sticks centred and throttle low, equals that of a freshly
+  // initialised rate group fed the same samples.
+  bias_ = prim::Vec3<float>(2.0F, -3.0F, 1.5F);
+  reset_ref_ = false;
+  link_up();
+  fresh_.init(rate::load_config(), mixer_, rate_group::load_chain_config());
+  const float t_min = static_cast<float>(composition::kMotors) * mixer::f_min(mixer_);
+  const ManualControl m = frame_of({}, kSwitchOn);
+  while (n_ % divisor_ != 0) {
+    step_tick();
+  }
+  ManualControl staged = m;
+  staged.t_us = hal_sim::stamp_us(period_, n_);
+  staged.frames = ++frames_;
+  hal_sim::stage_manual_control(staged);
+  const Out first = step_tick();
+  ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+  const auto fresh = fresh_.execute(prim::Vec3<float>(), prim::Vec3<float>(), t_min).dshot;
+  const auto wound = reference({});
+  EXPECT_NE(wound, fresh) << "the bias must have wound the integrator, or the test proves nothing";
+  EXPECT_EQ(first.motor, fresh);
 }
 
 }  // namespace

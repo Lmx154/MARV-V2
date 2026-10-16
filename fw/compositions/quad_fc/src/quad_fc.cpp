@@ -22,7 +22,9 @@
 // MotorTest (the console motor test, decision 0038): exactly one logical motor gets the requested value and the other
 // three stop. Armed and MotorTest are never both: a test starts only from Disarmed (a request while armed is refused,
 // MotorTestReason::Armed), and the machine's motor_test_active input is true while a test runs, so it refuses to arm.
-// Every disarm writes stop on the rate tick it is decided (decision 0040, I1 and I2).
+// Every disarm writes stop on the rate tick it is decided (decision 0040, I1 and I2). On the disarmed-to-armed transition
+// the rate loop's controller state restarts (RateGroupStep::reset_controller; the gyro chain keeps running), so the
+// integrator wound up on a gyro bias while disarmed is not applied.
 //
 // The motor-test request comes from the HAL (hal_motor_test), is read only on a rate tick and is validated here, never
 // by the console: motor 1..4, value in [kDshotThrottleMin, motor_test_dshot_max], duration in [1 ms,
@@ -305,6 +307,9 @@ void tick(const ImuSample& s) noexcept {
   const arming::ArmingOutput<float> out = g_arming.step(in);
   g_arming_state.store(static_cast<std::uint8_t>(out.state), std::memory_order_relaxed);
   if (out.armed) {
+    if (g_gate != MotorGate::Armed) {
+      g_step.reset_controller();  // arming never applies controller state accumulated while disarmed
+    }
     g_gate = MotorGate::Armed;
   } else if (g_gate == MotorGate::Armed) {
     g_gate = MotorGate::Disarmed;
