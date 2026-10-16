@@ -31,7 +31,7 @@ TEST_F(ManualControlTest, NothingStagedPullsNoFrameAndEveryFieldZero) {
   EXPECT_EQ(m.throttle, 0.0F);
   EXPECT_EQ(m.link_quality, 0.0F);
   EXPECT_EQ(m.link_t_us, 0U);
-  for (const float a : m.aux) {
+  for (const float a : m.channels) {
     EXPECT_EQ(a, 0.0F);
   }
   hal_sim::end_tick();
@@ -45,8 +45,8 @@ TEST_F(ManualControlTest, AStagedStructIsPulledVerbatimFromTheNextTickOnAndStays
   staged.pitch = 1.0F;
   staged.yaw = -0.5F;
   staged.throttle = 1.0F;
-  staged.aux.front() = 1.0F;
-  staged.aux.back() = -1.0F;
+  staged.channels.front() = 1.0F;
+  staged.channels.back() = -1.0F;
   staged.link_quality = 0.5F;
   staged.link_t_us = 99;
   hal_sim::stage_manual_control(staged);
@@ -59,8 +59,8 @@ TEST_F(ManualControlTest, AStagedStructIsPulledVerbatimFromTheNextTickOnAndStays
     EXPECT_EQ(m.pitch, 1.0F);
     EXPECT_EQ(m.yaw, -0.5F);
     EXPECT_EQ(m.throttle, 1.0F);
-    EXPECT_EQ(m.aux.front(), 1.0F);
-    EXPECT_EQ(m.aux.back(), -1.0F);
+    EXPECT_EQ(m.channels.front(), 1.0F);
+    EXPECT_EQ(m.channels.back(), -1.0F);
     EXPECT_EQ(m.link_quality, 0.5F);
     EXPECT_EQ(m.link_t_us, 99U);
     hal_sim::end_tick();

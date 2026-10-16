@@ -69,13 +69,6 @@ inline constexpr std::size_t kCrsfRcChannels = 16;
 inline constexpr unsigned kCrsfRcChannelBits = 11;
 inline constexpr std::size_t kCrsfRcPayloadBytes = 22;
 
-// The channels of a 0x16 frame beyond the four control channels (roll, pitch, yaw, throttle): the manual-control
-// struct's raw aux channels (decision 0040 Q3). Citation: the same TBS CRSF spec section as kCrsfRcChannels, whose
-// 16 channels less the four control channels; the control channels are the four stick axes of the quad's pilot
-// input (quad spec section 4.0 M2).
-// Kind: standard.
-inline constexpr std::size_t kManualControlAuxChannels = kCrsfRcChannels - 4;
-
 // CRSF 0x14 Link Statistics payload layout. Citation: TBS CRSF spec
 // (https://github.com/tbs-fpv/tbs-crsf-spec/blob/main/crsf.md), section "0x14 Link Statistics": ten one-byte fields in this
 // order, the SNR fields being int8_t: up_rssi_ant1, up_rssi_ant2, up_link_quality, up_snr, active_antenna, rf_profile,
