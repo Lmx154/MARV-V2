@@ -14,3 +14,10 @@ add_executable(unit_lsm6dsv_decode lsm6dsv_decode_test.cpp)
 target_link_libraries(unit_lsm6dsv_decode PRIVATE marv_lsm6dsv_decode marv_types GTest::gtest_main)
 marv_apply_flags(unit_lsm6dsv_decode)
 marv_frozen_suite(unit_lsm6dsv_decode)
+
+# The FC3v2 DShot600 output logic (fw/hal/target/decode, M1 P10): frame encoder, pad permutation, word packing, the PIO
+# timing and the panic loop's stop frames, on the host.
+add_executable(unit_dshot dshot_test.cpp)
+target_link_libraries(unit_dshot PRIVATE marv_dshot marv_types GTest::gtest_main)
+marv_apply_flags(unit_dshot)
+marv_frozen_suite(unit_dshot)

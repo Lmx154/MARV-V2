@@ -29,6 +29,7 @@
 #include "marv/hal/hal.hpp"
 #include "marv/hal_target/imu.hpp"
 #include "marv/hal_target/lsm6dsv_decode.hpp"
+#include "marv/hal_target/motor_output.hpp"
 
 namespace marv::hal_target {
 namespace {
@@ -116,6 +117,7 @@ void write_reg(std::uint8_t reg, std::uint8_t value) noexcept {
 
 void publish() noexcept {
   g_acc.actuator_writes = actuator_writes();
+  g_acc.actuator_drops = motor_frames_dropped();
   const std::uint32_t q = g_seq.load(std::memory_order_relaxed);
   g_seq.store(q + 1, std::memory_order_relaxed);
   std::atomic_thread_fence(std::memory_order_release);

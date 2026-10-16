@@ -6,7 +6,9 @@
 
 #include "marv/hal/hal.hpp"
 #include "marv/hal/tick.hpp"
+#include "marv/hal_target/dshot.hpp"
 #include "marv/hal_target/imu.hpp"
+#include "marv/hal_target/motor_output.hpp"
 #include "marv/params/param.hpp"
 #include "marv/prim/constants.hpp"
 #include "marv/types/imu_sample.hpp"
@@ -29,8 +31,9 @@ constexpr auto kPrintPeriodUs = static_cast<marv::TimeUs>(marv::prim::kMicroseco
 
 // How far boot got, printed at boot and again whenever a host opens the CDC port, so a host that attaches late still
 // reads it (the lines printed at boot are lost when no host has the port open).
-enum class Stage { kStart, kParamsOk, kInitOk, kImuOk };
+enum class Stage { kStart, kParamsOk, kInitOk, kMotorsOk, kImuOk };
 Stage stage = Stage::kStart;
+marv::hal_target::MotorOutputBoot motor_boot;
 marv::hal_target::ImuBoot imu_boot;
 
 void print_progress() {
@@ -40,6 +43,11 @@ void print_progress() {
   }
   if (stage >= Stage::kInitOk) {
     std::printf("init ok\n");
+  }
+  if (stage >= Stage::kMotorsOk) {
+    std::printf("motors ok: DShot600 on PIO 0, clk_sys %lu Hz, PIO divider %lu + %u/256 (derived, dshot.hpp)\n",
+                static_cast<unsigned long>(motor_boot.clk_sys_hz), static_cast<unsigned long>(motor_boot.div_int),
+                static_cast<unsigned>(motor_boot.div_frac8));
   }
   if (stage >= Stage::kImuOk) {
     std::printf("imu ok: LSM6DSV, SPI %lu Hz, FREQ_FINE %d (ODR %.1f Hz by DS13476 9.49), tick %s\n",
@@ -56,12 +64,12 @@ void print_stats(const marv::hal_target::ImuStats& now, const marv::hal_target::
   };
   const marv::ImuSample& s = now.last;
   std::printf(
-      "imu dt=%lluus irq/s=%.1f words/s=%.1f samples/s=%.1f ticks/s=%.1f writes/s=%.1f | total samples=%llu ovr=%lu "
+      "imu dt=%lluus irq/s=%.1f words/s=%.1f samples/s=%.1f ticks/s=%.1f writes/s=%.1f motor_drops=%llu | total samples=%llu ovr=%lu "
       "spi=%lu partial=%lu clamp=%lu order=%lu empty=%lu | spacing=[%llu,%llu]us | t=%llu gyro=(%+.4f,%+.4f,%+.4f) "
       "accel=(%+.3f,%+.3f,%+.3f) temp=%.2fK flags=0x%03lx\n",
       static_cast<unsigned long long>(dt_us), per_s(now.irqs, before.irqs), per_s(now.words, before.words),
       per_s(now.samples, before.samples), per_s(now.ticks, before.ticks),
-      per_s(now.actuator_writes, before.actuator_writes),
+      per_s(now.actuator_writes, before.actuator_writes), static_cast<unsigned long long>(now.actuator_drops),
       static_cast<unsigned long long>(now.samples), static_cast<unsigned long>(now.fifo_overflows),
       static_cast<unsigned long>(now.spi_errors), static_cast<unsigned long>(now.partial),
       static_cast<unsigned long>(now.stamp_clamps), static_cast<unsigned long>(now.order_faults),
@@ -88,6 +96,15 @@ int main() {
   marv::composition::init();
   stage = Stage::kInitOk;
   std::printf("init ok\n");
+  using marv::ParamId;
+  motor_boot = marv::hal_target::motor_output_start(
+      {marv::param_value<ParamId::motor_pad_m1>(), marv::param_value<ParamId::motor_pad_m2>(),
+       marv::param_value<ParamId::motor_pad_m3>(), marv::param_value<ParamId::motor_pad_m4>()},
+      marv::hal_target::stop_interval_us(marv::param_value<ParamId::rate_loop_divisor>(),
+                                         marv::param_value<ParamId::tick_period_num_us>(),
+                                         marv::param_value<ParamId::tick_period_den>()));
+  stage = Stage::kMotorsOk;
+  std::printf("motors ok\n");
   imu_boot = marv::hal_target::imu_start(kSink);
   stage = Stage::kImuOk;
   print_progress();

@@ -22,6 +22,22 @@ inline constexpr std::size_t kSpatialDim = 3;
 inline constexpr std::uint16_t kDshotThrottleMin = 48;
 inline constexpr std::uint16_t kDshotThrottleMax = 2047;
 
+// DShot frame layout and the DShot600 timing. Citation: Betaflight DShot notes
+// (https://github.com/betaflight/betaflight.com/blob/master/docs/development/API/Dshot.mdx): a frame is 16 bits
+// "SSSSSSSSSSSTCCCC", sent most significant bit first: 11 bits of throttle, 1 bit of telemetry request, 4 bits of CRC
+// = (value ^ (value >> 4) ^ (value >> 8)) & 0x0F over the 12 bits above it. DShot600: bitrate 600 kbit/s, bit period
+// 1.67 us, T0H 0.625 us and T1H 1.25 us (the high time of a 1 is double that of a 0), which are 3/8 and 6/8 of the bit
+// period; the frame lasts 16 bit periods (26.72 us).
+// Kind: standard.
+inline constexpr unsigned kDshotThrottleBits = 11;
+inline constexpr unsigned kDshotTelemetryBits = 1;
+inline constexpr unsigned kDshotCrcBits = 4;
+inline constexpr unsigned kDshotFrameBits = 16;
+inline constexpr std::uint32_t kDshot600BitRateHz = 600000;
+inline constexpr unsigned kDshotT0hOfBitNum = 3;
+inline constexpr unsigned kDshotT1hOfBitNum = 6;
+inline constexpr unsigned kDshotBitFractionDen = 8;
+
 // Pi. Citation: the mathematical constant, the ratio of a circle's circumference to its diameter.
 // Kind: math.
 inline constexpr double kPi = 3.14159265358979323846;

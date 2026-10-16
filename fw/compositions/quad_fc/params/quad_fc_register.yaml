@@ -1,4 +1,10 @@
-# quad_fc composition (fw/compositions/quad_fc) parameters: none in M1. The composition's rate setpoint and collective
-# thrust are the constants 0 and the motor output gate has one state, so no tunable exists yet. The set exists so that a
-# later packet's entries (arming, motor test) append after the product ids (marv_add_card_param_set EXTRA_REGISTER).
-{}
+# quad_fc composition (fw/compositions/quad_fc) parameters. The composition's rate setpoint and collective thrust are the
+# constants 0 and the motor output gate has one state, so no composition tunable exists yet; the later packets' entries
+# (arming) append after the product ids (marv_add_card_param_set EXTRA_REGISTER).
+#
+# motor_pad (M1 P10, the FC3v2 board's wiring): the pad of each logical motor, a permutation of the board outputs
+# OUT0 .. OUT3 (GPIO 6 .. 9, boards/madflight_fc3v2_revc.h). Applied once, at motor output start-up (hal_target); the
+# start-up refuses a table that is not a permutation. A motor's direction is set in the ESC, never inverted in firmware.
+
+motor_pad:
+  {type: i32, value: [0, 1, 2, 3], shape: motors, unit: "1", method: scenario, source: "PLACEHOLDER: the identity map (logical motor n on OUT(n-1)), because the wiring of the airframe's ESCs to the board's outputs is not recorded. It is replaced by the map the M1 console motor test (P11) establishes, with the props off, by spinning one motor at a time and reading the quad-X position and spin direction; nothing spins on the target until then (the quad_fc motor gate is always disarmed)", sigma: choice}
