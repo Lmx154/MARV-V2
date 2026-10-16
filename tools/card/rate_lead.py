@@ -82,7 +82,9 @@ below set resolution and termination only)
        - the per-axis f32 kp, ki, kd and T_f;
        - dt_n = float(dt_us)/float(1e6) per execution, with dt_us the stamp difference of the SIL (hal_sim stamp_us,
          fw/hal/sim/include/marv/hal_sim/hal_sim.hpp:21-23): at 625/4 us and D = 2 the executions alternate 312 and 313 us
-         (execution_dts; a pattern longer than 2 is refused);
+         (execution_dts; a pattern longer than 2 is refused). The board's scenario register has the rate_guard_mean_period entry
+         (decision 0014, Amendment 2026-10-16): one phase at dt = D num/den, the part's mean period from its ODR trim,
+         and no pattern refusal, because the board's stamps are the chip's clock read in whole microseconds, not a pattern;
        - alpha_n = 1 - exp(-dt_n/T_f) in float: the division and the subtraction rounded to f32 (computing in double then
          rounding is exact for one operation), exp correctly rounded and then moved by -LIBM_EXP_ULPS, 0, +LIBM_EXP_ULPS f32
          steps (the target libm's expf, INFERRED within that bound); every variant must pass. 1 - exp cancels, so the f32
@@ -181,6 +183,9 @@ CORNER_TOL_ULPS = 8               # triangle-inequality and duplicate tolerance,
 # (tests/regression/quad/L06/gyro_chain/support.hpp kLibmUlps, INFERRED from glibc's documented float maxima).
 LIBM_EXP_ULPS = 2
 MICRO_PER_UNIT = 1e6              # SI prefix: microseconds per second (fw prim::kMicrosecondsPerSecond)
+RATE_GUARD = "rate_guard_mean_period"  # scenario-register key (decision 0014, Amendment 2026-10-16), present in the board's only:
+# its presence makes the guard run at one dt = D num/den (the board's mean period), not at the stamp pattern; its value
+# is UNKNOWN (never a number: a numeric entry would become a parameter and shift the ids of every later one)
 NOTCH_GRID_HALVINGS_MAX = 6       # no resolved notch grid by level 6 (65 speeds): refused (rule step 13)
 
 SIGN_PATTERNS = tuple(itertools.product((1, -1), repeat=3))  # the signs of w0 at rate_max (rule step 6)
@@ -914,7 +919,11 @@ def design(card, budget, scenario, profile, card_path, profile_path, procs=None)
     si, _, _ = gic.imu_config(profile_path)
     num, den = scenario["tick_period_num_us"]["value"], scenario["tick_period_den"]["value"]
     sigma_d = gic.derived_report(si, num, den)[0]["gyro"][4]
-    dts = execution_dts(num, den, chain["divisor"])
+    mean_guard = RATE_GUARD in scenario
+    if mean_guard:
+        dts = [chain["divisor"] * num / den]
+    else:
+        dts = execution_dts(num, den, chain["divisor"])
     if dts is None:
         refuse(card_path, "the rate executions' stamp pattern is longer than 2: the guard's periodic analysis covers 1 or 2")
     corners = rate.corner_list(inp["tau"], inp["b_tau"], inp["b_J"])
@@ -1059,7 +1068,7 @@ def design(card, budget, scenario, profile, card_path, profile_path, procs=None)
         "grid": grid, "k_first": k_first, "n_bisections": n_bisections, "n_lo": lo_r, "n_hi": hi_r,
         "n_star": star["n"], "omega_c": omega_c, "sup": star["sup"], "gains": gains, "stepped_down": stepped_down,
         "margins": margins, "sens": sens, "pm_worst": worst(margins), "ms_worst": worst(sens, largest=True),
-        "axes32": axes32, "guard": guard_rows, "dts": dts, "effects": effects, "noise_variants": variants,
+        "axes32": axes32, "guard": guard_rows, "dts": dts, "mean_guard": mean_guard, "effects": effects, "noise_variants": variants,
         "t_ff": t_ff, "ff_grid": ff_grid, "noise_hover": hover, "noise_max": at_max, "noise_max_w0": worst_ff[2],
         "noise_floor_max": floor_max, "noise_convergence": conv,
         "condition": condition, "qf8": qf8, "t63": t63, "tau_cl": max(x[1] for x in t63),
@@ -1116,7 +1125,7 @@ def report_lines(r):
     for ax, j, g32, (pm, pmc, ms, msc) in zip(AXES, i["inertia"], r["axes32"], r["guard"]):
         lines.append(f"  {ax:<5} J {j!r}: kp {g32[0]!r}  ki {g32[1]!r}  kd {g32[2]!r}  T_f {g32[3]!r}  (f32); guard: "
                      f"PM {deg(pm):.6f} deg ({pmc}), Ms {ms:.6f} ({msc})")
-    lines.append(f"f32 guard (rule step 8: PM >= PM_min and Ms <= Ms_max on the firmware loop, dt pattern {r['dts']} us, "
+    lines.append(f"f32 guard (rule step 8: PM >= PM_min and Ms <= Ms_max on the firmware loop, {'mean-period dt' if r['mean_guard'] else 'dt pattern'} {r['dts']} us, "
                  f"f32 alpha, expf -+{LIBM_EXP_ULPS} ulp): "
                  f"{'pass' if guard_passes(r['guard'], i['PM_min'], i['Ms_max']) else 'FAIL'}")
     lines.append("  effects at the chosen design, roll, worst PM - PM_min (rad): "

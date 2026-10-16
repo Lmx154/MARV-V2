@@ -113,6 +113,19 @@ WordResult Lsm6dsvAssembler::push(const FifoWord& w, ImuSample& out) noexcept {
   return r;
 }
 
+TickPeriodUs tick_period_from_trim(std::int8_t freq_fine) noexcept {
+  const auto us_per_s = static_cast<std::int64_t>(prim::kMicrosecondsPerSecond);
+  TickPeriodUs t;
+  t.num = us_per_s * lsm6dsv::kFreqFineStepDen;
+  t.den = static_cast<std::int64_t>(lsm6dsv::kOdrHz) *
+          (lsm6dsv::kFreqFineStepDen + lsm6dsv::kFreqFineStepNum * static_cast<std::int64_t>(freq_fine));
+  return t;
+}
+
+bool same_period(std::int64_t num_a, std::int64_t den_a, std::int64_t num_b, std::int64_t den_b) noexcept {
+  return num_a >= 1 && den_a >= 1 && num_b >= 1 && den_b >= 1 && num_a * den_b == num_b * den_a;
+}
+
 TimeUs ImuStamper::stamp(TimeUs t_irq, std::size_t back) noexcept {
   const auto us_per_s = static_cast<std::uint64_t>(prim::kMicrosecondsPerSecond);
   const std::uint64_t step = (2 * static_cast<std::uint64_t>(back) * us_per_s + odr_hz_) / (2 * odr_hz_);

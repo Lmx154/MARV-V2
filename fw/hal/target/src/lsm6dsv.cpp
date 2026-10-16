@@ -231,7 +231,7 @@ void on_int1() {
 
 }  // namespace
 
-ImuBoot imu_start(ImuSink sink, RateCountsSource rate_counts) noexcept {
+ImuBoot imu_start(ImuSink sink, RateCountsSource rate_counts, TickPeriod design_period) noexcept {
   if (sink == nullptr || rate_counts == nullptr) {
     hal_panic("imu_start: no sink or no rate-counts source");
   }
@@ -288,6 +288,18 @@ ImuBoot imu_start(ImuSink sink, RateCountsSource rate_counts) noexcept {
   write_reg(lsm6dsv::kRegFifoCtrl4, lsm6dsv::kFifoCtrl4Continuous);
   boot.freq_fine = static_cast<std::int8_t>(read_reg(lsm6dsv::kRegInternalFreqFine));
   boot.odr_hz_by_trim = static_cast<double>(lsm6dsv::kOdrHz) * (1.0 + lsm6dsv::kFreqFineStep * boot.freq_fine);
+  const TickPeriodUs trim_period = tick_period_from_trim(boot.freq_fine);
+  if (!same_period(design_period.num, design_period.den, trim_period.num, trim_period.den)) {
+    static constexpr char kFormat[] =
+        "LSM6DSV: the rate design was checked at a tick period of %ld/%ld us, but this part's FREQ_FINE %d gives %lld/%lld us "
+        "(DS13476 9.49)";
+    constexpr std::size_t kNumber = sizeof("-9223372036854775808");  // the widest of the five numbers
+    static std::array<char, sizeof(kFormat) + kNumber + kNumber + kNumber + kNumber + kNumber> msg{};
+    static_cast<void>(std::snprintf(msg.data(), msg.size(), kFormat, static_cast<long>(design_period.num),
+                                    static_cast<long>(design_period.den), static_cast<int>(boot.freq_fine),
+                                    static_cast<long long>(trim_period.num), static_cast<long long>(trim_period.den)));
+    hal_panic(msg.data());
+  }
 
   gpio_add_raw_irq_handler(kIntPin, &on_int1);
   gpio_set_irq_enabled(kIntPin, GPIO_IRQ_LEVEL_HIGH, true);

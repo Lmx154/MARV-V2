@@ -47,11 +47,19 @@ struct ImuBoot {
   double odr_hz_by_trim = 0.0;  // 7680 Hz x (1 + 0.0013 x freq_fine), §9.49 (the stamping rule keeps the nominal T)
 };
 
+// The tick period the rate design was checked at, tick_period_num_us / tick_period_den microseconds (the parameters).
+struct TickPeriod {
+  std::int32_t num = 0;
+  std::int32_t den = 0;
+};
+
 // Configures SPI1 and the LSM6DSV (WHO_AM_I check, software reset, ±2000 dps, ±16 g, 7.68 kHz high-performance, FIFO
 // continuous with both sensors batched at 7.68 kHz, watermark one sample on INT1), then enables the interrupt; from
 // then on every sample goes to `sink`, in the interrupt, and `rate_counts` is read after each batch. hal_panic on any
-// failure. Call once, from main, after composition::init.
-ImuBoot imu_start(ImuSink sink, RateCountsSource rate_counts) noexcept;
+// failure, and when the period `design_period` is not exactly the one this part's INTERNAL_FREQ_FINE gives (DS13476
+// §9.49, tick_period_from_trim): the rate design was then checked at the wrong period (decision 0014, Amendment
+// 2026-10-16). Call once, from main, after composition::init.
+ImuBoot imu_start(ImuSink sink, RateCountsSource rate_counts, TickPeriod design_period) noexcept;
 
 // The hal_actuators_write calls so far (hal_target.cpp). Called only from the tick's counter publication.
 [[nodiscard]] std::uint64_t actuator_writes() noexcept;
