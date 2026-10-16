@@ -71,6 +71,7 @@ full_roots:
 # Paths that select nothing.
 ignore:
   - .claude/**
+  - tools/target/**   # bench-only scripts (flashing); never run by CI (decision 0027)
   - docs/**
   - LICENSE
   - THIRD_PARTY_NOTICES.md
