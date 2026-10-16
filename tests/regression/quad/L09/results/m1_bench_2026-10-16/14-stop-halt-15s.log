@@ -1,0 +1,17 @@
+10:38:44.747 sendcon start
+[  0.000] > 
+[  0.501] marv_fc3v2 quad-L2-pass-147-gc52b42b-dirty
+[  0.501] params ok: generated defaults, rate_period_tolerance_us 1
+[  0.501] init ok
+[  0.501] motors ok: DShot600 on PIO 0, clk_sys 150000000 Hz, PIO divider 31 + 64/256 (derived, dshot.hpp)
+[  0.501] imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+[  0.501] bench stats: off
+[  0.501] > motor_test 1 100 20000 PROPS-OFF
+[  1.546] motor_test accepted: motor 1 dshot 100 for 20000 ms
+[  1.546] imu dt=1000012us irq/s=7494.9 words/s=14989.8 samples/s=7494.9 ticks/s=7494.9 writes/s=3748.0 motor_drops=0 | total samples=562127 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=75070512 gyro=(-0.0049,-0.0012,-0.0037) accel=(+0.584,-0.617,-9.686) temp=306.99K flags=0x1c0 | motor_test console_refused=0 forwarded=1 accepted=1 refused=0 stopped=0 | rate executions/s=3748.0 executions=281064 timing_faults=281063
+[  2.596] imu dt=1000002us irq/s=7495.0 words/s=14990.0 samples/s=7495.0 ticks/s=7495.0 writes/s=3747.0 motor_drops=0 | total samples=569622 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=76070518 gyro=(-0.0024,+0.0012,-0.0049) accel=(-0.258,-0.847,-10.035) temp=306.99K flags=0x1c0 | motor_test console_refused=0 forwarded=1 accepted=1 refused=0 stopped=0 | rate executions/s=3747.0 executions=284811 timing_faults=284810
+[  3.646] imu dt=1000012us irq/s=7494.9 words/s=14989.8 samples/s=7494.9 ticks/s=7494.9 writes/s=3748.0 motor_drops=0 | total samples=577117 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=77070525 gyro=(-0.0073,+0.0171,-0.0012) accel=(-0.177,+0.043,-10.107) temp=307.04K flags=0x1c0 | motor_test console_refused=0 forwarded=1 accepted=1 refused=0 stopped=0 | rate executions/s=3748.0 executions=288559 timing_faults=288558
+[  4.646] imu dt=1000000us irq/s=7495.0 words/s=14990.0 samples/s=7495.0 ticks/s=7495.0 writes/s=3747.0 motor_drops=0 | total samples=584612 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=78070532 gyro=(+0.0024,+0.0037,-0.0049) accel=(+0.364,+0.608,-9.289) temp=307.05K flags=0x1c0 | motor_test console_refused=0 forwarded=1 accepted=1 refused=0 stopped=0 | rate executions/s=3747.0 executions=292306 timing_faults=292305
+10:38:50.349 openocd start (init, halt cm0, 15 s, watchdog reboot)
+[  5.646] imu dt=1000014us irq/s=7494.9 words/s=14989.8 samples/s=7494.9 ticks/s=7494.9 writes/s=3747.9 motor_drops=0 | total samples=592107 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=79070539 gyro=(+0.0049,-0.0110,-0.0024) accel=(-0.718,+0.450,-9.141) temp=307.06K flags=0x1c0 | motor_test console_refused=0 forwarded=1 accepted=1 refused=0 stopped=0 | rate executions/s=3747.9 executions=296054 timing_faults=296053
+10:39:05.397 openocd done

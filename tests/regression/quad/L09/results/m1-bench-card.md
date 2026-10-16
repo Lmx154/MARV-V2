@@ -48,10 +48,24 @@ Image `quad-L2-pass-147-gc52b42b` for steps 1–2, then `gc52b42b-dirty` (this c
    1. Cancel (`09`): **pass**, stopped at the keystroke (`stopped: cancel`). The cancelling byte stays in the console
       line buffer, so the next line was refused as "unknown command" (`10`, nothing spun; noticed, not changed).
    2. Disconnect (`11`): **pass**, one continuous run that ended at the port close (`stopped: disconnect`).
-   3. SWD halt (`12`): **FAIL**. Core 0 halted 2.0 s into the test for 5 s, then watchdog reboot. The motor ran without
-      a break until the reboot (Luis: "it was one continuous go no stopping in between at any point"). With the core
-      halted the DShot PIO is stalled on its empty FIFO and all four pads read low (`13`: FDEBUG TXSTALL0 re-set
-      within 200 ms, FLEVEL 0, SM0 at 0, GPIO 6–9 low ×20). So the ESC held the last throttle for ≥ 5 s with no
-      signal (AM32 signal-loss behaviour INFERRED; version and settings unread). Blocks props-on (M4). Luis: both a
-      firmware watchdog and the AM32 setting.
+   3. SWD halt: **pass** (the ESC's own signal-loss stop). First run (`12`): core 0 halted 2.0 s into the test for
+      5 s; the motor stopped on an ESC beep (Luis: "it did so right when i heard the esc beeps yes", about 4 s of spin
+      in total by recall). It was first recorded here as a fail, a misreading of "until the ESC rebooted" as our reboot;
+      corrected after the timed re-run. Timed re-run (`14`, same image): halted 5.1 s into the test for 15 s; Luis's
+      timer: "went on for around 5.5 seconds until the esc beep. it stopped on the esc beep", so the ESC cut the motor
+      about 0.4 s after the line went silent, well before our reboot at 20.1 s. With the core halted the DShot PIO is
+      stalled on its empty FIFO and all four pads read low (`13`: FDEBUG TXSTALL0 re-set within 200 ms, FLEVEL 0, SM0
+      at 0, GPIO 6–9 low ×20). Consistent with AM32 v2.20 `main.c`: no valid frame for half a second while armed →
+      motor off and ESC reset (INFERRED from a source read; timeout constant not checked). AM32 v2.20 has no setting for
+      this (configurator, all fields).
    4. Panic: not run.
+
+## AM32 settings (read through Betaflight 2026.6.2 MADFLIGHT_FC3 passthrough, am32.ca configurator v0.1.3)
+
+All four: firmware FLYWOO_GOKU_F421 2.20, bootloader v1 (pin PB4), MCU F421, EEPROM v3; DShot; timing 15°, startup power
+100 %, KV 820, 14 poles, variable PWM 24–48 kHz, complementary PWM on, stuck-rotor protection on, stall protection off,
+ramp 16 %/ms, minimum duty 2 %, low-voltage cut-off off, temperature and current limit DISABLED, sinusoidal startup off,
+brake on stop off. Reversed: ESC 1 and 4 (OUT0 rear left, OUT3 front right: the CCW pair), not 2 and 3. Backups:
+`m1_bench_2026-10-16/am32/esc{1..4}_config.bin` (ESC 1 = ESC 4 byte for byte; ESC 3 differs only at 0x11 (reversed);
+ESC 2 also at 0x1E, 2 → 1, and 0x2B, 145 → 255: beeper volume and temperature limit by the configurator's mismatch
+dots, field names INFERRED). Nothing was changed on the ESCs.
