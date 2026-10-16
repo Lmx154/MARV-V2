@@ -127,8 +127,11 @@ endfunction()
 # EXTRA_REGISTER appends register files, in the order given, after the budget register, so every id of the set without
 # them keeps its value and the extra entries follow (the rate-timing register, then a composition's own scenario
 # parameters); without it the outputs are unchanged.
+# RATE_GUARD <exact|mean_period> (default exact, with SCENARIO) selects tools/card/rate_lead.py's firmware-loop guard (rule
+# step 8, flatten.py --rate-guard): the SIL's exact stamp pattern, or one dt = D num/den, the board's mean period (decision
+# 0014, Amendment 2026-10-16). Only marv_params_fc3v2 passes it.
 function(marv_add_card_param_set name)
-  cmake_parse_arguments(ARG "PRODUCT_TABLE" "CARD;BUDGET;SCENARIO" "EXTRA_REGISTER" ${ARGN})
+  cmake_parse_arguments(ARG "PRODUCT_TABLE" "CARD;BUDGET;SCENARIO;RATE_GUARD" "EXTRA_REGISTER" ${ARGN})
   cmake_path(ABSOLUTE_PATH ARG_CARD BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
   cmake_path(ABSOLUTE_PATH ARG_BUDGET BASE_DIRECTORY "${PROJECT_SOURCE_DIR}" NORMALIZE)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ARG_CARD}")
@@ -152,6 +155,9 @@ function(marv_add_card_param_set name)
     set(flat_rate "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_rate.yaml")
     set(flat_rate_report "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_rate_report.txt")
     set(rate_args --out-rate-lead "${flat_rate}")
+    if(ARG_RATE_GUARD)
+      list(APPEND rate_args --rate-guard "${ARG_RATE_GUARD}")
+    endif()
     set(rate_outputs "${flat_rate}" "${flat_rate_report}")
     set(flat_attitude "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_attitude.yaml")
     set(flat_attitude_report "${CMAKE_BINARY_DIR}/generated/${name}/flatten/${name}_attitude_report.txt")
@@ -289,6 +295,7 @@ marv_add_card_param_set(marv_params_l11_vertical_scripted CARD "${MARV_VEHICLE_C
 # fixed to vehicles/uzh_neurobem_5in.yaml (not MARV_VEHICLE_CARD) until a later packet names the real airframe's.
 # marv_rate, marv_mixer and marv_rate_group read the product ids, which this set keeps.
 marv_add_card_param_set(marv_params_fc3v2 CARD "vehicles/uzh_neurobem_5in.yaml" BUDGET "${MARV_DESIGN_BUDGET}"
+  RATE_GUARD mean_period
   SCENARIO "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml"
   EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml"
                  "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml")

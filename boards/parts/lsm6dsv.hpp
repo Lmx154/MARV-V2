@@ -96,6 +96,10 @@ inline constexpr double kTempDegCAtZeroLsb = 25.0;
 // from typical in steps of 0.13 %: ODR_actual = 7680 Hz x (1 + 0.0013 x FREQ_FINE) / ODRcoeff, ODRcoeff 1 at 7.68 kHz
 // (Table 138).
 inline constexpr double kFreqFineStep = 0.0013;
+// The same step as the exact fraction 13 / 10000, for the tick period: T = 1e6 us / ODR_actual
+// = 1e6 x 10000 / (kOdrHz x (10000 + 13 x FREQ_FINE)) us (§9.49 Table 138), no float (M1 P7b, decision 0014 Amendment).
+inline constexpr std::int32_t kFreqFineStepNum = 13;
+inline constexpr std::int32_t kFreqFineStepDen = 10000;
 
 // Ton, gyroscope turn-on time, 30 ms typ., §4.2 Table 4, in µs.
 inline constexpr std::uint32_t kGyroTurnOnUs = 30000;

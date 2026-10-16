@@ -89,6 +89,18 @@ class Lsm6dsvAssembler {
   float temp_k_ = 0.0F;
 };
 
+// The tick period of a part with INTERNAL_FREQ_FINE `freq_fine`, as the exact fraction num / den microseconds:
+// 1e6 x 10000 / (7680 x (10000 + 13 x freq_fine)), ST DS13476 §9.49 (boards/parts/lsm6dsv.hpp). Not reduced.
+struct TickPeriodUs {
+  std::int64_t num = 0;
+  std::int64_t den = 1;
+};
+[[nodiscard]] TickPeriodUs tick_period_from_trim(std::int8_t freq_fine) noexcept;
+
+// True iff num_a / den_a and num_b / den_b are the same rational (integers, no float). pre: every term >= 1 and below
+// 2^31 x 2^31, so the cross products fit.
+[[nodiscard]] bool same_period(std::int64_t num_a, std::int64_t den_a, std::int64_t num_b, std::int64_t den_b) noexcept;
+
 // The stamping rule (file comment).
 class ImuStamper {
  public:

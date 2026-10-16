@@ -305,7 +305,9 @@ int main() {
                                          marv::param_value<ParamId::tick_period_den>()));
   stage = Stage::kMotorsOk;
   std::printf("motors ok\n");
-  imu_boot = marv::hal_target::imu_start(kSink, &rate_counts);
+  imu_boot = marv::hal_target::imu_start(
+      kSink, &rate_counts,
+      {marv::param_value<ParamId::tick_period_num_us>(), marv::param_value<ParamId::tick_period_den>()});
   stage = Stage::kImuOk;
   print_progress();
 
