@@ -69,3 +69,16 @@ brake on stop off. Reversed: ESC 1 and 4 (OUT0 rear left, OUT3 front right: the 
 `m1_bench_2026-10-16/am32/esc{1..4}_config.bin` (ESC 1 = ESC 4 byte for byte; ESC 3 differs only at 0x11 (reversed);
 ESC 2 also at 0x1E, 2 → 1, and 0x2B, 145 → 255: beeper volume and temperature limit by the configurator's mismatch
 dots, field names INFERRED). Nothing was changed on the ESCs.
+
+## P12b soak (2026-10-16 14:02–14:13, USB only, no pack)
+
+Image `quad-L2-pass-155-g679d12f` (m33 ELF sha256 06c1813eaf36ed5823e6963d897b5762ceaf18899f0f4bf42970dea829be4d59;
+P7b: the board's tick period 1953125/14649 µs from FREQ_FINE −18, `rate_period_tolerance_us` 3). Raw log
+`p12_bench/run-e-p7b-soak-679d12f.log.gz` (`tools/target/readcon.py <port> 665`). 666 status lines, device time to
+668.1 s: 2 503 331 rate executions, **0 timing faults**, 0 FIFO overflows, 0 SPI / partial / order / empty, 0 stamp
+clamps, 0 motor drops, sample spacing [133, 134] µs, no panic. A preliminary run on the P7b branch image (51b4246,
+693 s, 2 597 019 executions) and a run on the pre-commit build of the same source were equally clean (not committed).
+
+M1 done-when (quad §4.0): rate loop at its rate and EMB-3 on measured stage times (p12_bench/report.txt, 46 %
+margin); each logical motor alone on its card pad and direction (steps 2, 08); still-bench IMU samples inside the
+profile's bounds (report.txt; gyro x/y noise kept UNVERIFIED by Luis's ruling); a soak with no FIFO overflow (above).
