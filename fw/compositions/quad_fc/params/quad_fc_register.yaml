@@ -33,3 +33,18 @@ rates_expo_pitch:
   {type: f32, value: 0.0, unit: "1", method: scenario, source: "QF-1 pitch expo, pilot preference, a fraction in [0, 1] (Betaflight stores a percentage: rcExpo / 100). Betaflight 4.5.2, commit 024f8e13d4e642eb6a380308685b9ea3aa3ef1a2: src/main/fc/controlrate_profile.c:48-57 (rcExpo 0 per axis); the curve, src/main/fc/rc.c:209-217, is written as mathematics in fw/stick_rates/include/marv/stick_rates/stick_rates.hpp", sigma: choice}
 rates_expo_yaw:
   {type: f32, value: 0.0, unit: "1", method: scenario, source: "QF-1 yaw expo, pilot preference, a fraction in [0, 1] (Betaflight stores a percentage: rcExpo / 100). Betaflight 4.5.2, commit 024f8e13d4e642eb6a380308685b9ea3aa3ef1a2: src/main/fc/controlrate_profile.c:48-57 (rcExpo 0 per axis); the curve, src/main/fc/rc.c:209-217, is written as mathematics in fw/stick_rates/include/marv/stick_rates/stick_rates.hpp", sigma: choice}
+
+# The link-loss failsafe and arming (M2 P1, decisions 0040 and 0041): the state machine of fw/arming. Safety numbers: exactly
+# these values, never others. The four times follow Betaflight 4.5.1 as read in decision 0041.
+failsafe_loss_us:
+  {type: i32, value: 100000, unit: "us", method: scenario, source: "Betaflight 4.5.1 src/main/rx/rx.c:136,506 (link lost after 100 ms without a valid frame); Luis 2026-10-16 '1. yes 2. yes' (decision 0041)", sigma: choice}
+failsafe_hold_us:
+  {type: i32, value: 300000, unit: "us", method: scenario, source: "Betaflight 4.5.1 src/main/rx/rx.c:131 MAX_INVALID_PULSE_TIME_MS 300 and rx.c:732-741 (last sticks held until 300 ms after the last valid frame, then sticks centred and minimum throttle); Luis 2026-10-16 '1. yes 2. yes' (decision 0041)", sigma: choice}
+failsafe_disarm_us:
+  {type: i32, value: 1500000, unit: "us", method: scenario, source: "Betaflight 4.5.1 src/main/flight/failsafe.c:74 failsafe_delay 15 (1.5 s), :77 failsafe_procedure Drop, :214-216 and :389-390 (link down at 1.5 s, disarm); Luis 2026-10-16 '1. yes 2. yes' (decision 0041)", sigma: choice}
+failsafe_recovery_us:
+  {type: i32, value: 500000, unit: "us", method: scenario, source: "Betaflight 4.5.1 src/main/flight/failsafe.c:68 failsafe_recovery_delay 5 (0.5 s): after a failsafe disarm, and at boot, arming needs 0.5 s of continuously valid link and the arm switch cycled off and on; Luis 2026-10-16 '1. yes 2. yes' (decision 0041)", sigma: choice}
+arm_switch_threshold:
+  {type: f32, value: 0.390625, unit: "1", method: scenario, source: "Derived: arm at or above 1700 us, normalized (1700 us - 1500 us) / 512 us = 0.390625, under the receive contract aux x = (us - 1500) / 512 and throttle = (us - 988) / 1024, whose endpoints and centre are the CRSF channel values 172 -> 988 us, 992 -> 1500 us, 1811 -> 2012 us (TBS CRSF spec, RC channels). Luis 2026-10-16 gave channel 5 at +100 armed and -100 disarmed and did not object to arming above 1700 us (the lead's recommendation)", sigma: choice}
+arm_throttle_min:
+  {type: f32, value: 0.060546875, unit: "1", method: scenario, source: "Derived: arming needs the throttle below 1050 us, normalized (1050 us - 988 us) / 1024 us = 0.060546875, under the receive contract throttle = (us - 988) / 1024 (CRSF 172 -> 988 us, 1811 -> 2012 us, TBS CRSF spec, RC channels). 1050 us is Betaflight's min_check default; Luis 2026-10-16: 'throttle at minimum is fine with the betaflight defaults'", sigma: choice}

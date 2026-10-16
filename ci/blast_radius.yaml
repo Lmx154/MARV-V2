@@ -301,6 +301,13 @@ rules:
     gz_groups: [l4, l5, l11]
     why: "mixer is linked by the L03 and L09 tests, rate, rate_group, vertical and the compositions; L06 tools compile with fw/mixer/include"
 
+  - paths: [fw/arming/**]
+    ctest_labels: [L08]
+    run_ci_steps: ["@host"]
+    pytest_paths: []
+    gz_groups: []
+    why: "arming is the pure arming and failsafe machine, tested by the L08 unit_arming host test; no composition links it yet"
+
   - paths: [fw/attitude/**]
     ctest_labels: [L05, L11]
     run_ci_steps: ["@flight_gates"]
@@ -1008,7 +1015,7 @@ rules:
     run_ci_steps: ["@host"]
     pytest_paths: []
     gz_groups: []
-    why: "the L08 unit tests (the CRSF decoder, the QF-1 rates curve) are host ctest entries"
+    why: "the L08 unit tests (the CRSF decoder, the QF-1 rates curve, the manual-control pull, the arming machine) are host ctest entries"
 
   - paths: [tests/regression/quad/L09/CMakeLists.txt, tests/regression/quad/L09/unit/**]
     ctest_labels: [L09]
