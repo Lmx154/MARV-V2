@@ -77,7 +77,7 @@
     {
       "name": "m33",
       "inherits": "base",
-      "displayName": "Cortex-M33 (Pico SDK 2.3.1, RP2350 secure Arm), compile-only",
+      "displayName": "Cortex-M33 (Pico SDK 2.3.1, RP2350 secure Arm)",
       "cacheVariables": {
         "MARV_TARGET": "m33",
         "CMAKE_BUILD_TYPE": "Release",

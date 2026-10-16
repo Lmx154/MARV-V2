@@ -54,7 +54,9 @@ host_preset() {
 }
 
 m33_build() {
-  cmake --preset m33 && cmake --build --preset m33
+  local elf=build/m33/fw/hal/target/marv_fc3v2.elf
+  cmake --preset m33 && cmake --build --preset m33 \
+    && arm-none-eabi-size -A "${elf}" && arm-none-eabi-readelf -A "${elf}"
 }
 
 regression_change_check() {
