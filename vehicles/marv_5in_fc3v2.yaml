@@ -1,10 +1,11 @@
 # Vehicle card: Luis's 5-inch quad on the madflight FC3v2 Rev-C (quad spec §4.0 M1, M4; core contracts 2.1). Schema and
 # sigma policy: tools/card/schema.py. Frames: FRD body, CM origin. Spin: ccw = counter-clockwise viewed from above.
 # Hardware (Luis, 2026-10-15): madflight FC3v2 Rev-C, Goku G55M 55A AM32 4-in-1 ESC, flight pack 4S1P 1600 mAh 120C LiPo,
-# 14.8 V nominal, 23.68 Wh (quad spec §4.0 M4). The card schema (tools/card/lint.py) has no pack field, so the pack is
+# 14.8 V nominal, 23.68 Wh (quad spec §4.0 M4). Luis, 2026-10-16: motors Emax ECO II Series 2807-1700KV; frame HGLRC
+# MY7 7-inch, 335 mm wheelbase, 217 g frame only (this card still carries the UZH 5-inch physics as placeholders). The card schema (tools/card/lint.py) has no pack field, so the pack is
 # recorded in this comment only and no tool reads it.
 # Physics: every entry is the published value of the UZH NeuroBEM 5-inch card (vehicles/uzh_neurobem_5in.yaml), carried
-# as a PLACEHOLDER until the M4 measurements replace it; rotors.speed_range is UNKNOWN (a motor limit, see its note).
+# as a PLACEHOLDER until the M4 measurements replace it; rotors.speed_range is Luis's ruling of 2026-10-16 (see its source).
 vehicle: marv_5in_fc3v2
 
 mass:
@@ -60,12 +61,14 @@ rotors:
     status: [PLACEHOLDER]
     placeholder: *uzh_placeholder
   speed_range:
-    value: UNKNOWN
+    value: [0, 2991]
+    shape: range
     unit: rad/s
-    method: measured
-    source: "not measured: this airframe's motors are not recorded and no rotor speed range is known for them (M4)"
+    method: derived(no-load speed KV x V_full x 2π/60; min 0 at the lowest DShot throttle value)
+    source: "Luis 2026-10-16: 'set this to max there's no reason to prevent it' and 'other firmwares have no problem leaving this open and using dshot's own range ... if a for the development velocity, then sure' (option a: endpoints at the motor's physical range, so the linear esc_map spans the whole DShot throttle range with no cap). Max = no-load speed on a full pack: KV x V x 2π/60 = 1700 rpm/V x 16.8 V x 2π/60 = 2990.8 rad/s, rounded to 2991; KV from the motor model Luis gave, 'Emax ECO II Series 2807-1700KV Motor' (manufacturer rating); V = 4S x 4.20 V LiPo full charge (INFERRED: the pack's datasheet is not recorded). Min = 0 rad/s at the lowest DShot throttle value (the ESC's own minimum)"
     sigma: UNKNOWN
-    note: "Not copied from the UZH card ([150, 2800] rad/s, blackbird.yaml motor_omega_min / motor_omega_max): flatten.py emits speed_range as rotor_speed_min / rotor_speed_max, mixer.py derives idle_speed from its minimum, and the firmware mixer uses all three as rotor speed limits (fw/mixer/src/mixer.cpp). A motor limit is a safety number (CLAUDE.md UNKNOWN rule), so it stays UNKNOWN until Luis sets it."
+    status: [INFERRED]
+    note: "flatten.py emits speed_range as rotor_speed_min / rotor_speed_max, mixer.py derives idle_speed from its minimum (QF-6's measured minimum stable rotor speed replaces it, mixer.py:6), and the firmware mixer uses all three as rotor speed limits (fw/mixer/src/mixer.cpp). The no-load maximum overstates the loaded speed with 7-inch props; the M4 thrust stand's DShot map replaces esc_map, not this ruling. The AM32 'Motor KV' setting reads 820 on all four ESCs (m1-bench-card.md), not 1700: noticed, not changed"
   motor_lag:
     model: first_order
     tau:
@@ -85,7 +88,7 @@ rotors:
     placeholder:
       reason: "other airframe (UZH NeuroBEM 5in): the UZH card's DShot→rotor-speed model; this airframe's map is unknown (AM32 version and settings UNKNOWN, Luis 2026-10-16)"
       replaced_by: "the M4 thrust stand's DShot-to-thrust map at two pack voltages (quad spec §4.0 M4)"
-    note: "endpoints are the DShot throttle range (core §4) and rotors.speed_range, which is UNKNOWN on this card"
+    note: "endpoints are the DShot throttle range (core §4) and rotors.speed_range (Luis 2026-10-16, [0, 2991] rad/s)"
   m1:
     position:
       value: [0.075, 0.10, 0.0]

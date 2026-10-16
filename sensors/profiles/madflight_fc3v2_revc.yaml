@@ -30,7 +30,17 @@ classes:
         method: datasheet
         source: "DS13476 Rev 5, §4.1 Table 3 (Rn)"
         sigma: UNKNOWN
-        note: "Table: '2.8 mdps/√Hz', high-performance mode, independent of ODR and FS up to ±2000 dps (footnote 5)."
+        status: [UNVERIFIED]
+        conflict:
+          - value: 5.17
+            unit: mdeg/s/sqrt(Hz)
+            source: "M1 P12 still bench, x axis: sd 119.83 mdps (tests/regression/quad/L09/results/p12_bench/report.txt:116) / sqrt(537 Hz), the bandwidth the profile prediction uses (report.txt:114)"
+            state: open
+          - value: 4.94
+            unit: mdeg/s/sqrt(Hz)
+            source: "M1 P12 still bench, y axis: sd 114.46 mdps (report.txt:117) / sqrt(537 Hz) (report.txt:114)"
+            state: open
+        note: "Table: '2.8 mdps/√Hz', high-performance mode, independent of ODR and FS up to ±2000 dps (footnote 5). Both kept, UNVERIFIED (Luis 2026-10-16, '4. yes'): x and y measure 1.85x and 1.76x the datasheet's typical; z (sd 83.42 mdps, 3.60 by the same rule) matches the first-order-LPF2 prediction of 83.8 mdps (report.txt:115, 118)."
       gyro_zero_rate_offset:
         value: 1
         unit: deg/s
