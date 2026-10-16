@@ -97,8 +97,8 @@ struct TickPeriodUs {
 };
 [[nodiscard]] TickPeriodUs tick_period_from_trim(std::int8_t freq_fine) noexcept;
 
-// True iff num_a / den_a and num_b / den_b are the same rational (integers, no float). pre: every term >= 1 and below
-// 2^31 x 2^31, so the cross products fit.
+// True iff num_a / den_a and num_b / den_b are the same rational (integers, no float). pre: every term >= 1 and both
+// cross products num_a x den_b and num_b x den_a below 2^63 (the trim period's terms reach about 1e10 x 3e4).
 [[nodiscard]] bool same_period(std::int64_t num_a, std::int64_t den_a, std::int64_t num_b, std::int64_t den_b) noexcept;
 
 // The stamping rule (file comment).
