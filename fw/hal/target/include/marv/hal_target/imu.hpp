@@ -25,7 +25,8 @@ struct ImuStats {
   std::uint32_t stamp_clamps = 0;    // stamps raised to keep t_us strictly increasing (ImuStamper)
   std::uint32_t order_faults = 0;    // samples whose t_us did not exceed the previous one (expected 0: the check)
   std::uint32_t empty_irqs = 0;      // handler entries that found no FIFO word
-  std::uint64_t actuator_writes = 0; // hal_actuators_write calls (counted and dropped until P10)
+  std::uint64_t actuator_writes = 0; // hal_actuators_write calls
+  std::uint64_t actuator_drops = 0;  // motor frames dropped because the previous one had not left (motor_output.hpp)
   TimeUs spacing_min_us = 0;         // smallest and largest t_us spacing since the previous imu_stats() (0: none)
   TimeUs spacing_max_us = 0;
   ImuSample last{};                  // the newest sample

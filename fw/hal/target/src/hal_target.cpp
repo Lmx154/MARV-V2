@@ -12,6 +12,7 @@
 
 #include "marv/hal/hal.hpp"
 #include "marv/hal_target/imu.hpp"
+#include "marv/hal_target/motor_output.hpp"
 #include "marv/types/actuator.hpp"
 
 namespace marv {
@@ -58,19 +59,22 @@ std::uint64_t actuator_writes() noexcept { return g_actuator_writes; }
 
 }  // namespace hal_target
 
-// No motor output exists until P10, which replaces this with the PIO DShot output: a write is counted and dropped
-// (quad_fc writes DshotValue::stop() on every rate tick, M1 P9 ruling). The span sizes must equal the board's outputs,
-// the four motor pads OUT0-OUT3 and no servo, as hal_sim checks them against its bound latch.
+// A write is counted and sends one DShot frame per motor (motor_output.hpp); quad_fc writes DshotValue::stop() on every
+// rate tick (M1 P9 ruling). The span sizes must equal the board's outputs, the four motor pads OUT0-OUT3 and no servo, as
+// hal_sim checks them against its bound latch.
 void hal_actuators_write(std::span<const DshotValue> motor, std::span<const ServoUs> servo) noexcept {
   if (motor.size() != kQuadXMotors || !servo.empty()) {
     hal_panic("hal_actuators_write span size differs from the board's outputs");
   }
   ++hal_target::g_actuator_writes;
+  hal_target::motor_output_write(motor);
 }
 
-// With no motor output there is nothing for a panic to do to the motors. What panic does to them (cut, hold, idle) is
-// decided before the DShot packet (decision 0027, Evidence). Interrupts are disabled and stay disabled, so no interrupt
-// handler runs again: the USB device is serviced by polling instead. dcd_int_handler (tud_int_handler) is the body of
+// What a panic does to the motors (Luis, 2026-10-16, "take option A"): the loop keeps sending DShot motor-stop frames
+// (DshotValue::stop() on every motor, nothing else) at a steady interval, motor_output_panic_service; if that fails the
+// ESC's signal-loss stop applies (the AM32 timeout is INFERRED). Before the motor output is started it sends nothing.
+// Interrupts are disabled and stay disabled, so no interrupt handler runs again: the USB device is serviced by polling
+// instead. dcd_int_handler (tud_int_handler) is the body of
 // the USBCTRL interrupt service routine; it only reads the controller's status registers, so calling it from the loop
 // does what the interrupt would have done. tud_task then runs the queued device events, including the control requests
 // that carry the 1200-baud line coding and the vendor reset request, so the SDK's reset to BOOTSEL keeps working.
@@ -92,6 +96,7 @@ void hal_panic(const char* reason) noexcept {
   std::size_t part = 0;
   std::size_t sent = 0;
   for (;;) {
+    hal_target::motor_output_panic_service();
     tud_int_handler(0);
     tud_task();
     if (!tud_cdc_connected()) {

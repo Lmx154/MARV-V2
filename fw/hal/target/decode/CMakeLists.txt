@@ -5,3 +5,11 @@ add_library(marv_lsm6dsv_decode STATIC src/lsm6dsv_decode.cpp)
 target_include_directories(marv_lsm6dsv_decode PUBLIC include "${PROJECT_SOURCE_DIR}/boards")
 target_link_libraries(marv_lsm6dsv_decode PUBLIC marv_types marv_prim)
 marv_apply_flags(marv_lsm6dsv_decode FIRMWARE)
+
+# The DShot600 output logic of the FC3v2 (M1 P10): frame encoder, pad permutation, word packing, PIO bit timing and the
+# panic loop's stop frames. No Pico SDK, so it is added on every target: the m33 image links it, the L09 T1 tests run it
+# on the host.
+add_library(marv_dshot STATIC src/dshot.cpp)
+target_include_directories(marv_dshot PUBLIC include)
+target_link_libraries(marv_dshot PUBLIC marv_types marv_prim)
+marv_apply_flags(marv_dshot FIRMWARE)
