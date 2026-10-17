@@ -86,7 +86,7 @@ bool ImuSilCommandSource::dshot(std::uint64_t tick, const marv_imu_meas* imu, Ds
 }
 
 Adapter::Adapter(marv_plant* plant, CommandSource& source, double t_tick_s)
-    : Adapter(plant, source, AdapterConfig{t_tick_s, 0, 0.0, nullptr, nullptr, 0.0}) {}
+    : Adapter(plant, source, AdapterConfig{t_tick_s, 0, 0.0, nullptr, nullptr, 0.0, 0}) {}
 
 Adapter::Adapter(marv_plant* plant, CommandSource& source, const AdapterConfig& cfg)
     : plant_(plant),
@@ -94,6 +94,10 @@ Adapter::Adapter(marv_plant* plant, CommandSource& source, const AdapterConfig& 
       t_tick_s_(cfg.t_tick_true_s != 0.0
                     ? cfg.t_tick_true_s
                     : true_tick_period_s(cfg.t_tick_nominal_s, clock_error(cfg.clock_corner, cfg.odr_error))) {
+  delay_ = cfg.command_delay_ticks;
+  if (delay_ > 0 && delay_ <= kMaxCommandDelayTicks) {
+    delay_line_.assign(delay_, Dshot{});
+  }
   if (cfg.imu != nullptr) {
     imu_enabled_ = true;
     imu_attach_status_ = marv_plant_imu_attach(plant_, cfg.imu);
@@ -110,6 +114,10 @@ StepResult Adapter::step(const marv_plant_body& body, std::uint64_t first_tick, 
   StepResult r;
   if (m < 1) {
     r.status = Status::kZeroTicks;
+    return r;
+  }
+  if (delay_ > kMaxCommandDelayTicks) {
+    r.status = Status::kBadDelay;
     return r;
   }
   if (imu_attach_status_ != MARV_PLANT_OK) {
@@ -157,10 +165,16 @@ StepResult Adapter::step(const marv_plant_body& body, std::uint64_t first_tick, 
       r.status = Status::kCommandSource;
       return r;
     }
+    t.dshot_applied = t.dshot;
+    if (delay_ > 0) {
+      t.dshot_applied = delay_line_[delay_head_];
+      delay_line_[delay_head_] = t.dshot;
+      delay_head_ = (delay_head_ + 1) % delay_;
+    }
     marv_plant_cmd cmd{};
     cmd.struct_size = sizeof(cmd);
-    for (std::size_t k = 0; k < t.dshot.size(); ++k) {
-      cmd.dshot[k] = t.dshot[k];
+    for (std::size_t k = 0; k < t.dshot_applied.size(); ++k) {
+      cmd.dshot[k] = t.dshot_applied[k];
     }
     t.out.struct_size = sizeof(t.out);
     const marv_plant_status s = marv_plant_step(plant_, &body, &cmd, t_tick_s_, &t.out);

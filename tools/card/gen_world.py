@@ -2,7 +2,7 @@
 """Gazebo world generator for the quad L2 lockstep plugin (docs/decisions/0003 items 4, 5, 7, 9, 10).
 
   gen_world.py --card <vehicle>.yaml --scenario <scenario>.yaml --mode pilot|test --m <int>
-               [--hover lo|hi] [--log-path <path>] [--attitude-source] --out-dir <dir> [--root <repo root>]
+               [--hover lo|hi] [--log-path <path>] [--attitude-source] [--command-delay-ticks <N>] --out-dir <dir> [--root <repo root>]
 
 Writes <dir>/<vehicle>_<scenario>_<mode>_m<m>.sdf (build directory only, never committed) from the linted card
 (gen_sdf.py, imported and reused, not copied) and a validated scenario (tools/sim/scenario.py). For a hover scenario
@@ -88,6 +88,12 @@ Card children come from gen_plant_config.plugin_element() unchanged; scenario ch
                                                           is no clock corner: the bound of the plugin's host-step rounding
                                                           error (it refuses a larger one); with a clock corner n above is
                                                           the rounded step and the one odr_error element serves both
+  command_delay_ticks           int N >= 1     --command-delay-ticks OPTIONAL, present iff N > 0 (decision 0046 item 2):
+                                                          the adapter steps the plant at tick j with the SIL's command
+                                                          of tick j - N (stop command, DShot 0, before that); N is at
+                                                          most COMMAND_DELAY_MAX_TICKS, the plugin's bound. N = 0
+                                                          writes nothing: the world is byte-identical to one without
+                                                          the argument
   log_path                      text           --log-path OPTIONAL, present iff given; where the plugin writes its
                                                           binary log; no log if absent. Never written into the log.
 
@@ -137,6 +143,9 @@ DSHOT_TYPE = "i32"
 ATTITUDE_SOURCE_TRUTH = "truth"
 GYRO_SOURCE_MODEL = "model"
 CLOCK_CORNERS = (-1, 0, 1)
+# The plugin's bound on <command_delay_ticks>: sim/gz/adapter/include/marv/gz/adapter.hpp kMaxCommandDelayTicks (PLACEHOLDER
+# there: a bound against typos, not a design limit).
+COMMAND_DELAY_MAX_TICKS = 256
 SCENARIO_REGISTER = Path("design") / "scenario_values.yaml"
 # Nanoseconds per microsecond and per second: SI prefixes nano = 10^-9, micro = 10^-6 (BIPM, SI Brochure 9th ed. (2019),
 # Table 7).
@@ -253,7 +262,7 @@ def _world_stem(vehicle, name, mode, m):
 
 
 def world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitude_source=False, sensors=None,
-                  sensor_values=None):
+                  sensor_values=None, command_delay_ticks=0):
     vals = scn.values(doc)
     tick = scn.tick_period_s(doc)
     stem = _world_stem(card["vehicle"], name, mode, m)
@@ -318,6 +327,8 @@ def world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitud
             gpc.text_element(plugin, "odr_error", repr(float(si["odr_error"])))
     if rounded and (sensors is None or sensors.clock_corner is None):
         gpc.text_element(plugin, "odr_error", repr(float(sensor_values["imu"][0]["odr_error"])))
+    if command_delay_ticks:
+        gpc.text_element(plugin, "command_delay_ticks", str(command_delay_ticks))
     if attitude_source:
         gpc.text_element(plugin, "attitude_source", ATTITUDE_SOURCE_TRUTH)
     if log_path is not None:
@@ -326,11 +337,16 @@ def world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitud
 
 
 def generate(card_path, scenario_path, mode, m, hover_member=None, log_path=None, root=gpc.ROOT,
-             attitude_source=False, sensors=None):
+             attitude_source=False, sensors=None, command_delay_ticks=0):
     """Return (file name, text). Raises gpc.GenError, scn.ScenarioError or hover.HoverError. `sensors` is a SensorSet or
-    None (module docstring)."""
+    None (module docstring). `command_delay_ticks` is N of decision 0046 item 2, an integer in 0..COMMAND_DELAY_MAX_TICKS
+    (0 changes nothing)."""
     if mode not in MODES:
         raise gpc.GenError([f"mode {mode!r} is not one of {MODES}"])
+    if (isinstance(command_delay_ticks, bool) or not isinstance(command_delay_ticks, int)
+            or not 0 <= command_delay_ticks <= COMMAND_DELAY_MAX_TICKS):
+        raise gpc.GenError([f"command_delay_ticks must be an integer in 0..{COMMAND_DELAY_MAX_TICKS}, "
+                            f"not {command_delay_ticks!r}"])
     if sensors is not None and check_sensors(sensors):
         raise gpc.GenError(check_sensors(sensors))
     card, profile = gpc.load_linted(card_path, root)
@@ -366,7 +382,8 @@ def generate(card_path, scenario_path, mode, m, hover_member=None, log_path=None
             raise gpc.GenError(e.lines) from e
         sensor_values = {"imu": imu, "rotor": rotor_speed_values(profile, card_path, root)
                          if sensors is not None and sensors.rotor else None}
-    sdf = world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitude_source, sensors, sensor_values)
+    sdf = world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitude_source, sensors, sensor_values,
+                       command_delay_ticks)
     text = '<?xml version="1.0"?>\n' + gpc.to_text(sdf)
     return f"{_world_stem(card['vehicle'], name, mode, m)}.sdf", text
 
@@ -381,12 +398,14 @@ def main(argv=None):
     ap.add_argument("--log-path", metavar="PATH", help="written into the plugin's <log_path>; omitted if not given")
     ap.add_argument("--attitude-source", action="store_true",
                     help="write <attitude_source>truth</attitude_source> into the plugin element; omitted if not given")
+    ap.add_argument("--command-delay-ticks", type=int, default=0, metavar="N",
+                    help=f"write <command_delay_ticks>N</command_delay_ticks> (0..{COMMAND_DELAY_MAX_TICKS}); omitted if 0")
     ap.add_argument("--out-dir", required=True, metavar="DIR")
     ap.add_argument("--root", default=str(gpc.ROOT), help="repository root for resolving sensor_profile")
     args = ap.parse_args(argv)
     try:
         name, text = generate(args.card, args.scenario, args.mode, args.m, args.hover, args.log_path, args.root,
-                              args.attitude_source)
+                              args.attitude_source, command_delay_ticks=args.command_delay_ticks)
     except (gpc.GenError, scn.ScenarioError) as e:
         for line in e.lines:
             print(line, file=sys.stderr)

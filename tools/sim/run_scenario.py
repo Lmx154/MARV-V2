@@ -2,7 +2,7 @@
 """Scenario runner of quad L2 (quad spec section 4 L2, "(card, scenario, seed) -> logged run"; docs/decisions/0003).
 
   run_scenario.py --card <card> --scenario <scenario> [--m <int> | --sequence] [--seed <int>] [--mode test|pilot]
-                  [--hover lo|hi] --out-dir <dir> [--plugin-dir <dir>] [--measure-rtf]
+                  [--hover lo|hi] [--command-delay-ticks <N>] --out-dir <dir> [--plugin-dir <dir>] [--measure-rtf]
 
 As a module: run(), run_sequence(), measure_rtf(), write_report(), render_report(). One gz process per (world, m): one SIL
 per process. Every gz process is `gz sim --force-version 8 -s -r --iterations N --seed S <world>` with its own GZ_PARTITION
@@ -414,7 +414,7 @@ def _with_seed(text, seed, scenario_seed):
 
 
 def _run(card, scenario, seed, m, mode, hover, out_dir, plugin_dir, sdf_edit, iterations, root, budget, timeout_s,
-         sensors=None):
+         sensors=None, command_delay_ticks=0):
     card, scenario, out_dir = Path(card), Path(scenario), Path(out_dir)
     doc = scn.load(scenario, card)
     vals = scn.values(doc)
@@ -425,7 +425,8 @@ def _run(card, scenario, seed, m, mode, hover, out_dir, plugin_dir, sdf_edit, it
     base = f"{Path(name).stem}_seed{seed}"
     out_dir.mkdir(parents=True, exist_ok=True)
     log_path, world_path = out_dir / f"{base}.bin", out_dir / f"{base}.sdf"
-    _, generated = gen_world.generate(card, scenario, mode, m, hover, _resolve(log_path), root, sensors=sensors)
+    _, generated = gen_world.generate(card, scenario, mode, m, hover, _resolve(log_path), root, sensors=sensors,
+                                       command_delay_ticks=command_delay_ticks)
     text = _with_seed(generated, seed, vals["seed"])
     if sdf_edit is not None:
         text = sdf_edit(text)
@@ -450,30 +451,32 @@ def _run(card, scenario, seed, m, mode, hover, out_dir, plugin_dir, sdf_edit, it
 
 
 def run(card, scenario, seed, m, mode="test", hover=None, out_dir=None, plugin_dir=DEFAULT_PLUGIN_DIR, sdf_edit=None,
-        *, iterations=None, halving=None, root=ROOT, budget=None, timeout_s=TIMEOUT_S, sensors=None):
+        *, iterations=None, halving=None, root=ROOT, budget=None, timeout_s=TIMEOUT_S, sensors=None,
+        command_delay_ticks=0):
     """Generate the world, run one gz process, check it, parse the log; write the run report beside the log. `seed` None
     means the scenario's seed. `sdf_edit` is a callable on the SDF text (after the seed edit, before the world is written).
     `iterations` overrides the scenario's duration (measure_rtf uses it; the log's trailer is then checked against it).
     `halving` is the T4 rule's output, a dict printed in the report's halving section. `sensors` is a gen_world.SensorSet
-    or None (module docstring)."""
+    or None (module docstring). `command_delay_ticks` is N of decision 0046 item 2 (gen_world.generate; 0 is none)."""
     if out_dir is None:
         raise ValueError("run() needs an out_dir")
     r = _run(card, scenario, seed, m, mode, hover, out_dir, plugin_dir, sdf_edit, iterations, root,
-             budget or Path(root) / "design" / "budget.yaml", timeout_s, sensors)
+             budget or Path(root) / "design" / "budget.yaml", timeout_s, sensors, command_delay_ticks)
     r.report_path = str(Path(r.log_path).with_suffix(".report.txt"))
     write_report([r], halving, r.report_path)
     return r
 
 
 def run_sequence(card, scenario, seed, mode="test", hover=None, out_dir=None, plugin_dir=DEFAULT_PLUGIN_DIR,
-                 sdf_edit=None, *, halving=None, root=ROOT, budget=None, timeout_s=TIMEOUT_S, sensors=None):
+                 sdf_edit=None, *, halving=None, root=ROOT, budget=None, timeout_s=TIMEOUT_S, sensors=None,
+                 command_delay_ticks=0):
     """run() for every m of the scenario's m_sequence, one gz process (one SIL) per m; one sequence report."""
     if out_dir is None:
         raise ValueError("run_sequence() needs an out_dir")
     doc = scn.load(scenario, card)
     budget = budget or Path(root) / "design" / "budget.yaml"
     runs = [_run(card, scenario, seed, m, mode, hover, out_dir, plugin_dir, sdf_edit, None, root, budget, timeout_s,
-                 sensors) for m in scn.values(doc)["m_sequence"]]
+                 sensors, command_delay_ticks) for m in scn.values(doc)["m_sequence"]]
     first = runs[0]
     stem = re.sub(r"_m\d+$", "", Path(first.world_path).stem)
     path = str(Path(out_dir) / f"{stem}_sequence.report.txt")
@@ -544,6 +547,10 @@ def _run_block(r, ver):
            f"m * tick = {r.log['rounding']['exact_host_step_ns']!r} ns, error {r.log['rounding']['error_ppm']:+.3f} ppm "
            f"(the plugin refuses an error above the profile's odr_error {r.log['sensors']['odr_error'] * 1e6!r} ppm)"]
           if r.log.get("rounding") else []),
+        *([f"  command delay (decision 0046 item 2): N = {r.log['delay']['ticks']} ticks; the plant takes the SIL's command of "
+           f"tick j - N at tick j, the stop command {list(r.log['delay']['initial_dshot'])} before that; the log's dshot is the "
+           "SIL's command of that tick"]
+          if r.log.get("delay") else []),
         f"  host steps: {r.iterations}; ticks: {r.iterations * r.m}",
         "  versions:",
         *[f"    {k}: {v}" for k, v in ver.items()],
@@ -681,6 +688,8 @@ def main(argv=None):
     ap.add_argument("--out-dir", required=True, metavar="DIR")
     ap.add_argument("--plugin-dir", default=str(DEFAULT_PLUGIN_DIR), metavar="DIR")
     ap.add_argument("--measure-rtf", action="store_true", help="SIM-3 measurement at --m (needs --m)")
+    ap.add_argument("--command-delay-ticks", type=int, default=0, metavar="N",
+                    help="decision 0046 item 2: the plant takes the SIL's command of tick j - N at tick j (default 0: none)")
     ap.add_argument("--iterations", type=int, help="with --measure-rtf: host steps of the full run (default: the scenario's)")
     args = ap.parse_args(argv)
     if not (args.sequence or args.m):
@@ -698,12 +707,13 @@ def main(argv=None):
                                                      iterations=args.iterations)))
         elif args.sequence:
             res = run_sequence(args.card, args.scenario, args.seed, args.mode, args.hover, args.out_dir,
-                               args.plugin_dir)
+                               args.plugin_dir, command_delay_ticks=args.command_delay_ticks)
             print(f"report: {res.report_path}")
             for r in res.runs:
                 print(f"m = {r.m}: log {r.log_path} sha256 {r.log_sha256}")
         else:
-            r = run(args.card, args.scenario, args.seed, args.m, args.mode, args.hover, args.out_dir, args.plugin_dir)
+            r = run(args.card, args.scenario, args.seed, args.m, args.mode, args.hover, args.out_dir, args.plugin_dir,
+                    command_delay_ticks=args.command_delay_ticks)
             print(f"report: {r.report_path}\nlog: {r.log_path}\nlog sha256: {r.log_sha256}")
     except (gpc.GenError, scn.ScenarioError) as e:
         for line in e.lines:

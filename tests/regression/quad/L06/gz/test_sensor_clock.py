@@ -21,6 +21,14 @@ no clock, record 9 holds the exact m tick and the error -1.601536 ppm, and the S
 A whole-ns tick (625/4 us) with an <odr_error> element alone is the default log byte for byte. Negative controls: a bound
 just under the error (1.6 ppm) is refused and one just over it (1.61 ppm) runs; no <odr_error> is refused; a max_step_size
 of the next ns is refused.
+
+The command delay (decision 0046 item 2), <command_delay_ticks> N on the L2 hover world (member lo), m in {1, 2}: record 10
+holds N and the initial command (0 0 0 0), record 6 is written (host step m 156250 ns, no clock), every tick's dshot_applied is
+the dshot N ticks earlier (the stop command before that), the SIL's own dshot and stamps are the default run's, and the plant
+rotor speed of tick j + N is the default run's of tick j (the rotors start at rest and DShot 0 holds them there, so the delay
+is a pure shift of the rotor state). N = 0 is accepted and its log is the default log byte for byte. Negative controls: the
+default run's rotors have started at tick 0 while the delayed run's are at rest, and the shift is not zero; a negative N, a
+non-integer and an N above the plugin's bound are refused.
 """
 
 import re
@@ -266,4 +274,76 @@ def test_control_a_step_of_the_next_ns_is_refused(tmp_path_factory, n):
     assert r.returncode != 0
     assert "marv_gz_lockstep: REFUSED: physics max_step_size is not the rounded host step 133328 ns" in r.stderr, \
         run_scenario.stderr_tail(r.stderr)
+    assert not log.exists()
+
+
+# ---- the command delay (decision 0046 item 2) -------------------------------------------------------------------------------
+
+DELAY = 3  # labelled harness value: any N >= 1 shows the shift; 3 keeps the first ticks readable
+
+
+def add_delay(value):
+    def edit(text):
+        out, k = re.subn(r"(\n\s*)(<seed>)", rf"\g<1><command_delay_ticks>{value}</command_delay_ticks>\g<1>\g<2>", text, count=1)
+        assert k == 1
+        return out
+    return edit
+
+
+@pytest.fixture(scope="module")
+def delay_runs(tmp_path_factory):
+    out = {}
+    for m in TABLE:
+        tmp = tmp_path_factory.mktemp(f"delay_m{m}")
+        log = tmp / "run.bin"
+        sdf = tmp / "world.sdf"
+        sdf.write_text(gen_world.generate(CARD, HOVER, "test", m, "lo", str(log), command_delay_ticks=DELAY)[1], encoding="utf-8")
+        r = run_scenario.run_gz_process(sdf, ITERATIONS, SEED, PLUGIN_DIR, None, TIMEOUT_S)
+        assert r.returncode == 0, run_scenario.stderr_tail(r.stderr)
+        out[m] = lockstep_log.read(log)
+    return out
+
+
+@pytest.mark.parametrize("m", sorted(TABLE))
+def test_the_log_states_the_delay_and_every_tick_applies_the_dshot_n_ticks_earlier(runs, delay_runs, m):
+    d = delay_runs[m]
+    assert d["delay"] == {"ticks": DELAY, "initial_dshot": (0, 0, 0, 0)}
+    assert d["sensors"]["host_step_ns"] == m * 156250 and d["sensors"]["clock"] == 0 and d["rounding"] is None
+    assert len(d["ticks"]) == ITERATIONS * m
+    for j, t in enumerate(d["ticks"]):
+        assert t["dshot_applied"] == (d["ticks"][j - DELAY]["dshot"] if j >= DELAY else (0, 0, 0, 0))
+    default = runs[(m, None)][1]
+    assert [t["dshot"] for t in d["ticks"]] == [t["dshot"] for t in default["ticks"]]  # the SIL's own command is unchanged
+    assert [t["sil_t_us"] for t in d["ticks"]] == [t["sil_t_us"] for t in default["ticks"]]
+    assert default["delay"] is None and "dshot_applied" not in default["ticks"][0]
+    assert d["ticks"][DELAY]["dshot_applied"] != (0, 0, 0, 0)  # the hover command does arrive, at tick N
+
+
+@pytest.mark.parametrize("m", sorted(TABLE))
+def test_the_plant_feels_the_delay_as_a_shift_of_exactly_n_ticks(runs, delay_runs, m):
+    d, default = delay_runs[m]["ticks"], runs[(m, None)][1]["ticks"]
+    assert all(r == 0.0 for t in d[:DELAY] for r in t["rotor_speed"])  # stop held at rest
+    assert default[0]["rotor_speed"] != (0.0, 0.0, 0.0, 0.0)  # control: without the delay the rotors have started
+    for j in range(ITERATIONS * m - DELAY):
+        assert d[j + DELAY]["rotor_speed"] == default[j]["rotor_speed"], j
+    assert d[DELAY + 1]["rotor_speed"] != default[DELAY + 1]["rotor_speed"]  # control: the shift is not zero
+
+
+@pytest.mark.parametrize("m", sorted(TABLE))
+def test_a_delay_of_zero_is_accepted_and_the_log_is_the_default_log_byte_for_byte(runs, tmp_path_factory, m):
+    r, log = run(tmp_path_factory, m, None, add_delay(0))
+    assert r.returncode == 0, run_scenario.stderr_tail(r.stderr)
+    assert log.read_bytes() == runs[(m, None)][0]
+    assert lockstep_log.read(log)["delay"] is None
+
+
+@pytest.mark.parametrize("value, message", (
+    ("-1", "<command_delay_ticks> is not an integer of the expected range: '-1'"),
+    ("2.5", "<command_delay_ticks> is not an integer of the expected range: '2.5'"),
+    ("257", "<command_delay_ticks> 257 is above the bound kMaxCommandDelayTicks = 256"),
+))
+def test_control_a_negative_fractional_or_too_large_delay_is_refused(tmp_path_factory, value, message):
+    r, log = run(tmp_path_factory, 1, None, add_delay(value))
+    assert r.returncode != 0
+    assert message in r.stderr, run_scenario.stderr_tail(r.stderr)
     assert not log.exists()

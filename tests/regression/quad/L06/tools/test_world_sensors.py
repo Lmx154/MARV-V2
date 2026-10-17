@@ -17,6 +17,9 @@ What is checked:
       fl(round(m tick_ns) / 1e9) (133328 / 266656 / 399985 / 533313 ns at m = 1..4, errors -1.601536 / -1.601536 /
       +0.89856 / +0.273536 ppm), the profile's odr_error is the one inserted element (the bound the plugin checks), the
       clock corner rounds first and then goes outward, and a whole-ns tick's world has no odr_error without a corner.
+  The command delay (decision 0046 item 2): command_delay_ticks = 0 is the world without the argument byte for byte (with
+      and without a SensorSet), N > 0 inserts the one element <command_delay_ticks>N</command_delay_ticks> before
+      <log_path> and changes nothing else, and a negative, non-integer, boolean or above-the-bound N is refused.
   The generator refuses a malformed SensorSet.
   The test-only clock allow of the plugin (ruling on Q6) is named by exactly two files: the plugin, which reads it, and the
       clock T1 test, its only user.
@@ -272,6 +275,32 @@ def test_the_rounded_host_step_of_the_boards_tick_is_the_table(tmp_path):
         assert corner.count("<odr_error>") == 1 and "<clock_corner>1</clock_corner>" in corner
     # Control: a whole-ns tick has no odr_error element without a corner, and the default world is unchanged.
     assert "<odr_error>" not in world("hover", "lo", 1)
+
+
+@pytest.mark.parametrize("sensors", (None, gen_world.SensorSet(gyro="model", bias_signs=(0,) * 6)))
+def test_the_command_delay_element_is_the_only_change_and_zero_is_none(sensors):
+    base = gen_world.generate(CARD, SCEN / "hover.yaml", "test", 1, "lo", LOG, sensors=sensors)
+    assert gen_world.generate(CARD, SCEN / "hover.yaml", "test", 1, "lo", LOG, sensors=sensors, command_delay_ticks=0) == base
+    assert "command_delay_ticks" not in base[1]
+    for n in (1, 10, gen_world.COMMAND_DELAY_MAX_TICKS):
+        name, text = gen_world.generate(CARD, SCEN / "hover.yaml", "test", 1, "lo", LOG, sensors=sensors, command_delay_ticks=n)
+        assert name == base[0]
+        element = f"<command_delay_ticks>{n}</command_delay_ticks>"
+        assert text.count(element) == 1
+        plugin = ET.fromstring(text).find(".//plugin[@filename='marv_gz_lockstep']")
+        tags = [c.tag for c in plugin]
+        assert tags.index("command_delay_ticks") == tags.index("log_path") - 1
+        stripped = re.sub(r"[ \t]*<command_delay_ticks>\d+</command_delay_ticks>\n", "", text)
+        assert stripped == base[1]
+    # Control: the element is the change - removing it from the N > 0 world gives the default world, and it is not in it.
+    assert re.sub(r"[ \t]*<command_delay_ticks>1</command_delay_ticks>\n", "", gen_world.generate(
+        CARD, SCEN / "hover.yaml", "test", 1, "lo", LOG, sensors=sensors, command_delay_ticks=1)[1]) == base[1]
+
+
+@pytest.mark.parametrize("bad", (-1, gen_world.COMMAND_DELAY_MAX_TICKS + 1, 1.0, True, "3", None))
+def test_the_generator_refuses_a_bad_command_delay(bad):
+    with pytest.raises(gpc.GenError):
+        gen_world.generate(CARD, SCEN / "hover.yaml", "test", 1, "lo", LOG, command_delay_ticks=bad)
 
 
 def test_the_generator_refuses_a_malformed_sensor_set():

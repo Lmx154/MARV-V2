@@ -141,6 +141,7 @@ struct Parsed {
   std::optional<marv_plant_rotor_speed_config> rotor_speed;
   std::optional<std::int32_t> clock_corner;
   std::optional<double> odr_error;
+  std::optional<std::uint32_t> command_delay_ticks;
 };
 
 std::string text_of(const sdf::ElementPtr& e) { return e->Get<std::string>(); }
@@ -448,6 +449,13 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
     } else if (name == "odr_error") {
       once(name);
       p.odr_error = number_of(e);
+    } else if (name == "command_delay_ticks") {
+      once(name);
+      p.command_delay_ticks = integer_of<std::uint32_t>(e);
+      if (*p.command_delay_ticks > kMaxCommandDelayTicks) {
+        refuse("<command_delay_ticks> " + std::to_string(*p.command_delay_ticks) + " is above the bound kMaxCommandDelayTicks = " +
+               std::to_string(kMaxCommandDelayTicks));
+      }
     } else if (name == "attitude_source") {
       once(name);
       if (trim(text_of(e)) != "truth") {
@@ -1122,7 +1130,10 @@ class Lockstep final : public gzs::System,
       clock_ = true;
       clock_corner_ = c;
     }
-    sensors_ = p.model_gyro || p.rotor_speed.has_value() || clock_ || rounded_;
+    if (p.command_delay_ticks) {
+      delay_ticks_ = *p.command_delay_ticks;
+    }
+    sensors_ = p.model_gyro || p.rotor_speed.has_value() || clock_ || rounded_ || delay_ticks_ > 0;
   }
 
   // The adapter of a world with a sensor element (decision 0019), the source's model path and record 6.
@@ -1138,6 +1149,7 @@ class Lockstep final : public gzs::System,
     ac.rotor_speed = p.rotor_speed ? &rotor : nullptr;
     // t_true = n_true / (m * 1e9), rounded once: at c = 0, and without the element, the same rational as t_tick_s_. With a
     // rounded host step (decision 0046 item 1) it is the plant's tick time as well.
+    ac.command_delay_ticks = delay_ticks_;
     ac.t_tick_true_s = (clock_ || rounded_) ? static_cast<double>(host_ns_) / (static_cast<double>(m_) * kNanosecondsPerSecond) : 0.0;
     adapter_ = std::make_unique<Adapter>(plant, source_, ac);
     if (adapter_->imu_attach_status() != MARV_PLANT_OK) {
@@ -1154,6 +1166,14 @@ class Lockstep final : public gzs::System,
       rounding_record_.u8(static_cast<std::uint8_t>(LogRecord::kRounding));
       rounding_record_.f64(round_exact_ns_);
       rounding_record_.f64(round_error_ * kPartsPerMillion);
+    }
+
+    if (delay_ticks_ > 0) {
+      delay_record_.u8(static_cast<std::uint8_t>(LogRecord::kDelay));
+      delay_record_.u32(delay_ticks_);
+      for (const std::uint16_t d : Dshot{}) {
+        delay_record_.u16(d);
+      }
     }
 
     LogBuffer& b = sensors_record_;
@@ -1207,6 +1227,9 @@ class Lockstep final : public gzs::System,
       refuse("cannot write the log");
     }
     if (rounded_ && !log_.write(rounding_record_)) {
+      refuse("cannot write the log");
+    }
+    if (delay_ticks_ > 0 && !log_.write(delay_record_)) {
       refuse("cannot write the log");
     }
   }
@@ -1288,9 +1311,12 @@ class Lockstep final : public gzs::System,
   bool rounded_ = false;
   double round_exact_ns_ = 0.0;
   double round_error_ = 0.0;
+  // Decision 0046 item 2: the adapter's command delay N (0 = none) and record 10 (N and the initial command).
+  std::uint32_t delay_ticks_ = 0;
   bool log_rotor_ = false;
   LogBuffer sensors_record_;
   LogBuffer rounding_record_;
+  LogBuffer delay_record_;
   std::optional<std::string> log_path_;
   struct LogParams {
     std::uint32_t m, num_us, den;
