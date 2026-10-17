@@ -1017,12 +1017,13 @@ rules:
     why: "L06 tools tests and the committed L06 measurements they read"
 
   # ---------------------------------------------------------------- L11
-  - paths: [tests/regression/quad/L07/CMakeLists.txt, tests/regression/quad/L07/unit/**]
+  - paths: [tests/regression/quad/L07/CMakeLists.txt, tests/regression/quad/L07/unit/**, tests/regression/quad/L07/replay/**,
+            tests/regression/quad/L07/results/**]
     ctest_labels: [L07]
     run_ci_steps: ["@host"]
     pytest_paths: []
     gz_groups: []
-    why: "the L07 unit tests (the Mahony attitude filter) are host ctest entries"
+    why: "the L07 unit tests (the Mahony attitude filter) and the T2 bench-log replay (unit_l07_replay, which reads the committed logs under results/) are host ctest entries"
 
   - paths: [tests/regression/quad/L08/CMakeLists.txt, tests/regression/quad/L08/unit/**]
     ctest_labels: [L08]

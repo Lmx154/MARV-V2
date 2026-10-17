@@ -175,6 +175,16 @@ typedef struct marv_plant_vibration_config {
  * already taken a sample). A refused call changes nothing. */
 marv_plant_status marv_plant_vibration_attach(marv_plant* plant, const marv_plant_vibration_config* cfg);
 
+/* Contact force for the IMU (M3, decision 0042 item 3). Opt-in, like the IMU: a plant that never calls
+ * marv_plant_contact_set gives IMU bytes bit-identical to a plant without the entry, and marv_plant_step is never
+ * affected, set or not (the host owns contact, core section 6; the wrench and the state derivative do not see it).
+ * force_ned_n is the host's contact force on the body (N, NED). Once set it holds for every later IMU sample until the
+ * next call. marv_plant_imu_sample then adds R^T * F_contact / m to the specific force, R the body -> NED rotation of
+ * the sampled body's q_wxyz and m the plant mass, so the specific force is (thrust along -z_FRD + R^T F_contact) / m.
+ * A vehicle at rest on the ground, rotors stopped, has F_contact = (0, 0, -m g) (the ground pushes up; NED z is down)
+ * and reads R^T (0, 0, -g). Errors: E_NULL, E_CONFIG (a non-finite component). A refused call changes nothing. */
+marv_plant_status marv_plant_contact_set(marv_plant* plant, const double force_ned_n[3]);
+
 /* Rotor-speed sensor (L6 stage (b), decision 0013, owner decision 7). Opt-in, like the IMU: a plant that never calls
  * marv_plant_rotor_speed_attach is untouched, and the model never changes marv_plant_step or the IMU bytes (it only reads
  * the rotor speeds). One sample per motor of omega after the last marv_plant_step (before any step, the initial rotor
