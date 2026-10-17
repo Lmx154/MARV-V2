@@ -8,6 +8,7 @@
 #include "marv/hal/tick.hpp"
 #include "marv/hal_target/hil.hpp"
 #include "marv/hal_target/imu.hpp"
+#include "marv/hal_target/lsm6dsv_decode.hpp"
 #include "marv/params/param.hpp"
 
 namespace {
@@ -47,6 +48,11 @@ int main() {
   cfg.tick_period_num_us = marv::param_value<ParamId::tick_period_num_us>();
   cfg.tick_period_den = marv::param_value<ParamId::tick_period_den>();
   cfg.rate_loop_divisor = marv::param_value<ParamId::rate_loop_divisor>();
+  // D_HIL (decision 0046 item 3): the flight image's IMU read deadline D = FIFO depth / ODR (core EMB-6) at the table's
+  // tick period, the same rule imu_start applies. fc3v2: floor(109 x 1953125 / 14649) us = 14532 us, 9.9 times the longest
+  // arrival gap the HIL S1 link measured at 4 samples per record, 1463 us
+  // (tests/regression/quad/L09/results/hil_s1/s1_b04.summary.txt).
+  cfg.deadline_us = marv::hal_target::imu_read_deadline_us(cfg.tick_period_num_us, cfg.tick_period_den);
   cfg.version = MARV_FC3V2_VERSION;
   marv::hal_target::hil_start(cfg);
 

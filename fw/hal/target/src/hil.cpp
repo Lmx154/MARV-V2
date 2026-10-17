@@ -22,6 +22,17 @@
 // number of the sample being ticked, and this loop sends them once the record's ticks have run. The cycle counts are the
 // DWT CYCCNT at clk_sys (bench_stats.hpp: the register, its enable bits and the NOCYCCNT check).
 //
+// Deadline (decision 0046 item 3): from the first sample record on, a gap of at least D_HIL (HilConfig::deadline_us)
+// between the reads that complete two sample records is an IMU deadline miss: hal_imu_deadline_misses() increments once
+// per gap, checked by this loop on every pass and, before the record's ticks run, when the next record arrives, so the
+// first tick after the gap already sees it (as the flight driver counts a FIFO overrun before it delivers the batch,
+// lsm6dsv.cpp). The composition latches it and disarms (arming.hpp). D_HIL is the flight image's read deadline D = FIFO
+// depth / ODR (imu_read_deadline_us, core EMB-6), computed by main from the table's tick period: the longest the flight
+// image lets the composition go without a fresh sample before counting a miss.
+//
+// Hello: on each port open the record names the image (version), the parameter table (kParamSchemaHash, count, the tick
+// period, the rate divisor) and the link (batch limit, D_HIL, clk_sys), so the host can refuse a mismatch.
+//
 // Send: the DShot reports a record's ticks wrote go out in one write as one record, the status record once per second.
 // The SDK's write waits for FIFO room and gives up after PICO_STDIO_USB_STDOUT_TIMEOUT_US (stdio_usb.c), so a host that
 // does not read loses records (its sequence check sees it); MaxSendUs records the longest write.
@@ -36,7 +47,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <span>
+#include <tuple>
 
 #include <hardware/clocks.h>
 #include <hardware/irq.h>
@@ -119,6 +132,7 @@ bool g_have_tick = false;
 std::uint64_t g_last_tick = 0;
 bool g_have_arrival = false;
 TimeUs g_last_arrival = 0;
+bool g_gap_counted = false;
 TimeUs g_status_due = 0;
 
 // Background loop to tick: the background loop writes a slot and then advances g_queue_head; the tick reads it and then
@@ -219,6 +233,47 @@ void send_reports() noexcept {
   send(std::span{g_up}.first(w.end()));
 }
 
+void send_hello() noexcept {
+  constexpr std::size_t kWord = fmt::base::kWordBytes;
+  constexpr std::size_t kRoomWords =
+      (std::tuple_size_v<decltype(g_up)> - fmt::base::kHeaderBytes - fmt::base::kCrcBytes) / kWord - fmt::kHelloFields;
+  const std::size_t bytes = std::min(std::strlen(g_cfg.version), kRoomWords * kWord);
+  const std::size_t words = (bytes + kWord - 1) / kWord;
+  std::array<std::uint32_t, fmt::kHelloFields> f{};
+  const auto at = [&f](fmt::HelloField k) -> std::uint32_t& { return f[static_cast<std::size_t>(k)]; };
+  at(fmt::HelloField::SchemaHashLow) = static_cast<std::uint32_t>(g_cfg.param_schema_hash);
+  at(fmt::HelloField::SchemaHashHigh) = static_cast<std::uint32_t>(g_cfg.param_schema_hash >> (CHAR_BIT * kWord));
+  at(fmt::HelloField::ParamCount) = g_cfg.param_count;
+  at(fmt::HelloField::TickPeriodNumUs) = static_cast<std::uint32_t>(g_cfg.tick_period_num_us);
+  at(fmt::HelloField::TickPeriodDen) = static_cast<std::uint32_t>(g_cfg.tick_period_den);
+  at(fmt::HelloField::RateLoopDivisor) = static_cast<std::uint32_t>(g_cfg.rate_loop_divisor);
+  at(fmt::HelloField::MaxBatch) = static_cast<std::uint32_t>(kMaxBatch);
+  at(fmt::HelloField::DeadlineUs) = static_cast<std::uint32_t>(g_cfg.deadline_us);
+  at(fmt::HelloField::ClkSysHz) = clock_get_hz(clk_sys);
+  at(fmt::HelloField::VersionBytes) = static_cast<std::uint32_t>(bytes);
+  fmt::base::RecordWriter w{g_up};
+  w.begin(fmt::kHelloMagic, g_up_seq++, static_cast<std::uint32_t>(f.size() + words));
+  for (const std::uint32_t v : f) {
+    w.put_u32(v);
+  }
+  for (std::size_t i = 0; i < words; ++i) {
+    std::uint32_t v = 0;
+    for (std::size_t b = 0; b < kWord && i * kWord + b < bytes; ++b) {
+      v |= static_cast<std::uint32_t>(static_cast<unsigned char>(g_cfg.version[i * kWord + b])) << (CHAR_BIT * b);
+    }
+    w.put_u32(v);
+  }
+  send(std::span{g_up}.first(w.end()));
+}
+
+// Counts a miss once per gap of at least D_HIL since the last sample record (none before the first).
+void check_deadline(TimeUs now) noexcept {
+  if (g_have_arrival && !g_gap_counted && now - g_last_arrival >= g_cfg.deadline_us) {
+    g_deadline_misses.fetch_add(1, std::memory_order_relaxed);
+    g_gap_counted = true;
+  }
+}
+
 void send_status() noexcept {
   std::array<std::uint32_t, fmt::kStatusFields> f{};
   const auto at = [&f](fmt::StatusField k) -> std::uint32_t& { return f[static_cast<std::size_t>(k)]; };
@@ -308,11 +363,13 @@ void accept_manual(const std::uint8_t* p, TimeUs rx_us) noexcept {
 // A valid sample record at `p` holding `count` samples, read at `rx_us`: queues the samples, runs their ticks (the
 // interrupt), then sends the reports they wrote.
 void accept_samples(const std::uint8_t* p, std::size_t count, TimeUs rx_us) noexcept {
+  check_deadline(rx_us);
   if (g_have_arrival) {
     g_c.max_arrival_gap_us = std::max(g_c.max_arrival_gap_us, static_cast<std::uint32_t>(rx_us - g_last_arrival));
   }
   g_have_arrival = true;
   g_last_arrival = rx_us;
+  g_gap_counted = false;
   ++g_c.sample_records;
   g_c.samples += static_cast<std::uint32_t>(count);
   const std::uint8_t* item = p + fmt::base::kHeaderBytes;
@@ -404,6 +461,9 @@ void hil_start(const HilConfig& config) noexcept {
       config.version == nullptr) {
     hal_panic("hil_start: a function or the version is missing");
   }
+  if (config.deadline_us < 1 || config.deadline_us >= std::numeric_limits<std::uint32_t>::max()) {
+    hal_panic("hil_start: D_HIL = FIFO depth / ODR is not a positive 32-bit microsecond count");
+  }
   g_cfg = config;
   m33_hw->demcr = m33_hw->demcr | M33_DEMCR_TRCENA_BITS;
   if ((m33_hw->dwt_ctrl & M33_DWT_CTRL_NOCYCCNT_BITS) != 0) {
@@ -422,6 +482,7 @@ void hil_connect() noexcept {
   g_down_seq = 0;
   g_up_seq = 0;
   g_status_due = hal_time_us() + kStatusPeriodUs;
+  send_hello();
 }
 
 void hil_service(bool connected) noexcept {
@@ -438,6 +499,7 @@ void hil_service(bool connected) noexcept {
       parse(rx_us);
     }
   }
+  check_deadline(hal_time_us());
   send_reports();
   if (connected && hal_time_us() >= g_status_due) {
     g_status_due += kStatusPeriodUs;
