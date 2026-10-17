@@ -4,8 +4,9 @@
 // loop (acro).
 //
 // Every tick: the attitude estimator (marv::estimator, the Mahony filter, M3 P2) steps on the sample with dt from the stamps
-// (decision 0042); step.filter(sample, due); the sample's validity and saturation bits are accumulated since the previous rate
-// tick. On the ticks the rate group is due (every rate_loop_divisor ticks, tick 0 included): the pilot's input
+// (decision 0042), skipping a sample whose GyroValid bit is clear (the next step's dt spans the gap from the last stamp it
+// stepped on) and taking no correction from one whose AccelValid bit is clear; step.filter(sample, due); the sample's
+// validity and saturation bits are accumulated since the previous rate tick. On the ticks the rate group is due (every rate_loop_divisor ticks, tick 0 included): the pilot's input
 // (hal_manual_control), the clock (hal_time_us) and the estimator's validity go to the arming machine (decision 0040), which decides armed and the
 // effective sticks; the rate group executes (armed: the rate setpoint of the sticks through the QF-1 curve and the
 // collective thrust of the throttle, below; disarmed: zero setpoint and zero thrust, so the filters keep running); the
@@ -102,6 +103,9 @@ std::atomic<std::uint8_t> g_arming_state{static_cast<std::uint8_t>(arming::ArmSt
 estimator::Mahony<float> g_estimator;
 TimeUs g_estimator_prev_us = 0;  // the stamp of the previous sample the estimator stepped on
 bool g_estimator_started = false;
+// The accelerometer a sample whose AccelValid bit is clear gives the estimator: no direction, so no correction that step.
+const prim::Vec3<float> kNoAccel{std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::quiet_NaN(),
+                                 std::numeric_limits<float>::quiet_NaN()};
 std::atomic<float> g_tilt_xy2{0.0F};  // x^2 + y^2 of the estimate's quaternion, published on rate ticks
 std::atomic<float> g_tilt_wz2{1.0F};  // w^2 + z^2
 std::atomic<bool> g_estimator_valid{false};
@@ -298,12 +302,15 @@ void tick(const ImuSample& s) noexcept {
   const std::uint32_t due = g_groups.due(g_n);
   ++g_n;
   const bool rate_due = fired(due, kRate);
-  const std::uint64_t since = g_estimator_started && s.t_us > g_estimator_prev_us ? s.t_us - g_estimator_prev_us : 0;
-  g_estimator_prev_us = s.t_us;
-  g_estimator_started = true;
-  g_estimator.step(s.gyro_rad_s, s.accel_m_s2,
-                   since > std::numeric_limits<std::uint32_t>::max() ? std::numeric_limits<std::uint32_t>::max()
-                                                                     : static_cast<std::uint32_t>(since));
+  if ((s.flags & imu_flag(ImuFlag::GyroValid)) != 0) {
+    const std::uint64_t since = g_estimator_started && s.t_us > g_estimator_prev_us ? s.t_us - g_estimator_prev_us : 0;
+    g_estimator_prev_us = s.t_us;
+    g_estimator_started = true;
+    const prim::Vec3<float> accel = (s.flags & imu_flag(ImuFlag::AccelValid)) != 0 ? s.accel_m_s2 : kNoAccel;
+    g_estimator.step(s.gyro_rad_s, accel,
+                     since > std::numeric_limits<std::uint32_t>::max() ? std::numeric_limits<std::uint32_t>::max()
+                                                                       : static_cast<std::uint32_t>(since));
+  }
   g_step.filter(s, rate_due);
   constexpr std::uint32_t kValid = imu_flag(ImuFlag::GyroValid) | imu_flag(ImuFlag::AccelValid);
   g_imu_invalid = g_imu_invalid || (s.flags & kValid) != kValid;

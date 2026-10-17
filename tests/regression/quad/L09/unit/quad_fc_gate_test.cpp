@@ -124,6 +124,57 @@ INSTANTIATE_TEST_SUITE_P(Samples, QuadFcGateTest,
                          ::testing::Values(Kind::Quiet, Kind::Moving, Kind::Saturated, Kind::GyroInvalid,
                                            Kind::GyroNaN));
 
+// The estimator's input flags (M3 P2, decision 0042): a sample whose GyroValid bit is clear is not stepped on (its NaN gyro does
+// not invalidate the estimate, and the next stepped sample's dt spans the gap from the last stamp stepped on), and one whose
+// AccelValid bit is clear gives no correction (its accelerometer, here 90 degrees off the estimate, is ignored). Tick 0 is a
+// healthy level sample; a roll rate of kRoll rad/s then acts for every tick with no correction, so the tilt at the last rate tick
+// is kRoll x (its stamp - tick 0's stamp) to float accumulation, 1e-4 rad (a correction of Kp = 0.25 1/s toward the ignored
+// accelerometer would move it by about 1.3e-3 rad, and a dt measured from the last sample seen by the gap, ticks 100..199, of
+// 1.3e-2 rad). Control: the same run with the bits set, where the NaN gyro invalidates the estimate and tick 200 initialises it
+// again from the accelerometer, so the tilt ends near pi / 2 instead (checked to differ by more than 1 rad).
+TEST_F(QuadFcGateTest, SamplesFlaggedInvalidAreNotFedToTheEstimator) {
+  constexpr float kRoll = 1.0F;
+  constexpr double kTol = 1.0e-4;
+  const std::size_t last = divisor_ * (kTicks / divisor_ - 1);  // the last rate tick of the run
+  for (const bool flagged : {true, false}) {
+    hal_sim::setup(period_, motor_latch_, servo_latch_);
+    composition::init();
+    TimeUs first_us = 0;
+    TimeUs last_us = 0;
+    for (std::size_t n = 0; n <= last; ++n) {
+      hal_sim::begin_tick(n);
+      ImuSample s = sample_of(Kind::Quiet, n);
+      if (n > 0) {
+        s.gyro_rad_s = prim::Vec3<float>(kRoll, 0.0F, 0.0F);
+        s.accel_m_s2 = prim::Vec3<float>(0.0F, -9.8F, 0.0F);
+        if (flagged) {
+          s.flags &= ~imu_flag(ImuFlag::AccelValid);
+        }
+        if (n >= 100 && n < 200) {
+          s.gyro_rad_s = prim::Vec3<float>(std::numeric_limits<float>::quiet_NaN(), 0.0F, 0.0F);
+          if (flagged) {
+            s.flags &= ~imu_flag(ImuFlag::GyroValid);
+          }
+        }
+      }
+      if (n == 0) {
+        first_us = s.t_us;
+      }
+      last_us = s.t_us;
+      composition::tick(s);
+      hal_sim::end_tick();
+    }
+    const composition::AttitudeStatus a = composition::attitude_status();
+    const double expected = static_cast<double>(kRoll) * static_cast<double>(last_us - first_us) / 1.0e6;
+    EXPECT_TRUE(a.valid);
+    if (flagged) {
+      EXPECT_NEAR(static_cast<double>(a.tilt_rad), expected, kTol);
+    } else {
+      EXPECT_GT(std::fabs(static_cast<double>(a.tilt_rad) - expected), 1.0);
+    }
+  }
+}
+
 // One rate-tick sample off its stamp (Late, Early: displaced by the tolerance plus 1 µs, beyond the tolerance and the
 // stamp truncation; Repeated: the previous rate sample's stamp; Backwards: 1 µs before it), or one sample never
 // delivered (Missing).
