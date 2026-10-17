@@ -1,0 +1,3 @@
+# Product-set parameter ids added by quad L7 (decision 0042; decision 0004 manifest rule). One id per line.
+# attitude_tilt_error_max is a design-budget entry (flattened by flatten.py like every numeric register entry).
+attitude_tilt_error_max
