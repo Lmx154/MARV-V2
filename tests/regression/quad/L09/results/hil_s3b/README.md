@@ -108,3 +108,18 @@ encoding, pacing, hello check and compare chain agree, nothing about the board).
 ## Board run
 
 (The lead adds the image, the commands, `compare` output, and EMB-3 numbers here.)
+
+## Board results, 2026-10-17 (lead)
+
+HIL image `quad-L2-pass-267-g3ac0d4b` (sha256 28cd9f19…7b08), board reset before each replay, battery unplugged.
+
+| scenario | DShot values equal | max \|difference\| | arming transitions (rate tick) | faults | longest 4-tick record |
+|---|---|---|---|---|---|
+| sticks | 125 703 / 127 440 (98.64 %) | 1 count | 22 560 armed, 60 060 stopped — identical | 0 | 99.1 µs of 533.3 µs |
+| motion | 125 243 / 127 440 (98.28 %) | 1 count | 22 560 armed, 60 060 stopped — identical | 0 | 102.4 µs of 533.3 µs |
+
+Both HIL MATCH at the 1-count tolerance. The m33 build does not set -ffp-contract=off (GCC's default `fast`; 295 fused
+multiply-adds in the HIL ELF) while the host build does: the quad spec's L10 pass bar assumes "off on both builds";
+core allows "a tolerance or -ffp-contract=off". The 1-count tolerance is the fused-build proxy's measured maximum
+(`fma_proxy.txt`). Files: `<scenario>.bin.compare.txt` (compare output), `<scenario>.bin.xz` (raw uplink),
+`<scenario>.npz.xz` (the reference), `SHA256SUMS` (uncompressed).

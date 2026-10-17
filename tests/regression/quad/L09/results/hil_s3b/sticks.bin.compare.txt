@@ -1,0 +1,18 @@
+reference hil_s3b/sticks.npz: scenario sticks, 63720 ticks; uplink hil_s3b/sticks.bin
+board: version 'quad-L2-pass-267-g3ac0d4b'  schema hash 0x2ff36d1da5fc3596  values CRC 0x97ed61ec  clk_sys 150000000 Hz
+rate ticks: reference 31860, board reports compared 31860, missing on the board 0, extra 0, duplicate ticks 0
+DShot values equal: 125703 of 127440 (98.6370 %); rate ticks with all four motors equal: 30312 of 31860; max |difference| 1 counts
+rate ticks by their largest |difference|: 0: 30312, 1: 1548
+first mismatch at tick 42002
+  tick  41998   reference (1286, 1338, 1346, 1277)  board (1286, 1338, 1346, 1277)
+  tick  42000   reference (1286, 1338, 1347, 1277)  board (1286, 1338, 1347, 1277)
+  tick  42002 < reference (1286, 1339, 1346, 1277)  board (1286, 1338, 1346, 1277)
+  tick  42004   reference (1286, 1338, 1347, 1277)  board (1286, 1339, 1347, 1277)
+  tick  42006   reference (1285, 1338, 1347, 1277)  board (1285, 1338, 1347, 1277)
+reference transitions: 22560 armed, 60060 stopped
+board transitions:     22560 armed, 60060 stopped
+board arming state per status (1 s): 6492:calibrating, 13992:switch_off, 21492:switch_off, 28992:armed, 36492:armed, 43992:armed, 51492:armed, 58992:armed, 63720:throttle_up, 63720:throttle_up, 63720:throttle_up
+status t=17060993 records=15930 samples=63720 mc=1062 ticks=63720 reports=31860 arming=throttle_up rate_exec=31860 rate_timing_faults=0 att_faults=0/0 deadline_misses=1 max_tick=5343cy (35.6 us) max_record=14858cy (99.1 us) max_gap=905us max_send=68us faults=
+EMB-3 inputs: longest tick 5343 cycles = 35.6 us against the tick period 133.3 us; longest record of 4 ticks 14858 cycles = 99.1 us against 4 tick periods 533.3 us (18.6 %); longest arrival gap 905 us, longest USB send 68 us (reported, not judged here)
+tolerance 1 counts (see the tolerance note in the tool's help)
+HIL MATCH
