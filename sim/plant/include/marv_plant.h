@@ -7,7 +7,8 @@
  * quaternion body -> NED stored [w, x, y, z] (core contracts section 3). Motors are indexed by logical number - 1.
  *
  * The plant owns the motor states (core section 6); the host never reads or writes them. Motor state starts at
- * 0 rad/s. Battery, drag, ground effect, noise: not at v0.
+ * 0 rad/s. Battery, ground effect, noise: not at v0. Rotor drag is opt-in (marv_plant_config.drag_coeff_kg_s; decision
+ * 0049): all coefficients 0 is a plant without drag, byte-identical to one built before drag existed.
  */
 #ifndef MARV_PLANT_H
 #define MARV_PLANT_H
@@ -63,12 +64,17 @@ typedef struct marv_plant_config {
                                                          last: struct_size (== sizeof, checked exactly) grows with it,
                                                          so a caller built against the older header gets
                                                          MARV_PLANT_E_ABI, never a read past its struct. */
+  double drag_coeff_kg_s[3];                          /* body-frame linear drag D = diag(d_x, d_y, d_z), kg/s (the
+                                                         mass-normalized D of Faessler et al., IEEE RA-L 2018, times the
+                                                         mass): F_drag = -R D R^T v, R body -> NED, v the NED velocity
+                                                         relative to still air. Each finite and >= 0, else
+                                                         MARV_PLANT_E_CONFIG. All 0 = no drag. Appended last. */
 } marv_plant_config;
 
 typedef struct marv_plant_body {
   uint32_t struct_size;
   double pos_ned_m[3];
-  double vel_ned_m_s[3];                              /* validated, unused at v0 (drag comes later) */
+  double vel_ned_m_s[3];                              /* validated; read only for drag (drag_coeff_kg_s), else unused */
   double q_wxyz[4];                                   /* Hamilton, body FRD -> NED; | |q|^2 - 1 | <= 4 eps_float */
   double omega_frd_rad_s[3];                          /* validated, unused at v0 */
 } marv_plant_body;
@@ -80,7 +86,8 @@ typedef struct marv_plant_cmd {
 
 /* The wrench is evaluated from the motor state at the END of the step (after the motors have advanced by dt), so a
  * step's output is the load the body feels over the next interval, and the dshot given at step k already acts in the
- * output of step k. Force is the total force on the body in NED including gravity m*g(h)*z_NED with g from WGS 84
+ * output of step k. Force is the total force on the body in NED including the rotor drag -R D R^T v of the body's
+ * velocity (only when drag_coeff_kg_s is nonzero) and gravity m*g(h)*z_NED with g from WGS 84
  * normal gravity at h = site_height_m - pos_ned_m[2]; torque is about the centre of mass in NED. */
 typedef struct marv_plant_out {
   uint32_t struct_size;
@@ -106,7 +113,9 @@ const char*       marv_plant_status_str(marv_plant_status s);
  *
  * One sample: the truth is the body's angular rate (marv_plant_body.omega_frd_rad_s) and the specific force of the rotor
  * thrust of the motor state after the last marv_plant_step (before any step, the initial rotor speeds), thrust / mass
- * along -z_FRD, no gravity (thrust is the only non-gravity force at v0). The measurement of sample k is
+ * along -z_FRD plus, when drag_coeff_kg_s is nonzero, the drag force / mass in the body frame, -D R^T v / m with v the
+ * sampled body's velocity (the rotor drag of the host's body velocity); no gravity (thrust and drag are the only
+ * non-gravity forces at v0). The measurement of sample k is
  * truth(k - latency_samples) (sample 0's truth before the start) + bias(k) + white noise, rounded to the LSB and clamped
  * to the tighter of the 20-bit word and the full scale. Details and the noise convention: sim/plant/src/imu_model.hpp. */
 enum { MARV_PLANT_IMU_MAX_LATENCY_SAMPLES = 64 }; /* delay-line capacity (a labelled bound, not a sensor figure) */

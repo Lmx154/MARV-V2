@@ -31,6 +31,7 @@ struct Params {
   T site_lat = T(0);
   T site_height = T(0);
   std::array<T, kMotors> omega0{};                    // rotor speed at the first step, rad/s
+  std::array<T, 3> drag{};                            // body-frame linear drag diag(d_x, d_y, d_z), kg/s; all 0 = none
 };
 
 template <class T>
@@ -91,9 +92,21 @@ class Model {
     }
   }
 
+  // True iff any drag coefficient is nonzero. With none, the drag terms are not evaluated at all (not even "+ 0"), so a
+  // plant without drag gives the bytes it gave before drag existed.
+  bool drag_active() const { return p_.drag[0] != T(0) || p_.drag[1] != T(0) || p_.drag[2] != T(0); }
+
+  // Rotor drag force on the body in the body frame, -D R^T v (Faessler, Franchi and Scaramuzza, IEEE RA-L 2018, eq. (2)
+  // with D in kg/s, that is the paper's mass-normalized D times the mass): v is the NED velocity relative to still air.
+  prim::Vec3<T> drag_force_body(const prim::Quat<T>& q_body_to_ned, const prim::Vec3<T>& vel_ned) const {
+    const prim::Vec3<T> vb = q_body_to_ned.normalized().conjugate().rotate(vel_ned);
+    return prim::Vec3<T>(-p_.drag[0] * vb[0], -p_.drag[1] * vb[1], -p_.drag[2] * vb[2]);
+  }
+
   // Wrench about the centre of mass from the current motor state, in NED. The quaternion is normalized here so a
-  // quaternion within the ABI's tolerance still gives an exactly orthonormal rotation.
-  Wrench<T> wrench(const prim::Quat<T>& q_body_to_ned, T pos_down) const {
+  // quaternion within the ABI's tolerance still gives an exactly orthonormal rotation. The drag force, when any
+  // coefficient is nonzero, is -R D R^T v of the given NED velocity.
+  Wrench<T> wrench(const prim::Quat<T>& q_body_to_ned, T pos_down, const prim::Vec3<T>& vel_ned) const {
     const prim::Vec3<T> z_frd(T(0), T(0), T(1));
     prim::Vec3<T> force_b;
     prim::Vec3<T> torque_b;
@@ -106,6 +119,9 @@ class Model {
     const prim::Mat3<T> rot = q_body_to_ned.normalized().to_rotation_matrix();
     const T g = prim::normal_gravity<T>(p_.site_lat, p_.site_height - pos_down);
     Wrench<T> w;
+    if (drag_active()) {
+      force_b = force_b + drag_force_body(q_body_to_ned, vel_ned);
+    }
     w.force_ned = rot * force_b + prim::Vec3<T>(T(0), T(0), p_.mass * g);
     w.torque_ned = rot * torque_b;
     return w;

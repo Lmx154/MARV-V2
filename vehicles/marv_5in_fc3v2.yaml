@@ -39,6 +39,21 @@ inertia_diag:
     replaced_by: "the M4 bifilar pendulum measurement of the flight-ready quad (quad spec §4.0 M4)"
   note: "diagonal only: the products of inertia (the pack, camera and wiring are not exactly centred) are neglected. Roll inertia is the largest of the two tilt axes because the y span (255 mm) is wider than the x span (224 mm). Source frame FRD"
 
+drag:
+  value: [0.356, 0.214, 0.0]
+  shape: diag3
+  unit: kg/s
+  method: "derived(D = m x d: the mass-normalized rotor-drag coefficients d_x, d_y that Faessler, Franchi and Scaramuzza identified on their own 610 g quadrotor with six-inch propellers, each averaged over the paper's three identification runs, times this card's mass 0.732 kg and rounded to three decimals; d_z = 0)"
+  source: "Faessler, Franchi, Scaramuzza, 'Differential flatness of quadrotor dynamics subject to rotor drag for accurate tracking of high-speed trajectories', IEEE RA-L 3(2):620-626, 2018 (arXiv 1712.02402): model v_dot = -g z_W + c z_B - R D R^T v, eq. (2), with D = diag(d_x, d_y, d_z) 'formed by the mass-normalized rotor-drag coefficients' (unit 1/s); identified in Section VII-C (platform of Section VII-A: 610 g, six-inch propellers, thrust-to-weight 4): circle trajectory at 4 m/s d_x = 0.544, d_y = 0.386 1/s; Gerono lemniscate (max 4 m/s) d_x = 0.491, d_y = 0.236 1/s; circle at 2.8 m/s d_x = 0.425, d_y = 0.256 1/s. Means 0.4867 and 0.2927 1/s; times 0.732 kg = 0.3562 and 0.2142 kg/s. d_z: the paper sets d_z = 0 because 'a non zero drag coefficient in the z-direction d_z does not improve the trajectory tracking performance', also on vertical trajectories up to 2.5 m/s: that is not a measurement of d_z, so d_z = 0 here is a modelling choice and its sigma is UNKNOWN. The UZH NeuroBEM paper (Bauersfeld et al., RSS 2021, arXiv 2106.08015) gives no D (blade-element model plus a learned residual); no source gives D for a 7-inch, 732 g quad"
+  sigma: [0.044, 0.055, UNKNOWN]
+  sigma_rule: "d_x, d_y: half of the spread of the paper's three identifications, (max - min) / 2 = 0.0595 and 0.0750 1/s, times 0.732 kg. This covers the scatter between trajectories only, not the transfer from a 610 g six-inch quad (wider than long, carbon frame) to this 732 g seven-inch HGLRC MY7 frame, which is not quantified (the paper itself reports that the value depends on the trajectory and on thrust). d_z: UNKNOWN"
+  status: [INFERRED, UNVERIFIED, PLACEHOLDER]
+  placeholder:
+    reason: "mass-normalized coefficients of another airframe (610 g, six-inch) multiplied by this airframe's mass; no drag measurement on this quad; the mass 0.732 kg is itself a placeholder; D is derived with it and must be re-derived when the mass is replaced; the transfer rule 'the mass-normalized coefficient carries over' is INFERRED (an assumption of similar thrust-to-weight and rotor-disc loading); d_z = 0 is a modelling choice"
+    replaced_by: "a fit of D to logged flight data of this quad after first flight (velocity against the accelerometer-minus-attitude residual, as in Faessler section VII-C), or a wind-tunnel / towing measurement"
+  check: "the post-first-flight fit above; until then the sim's tilt-versus-velocity behaviour is that of a quad with the Faessler et al. platform's rotor drag, not a prediction of this quad's"
+  note: "decision 0049: opt-in plant drag F_drag = -R D R^T v in the body frame (R body to NED, v the NED velocity relative to still air), in the translational dynamics and in the IMU specific force. Body drag (quadratic in speed) is not modelled. The paper's D has unit 1/s (acceleration per speed); the plant's has unit kg/s (force per speed), hence the factor m. Not a safety number"
+
 rotors:
   layout: quad_x
   thrust_coeff:

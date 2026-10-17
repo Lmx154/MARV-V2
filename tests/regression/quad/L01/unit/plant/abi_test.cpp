@@ -116,6 +116,20 @@ TEST(PlantAbiCreate, RefusesEveryInvalidConfigField) {
     }
   }
 
+  // Drag coefficients (decision 0049): each finite and >= 0; 0 is "no drag" and is valid.
+  for (std::size_t j = 0; j < 3; ++j) {
+    for (const double v : {kNan, kInf, -kInf, -1.0, -std::numeric_limits<double>::min()}) {
+      cfg = fixture_config();
+      cfg.drag_coeff_kg_s[j] = v;
+      EXPECT_EQ(create_status(cfg), MARV_PLANT_E_CONFIG) << "drag_coeff_kg_s[" << j << "] = " << v;
+    }
+    for (const double v : {0.0, 0.25}) {
+      cfg = fixture_config();
+      cfg.drag_coeff_kg_s[j] = v;
+      EXPECT_EQ(create_status(cfg), MARV_PLANT_OK) << "drag_coeff_kg_s[" << j << "] = " << v;
+    }
+  }
+
   cfg = fixture_config();
   cfg.esc_map = 0;
   EXPECT_EQ(create_status(cfg), MARV_PLANT_E_CONFIG);
@@ -127,6 +141,19 @@ TEST(PlantAbiCreate, RefusesEveryInvalidConfigField) {
   EXPECT_EQ(create_status(cfg), MARV_PLANT_E_CONFIG) << "odd pole_count";
   cfg.pole_count = 0;
   EXPECT_EQ(create_status(cfg), MARV_PLANT_OK) << "pole_count 0 is 'unknown', allowed";
+}
+
+// The drag coefficients are appended after the last field that existed before them, so struct_size (checked exactly)
+// grows with them and a caller built against the older header gets MARV_PLANT_E_ABI.
+TEST(PlantAbiCreate, DragCoefficientsAreTheLastFieldAndARefreshedStructSizeIsRequired) {
+  static_assert(offsetof(marv_plant_config, drag_coeff_kg_s) >
+                    offsetof(marv_plant_config, initial_omega_rad_s) + sizeof(double) * (MARV_PLANT_N_MOTORS - 1),
+                "drag_coeff_kg_s follows initial_omega_rad_s");
+  static_assert(offsetof(marv_plant_config, drag_coeff_kg_s) + sizeof(double[3]) == sizeof(marv_plant_config),
+                "drag_coeff_kg_s is the last field");
+  marv_plant_config cfg = fixture_config();
+  cfg.struct_size = static_cast<std::uint32_t>(sizeof(cfg) - sizeof(double[3]));
+  EXPECT_EQ(create_status(cfg), MARV_PLANT_E_ABI) << "the size of the header before drag existed";
 }
 
 // A plant that has already moved, so "unchanged" means something.

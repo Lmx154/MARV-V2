@@ -113,6 +113,8 @@ def plant_input(world_text):
         lines.append(f"rotor {r.get('motor')} {one(r, 'position_frd_m')} {one(r, 'yaw_sign')}")
     if plugin.findall("initial_rotor_speed_rad_s"):
         lines.append(f"initial_rotor_speed_rad_s {one(plugin, 'initial_rotor_speed_rad_s')}")
+    if plugin.findall("drag_coeff_kg_s"):
+        lines.append(f"drag_coeff_kg_s {one(plugin, 'drag_coeff_kg_s')}")
     g = profile_rotor_grid()
     lines.append(f"rotor_speed_model {g['latency_ticks']} {g['exponent_bits']} {g['mantissa_bits']} "
                  f"{g['period_unit_s']!r}")

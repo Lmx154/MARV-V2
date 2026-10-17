@@ -24,6 +24,10 @@ PROFILE = ROOT / "sensors" / "profiles" / "marv_v2_board_default.yaml"
 PLANT_HEADER = ROOT / "sim" / "plant" / "include" / "marv_plant.h"
 VEHICLE = "uzh_neurobem_5in"
 SCENARIO_FIELDS = {"site_lat_rad", "site_height_m", "motor_substep_s", "rng_seed", "initial_omega_rad_s"}
+# A vehicle field the plugin element carries only when the card has the entry (decision 0049: drag); the header always
+# assigns it (0 for a card without it).
+OPTIONAL_VEHICLE_FIELDS = {"drag_coeff_kg_s"}
+FC3V2_CARD = ROOT / "vehicles" / "marv_5in_fc3v2.yaml"
 MOTORS = ("m1", "m2", "m3", "m4")
 
 sys.path.insert(0, str(ROOT / "tools" / "card"))
@@ -199,7 +203,8 @@ def test_plugin_and_header_carry_exactly_the_vehicle_fields_of_the_plant_config(
 
     plugin = plugin_of(generated / f"{VEHICLE}.sdf")
     plugin_fields = {c.tag for c in plugin if c.tag != "rotor"} | {"rotor_position_frd_m", "yaw_sign"}
-    assert plugin_fields == vehicle_fields
+    assert plugin_fields | OPTIONAL_VEHICLE_FIELDS == vehicle_fields
+    assert not plugin_fields & OPTIONAL_VEHICLE_FIELDS  # the product card has no drag entry: its worlds are unchanged
 
     header = header_assignments((generated / f"marv_plant_card_{VEHICLE}.h").read_text(encoding="utf-8"))
     assigned = {re.sub(r"\[.*", "", k) for k in header}
@@ -228,7 +233,8 @@ def test_control_an_unclassified_struct_field_fails_the_classification_rule(gene
 
     def rule_holds(header_text):
         fields = _struct_fields(header_text)
-        return SCENARIO_FIELDS <= fields and plugin_fields == fields - {"struct_size"} - SCENARIO_FIELDS
+        return (SCENARIO_FIELDS <= fields
+                and plugin_fields | OPTIONAL_VEHICLE_FIELDS == fields - {"struct_size"} - SCENARIO_FIELDS)
 
     assert rule_holds(text)  # control of the control: the committed header satisfies the rule
     planted = text.replace("} marv_plant_config;", "  double planted_unclassified_field;\n} marv_plant_config;", 1)
@@ -362,3 +368,27 @@ def test_gz_sdf_check_accepts_the_generated_sdf_and_rejects_a_broken_one(generat
                       encoding="utf-8")
     r = subprocess.run([GZ, "sdf", "-k", str(broken)], capture_output=True, text=True, check=False)
     assert "Valid" not in r.stdout + r.stderr  # gz sdf -k prints its error and still exits 0 on an unreadable file
+
+
+def test_drag_entry_reaches_the_plugin_and_the_header_and_its_absence_is_zero(tmp_path):
+    """Decision 0049: a card's drag entry becomes <drag_coeff_kg_s> (kg/s) and the header's drag_coeff_kg_s; a card
+    without it has no element and zeros in the header (the UZH card here)."""
+    for script in (GEN_PLANT, GEN_SDF):
+        r = run(script, FC3V2_CARD, tmp_path)
+        assert r.returncode == 0, r.stderr
+    drag = [float(v) for v in load(FC3V2_CARD)["drag"]["value"]]
+    assert any(v > 0.0 for v in drag)
+    plugin = plugin_of(tmp_path / "marv_5in_fc3v2.sdf")
+    element = plugin.find("drag_coeff_kg_s")
+    assert element is not None and element.get("unit") == "kg/s"
+    assert [float(t) for t in element.text.split()] == drag
+    standalone = ET.parse(tmp_path / "marv_plant_card_marv_5in_fc3v2.plugin.xml").getroot()
+    assert [float(t) for t in standalone.find("drag_coeff_kg_s").text.split()] == drag
+    h = header_assignments((tmp_path / "marv_plant_card_marv_5in_fc3v2.h").read_text(encoding="utf-8"))
+    assert [h[f"drag_coeff_kg_s[{k}]"] for k in range(3)] == drag
+
+    uzh = tmp_path / "uzh"
+    assert run(GEN_PLANT, CARD, uzh).returncode == 0
+    h0 = header_assignments((uzh / f"marv_plant_card_{VEHICLE}.h").read_text(encoding="utf-8"))
+    assert [h0[f"drag_coeff_kg_s[{k}]"] for k in range(3)] == [0.0, 0.0, 0.0]
+    assert ET.parse(uzh / f"marv_plant_card_{VEHICLE}.plugin.xml").getroot().find("drag_coeff_kg_s") is None

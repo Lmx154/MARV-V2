@@ -14,6 +14,10 @@ generates nothing), and writes into <dir>:
 
 Vehicle fields are exactly those of marv_plant_config that the card defines. Scenario fields (site_lat_rad,
 site_height_m, motor_substep_s, rng_seed) are not vehicle data and are never emitted; the consumer supplies them.
+An optional card entry `drag` (decision 0049: the body-frame linear drag diag(d_x, d_y, d_z), kg/s) becomes the field
+drag_coeff_kg_s: a card without it gives 0 0 0 in the header, and no <drag_coeff_kg_s> element in the plugin, so the
+worlds of cards without drag are byte-identical to those generated before the field existed.
+
 struct_size is ABI plumbing, set by the generated fill function from the caller's sizeof.
 
 The card file must be named <vehicle>.yaml so that a build can name the outputs without reading the card.
@@ -120,6 +124,11 @@ def config_from(card, profile, card_path, root=ROOT):
     units["omega_min_rad_s"] = units["omega_max_rad_s"] = rotors["speed_range"]["unit"]
     cfg["motor_tau_s"] = float(_known(rotors["motor_lag"]["tau"], "rotors.motor_lag.tau", card_path))
     units["motor_tau_s"] = rotors["motor_lag"]["tau"]["unit"]
+    if "drag" in card:
+        cfg["drag_coeff_kg_s"] = [float(v) for v in _known(card["drag"], "drag", card_path)]
+        units["drag_coeff_kg_s"] = card["drag"]["unit"]
+    else:
+        cfg["drag_coeff_kg_s"] = [0.0, 0.0, 0.0]
     return cfg, units
 
 
@@ -162,6 +171,8 @@ def render_header(cfg, card, card_path):
             lines.append(f"  c->rotor_position_frd_m[{i}][{k}] = {_hex(x)};  /* {x!r} */")
     for name in SCALAR_FIELDS[1:]:
         lines.append(f"  c->{name} = {_hex(cfg[name])};  /* {cfg[name]!r} */")
+    for k, x in enumerate(cfg["drag_coeff_kg_s"]):
+        lines.append(f"  c->drag_coeff_kg_s[{k}] = {_hex(x)};  /* {x!r} */")
     lines += ["}", "", f"#endif /* {guard} */", ""]
     return "\n".join(lines)
 
@@ -187,6 +198,9 @@ def plugin_element(cfg, units, card):
         text_element(rotor, "position_frd_m", " ".join(repr(x) for x in cfg["rotor_position_frd_m"][i]),
                       units["rotor_position_frd_m"])
         text_element(rotor, "yaw_sign", str(cfg["yaw_sign"][i]))
+    if "drag" in card:
+        text_element(plugin, "drag_coeff_kg_s", " ".join(repr(x) for x in cfg["drag_coeff_kg_s"]),
+                      units["drag_coeff_kg_s"])
     return plugin
 
 

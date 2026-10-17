@@ -11,7 +11,9 @@ Exit 0 when every file is clean. Exit 1 otherwise, with one line per finding on 
 
 The entry schema and the sigma policy live in schema.py; this file only knows the structure of each file kind.
 
-Card structure (top level): vehicle, mass, inertia_diag, rotors, sensor_profile. rotors holds layout: quad_x,
+Card structure (top level): vehicle, mass, inertia_diag, rotors, sensor_profile, and optionally drag (decision 0049: the
+body-frame linear drag D = diag(d_x, d_y, d_z), unit kg/s, shape diag3, each component finite and >= 0; absent = no
+drag, the plant's D = 0). rotors holds layout: quad_x,
 thrust_coeff, torque_ratio, speed_range, motor_lag {model: first_order, tau}, esc_map (a model entry:
 model: linear_in_omega, with method, source and sigma), and m1..m4, each
 {position, spin}. Position is FRD metres and must lie in the quadrant of the logical motor number (core 3):
@@ -47,7 +49,7 @@ PROFILE_DIR = Path("sensors") / "profiles"
 IDENTIFIER = re.compile(r"[a-z][a-z0-9_]*")
 NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
 
-CARD_KEYS = ("vehicle", "mass", "inertia_diag", "rotors", "sensor_profile")
+CARD_KEYS = ("vehicle", "mass", "inertia_diag", "rotors", "sensor_profile", "drag")
 ROTOR_SCALARS = {"thrust_coeff": "N/(rad/s)^2", "torque_ratio": "m", "speed_range": "rad/s"}
 ESC_MODELS = ("linear_in_omega",)
 TOP_UNITS = {"mass": "kg", "inertia_diag": "kg m^2"}
@@ -172,6 +174,11 @@ def lint_card(path, out, root=ROOT):
             out.add(path, name, "missing")
         else:
             _entry(doc[name], name, out, path, unit=unit, shape="diag3" if name == "inertia_diag" else None)
+    if "drag" in doc:
+        _entry(doc["drag"], "drag", out, path, unit="kg/s", shape="diag3")
+        value = doc["drag"].get("value") if isinstance(doc["drag"], dict) else None
+        if isinstance(value, list) and any(schema.is_number(v) and v < 0 for v in value):
+            out.add(path, "drag", "value: every drag coefficient must be >= 0")
     if "rotors" not in doc:
         out.add(path, "rotors", "missing")
     else:

@@ -15,6 +15,12 @@ Rotor and body drag move from the quad §4.0 deferred list ("plant fidelity") in
 3. **Opt-in:** a card without drag coefficients keeps D = 0, and every existing world and log stays byte-identical (the
    UZH card's gz suites, L2, L4, L5, L7, L11, L10 plumbing). Only `vehicles/marv_5in_fc3v2.yaml` gains coefficients.
 4. Frozen plant tests are extended, not loosened (ABI field list, a known answer for the drag force and the specific force).
+   Extended files, one line each, nothing loosened: `tests/regression/quad/L01/unit/plant/abi_test.cpp` (drag
+   coefficients: each finite and >= 0, and the last field of the config), `tests/regression/quad/L01/unit/plant/wrench_test.cpp`
+   (known answers for the drag force and the specific force, identity and rotated, with negative controls),
+   `tests/regression/quad/L01/tools/test_card_lint.py` (the optional drag entry), `tests/regression/quad/L01/tools/test_gen_sdf_plant_config.py`
+   (drag is an optional vehicle field of the plugin element, always assigned by the header; a card with and without it),
+   `tests/regression/quad/L06/gz/test_sensor_replay.py` (the replay's plant input carries the drag element when the world has one).
 
 ## Why
 

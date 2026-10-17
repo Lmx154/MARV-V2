@@ -51,6 +51,8 @@ Card children come from gen_plant_config.plugin_element() unchanged; scenario ch
     omega_min_rad_s,
     omega_max_rad_s, motor_tau_s
   rotor (attr motor 1..4)       -              card       children position_frd_m (3 floats, m) and yaw_sign (+1/-1)
+  drag_coeff_kg_s (attr unit)   3 floats       card       OPTIONAL, present iff the card has a drag entry (decision 0049):
+                                kg/s                    marv_plant_config.drag_coeff_kg_s; absent = no drag
   site_lat_rad                  float, rad     scenario   marv_plant_config.site_lat_rad
   site_height_m                 float, m       scenario   marv_plant_config.site_height_m (h0 of the NED origin)
   motor_substep_s               float, s       scenario   marv_plant_config.motor_substep_s = the tick period, exact
