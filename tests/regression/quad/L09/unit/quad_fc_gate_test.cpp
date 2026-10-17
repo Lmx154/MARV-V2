@@ -1261,9 +1261,10 @@ class AngleGateTest : public ArmedGateTest {
   }
 };
 
-TEST_F(AngleGateTest, TheAngleSwitchDefaultsToNoSwitchAndTheThresholdIsTheArmSwitchsRule) {
+TEST_F(AngleGateTest, TheAngleSwitchIsChannel8AndTheThresholdIsTheArmSwitchsRule) {
   const std::span<const ParamRecord, kParamCount> d = param_defaults();
-  EXPECT_EQ(d[static_cast<std::size_t>(ParamId::rc_channel_angle)].value.i32, 0);
+  constexpr std::int32_t kLuisAngleChannel = 8;  // Luis 2026-10-17, decision 0048 item 2 (was 0, no switch, 0043)
+  EXPECT_EQ(d[static_cast<std::size_t>(ParamId::rc_channel_angle)].value.i32, kLuisAngleChannel);
   EXPECT_EQ(d[static_cast<std::size_t>(ParamId::angle_switch_threshold)].value.f32, kAngleThreshold);
   EXPECT_EQ(d[static_cast<std::size_t>(ParamId::angle_switch_threshold)].value.f32,
             d[static_cast<std::size_t>(ParamId::arm_switch_threshold)].value.f32);
