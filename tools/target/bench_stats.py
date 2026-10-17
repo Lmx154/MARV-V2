@@ -227,7 +227,16 @@ def still_report(log: dict, profile_path: Path, out) -> None:
     g_lsb = prof["gyro_sensitivity"]["value"] * 1e-3  # dps per LSB
     a_lsb = prof["accel_sensitivity"]["value"] * 1e-3  # g per LSB
     g_nd = prof["gyro_noise_density"]["value"] * 1e-3  # dps/sqrt(Hz)
-    a_nd = prof["accel_noise_density"]["value"] * 1e-6  # g/sqrt(Hz)
+    a_nd = prof["accel_noise_density"]["value"]
+    if isinstance(a_nd, list):  # keyed by full-scale range, one position per ACCEL_RANGES_G; the configured range selects it
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "card"))
+        from gen_imu_config import ACCEL_RANGES_G
+
+        fsr = prof["accel_fsr"]["value"]
+        if fsr not in ACCEL_RANGES_G:
+            sys.exit(f"{profile_path}: accel_fsr {fsr!r} g matches no accel_noise_density position {list(ACCEL_RANGES_G)} g")
+        a_nd = a_nd[ACCEL_RANGES_G.index(fsr)]
+    a_nd = a_nd * 1e-6  # g/sqrt(Hz)
     g_off = prof["gyro_zero_rate_offset"]["value"]  # dps
     a_off = prof["accel_offset"]["value"] * 1e-3  # g
     odr = prof["odr_selected"]["value"]
