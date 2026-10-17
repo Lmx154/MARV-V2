@@ -191,6 +191,23 @@ g8_control() {
   rm -f "${log}"
 }
 
+gs3_check() {
+  uv run python tools/ci/check_gs3.py
+}
+
+gs3_control() {
+  local log status=0
+  log="$(mktemp)"
+  uv run python tools/ci/check_gs3.py tests/regression/quad/L00/controls/gs3_mavlink_include.cpp >"${log}" 2>&1 || status=$?
+  cat "${log}"
+  if [[ ${status} -ne 1 ]] || ! grep -q "^GS3-VIOLATION: .*gs3_mavlink_include.cpp:3: names MAVLink" "${log}"; then
+    echo "control did not fail for the planted MAVLink include (exit ${status}): GS-3 is not enforced"
+    rm -f "${log}"
+    return 1
+  fi
+  rm -f "${log}"
+}
+
 g1_literal_control() {
   g1_control tests/regression/quad/L00/controls/g1_planted_literal.cpp G1-TIDY G1-NOLINT
 }
@@ -969,6 +986,7 @@ if [[ "${MARV_CI_MODE:-per-push}" != full ]]; then
   step "per-push pytest guard (positive check: a short tools-test file passes the per-file time guard)" per_push_pytest_guard_applied
 fi
 step "G8: CLAUDE.md keeps the ACTIVE-spec, number, UNKNOWN and CI-gate sections" g8_check
+step "GS-3: no tracked file outside the codec includes a MAVLink header or names MAVLink or an in-scope message" gs3_check
 step "L1: the committed vehicle card, its sensor profile and the design budget lint clean (sigma policy)" l1_card_lint
 step "L1: plant known-answer reference reproduces plant_ref_expected.txt from plant_ref_inputs.txt" plant_ref_reproduces
 step "L5: rate-bypass fixture reproduces from gen_fixture.py" rate_bypass_fixture_reproduces
@@ -1007,6 +1025,7 @@ step "G3 negative control (planted fw/hal/sim in an INTERFACE library's include 
 step "G3 negative control (planted -include of a fw/hal/sim file must fail the include check)" g3_forced_control
 step "G3 negative control (planted extra SIL export must fail the export check)" g3_export_control
 step "G8 negative control (a CLAUDE.md without the UNKNOWN rule must fail)" g8_control
+step "GS-3 negative control (a planted file outside the codec that includes a MAVLink header must fail)" gs3_control
 step "G3 negative control (planted marv_plant_ and marv::plant:: symbols in a flight library must fail the symbol check)" g3_plant_control
 step "L1 negative control (the core 2.1 example card without sigma must fail the card linter)" l1_card_lint_control
 step "L1 negative control (a card with sigma = 0 on a published entry must fail the parameter set build)" l1_flatten_control
