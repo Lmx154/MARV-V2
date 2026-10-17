@@ -14,7 +14,9 @@ lead summary here). Items marked (Luis) were signed by him on 2026-10-17 (Approv
    an internal-flash A/B slot outside every image before the IMU, receiver and motors start. The FC boots from flash and
    never needs the SD card to boot or arm. A table-parametric validator equals init's panics. Locked parameters keep
    their compiled values (list: Luis). Outside the validator by nature: imu_start's check of the tick period against the IMU's
-   FREQ_FINE trim (lsm6dsv.cpp ~:351) depends on the chip, so it stays a boot-time panic. New arming refusals ConfigRefused and Maintenance; reboot / bootloader reset only
+   FREQ_FINE trim (lsm6dsv.cpp ~:351) depends on the chip, so it stays a boot-time panic.
+   `tests/regression/quad/L06/tools/test_rate_lead_checks.py` adds `fw/params/include` to the include list of its
+   firmware-law tool (the module headers now include param_types.hpp); nothing else changes. New arming refusals ConfigRefused and Maintenance; reboot / bootloader reset only
    with a disarmed maintenance grant (Luis). G7: arming refuses a stored config not bound to this image's validation
    report (check list: Luis).
    Unit 4a frozen tests extended: tests/regression/quad/L08/unit/arming_test.cpp gains the ArmState codes (ConfigRefused 16, Maintenance 17),

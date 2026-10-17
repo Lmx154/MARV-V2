@@ -118,7 +118,7 @@ def law_tool(tmp_path_factory):
     if cxx is None:
         pytest.fail("no C++ compiler on this host: the firmware-law check cannot run (it is a required check)")
     exe = tmp_path_factory.mktemp("rate_law_tool") / "rate_law_tool"
-    inc = [f"-I{ROOT / 'fw' / d / 'include'}" for d in ("rate", "prim", "types", "mixer")]
+    inc = [f"-I{ROOT / 'fw' / d / 'include'}" for d in ("rate", "prim", "types", "mixer", "params")]
     build = subprocess.run([cxx, "-std=c++20", "-ffp-contract=off", "-fno-exceptions", "-fno-rtti", "-Wall", "-Wextra",
                             "-Werror", *inc, str(TOOL_SRC), "-o", str(exe)], capture_output=True, text=True, check=False)
     assert build.returncode == 0, build.stderr
