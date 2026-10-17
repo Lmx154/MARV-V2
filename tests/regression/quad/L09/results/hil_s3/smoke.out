@@ -1,0 +1,15 @@
+hello: version 'quad-L2-pass-267-g3ac0d4b'  param schema hash 0x2ff36d1da5fc3596  params 136  values CRC 0x97ed61ec  tick 1953125/14649 us  rate divisor 2  max batch 16  D_HIL 14532 us  clk_sys 150000000 Hz
+status t=7016368 records=1686 samples=6744 mc=225 ticks=6744 reports=3372 arming=calibrating rate_exec=3372 rate_timing_faults=0 att_faults=0/0 deadline_misses=0 max_tick=4998cy (33.3 us) max_record=14409cy (96.1 us) max_gap=856us max_send=22us faults=
+status t=8016369 records=3561 samples=14244 mc=475 ticks=14244 reports=7122 arming=switch_off rate_exec=7122 rate_timing_faults=0 att_faults=0/0 deadline_misses=0 max_tick=5168cy (34.5 us) max_record=14409cy (96.1 us) max_gap=900us max_send=117us faults=
+status t=9016373 records=5436 samples=21744 mc=725 ticks=21744 reports=10872 arming=switch_off rate_exec=10872 rate_timing_faults=0 att_faults=0/0 deadline_misses=0 max_tick=5168cy (34.5 us) max_record=14409cy (96.1 us) max_gap=900us max_send=117us faults=
+status t=10016369 records=7311 samples=29244 mc=975 ticks=29244 reports=14622 arming=armed rate_exec=14622 rate_timing_faults=0 att_faults=0/0 deadline_misses=0 max_tick=5168cy (34.5 us) max_record=14409cy (96.1 us) max_gap=900us max_send=117us faults=
+status t=11016374 records=9186 samples=36744 mc=1225 ticks=36744 reports=18372 arming=armed rate_exec=18372 rate_timing_faults=0 att_faults=0/0 deadline_misses=0 max_tick=5168cy (34.5 us) max_record=14409cy (96.1 us) max_gap=900us max_send=117us faults=
+status t=12016369 records=11061 samples=44244 mc=1475 ticks=44244 reports=22122 arming=armed rate_exec=22122 rate_timing_faults=0 att_faults=0/0 deadline_misses=0 max_tick=5168cy (34.5 us) max_record=14409cy (96.1 us) max_gap=900us max_send=117us faults=
+status t=13016378 records=12936 samples=51744 mc=1725 ticks=51744 reports=25872 arming=switch_off rate_exec=25872 rate_timing_faults=0 att_faults=0/0 deadline_misses=0 max_tick=5168cy (34.5 us) max_record=14409cy (96.1 us) max_gap=908us max_send=117us faults=
+status t=14016368 records=13125 samples=52500 mc=1750 ticks=52500 reports=26250 arming=switch_off rate_exec=26250 rate_timing_faults=0 att_faults=0/0 deadline_misses=1 max_tick=5168cy (34.5 us) max_record=14409cy (96.1 us) max_gap=908us max_send=117us faults=
+status t=15016369 records=13125 samples=52500 mc=1750 ticks=52500 reports=26250 arming=switch_off rate_exec=26250 rate_timing_faults=0 att_faults=0/0 deadline_misses=1 max_tick=5168cy (34.5 us) max_record=14409cy (96.1 us) max_gap=908us max_send=117us faults=
+sent: 13125 sample records (4 per record), 52500 samples, 1750 ManualControl records
+uplink host-side: CRC failures 0  bad headers 0  sequence gaps 0  unframed bytes 0
+armed reports: 11250, ticks 22500 .. 44998 (stamps 2.9999 .. 5.9995 s), first values (48, 48, 48, 48), last values (48, 48, 48, 48)
+EMB-3 inputs (not judged here): longest record of 4 ticks 14409 cycles = 96.1 us against 4 tick periods = 533.3 us; longest tick 34.5 us
+SMOKE OK

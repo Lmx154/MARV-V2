@@ -67,7 +67,24 @@ set(MARV_FC3V2_HIL_LINK_MAX_BATCH 16 CACHE STRING "Largest downlink record of th
 if(MARV_FC3V2_HIL_LINK AND (MARV_FC3V2_COUNT_ONLY OR MARV_FC3V2_BENCH_STATS OR MARV_FC3V2_IMU_LOG OR MARV_FC3V2_BENCH_ACCEPT_SPACING))
   message(FATAL_ERROR "MARV_FC3V2_HIL_LINK excludes MARV_FC3V2_COUNT_ONLY, MARV_FC3V2_BENCH_STATS, MARV_FC3V2_IMU_LOG and MARV_FC3V2_BENCH_ACCEPT_SPACING")
 endif()
-if(MARV_FC3V2_HIL_LINK)
+# MARV_FC3V2_HIL (bench only, default OFF, HIL stage S3a, decision 0046 items 3-5): the image runs quad_fc with the
+# generated fc3v2 table unchanged on the IMU samples and ManualControl frames a host sends over USB, and returns its DShot
+# values over USB (src/hil_main.cpp, hil.cpp, hil_format.hpp; tools/target/hil_fc.py drives it). It starts no IMU, receiver
+# or motor output: lsm6dsv.cpp is not compiled, the DShot PIO program is never loaded and the motor pads are never driven,
+# not even with stop frames (decision 0046 item 5). Its sample records hold at most MARV_FC3V2_HIL_LINK_MAX_BATCH samples,
+# the S1 limit. Mutually exclusive with every other bench variant.
+option(MARV_FC3V2_HIL "FC3v2 bench HIL image: quad_fc ticked from USB samples, DShot values returned over USB; no motor pad driven" OFF)
+if(MARV_FC3V2_HIL AND (MARV_FC3V2_COUNT_ONLY OR MARV_FC3V2_BENCH_STATS OR MARV_FC3V2_IMU_LOG OR MARV_FC3V2_BENCH_ACCEPT_SPACING OR MARV_FC3V2_HIL_LINK))
+  message(FATAL_ERROR "MARV_FC3V2_HIL excludes MARV_FC3V2_COUNT_ONLY, MARV_FC3V2_BENCH_STATS, MARV_FC3V2_IMU_LOG, MARV_FC3V2_BENCH_ACCEPT_SPACING and MARV_FC3V2_HIL_LINK")
+endif()
+if(MARV_FC3V2_HIL)
+  target_sources(marv_hal_target PRIVATE src/hil.cpp)
+  set_source_files_properties(src/lsm6dsv.cpp PROPERTIES HEADER_FILE_ONLY ON)
+  target_compile_definitions(marv_hal_target PRIVATE MARV_FC3V2_HIL MARV_FC3V2_HIL_LINK_MAX_BATCH=${MARV_FC3V2_HIL_LINK_MAX_BATCH})
+  target_include_directories(marv_hal_target SYSTEM PRIVATE
+    $<TARGET_PROPERTY:pico_stdio_headers,INTERFACE_INCLUDE_DIRECTORIES>)
+  add_executable(marv_fc3v2 src/hil_main.cpp)
+elseif(MARV_FC3V2_HIL_LINK)
   target_sources(marv_hal_target PRIVATE src/hil_link.cpp)
   target_compile_definitions(marv_hal_target PRIVATE MARV_FC3V2_HIL_LINK MARV_FC3V2_HIL_LINK_MAX_BATCH=${MARV_FC3V2_HIL_LINK_MAX_BATCH})
   target_include_directories(marv_hal_target SYSTEM PRIVATE
