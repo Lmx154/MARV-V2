@@ -754,7 +754,8 @@ TEST_F(ArmedGateTest, ASwitchCycleArmsAndThenTheMixerOutputForTheSticksIsWritten
   for (const DshotValue& m : idle.out.motor) {
     EXPECT_GE(m.raw(), prim::kDshotThrottleMin);
   }
-  const Sticks fly{0.5F, -0.25F, 0.75F, 0.5F};
+  // Roll only: motors 1 and 2 (diagonal, same spin) differ by twice the roll term on any geometry (decision 0044).
+  const Sticks fly{0.5F, 0.0F, 0.75F, 0.5F};
   RateOut r;
   for (std::size_t k = 0; k < 20; ++k) {
     r = hold(fly, kSwitchOn, fly);
