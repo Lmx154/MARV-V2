@@ -17,6 +17,11 @@ inline constexpr std::uint64_t kNanosecondsPerMicrosecond = 1000;
 // Kind: standard.
 inline constexpr double kNanosecondsPerSecond = 1000000000.0;
 
+// Parts per million. Citation: SI prefix micro = 10^-6 (BIPM, "The International System of Units (SI)", 9th ed. (2019),
+// Table 7), so 1 = 10^6 ppm. Exactly representable in binary64.
+// Kind: standard.
+inline constexpr double kPartsPerMillion = 1000000.0;
+
 // Bytes of a SHA-256 message digest. Citation: NIST FIPS 180-4, "Secure Hash Standard (SHS)" (2015), section 1 (Figure 1:
 // SHA-256 message digest size 256 bits), 256 / 8 = 32.
 // Kind: standard.

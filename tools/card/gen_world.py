@@ -23,7 +23,8 @@ World (SDFormat 1.11, the specification version of sdformat14, the library of gz
 
   <world name="<file stem>">
     <physics name="marv_physics" type="dart">
-      <max_step_size>            m * tick period, seconds
+      <max_step_size>            m * tick period, seconds; round(m tick_ns) ns when the tick is not a whole number of
+                                 ns (decision 0046 item 1)
       <real_time_factor>         1 in pilot mode, 0 in test mode (uncapped)
     <gravity>0 0 0</gravity>     world gravity is zero in every host (core section 6); marv_plant applies g
     <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics">
@@ -83,6 +84,10 @@ Card children come from gen_plant_config.plugin_element() unchanged; scenario ch
                                                           then fl(n_true / 1e9) with n_true = outward(m tick_ns / (1 + c e))
                                                           ns, exact rationals (floor for c = +1, ceil for c = -1), the
                                                           plugin's realised host step (realised_host_step_ns)
+  odr_error (alone)             float          profile    present iff tick_ns = num_us 1000 / den is not an integer and there
+                                                          is no clock corner: the bound of the plugin's host-step rounding
+                                                          error (it refuses a larger one); with a clock corner n above is
+                                                          the rounded step and the one odr_error element serves both
   log_path                      text           --log-path OPTIONAL, present iff given; where the plugin writes its
                                                           binary log; no log if absent. Never written into the log.
 
@@ -176,14 +181,22 @@ def check_sensors(sensors):
     return bad
 
 
-def realised_host_step_ns(doc, m, corner, odr_error):
-    """n_true = outward(m tick_ns / (1 + corner e)) ns in exact rationals, e the binary64 odr_error exactly: floor for
-    corner +1, ceil for corner -1, m tick_ns for corner 0. tick_ns = num_us 1000 / den must be an integer."""
+def tick_ns_exact(doc):
+    """The tick period in ns, the exact rational num_us 1000 / den."""
     vals = scn.values(doc)
-    tick_ns = Fraction(vals["tick_period_num_us"] * NS_PER_US, vals["tick_period_den"])
-    if tick_ns.denominator != 1:
-        raise gpc.GenError([f"the tick period {tick_ns} ns is not a whole number of nanoseconds"])
-    n = m * tick_ns.numerator
+    return Fraction(vals["tick_period_num_us"] * NS_PER_US, vals["tick_period_den"])
+
+
+def rounded_host_step_ns(doc, m):
+    """round(m tick_ns) ns, a tie rounded up (decision 0046 item 1): m tick_ns itself when tick_ns is a whole number of
+    nanoseconds."""
+    return math.floor(m * tick_ns_exact(doc) + Fraction(1, 2))
+
+
+def realised_host_step_ns(doc, m, corner, odr_error):
+    """n_true = outward(n / (1 + corner e)) ns in exact rationals, n = round(m tick_ns) (m tick_ns when tick_ns is a whole
+    number of nanoseconds), e the binary64 odr_error exactly: floor for corner +1, ceil for corner -1, n for corner 0."""
+    n = rounded_host_step_ns(doc, m)
     exact = n / (1 + corner * Fraction(odr_error))
     return n if corner == 0 else (math.floor(exact) if corner > 0 else math.ceil(exact))
 
@@ -251,9 +264,12 @@ def world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitud
         f"mode {mode}, m = {m}. SDFormat {SDF_VERSION}. Gravity is zero (core section 6). No ground plane: no L2 "
         "scenario needs contact. "))
     physics = ET.SubElement(world, "physics", {"name": PHYSICS_NAME, "type": PHYSICS_TYPE})
+    rounded = tick_ns_exact(doc).denominator != 1
     if sensors is not None and sensors.clock_corner is not None:
         n_true = realised_host_step_ns(doc, m, sensors.clock_corner, sensor_values["imu"][0]["odr_error"])
         gpc.text_element(physics, "max_step_size", repr(float(Fraction(n_true, NS_PER_S))))
+    elif rounded:
+        gpc.text_element(physics, "max_step_size", repr(float(Fraction(rounded_host_step_ns(doc, m), NS_PER_S))))
     else:
         gpc.text_element(physics, "max_step_size", repr(float(m * tick)))
     gpc.text_element(physics, "real_time_factor", repr(RTF[mode]))
@@ -300,6 +316,8 @@ def world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitud
         if sensors.clock_corner is not None:
             gpc.text_element(plugin, "clock_corner", str(sensors.clock_corner))
             gpc.text_element(plugin, "odr_error", repr(float(si["odr_error"])))
+    if rounded and (sensors is None or sensors.clock_corner is None):
+        gpc.text_element(plugin, "odr_error", repr(float(sensor_values["imu"][0]["odr_error"])))
     if attitude_source:
         gpc.text_element(plugin, "attitude_source", ATTITUDE_SOURCE_TRUTH)
     if log_path is not None:
@@ -341,12 +359,13 @@ def generate(card_path, scenario_path, mode, m, hover_member=None, log_path=None
         dshot = [d] * scn.MOTORS
         name = f"{name}_{hover_member}"
     sensor_values = None
-    if sensors is not None:
+    if sensors is not None or tick_ns_exact(doc).denominator != 1:
         try:
             imu = gic.imu_config(Path(root) / lint.PROFILE_DIR / f"{card['sensor_profile']}.yaml")[0::2]
         except gic.GenError as e:
             raise gpc.GenError(e.lines) from e
-        sensor_values = {"imu": imu, "rotor": rotor_speed_values(profile, card_path, root) if sensors.rotor else None}
+        sensor_values = {"imu": imu, "rotor": rotor_speed_values(profile, card_path, root)
+                         if sensors is not None and sensors.rotor else None}
     sdf = world_element(card, cfg, units, doc, mode, m, dshot, name, log_path, attitude_source, sensors, sensor_values)
     text = '<?xml version="1.0"?>\n' + gpc.to_text(sdf)
     return f"{_world_stem(card['vehicle'], name, mode, m)}.sdf", text

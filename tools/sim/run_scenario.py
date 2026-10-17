@@ -540,6 +540,10 @@ def _run_block(r, ver):
         f"  m (ticks per host step): {r.m}",
         f"  tick period: {h['tick_period_num_us']}/{h['tick_period_den']} us = {_tick_text(r.tick_period_s)}",
         f"  host step H = m * tick = {_tick_text(r.tick_period_s * r.m)}",
+        *([f"  host step rounded (decision 0046 item 1): the plant integrates at {r.log['sensors']['host_step_ns']} ns, "
+           f"m * tick = {r.log['rounding']['exact_host_step_ns']!r} ns, error {r.log['rounding']['error_ppm']:+.3f} ppm "
+           f"(the plugin refuses an error above the profile's odr_error {r.log['sensors']['odr_error'] * 1e6!r} ppm)"]
+          if r.log.get("rounding") else []),
         f"  host steps: {r.iterations}; ticks: {r.iterations * r.m}",
         "  versions:",
         *[f"    {k}: {v}" for k, v in ver.items()],

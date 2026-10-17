@@ -23,6 +23,11 @@
 //              rotor_speed 1): u32 pole_count, latency_ticks, exponent_bits, mantissa_bits, f64 period_unit_s. The
 //              plant's bias state is not logged. A log of a run without those elements has no type 6 or 7 record.
 //
+//   9 ROUNDING only when the tick is not a whole number of nanoseconds (decision 0046 item 1), once, directly after the
+//              SENSORS record (which that case writes): f64 exact_host_step_ns (m * num_us * 1000 / den, one rounding);
+//              f64 error_ppm ((host step - exact) / exact * 1e6, signed, one rounding; the host step is the rounded
+//              step before any clock corner). The plugin refuses a run whose error is above the profile's odr_error.
+//
 //   Per host step, in this order:
 //   1 STEP     u64 iteration (gz UpdateInfo::iterations); u64 sim_time_ns; then doubles: the raw gz reads, pose position
 //              ENU [3], quaternion FLU->ENU [w x y z], world linear velocity ENU [3], world angular velocity ENU [3];
@@ -63,7 +68,7 @@
 
 namespace marv::gz {
 
-enum class LogRecord : std::uint8_t { kStep = 1, kTick, kApplied, kTrailer, kTruth, kSensors, kRotor, kVertical };
+enum class LogRecord : std::uint8_t { kStep = 1, kTick, kApplied, kTrailer, kTruth, kSensors, kRotor, kVertical, kRounding };
 // Record 6's gyro_source byte.
 enum class LogGyroSource : std::uint8_t { kNone = 0, kTruth, kModel };
 
