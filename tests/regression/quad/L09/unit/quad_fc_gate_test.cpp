@@ -754,8 +754,7 @@ TEST_F(ArmedGateTest, ASwitchCycleArmsAndThenTheMixerOutputForTheSticksIsWritten
   for (const DshotValue& m : idle.out.motor) {
     EXPECT_GE(m.raw(), prim::kDshotThrottleMin);
   }
-  // Roll only: motors 1 and 2 (diagonal, same spin) differ by twice the roll term on any geometry (decision 0044).
-  const Sticks fly{0.5F, 0.0F, 0.75F, 0.5F};
+  const Sticks fly{0.5F, -0.25F, 0.75F, 0.5F};
   RateOut r;
   for (std::size_t k = 0; k < 20; ++k) {
     r = hold(fly, kSwitchOn, fly);
@@ -776,7 +775,8 @@ TEST_F(ArmedGateTest, ASwitchCycleArmsAndThenTheMixerOutputForTheSticksIsWritten
     sum_top += top.out.motor[i].raw();
   }
   EXPECT_GT(sum_top, sum_idle);
-  EXPECT_NE(r.out.motor[0], r.out.motor[1]);
+  // Motors 1 and 3 spin opposite ways, so the yaw stick separates them on any geometry (decision 0044).
+  EXPECT_NE(r.out.motor[0], r.out.motor[2]);
   // The switch off disarms on that rate tick.
   expect_all_stop(hold(fly, kSwitchOff, fly).out);
   EXPECT_EQ(composition::arming_status(), arming::ArmState::SwitchOff);

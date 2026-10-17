@@ -11,15 +11,17 @@
    reported as "not computed: <reason>" instead of aborting the build. The stability test, every threshold and the
    flight rule `attitude_lead.design` are unchanged.
 3. `tests/regression/quad/L09/unit/quad_fc_gate_test.cpp`, `ASwitchCycleArmsAndThenTheMixerOutputForTheSticksIsWrittenNotStop`:
-   the scenario stick vector `fly` goes from (0.5, −0.25, 0.75, 0.5) to (0.5, 0, 0.75, 0.5). No assertion changes.
+   the "the stick makes the motors differ" check compares motors 1 and 3 (opposite spin) instead of motors 1 and 2 (same
+   spin, diagonal); the stick vector is unchanged. (A first attempt, a roll-only stick vector, was reverted: with the
+   real card's latency-3 gains the roll term is still under one DShot count after the case's 20 rate ticks.)
 
 ## Why
 
 Quad spec §4.0 M4 (amended, Luis 2026-10-17: "1. OK"): the card carries the real airframe and the gains are regenerated
 from it. On the real card's rectangle (motors at x ±0.112, y ±0.1275 m) the mixer's roll and pitch entries are ±1.9608
 and ±2.2321, so for the old stick vector the roll and pitch terms cancel on motors 1 and 2 (both counter-clockwise,
-diagonal) to within one DShot count, and the test's `motor[0] != motor[1]` was decided by rounding. With roll only the
-two motors differ by twice the roll term on any geometry. The comparator refusal is numerical (the closed-loop
+diagonal) to within one DShot count, and the test's `motor[0] != motor[1]` was decided by rounding. Motors 1 and 3 spin
+opposite ways, so the yaw stick (0.75) separates them by the yaw term on any geometry (about 20 DShot counts here). The comparator refusal is numerical (the closed-loop
 polynomial's p(1) is about 16 double epsilons at the scan start) and the column is informational.
 
 ## Evidence
