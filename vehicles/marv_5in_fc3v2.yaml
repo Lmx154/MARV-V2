@@ -9,7 +9,7 @@
 # recorded in this comment only and no tool reads it.
 # Physics (M4 P1): mass and motor x, y are Luis's measurements. Thrust coefficient, torque ratio, motor lag, inertia and
 # the motors' z are sourced estimates (INFERRED, PLACEHOLDER) until the thrust stand and the bifilar pendulum (quad spec
-# §4.0 M4) replace them. rotors.speed_range and rotors.esc_map are unchanged from M1 (Luis's ruling of 2026-10-16).
+# §4.0 M4) replace them. rotors.esc_map is unchanged from M1 (Luis's ruling of 2026-10-16); rotors.speed_range max is the loaded maximum (Luis 2026-10-17, decision 0052).
 vehicle: marv_5in_fc3v2
 
 mass:
@@ -60,7 +60,7 @@ rotors:
     value: 2.8e-6
     unit: N/(rad/s)^2
     method: "derived(k_T = T / omega^2 on the rows of the Emax ECO II 2807-1300KV test table with an Avia 7040-3 prop at 25 V, scaled by the pitch ratio 3.5 / 4 for the HQProp 7x3.5x3; the midpoint of the scaled rows, the range widened to include the unscaled rows)"
-    source: "Emax ECO II 2807 1300KV table with the Avia 7040-3 prop at 25 V as posted at https://rcdrone.top/de/products/avia-7035-7-inch-7035-3-fpv-propeller-1cw-1ccw-copy (analyst's reading, M4 P1 packet; rows thrust g / rpm: 480 / 11942, 1000 / 16835, 1640 / 21080, 1990 / 23008, which give k_T = 3.0, 3.2, 3.3, 3.4e-6 N/(rad/s)^2). The pitch ratio 3.5 / 4 is a rough rule (INFERRED); the scaled rows are 2.6-3.0e-6. No published table exists for the 1700KV motor or for the HQProp 7x3.5x3"
+    source: "Emax ECO II 2807 1300KV table with the Avia 7040-3 prop at 25 V as posted at https://rcdrone.top/de/products/avia-7035-7-inch-7035-3-fpv-propeller-1cw-1ccw-copy (analyst's reading, M4 P1 packet; rows thrust g / rpm: 480 / 11942, 1000 / 16835, 1640 / 21080, 1990 / 23008, which give k_T = 3.0, 3.2, 3.3, 3.4e-6 N/(rad/s)^2). The pitch ratio 3.5 / 4 is a rough rule (INFERRED); the scaled rows are 2.6-3.0e-6. No published table exists for the 1700KV motor or for the HQProp 7x3.5x3. CONFLICTING SOURCE (kept, UNVERIFIED, Luis 2026-10-17 packet): the Emax ECO III 2807 1700KV table at 16.8 V with an Avia 7035-3 (reseller page https://rcdrone.top/hi/products/eamx-ecoiii-series-2807-3-6s-1300kv-1500kv-1700kv-brushless-motor-drone-motor-accessories) gives k_T = 3.27e-6 N/(rad/s)^2 (mean of seven rows, 3.232..3.315e-6; see rotors.speed_range), 17 % above this value; it lies inside the stated range 2.5e-6..3.4e-6 and the 0.5 thrust-gain band of the vertical loop, 1.04 sigma above this value"
     sigma: 0.45e-6
     sigma_rule: "half of the stated range 2.5e-6..3.4e-6: (3.4e-6 - 2.5e-6) / 2"
     status: [INFERRED, PLACEHOLDER]
@@ -81,14 +81,16 @@ rotors:
       replaced_by: "the M4 thrust stand's torque and thrust measurement (quad spec §4.0 M4)"
     check: "the thrust stand: reaction torque against thrust"
   speed_range:
-    value: [0, 2991]
+    value: [0, 2297]
     shape: range
     unit: rad/s
-    method: derived(no-load speed KV x V_full x 2π/60; min 0 at the lowest DShot throttle value)
-    source: "Luis 2026-10-16: 'set this to max there's no reason to prevent it' and 'other firmwares have no problem leaving this open and using dshot's own range ... if a for the development velocity, then sure' (option a: endpoints at the motor's physical range, so the linear esc_map spans the whole DShot throttle range with no cap). Max = no-load speed on a full pack: KV x V x 2π/60 = 1700 rpm/V x 16.8 V x 2π/60 = 2990.8 rad/s, rounded to 2991; KV from the motor model Luis gave, 'Emax ECO II Series 2807-1700KV Motor' (manufacturer rating); V = 4S x 4.20 V LiPo full charge (INFERRED: the pack's datasheet is not recorded). Min = 0 rad/s at the lowest DShot throttle value (the ESC's own minimum)"
-    sigma: UNKNOWN
-    status: [INFERRED]
-    note: "flatten.py emits speed_range as rotor_speed_min / rotor_speed_max, mixer.py derives idle_speed from its minimum (QF-6's measured minimum stable rotor speed replaces it, mixer.py:6), and the firmware mixer uses all three as rotor speed limits (fw/mixer/src/mixer.cpp). The no-load maximum overstates the loaded speed with 7-inch props; the M4 thrust stand's DShot map replaces esc_map, not this ruling. The AM32 'Motor KV' setting reads 820 on all four ESCs (m1-bench-card.md), not 1700: noticed, not changed"
+    method: "derived(loaded maximum: omega_max = sqrt(T_max / k_T) with T_max the 1760 g maximum-load row of the Emax ECO III 2807 1700KV table, 16.8 V, Avia 7035-3 prop, and k_T the mean of the table's k_T = T / omega^2 on its rows with a listed RPM, omega = RPM 2 pi / 60, T = g x 9.80665e-3 N; min 0 at the lowest DShot throttle value)"
+    source: "Luis 2026-10-17: loaded maximum instead of no-load (ruling 'Yes (Recommended)', decision 0052; it replaces the no-load maximum of Luis 2026-10-16, 'set this to max there's no reason to prevent it', 2991 rad/s = KV 1700 rpm/V x 16.8 V x 2 pi / 60). Table: Emax ECO III 2807 1700KV, 16.8 V, Avia 7035-3, static, as posted by the reseller at https://rcdrone.top/hi/products/eamx-ecoiii-series-2807-3-6s-1300kv-1500kv-1700kv-brushless-motor-drone-motor-accessories (analyst's reading, M4 card/throttle packet; thrust g / RPM: 225 / 7890, 380 / 10240, 560 / 12290, 750 / 14280, 980 / 16360, 1230 / 18340, 1480 / 20120, which give k_T = 3.232, 3.241, 3.315, 3.289, 3.274, 3.270, 3.269e-6 N/(rad/s)^2, mean 3.270e-6; the maximum-load row is 1760 g, 33.4 A, 561 W, with no RPM listed): T_max = 1760 g = 17.26 N, omega_max = sqrt(17.26 / 3.270e-6) = 2297 rad/s (2297.4). Luis's motor is the ECO II 2807 1700KV; Emax publishes no ECO II table, so the ECO III table is the closest published one for a 1700KV 4S 7-inch setup, with another prop (Avia 7035-3, not the HQProp 7x3.5x3) and another motor generation (INFERRED transfer, UNVERIFIED)"
+    sigma: [0, 15]
+    sigma_rule: "min: 0, the lowest DShot throttle value is the definition. Max: half of the spread of omega_max over the table's own k_T range 3.232e-6..3.315e-6: (2310.8 - 2281.6) / 2 = 14.6 rad/s, rounded to 15. It covers the scatter of k_T between the table's rows only, not the transfer from the ECO III with an Avia 7035-3 to the ECO II with an HQProp 7x3.5x3, and not the sag of a real pack under load, which is not quantified"
+    status: [INFERRED, UNVERIFIED]
+    check: "the M4 thrust stand: rotor speed at full throttle on a charged pack under load; the stand's DShot map replaces esc_map, not this ruling"
+    note: "flatten.py emits speed_range as rotor_speed_min / rotor_speed_max, mixer.py derives idle_speed from its minimum (QF-6's measured minimum stable rotor speed replaces it, mixer.py:6), and the firmware mixer uses all three as rotor speed limits (fw/mixer/src/mixer.cpp). The ECO III table's k_T (3.270e-6) and this card's thrust_coeff (2.8e-6, another source) conflict; both are kept and both are UNVERIFIED, and the maximum thrust 4 k_T omega_max^2 the firmware uses follows the card's 2.8e-6. The AM32 'Motor KV' setting reads 820 on all four ESCs (m1-bench-card.md), not 1700: noticed, not changed"
   motor_lag:
     model: first_order
     tau:
@@ -111,7 +113,7 @@ rotors:
     placeholder:
       reason: "other airframe (UZH NeuroBEM 5in): the UZH card's DShot→rotor-speed model; this airframe's map is unknown (AM32 version and settings UNKNOWN, Luis 2026-10-16)"
       replaced_by: "the M4 thrust stand's DShot-to-thrust map at two pack voltages (quad spec §4.0 M4)"
-    note: "endpoints are the DShot throttle range (core §4) and rotors.speed_range (Luis 2026-10-16, [0, 2991] rad/s)"
+    note: "endpoints are the DShot throttle range (core §4) and rotors.speed_range (Luis 2026-10-16/17, [0, 2297] rad/s, decision 0052)"
   m1:
     position:
       value: [0.112, 0.1275, -0.0233]
