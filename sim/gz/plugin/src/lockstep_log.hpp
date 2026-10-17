@@ -33,6 +33,13 @@
 //              TICK record's dshot of tick j - N (the initial command for j < N); the TICK record's dshot stays the one the
 //              SIL issued at that tick. A log of a run without the element (or with N = 0) has no type 10 record.
 //
+//   11 MANUAL  only with <manual_control_script> (HIL S2d-2a, decision 0046 item 4), after the TICK record of the tick before
+//              whose marv_sil_tick the frame was staged (and after that tick's TRUTH, VERTICAL and ROTOR records, if any), at
+//              most one per tick, only for a tick a frame was staged for: u64 tick; u32 frames; u64 t_us (the frame stamp, the
+//              tick's SIL stamp); f32 roll, pitch, yaw, throttle; f32 channels [16] (channel_01 first). link_quality and
+//              link_t_us staged are 0 and not logged. The trailer's counts do not include it. A log of a run without the
+//              element has no type 11 record.
+//
 //   Per host step, in this order:
 //   1 STEP     u64 iteration (gz UpdateInfo::iterations); u64 sim_time_ns; then doubles: the raw gz reads, pose position
 //              ENU [3], quaternion FLU->ENU [w x y z], world linear velocity ENU [3], world angular velocity ENU [3];
@@ -73,7 +80,7 @@
 
 namespace marv::gz {
 
-enum class LogRecord : std::uint8_t { kStep = 1, kTick, kApplied, kTrailer, kTruth, kSensors, kRotor, kVertical, kRounding, kDelay };
+enum class LogRecord : std::uint8_t { kStep = 1, kTick, kApplied, kTrailer, kTruth, kSensors, kRotor, kVertical, kRounding, kDelay, kManual };
 // Record 6's gyro_source byte.
 enum class LogGyroSource : std::uint8_t { kNone = 0, kTruth, kModel };
 

@@ -28,6 +28,10 @@ record, m TICK records, one APPLIED record. A TRAILER record is the last record 
   DELAY 10  only with <command_delay_ticks> N > 0 (decision 0046 item 2), once, directly after the SENSORS record (or the ROUNDING
             record): u32 N, 4 u16 initial_dshot (0). The plant is stepped at tick j with the TICK record's dshot of tick j - N
             (initial_dshot for j < N); a TICK record's dshot is the one the SIL issued at that tick
+  MANUAL 11 only with <manual_control_script> (HIL S2d-2a, decision 0046 item 4), after the TICK record of the tick the frame
+            was staged before (and after its TRUTH, VERTICAL and ROTOR records, if any), at most one per tick: u64 tick; u32
+            frames; u64 t_us (the frame stamp = that tick's SIL stamp); f32 roll, pitch, yaw, throttle; 16 x f32 channels
+            (channel_01 first); the trailer's counts do not include it
   ROTOR 7   only with <rotor_speed_model>, after that tick's TICK record (and its TRUTH and VERTICAL records, if any): u64
             tick; the 20 bytes of marv_rotor_speed_meas (4 x f32 omega, u32 flags); the trailer's counts do not include it
   VERTICAL 8 only when the plugin has <vertical_source>truth</vertical_source> (decision 0020), directly after that tick's
@@ -36,12 +40,12 @@ record, m TICK records, one APPLIED record. A TRAILER record is the last record 
 
 read() returns {"header": dict, "steps": [dict], "ticks": [dict], "applied": [dict], "truths": [dict],
 "trailer": dict or None, "raw_records": bytes (everything after the header, for byte comparison), "sensors": dict or None,
-"rotors": [dict], "rounding": dict or None, "delay": dict or None}; with a DELAY record every dict in "ticks" also has
+"rotors": [dict], "rounding": dict or None, "delay": dict or None, "manuals": [dict]}; with a DELAY record every dict in "ticks" also has
 "dshot_applied" (the dshot of the tick N before, else initial_dshot), a VERTICAL record is the "vertical" dict of its tick's dict in "ticks" (a tick without one has no
 "vertical" key). A file that is cut inside a record, has an
 unknown record type, a record after the trailer or a TRUTH record that does not directly follow the TICK record of
 its tick raises LogError, and so does a SENSORS record that is not the first record, a ROTOR record that does not follow
-its tick's TICK (or TRUTH or VERTICAL) record, a ROUNDING record that does not directly follow the SENSORS record, a DELAY record that does not directly follow the SENSORS or ROUNDING record or a VERTICAL record that does not directly follow its tick's TRUTH record.
+its tick's TICK (or TRUTH or VERTICAL) record, a MANUAL record that does not follow its tick's TICK (or TRUTH, VERTICAL or ROTOR) record, a ROUNDING record that does not directly follow the SENSORS record, a DELAY record that does not directly follow the SENSORS or ROUNDING record or a VERTICAL record that does not directly follow its tick's TRUTH record.
 Doubles are Python floats (exact binary64); no numpy.
 """
 
@@ -52,7 +56,7 @@ import sys
 
 MAGIC = b"MARVLOCK"
 VERSION = 1
-STEP, TICK, APPLIED, TRAILER, TRUTH, SENSORS, ROTOR, VERTICAL, ROUNDING, DELAY = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+STEP, TICK, APPLIED, TRAILER, TRUTH, SENSORS, ROTOR, VERTICAL, ROUNDING, DELAY, MANUAL = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
 _STEP = struct.Struct("<QQ26d")
 _TICK = struct.Struct("<QQ32s4HII20d")
 _APPLIED = struct.Struct("<6d")
@@ -63,8 +67,10 @@ _ROTOR = struct.Struct("<Q4fI")
 _VERTICAL = struct.Struct("<QffI")
 _ROUNDING = struct.Struct("<2d")
 _DELAY = struct.Struct("<I4H")
+_MANUAL = struct.Struct("<QIQ4f16f")
 _SIZES = {STEP: _STEP.size, TICK: _TICK.size, APPLIED: _APPLIED.size, TRAILER: _TRAILER.size, TRUTH: _TRUTH.size,
-          SENSORS: _SENSORS.size, ROTOR: _ROTOR.size, VERTICAL: _VERTICAL.size, ROUNDING: _ROUNDING.size, DELAY: _DELAY.size}
+          SENSORS: _SENSORS.size, ROTOR: _ROTOR.size, VERTICAL: _VERTICAL.size, ROUNDING: _ROUNDING.size, DELAY: _DELAY.size,
+          MANUAL: _MANUAL.size}
 GYRO_SOURCES = ("none", "truth", "model")
 
 
@@ -113,7 +119,7 @@ def read(path):
     header = _header(data)
     pos = header["header_size"]
     steps, ticks, applied, truths, trailer = [], [], [], [], None
-    sensors, rotors, rounding, delay = None, [], None, None
+    sensors, rotors, rounding, delay, manuals = None, [], None, None, []
     last_kind = None
     while pos < len(data):
         if trailer is not None:
@@ -165,6 +171,12 @@ def read(path):
                 raise LogError(f"VERTICAL record of tick {v[0]} at byte {pos} does not directly follow that tick's TRUTH "
                                "record")
             ticks[-1]["vertical"] = {"tick": v[0], "z_ned_m": v[1], "vz_ned_m_s": v[2], "flags": v[3]}
+        elif kind == MANUAL:
+            v = _MANUAL.unpack_from(data, pos + 1)
+            if last_kind not in (TICK, TRUTH, VERTICAL, ROTOR) or v[0] != ticks[-1]["tick"]:
+                raise LogError(f"MANUAL record of tick {v[0]} at byte {pos} does not follow that tick's TICK record")
+            manuals.append({"tick": v[0], "frames": v[1], "t_us": v[2], "roll": v[3], "pitch": v[4], "yaw": v[5],
+                            "throttle": v[6], "channels": v[7:23]})
         elif kind == APPLIED:
             v = _APPLIED.unpack_from(data, pos + 1)
             applied.append({"force_enu": v[0:3], "torque_enu": v[3:6]})
@@ -178,7 +190,7 @@ def read(path):
             t["dshot_applied"] = ticks[i - delay["ticks"]]["dshot"] if i >= delay["ticks"] else delay["initial_dshot"]
     return {"header": header, "steps": steps, "ticks": ticks, "applied": applied, "truths": truths, "trailer": trailer,
             "raw_records": data[header["header_size"]:], "sensors": sensors, "rotors": rotors, "rounding": rounding,
-            "delay": delay}
+            "delay": delay, "manuals": manuals}
 
 
 def main(argv=None):

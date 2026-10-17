@@ -123,6 +123,28 @@ struct ImuModel {
   std::array<std::uint8_t, kSha256DigestBytes> profile_sha256{};
 };
 
+// <manual_control_script> (HIL S2d-2a, decision 0046 item 4): the pilot's stick stream, staged into the SIL before each tick.
+// Segment k covers the stamps [start_us, start_us + duration_us); between segments and after the last no frame is staged
+// (the link is down; the last staged frame persists in the SIL, as on the board). A segment with link off stages nothing.
+struct ManualSegment {
+  std::uint64_t start_us = 0;
+  std::uint64_t duration_us = 0;
+  bool link = false;
+  float roll = 0.0F;
+  float pitch = 0.0F;
+  float yaw = 0.0F;
+  float throttle = 0.0F;
+  float arm = 0.0F;
+  float angle = 0.0F;
+};
+
+struct ManualScript {
+  std::uint32_t frame_period_us = 0;
+  std::uint32_t arm_channel = 0;    // 1-based RC channel the arm value is written to
+  std::uint32_t angle_channel = 0;  // 1-based RC channel the angle-mode value is written to
+  std::vector<ManualSegment> segments;
+};
+
 struct Parsed {
   marv_plant_config plant{};
   std::uint32_t m = 0;
@@ -142,6 +164,7 @@ struct Parsed {
   std::optional<std::int32_t> clock_corner;
   std::optional<double> odr_error;
   std::optional<std::uint32_t> command_delay_ticks;
+  std::optional<ManualScript> manual_script;
 };
 
 std::string text_of(const sdf::ElementPtr& e) { return e->Get<std::string>(); }
@@ -306,6 +329,94 @@ marv_plant_rotor_speed_config rotor_speed_model_of(const sdf::ElementPtr& e) {
   return r;
 }
 
+float unit_range_of(const sdf::ElementPtr& e, double lo) {
+  const double v = number_of(e);
+  if (!std::isfinite(v) || v < lo || v > 1.0) {
+    refuse("<" + e->GetName() + "> in <manual_control_script> is " + trim(text_of(e)) + ", not a finite value in [" +
+           (lo < 0.0 ? "-1" : "0") + ", 1]");
+  }
+  return static_cast<float>(v);
+}
+
+ManualSegment manual_segment_of(const sdf::ElementPtr& e) {
+  const std::vector<sdf::ElementPtr> c = children_of(
+      e, {"start_us", "duration_us", "link", "roll", "pitch", "yaw", "throttle", "arm", "angle"});
+  ManualSegment g;
+  g.start_us = integer_of<std::uint64_t>(c[0]);
+  g.duration_us = integer_of<std::uint64_t>(c[1]);
+  if (g.duration_us == 0) {
+    refuse("<segment> duration_us is 0");
+  }
+  const std::string link = trim(text_of(c[2]));
+  if (link != "on" && link != "off") {
+    refuse("<segment> link is '" + link + "', not 'on' or 'off'");
+  }
+  g.link = link == "on";
+  g.roll = unit_range_of(c[3], -1.0);
+  g.pitch = unit_range_of(c[4], -1.0);
+  g.yaw = unit_range_of(c[5], -1.0);
+  g.throttle = unit_range_of(c[6], 0.0);
+  g.arm = unit_range_of(c[7], -1.0);
+  g.angle = unit_range_of(c[8], -1.0);
+  return g;
+}
+
+// The children: frame_period_us, arm_channel and angle_channel once each, and one or more <segment>, in time order
+// without overlap (a gap is a link-down interval).
+ManualScript manual_script_of(const sdf::ElementPtr& block) {
+  ManualScript m;
+  bool have_period = false;
+  bool have_arm = false;
+  bool have_angle = false;
+  const auto channel = [](const sdf::ElementPtr& e) {
+    const auto v = integer_of<std::uint32_t>(e);
+    if (v < 1 || v > MARV_RC_CHANNELS) {
+      refuse("<" + e->GetName() + "> is not an RC channel 1.." + std::to_string(MARV_RC_CHANNELS));
+    }
+    return v;
+  };
+  const auto once_only = [](bool& seen, const std::string& name) {
+    if (seen) {
+      refuse("<manual_control_script> element <" + name + "> appears twice");
+    }
+    seen = true;
+  };
+  for (sdf::ElementPtr e = block->GetFirstElement(); e; e = e->GetNextElement("")) {
+    const std::string name = e->GetName();
+    if (name == "frame_period_us") {
+      once_only(have_period, name);
+      m.frame_period_us = integer_of<std::uint32_t>(e);
+      if (m.frame_period_us == 0) {
+        refuse("<frame_period_us> is 0");
+      }
+    } else if (name == "arm_channel") {
+      once_only(have_arm, name);
+      m.arm_channel = channel(e);
+    } else if (name == "angle_channel") {
+      once_only(have_angle, name);
+      m.angle_channel = channel(e);
+    } else if (name == "segment") {
+      const ManualSegment g = manual_segment_of(e);
+      if (g.start_us > std::numeric_limits<std::uint64_t>::max() - g.duration_us) {
+        refuse("<segment> start_us + duration_us does not fit in 64 bits");
+      }
+      if (!m.segments.empty() && g.start_us < m.segments.back().start_us + m.segments.back().duration_us) {
+        refuse("<segment> at start_us " + std::to_string(g.start_us) + " overlaps or precedes the segment before it");
+      }
+      m.segments.push_back(g);
+    } else {
+      refuse("unknown element <" + name + "> in <manual_control_script>");
+    }
+  }
+  if (!have_period || !have_arm || !have_angle || m.segments.empty()) {
+    refuse("<manual_control_script> needs <frame_period_us>, <arm_channel>, <angle_channel> and at least one <segment>");
+  }
+  if (m.arm_channel == m.angle_channel) {
+    refuse("<manual_control_script> arm_channel and angle_channel are the same channel");
+  }
+  return m;
+}
+
 Parsed parse_plugin(const sdf::ElementPtr& root) {
   Parsed p;
   p.plant.struct_size = sizeof(p.plant);
@@ -456,6 +567,9 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
         refuse("<command_delay_ticks> " + std::to_string(*p.command_delay_ticks) + " is above the bound kMaxCommandDelayTicks = " +
                std::to_string(kMaxCommandDelayTicks));
       }
+    } else if (name == "manual_control_script") {
+      once(name);
+      p.manual_script = manual_script_of(e);
     } else if (name == "attitude_source") {
       once(name);
       if (trim(text_of(e)) != "truth") {
@@ -566,6 +680,67 @@ std::uint64_t realised_host_step_ns(std::uint64_t n, std::int32_t corner, double
   return static_cast<std::uint64_t>(q);
 }
 
+// The ManualControl stream of a <manual_control_script> (HIL S2d-2a). One RC frame arrives every frame_period_us of SIL
+// time; the frame of slot k = floor(stamp / frame_period_us) >= 1 is staged before the first tick whose stamp reaches slot k
+// (so a frame's age is 0 at the tick it arrives and grows by the tick period), with frames counting the staged frames from 1
+// and t_us = that tick's stamp (the SIL's hal_time_us() at the tick). Slot 0 carries no frame. The sticks and channels are
+// those of the segment that covers the stamp; a slot whose stamp lies in no segment, or in a link-off segment, stages nothing
+// (the SIL keeps the last staged frame, whose stamp ages, as the HAL's sticky stage does on the board). The stamp is the SIL's:
+// floor(tick * num_us / den) (SIL stamps of L06 test_sensor_clock.py).
+class ManualStager {
+ public:
+  void configure(const ManualScript& script, std::uint32_t num_us, std::uint32_t den) {
+    script_ = script;
+    num_us_ = num_us;
+    den_ = den;
+    active_ = true;
+  }
+  bool active() const { return active_; }
+  // Stages the frame due before tick `tick`, if any, into `staged`. Returns the status of marv_sil_stage_manual_control.
+  std::int32_t stage(std::uint64_t tick, std::optional<marv_manual_control>& staged) {
+    staged.reset();
+    const std::uint64_t stamp = (tick / den_) * num_us_ + ((tick % den_) * num_us_) / den_;
+    const std::uint64_t slot = stamp / script_.frame_period_us;
+    if (slot <= last_slot_) {
+      return MARV_SIL_OK;
+    }
+    last_slot_ = slot;
+    const ManualSegment* seg = nullptr;
+    for (const ManualSegment& g : script_.segments) {
+      if (stamp >= g.start_us && stamp - g.start_us < g.duration_us) {
+        seg = &g;
+        break;
+      }
+    }
+    if (seg == nullptr || !seg->link) {
+      return MARV_SIL_OK;
+    }
+    marv_manual_control mc{};
+    mc.struct_size = sizeof(mc);
+    mc.frames = ++frames_;
+    mc.t_us = stamp;
+    mc.roll = seg->roll;
+    mc.pitch = seg->pitch;
+    mc.yaw = seg->yaw;
+    mc.throttle = seg->throttle;
+    mc.channels[script_.arm_channel - 1] = seg->arm;
+    mc.channels[script_.angle_channel - 1] = seg->angle;
+    const marv_sil_status st = marv_sil_stage_manual_control(&mc);
+    if (st == MARV_SIL_OK) {
+      staged = mc;
+    }
+    return st;
+  }
+
+ private:
+  bool active_ = false;
+  ManualScript script_;
+  std::uint32_t num_us_ = 0;
+  std::uint32_t den_ = 1;
+  std::uint64_t last_slot_ = 0;
+  std::uint32_t frames_ = 0;
+};
+
 // A command source that keeps the SIL's stamp and the IMU sample of every tick of the current host step. The sample is
 // the one passed to the SIL: SilCommandSource passes a zeroed one; the truth-gyro source (optional <gyro_source>) its own.
 // With the optional <attitude_source> (which needs the truth gyro and a SIL library built with TRUTH_STATE) the truth-
@@ -580,6 +755,9 @@ std::uint64_t realised_host_step_ns(std::uint64_t n, std::int32_t corner, double
 class RecordingSource final : public CommandSource {
  public:
   bool dshot(std::uint64_t tick, Dshot& out) override {
+    if (!stage_manual(tick)) {
+      return false;
+    }
     bool ok = false;
 #ifdef MARV_GZ_TRUTH_STATE
     if (use_attitude_) {
@@ -595,6 +773,7 @@ class RecordingSource final : public CommandSource {
     if (ok) {
       stamps_.push_back(use_truth_ ? truth_.last_stamp_us() : inner_.last_stamp_us());
       imus_.push_back(use_truth_ ? truth_.imu() : marv_imu_meas{});
+      keep_manual();
     }
     return ok;
   }
@@ -602,6 +781,9 @@ class RecordingSource final : public CommandSource {
   bool dshot(std::uint64_t tick, const marv_imu_meas* imu, const marv_rotor_speed_meas* rotor, Dshot& out) override {
     if (!use_model_) {
       return CommandSource::dshot(tick, imu, rotor, out);
+    }
+    if (!stage_manual(tick)) {
+      return false;
     }
     bool ok = false;
 #ifdef MARV_GZ_TRUTH_STATE
@@ -619,11 +801,15 @@ class RecordingSource final : public CommandSource {
       stamps_.push_back(model_.last_stamp_us());
       imus_.push_back(imu != nullptr ? *imu : marv_imu_meas{});
       rotors_.push_back(rotor != nullptr ? *rotor : marv_rotor_speed_meas{});
+      keep_manual();
     }
     return ok;
   }
   // The failed call of the last dshot(), as a message.
   std::string failure() const {
+    if (stage_status_ != MARV_SIL_OK) {
+      return std::string("marv_sil_stage_manual_control: ") + marv_sil_status_str(static_cast<marv_sil_status>(stage_status_));
+    }
 #ifdef MARV_GZ_TRUTH_STATE
     if (use_attitude_ && use_model_ && attitude_model_.truth_status() != MARV_SIL_OK) {
       return std::string("marv_truth_state_set: ") +
@@ -646,6 +832,9 @@ class RecordingSource final : public CommandSource {
     }
     return std::string("marv_sil_tick: ") +
            marv_sil_status_str(static_cast<marv_sil_status>(use_truth_ ? truth_.last_status() : inner_.last_status()));
+  }
+  void use_manual_script(const ManualScript& script, std::uint32_t num_us, std::uint32_t den) {
+    manual_.configure(script, num_us, den);
   }
   void use_truth_gyro() { use_truth_ = true; }
   void use_model_gyro() { use_model_ = true; }
@@ -679,14 +868,36 @@ class RecordingSource final : public CommandSource {
     truths_.clear();
     rotors_.clear();
     verticals_.clear();
+    manuals_.clear();
   }
   const std::vector<std::uint64_t>& stamps() const { return stamps_; }
   const std::vector<marv_imu_meas>& imus() const { return imus_; }
   const std::vector<marv_truth_state>& truths() const { return truths_; }
   const std::vector<marv_rotor_speed_meas>& rotors() const { return rotors_; }
   const std::vector<marv_truth_vertical>& verticals() const { return verticals_; }
+  // The frame staged before each tick of the step (empty where none was); one entry per tick, only with a script.
+  const std::vector<std::optional<marv_manual_control>>& manuals() const { return manuals_; }
+  bool has_manual_script() const { return manual_.active(); }
 
  private:
+  // Before the tick's marv_sil_tick, once per tick (the overloads delegate to one another): stages the frame that is due.
+  bool stage_manual(std::uint64_t tick) {
+    if (!manual_.active()) {
+      return true;
+    }
+    if (staged_tick_ && *staged_tick_ == tick) {
+      return true;
+    }
+    staged_tick_ = tick;
+    stage_status_ = manual_.stage(tick, pending_manual_);
+    return stage_status_ == MARV_SIL_OK;
+  }
+  void keep_manual() {
+    if (manual_.active()) {
+      manuals_.push_back(pending_manual_);
+    }
+  }
+
 #ifdef MARV_GZ_TRUTH_STATE
   // The outermost truth source over the gyro source (`model`: the model-gyro one): the truth-vertical source with
   // <vertical_source>, which wraps the truth-attitude one, else the truth-attitude one.
@@ -722,6 +933,11 @@ class RecordingSource final : public CommandSource {
   bool use_vertical_ = false;
 #endif
 #endif
+  ManualStager manual_;
+  std::optional<std::uint64_t> staged_tick_;
+  std::optional<marv_manual_control> pending_manual_;
+  std::int32_t stage_status_ = MARV_SIL_OK;
+  std::vector<std::optional<marv_manual_control>> manuals_;
   bool use_truth_ = false;
   bool use_model_ = false;
   std::vector<std::uint64_t> stamps_;
@@ -891,6 +1107,10 @@ class Lockstep final : public gzs::System,
       log_vertical_ = true;
     }
 
+    if (p.manual_script) {
+      source_.use_manual_script(*p.manual_script, p.num_us, p.den);
+    }
+
     log_path_ = p.log_path;
     log_params_ = {m_, p.num_us, p.den, p.seed};
   }
@@ -1010,6 +1230,19 @@ class Lockstep final : public gzs::System,
         b.u8(static_cast<std::uint8_t>(LogRecord::kRotor));
         b.u64(t.tick);
         b.bytes(&source_.rotors()[j], sizeof(marv_rotor_speed_meas));  // the sample passed to the SIL for this tick
+      }
+      if (source_.has_manual_script() && source_.manuals()[j]) {
+        const marv_manual_control& mc = *source_.manuals()[j];  // the frame staged before this tick's marv_sil_tick
+        b.u8(static_cast<std::uint8_t>(LogRecord::kManual));
+        b.u64(t.tick);
+        b.u32(mc.frames);
+        b.u64(mc.t_us);
+        for (const float v : {mc.roll, mc.pitch, mc.yaw, mc.throttle}) {
+          b.u32(std::bit_cast<std::uint32_t>(v));
+        }
+        for (const float v : mc.channels) {
+          b.u32(std::bit_cast<std::uint32_t>(v));
+        }
       }
     }
     if (r.status == Status::kOk) {
