@@ -49,6 +49,22 @@ struct AttitudeCounts {
 // atomic read, callable from any context (the target's background loop prints it).
 [[nodiscard]] arming::ArmState arming_status() noexcept;
 
+// The status of the config this boot uses (decision 0053): Ok for the factory table, else why a stored config cannot be used
+// (arming.hpp ConfigStatus); anything but Ok refuses arming with ArmState::ConfigRefused. Fixed at init: set_config_status
+// is for the harness to call before init (the default is Ok; a call after init takes effect at the next init, which also
+// keeps the last status given).
+void set_config_status(arming::ConfigStatus status) noexcept;
+[[nodiscard]] arming::ConfigStatus config_status() noexcept;
+
+// The maintenance grant (decision 0053, ground spec GS-4): request_maintenance asks the rate tick for it, from any context
+// (the target's background loop); a single atomic store. The next rate tick that starts disarmed grants it: from then on
+// arming is refused (ArmState::Maintenance) until the next init; there is no un-grant. A request that tick finds the
+// vehicle armed is dropped, not granted and changes nothing, and the requester asks again. maintenance_granted is a single
+// atomic read of the grant as of the latest rate tick (false until a tick answers); true also means the vehicle is and
+// stays disarmed. Neither can disarm an armed vehicle.
+void request_maintenance() noexcept;
+[[nodiscard]] bool maintenance_granted() noexcept;
+
 // The attitude estimate as of the latest rate tick: its tilt, the angle between body down and NED down (rad, [0, pi]), and
 // its validity (estimator::Mahony::valid). The tilt is 0 until the estimator is initialised. Callable from any context
 // (the target's background loop prints it); the tilt is from two values published one after the other, so a read that

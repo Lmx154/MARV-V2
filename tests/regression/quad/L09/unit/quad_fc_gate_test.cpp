@@ -1162,6 +1162,73 @@ TEST_F(ArmedGateTest, AnImuDeadlineMissDisarmsOnThatRateTickAndKeepsArmingRefuse
   }
 }
 
+// The maintenance grant through the composition (decision 0053, unit 4a): a request on a rate tick that starts armed is dropped
+// and changes nothing; one that starts disarmed is granted and arming is refused (Maintenance) until the next init.
+TEST_F(ArmedGateTest, AMaintenanceRequestWhileArmedIsNotGrantedAndTheVehicleKeepsFlying) {
+  arm();
+  EXPECT_FALSE(composition::maintenance_granted());
+  composition::request_maintenance();
+  const Sticks fly{0.0F, 0.0F, 0.0F, 0.3F};
+  for (std::size_t k = 0; k < 10; ++k) {
+    const RateOut r = hold(fly, kSwitchOn, fly);
+    EXPECT_EQ(r.out.motor, r.mixed);
+    EXPECT_EQ(composition::arming_status(), arming::ArmState::Armed);
+    EXPECT_FALSE(composition::maintenance_granted());
+  }
+  // The request was dropped, not kept: disarmed by the switch, still not granted, and a switch cycle arms.
+  for (std::size_t k = 0; k < 10; ++k) {
+    expect_all_stop(hold({}, kSwitchOff, {}).out);
+    EXPECT_EQ(composition::arming_status(), arming::ArmState::SwitchOff);
+    EXPECT_FALSE(composition::maintenance_granted());
+  }
+  const RateOut r = hold({}, kSwitchOn, {});
+  EXPECT_EQ(composition::arming_status(), arming::ArmState::Armed);
+  EXPECT_EQ(r.out.motor, r.mixed);
+  EXPECT_FALSE(composition::maintenance_granted());
+}
+
+TEST_F(ArmedGateTest, AMaintenanceRequestWhileDisarmedIsGrantedAndArmingStaysRefusedUntilInit) {
+  link_up();
+  EXPECT_FALSE(composition::maintenance_granted());
+  composition::request_maintenance();
+  expect_all_stop(hold({}, kSwitchOff, {}).out);
+  EXPECT_EQ(composition::arming_status(), arming::ArmState::Maintenance);
+  EXPECT_TRUE(composition::maintenance_granted());
+  for (std::size_t k = 0; k < 40; ++k) {
+    expect_all_stop(hold({}, k % 2 == 0 ? kSwitchOn : kSwitchOff, {}).out);
+    EXPECT_EQ(composition::arming_status(), arming::ArmState::Maintenance);
+    EXPECT_TRUE(composition::maintenance_granted());
+  }
+  composition::init();  // a reboot ends the grant
+  EXPECT_FALSE(composition::maintenance_granted());
+}
+
+// A config status other than Ok, set before init, refuses arming (ConfigRefused) with the link good and the switch cycled; the
+// boot gyro calibration is re-run by init, so the case starts after it as the others do.
+class ConfigRefusedGateTest : public ArmedGateTest {
+ protected:
+  void warm_up() override {
+    composition::set_config_status(arming::ConfigStatus::NotValidated);
+    composition::init();
+    ArmedGateTest::warm_up();
+  }
+
+  void TearDown() override { composition::set_config_status(arming::ConfigStatus::Ok); }
+};
+
+TEST_F(ConfigRefusedGateTest, ArmingIsRefusedWithTheLinkGoodAndTheSwitchCycled) {
+  EXPECT_EQ(composition::config_status(), arming::ConfigStatus::NotValidated);
+  const TimeUs until = hal_sim::stamp_us(period_, n_) + kRecoveryUs + kRecoveryUs / 2;
+  while (hal_sim::stamp_us(period_, n_) <= until) {
+    expect_all_stop(hold({}, kSwitchOff, {}).out);
+  }
+  for (std::size_t k = 0; k < 40; ++k) {
+    expect_all_stop(hold({}, k % 2 == 0 ? kSwitchOn : kSwitchOff, {}).out);
+    EXPECT_EQ(composition::arming_status(), arming::ArmState::ConfigRefused);
+  }
+  EXPECT_FALSE(composition::maintenance_granted());
+}
+
 TEST_F(ArmedGateTest, ASaturatedSampleSinceTheLastRateTickRefusesArmingAndNeverDisarms) {
   link_up();
   // The saturated sample is on the tick before the rate tick: it counts for that rate tick, whose own sample is fine.

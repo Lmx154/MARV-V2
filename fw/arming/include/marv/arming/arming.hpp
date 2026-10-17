@@ -26,6 +26,14 @@
 // cleared on the first tick with a valid link), NoLink (no valid link, or valid for less than `recovery_us`),
 // ImuInvalid, Saturated, Calibrating, EstimatorInvalid, NotUpright, ThrottleUp, then SwitchOff (switch low, everything else ready) or SwitchNotCycled (switch high
 // without a rising edge, everything else ready). Boot is the state before the first step.
+//
+// Ground segment refusals (decision 0053, Luis 2026-10-17); both only refuse arming and neither disarms an armed vehicle.
+// ConfigRefused: the config status given to init is not Ok (the stored config is corrupt, of an unknown schema, invalid, or
+// not validated for this image; the reason is config_status()). Fixed at init. Maintenance: a maintenance request (the
+// input `maintenance_request`) seen on a step that starts disarmed grants maintenance, which refuses arming until reset();
+// there is no un-grant. A request on a step that starts armed is not granted and changes nothing. In the refusal order both
+// come right after MotorTest, before Failsafe and NoLink, so they name themselves whatever the link and the sensors do:
+// Maintenance first (a reboot is expected), then ConfigRefused.
 
 #include <cstdint>
 
@@ -50,6 +58,18 @@ enum class ArmState : std::uint8_t {
   EstimatorInvalid,
   Calibrating,
   NotUpright,
+  ConfigRefused,
+  Maintenance,
+};
+
+// Why the config the machine was initialised with cannot be used (core 4, ground spec GS-11). Ok: the factory table or a
+// stored config that passed every check.
+enum class ConfigStatus : std::uint8_t {
+  Ok,
+  Corrupt,
+  SchemaMismatch,
+  Invalid,
+  NotValidated,
 };
 
 [[nodiscard]] constexpr bool is_armed(ArmState s) noexcept {
@@ -90,6 +110,7 @@ struct ArmingInputs {
   bool estimator_valid = false;      // the attitude estimate is valid (marv::estimator::Mahony::valid)
   bool upright = false;              // the estimate's tilt is below the small angle
   bool motor_test_active = false;
+  bool maintenance_request = false;  // a maintenance request is pending this step; granted only if the step starts disarmed
 };
 
 template <class T>
@@ -105,8 +126,9 @@ struct ArmingOutput {
 template <class T>
 class Arming {
  public:
-  void init(const ArmingConfig<T>& config) noexcept {
+  void init(const ArmingConfig<T>& config, ConfigStatus config_status = ConfigStatus::Ok) noexcept {
     cfg_ = config;
+    config_status_ = config_status;
     reset();
   }
 
@@ -117,6 +139,7 @@ class Arming {
     link_run_ = false;
     link_run_start_us_ = 0;
     prev_switch_on_ = true;
+    maintenance_ = false;
     state_ = ArmState::Boot;
   }
 
@@ -139,6 +162,9 @@ class Arming {
     const bool switch_on = in.arm >= cfg_.arm_threshold;
     const bool edge = switch_on && !prev_switch_on_;
     prev_switch_on_ = switch_on;
+    if (in.maintenance_request && !armed_) {
+      maintenance_ = true;
+    }
 
     if (armed_) {
       ArmState cause = ArmState::Armed;
@@ -171,6 +197,10 @@ class Arming {
       refusal = ArmState::ImuStale;
     } else if (in.motor_test_active) {
       refusal = ArmState::MotorTest;
+    } else if (maintenance_) {
+      refusal = ArmState::Maintenance;
+    } else if (config_status_ != ConfigStatus::Ok) {
+      refusal = ArmState::ConfigRefused;
     } else if (failsafe_) {
       refusal = ArmState::Failsafe;
     } else if (!recovered) {
@@ -201,6 +231,8 @@ class Arming {
 
   [[nodiscard]] bool armed() const noexcept { return armed_; }
   [[nodiscard]] ArmState state() const noexcept { return state_; }
+  [[nodiscard]] bool maintenance() const noexcept { return maintenance_; }
+  [[nodiscard]] ConfigStatus config_status() const noexcept { return config_status_; }
 
  private:
   static constexpr std::uint64_t kNoFrame = ~std::uint64_t{0};
@@ -234,6 +266,8 @@ class Arming {
   bool link_run_ = false;
   std::uint64_t link_run_start_us_ = 0;
   bool prev_switch_on_ = true;
+  bool maintenance_ = false;
+  ConfigStatus config_status_ = ConfigStatus::Ok;
   ArmState state_ = ArmState::Boot;
 };
 

@@ -17,6 +17,11 @@ lead summary here). Items marked (Luis) were signed by him on 2026-10-17 (Approv
    FREQ_FINE trim (lsm6dsv.cpp ~:351) depends on the chip, so it stays a boot-time panic. New arming refusals ConfigRefused and Maintenance; reboot / bootloader reset only
    with a disarmed maintenance grant (Luis). G7: arming refuses a stored config not bound to this image's validation
    report (check list: Luis).
+   Unit 4a frozen tests extended: tests/regression/quad/L08/unit/arming_test.cpp gains the ArmState codes (ConfigRefused 16, Maintenance 17),
+   ConfigRefused for every status with every other condition good, and the maintenance request armed (not granted) and disarmed
+   (granted, persists until reset); tests/regression/quad/L09/unit/quad_fc_gate_test.cpp gains the same through the composition
+   (request_maintenance, maintenance_granted, set_config_status). Negative controls run and restored: removing the armed check
+   of the grant fails both request-while-armed tests, removing the ConfigRefused refusal fails both ConfigRefused tests.
    Frozen tests extended (unit 3, VALIDATE): tests/regression/quad/L09/unit/quad_fc_gate_test.cpp gains the validate cases
    (the default table accepted, one rejecting table per parameter-dependent panic site, init panicking with validate's reason).
 3. **Storage format:** binary `.mcfg` on the device, JSON as the host view (GD-3, Luis); FatFs (BSD-style) over SPI0 for

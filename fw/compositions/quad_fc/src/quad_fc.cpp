@@ -146,6 +146,9 @@ std::atomic<std::uint32_t> g_attitude_timing_faults{0};  // and its timing_fault
 bool g_imu_invalid = false;     // a sample since the previous rate tick lacked GyroValid or AccelValid
 bool g_imu_saturated = false;   // a sample since the previous rate tick had a saturation bit
 std::atomic<std::uint8_t> g_arming_state{static_cast<std::uint8_t>(arming::ArmState::Boot)};
+std::atomic<bool> g_maintenance_request{false};  // set by the background loop (request_maintenance), cleared by the rate tick that reads it
+std::atomic<bool> g_maintenance_granted{false};  // the arming machine's grant, published after each rate tick
+arming::ConfigStatus g_config_status = arming::ConfigStatus::Ok;  // set before init (set_config_status), read by init
 estimator::Mahony<float> g_estimator;
 estimator::GyroCal<float> g_gyro_cal;
 float g_upright_cos = 0.0F;  // cos(arm_small_angle): upright iff the cosine of the estimate's tilt is above it
@@ -411,7 +414,9 @@ void init() noexcept {
   g_angle_running = false;
   g_attitude_faults.store(0, std::memory_order_relaxed);
   g_attitude_timing_faults.store(0, std::memory_order_relaxed);
-  g_arming.init(arming::load_config());
+  g_arming.init(arming::load_config(), g_config_status);
+  g_maintenance_request.store(false, std::memory_order_relaxed);
+  g_maintenance_granted.store(false, std::memory_order_relaxed);
   g_estimator.init(estimator::MahonyConfig<float>{
       param_value<ParamId::estimator_kp>(), param_value<ParamId::estimator_ki>(),
       param_value<ParamId::estimator_accel_healthy_min>(), param_value<ParamId::estimator_accel_healthy_max>()});
@@ -483,6 +488,10 @@ void tick(const ImuSample& raw) noexcept {
   in.gyro_calibrated = g_gyro_cal.complete();
   in.estimator_valid = g_estimator.valid();
   in.motor_test_active = g_gate == MotorGate::MotorTest;
+  in.maintenance_request = g_maintenance_request.load(std::memory_order_relaxed);
+  if (in.maintenance_request) {
+    g_maintenance_request.store(false, std::memory_order_relaxed);  // only this tick clears it, so a request is never lost
+  }
   const prim::Quat<float>& q = g_estimator.quat();
   in.upright = in.estimator_valid && 1.0F - 2.0F * (q.x * q.x + q.y * q.y) > g_upright_cos;
   g_tilt_xy2.store(q.x * q.x + q.y * q.y, std::memory_order_relaxed);
@@ -492,6 +501,7 @@ void tick(const ImuSample& raw) noexcept {
   g_imu_saturated = false;
   const arming::ArmingOutput<float> out = g_arming.step(in);
   g_arming_state.store(static_cast<std::uint8_t>(out.state), std::memory_order_relaxed);
+  g_maintenance_granted.store(g_arming.maintenance(), std::memory_order_relaxed);
   if (out.armed) {
     if (g_gate != MotorGate::Armed) {
       g_step.reset_controller();  // arming never applies controller state accumulated while disarmed
@@ -548,6 +558,14 @@ void tick(const ImuSample& raw) noexcept {
 arming::ArmState arming_status() noexcept {
   return static_cast<arming::ArmState>(g_arming_state.load(std::memory_order_relaxed));
 }
+
+void set_config_status(arming::ConfigStatus status) noexcept { g_config_status = status; }
+
+arming::ConfigStatus config_status() noexcept { return g_config_status; }
+
+void request_maintenance() noexcept { g_maintenance_request.store(true, std::memory_order_relaxed); }
+
+bool maintenance_granted() noexcept { return g_maintenance_granted.load(std::memory_order_relaxed); }
 
 AttitudeStatus attitude_status() noexcept {
   const float xy2 = g_tilt_xy2.load(std::memory_order_relaxed);
