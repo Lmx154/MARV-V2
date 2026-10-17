@@ -13,7 +13,8 @@ lead summary here). Items marked (Luis) were signed by him on 2026-10-17 (Approv
    activation (disarmed, USB) writes the staged config to SD, reboots, and the boot step verifies it and copies it into
    an internal-flash A/B slot outside every image before the IMU, receiver and motors start. The FC boots from flash and
    never needs the SD card to boot or arm. A table-parametric validator equals init's panics. Locked parameters keep
-   their compiled values (list: Luis). New arming refusals ConfigRefused and Maintenance; reboot / bootloader reset only
+   their compiled values (list: Luis). Outside the validator by nature: imu_start's check of the tick period against the IMU's
+   FREQ_FINE trim (lsm6dsv.cpp ~:351) depends on the chip, so it stays a boot-time panic. New arming refusals ConfigRefused and Maintenance; reboot / bootloader reset only
    with a disarmed maintenance grant (Luis). G7: arming refuses a stored config not bound to this image's validation
    report (check list: Luis).
    Frozen tests extended (unit 3, VALIDATE): tests/regression/quad/L09/unit/quad_fc_gate_test.cpp gains the validate cases
