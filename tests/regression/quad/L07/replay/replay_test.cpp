@@ -23,9 +23,9 @@
 namespace marv::l07 {
 namespace {
 
-// Committed bench logs under tests/regression/quad/L07/results/, one file name per entry. The test replays each and requires
+// Committed bench logs (extracted from tests/regression/quad/L07/results/*.tar.xz into MARV_L07_RESULTS_DIR), one file name per entry. The test replays each and requires
 // a valid T2 log, (a) and (c') to pass and both controls to fail.
-const std::vector<std::string> kRealLogs = {};
+const std::vector<std::string> kRealLogs = {"t2_hand_rotation_2026-10-16.bin"};
 
 // The synthetic log's framing, not a flight quantity: samples per data record, data records between status records.
 constexpr std::size_t kSamplesPerRecord = 32;
