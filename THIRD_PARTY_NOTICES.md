@@ -84,3 +84,10 @@
   - pymavlink 2.4.50 itself: LGPL-3 (`License: LGPLv3`, `COPYING`). It is a build and test tool only: a dev dependency
     in `pyproject.toml` and `uv.lock`, run as `python -m pymavlink.tools.mavgen` and imported by no runtime code. None of
     it is linked into or shipped with any image, library or the ground-station package.
+
+## websockets 17.2 (ground-segment helper dependency)
+
+- **Where:** not vendored. A runtime dependency of `tools/gs/helper.py` in `pyproject.toml` and `uv.lock`, installed by
+  `uv sync --frozen`. Copyright (c) Aymeric Augustin and contributors.
+- **Licence:** BSD-3-Clause (`License-Expression: BSD-3-Clause` in the package metadata; the licence file ships in its
+  distribution). It is used by the helper on the developer's machine only; it is not part of `fw/` and enters no image.
