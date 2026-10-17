@@ -212,6 +212,19 @@ gz_sensors_l5() {
   pytest_no_skips tests/regression/quad/L06/gz_compositions/test_l5_sensors.py
 }
 
+# The L7 plugin: the same plugin source on the l7_attitude_estimated composition (MARV_GZ_SIL =
+# marv_sil_l7_attitude_estimated, a library without TRUTH_STATE: the attitude is the estimator's), decision 0042 item 4.
+gz_build_l7() {
+  uv sync --frozen || return 1
+  cmake --preset host-gz-l7 && cmake --build --preset host-gz-l7
+}
+
+# The L7 hover predicate on the estimate (angle mode and the attitude law on the model IMU, decision 0042 item 4) and its
+# control, on the host-gz-l7 build.
+gz_l7() {
+  pytest_gz_dir tests/regression/quad/L07/gz
+}
+
 # The L11 plugin: the same plugin source on the l11_vertical_scripted composition (MARV_GZ_SIL =
 # marv_sil_l11_vertical_scripted, a TRUTH_STATE and TRUTH_VERTICAL library), decision 0020 section 5 "CI cost".
 gz_build_l11() {
@@ -232,8 +245,8 @@ gz_l11() {
   pytest_gz_dir tests/regression/quad/L11/gz
 }
 
-# Usage: ci/run_ci_gz.sh [l2|l4|l5|l11]. No argument runs every step (l2, l4, l5, l11 in order). The Actions jobs gz-l2,
-# gz-l4, gz-l5 and gz-l11 run one group each, in parallel on separate runners, so a group must not depend on another
+# Usage: ci/run_ci_gz.sh [l2|l4|l5|l7|l11]. No argument runs every step (l2, l4, l5, l7, l11 in order). The Actions jobs
+# gz-l2, gz-l4, gz-l5, gz-l7 and gz-l11 run one group each, in parallel on separate runners, so a group must not depend on another
 # group's build: gz_build is in l2 and in l4 (test_truth_gyro.py runs on the host-gz build), gz_build_l5 in l5 and in l11
 # (the L11 suite's refusal and I1 tests run on the host-gz-l5 build).
 group_l2() {
@@ -261,6 +274,11 @@ group_l5() {
   step gz_sensors_l5 gz_sensors_l5
 }
 
+group_l7() {
+  step gz_build_l7 gz_build_l7
+  step gz_l7 gz_l7
+}
+
 group_l11() {
   step gz_build_l5 gz_build_l5
   step gz_build_l11 gz_build_l11
@@ -272,15 +290,17 @@ case "${1:-all}" in
   l2) group_l2 ;;
   l4) group_l4 ;;
   l5) group_l5 ;;
+  l7) group_l7 ;;
   l11) group_l11 ;;
   all)
     group_l2
     group_l4
     group_l5
+    group_l7
     group_l11
     ;;
   *)
-    echo "usage: ci/run_ci_gz.sh [l2|l4|l5|l11]" >&2
+    echo "usage: ci/run_ci_gz.sh [l2|l4|l5|l7|l11]" >&2
     exit 2
     ;;
 esac

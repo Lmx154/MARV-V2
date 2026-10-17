@@ -3,7 +3,7 @@
 # containers, as root, under the GitHub runner's CPU and memory limits, so that a local pass predicts an Actions pass.
 #
 # Usage: ci/local_ci.sh [--commit <rev>] [--no-cache] [--parallel N] [job ...]
-#   jobs: core, gz-l2, gz-l4, gz-l5, gz-l11 (default: all five, in that order, sequentially)
+#   jobs: core, gz-l2, gz-l4, gz-l5, gz-l7, gz-l11 (default: all six, in that order, sequentially)
 #   --commit: the commit to check, default HEAD. The commit is cloned fresh (git clone, tags included), so uncommitted
 #             and untracked files are not tested, exactly as on Actions.
 #   --no-cache: run with an empty throwaway cache volume instead of marv-ci-cache (a from-scratch proof).
@@ -34,7 +34,7 @@ set -euo pipefail
 export MARV_CI_MODE="${MARV_CI_MODE:-full}"
 
 usage() {
-  echo "usage: ci/local_ci.sh [--commit <rev>] [--no-cache] [--parallel N] [core|gz-l2|gz-l4|gz-l5|gz-l11 ...]" >&2
+  echo "usage: ci/local_ci.sh [--commit <rev>] [--no-cache] [--parallel N] [core|gz-l2|gz-l4|gz-l5|gz-l7|gz-l11 ...]" >&2
   exit 2
 }
 
@@ -66,14 +66,14 @@ while (($# > 0)); do
       parallel="$2"
       shift 2
       ;;
-    core | gz-l2 | gz-l4 | gz-l5 | gz-l11)
+    core | gz-l2 | gz-l4 | gz-l5 | gz-l7 | gz-l11)
       add_job "$1"
       shift
       ;;
     *) usage ;;
   esac
 done
-((${#jobs[@]} > 0)) || jobs=(core gz-l2 gz-l4 gz-l5 gz-l11)
+((${#jobs[@]} > 0)) || jobs=(core gz-l2 gz-l4 gz-l5 gz-l7 gz-l11)
 ((parallel <= ${#jobs[@]})) || parallel=${#jobs[@]}
 
 mem_bytes=$((RUNNER_RAM_BYTES - HEADROOM_BYTES))
