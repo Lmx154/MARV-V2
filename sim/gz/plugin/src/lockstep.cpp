@@ -539,6 +539,12 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
       for (std::size_t i = 0; i < kMotors; ++i) {
         p.plant.initial_omega_rad_s[i] = w[i];
       }
+    } else if (name == "drag_coeff_kg_s") {
+      once(name);
+      const Vec3 d = vec3_of(e);
+      for (std::size_t i = 0; i < d.size(); ++i) {
+        p.plant.drag_coeff_kg_s[i] = d[i];
+      }
     } else if (name == "gyro_source") {
       once(name);
       const std::string source = trim(text_of(e));

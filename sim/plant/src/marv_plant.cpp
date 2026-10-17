@@ -68,6 +68,11 @@ bool config_valid(const marv_plant_config& c) {
       return false;
     }
   }
+  for (std::size_t i = 0; i < 3; ++i) {
+    if (!finite(c.drag_coeff_kg_s[i]) || c.drag_coeff_kg_s[i] < 0.0) {
+      return false;
+    }
+  }
   return positive(c.mass_kg) && positive(c.thrust_coeff) && positive(c.torque_ratio_m) &&
          finite(c.omega_min_rad_s) && c.omega_min_rad_s >= 0.0 && positive(c.omega_max_rad_s) &&
          c.omega_min_rad_s < c.omega_max_rad_s && positive(c.motor_tau_s) && positive(c.motor_substep_s) &&
@@ -140,6 +145,9 @@ Params<double> to_params(const marv_plant_config& c) {
   for (std::size_t i = 0; i < kMotors; ++i) {
     p.omega0[i] = c.initial_omega_rad_s[i];
   }
+  for (std::size_t i = 0; i < 3; ++i) {
+    p.drag[i] = c.drag_coeff_kg_s[i];
+  }
   return p;
 }
 
@@ -198,7 +206,8 @@ marv_plant_status marv_plant_step(marv_plant* plant, const marv_plant_body* body
 
   plant->model.advance(dshot, dt_s);
   const marv::prim::Quat<double> q(body->q_wxyz[0], body->q_wxyz[1], body->q_wxyz[2], body->q_wxyz[3]);
-  const Wrench<double> w = plant->model.wrench(q, body->pos_ned_m[2]);
+  const Wrench<double> w = plant->model.wrench(
+      q, body->pos_ned_m[2], marv::prim::Vec3<double>(body->vel_ned_m_s[0], body->vel_ned_m_s[1], body->vel_ned_m_s[2]));
 
   out->erpm_valid = plant->pole_count != 0 ? 1U : 0U;
   const double pole_pairs = static_cast<double>(plant->pole_count / 2);
@@ -255,7 +264,8 @@ marv_plant_status marv_plant_imu_sample(marv_plant* plant, const marv_plant_body
   if (!plant->imu.attached()) {
     return MARV_PLANT_E_STATE;
   }
-  // Specific force: the rotor thrust after the last step over the mass, along -z_FRD (no gravity, no drag at v0).
+  // Specific force: the rotor thrust after the last step over the mass, along -z_FRD, plus the rotor drag force over the
+  // mass when any drag coefficient is nonzero (body frame, -D R^T v / m, v the sampled body's velocity); no gravity.
   const Params<double>& mp = plant->model.params();
   double thrust = 0.0;
   for (std::size_t i = 0; i < kMotors; ++i) {
@@ -264,6 +274,14 @@ marv_plant_status marv_plant_imu_sample(marv_plant* plant, const marv_plant_body
   }
   std::array<double, 6> truth = {body->omega_frd_rad_s[0], body->omega_frd_rad_s[1], body->omega_frd_rad_s[2],
                                  0.0, 0.0, -(thrust / mp.mass)};
+  if (plant->model.drag_active()) {
+    const marv::prim::Quat<double> q(body->q_wxyz[0], body->q_wxyz[1], body->q_wxyz[2], body->q_wxyz[3]);
+    const marv::prim::Vec3<double> v_ned(body->vel_ned_m_s[0], body->vel_ned_m_s[1], body->vel_ned_m_s[2]);
+    const marv::prim::Vec3<double> f_drag = plant->model.drag_force_body(q, v_ned);
+    for (std::size_t a = 0; a < 3; ++a) {
+      truth[3 + a] += f_drag[a] / mp.mass;
+    }
+  }
   // Vibration, when attached with some nonzero amplitude: added to the gyro truth, before the delay line. Otherwise
   // the truth is not touched (not even by + 0), so the stage (a) bytes are unchanged by construction.
   if (plant->vibration.active()) {

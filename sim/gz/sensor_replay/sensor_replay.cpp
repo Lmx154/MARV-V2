@@ -14,11 +14,12 @@
 //                                             omega_max_rad_s, motor_tau_s, site_lat_rad, site_height_m, motor_substep_s
 //            rotor <motor> <x> <y> <z> <yaw>  one per logical motor 1..4: position_frd_m, then yaw_sign
 //            initial_rotor_speed_rad_s <w1> <w2> <w3> <w4>   optional; absent, all 0 (as in the plugin)
+//            drag_coeff_kg_s <dx> <dy> <dz>   optional; absent, all 0 (as in the plugin)
 //            rotor_speed_model <latency_ticks> <exponent_bits> <mantissa_bits> <period_unit_s>
 //                                             the sensor profile's rotor-speed values (the profile's latency in rate periods
 //                                             x rate_loop_divisor, and its telemetry grid), not the world's; required iff
 //                                             record 6 has rotor_speed 1, otherwise optional and unused
-//          Each line once; every name but the two optional ones is required. rng_seed is record 6's seed.
+//          Each line once; every name but the three optional ones is required. rng_seed is record 6's seed.
 //
 // The replay is a sequence of direct marv_plant calls. One plant from <plant> with rng_seed = record 6's seed; record 6's
 // IMU configuration attached, then, with rotor_speed 1, its rotor-speed configuration (the adapter's order). For each host
@@ -437,6 +438,7 @@ bool read_plant(const std::string& path, marv_plant_config& pc, std::optional<Ro
   bool esc = false;
   bool poles = false;
   bool initial = false;
+  bool drag = false;
   std::array<bool, kMotors> rotor_seen{};
   std::size_t line_no = 0;
   for (std::string line; std::getline(f, line);) {
@@ -487,6 +489,16 @@ bool read_plant(const std::string& path, marv_plant_config& pc, std::optional<Ro
         return bad("'rotor_speed_model' is repeated or is not three unsigned integers and a number");
       }
       grid = g;
+    } else if (name == "drag_coeff_kg_s") {
+      if (drag || t.size() != 1 + kAxes) {
+        return bad("'drag_coeff_kg_s' is repeated or does not have " + std::to_string(kAxes) + " values");
+      }
+      for (std::size_t i = 0; i < kAxes; ++i) {
+        if (!parse(t[1 + i], pc.drag_coeff_kg_s[i])) {
+          return bad("a drag coefficient is not a number");
+        }
+      }
+      drag = true;
     } else if (name == "initial_rotor_speed_rad_s") {
       if (initial || t.size() != 1 + kMotors) {
         return bad("'initial_rotor_speed_rad_s' is repeated or does not have " + std::to_string(kMotors) + " values");

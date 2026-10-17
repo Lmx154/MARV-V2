@@ -612,3 +612,24 @@ def test_per_component_sigma_on_vector_accepted(tmp_path):
         d["inertia_diag"]["sigma_rule"] = "test value"
     p = card(tmp_path, mutate)
     assert run_lint("--card", p).returncode == 0
+
+
+# The optional drag entry (decision 0049): diag3, kg/s, each component >= 0.
+
+def test_drag_entry_accepted_and_absence_is_valid(tmp_path):
+    drag = load(FC3V2_CARD)["drag"]
+    assert "drag" not in load(CARD)  # the control: the UZH card lints clean without it (test above)
+    p = card(tmp_path, lambda d: d.update(drag=drag))
+    assert run_lint("--card", p).returncode == 0
+
+
+@pytest.mark.parametrize("mutate,needle", [
+    (lambda e: e.update(value=[0.356, -0.001, 0.0]), "drag: value: every drag coefficient must be >= 0"),
+    (lambda e: e.update(unit="1/s"), "drag: unit: must be 'kg/s'"),
+    (lambda e: e.update(value=[0.356, 0.214]), "drag: shape: diag3 needs 3 components"),
+])
+def test_bad_drag_entry_rejected(tmp_path, mutate, needle):
+    drag = load(FC3V2_CARD)["drag"]
+    mutate(drag)
+    p = card(tmp_path, lambda d: d.update(drag=drag))
+    reject("--card", p, needle)
