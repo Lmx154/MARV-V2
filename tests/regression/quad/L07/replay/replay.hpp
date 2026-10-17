@@ -4,6 +4,14 @@
 // log, replay every sample through marv::estimator::Mahony<float> with quad_fc's flag rule, and run the two checks and
 // their controls. Test code, host only; the numbers come in through Params (read from the parameter set by the test).
 //
+// Boot gyro calibration. The logged stream is what the flight composition's tick() receives, before its calibration. The
+// replay therefore applies it as tick() does: marv::estimator::GyroCal (gyro_cal_duration_us, gyro_cal_movement_max) takes
+// every sample from the log's first on, and once it is complete its bias is subtracted from a copy of each sample, the
+// completing one included, before the estimator. A T2 log starts with the board still (the protocol), which plays the role
+// of the boot calibration. If the calibration has not completed by the end of the trimmed still segment 1, the log is not a
+// valid T2 log. The gyro-path check (c') runs on the calibrated gyro, as the flight code would. Control::NoCalibration
+// replays without it: a log with a gyro bias must then fail (a).
+//
 // Parse (imu_log_format.hpp; tools/target/imu_log.py is the reference decoder). Bytes before the first record that checks
 // are skipped (a capture may start mid-record); after it every byte must belong to a record. A log is rejected unless it is
 // clean (decision 0042 item 2: no deadline miss, FIFO overflow or stamp gap): every record's CRC-32 checks, the sequence
@@ -13,7 +21,7 @@
 // integers, |dt den - num| <= tol den, the decoder's rule). An incomplete record at the end of the file (the capture
 // stopped) is dropped and counted.
 //
-// Replay. The estimator is stepped exactly as quad_fc's tick() steps it: a sample whose GyroValid bit is clear is not
+// Replay. The estimator is stepped exactly as quad_fc's tick() steps it (the calibration first, see above): a sample whose GyroValid bit is clear is not
 // stepped (the next step's dt spans from the last stepped stamp), one whose AccelValid bit is clear is stepped with no
 // accelerometer direction (NaN: no correction), dt is the stamp difference in microseconds (0 for the first step or a
 // non-increasing stamp, clamped to uint32).
@@ -44,7 +52,7 @@
 // between them is at most 10 s, and each segment lasts at least T_s = ln(theta_rot / share) / Kp.
 // Controls (each must fail its check): Control::NegateStill2Accel negates still 2's dominant mean-f axis in the estimator's
 // input for every sample from the first of still 2 on; Control::NegateRotationGyro negates, in the gyro-only replay, the
-// gyro axis with the largest integral over the rotation.
+// gyro axis with the largest integral over the rotation, after the calibration (Control::NoCalibration replays without it).
 
 #include <algorithm>
 #include <array>
@@ -59,6 +67,7 @@
 #include <utility>
 #include <vector>
 
+#include "marv/estimator/gyro_cal.hpp"
 #include "marv/estimator/mahony.hpp"
 #include "marv/hal_target/imu_log_format.hpp"
 #include "marv/prim/constants.hpp"
@@ -76,6 +85,7 @@ inline constexpr double kRotationWindowS = 10.0;            // the protocol's lo
 
 struct Params {
   estimator::MahonyConfig<float> mahony;
+  estimator::GyroCalConfig<float> gyro_cal;  // gyro_cal_duration_us and gyro_cal_movement_max
   double share = 0.0;           // attitude_tilt_error_max, rad
   std::uint32_t tick_num = 0;   // tick period num / den us
   std::uint32_t tick_den = 1;
@@ -238,11 +248,30 @@ inline constexpr std::array kMustBeZero{
 
 // ---------------------------------------------------------------------------------------------------------- replay
 
-// quad_fc's tick() estimator step (fw/compositions/quad_fc/src/quad_fc.cpp), on one sample. accel_on false: no correction.
+// quad_fc's tick() on one sample: the boot gyro calibration, then the estimator step. accel_on false: no correction.
 class Replayer {
  public:
-  explicit Replayer(const estimator::MahonyConfig<float>& cfg) { est_.init(cfg); }
-  void step(const ImuSample& s, bool accel_on = true) {
+  explicit Replayer(const Params& p, bool calibrate = true) : calibrate_(calibrate) {
+    est_.init(p.mahony);
+    cal_.init(p.gyro_cal);
+  }
+  // From now on the calibrated gyro's axis is negated (the control of check (c')).
+  void negate_gyro_axis(std::size_t axis) { negate_axis_ = static_cast<int>(axis); }
+  void step(const ImuSample& raw, bool accel_on = true) {
+    ImuSample s = raw;
+    if (calibrate_) {
+      cal_.update(raw.gyro_rad_s, (raw.flags & imu_flag(ImuFlag::GyroValid)) != 0, raw.t_us);
+      if (cal_.complete()) {
+        if (!done_) {
+          done_ = true;
+          done_us_ = raw.t_us;
+        }
+        s.gyro_rad_s = raw.gyro_rad_s - cal_.bias();
+      }
+    }
+    if (negate_axis_ >= 0) {
+      s.gyro_rad_s[static_cast<std::size_t>(negate_axis_)] = -s.gyro_rad_s[static_cast<std::size_t>(negate_axis_)];
+    }
     if ((s.flags & imu_flag(ImuFlag::GyroValid)) == 0) {
       return;
     }
@@ -257,9 +286,17 @@ class Replayer {
                                                                 : static_cast<std::uint32_t>(since));
   }
   [[nodiscard]] const estimator::Mahony<float>& estimator() const { return est_; }
+  [[nodiscard]] bool calibration_complete() const { return done_; }
+  [[nodiscard]] std::uint64_t calibration_done_us() const { return done_us_; }  // the completing sample's stamp
+  [[nodiscard]] const prim::Vec3<float>& calibration_bias() const { return cal_.bias(); }
 
  private:
   estimator::Mahony<float> est_;
+  estimator::GyroCal<float> cal_;
+  bool calibrate_ = true;
+  bool done_ = false;
+  std::uint64_t done_us_ = 0;
+  int negate_axis_ = -1;
   std::uint64_t prev_us_ = 0;
   bool started_ = false;
 };
@@ -402,7 +439,7 @@ struct Segment {
   return {m[0] / c, m[1] / c, m[2] / c};
 }
 
-enum class Control : std::uint8_t { None, NegateStill2Accel, NegateRotationGyro };
+enum class Control : std::uint8_t { None, NegateStill2Accel, NegateRotationGyro, NoCalibration };
 
 struct Report {
   std::string invalid;  // empty: the log is a valid T2 log
@@ -419,6 +456,9 @@ struct Report {
   double err_a2 = 0.0;
   double err_c = 0.0;    // rad
   double bound_c = 0.0;  // theta_rot / 2
+  bool calibrated = false;     // the replay applied the boot gyro calibration and it completed
+  double cal_done_s = 0.0;     // from the log's first sample to the completing sample
+  Dir cal_bias_rad_s{};        // the calibration's bias, rad/s
   bool pass_a = false;
   bool pass_c = false;
   [[nodiscard]] bool valid() const { return invalid.empty(); }
@@ -483,7 +523,8 @@ struct Report {
     }
   }
 
-  Replayer main(p.mahony);
+  const bool calibrate = control != Control::NoCalibration;
+  Replayer main(p, calibrate);
   std::optional<Replayer> at_end1;
   bool ok_a = true;
   for (std::size_t k = 0; k <= r.still2.last; ++k) {
@@ -493,6 +534,17 @@ struct Report {
     }
     main.step(s);
     if (k == r.still1.last) {
+      if (calibrate) {
+        if (!main.calibration_complete()) {
+          r.invalid = "the boot gyro calibration did not complete within still segment 1: the log does not start with the board still";
+          return r;
+        }
+        r.calibrated = true;
+        r.cal_done_s = static_cast<double>(main.calibration_done_us() - samples[0].t_us) / prim::kMicrosecondsPerSecond;
+        for (std::size_t a = 0; a < prim::kSpatialDim; ++a) {
+          r.cal_bias_rad_s[a] = static_cast<double>(main.calibration_bias()[a]);
+        }
+      }
       at_end1 = main;
       r.err_a1 = angle_between(down_body(main.estimator()), unit({-f1[0], -f1[1], -f1[2]}));
       ok_a = ok_a && main.estimator().valid();
@@ -503,12 +555,11 @@ struct Report {
   r.pass_a = ok_a && r.err_a1 <= p.share && r.err_a2 <= p.share;
 
   Replayer gyro_only = *at_end1;
+  if (control == Control::NegateRotationGyro) {
+    gyro_only.negate_gyro_axis(axis_c);
+  }
   for (std::size_t k = r.still1.last + 1; k <= r.still2.last; ++k) {
-    ImuSample s = samples[k];
-    if (control == Control::NegateRotationGyro) {
-      s.gyro_rad_s[axis_c] = -s.gyro_rad_s[axis_c];
-    }
-    gyro_only.step(s, false);
+    gyro_only.step(samples[k], false);
   }
   r.bound_c = r.theta_rot / 2.0;
   r.err_c = angle_between(down_body(gyro_only.estimator()), unit({-f2[0], -f2[1], -f2[2]}));

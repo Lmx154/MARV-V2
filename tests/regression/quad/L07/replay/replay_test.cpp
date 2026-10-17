@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -59,6 +60,12 @@ constexpr double kTrimS = 0.5;
 // Known-answer tolerance of the synthetic log: float32 rounding accumulated over the samples; the measured errors are far
 // below it and far below the share.
 constexpr double kKatTolRad = 1.0e-4;
+// A constant gyro bias of the board's measured size, 0.35 deg/s perpendicular to gravity: the FC3v2 at rest read
+// (-0.175, 0.307, -0.10) deg/s (M3 P6 bench measurement). Test-harness scenario value.
+constexpr std::array<double, prim::kSpatialDim> kBoardGyroBiasDegPerS = {-0.175, 0.307, -0.10};
+// Shaking of the first still segment of the invalid-calibration case: the gyro y axis alternates +-10 deg/s sample by sample, inside
+// the 15 deg/s still gate and above the calibration's movement limit (3.36 deg/s standard deviation).
+constexpr double kShakeDegPerS = 10.0;
 
 Params read_params() {
   static const bool ok = params_init(param_defaults());
@@ -67,6 +74,8 @@ Params read_params() {
   p.mahony = estimator::MahonyConfig<float>{param_value<ParamId::estimator_kp>(), param_value<ParamId::estimator_ki>(),
                                             param_value<ParamId::estimator_accel_healthy_min>(),
                                             param_value<ParamId::estimator_accel_healthy_max>()};
+  p.gyro_cal = estimator::GyroCalConfig<float>{static_cast<std::uint64_t>(param_value<ParamId::gyro_cal_duration_us>()),
+                                               param_value<ParamId::gyro_cal_movement_max>()};
   p.share = static_cast<double>(param_value<ParamId::attitude_tilt_error_max>());
   p.tick_num = static_cast<std::uint32_t>(param_value<ParamId::tick_period_num_us>());
   p.tick_den = static_cast<std::uint32_t>(param_value<ParamId::tick_period_den>());
@@ -82,6 +91,8 @@ struct SynthSpec {
   double ramp_s = 0.0;   // a slow start of the rotation (kSynthRampDegPerS, inside the still gate) before the main rotation
   bool spikes = false;   // single-sample outliers inside each still segment
   bool gentle_start = false;  // a lead-in that dips below the still gate many times (kGentlePieces pieces)
+  std::array<double, prim::kSpatialDim> gyro_bias_deg_s{};  // added to every sample's gyro (the sensor's constant bias)
+  bool shaky_still1 = false;  // gyro y alternates +-kShakeDegPerS over the whole of still 1: the calibration cannot complete
 };
 
 double required_ts(double theta, const Params& p) { return std::log(theta / p.share) / static_cast<double>(p.mahony.kp); }
@@ -144,7 +155,12 @@ std::vector<ImuSample> synth_samples(const SynthSpec& spec, const Params& p) {
     phi += rate * dt_s(k);
     ImuSample& s = out[k];
     s.t_us = stamp(k, p);
-    s.gyro_rad_s = {static_cast<float>(rate), 0.0F, 0.0F};
+    double shake = 0.0;
+    if (spec.shaky_still1 && k < n_still) {
+      shake = (k % 2 == 0 ? 1.0 : -1.0) * deg(kShakeDegPerS);
+    }
+    s.gyro_rad_s = {static_cast<float>(rate + deg(spec.gyro_bias_deg_s[0])), static_cast<float>(shake + deg(spec.gyro_bias_deg_s[1])),
+                    static_cast<float>(deg(spec.gyro_bias_deg_s[2]))};
     s.accel_m_s2 = {0.0F, static_cast<float>(-g * std::sin(phi)), static_cast<float>(-g * std::cos(phi))};
     s.temp_k = 0.0F;
     s.flags = kValid;
@@ -221,6 +237,13 @@ std::vector<ImuSample> head_samples(const Params& p) {
 }
 
 void print(const char* name, const Report& r, const Params& p) {
+  if (r.calibrated) {
+    std::printf("%s: calibration completed %.3f s after the first sample, bias (%.4f, %.4f, %.4f) deg/s\n", name, r.cal_done_s,
+                r.cal_bias_rad_s[0] * prim::kDegreesPerHalfTurn / prim::kPi, r.cal_bias_rad_s[1] * prim::kDegreesPerHalfTurn / prim::kPi,
+                r.cal_bias_rad_s[2] * prim::kDegreesPerHalfTurn / prim::kPi);
+  } else {
+    std::printf("%s: no calibration applied\n", name);
+  }
   std::printf(
       "%s: theta_rot %.6f rad, T_s required %.3f s (kp %.4f, share %.5f rad), still1 %.3f s, still2 %.3f s, rotation %.3f s\n"
       "  (a) err1 %.3e err2 %.3e rad (<= %.5f): %s;  (c') err %.3e rad (<= theta_rot/2 = %.5f): %s\n",
@@ -247,6 +270,40 @@ TEST(L07Replay, SyntheticKnownAnswerPassesBothChecks) {
   EXPECT_LT(r.err_a1, kKatTolRad);
   EXPECT_LT(r.err_a2, kKatTolRad);
   EXPECT_LT(r.err_c, kKatTolRad);
+}
+
+TEST(L07Replay, ABoardSizedGyroBiasIsCalibratedOutAndWithoutTheCalibrationFailsCheckA) {
+  const Params p = read_params();
+  SynthSpec spec;
+  spec.gyro_bias_deg_s = kBoardGyroBiasDegPerS;
+  const std::vector<ImuSample> samples = synth_samples(spec, p);
+  const Report r = evaluate(samples, p);
+  print("biased", r, p);
+  ASSERT_TRUE(r.valid()) << r.invalid;
+  ASSERT_TRUE(r.calibrated);
+  for (std::size_t a = 0; a < prim::kSpatialDim; ++a) {
+    EXPECT_NEAR(r.cal_bias_rad_s[a], spec.gyro_bias_deg_s[a] * prim::kPi / prim::kDegreesPerHalfTurn, kKatTolRad);
+  }
+  EXPECT_NEAR(r.theta_rot, kSynthRotationRad, kKatTolRad);
+  EXPECT_TRUE(r.pass_a);
+  EXPECT_TRUE(r.pass_c);
+  // The control: the same log replayed without the calibration, the bias tilts the estimate by about bias / Kp.
+  const Report off = evaluate(samples, p, Control::NoCalibration);
+  print("biased, no calibration", off, p);
+  ASSERT_TRUE(off.valid()) << off.invalid;
+  EXPECT_FALSE(off.pass_a);
+  EXPECT_GT(off.err_a1, p.share);
+}
+
+TEST(L07Replay, ALogWhoseCalibrationCannotCompleteInStill1IsNotAValidT2Log) {
+  const Params p = read_params();
+  SynthSpec spec;
+  spec.shaky_still1 = true;
+  const Report r = evaluate(synth_samples(spec, p), p);
+  EXPECT_FALSE(r.valid());
+  EXPECT_NE(r.invalid.find("calibration"), std::string::npos) << r.invalid;
+  // The same log without the calibration is a valid T2 log: only the calibration rejects it.
+  EXPECT_TRUE(evaluate(synth_samples(spec, p), p, Control::NoCalibration).valid());
 }
 
 TEST(L07Replay, ControlStill2AccelAxisNegatedFailsCheckA) {
