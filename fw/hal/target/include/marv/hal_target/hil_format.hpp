@@ -28,6 +28,20 @@
 //     each rate tick saw.
 //   Status record, magic "MHST", once per second while the port is open: `count` = kStatusFields counters (u32 each), in
 //     StatusField order, cumulative since boot.
+// Receiver records, only from an image built with MARV_FC3V2_HIL_RECEIVER (HIL stage S4, decision 0046 item 4): there the
+// composition's ManualControl comes from the board's own CRSF receiver (receiver.hpp, its one writer) and every
+// manual-control record from the host is refused (counted in ManualRefused, never published).
+//   Receiver-boot record, magic "MHRB", sent directly after each hello: `count` = kReceiverBootFields u32 words, in
+//     ReceiverBootField order (receiver.hpp ReceiverBoot). Its presence is how a host tells this image from the S3 one.
+//   Receiver-frame record, magic "MHRF", count = 1, one per change of the receiver's ManualControl the background loop sees
+//     (receiver_stats(): a new RC frame or link-statistics frame), while the port is open: frames (u32), t_us (u64), roll,
+//     pitch, yaw, throttle (f32), the kCrsfRcChannels channels (f32, channel_01 first), link_quality (f32), link_t_us (u64),
+//     seen_us (u64, hal_time_us() when the loop read it), missed (u32: RC frames published since the previous record of this
+//     connection that the loop did not see, frames - previous frames - 1 when positive; not corrected for the counter's wrap).
+//     With board_us of the DShot reports it gives the sticks and the frame age each rate tick saw (the newest t_us at or
+//     before board_us), for the SIL replay of stage S5.
+//   Receiver-status record, magic "MHRS", directly after each status record: `count` = kReceiverStatusFields counters (u32
+//     each), in ReceiverStatusField order, cumulative since boot.
 
 #include <array>
 #include <cstddef>
@@ -48,6 +62,9 @@ inline constexpr std::array kHelloMagic{std::uint8_t{'M'}, std::uint8_t{'H'}, st
 inline constexpr std::array kDshotMagic{std::uint8_t{'M'}, std::uint8_t{'H'}, std::uint8_t{'D'}, std::uint8_t{'S'}};
 inline constexpr std::array kArrivalMagic{std::uint8_t{'M'}, std::uint8_t{'H'}, std::uint8_t{'M'}, std::uint8_t{'A'}};
 inline constexpr std::array kStatusMagic{std::uint8_t{'M'}, std::uint8_t{'H'}, std::uint8_t{'S'}, std::uint8_t{'T'}};
+inline constexpr std::array kReceiverBootMagic{std::uint8_t{'M'}, std::uint8_t{'H'}, std::uint8_t{'R'}, std::uint8_t{'B'}};
+inline constexpr std::array kReceiverFrameMagic{std::uint8_t{'M'}, std::uint8_t{'H'}, std::uint8_t{'R'}, std::uint8_t{'F'}};
+inline constexpr std::array kReceiverStatusMagic{std::uint8_t{'M'}, std::uint8_t{'H'}, std::uint8_t{'R'}, std::uint8_t{'S'}};
 
 inline constexpr std::size_t kMotors = kQuadXMotors;
 // tick, t_us, gyro and accel components, flags.
@@ -62,6 +79,13 @@ inline constexpr std::size_t kManualBytes = sizeof(ManualControl::frames) + size
 inline constexpr std::size_t kDshotItemBytes = sizeof(std::uint64_t) + kMotors * sizeof(std::uint16_t) + sizeof(std::uint64_t);
 // frames, seq, t_us.
 inline constexpr std::size_t kArrivalItemBytes = sizeof(std::uint32_t) + sizeof(std::uint32_t) + sizeof(std::uint64_t);
+// frames, t_us, roll, pitch, yaw, throttle, channels, link_quality, link_t_us, seen_us, missed.
+inline constexpr std::size_t kReceiverFrameBytes = sizeof(ManualControl::frames) + sizeof(ManualControl::t_us) +
+                                                   sizeof(ManualControl::roll) + sizeof(ManualControl::pitch) +
+                                                   sizeof(ManualControl::yaw) + sizeof(ManualControl::throttle) +
+                                                   sizeof(ManualControl::channels) + sizeof(ManualControl::link_quality) +
+                                                   sizeof(ManualControl::link_t_us) + sizeof(std::uint64_t) +
+                                                   sizeof(std::uint32_t);
 
 [[nodiscard]] constexpr std::size_t record_bytes(std::size_t count, std::size_t item_bytes) noexcept {
   return base::kHeaderBytes + count * item_bytes + base::kCrcBytes;
@@ -88,7 +112,8 @@ enum class StatusField : std::uint8_t {
   SampleRecords,          // sample records that passed the CRC
   Samples,                // samples in them
   ManualRecords,          // manual-control records published
-  ManualRefused,          // manual-control records that passed the CRC but break the ManualControl contract (not published)
+  ManualRefused,          // manual-control records that passed the CRC but break the ManualControl contract, or reached the
+                          // receiver image (not published)
   CrcFailures,            // headers followed by a whole record whose CRC did not match
   BadHeaders,             // magic followed by a count no record of that kind has
   SeqGaps,                // downlink sequence discontinuities
@@ -115,5 +140,27 @@ enum class StatusField : std::uint8_t {
 };
 inline constexpr std::size_t kStatusFields = static_cast<std::size_t>(StatusField::Count);
 inline constexpr std::size_t kStatusRecordBytes = record_bytes(kStatusFields, base::kWordBytes);
+
+enum class ReceiverBootField : std::uint8_t {
+  BaudRequested,  // ReceiverBoot::baud_requested
+  BaudActual,     // ReceiverBoot::baud_actual
+  IrqPriority,    // ReceiverBoot::irq_priority
+  Count
+};
+inline constexpr std::size_t kReceiverBootFields = static_cast<std::size_t>(ReceiverBootField::Count);
+
+enum class ReceiverStatusField : std::uint8_t {
+  RcFrames,         // receiver_stats(): CrsfCounters::rc_frames
+  LinkStatsFrames,  // CrsfCounters::link_stats_frames
+  SkippedFrames,    // CrsfCounters::skipped_frames
+  BadCrc,           // CrsfCounters::bad_crc
+  BadLength,        // CrsfCounters::bad_length
+  DroppedBytes,     // CrsfCounters::dropped_bytes
+  UartErrors,       // ReceiverStats::uart_errors
+  FramesSent,       // receiver-frame records sent
+  FramesMissed,     // the sum of their `missed`
+  Count
+};
+inline constexpr std::size_t kReceiverStatusFields = static_cast<std::size_t>(ReceiverStatusField::Count);
 
 }  // namespace marv::hal_target::hil

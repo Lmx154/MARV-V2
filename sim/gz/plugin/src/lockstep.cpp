@@ -3,7 +3,8 @@
 // of tools/card/gen_world.py), checks the world against it and refuses anything that does not match (a REFUSED line
 // on stderr, then std::abort: a gz System cannot stop the server with a failure status, and an abort is the one
 // outcome that cannot be mistaken for a run). PreUpdate reads the state, steps the adapter, applies the wrench and
-// logs (lockstep_log.hpp). Everything is serial, in PreUpdate; nothing reads the wall clock.
+// logs (lockstep_log.hpp). Everything is serial, in PreUpdate; nothing reads the wall clock, except the HIL command source
+// of the optional <hil> element (hil_source.hpp, HIL stage S4), which paces the ticks on it.
 //
 // The namespace marv::gz hides ::gz, so gz names are reached through the aliases below.
 #include <gz/math/Inertial.hh>
@@ -52,6 +53,7 @@
 #include <marv/params/param_ids.hpp>
 
 #include "constants.hpp"
+#include "hil_source.hpp"
 #include "lockstep_log.hpp"
 #include "marv/gz/adapter.hpp"
 #include "marv/gz/frames.hpp"
@@ -166,6 +168,7 @@ struct Parsed {
   std::optional<std::uint32_t> command_delay_ticks;
   std::optional<ManualScript> manual_script;
   bool launch_pad = false;
+  std::optional<HilConfig> hil;
 };
 
 std::string text_of(const sdf::ElementPtr& e) { return e->Get<std::string>(); }
@@ -418,6 +421,36 @@ ManualScript manual_script_of(const sdf::ElementPtr& block) {
   return m;
 }
 
+// <hil> (HIL stage S4, decision 0046 items 2-4; hil_source.hpp): each child exactly once. The schema hash and the tick period
+// are filled in by Configure (the SIL library's and the world's).
+HilConfig hil_of(const sdf::ElementPtr& e) {
+  const std::vector<sdf::ElementPtr> c =
+      children_of(e, {"device", "samples_per_record", "delay_ticks", "values_crc", "hello_wait_us", "late_wait_us", "drain_us",
+                      "uplink_path", "frames_path", "reports_path"});
+  HilConfig h;
+  h.device = trim(text_of(c[0]));
+  h.samples_per_record = integer_of<std::uint32_t>(c[1]);
+  h.delay_ticks = integer_of<std::uint32_t>(c[2]);
+  h.values_crc = integer_of<std::uint32_t>(c[3]);
+  h.hello_wait_us = integer_of<std::uint64_t>(c[4]);
+  h.late_wait_us = integer_of<std::uint64_t>(c[5]);
+  h.drain_us = integer_of<std::uint64_t>(c[6]);
+  h.uplink_path = trim(text_of(c[7]));
+  h.frames_path = trim(text_of(c[8]));
+  h.reports_path = trim(text_of(c[9]));
+  if (h.device.empty() || h.uplink_path.empty() || h.frames_path.empty() || h.reports_path.empty()) {
+    refuse("<hil> has an empty device or path");
+  }
+  if (h.samples_per_record < 1) {
+    refuse("<hil> samples_per_record is 0");
+  }
+  if (h.delay_ticks > kMaxCommandDelayTicks) {
+    refuse("<hil> delay_ticks " + std::to_string(h.delay_ticks) + " is above the bound kMaxCommandDelayTicks = " +
+           std::to_string(kMaxCommandDelayTicks));
+  }
+  return h;
+}
+
 Parsed parse_plugin(const sdf::ElementPtr& root) {
   Parsed p;
   p.plant.struct_size = sizeof(p.plant);
@@ -577,6 +610,9 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
     } else if (name == "manual_control_script") {
       once(name);
       p.manual_script = manual_script_of(e);
+    } else if (name == "hil") {
+      once(name);
+      p.hil = hil_of(e);
     } else if (name == "launch_pad") {
       once(name);
       if (e->GetFirstElement() || !trim(text_of(e)).empty()) {
@@ -808,10 +844,10 @@ class RecordingSource final : public CommandSource {
     } else
 #endif
     {
-      ok = model_.dshot(tick, imu, rotor, out);
+      ok = hil_ != nullptr ? hil_->dshot(tick, imu, out) : model_.dshot(tick, imu, rotor, out);
     }
     if (ok) {
-      stamps_.push_back(model_.last_stamp_us());
+      stamps_.push_back(hil_ != nullptr ? hil_->last_stamp_us() : model_.last_stamp_us());
       imus_.push_back(imu != nullptr ? *imu : marv_imu_meas{});
       rotors_.push_back(rotor != nullptr ? *rotor : marv_rotor_speed_meas{});
       keep_manual();
@@ -820,6 +856,9 @@ class RecordingSource final : public CommandSource {
   }
   // The failed call of the last dshot(), as a message.
   std::string failure() const {
+    if (hil_ != nullptr && !hil_->failure().empty()) {
+      return hil_->failure();
+    }
     if (stage_status_ != MARV_SIL_OK) {
       return std::string("marv_sil_stage_manual_control: ") + marv_sil_status_str(static_cast<marv_sil_status>(stage_status_));
     }
@@ -851,6 +890,8 @@ class RecordingSource final : public CommandSource {
   }
   void use_truth_gyro() { use_truth_ = true; }
   void use_model_gyro() { use_model_ = true; }
+  // HIL stage S4: the model path's commands come from the board (hil_source.hpp) instead of the SIL.
+  void use_hil(HilCommandSource& hil) { hil_ = &hil; }
   void use_truth_attitude() {
 #ifdef MARV_GZ_TRUTH_STATE
     use_attitude_ = true;
@@ -863,6 +904,9 @@ class RecordingSource final : public CommandSource {
   }
   void set_body(const marv_plant_body& body) {
     truth_.set_body(body);
+    if (hil_ != nullptr) {
+      hil_->set_body(body);
+    }
 #ifdef MARV_GZ_TRUTH_STATE
     attitude_.set_body(body);
     if (use_model_) {
@@ -936,6 +980,7 @@ class RecordingSource final : public CommandSource {
   SilCommandSource inner_;
   truth::TruthGyroSilCommandSource truth_;
   RotorSilCommandSource model_;
+  HilCommandSource* hil_ = nullptr;
 #ifdef MARV_GZ_TRUTH_STATE
   truth::TruthAttitude attitude_{truth_};
   truth::TruthAttitude attitude_model_{model_};
@@ -976,6 +1021,7 @@ class Lockstep final : public gzs::System,
                        public gzs::ISystemReset {
  public:
   ~Lockstep() override {
+    hil_.finish();
     if (log_.is_open()) {
       log_.close_with_trailer(steps_, ticks_, steps_);
     }
@@ -1009,6 +1055,23 @@ class Lockstep final : public gzs::System,
       }
       if (p.v_ned || p.w_frd) {
         refuse("<launch_pad> is a held start and excludes <initial_velocity_ned_m_s> and <initial_body_rates_frd>");
+      }
+    }
+    if (p.hil) {
+      // HIL stage S4 (hil_source.hpp): the board gets the plant model's IMU samples, applies its own command delay and takes
+      // the pilot's sticks from its own receiver.
+      if (!p.model_gyro) {
+        refuse("<hil> needs <gyro_source>model</gyro_source> (the board is fed the plant model's IMU samples)");
+      }
+      if (p.command_delay_ticks && *p.command_delay_ticks > 0) {
+        refuse("<hil> applies its own delay_ticks; <command_delay_ticks> would delay the board's command twice");
+      }
+      if (p.manual_script) {
+        refuse("<hil> takes the sticks from the board's receiver; <manual_control_script> is for the SIL");
+      }
+      if (p.rotor_speed || p.truth_attitude || p.truth_vertical || p.clock_corner) {
+        refuse("<hil> excludes <rotor_speed_model>, <attitude_source>, <vertical_source> and <clock_corner> (the board takes "
+               "IMU samples only, at the nominal clock)");
       }
     }
 #ifndef MARV_GZ_TRUTH_VERTICAL
@@ -1131,6 +1194,17 @@ class Lockstep final : public gzs::System,
 
     if (p.manual_script) {
       source_.use_manual_script(*p.manual_script, p.num_us, p.den);
+    }
+    if (p.hil) {
+      HilConfig h = *p.hil;
+      h.num_us = p.num_us;
+      h.den = p.den;
+      h.schema_hash = info.param_schema_hash;
+      const std::string error = hil_.open(h);
+      if (!error.empty()) {
+        refuse("<hil>: " + error);
+      }
+      source_.use_hil(hil_);
     }
 
     log_path_ = p.log_path;
@@ -1590,6 +1664,7 @@ class Lockstep final : public gzs::System,
     std::uint64_t seed;
   } log_params_{};
   gzs::Link link_{gzs::kNullEntity};
+  HilCommandSource hil_;
   RecordingSource source_;
   std::unique_ptr<Adapter> adapter_;
   LogFile log_;

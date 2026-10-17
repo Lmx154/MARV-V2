@@ -14,6 +14,7 @@
 #include "marv/hal_target/imu.hpp"
 #include "marv/hal_target/imu_log_format.hpp"
 #include "marv/hal_target/lsm6dsv_decode.hpp"
+#include "marv/hal_target/receiver.hpp"
 #include "marv/params/param.hpp"
 
 namespace {
@@ -52,7 +53,9 @@ marv::hal_target::HilCompositionStatus composition_status() noexcept {
 // table and composition init, unchanged; then, in place of the motor output, the receiver and the IMU, the USB link
 // (marv/hal_target/hil.hpp): the host's samples tick the composition and its DShot values go back to the host. No DShot
 // program is loaded and no motor pad is driven, not even with stop frames. The port carries binary records only
-// (hil_format.hpp); a panic prints its text line (hal_panic).
+// (hil_format.hpp); a panic prints its text line (hal_panic). The receiver image (MARV_FC3V2_HIL_RECEIVER, HIL stage S4,
+// decision 0046 item 4) starts the flight image's receiver as main.cpp does, before the tick interrupt, so the pilot's radio
+// on the board's own receiver arms and flies the composition on the board clock; the host sends samples only.
 int main() {
   stdio_init_all();
   if (!marv::params_init(marv::param_defaults())) {
@@ -61,6 +64,13 @@ int main() {
   marv::composition::init();
   using marv::ParamId;
   marv::hal_target::HilConfig cfg;
+#if defined(MARV_FC3V2_HIL_RECEIVER)
+  cfg.receiver_boot = marv::hal_target::receiver_start({marv::param_value<ParamId::rc_channel_roll>(),
+                                                       marv::param_value<ParamId::rc_channel_pitch>(),
+                                                       marv::param_value<ParamId::rc_channel_throttle>(),
+                                                       marv::param_value<ParamId::rc_channel_yaw>()});
+  cfg.receiver = true;
+#endif
   cfg.sink = &marv::composition::tick;
   cfg.rate_counts = &rate_counts;
   cfg.composition_status = &composition_status;

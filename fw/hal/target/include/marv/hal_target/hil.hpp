@@ -2,13 +2,16 @@
 
 // The bench HIL image's link and tick (HIL stage S3a, decision 0046 items 3-5; fw/hal/target/src/hil.cpp, format in
 // hil_format.hpp). Built only into the image with MARV_FC3V2_HIL (fw/hal/target/CMakeLists.txt): quad_fc runs on the
-// FC3v2 from the IMU samples and ManualControl frames a host sends over USB, and its DShot values go back over USB. No IMU,
-// receiver or motor output is started: no DShot program is loaded and no motor pad is driven.
+// FC3v2 from the IMU samples and ManualControl frames a host sends over USB, and its DShot values go back over USB. No IMU
+// or motor output is started: no DShot program is loaded and no motor pad is driven. The receiver is started only in the
+// MARV_FC3V2_HIL_RECEIVER image (HIL stage S4, decision 0046 item 4: HilConfig::receiver), where it, not the host, gives the
+// ManualControl.
 
 #include <cstdint>
 #include <span>
 
 #include "marv/hal_target/imu.hpp"
+#include "marv/hal_target/receiver.hpp"
 #include "marv/types/actuator.hpp"
 #include "marv/types/time.hpp"
 
@@ -34,6 +37,10 @@ struct HilConfig {
   std::int32_t rate_loop_divisor = 0;
   TimeUs deadline_us = 0;                          // D_HIL (hil.cpp)
   const char* version = "";
+  // The receiver image (MARV_FC3V2_HIL_RECEIVER): receiver_start ran before hil_start, so the receiver interrupt is the one
+  // ManualControl writer; the host's manual-control records are refused and the receiver records are sent (hil_format.hpp).
+  bool receiver = false;
+  ReceiverBoot receiver_boot{};  // receiver_start's result, reported in the receiver-boot record
 };
 
 // Starts the cycle counter and the tick interrupt. hal_panic if a function is missing or D_HIL is not a positive 32-bit

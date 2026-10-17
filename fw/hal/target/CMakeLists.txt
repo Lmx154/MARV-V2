@@ -70,12 +70,20 @@ endif()
 # MARV_FC3V2_HIL (bench only, default OFF, HIL stage S3a, decision 0046 items 3-5): the image runs quad_fc with the
 # generated fc3v2 table unchanged on the IMU samples and ManualControl frames a host sends over USB, and returns its DShot
 # values over USB (src/hil_main.cpp, hil.cpp, hil_format.hpp; tools/target/hil_fc.py drives it). It starts no IMU, receiver
-# or motor output: lsm6dsv.cpp is not compiled, the DShot PIO program is never loaded and the motor pads are never driven,
+# (except with MARV_FC3V2_HIL_RECEIVER, below) or motor output: lsm6dsv.cpp is not compiled, the DShot PIO program is never loaded and the motor pads are never driven,
 # not even with stop frames (decision 0046 item 5). Its sample records hold at most MARV_FC3V2_HIL_LINK_MAX_BATCH samples,
 # the S1 limit. Mutually exclusive with every other bench variant.
 option(MARV_FC3V2_HIL "FC3v2 bench HIL image: quad_fc ticked from USB samples, DShot values returned over USB; no motor pad driven" OFF)
 if(MARV_FC3V2_HIL AND (MARV_FC3V2_COUNT_ONLY OR MARV_FC3V2_BENCH_STATS OR MARV_FC3V2_IMU_LOG OR MARV_FC3V2_BENCH_ACCEPT_SPACING OR MARV_FC3V2_HIL_LINK))
   message(FATAL_ERROR "MARV_FC3V2_HIL excludes MARV_FC3V2_COUNT_ONLY, MARV_FC3V2_BENCH_STATS, MARV_FC3V2_IMU_LOG, MARV_FC3V2_BENCH_ACCEPT_SPACING and MARV_FC3V2_HIL_LINK")
+endif()
+# MARV_FC3V2_HIL_RECEIVER (bench only, default OFF, HIL stage S4, decision 0046 item 4; needs MARV_FC3V2_HIL): the HIL image
+# starts the flight image's CRSF receiver (receiver.cpp, its flight interrupt priority) and takes the ManualControl from it,
+# not from the host; the host's manual-control records are refused, and the receiver's frames and counters go to the host
+# (hil_format.hpp receiver records). Everything else is the HIL image above, motor pads included (none driven).
+option(MARV_FC3V2_HIL_RECEIVER "FC3v2 bench HIL image whose ManualControl comes from the board's receiver (HIL S4)" OFF)
+if(MARV_FC3V2_HIL_RECEIVER AND NOT MARV_FC3V2_HIL)
+  message(FATAL_ERROR "MARV_FC3V2_HIL_RECEIVER needs MARV_FC3V2_HIL")
 endif()
 if(MARV_FC3V2_HIL)
   target_sources(marv_hal_target PRIVATE src/hil.cpp)
@@ -98,6 +106,7 @@ endif()
 pico_set_binary_type(marv_fc3v2 copy_to_ram)
 target_compile_definitions(marv_fc3v2 PRIVATE MARV_FC3V2_VERSION="${MARV_FC3V2_VERSION}"
   $<$<BOOL:${MARV_FC3V2_COUNT_ONLY}>:MARV_FC3V2_COUNT_ONLY>
+  $<$<BOOL:${MARV_FC3V2_HIL_RECEIVER}>:MARV_FC3V2_HIL_RECEIVER>
   $<$<BOOL:${MARV_FC3V2_BENCH_ACCEPT_SPACING}>:MARV_FC3V2_BENCH_ACCEPT_SPACING>)
 if(MARV_FC3V2_HIL_LINK)
   target_link_libraries(marv_fc3v2 PRIVATE marv_hal_target marv_lsm6dsv_decode pico_stdlib hardware_spi hardware_pio hardware_uart)
