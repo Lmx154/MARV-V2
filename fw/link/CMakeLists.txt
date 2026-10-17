@@ -8,49 +8,10 @@
 #     link/scope.txt. It includes no MAVLink header.
 # marv_link is the interface every module may use (envelope, frame, status, the structs); marv_link_codec_mavlink is the
 # codec and the only code that sees MAVLink.
-set(MARV_MAVLINK_DEFS_DIR "${CMAKE_BINARY_DIR}/mavlink/defs")
-set(MARV_MAVLINK_C_DIR "${CMAKE_BINARY_DIR}/mavlink/c")
-set(MARV_LINK_GEN_ROOT "${CMAKE_BINARY_DIR}/generated/marv_link")
-set(MARV_LINK_DIALECT "${PROJECT_SOURCE_DIR}/link/marv.xml")
-set(MARV_LINK_SCOPE "${PROJECT_SOURCE_DIR}/link/scope.txt")
-set(MARV_LINK_TOOLS "${PROJECT_SOURCE_DIR}/tools/link")
-
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-  "${MARV_LINK_DIALECT}" "${PROJECT_SOURCE_DIR}/link/mavlink_pin.json" "${MARV_LINK_TOOLS}/fetch_defs.py")
-
-execute_process(
-  COMMAND "${MARV_PYTHON}" "${MARV_LINK_TOOLS}/fetch_defs.py" --out-dir "${MARV_MAVLINK_DEFS_DIR}"
-  RESULT_VARIABLE _marv_defs_result OUTPUT_VARIABLE _marv_defs_out ERROR_VARIABLE _marv_defs_error)
-if(NOT _marv_defs_result EQUAL 0)
-  message(FATAL_ERROR "Fetching the pinned MAVLink message definitions failed (link/mavlink_pin.json): ${_marv_defs_error}")
-endif()
-
-set(_marv_defs_xml
-  "${MARV_MAVLINK_DEFS_DIR}/marv.xml" "${MARV_MAVLINK_DEFS_DIR}/common.xml"
-  "${MARV_MAVLINK_DEFS_DIR}/standard.xml" "${MARV_MAVLINK_DEFS_DIR}/minimal.xml")
-
-add_custom_command(
-  OUTPUT "${MARV_MAVLINK_C_DIR}/marv/mavlink.h"
-  COMMAND "${CMAKE_COMMAND}" -E rm -rf "${MARV_MAVLINK_C_DIR}"
-  COMMAND "${MARV_PYTHON}" -m pymavlink.tools.mavgen --lang C --wire-protocol 2.0
-          --output "${MARV_MAVLINK_C_DIR}" "${MARV_MAVLINK_DEFS_DIR}/marv.xml"
-  DEPENDS ${_marv_defs_xml}
-  COMMENT "Generating the MAVLink C headers (pymavlink mavgen, MARV dialect)"
-  VERBATIM)
-
-add_custom_command(
-  OUTPUT "${MARV_LINK_GEN_ROOT}/marv/link/messages.hpp"
-  COMMAND "${MARV_PYTHON}" "${MARV_LINK_TOOLS}/gen_cpp_structs.py"
-          --dialect "${MARV_LINK_DIALECT}" --include-dir "${MARV_MAVLINK_DEFS_DIR}"
-          --scope "${MARV_LINK_SCOPE}" --out "${MARV_LINK_GEN_ROOT}/marv/link/messages.hpp"
-  DEPENDS ${_marv_defs_xml} "${MARV_LINK_DIALECT}" "${MARV_LINK_SCOPE}"
-          "${MARV_LINK_TOOLS}/gen_cpp_structs.py" "${MARV_LINK_TOOLS}/mavxml.py"
-  COMMENT "Generating the plain link message structs"
-  VERBATIM)
-
-add_custom_target(marv_link_generated DEPENDS
-  "${MARV_LINK_GEN_ROOT}/marv/link/messages.hpp" "${MARV_MAVLINK_C_DIR}/marv/mavlink.h")
-
+# The generation step (marv_link_generated and the MARV_LINK_GEN_ROOT / MARV_MAVLINK_C_DIR variables) is defined in
+# link/CMakeLists.txt, outside fw/: a custom target has no code for the flight gates (G3) to check.
+set(MARV_MAVLINK_C_DIR "${CMAKE_BINARY_DIR}/mavlink/c")             # as in link/CMakeLists.txt
+set(MARV_LINK_GEN_ROOT "${CMAKE_BINARY_DIR}/generated/marv_link")  # as in link/CMakeLists.txt
 add_library(marv_link INTERFACE)
 target_include_directories(marv_link INTERFACE include "${MARV_LINK_GEN_ROOT}")
 add_dependencies(marv_link marv_link_generated)
