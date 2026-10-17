@@ -6,6 +6,7 @@
 #include <cmath>
 #include <vector>
 
+#include "marv/prim/gravity.hpp"
 #include "support.hpp"
 
 namespace {
@@ -285,6 +286,123 @@ TEST(ImuKat, TurnOnBiasAppearsExactlyAndStaysWithoutNoise) {
       EXPECT_EQ(o.accel_m_s2.z, 1.0F);
     }
   }
+}
+
+// The contact force (decision 0042 item 3). A vehicle at rest on the ground has zero acceleration, so the sum of the
+// forces is zero: thrust (none, rotors stopped) + F_contact + m g_ned = 0, with g_ned = (0, 0, +g) (NED z is down).
+// So F_contact = (0, 0, -m g): the ground pushes up. The accelerometer measures the non-gravitational force over the
+// mass, f = (thrust along -z_FRD + R^T F_contact) / m = R^T (0, 0, -g): minus g expressed in the body, which points up
+// in NED. Level that is (0, 0, -g) FRD. g is the plant's own: WGS 84 normal gravity (marv/prim/gravity.hpp) at the
+// fixture's latitude and height (the body is at pos_down 0, so the height is the site height).
+double plant_g() { return marv::prim::normal_gravity<double>(kLat, kSiteHeight); }
+
+float quantised(double v) { return static_cast<float>(std::round(v / kAccelLsb) * kAccelLsb); }
+
+// Hamilton body -> NED of yaw psi, pitch theta, roll phi (ZYX, R = Rz Ry Rx), from half-angle products.
+marv_plant_body tilted_body(double roll, double pitch, double yaw) {
+  const double cr = std::cos(0.5 * roll);
+  const double sr = std::sin(0.5 * roll);
+  const double cp = std::cos(0.5 * pitch);
+  const double sp = std::sin(0.5 * pitch);
+  const double cy = std::cos(0.5 * yaw);
+  const double sy = std::sin(0.5 * yaw);
+  marv_plant_body b = identity_body();
+  b.q_wxyz[0] = cy * cp * cr + sy * sp * sr;
+  b.q_wxyz[1] = cy * cp * sr - sy * sp * cr;
+  b.q_wxyz[2] = cy * sp * cr + sy * cp * sr;
+  b.q_wxyz[3] = sy * cp * cr - cy * sp * sr;
+  return b;
+}
+
+TEST(ImuKat, ContactLevelAtRestReadsMinusGAlongZ) {
+  PlantHandle plant;
+  const marv_plant_imu_config c = zero_noise_config();
+  ASSERT_EQ(marv_plant_imu_attach(plant.get(), &c), MARV_PLANT_OK);
+  const double g = plant_g();
+  const double contact[3] = {0.0, 0.0, -kMass * g};
+  ASSERT_EQ(marv_plant_contact_set(plant.get(), contact), MARV_PLANT_OK);
+  const marv_plant_imu_out o = sample_ok(plant.get(), identity_body());
+  EXPECT_EQ(o.accel_m_s2.x, 0.0F);
+  EXPECT_EQ(o.accel_m_s2.y, 0.0F);
+  EXPECT_EQ(o.accel_m_s2.z, quantised(-g));
+  EXPECT_LT(o.accel_m_s2.z, -1.0F);  // control: not the zero of the free-fall case
+  EXPECT_EQ(o.flags, kValidBits);
+}
+
+TEST(ImuKat, ContactTiltedAtRestReadsRTransposeMinusG) {
+  // R^T (0, 0, -g) = -g times the third row of R. For R = Rz(psi) Ry(theta) Rx(phi) that row is
+  // (-sin theta, cos theta sin phi, cos theta cos phi), so f_body = (g sin theta, -g cos theta sin phi,
+  // -g cos theta cos phi), independent of the yaw. Labelled scenario values: roll 0.3, pitch -0.2, yaw 0.7 rad
+  // (all three nonzero and unequal so a transposed rotation, a swapped axis or a dropped yaw shows).
+  const double roll = 0.3;
+  const double pitch = -0.2;
+  const double yaw = 0.7;
+  const marv_plant_body b = tilted_body(roll, pitch, yaw);
+  PlantHandle plant;
+  const marv_plant_imu_config c = zero_noise_config();
+  ASSERT_EQ(marv_plant_imu_attach(plant.get(), &c), MARV_PLANT_OK);
+  const double g = plant_g();
+  const double contact[3] = {0.0, 0.0, -kMass * g};
+  ASSERT_EQ(marv_plant_contact_set(plant.get(), contact), MARV_PLANT_OK);
+  const marv_plant_imu_out o = sample_ok(plant.get(), b);
+  const double fx = g * std::sin(pitch);
+  const double fy = -g * std::cos(pitch) * std::sin(roll);
+  const double fz = -g * std::cos(pitch) * std::cos(roll);
+  EXPECT_EQ(o.accel_m_s2.x, quantised(fx));
+  EXPECT_EQ(o.accel_m_s2.y, quantised(fy));
+  EXPECT_EQ(o.accel_m_s2.z, quantised(fz));
+  // Cross-check of the closed form with the fixture's independent rotation: rotating the measurement back to NED
+  // (R f, the conjugate of R^T) gives (0, 0, -g).
+  const double f_body[3] = {fx, fy, fz};
+  double f_ned[3] = {};
+  rotate_to_ned(b.q_wxyz, f_body, f_ned);
+  EXPECT_NEAR(f_ned[0], 0.0, 4.0 * kEps * g);  // labelled: a few roundings of the rotation, relative to g
+  EXPECT_NEAR(f_ned[1], 0.0, 4.0 * kEps * g);
+  EXPECT_NEAR(f_ned[2], -g, 4.0 * kEps * g);
+  // Control: the tilt is observable (x and y are far from the level reading of 0).
+  EXPECT_GT(std::fabs(o.accel_m_s2.x), 0.5F);
+  EXPECT_GT(std::fabs(o.accel_m_s2.y), 0.5F);
+}
+
+TEST(ImuKat, ContactNeverEntersTheStep) {
+  // Twin plants, one given a contact force: marv_plant_step outputs (the wrench and the rotor state) are identical in
+  // every byte at every step, on a tilted body and a varying command; the IMU of the two plants differs (control:
+  // the force is in effect, in the specific force only).
+  const marv_plant_body b = tilted_body(0.3, -0.2, 0.7);
+  PlantHandle a;
+  PlantHandle with;
+  const marv_plant_imu_config c = zero_noise_config();
+  ASSERT_EQ(marv_plant_imu_attach(a.get(), &c), MARV_PLANT_OK);
+  ASSERT_EQ(marv_plant_imu_attach(with.get(), &c), MARV_PLANT_OK);
+  const double contact[3] = {0.0, 0.0, -kMass * plant_g()};
+  ASSERT_EQ(marv_plant_contact_set(with.get(), contact), MARV_PLANT_OK);
+  for (std::uint16_t d : {std::uint16_t{600}, std::uint16_t{1200}, std::uint16_t{1800}}) {  // labelled: three commands
+    const marv_plant_cmd cmd = make_cmd(d, static_cast<std::uint16_t>(d + 100), d, static_cast<std::uint16_t>(d + 100));
+    marv_plant_out oa = make_out();
+    marv_plant_out ow = make_out();
+    ASSERT_EQ(marv_plant_step(a.get(), &b, &cmd, kDt, &oa), MARV_PLANT_OK);
+    ASSERT_EQ(marv_plant_step(with.get(), &b, &cmd, kDt, &ow), MARV_PLANT_OK);
+    EXPECT_TRUE(same_bits(oa, ow)) << d;
+    const marv_plant_imu_out ia = sample_ok(a.get(), b);
+    const marv_plant_imu_out iw = sample_ok(with.get(), b);
+    EXPECT_FALSE(same_bits(ia, iw)) << d;
+    EXPECT_EQ(ia.gyro_rad_s.x, iw.gyro_rad_s.x);  // the gyro is untouched
+    EXPECT_EQ(ia.gyro_rad_s.y, iw.gyro_rad_s.y);
+    EXPECT_EQ(ia.gyro_rad_s.z, iw.gyro_rad_s.z);
+  }
+}
+
+TEST(ImuKat, ContactSetRefusesNullAndNonFiniteAndChangesNothing) {
+  PlantHandle plant;
+  const double bad[3] = {0.0, std::nan(""), 0.0};
+  const double ok[3] = {0.0, 0.0, 0.0};
+  EXPECT_EQ(marv_plant_contact_set(nullptr, ok), MARV_PLANT_E_NULL);
+  EXPECT_EQ(marv_plant_contact_set(plant.get(), nullptr), MARV_PLANT_E_NULL);
+  EXPECT_EQ(marv_plant_contact_set(plant.get(), bad), MARV_PLANT_E_CONFIG);
+  const marv_plant_imu_config c = zero_noise_config();
+  ASSERT_EQ(marv_plant_imu_attach(plant.get(), &c), MARV_PLANT_OK);
+  const marv_plant_imu_out o = sample_ok(plant.get(), identity_body());
+  EXPECT_EQ(o.accel_m_s2.z, 0.0F);  // the refused calls left the plant without a contact force
 }
 
 }  // namespace

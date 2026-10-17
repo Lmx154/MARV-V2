@@ -26,6 +26,8 @@ struct marv_plant {
   marv::plant::ImuModel imu;
   marv::plant::VibrationModel vibration;
   marv::plant::RotorSpeedModel rotor_speed;
+  bool contact_set = false;
+  std::array<double, 3> contact_ned{};
 };
 
 namespace marv::plant {
@@ -270,11 +272,37 @@ marv_plant_status marv_plant_imu_sample(marv_plant* plant, const marv_plant_body
       truth[a] += vib[a];
     }
   }
+  // Contact force, when the host has supplied one: R^T F / m added to the accel truth. Otherwise the truth is not
+  // touched (not even by + 0), so the bytes without the entry are unchanged by construction.
+  if (plant->contact_set) {
+    const marv::prim::Quat<double> q(body->q_wxyz[0], body->q_wxyz[1], body->q_wxyz[2], body->q_wxyz[3]);
+    const marv::prim::Vec3<double> f_ned(plant->contact_ned[0], plant->contact_ned[1], plant->contact_ned[2]);
+    const marv::prim::Vec3<double> f_body = q.normalized().conjugate().rotate(f_ned);
+    for (std::size_t a = 0; a < 3; ++a) {
+      truth[3 + a] += f_body[a] / mp.mass;
+    }
+  }
   const ImuOut m = plant->imu.sample(truth, dt_s);
   out->gyro_rad_s = {m.gyro[0], m.gyro[1], m.gyro[2]};
   out->accel_m_s2 = {m.accel[0], m.accel[1], m.accel[2]};
   out->temp_k = 0.0F;
   out->flags = m.flags;
+  return MARV_PLANT_OK;
+}
+
+marv_plant_status marv_plant_contact_set(marv_plant* plant, const double force_ned_n[3]) {
+  if (plant == nullptr || force_ned_n == nullptr) {
+    return MARV_PLANT_E_NULL;
+  }
+  for (std::size_t i = 0; i < 3; ++i) {
+    if (!std::isfinite(force_ned_n[i])) {
+      return MARV_PLANT_E_CONFIG;
+    }
+  }
+  for (std::size_t i = 0; i < 3; ++i) {
+    plant->contact_ned[i] = force_ned_n[i];
+  }
+  plant->contact_set = true;
   return MARV_PLANT_OK;
 }
 
