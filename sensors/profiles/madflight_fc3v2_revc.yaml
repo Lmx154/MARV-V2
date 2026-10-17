@@ -70,12 +70,13 @@ classes:
         sigma: UNKNOWN
         note: "At the configured full scale accel_fsr (±16 g). Table 3 states no accelerometer sensitivity tolerance (G_So% is the gyroscope's); change vs. temperature ±0.01 %/°C (LA_SoDr, footnote 3)."
       accel_noise_density:
-        value: 60
+        value: [60, 60, 60]
+        shape: set
         unit: ug/sqrt(Hz)
         method: datasheet
         source: "DS13476 Rev 5, §4.1 Table 3 (An)"
         sigma: UNKNOWN
-        note: "Table: '60 µg/√Hz' in high-performance mode for FS = ±2 g to ±16 g, independent of ODR and FS, valid with XL_DualC_EN = 0 in CTRL8 (footnote 7). One figure for every range, so a single value, not the ICM profile's set keyed by range."
+        note: "Table: '60 µg/√Hz' in high-performance mode for FS = ±2 g to ±16 g, independent of ODR and FS, valid with XL_DualC_EN = 0 in CTRL8 (footnote 7). The list is keyed by full-scale range, one position per ≤ 8 / 16 / 32 g as tools/card/gen_imu_config.py reads it (the key is not an axis): the datasheet gives one figure for every range, so the same 60 is written in all three positions; the ±32 g position has no meaning on this part (largest range ±16 g) and is filled only so the entry has the keyed shape. The configured range accel_fsr (±16 g) selects position 2."
       accel_offset:
         value: 12
         unit: mg
@@ -90,6 +91,44 @@ classes:
         source: "DS13476 Rev 5, §4.1 Table 3 (LA_OffDr)"
         sigma: UNKNOWN
         note: "Table: '±0.07 mg/°C', characterisation on a limited number of samples, not production-tested (footnote 3); the ± tolerance, not a sigma."
+      gyro_fifo_sensitivity:
+        value: 14.285714285714286
+        unit: LSB/(deg/s)
+        method: "derived(1000 / gyro_sensitivity: 1000 mdeg/s per deg/s over 70 mdeg/s/LSB)"
+        source: "DS13476 Rev 5, §4.1 Table 3 (G_So, FS = ±2000 dps), through gyro_sensitivity; the driver sets that full scale (fw/hal/target/src/lsm6dsv.cpp:73, kCtrl6Fs2000Dps) and reads the 16-bit FIFO word"
+        sigma: UNKNOWN
+        status: [INFERRED]
+        note: "LSB per deg/s of the FIFO word the driver reads (fifo_word_bits 16, uncompressed); the ICM-45686 profile's entry of the same name is that part's 20-bit format with a fixed scaling, this part has none. INFERRED: that the FIFO word carries the output-register scaling (G_So); the table gives the sensitivity of the output, and no committed test shows the FIFO word equals it."
+      accel_fifo_sensitivity:
+        value: 2049.1803278688524
+        unit: LSB/g
+        method: "derived(1000 / accel_sensitivity: 1000 mg per g over 0.488 mg/LSB)"
+        source: "DS13476 Rev 5, §4.1 Table 3 (LA_So, FS = ±16 g), through accel_sensitivity; the driver sets that range (fw/hal/target/src/lsm6dsv.cpp:74, kCtrl8Fs16G)"
+        sigma: UNKNOWN
+        status: [INFERRED]
+        note: "LSB per g of the 16-bit FIFO word at ±16 g. The table's 0.488 mg/LSB is rounded (16 g / 32768 = 0.48828 mg/LSB, i.e. 2048 LSB/g); the table value is used as written. 'g' read as standard gravity is INFERRED (the generator uses 9.80665 m/s^2). Same INFERRED as gyro_fifo_sensitivity for the FIFO word."
+      gyro_bias_instability:
+        value: 2.8e-3
+        unit: deg/s
+        method: scenario
+        source: "labelled scenario value, the rule of marv_v2_board_default.yaml gyro_bias_instability (decision 0012, owner decision A) applied to this part: B = N x 1 sqrt(Hz), N = gyro_noise_density 2.8 mdeg/s/sqrt(Hz) (DS13476 Rev 5, §4.1 Table 3, Rn). Table 3 as recorded in this profile carries no bias-instability or Allan figure"
+        sigma: choice
+        status: [UNVERIFIED, PLACEHOLDER]
+        placeholder:
+          reason: "no datasheet bias instability for the LSM6DSV among the Table 3 rows this profile records (the PDF was not searched further); the value is the rule B = N x 1 sqrt(Hz) on the datasheet noise density, which M1 P12 measured 1.8x higher on x and y"
+          replaced_by: "the M4 still-bench Allan run on this part"
+        note: "B = 2.8 mdeg/s = 10.08 deg/h, the Allan minimum placed at tau* = (N/B)^2 = 1 s under the plant's white-noise plus bias-random-walk rule; a choice, not a sigma. Read by the SIL plant's IMU model and the Allan record; the flight gains do not read it."
+      accel_bias_instability:
+        value: 60
+        unit: ug
+        method: scenario
+        source: "labelled scenario value, the rule of marv_v2_board_default.yaml accel_bias_instability (decision 0012, owner decision A) applied to this part: B = N x 1 sqrt(Hz), N = accel_noise_density 60 ug/sqrt(Hz) (DS13476 Rev 5, §4.1 Table 3, An). Table 3 as recorded in this profile carries no bias-instability figure"
+        sigma: choice
+        status: [UNVERIFIED, PLACEHOLDER]
+        placeholder:
+          reason: "no datasheet accelerometer bias instability for the LSM6DSV among the Table 3 rows this profile records (the PDF was not searched further); the value is the rule B = N x 1 sqrt(Hz) on the datasheet noise density"
+          replaced_by: "the M4 still-bench Allan run on this part"
+        note: "B = 60 ug at tau* = 1 s, as gyro_bias_instability; a choice, not a sigma. Read by the SIL plant's IMU model and the Allan record; the flight gains do not read it."
       odr:
         value: [7.5, 15, 30, 60, 120, 240, 480, 960, 1920, 3840, 7680]
         shape: set
@@ -117,12 +156,13 @@ classes:
           replaced_by: "the M1 P12b soak (script, inputs and raw log committed) and a temperature sweep of the same measurement, or a published figure for the high-performance mode"
         note: "Unit ppm, as the ICM-45686 profile's odr_error (10000 ppm = the table's 1 %); the value is a ± bound, not a sigma. External clock: the LSM6DSV has no CLKIN pin (§3.1 Table 2). Its external-reference mode is ODR-triggered mode (§6.6: OP_MODE_G_[2:0] = 011, a reference signal on INT2, data generation aligned in frequency and phase to its edges; ODR_TRIG_NODR_[7:0] = 4 to 255 samples per reference period, §9.4 Table 31), and that mode excludes the 7.68 kHz setting (odr_selected). The board names GPIO26 IMU_CLKIN (https://madflight.com/Board-FC3/; madflight src/brd/madflight_FC3v2.h pin_imu_clkin 26); which LSM6DSV pin that net reaches on Rev-C is UNKNOWN (INT2 is INFERRED, as the only pin that takes a timing reference). Luis, 2026-10-16: the board timing tolerance is ceil(T_rate·odr_error + 2δ + 1 µs) in whole µs (fc3v2_rate_timing_register.yaml)."
       latency_samples:
-        value: UNKNOWN
+        value: 1
         unit: "1"
-        method: datasheet
-        source: "DS13476 Rev 5, §6.7.2 Table 20 (gyroscope LPF2 cut-off per ODR) and §9.19 Table 63 (LPF1 + LPF2 bandwidth); no group delay or phase delay is published"
+        method: "derived(the driver's own delay in whole samples: the FIFO watermark is one sample (WTM = 2 words, fw/hal/target/src/lsm6dsv.cpp:54 and :75), so the interrupt that delivers a sample fires when its words are written and the sample is stamped at the handler's entry (lsm6dsv_decode.hpp:18-23); rounded up to the smallest nonzero count the tick model represents)"
+        source: "fw/hal/target/src/lsm6dsv.cpp:9-11, :54, :75 (watermark of one sample); fw/hal/target/decode/include/marv/hal_target/lsm6dsv_decode.hpp:18-23 (stamping rule: the newest sample's stamp is late by the FIFO-write-to-handler time, unmeasured); DS13476 Rev 5 §6.7.2 Table 20 and §9.19 Table 63 give the -3 dB bandwidths of the UI chain (LPF2 537 Hz at 7.68 kHz) and no group delay"
         sigma: UNKNOWN
-        note: "A count of IMU samples, as in the ICM-45686 profile. The datasheet gives the -3 dB bandwidths of the UI chain only (537 Hz with LPF1 off at 7.68 kHz, Table 20; 14.4 to 407 Hz with LPF1 on, Table 63), not a delay. The filter path (LPF1 on or off, LPF1_G_BW_[2:0]) is the P9 driver's choice. The application note AN5922 (named on DS13476 page 1) was not read. A bench measurement or a published delay replaces it."
+        status: [UNVERIFIED, INFERRED]
+        note: "A count of IMU samples (one sample = one tick, 3125/24 us at 7.68 kHz), the same count as marv_v2_board_default.yaml latency_samples. It stands for the driver's one-sample batching and the SPI read of the two words; it does NOT include the chip's own LPF2 phase delay, which DS13476 does not publish (a first-order 537 Hz filter would be about 0.3 ms, 2 samples; INFERRED, not used). If the chip delay is part of the loop, the design model's latency is larger than 1; the bench (INT1 edge against the stamp on a logic analyzer, lsm6dsv_decode.hpp:23) or a published delay replaces it."
       fifo_word_bits:
         value: 16
         unit: "1"
@@ -213,9 +253,18 @@ classes:
         sigma: UNKNOWN
         note: "eRPM decode and the RPM notches wait for the L6 resume (quad §4.0 M1)."
       esc_clock_error:
-        value: UNKNOWN
+        value: 2
         unit: "%"
-        method: datasheet
-        source: "the ESC's MCU is not identified; AM32 version and settings UNKNOWN (Luis, 2026-10-16: no passthrough yet; M4)"
+        method: derived(max(|min|, |max|) of the AT32F421 HICK accuracy over -40..105 degC, -2 % / +1.5 % = 2 %; the symmetric bound that contains the asymmetric limits)
+        source: "Artery AT32F421 Series Datasheet V2.02 (Chinese edition, 2023-10-17), §5.3.7 Table 27 (HICK clock characteristics), as read for sensors/profiles/marv_v2_board_default.yaml esc_clock_error_datasheet; the Goku G55M's MCU: retailer listing 'AM32 (AT32DEVF421)', https://www.getfpv.com/electronics/electronic-speed-controllers-esc/flywoo-goku-g55m-55a-3-6s-am32-4-in-1-esc-30x30.html (read through a search summary, 2026-10-17)"
         sigma: UNKNOWN
-        note: "Compared with design/budget.yaml esc_clock_error_max once known (lint.py --budget)."
+        status: [UNVERIFIED, INFERRED]
+        note: "A bound, not a sigma (the same figure and reasoning as marv_v2_board_default.yaml, whose note carries the AM32 clock-source reading). INFERRED: that the G55M runs the AT32F421 on its internal HICK clock; the MCU marking has not been read and the AM32 version and settings are UNKNOWN (Luis, 2026-10-16: no passthrough yet; M4). Equals design/budget.yaml esc_clock_error_max (2 %), the requirement on any ESC."
+      telemetry_mantissa_bits:
+        value: 9
+        unit: "1"
+        method: published
+        source: "Betaflight, github.com/betaflight/betaflight, commit 5a09417ee75e91e81003cf7891bc1f4de86f3a83, src/main/drivers/dshot.c lines 206-221 (dshot_decode_eRPM_telemetry_value) and line 395; cited for the format only (Betaflight is GPL-3.0: no code taken); the same citation as marv_v2_board_default.yaml telemetry_mantissa_bits"
+        sigma: exact
+        status: [INFERRED]
+        note: "Bidirectional-DShot eRPM telemetry word, 12 bits: eee mmmmmmmmm (3 exponent bits, 9 mantissa bits). INFERRED: that the Goku G55M's AM32 encodes the same format; no committed test shows it. The gyro chain reads only this (the notch quality factor's telemetry step 2^-(m-1))."
