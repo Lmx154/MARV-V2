@@ -1,0 +1,17 @@
+{
+	"name": "marv-gcs",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"license": "BSD-3-Clause",
+	"scripts": {
+		"test": "vitest run",
+		"check": "tsc --noEmit"
+	},
+	"devDependencies": {
+		"@types/node": "22.20.5",
+		"typescript": "6.0.3",
+		"vite": "8.3.0",
+		"vitest": "5.0.1"
+	}
+}

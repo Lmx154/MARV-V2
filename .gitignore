@@ -5,3 +5,4 @@ __pycache__/
 .claude/worktrees/
 .serena/
 datasheets/
+node_modules/

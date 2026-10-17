@@ -36,3 +36,51 @@
   - Pico SDK: BSD-3-Clause, Copyright 2020 (c) 2020 Raspberry Pi (Trading) Ltd. (`LICENSE.TXT` of the archive). The
     binary-redistribution clause (the licence text with the distribution) applies to the image.
   - TinyUSB: MIT, Copyright (c) 2018, hathach (tinyusb.org) (`LICENSE` of the archive).
+
+## MAVLink message definitions, generated C headers and pymavlink 2.4.50 (link codec, ground segment unit 5)
+
+- **Where:** not vendored. `fw/link/CMakeLists.txt` runs `tools/link/fetch_defs.py`, which downloads `common.xml`,
+  `standard.xml` and `minimal.xml` from <https://github.com/mavlink/mavlink> at commit
+  `2e2b6af99084e4fde9bb304c84bb9253a1a98b6f` (URL template and SHA-256 of each file in `link/mavlink_pin.json`), into the
+  build tree. The MARV dialect `link/marv.xml` includes them. pymavlink's `mavgen` generates the C headers into the build
+  tree; `tools/link/gen_ts.py` and `tools/link/gen_cpp_structs.py` read the same XML for the TypeScript and plain C++
+  message types (`gcs/src/lib/link/generated/messages.ts` is committed).
+- **Use:** the link codec only (`fw/link/src/codec_mavlink.cpp`, the only code that includes a MAVLink header, GS-3;
+  `gcs/src/lib/link/`, which has no MAVLink library at runtime). The codec library enters a flight image only when a
+  composition links it.
+- **Licences:**
+  - The MAVLink message definitions (`common.xml`, `standard.xml`, `minimal.xml`): MIT, mavlink/mavlink (<https://mavlink.io/en/#license>;
+    the `COPYING` of the repository at the pinned commit carries the same MIT grant as the one quoted below).
+  - The generated C headers (mavgen output, including the fixed headers it copies from pymavlink's
+    `generator/C/include_v2.0`): MIT, under the exception in pymavlink's `COPYING`
+    (`pymavlink-2.4.50.dist-info/licenses/COPYING`). The exception reads:
+
+> As an exception, if you use this Software to compile your source code and
+> portions of this Software, including messages ("the generator output"), are embedded
+> into the binary product as a result, you may redistribute such product and such
+> product is hereby licensed under the following MIT license:
+>
+> Copyright (C) the ArduPilot project
+> http://ardupilot.org/
+>
+> Permission is hereby granted, free of charge, to any person obtaining a copy
+> of the generated software (the "Generated Software"), to deal
+> in the Generated Software without restriction, including without limitation the
+> rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+> copies of the Generated Software, and to permit persons to whom the Generated
+> Software is furnished to do so, subject to the following conditions:
+>
+> The above copyright notice and this permission notice shall be included in
+> all copies or substantial portions of the Generated Software.
+>
+> THE GENERATED SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+> OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+> FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL THE
+> AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+> LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+> OUT OF OR IN CONNECTION WITH THE GENERATED SOFTWARE OR THE USE OR OTHER DEALINGS
+> IN THE GENERATED SOFTWARE.
+
+  - pymavlink 2.4.50 itself: LGPL-3 (`License: LGPLv3`, `COPYING`). It is a build and test tool only: a dev dependency
+    in `pyproject.toml` and `uv.lock`, run as `python -m pymavlink.tools.mavgen` and imported by no runtime code. None of
+    it is linked into or shipped with any image, library or the ground-station package.

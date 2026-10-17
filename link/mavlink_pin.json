@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/mavlink/mavlink",
+  "commit": "2e2b6af99084e4fde9bb304c84bb9253a1a98b6f",
+  "url_template": "https://raw.githubusercontent.com/mavlink/mavlink/{commit}/message_definitions/v1.0/{file}",
+  "files": {
+    "common.xml": "4194171608d0641cbf9a646ebf440b174a3bd5842e41e5b87a43c540c584b280",
+    "standard.xml": "64af1ee5538344782abf8b35cf199a6cd48aa06eeb6bd41c7ae31f740a06a7f3",
+    "minimal.xml": "d4c7c7346432814348bb858cbab8cee7a17b23e37937c1574e2018148cbfb785"
+  }
+}

@@ -339,6 +339,13 @@ rules:
     gz_groups: [l11]
     why: "vertical is linked by the composition l11 only"
 
+  - paths: [fw/link/**]
+    ctest_labels: [L00]
+    run_ci_steps: ["@flight_gates", gs3_check, tools_tests]
+    pytest_paths: [tests/regression/quad/L00/tools]
+    gz_groups: []
+    why: "link is the MAVLink codec library (ground segment unit 5), built on the host and m33 presets from link/marv.xml by tools/link and pymavlink's mavgen, held by the L00 conformance suite (unit_link) and by GS-3 and the mavgen drift guard in the L00 tools tests; no composition links it yet"
+
   # ---------------------------------------------------------------- fw: the compositions
   - paths: [fw/compositions/l0/**]
     ctest_labels: [L00]
@@ -601,6 +608,20 @@ rules:
     gz_groups: [l5, l11]
     why: "refdata regenerates the T3 reference sets that the L04, L05 and L11 T3 tests and the l5 and l11 groups read"
 
+  - paths: [tools/ci/check_gs3.py]
+    ctest_labels: []
+    run_ci_steps: [gs3_check, gs3_control, tools_tests]
+    pytest_paths: [tests/regression/quad/L00/tools]
+    gz_groups: []
+    why: "the GS-3 codec-isolation checker, its gate step, its control and its L00 tools test"
+
+  - paths: [tools/link/**]
+    ctest_labels: [L00]
+    run_ci_steps: ["@flight_gates", gs3_check, tools_tests]
+    pytest_paths: [tests/regression/quad/L00/tools]
+    gz_groups: []
+    why: "the dialect reader, definitions fetcher and C++ and TypeScript generators run in the fw/link build (host and m33), produce gcs/src/lib/link/generated/messages.ts, and are held to pymavlink's mavgen by the L00 tools test_link_gen"
+
   - paths: [tools/ci/check_claude_md.py]
     ctest_labels: []
     run_ci_steps: [g8_check, g8_control, tools_tests]
@@ -695,6 +716,20 @@ rules:
     gz_groups: []
     why: "the clang-tidy configuration is the G1 lint configuration"
 
+  - paths: [link/**]
+    ctest_labels: [L00]
+    run_ci_steps: ["@flight_gates", gs3_check, tools_tests]
+    pytest_paths: [tests/regression/quad/L00/tools]
+    gz_groups: []
+    why: "the MARV dialect, the pinned MAVLink definitions and the scope list are the inputs of the fw/link build (host and m33), of the TypeScript generator (gcs/src/lib/link/generated/messages.ts), of the GS-3 identifier list and of the L00 tools test_link_gen"
+
+  - paths: [gcs/**]
+    ctest_labels: [L00]
+    run_ci_steps: [gs3_check, tools_tests]
+    pytest_paths: [tests/regression/quad/L00/tools]
+    gz_groups: []
+    why: "the ground-station package: its TypeScript codec is held by the L00 link suite (ctest link_ts_conformance where Node is present; the CI images carry none yet), its generated messages.ts by the L00 tools test_link_gen, and GS-3 holds the rest of gcs/ clear of MAVLink"
+
   - paths: [CLAUDE.md]
     ctest_labels: []
     run_ci_steps: [g8_check, g8_control]
@@ -769,6 +804,20 @@ rules:
     pytest_paths: []
     gz_groups: []
     why: "the planted libraries of the G3 controls are built in both presets and scanned by every G3 control"
+
+  - paths: [tests/regression/quad/L00/link/**]
+    ctest_labels: [L00]
+    run_ci_steps: ["@host", gs3_check]
+    pytest_paths: []
+    gz_groups: []
+    why: "the codec conformance suite (unit_link, link_vectors_tool, the TypeScript suite and the vector files); gs3_check because its allow-list names this directory"
+
+  - paths: [tests/regression/quad/L00/controls/gs3_mavlink_include.cpp]
+    ctest_labels: []
+    run_ci_steps: [gs3_check, gs3_control, tools_tests]
+    pytest_paths: [tests/regression/quad/L00/tools]
+    gz_groups: []
+    why: "the planted file of the GS-3 control, also read by the L00 tools test_check_gs3"
 
   - paths: [tests/regression/quad/L00/controls/g8_claude_md_missing_unknown.md]
     ctest_labels: []
@@ -1239,6 +1288,7 @@ rules:
       - tools/ci/check_claude_md.py
       - tools/ci/check_constants.py
       - tools/ci/check_g3.py
+      - tools/ci/check_gs3.py
       - tools/ci/check_param_ids.py
       - tools/ci/check_regression_changes.py
       - tools/ci/lint_g1.py

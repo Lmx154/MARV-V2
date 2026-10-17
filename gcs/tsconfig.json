@@ -1,0 +1,33 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"lib": [
+			"ES2022",
+			"DOM"
+		],
+		"types": [
+			"node"
+		],
+		"strict": true,
+		"noUncheckedIndexedAccess": true,
+		"skipLibCheck": true,
+		"noEmit": true,
+		"allowImportingTsExtensions": true,
+		"forceConsistentCasingInFileNames": true,
+		"paths": {
+			"$link/*": [
+				"./src/lib/link/*"
+			],
+			"vitest": [
+				"./node_modules/vitest"
+			]
+		}
+	},
+	"include": [
+		"src/**/*.ts",
+		"../tests/regression/quad/L00/link/ts/**/*.ts",
+		"vitest.config.ts"
+	]
+}
