@@ -611,6 +611,10 @@ constexpr TimeUs kCalibrationUs = 1250000;
 // (CRSF 172 -> 988 us, 1811 -> 2012 us): below it, armed, the rate integrator is held at zero (M4 C1, decision 0045). Stated here
 // independently of the parameter table.
 constexpr float kMinCheck = 0.060546875F;
+// Betaflight 4.5.1 airModeActivateThreshold 25 (pg/rx.c:103) of the span from mincheck 1050 us to PWM_RANGE_MAX 2000 us in integer
+// percent (core.c:715-744): the first whole microsecond at 25 is 1288 us (237 -> 24 percent, 238 -> 25), normalized
+// (1288 - 988) / 1024 (M4, decision 0050). Stated here independently of the parameter table.
+constexpr float kAirmodeThreshold = 0.29296875F;
 
 struct Sticks {
   float roll = 0;
@@ -739,9 +743,15 @@ class ArmedGateTest : public MotorTestGateTest {
     return mixed;
   }
 
-  // The beside side of the low-throttle hold: armed below min_check, the integrator is zeroed after the tick's output.
+  // The beside side of the low-throttle hold: armed below min_check and before the airmode latch (Betaflight's, decision 0050: set
+  // at or above the activation threshold while armed, cleared when not armed), the integrator is zeroed after the tick's output.
   void hold_integrator(const Sticks& want) {
-    if (was_armed_ && want.throttle < kMinCheck) {
+    if (!was_armed_) {
+      airmode_ = false;
+    } else if (want.throttle >= kAirmodeThreshold) {
+      airmode_ = true;
+    }
+    if (was_armed_ && want.throttle < kMinCheck && !airmode_) {
       ref_.zero_integrator();
     }
   }
@@ -894,6 +904,7 @@ class ArmedGateTest : public MotorTestGateTest {
   Tick stamp_fault_tick_ = 0;
   TimeUs last_rate_stamp_ = 0;        // the stamp of the latest rate-tick sample
   bool was_armed_ = false;
+  bool airmode_ = false;  // the beside airmode latch
   bool reset_ref_ = true;  // ref_ restarts its controller at the arming edge as the composition does
 };
 
@@ -1188,12 +1199,15 @@ TEST_F(ArmedGateTest, ArmedAtMinCheckAndAboveTheIntegratorRunsAsBefore) {
   }
 }
 
-// The transition. The integrator wound at throttle 0.5 is in the first low tick's output (Betaflight zeroes it after the output)
-// and not in the next; back above min_check it integrates from zero, so the output differs from the group that kept it.
+// The transition. The integrator wound at a throttle above min_check and below the airmode threshold (no latch, decision 0050) is
+// in the first low tick's output (Betaflight zeroes it after the output) and not in the next; back above min_check it integrates
+// from zero, so the output differs from the group that kept it.
+const float kJustBelowAirmode = std::nextafter(kAirmodeThreshold, 0.0F);
+
 TEST_F(ArmedGateTest, TheTransitionToLowThrottleAndBackZeroesAfterTheFirstLowTickOutput) {
   bias_ = kHoldBias;
   arm_both();
-  const Sticks high{0.0F, 0.0F, 0.0F, 0.5F};
+  const Sticks high{0.0F, 0.0F, 0.0F, kJustBelowAirmode};
   const Sticks low{0.0F, 0.0F, 0.0F, kJustBelowMinCheck};
   for (std::size_t k = 0; k < kHoldTicks; ++k) {
     const Both b = hold_both(high, kSwitchOn);
@@ -1216,6 +1230,104 @@ TEST_F(ArmedGateTest, TheTransitionToLowThrottleAndBackZeroesAfterTheFirstLowTic
       EXPECT_NE(b.r.out.motor, b.integrating);
     }
   }
+}
+
+// ---- The airmode latch (M4, decision 0050) ----
+// Armed at idle before the throttle first reaches the threshold, the hold applies as above. At the threshold (>=, one tick is
+// enough) the latch sets; afterwards a throttle below min_check does not zero the integrator until a disarm clears the latch,
+// and the next arm zeroes again. The cases compare the output with the beside oracle, which applies the latch, over runs in
+// which the bias has wound the integrator, so firmware that zeroes where the oracle does not (or the reverse) differs.
+TEST_F(ArmedGateTest, TheAirmodeThresholdIsBetaflightsTwentyFivePercentOfMinCheckToTwoThousandMicroseconds) {
+  const std::span<const ParamRecord, kParamCount> d = param_defaults();
+  EXPECT_EQ(d[static_cast<std::size_t>(ParamId::airmode_activate_throttle)].value.f32, kAirmodeThreshold);
+}
+
+TEST_F(ArmedGateTest, ArmedAtIdleBeforeTheThresholdTheIntegratorIsStillHeldAtZero) {
+  bias_ = kHoldBias;
+  arm_both();
+  const Sticks pad{0.0F, 0.0F, 0.0F, 0.0F};
+  std::size_t apart = 0;
+  for (std::size_t k = 0; k < kHoldTicks; ++k) {
+    const Both b = hold_both(pad, kSwitchOn);
+    ASSERT_EQ(b.r.out.motor, b.r.mixed) << k;
+    apart += b.r.out.motor != b.integrating ? 1U : 0U;
+  }
+  EXPECT_GT(apart, kHoldTicks / 2) << "an integrating group would give the same output: the test is insensitive to the hold";
+  const Sticks below{0.0F, 0.0F, 0.0F, kJustBelowAirmode};  // short of the threshold: no latch, so a dip afterwards is still zeroed
+  for (std::size_t k = 0; k < kHoldTicks; ++k) {
+    const Both b = hold_both(below, kSwitchOn);
+    ASSERT_EQ(b.r.out.motor, b.r.mixed) << k;
+  }
+  for (std::size_t k = 0; k < kHoldTicks; ++k) {
+    const Both b = hold_both(pad, kSwitchOn);
+    ASSERT_EQ(b.r.out.motor, b.r.mixed) << k;
+  }
+}
+
+TEST_F(ArmedGateTest, ThePassOfTheThresholdLatchesAndALaterDipBelowMinCheckDoesNotZeroTheIntegrator) {
+  bias_ = kHoldBias;
+  arm_both();
+  const Sticks pad{0.0F, 0.0F, 0.0F, 0.0F};
+  const Sticks at{0.0F, 0.0F, 0.0F, kAirmodeThreshold};  // exactly at the threshold: the latch sets (>=)
+  for (std::size_t k = 0; k < kHoldTicks; ++k) {
+    const Both b = hold_both(pad, kSwitchOn);
+    ASSERT_EQ(b.r.out.motor, b.r.mixed) << k;
+  }
+  for (std::size_t k = 0; k < kHoldTicks; ++k) {
+    const Both b = hold_both(at, kSwitchOn);
+    ASSERT_EQ(b.r.out.motor, b.r.mixed) << k;
+  }
+  for (const float throttle : {kJustBelowMinCheck, 0.0F}) {
+    const Sticks dip{0.0F, 0.0F, 0.0F, throttle};
+    for (std::size_t k = 0; k < kHoldTicks; ++k) {
+      const Both b = hold_both(dip, kSwitchOn);
+      ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+      ASSERT_EQ(b.r.out.motor, b.r.mixed) << "throttle " << throttle << " tick " << k;
+    }
+  }
+}
+
+// The control: armed at the threshold on the first armed tick, nothing has been zeroed, so the beside group that never zeroes
+// equals the oracle; after the latch every low-throttle tick equals it exactly (the integrator was not zeroed).
+TEST_F(ArmedGateTest, AfterTheThresholdAnyLowThrottleEqualsTheGroupThatNeverZeroes) {
+  bias_ = kHoldBias;
+  arm_both();
+  const Sticks pass{0.0F, 0.0F, 0.0F, kAirmodeThreshold};
+  const Sticks dip{0.0F, 0.0F, 0.0F, 0.0F};
+  const Both first = hold_both(pass, kSwitchOn);
+  ASSERT_EQ(first.r.out.motor, first.integrating);
+  for (std::size_t k = 0; k < kHoldTicks; ++k) {
+    const Both b = hold_both(dip, kSwitchOn);
+    ASSERT_EQ(b.r.out.motor, b.integrating) << "the integrator was zeroed after the latch, tick " << k;
+  }
+}
+
+TEST_F(ArmedGateTest, ADisarmClearsTheLatchAndTheNextArmZeroesAgain) {
+  bias_ = kHoldBias;
+  arm_both();
+  const Sticks pass{0.0F, 0.0F, 0.0F, kAirmodeThreshold};
+  const Sticks dip{0.0F, 0.0F, 0.0F, 0.0F};
+  (void)hold_both(pass, kSwitchOn);
+  for (std::size_t k = 0; k < kHoldTicks; ++k) {
+    const Both b = hold_both(dip, kSwitchOn);
+    ASSERT_EQ(b.r.out.motor, b.integrating) << k;
+  }
+  const RateOut off = hold(dip, kSwitchOff, dip);  // the switch off: disarmed on this tick
+  ASSERT_NE(composition::arming_status(), arming::ArmState::Armed);
+  expect_all_stop(off.out);
+  bias_ = {};  // the bias has tilted the estimate (NotUpright refuses arming); arm again on quiet samples, then wind it again
+  link_up();
+  bias_ = kHoldBias;
+  const RateOut again = hold({}, kSwitchOn, {});
+  ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+  EXPECT_EQ(again.out.motor, again.mixed);
+  std::size_t apart = 0;
+  for (std::size_t k = 0; k < kHoldTicks; ++k) {
+    const Both b = hold_both(dip, kSwitchOn);
+    ASSERT_EQ(b.r.out.motor, b.r.mixed) << k;
+    apart += b.r.out.motor != b.integrating ? 1U : 0U;
+  }
+  EXPECT_GT(apart, kHoldTicks / 2) << "the latch survived the disarm, or the test is insensitive to it";
 }
 
 // ---- Angle mode (M4 A2, decision 0043 item 3) ----

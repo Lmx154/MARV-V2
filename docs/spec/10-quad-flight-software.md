@@ -236,8 +236,8 @@ adding more complex features gradually" (decision 0026).
 - Before the stand and safety gear arrive (Luis, 2026-10-17: "1. OK 2. yes"), in this order: the card carries the real
   airframe (measured mass and motor positions; sourced thrust, torque and inertia estimates marked INFERRED or
   UNVERIFIED until measured) and the gains regenerated from it; angle mode on the board (the attitude law in `quad_fc`,
-  sticks to angle setpoints, `angle_tilt_max`); the rate integrator held at zero at minimum throttle (Betaflight without
-  airmode); then L10 HIL, pulled forward from the deferred list: the board's flight code flies the Gazebo sim from
+  sticks to angle setpoints, `angle_tilt_max`); the rate integrator held at zero at minimum throttle until the throttle first passes
+  Betaflight's airmode activation threshold after arming (Betaflight's default airmode latch; Luis, 2026-10-17, decision 0050); then L10 HIL, pulled forward from the deferred list: the board's flight code flies the Gazebo sim from
   simulated IMU samples, driven by the ELRS radio, built in stages behind a bench-only image; before its closed-loop
   stage (S4), rotor and body drag in the plant, pulled forward from the deferred list (Luis, 2026-10-17: "yes pull drag
   forward"; decision 0049).

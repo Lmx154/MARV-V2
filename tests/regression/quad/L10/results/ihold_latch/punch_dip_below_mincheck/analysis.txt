@@ -1,0 +1,35 @@
+HIL S2f integrator-hold analysis: integrator hold engaged (dip to stick 0)
+Simulation on INFERRED / UNVERIFIED / PLACEHOLDER card values (vehicles/marv_5in_fc3v2.yaml), not a flight result.
+log sha256 a2ed44e487a40e5c628123eb439f49bb29e385fcedde3c26aea97a5dd41e4932
+tick 1953125/14649 us; command delay N = 10; ticks 221634
+disturbance: every rotor position shifted by 0.005 m on x and y (plant torque tau_x = -T d, tau_y = +T d); at hover T = 7.178320316026612 N: |tau| = 0.03589 Nm per axis
+dip: throttle stick 0.0 for 0.3 s; arm_throttle_min 0.060546875 (quad_fc.cpp:439 throttle_low = throttle < g_throttle_min): the decision 0045 hold ENGAGES
+
+Phases (SIL time):
+  ready     0.0000 s .. 2.7500 s  arm -1  throttle 0.0
+  arm_idle  2.7500 s .. 3.0000 s  arm +1  throttle 0.0
+  hold      3.0000 s .. 13.0000 s  arm +1  throttle 0.07164270430803299
+  punch     13.0000 s .. 13.0500 s  arm +1  throttle 0.3
+  hold_b    13.0500 s .. 23.0000 s  arm +1  throttle 0.07164270430803299
+  dip       23.0000 s .. 23.3000 s  arm +1  throttle 0.0
+  hold2     23.3000 s .. 29.3000 s  arm +1  throttle 0.07164270430803299
+  disarmed  29.3000 s .. 29.5500 s  arm -1  throttle 0.07164270430803299
+PAD release (lift-off) at 3.6452 s
+
+Pre-dip (the last 1.0 s before the dip, 22.0001 s .. 22.9999 s):
+  tilt mean 0.2972 deg (min 0.2726, max 0.3281); heading-frame tilt vector x (roll) +0.2479, y (pitch) +0.1618 deg
+  |body rate| mean 0.00188 rad/s (min 0.00171, max 0.00219)
+  commanded torque (mixer DShot through the ESC map and B), mean roll/pitch/yaw +0.03589/-0.03589/-0.00000 Nm; plant torque mean +0.03589/-0.03589/+0.00000 Nm (the integrator is not in the log; the commanded torque against the disturbance torque above is its trace)
+  z -7.7044 m (down), vz -1.05629 m/s at the dip start
+
+After the dip start (to the end of hold2, 6.30 s):
+  peak tilt 19.3206 deg at 23.4036 s (in the dip window: max 15.9111); peak after the dip window 19.3206 deg at 23.4036 s; heading-frame x/y at the peak +11.9558/-15.1772 deg
+  peak |body rate| 1.20156 rad/s at 23.6786 s (in the dip window: max 1.14077); peak after the dip window 1.20156 rad/s at 23.6786 s
+  return rule: the last sample outside the band pre-dip mean +- max(pre-dip envelope, 10% of the peak excursion), measured from the dip end (23.3000 s)
+  tilt returns within +-1.9023 deg of 0.2972: 2.865 s after the dip end
+  |body rate| returns within +-0.11997 rad/s of 0.00188: 1.611 s after the dip end
+  altitude lost (down positive, relative to the dip start / to continuing at the dip-start velocity; the throttle is open-loop and the pre-dip descent speed is -1.05629 m/s): dip end: 0.030 / 0.347 m (vz 1.523 m/s); dip end + 1 s: 2.331 / 3.704 m (vz 2.422 m/s); end of hold2: 14.544 / 21.199 m (vz 2.437 m/s)
+  DShot during the dip 48..605; rotor speed in the dip 12.60..833.39 rad/s; stick throttle in the dip (logged frame) 0.0..0.0
+  commanded torque max |roll/pitch/yaw| in the first second after the dip: 0.04623/0.04589/0.00128 Nm; plant torque 0.04454/0.04422/0.00221 Nm
+
+tilt (deg) at 0.5 s steps from 1 s before the dip: -1.0s:0.328 -0.5s:0.296 +0.0s:0.273 +0.5s:16.876 +1.0s:11.199 +1.5s:8.129 +2.0s:1.010 +2.5s:2.127 +3.0s:2.479 +3.5s:1.687 +4.0s:1.472 +4.5s:1.379 +5.0s:1.178 +5.5s:0.999 +6.0s:0.852
