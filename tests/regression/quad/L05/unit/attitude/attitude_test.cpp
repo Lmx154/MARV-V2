@@ -126,6 +126,11 @@ AttitudeConfig<float> test_config() {
   c.yaw_alpha_min = kAlphaMin;
   c.yaw_t_cross = kTCross;
   c.rate_max = V3(kRateMaxRoll, kRateMaxPitch, kRateMaxYaw);
+  // The spacing check: one tick of kPeriodUs us per execution, tolerance 1 us (the hal_sim truncation bound).
+  c.tick_period_num_us = static_cast<std::int32_t>(kPeriodUs);
+  c.tick_period_den = 1;
+  c.period_ticks = 1;
+  c.period_tolerance_us = 1;
   return c;
 }
 
@@ -722,39 +727,85 @@ TEST(L5AttitudeConfig, RequireValidPanicsOnAnInvalidWeightAndPassesAValidOne) {
 
 // ---- the period check --------------------------------------------------------------------------------------------
 
-// Runs the law with stamps t0, t0 + s1, ... for the given spacings (us), on valid input.
-void run_spacings(const AttitudeConfig<float>& cfg, const std::vector<std::int64_t>& spacings) {
+// Scenario test value: the setpoint of the period tests, 0.5 rad of roll away from the attitude, so an executed output is
+// nonzero and a refused one (zero rate setpoint) differs from it.
+const Q kRolledSetpoint = to_f(about(1, 0, 0, 0.5));
+
+// The outputs of the law for the stamps t0, t0 + s1, t0 + s1 + s2, ... (us), on valid input; element 0 is the first
+// execution, element i the execution after spacing i.
+std::vector<AttitudeOutput<float>> run_spacings(const AttitudeConfig<float>& cfg,
+                                                const std::vector<std::int64_t>& spacings) {
   AttitudeLaw<float> law;
   law.init(cfg);
   std::uint64_t t = kT0Us;
-  const AttitudeState<float> a0{t, Q::identity(), V3(), true};
-  (void)law.execute(a0, Q::identity(), 0.0F);
+  std::vector<AttitudeOutput<float>> out;
+  out.push_back(law.execute(AttitudeState<float>{t, Q::identity(), V3(), true}, kRolledSetpoint, 0.0F));
   for (const std::int64_t s : spacings) {
     t = static_cast<std::uint64_t>(static_cast<std::int64_t>(t) + s);
-    const AttitudeState<float> a{t, Q::identity(), V3(), true};
-    (void)law.execute(a, Q::identity(), 0.0F);
+    out.push_back(law.execute(AttitudeState<float>{t, Q::identity(), V3(), true}, kRolledSetpoint, 0.0F));
   }
+  return out;
+}
+
+bool executed(const AttitudeOutput<float>& o) { return !o.fault_active && o.rate_setpoint[0] != 0.0F; }
+
+// Refused and counted: zero rate setpoint, fault active and latched, n faults of which n are timing faults.
+bool refused(const AttitudeOutput<float>& o, std::uint32_t n) {
+  return o.fault_active && o.fault_latched && o.rate_setpoint[0] == 0.0F && o.rate_setpoint[1] == 0.0F &&
+         o.rate_setpoint[2] == 0.0F && o.fault_count == n && o.timing_fault_count == n;
+}
+
+// The spacings are accepted: every execution runs and nothing is counted.
+void expect_accepted(const AttitudeConfig<float>& cfg, const std::vector<std::int64_t>& spacings) {
+  const std::vector<AttitudeOutput<float>> out = run_spacings(cfg, spacings);
+  for (std::size_t i = 0; i < out.size(); ++i) {
+    EXPECT_TRUE(executed(out[i])) << "execution " << i;
+    EXPECT_EQ(out[i].fault_count, 0U) << "execution " << i;
+    EXPECT_EQ(out[i].timing_fault_count, 0U) << "execution " << i;
+  }
+}
+
+// The last spacing is refused and counted (the ones before it ran), and a following execution one period on is taken
+// from the refused stamp (re-anchored): it runs and the counts stay.
+void expect_last_refused(const AttitudeConfig<float>& cfg, std::vector<std::int64_t> spacings,
+                         std::int64_t period_us) {
+  const std::size_t n = spacings.size();
+  std::vector<AttitudeOutput<float>> out = run_spacings(cfg, spacings);
+  for (std::size_t i = 0; i < n; ++i) {
+    EXPECT_TRUE(executed(out[i])) << "execution " << i;
+  }
+  EXPECT_TRUE(refused(out[n], 1)) << "the last spacing " << spacings.back();
+  spacings.push_back(period_us);
+  out = run_spacings(cfg, spacings);
+  EXPECT_TRUE(refused(out[n], 1)) << "the last spacing " << spacings[n - 1];
+  EXPECT_TRUE(executed(out[n + 1])) << "the execution after the refusal runs";
+  EXPECT_EQ(out[n + 1].timing_fault_count, 1U);
+  EXPECT_EQ(out[n + 1].fault_count, 1U);
+  EXPECT_TRUE(out[n + 1].fault_latched);
 }
 
 TEST(L5AttitudePeriod, TheSpacingIsCheckedToPlusOrMinusOneMicrosecond) {
   const AttitudeConfig<float> cfg = test_config();
   const std::int64_t period = static_cast<std::int64_t>(kPeriodUs);
-  run_spacings(cfg, {period, period - 1, period + 1, period});  // within the tolerance: no panic (control)
-  EXPECT_DEATH(run_spacings(cfg, {period + 2}), "more than 1 us");
-  EXPECT_DEATH(run_spacings(cfg, {period - 2}), "more than 1 us");
-  EXPECT_DEATH(run_spacings(cfg, {-period}), "more than 1 us");  // a stamp going backwards
-  EXPECT_DEATH(run_spacings(cfg, {0}), "more than 1 us");        // a repeated stamp
-  EXPECT_DEATH(run_spacings(cfg, {2 * period}), "more than 1 us");  // a dropped execution
-  EXPECT_DEATH(run_spacings(cfg, {period, period, period + 2}), "more than 1 us");
+  expect_accepted(cfg, {period, period - 1, period + 1, period});  // within the tolerance (control)
+  expect_last_refused(cfg, {period + 2}, period);
+  expect_last_refused(cfg, {period - 2}, period);
+  expect_last_refused(cfg, {-period}, period);      // a stamp going backwards
+  expect_last_refused(cfg, {0}, period);            // a repeated stamp
+  expect_last_refused(cfg, {2 * period}, period);   // a dropped execution
+  expect_last_refused(cfg, {period, period, period + 2}, period);
 }
 
 TEST(L5AttitudePeriod, AHalfMicrosecondPeriodIsCheckedExactly) {
   // Scenario test value: T_a = 312.5 us (one 3.2 kHz rate period), whose stamps alternate 312 and 313 us.
   AttitudeConfig<float> cfg = test_config();
   cfg.period = f(312.5e-6);
-  run_spacings(cfg, {312, 313, 312, 313});
-  EXPECT_DEATH(run_spacings(cfg, {311}), "more than 1 us");
-  EXPECT_DEATH(run_spacings(cfg, {314}), "more than 1 us");
+  cfg.tick_period_num_us = 625;
+  cfg.tick_period_den = 2;
+  cfg.period_ticks = 1;
+  expect_accepted(cfg, {312, 313, 312, 313});
+  expect_last_refused(cfg, {311}, 312);
+  expect_last_refused(cfg, {314}, 312);
 }
 
 TEST(L5AttitudePeriod, NothingIsCheckedAtTheFirstExecutionAfterInitOrReset) {
@@ -762,14 +813,50 @@ TEST(L5AttitudePeriod, NothingIsCheckedAtTheFirstExecutionAfterInitOrReset) {
   AttitudeLaw<float> law;
   law.init(cfg);
   const AttitudeState<float> first{kT0Us, Q::identity(), V3(), true};
-  EXPECT_FALSE(law.execute(first, Q::identity(), 0.0F).fault_active);
+  EXPECT_FALSE(law.execute(first, kRolledSetpoint, 0.0F).fault_active);
   // A jump of a million periods after reset is the first execution again: no check.
   law.reset();
   const AttitudeState<float> jump{kT0Us + 1000000 * kPeriodUs, Q::identity(), V3(), true};
-  EXPECT_FALSE(law.execute(jump, Q::identity(), 0.0F).fault_active);
-  // And the spacing is checked from there (control: the same jump without a reset panics).
+  const AttitudeOutput<float> after_reset = law.execute(jump, kRolledSetpoint, 0.0F);
+  EXPECT_TRUE(executed(after_reset));
+  EXPECT_EQ(after_reset.timing_fault_count, 0U);
+  // And the spacing is checked from there (control: the same jump without a reset is refused and counted).
   const AttitudeState<float> jump2{jump.t_us + 1000000 * kPeriodUs, Q::identity(), V3(), true};
-  EXPECT_DEATH((void)law.execute(jump2, Q::identity(), 0.0F), "more than 1 us");
+  EXPECT_TRUE(refused(law.execute(jump2, kRolledSetpoint, 0.0F), 1));
+}
+
+TEST(L5AttitudePeriod, AnUnsetOrInvalidTimingConfigNeverProducesAnOutput) {
+  const AttitudeConfig<float> good = test_config();
+  const std::int64_t period = static_cast<std::int64_t>(kPeriodUs);
+  expect_accepted(good, {period, period});  // control: the same law with the fields set runs normally
+  const auto never_runs = [&](const AttitudeConfig<float>& cfg) {
+    ASSERT_NE(attitude::validate_timing(cfg), ConfigError::None);
+    const std::vector<AttitudeOutput<float>> out = run_spacings(cfg, {period, period});
+    for (std::size_t i = 0; i < out.size(); ++i) {  // every execution, the first included
+      EXPECT_TRUE(refused(out[i], static_cast<std::uint32_t>(i + 1))) << "execution " << i;
+    }
+  };
+  AttitudeConfig<float> unset = good;
+  unset.tick_period_num_us = 0;
+  unset.tick_period_den = 0;
+  unset.period_ticks = 0;
+  unset.period_tolerance_us = 0;
+  never_runs(unset);
+  AttitudeConfig<float> c = good;
+  c.tick_period_num_us = 0;
+  never_runs(c);
+  c = good;
+  c.tick_period_den = 0;
+  never_runs(c);
+  c = good;
+  c.period_ticks = 0;
+  never_runs(c);
+  c = good;
+  c.period_tolerance_us = -1;
+  never_runs(c);
+  c = good;
+  c.period_tolerance_us = static_cast<std::int32_t>(kPeriodUs);  // not below half a tick
+  never_runs(c);
 }
 
 TEST(L5AttitudePeriod, TheSpacingAfterAFaultIsStillChecked) {
@@ -777,9 +864,15 @@ TEST(L5AttitudePeriod, TheSpacingAfterAFaultIsStillChecked) {
   AttitudeLaw<float> law;
   law.init(cfg);
   const AttitudeState<float> bad{kT0Us, Q::identity(), V3(), false};
-  EXPECT_TRUE(law.execute(bad, Q::identity(), 0.0F).fault_active);
+  const AttitudeOutput<float> invalid = law.execute(bad, kRolledSetpoint, 0.0F);
+  EXPECT_TRUE(invalid.fault_active);
+  EXPECT_EQ(invalid.timing_fault_count, 0U);
   const AttitudeState<float> late{kT0Us + kPeriodUs + 5, Q::identity(), V3(), true};
-  EXPECT_DEATH((void)law.execute(late, Q::identity(), 0.0F), "more than 1 us");
+  const AttitudeOutput<float> out = law.execute(late, kRolledSetpoint, 0.0F);
+  EXPECT_TRUE(out.fault_active);
+  EXPECT_EQ(out.rate_setpoint[0], 0.0F);
+  EXPECT_EQ(out.fault_count, 2U);
+  EXPECT_EQ(out.timing_fault_count, 1U);
 }
 
 }  // namespace

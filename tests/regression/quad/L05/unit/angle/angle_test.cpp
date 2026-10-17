@@ -149,6 +149,12 @@ AttitudeConfig<float> test_config() {
   c.yaw_alpha_min = kAlphaMin;
   c.yaw_t_cross = kTCross;
   c.rate_max = V3(kRateMaxRoll, kRateMaxPitch, kRateMaxYaw);
+  // The law's spacing check (decision 0043): the scenario's tick period, one tick per execution, tolerance 1 us (the
+  // hal_sim truncation bound).
+  c.tick_period_num_us = static_cast<std::int32_t>(kPeriodUsNum);
+  c.tick_period_den = static_cast<std::int32_t>(kPeriodUsDen);
+  c.period_ticks = 1;
+  c.period_tolerance_us = 1;
   return c;
 }
 

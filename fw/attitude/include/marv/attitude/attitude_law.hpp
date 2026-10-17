@@ -13,6 +13,7 @@
 //   r = (k eq_x, k eq_y, (k / w) eq_z) + rotate(conj(q^), (0, 0, yaw_rate_cmd))
 // then the roll-pitch pair is scaled by one factor so both bounds hold, and yaw is clamped.
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -28,62 +29,68 @@
 
 namespace marv::attitude {
 
-// The largest accepted |dt_n - T_a| in microseconds (the L4 tolerance: the hal_sim truncation bound of a stamp).
-inline constexpr std::uint64_t kPeriodToleranceUs = 1;
-
 template <class T>
 struct AttitudeOutput {
   prim::Vec3<T> rate_setpoint{};  // rad/s, FRD
   bool fault_active = false;
   bool fault_latched = false;
   std::uint32_t fault_count = 0;
+  std::uint32_t timing_fault_count = 0;  // the faults of fault_count that are spacing faults
 };
-
-namespace detail {
-// hal_panic: the execution spacing differs from the design period by more than kPeriodToleranceUs.
-[[noreturn]] void panic_period() noexcept;
-}  // namespace detail
 
 template <class T>
 class AttitudeLaw {
  public:
-  // pre: validate(cfg) == None. Clears the period history, the fault latch and the fault counter.
+  // pre: validate(cfg) == None. A config failing validate_timing (an unset or invalid tick period, period ticks or
+  // tolerance) makes every execution a counted timing fault: the spacing check never runs silently off. Clears the
+  // period history, the fault latch and the fault counters.
   void init(AttitudeConfig<T> cfg) noexcept {
-    using std::lround;
     cfg_ = cfg;
     k_yaw_ = cfg.kp / cfg.yaw_weight;
-    // Twice the period in us (half-us resolution), so a period such as 312.5 us is checked exactly.
-    two_period_us_ =
-        static_cast<std::uint64_t>(lround(2 * cfg.period * static_cast<T>(prim::kMicrosecondsPerSecond)));
+    timing_ok_ = validate_timing(cfg) == ConfigError::None;
+    // T_a = D_a num / den µs exactly: |dt − T_a| > tol  ⇔  |den·dt − D_a·num| > den·tol, all integers.
+    den_ = static_cast<std::uint64_t>(cfg.tick_period_den);
+    target_ = static_cast<std::uint64_t>(cfg.period_ticks) * static_cast<std::uint64_t>(cfg.tick_period_num_us);
+    slack_ = den_ * static_cast<std::uint64_t>(cfg.period_tolerance_us);
+    dt_max_ = std::numeric_limits<std::uint64_t>::max() / std::max<std::uint64_t>(den_, 1);
     have_t_ = false;
     latched_ = false;
     count_ = 0;
+    timing_count_ = 0;
   }
 
   // The next execution is a first execution: no spacing check. Fault latch and counter are kept.
   void reset() noexcept { have_t_ = false; }
 
-  // One attitude execution. Panics when the spacing to the previous execution differs from the period by more than
-  // kPeriodToleranceUs. An invalid input (a.valid false, a non-finite or zero-norm quaternion, a non-finite yaw-rate
-  // command) or a non-finite output returns a zero rate setpoint and sets fault_active for this execution.
+  // One attitude execution. A spacing to the previous execution off the period by more than period_tolerance_us, an
+  // invalid input (a.valid false, a non-finite or zero-norm quaternion, a non-finite yaw-rate command) or a
+  // non-finite output returns a zero rate setpoint and sets fault_active for this execution. A spacing fault is also
+  // counted in timing_fault_count, and the next execution's spacing is taken from this execution's stamp.
   [[nodiscard]] AttitudeOutput<T> execute(const AttitudeState<T>& a, const prim::Quat<T>& q_sp,
                                           T yaw_rate_cmd) noexcept {
     using std::abs;
     using std::cos;
     using std::isfinite;
     using std::sin;
-    if (have_t_) {
+    bool off_period = !timing_ok_;
+    if (timing_ok_ && have_t_) {
       const std::uint64_t dt_us = a.t_us - t_us_;
-      const std::uint64_t two_tol = 2 * kPeriodToleranceUs;
-      // A spacing too large to double (a stamp going backwards wraps to one) is outside the bound anyway.
-      const bool no_double = dt_us > std::numeric_limits<std::uint64_t>::max() / 2;
-      const std::uint64_t two_dt = no_double ? 0 : 2 * dt_us;
-      if (no_double || two_dt > two_period_us_ + two_tol || two_dt + two_tol < two_period_us_) {
-        detail::panic_period();
+      // A spacing whose den·dt overflows (a stamp going backwards wraps to one) is outside the bound.
+      if (dt_us > dt_max_) {
+        off_period = true;
+      } else {
+        const std::uint64_t scaled = den_ * dt_us;
+        off_period = (scaled > target_ ? scaled - target_ : target_ - scaled) > slack_;
       }
     }
     t_us_ = a.t_us;
     have_t_ = true;
+    if (off_period) {
+      if (timing_count_ != std::numeric_limits<std::uint32_t>::max()) {
+        ++timing_count_;
+      }
+      return fault();
+    }
 
     bool ok = a.valid && is_finite(a.q) && is_finite(q_sp) && isfinite(yaw_rate_cmd);
     if (!ok) {
@@ -116,11 +123,12 @@ class AttitudeLaw {
         return fault();
       }
     }
-    return AttitudeOutput<T>{clamp(r), false, latched_, count_};
+    return AttitudeOutput<T>{clamp(r), false, latched_, count_, timing_count_};
   }
 
   [[nodiscard]] bool fault_latched() const noexcept { return latched_; }
   [[nodiscard]] std::uint32_t fault_count() const noexcept { return count_; }
+  [[nodiscard]] std::uint32_t timing_fault_count() const noexcept { return timing_count_; }
 
  private:
   // The roll-pitch pair is scaled by the one factor s <= 1 that brings both components inside their bounds (no
@@ -149,16 +157,21 @@ class AttitudeLaw {
     if (count_ != std::numeric_limits<std::uint32_t>::max()) {
       ++count_;
     }
-    return AttitudeOutput<T>{prim::Vec3<T>(), true, true, count_};
+    return AttitudeOutput<T>{prim::Vec3<T>(), true, true, count_, timing_count_};
   }
 
   AttitudeConfig<T> cfg_{};
   T k_yaw_{};  // k / w, computed once at init (PX4 setProportionalGain)
-  std::uint64_t two_period_us_ = 0;
+  bool timing_ok_ = false;
+  std::uint64_t den_ = 1;
+  std::uint64_t target_ = 0;
+  std::uint64_t slack_ = 0;
+  std::uint64_t dt_max_ = 0;
   TimeUs t_us_ = 0;
   bool have_t_ = false;
   bool latched_ = false;
   std::uint32_t count_ = 0;
+  std::uint32_t timing_count_ = 0;
 };
 
 extern template class AttitudeLaw<float>;

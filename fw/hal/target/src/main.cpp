@@ -177,6 +177,7 @@ std::uint32_t events_printed = 0;
   const marv::ManualControl& rc = rc_now.last;
   const marv::TimeUs t_now = marv::hal_time_us();
   const marv::composition::AttitudeStatus attitude = marv::composition::attitude_status();
+  const marv::composition::AttitudeCounts attitude_counts = marv::composition::attitude_counts();
   const long long rc_age_us = rc.frames == 0 ? -1 : static_cast<long long>(t_now > rc.t_us ? t_now - rc.t_us : 0);
   std::printf(
       "imu dt=%lluus irq/s=%.1f words/s=%.1f samples/s=%.1f ticks/s=%.1f writes/s=%.1f motor_drops=%llu | total samples=%llu ovr=%lu "
@@ -184,7 +185,7 @@ std::uint32_t events_printed = 0;
       "accel=(%+.3f,%+.3f,%+.3f) temp=%.2fK flags=0x%03lx | motor_test console_refused=%lu forwarded=%lu accepted=%lu "
       "refused=%lu stopped=%lu | rate executions/s=%.1f executions=%llu timing_faults=%lu | rc frames/s=%.1f total=%lu "
       "link_frames=%lu bad_crc=%lu bad_length=%lu dropped_bytes=%lu uart_errors=%lu age_us=%lld roll=%+.3f pitch=%+.3f "
-      "throttle=%.3f yaw=%+.3f tilt=%.4f est_valid=%d | arming=%s\n",
+      "throttle=%.3f yaw=%+.3f tilt=%.4f est_valid=%d | arming=%s | attitude faults=%lu timing_faults=%lu\n",
       static_cast<unsigned long long>(dt_us), per_s(now.irqs, before.irqs), per_s(now.words, before.words),
       per_s(now.samples, before.samples), per_s(now.ticks, before.ticks),
       per_s(now.actuator_writes, before.actuator_writes), static_cast<unsigned long long>(now.actuator_drops),
@@ -206,7 +207,8 @@ std::uint32_t events_printed = 0;
       static_cast<unsigned long>(rc_now.counters.bad_length), static_cast<unsigned long>(rc_now.counters.dropped_bytes),
       static_cast<unsigned long>(rc_now.uart_errors), rc_age_us, static_cast<double>(rc.roll),
       static_cast<double>(rc.pitch), static_cast<double>(rc.throttle), static_cast<double>(rc.yaw),
-      static_cast<double>(attitude.tilt_rad), attitude.valid ? 1 : 0, arming_text(marv::composition::arming_status()));
+      static_cast<double>(attitude.tilt_rad), attitude.valid ? 1 : 0, arming_text(marv::composition::arming_status()),
+      static_cast<unsigned long>(attitude_counts.faults), static_cast<unsigned long>(attitude_counts.timing_faults));
 }
 
 #if defined(MARV_FC3V2_BENCH_STATS)

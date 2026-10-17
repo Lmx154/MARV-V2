@@ -19,16 +19,30 @@
 // duration of still samples has passed, the calibrated bias is then subtracted from the gyro before the estimator and the rate
 // loop's chain, and a tilt above the small angle refuses arming (NotUpright). Every armed-gate case starts after the
 // calibration (ArmedGateTest::warm_up).
+//
+// Angle mode (M4 A2, decision 0043 item 3): with rc_channel_angle selecting a channel (the register's default 0 is no switch;
+// the tests select channel kAngleChannel, a table override) the sticks go through the attitude law while armed and the switch
+// is at or above angle_switch_threshold, and through the rate curve otherwise. The beside reference (ArmedGateTest::
+// reference_angle) is an estimator, AngleMode, AttitudeLaw and RateGroupStep::execute_bypass built as quad_fc builds them.
 #include <gtest/gtest.h>
+#include <sys/prctl.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <csignal>
+#include <cstdlib>
 #include <limits>
+#include <span>
 #include <vector>
 
+#include <marv/attitude/angle_mode.hpp>
+#include <marv/attitude/attitude_law.hpp>
+#include <marv/attitude/config.hpp>
 #include <marv/composition.hpp>
+#include <marv/estimator/mahony.hpp>
 #include <marv/hal/hal.hpp>
 #include <marv/hal/tick.hpp>
 #include <marv/hal_sim/hal_sim.hpp>
@@ -40,6 +54,7 @@
 #include <marv/rate_group/rate_group.hpp>
 #include <marv/stick_rates/stick_rates.hpp>
 #include <marv/types/actuator.hpp>
+#include <marv/types/attitude_state.hpp>
 #include <marv/types/imu_sample.hpp>
 
 namespace marv {
@@ -48,8 +63,25 @@ namespace {
 constexpr std::size_t kTicks = 400;
 constexpr std::uint16_t kSentinelRaw = 1000;
 
+// The channel the tests give the angle switch (a scenario test value: any channel but the arm channel 5 and the sticks 1 to 4).
+// The register's default is 0, no switch (decision 0043); the test process loads the default table with this one override.
+constexpr std::int32_t kAngleChannel = 6;
+
+std::array<ParamRecord, kParamCount> g_table;
+
+// The default table with rc_channel_angle = `angle_channel` (and att_loop_ratio = `att_loop_ratio` if not 0; nothing else changed).
+std::span<const ParamRecord, kParamCount> table_with_angle_channel(std::int32_t angle_channel, std::int32_t att_loop_ratio = 0) {
+  const std::span<const ParamRecord, kParamCount> d = param_defaults();
+  std::copy(d.begin(), d.end(), g_table.begin());
+  if (att_loop_ratio != 0) {
+    g_table[static_cast<std::size_t>(ParamId::att_loop_ratio)].value = ParamValue{ParamType::I32, 0.0F, att_loop_ratio};
+  }
+  g_table[static_cast<std::size_t>(ParamId::rc_channel_angle)].value = ParamValue{ParamType::I32, 0.0F, angle_channel};
+  return std::span<const ParamRecord, kParamCount>(g_table);
+}
+
 void init_params_once() {
-  static const bool ok = params_init(param_defaults());
+  static const bool ok = params_init(table_with_angle_channel(kAngleChannel));
   ASSERT_TRUE(ok);
 }
 
@@ -588,6 +620,10 @@ class ArmedGateTest : public MotorTestGateTest {
   struct RateOut {
     Out out;
     std::array<DshotValue, composition::kMotors> mixed{};  // the expected output if armed, from a beside rate group
+    // Angle reference only (use_angle_ref_): what the same tick would give in acro for the same sticks, and with the rate
+    // loop's controller restarted before the tick (both from copies of the beside group as it was before the tick).
+    std::array<DshotValue, composition::kMotors> acro{};
+    std::array<DshotValue, composition::kMotors> reset_alt{};
   };
 
   void SetUp() override {
@@ -602,6 +638,12 @@ class ArmedGateTest : public MotorTestGateTest {
                   param_value<ParamId::rates_expo_yaw>()};
     frames_ = 0;
     accel_ = sample_of(Kind::Quiet, 0).accel_m_s2;
+    const attitude::AttitudeConfig<float> attitude_cfg = attitude::load_config();
+    ref_angle_.init(attitude_cfg);
+    ref_att_.init(attitude_cfg);
+    est_ref_.init(estimator::MahonyConfig<float>{
+        param_value<ParamId::estimator_kp>(), param_value<ParamId::estimator_ki>(),
+        param_value<ParamId::estimator_accel_healthy_min>(), param_value<ParamId::estimator_accel_healthy_max>()});
     warm_up();
   }
 
@@ -623,6 +665,25 @@ class ArmedGateTest : public MotorTestGateTest {
     ImuSample s = sample_of(kind_, n_);
     s.accel_m_s2 = accel_;
     s.gyro_rad_s = s.gyro_rad_s + bias_;
+    if (stamp_fault_ && n_ == stamp_fault_tick_) {  // one rate-tick sample off its stamp, as run_timing does
+      const auto off_us = static_cast<TimeUs>(param_value<ParamId::rate_period_tolerance_us>()) + 1;
+      switch (stamp_kind_) {
+        case Stamp::Late:
+          s.t_us += off_us;
+          break;
+        case Stamp::Early:
+          s.t_us -= off_us;
+          break;
+        case Stamp::Repeated:
+          s.t_us = last_rate_stamp_;
+          break;
+        case Stamp::Backwards:
+          s.t_us = last_rate_stamp_ - 1;
+          break;
+        case Stamp::Missing:
+          break;
+      }
+    }
     composition::tick(s);
     ImuSample beside = s;
     if (n_ >= ref_bias_from_) {
@@ -630,6 +691,21 @@ class ArmedGateTest : public MotorTestGateTest {
     }
     ref_.filter(beside, n_ % divisor_ == 0);
     fresh_.filter(s, n_ % divisor_ == 0);
+    if ((beside.flags & imu_flag(ImuFlag::GyroValid)) != 0) {  // the beside estimator, stepped as the composition steps its own
+      const std::uint64_t since = est_ref_started_ && beside.t_us > est_ref_prev_us_ ? beside.t_us - est_ref_prev_us_ : 0;
+      est_ref_prev_us_ = beside.t_us;
+      est_ref_started_ = true;
+      est_ref_.step(beside.gyro_rad_s,
+                    (beside.flags & imu_flag(ImuFlag::AccelValid)) != 0
+                        ? beside.accel_m_s2
+                        : prim::Vec3<float>(std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::quiet_NaN(),
+                                            std::numeric_limits<float>::quiet_NaN()),
+                    static_cast<std::uint32_t>(since));
+    }
+    ref_state_ = AttitudeState<float>{beside.t_us, est_ref_.quat(), beside.gyro_rad_s, est_ref_.valid()};
+    if (n_ % divisor_ == 0) {
+      last_rate_stamp_ = s.t_us;
+    }
     const bool armed = arming::is_armed(composition::arming_status());
     if (armed && !was_armed_ && reset_ref_) {
       ref_.reset_controller();  // as the composition does at the arming edge
@@ -652,6 +728,32 @@ class ArmedGateTest : public MotorTestGateTest {
     return ref_.execute(sp, prim::Vec3<float>(), t_min + want.throttle * (t_max - t_min)).dshot;
   }
 
+  // The rate setpoint the attitude law gives for `want` from the beside estimator's state of the latest tick, through the
+  // given AngleMode and AttitudeLaw.
+  prim::Vec3<float> angle_setpoint(const Sticks& want, attitude::AngleMode<float>& angle, attitude::AttitudeLaw<float>& law) {
+    const attitude::AngleOutput<float> a = angle.execute(attitude::AngleSticks<float>{want.roll, want.pitch, want.yaw}, ref_state_);
+    return law.execute(ref_state_, a.q_sp, a.yaw_rate_cmd).rate_setpoint;
+  }
+
+  // The expected armed output in angle mode: the setpoint of the beside AngleMode and AttitudeLaw (ref_angle_, ref_att_; the
+  // test resets them where the composition does, on entering armed-and-angle) through execute_bypass, with acro's thrust.
+  std::array<DshotValue, composition::kMotors> reference_angle(const Sticks& want) {
+    angle_sp_ = angle_setpoint(want, ref_angle_, ref_att_);
+    return ref_.execute_bypass(angle_sp_, prim::Vec3<float>(), thrust_of(want)).dshot;
+  }
+
+  float thrust_of(const Sticks& want) const {
+    const float t_min = static_cast<float>(composition::kMotors) * mixer::f_min(mixer_);
+    const float t_max = static_cast<float>(composition::kMotors) * mixer::f_max(mixer_);
+    return t_min + want.throttle * (t_max - t_min);
+  }
+
+  // The beside side of entering armed-and-angle: the composition resets both on that rate tick.
+  void reset_angle_reference() {
+    ref_angle_.reset();
+    ref_att_.reset();
+  }
+
   // Runs to the next rate tick, staging a new frame (stamp = that tick's time) if `pilot` is given, and steps it;
   // `want` are the sticks the beside rate group is executed with (the armed output it would give).
   RateOut rate_tick(const ManualControl* frame, const Sticks& want) {
@@ -667,17 +769,29 @@ class ArmedGateTest : public MotorTestGateTest {
     }
     RateOut r;
     r.out = step_tick();
-    r.mixed = reference(want);
+    if (use_angle_ref_) {
+      const float thrust = thrust_of(want);
+      rate_group::RateGroupStep acro_alt = ref_;
+      r.acro = acro_alt.execute(stick_rates::rate_setpoint(rates_, prim::Vec3<float>(want.roll, want.pitch, want.yaw)),
+                                prim::Vec3<float>(), thrust).dshot;
+      rate_group::RateGroupStep reset_alt = ref_;
+      r.mixed = reference_angle(want);
+      reset_alt.reset_controller();
+      r.reset_alt = reset_alt.execute_bypass(angle_sp_, prim::Vec3<float>(), thrust).dshot;
+    } else {
+      r.mixed = reference(want);
+    }
     return r;
   }
 
-  static ManualControl frame_of(const Sticks& k, float arm) {
+  ManualControl frame_of(const Sticks& k, float arm) const {
     ManualControl m;
     m.roll = k.roll;
     m.pitch = k.pitch;
     m.yaw = k.yaw;
     m.throttle = k.throttle;
     m.channels[kLuisArmChannel - 1] = arm;
+    m.channels[kAngleChannel - 1] = angle_ch_;
     return m;
   }
 
@@ -722,6 +836,19 @@ class ArmedGateTest : public MotorTestGateTest {
   prim::Vec3<float> ref_bias_{};  // what ref_ is fed less, from tick ref_bias_from_ on
   Tick ref_bias_from_ = std::numeric_limits<Tick>::max();
   rate_group::RateGroupStep fresh_;
+  attitude::AngleMode<float> ref_angle_;
+  attitude::AttitudeLaw<float> ref_att_;
+  estimator::Mahony<float> est_ref_;
+  TimeUs est_ref_prev_us_ = 0;
+  bool est_ref_started_ = false;
+  AttitudeState<float> ref_state_{};  // the beside estimator's state after the latest tick's sample
+  float angle_ch_ = 0.0F;             // the angle switch channel's value in every staged frame (below the threshold)
+  bool use_angle_ref_ = false;        // rate_tick's expected output is reference_angle, not reference
+  prim::Vec3<float> angle_sp_{};      // the rate setpoint of the latest reference_angle
+  bool stamp_fault_ = false;          // the sample of tick stamp_fault_tick_ is off its stamp by stamp_kind_
+  Stamp stamp_kind_ = Stamp::Late;
+  Tick stamp_fault_tick_ = 0;
+  TimeUs last_rate_stamp_ = 0;        // the stamp of the latest rate-tick sample
   bool was_armed_ = false;
   bool reset_ref_ = true;  // ref_ restarts its controller at the arming edge as the composition does
 };
@@ -982,6 +1109,261 @@ TEST_F(ArmedGateTest, ArmingStartsTheRateLoopFromZeroStateNotFromWhatWasAccumula
   EXPECT_EQ(first.motor, fresh);
 }
 
+
+// ---- Angle mode (M4 A2, decision 0043 item 3) ----
+
+// The switch comparison as the test states it, independently of the parameter table: angle at or above 1700 us, normalized
+// (1700 - 1500) / 512 (the arm switch's rule, decision 0043).
+constexpr float kAngleThreshold = 0.390625F;
+// Smallest difference between two rate setpoints the controls count as different (scenario test value, rad/s).
+constexpr float kSetpointApart = 0.01F;
+
+float max_abs_diff(const prim::Vec3<float>& a, const prim::Vec3<float>& b) {
+  float m = 0.0F;
+  for (std::size_t i = 0; i < 3; ++i) {
+    m = std::max(m, std::fabs(a[i] - b[i]));
+  }
+  return m;
+}
+
+class AngleGateTest : public ArmedGateTest {
+ protected:
+  // The switch up: from the next rate tick the composition resets AngleMode and AttitudeLaw, and so does the reference.
+  void enter_angle(float value = kSwitchOn) {
+    angle_ch_ = value;
+    use_angle_ref_ = true;
+    reset_angle_reference();
+  }
+
+  void leave_angle() {
+    angle_ch_ = kSwitchOff;
+    use_angle_ref_ = false;
+  }
+
+  // Control: for `want` the angle law (from a fresh copy of the reference's state) and the rate curve give different rate
+  // setpoints, so an output equal to the one and not the other is a decision between two different things.
+  void expect_laws_differ(const Sticks& want) {
+    attitude::AngleMode<float> a = ref_angle_;
+    attitude::AttitudeLaw<float> l = ref_att_;
+    a.reset();
+    l.reset();
+    const prim::Vec3<float> angle = angle_setpoint(want, a, l);
+    const prim::Vec3<float> acro = stick_rates::rate_setpoint(rates_, prim::Vec3<float>(want.roll, want.pitch, want.yaw));
+    EXPECT_GT(max_abs_diff(angle, acro), kSetpointApart);
+  }
+};
+
+TEST_F(AngleGateTest, TheAngleSwitchDefaultsToNoSwitchAndTheThresholdIsTheArmSwitchsRule) {
+  const std::span<const ParamRecord, kParamCount> d = param_defaults();
+  EXPECT_EQ(d[static_cast<std::size_t>(ParamId::rc_channel_angle)].value.i32, 0);
+  EXPECT_EQ(d[static_cast<std::size_t>(ParamId::angle_switch_threshold)].value.f32, kAngleThreshold);
+  EXPECT_EQ(d[static_cast<std::size_t>(ParamId::angle_switch_threshold)].value.f32,
+            d[static_cast<std::size_t>(ParamId::arm_switch_threshold)].value.f32);
+  EXPECT_EQ(param_value<ParamId::rc_channel_angle>(), kAngleChannel);  // the test process's override
+}
+
+// (a) Control: the switch below the threshold is acro, whatever the sticks.
+TEST_F(AngleGateTest, TheSwitchBelowTheThresholdFliesAcro) {
+  arm();
+  const Sticks fly{0.5F, -0.25F, 0.75F, 0.5F};
+  expect_laws_differ(fly);
+  for (const float v : {kSwitchOff, 0.0F, std::nextafter(kAngleThreshold, 0.0F)}) {
+    angle_ch_ = v;
+    for (std::size_t k = 0; k < 20; ++k) {
+      const RateOut r = hold(fly, kSwitchOn, fly);
+      ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+      EXPECT_EQ(r.out.motor, r.mixed) << "channel " << v << " tick " << k;
+    }
+  }
+  EXPECT_EQ(composition::attitude_counts().faults, 0U);
+}
+
+// (b) The switch at the threshold (and above it), sticks centred, level quiet samples: the attitude law's output.
+TEST_F(AngleGateTest, TheSwitchAtOrAboveTheThresholdWithCentredSticksFliesTheAttitudeLaw) {
+  arm();
+  enter_angle(kAngleThreshold);
+  for (const float v : {kAngleThreshold, kSwitchOn}) {
+    angle_ch_ = v;  // still in angle: no reset on either side
+    for (std::size_t k = 0; k < 30; ++k) {
+      const Sticks centred{0.0F, 0.0F, 0.0F, 0.5F};
+      const RateOut r = hold(centred, kSwitchOn, centred);
+      ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+      EXPECT_EQ(r.out.motor, r.mixed) << "channel " << v << " tick " << k;
+    }
+  }
+  EXPECT_EQ(composition::attitude_counts().faults, 0U);
+  EXPECT_EQ(composition::attitude_counts().timing_faults, 0U);
+}
+
+// (c) A roll stick in angle mode: the attitude law's output, and not acro's.
+TEST_F(AngleGateTest, ARollStickInAngleModeGivesTheAttitudeLawsOutputAndNotAcros) {
+  arm();
+  enter_angle();
+  const Sticks roll{0.3F, 0.0F, 0.0F, 0.5F};
+  expect_laws_differ(roll);
+  for (std::size_t k = 0; k < 30; ++k) {
+    const RateOut r = hold(roll, kSwitchOn, roll);
+    ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+    EXPECT_EQ(r.out.motor, r.mixed) << k;
+    if (k == 0) {  // acro's setpoint prefilter starts from rest; the bypassed setpoint is applied at once
+      EXPECT_NE(r.out.motor, r.acro);
+    }
+  }
+  EXPECT_EQ(composition::attitude_counts().faults, 0U);
+}
+
+// (d) A channel value that is not a number is acro, with the same sticks that give a different output in angle mode.
+TEST_F(AngleGateTest, ANotANumberSwitchFliesAcro) {
+  arm();
+  const Sticks roll{0.3F, 0.0F, 0.0F, 0.5F};
+  expect_laws_differ(roll);
+  angle_ch_ = std::numeric_limits<float>::quiet_NaN();
+  for (std::size_t k = 0; k < 20; ++k) {
+    const RateOut r = hold(roll, kSwitchOn, roll);
+    ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+    EXPECT_EQ(r.out.motor, r.mixed) << k;
+  }
+}
+
+// (e) AngleMode and AttitudeLaw are reset on the first rate tick of armed-and-angle and on no other. A constant yaw rate on the
+// gyro (1 rad/s, a scenario value, from after the calibration) turns the estimate away from the heading the mode locks at
+// its first execution, so the yaw setpoint grows with the lock held and is about 0 after a reset. The composition's output
+// equals the reference that resets only at entry, for a run staying in angle mode, and again after angle -> acro -> angle,
+// where the reference resets again. Controls: the setpoint of a reset-at-every-tick law differs from the persistent one, and
+// at the second entry the setpoint of a law whose AngleMode keeps the old lock differs from the reset one.
+TEST_F(AngleGateTest, TheResetsHappenOnTheEntryTickOnly) {
+  arm();
+  bias_ = prim::Vec3<float>(0.0F, 0.0F, 1.0F);
+  const Sticks centred{0.0F, 0.0F, 0.0F, 0.5F};
+  for (std::size_t k = 0; k < 40; ++k) {
+    const RateOut r = hold(centred, kSwitchOn, centred);
+    ASSERT_EQ(r.out.motor, r.mixed);
+  }
+  enter_angle();
+  RateOut r;
+  for (std::size_t k = 0; k < 300; ++k) {
+    r = hold(centred, kSwitchOn, centred);
+    ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+    EXPECT_EQ(r.out.motor, r.mixed) << "first stay " << k;
+  }
+  {
+    attitude::AngleMode<float> a = ref_angle_;
+    attitude::AttitudeLaw<float> l = ref_att_;
+    a.reset();
+    l.reset();
+    EXPECT_GT(max_abs_diff(angle_sp_, angle_setpoint(centred, a, l)), kSetpointApart) << "the lock is not acting";
+  }
+  leave_angle();
+  for (std::size_t k = 0; k < 40; ++k) {
+    r = hold(centred, kSwitchOn, centred);
+    EXPECT_EQ(r.out.motor, r.mixed) << "acro " << k;
+  }
+  attitude::AngleMode<float> stale_angle = ref_angle_;
+  attitude::AttitudeLaw<float> stale_law = ref_att_;
+  stale_law.reset();
+  enter_angle();
+  for (std::size_t k = 0; k < 300; ++k) {
+    r = hold(centred, kSwitchOn, centred);
+    EXPECT_EQ(r.out.motor, r.mixed) << "second stay " << k;
+    if (k == 0) {
+      EXPECT_GT(max_abs_diff(angle_sp_, angle_setpoint(centred, stale_angle, stale_law)), kSetpointApart)
+          << "the old lock would not differ";
+    }
+  }
+  EXPECT_EQ(composition::attitude_counts().faults, 0U);
+}
+
+// (f) The rate loop's integrator is not reset by a change of mode: a constant gyro bias on roll and pitch (scenario values,
+// from after arming) winds it in acro; the first angle tick and the ticks after equal the beside group `ref_`, which is
+// restarted at the arming edge only (never at the switch). Control: the same tick from a copy of that group restarted at the
+// switch gives a different output, so the integrator was wound.
+TEST_F(AngleGateTest, TheRateIntegratorIsNotResetByAModeSwitch) {
+  arm();
+  bias_ = prim::Vec3<float>(0.05F, -0.05F, 0.0F);
+  const Sticks centred{0.0F, 0.0F, 0.0F, 0.5F};
+  for (std::size_t k = 0; k < 400; ++k) {
+    const RateOut r = hold(centred, kSwitchOn, centred);
+    ASSERT_EQ(r.out.motor, r.mixed);
+  }
+  enter_angle();
+  const RateOut first = hold(centred, kSwitchOn, centred);
+  ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+  EXPECT_EQ(first.out.motor, first.mixed);
+  EXPECT_NE(first.out.motor, first.reset_alt) << "the integrator was not wound, or the test is insensitive to it";
+  for (std::size_t k = 0; k < 30; ++k) {
+    const RateOut r = hold(centred, kSwitchOn, centred);
+    EXPECT_EQ(r.out.motor, r.mixed) << k;
+  }
+  leave_angle();
+  for (std::size_t k = 0; k < 30; ++k) {
+    const RateOut r = hold(centred, kSwitchOn, centred);
+    EXPECT_EQ(r.out.motor, r.mixed) << "back in acro " << k;
+  }
+}
+
+// (g) With angle selected and armed, one rate-tick sample off its stamp (as OffPeriodStampsNeverHaltAndAreCountedTimingFaults)
+// never halts, and the attitude law counts the spacing faults the rate loop counts (two per displaced or repeated stamp), with
+// no fault of any other kind. A missing sample is not covered here: the fixture's tick numbering is the composition's.
+class AngleTimingTest : public AngleGateTest {
+ protected:
+  void run(Stamp kind) {
+    arm();
+    enter_angle();
+    const Sticks centred{0.0F, 0.0F, 0.0F, 0.5F};
+    for (std::size_t k = 0; k < 40; ++k) {
+      const RateOut r = hold(centred, kSwitchOn, centred);
+      ASSERT_EQ(r.out.motor, r.mixed);
+    }
+    EXPECT_EQ(composition::rate_counts().timing_faults, 0U);
+    EXPECT_EQ(composition::attitude_counts().timing_faults, 0U);
+    stamp_fault_ = true;
+    stamp_kind_ = kind;
+    stamp_fault_tick_ = ((n_ + divisor_ - 1) / divisor_) * divisor_;  // the next rate tick
+    for (std::size_t k = 0; k < 40; ++k) {
+      (void)hold(centred, kSwitchOn, centred);
+      ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+    }
+    EXPECT_EQ(composition::rate_counts().timing_faults, 2U);
+    EXPECT_EQ(composition::attitude_counts().timing_faults, composition::rate_counts().timing_faults);
+    EXPECT_EQ(composition::attitude_counts().faults, composition::attitude_counts().timing_faults);
+  }
+};
+
+TEST_F(AngleTimingTest, ALateStampIsCountedByBothLoopsAndNeverHalts) { run(Stamp::Late); }
+TEST_F(AngleTimingTest, AnEarlyStampIsCountedByBothLoopsAndNeverHalts) { run(Stamp::Early); }
+TEST_F(AngleTimingTest, ARepeatedStampIsCountedByBothLoopsAndNeverHalts) { run(Stamp::Repeated); }
+TEST_F(AngleTimingTest, ABackwardsStampIsCountedByBothLoopsAndNeverHalts) { run(Stamp::Backwards); }
+
+// (h) init refuses an angle channel outside 0..16 and the arm or a stick channel (the register's AETR map: sticks 1 to 4, arm
+// 5), and accepts the others, 0 (no switch) included. Each case is a fresh process (threadsafe death tests), since the
+// parameter table loads once per process.
+void init_with_angle_channel(std::int32_t angle_channel, std::int32_t att_loop_ratio = 0) {
+  (void)prctl(PR_SET_DUMPABLE, 0);
+  if (!params_init(table_with_angle_channel(angle_channel, att_loop_ratio))) {
+    std::exit(2);
+  }
+  std::array<DshotValue, composition::kMotors> motor_latch{};
+  std::array<ServoUs, composition::kServos> servo_latch{};
+  hal_sim::setup({static_cast<std::uint32_t>(param_value<ParamId::tick_period_num_us>()),
+                  static_cast<std::uint32_t>(param_value<ParamId::tick_period_den>())},
+                 motor_latch, servo_latch);
+  composition::init();
+  std::exit(0);
+}
+
+TEST(QuadFcAngleInitDeathTest, InitRefusesABadAngleChannelAndAcceptsTheOthers) {
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  for (const std::int32_t bad : {-1, 17, 1, 2, 3, 4, 5}) {
+    EXPECT_EXIT(init_with_angle_channel(bad), ::testing::KilledBySignal(SIGABRT),
+                bad < 0 || bad > 16 ? "hal_panic: quad_fc composition: rc_channel_angle is outside 0..16"
+                                    : "hal_panic: quad_fc composition: rc_channel_angle is the arm channel or a stick channel")
+        << bad;
+  }
+  for (const std::int32_t good : {0, 6, 16}) {
+    EXPECT_EXIT(init_with_angle_channel(good), ::testing::ExitedWithCode(0), "") << good;
+  }
+}
+
 // ---- The boot gyro calibration and the upright check (M3 P6, decision 0042) ----
 
 // The fixture without the warm-up: the case itself runs the calibration.
@@ -1106,6 +1488,16 @@ TEST_F(CalibrationGateTest, ATiltAboveTheSmallAngleRefusesArmingAndBelowItDoesNo
       EXPECT_EQ(is_armed_output(o), roll_deg < 25.0) << roll_deg << " deg";
     }
     accel_ = sample_of(Kind::Quiet, 0).accel_m_s2;
+  }
+}
+
+// The law runs once per rate tick, which is its period only for att_loop_ratio 1: init refuses another ratio.
+TEST(QuadFcAngleInitDeathTest, InitRefusesAnAttitudeLoopRatioOtherThanOne) {
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  for (const std::int32_t ratio : {2, 3}) {
+    EXPECT_EXIT(init_with_angle_channel(kAngleChannel, ratio), ::testing::KilledBySignal(SIGABRT),
+                "hal_panic: quad_fc composition: att_loop_ratio is not 1")
+        << ratio;
   }
 }
 

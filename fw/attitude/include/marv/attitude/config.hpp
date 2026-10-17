@@ -28,6 +28,13 @@ struct AttitudeConfig {
   T yaw_alpha_min{};         // att_yaw_alpha_min, rad/s^2: the smallest yaw angular acceleration over the band box
   T yaw_t_cross{};           // att_yaw_t_cross, s: the latest linear-regime yaw-rate zero crossing over the band box
   prim::Vec3<T> rate_max{};  // rate_max_{roll,pitch,yaw}, rad/s
+  // The spacing check (the rate loop's rule, decision 0034, applied to the attitude law by decision 0043): tick period
+  // tick_period_num_us / tick_period_den µs, period_ticks = rate_loop_divisor * att_loop_ratio ticks per execution,
+  // largest accepted |dt_n - T_a| period_tolerance_us µs.
+  std::int32_t tick_period_num_us{};
+  std::int32_t tick_period_den{};
+  std::int32_t period_ticks{};
+  std::int32_t period_tolerance_us{};
 };
 
 enum class ConfigError : std::uint8_t {
@@ -40,7 +47,8 @@ enum class ConfigError : std::uint8_t {
   Deadband,
   AlphaMin,
   TCross,
-  RateMax
+  RateMax,
+  Timing
 };
 
 // The first violated rule, else None. Written with negated comparisons, so a NaN is rejected.
@@ -85,12 +93,29 @@ template <class T>
   return ConfigError::None;
 }
 
-// hal_panic naming the violated rule unless validate(c) == None.
+// Timing unless the tick numerator, denominator and period_ticks are at least 1, the tolerance is at least 0 and
+// 2 den tol < num (the tolerance below half a tick), so a missing sample is always outside the bound; else None.
+template <class T>
+[[nodiscard]] ConfigError validate_timing(const AttitudeConfig<T>& c) noexcept {
+  if (c.tick_period_num_us < 1 || c.tick_period_den < 1 || c.period_ticks < 1 || c.period_tolerance_us < 0) {
+    return ConfigError::Timing;
+  }
+  const auto num = static_cast<std::uint64_t>(c.tick_period_num_us);
+  const auto den = static_cast<std::uint64_t>(c.tick_period_den);
+  const auto tol = static_cast<std::uint64_t>(c.period_tolerance_us);
+  if (2 * den * tol >= num) {
+    return ConfigError::Timing;
+  }
+  return ConfigError::None;
+}
+
+// hal_panic naming the violated rule unless validate(c) == None and validate_timing(c) == None.
 void require_valid(const AttitudeConfig<float>& c) noexcept;
 
 // The configuration from the product parameters: att_kp, att_yaw_weight, angle_tilt_max, yaw_deadband, att_yaw_alpha_min,
-// att_yaw_t_cross and rate_max_{roll,pitch,yaw} as read, and the period T_a = att_loop_ratio * rate_loop_divisor *
-// tick_period_num_us / tick_period_den microseconds, in seconds. Not validated.
+// att_yaw_t_cross and rate_max_{roll,pitch,yaw} as read, the period T_a = att_loop_ratio * rate_loop_divisor *
+// tick_period_num_us / tick_period_den microseconds, in seconds, and the spacing check's tick_period_num_us,
+// tick_period_den, period_ticks = rate_loop_divisor * att_loop_ratio and rate_period_tolerance_us. Not validated.
 [[nodiscard]] AttitudeConfig<float> from_params() noexcept;
 
 // from_params, then require_valid: the firmware-facing init.
