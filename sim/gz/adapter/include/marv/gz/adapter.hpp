@@ -64,11 +64,13 @@ double clock_error(int corner, double odr_error);
 // (t_nom_s is not checked: marv_plant_step validates dt). e = 0 returns t_nom_s bitwise (division by exactly 1).
 double true_tick_period_s(double t_nom_s, double e);
 
-// The largest N the adapter accepts: the delay line's memory bound, not a design limit. A sanity bound for the plant's
-// ESC-command latency (N * 156.25 us = 40 ms at the fc3v2 tick), well above any N the rate loop's phase margin allows; the
-// design limit N_max is computed by tools/card/hil_delay_margin.py (decision 0046 item 2).
-// Kind: PLACEHOLDER (a bound against typos such as N = 4e9, 256 = 2^8 chosen only to be far above N_max; it is not a design
-// value and nothing will replace it).
+// The largest N the adapter accepts: a memory and typo bound on the delay line, not a design limit. 256 ticks are 40 ms at the
+// SIL tick (256 x 156.25 us) and 34.1 ms at the fc3v2 tick (256 x 1953125/14649 us = 34.13 ms). The design limit is N_max of
+// decision 0046 item 2 (tools/card/hil_delay_margin.py: 249 on the nominal rows at the fc3v2 timing, regenerated output in
+// tests/regression/quad/L09/results/hil_s2/); this bound only has to lie above the N a run asks for.
+// Kind: PLACEHOLDER (256 = 2^8, the power of two above N_max = 249; no source). Replaced by a bound derived from N_max once
+// the HIL's N is chosen (Luis, decision 0046 item 2). tools/card/gen_world.py COMMAND_DELAY_MAX_TICKS repeats it and
+// tests/regression/quad/L06/tools/test_world_sensors.py checks that the two are equal.
 inline constexpr std::uint32_t kMaxCommandDelayTicks = 256;
 
 class CommandSource {

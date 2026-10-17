@@ -11,14 +11,17 @@ Method (nothing here changes a design rule or a threshold; the evaluation is too
      firmware dt (the board's mean period).
   2. For each L = latency .. latency + extra (latency = the profile's latency_samples): the model of rule step 1 with latency L
      and rate_lead.configuration_rows (rule step 13) on those gains: the notch grid resolved at L by step 13's own halving
-     rule, with every notch bypassed, each at the f32 firmware loop (dt, f32 alpha, expf -+LIBM_EXP_ULPS) at nominal and the
-     four band corners (the robustness box of rate.corner_list). Worst PM and Ms over the flight configurations (latency L);
-     step 13's latency-0 configurations (the truth gyro) do not depend on L and are left out of the table.
+     rule, with every notch bypassed, each at the f32 firmware loop (dt, f32 alpha, expf -+LIBM_EXP_ULPS). Worst PM and Ms over
+     the flight configurations (latency L); step 13's latency-0 configurations (the truth gyro) do not depend on L and are left
+     out. Two sets of rows: the NOMINAL rows (the card's nominal J and tau only: the plant of a HIL or SIL run is the card's
+     nominal model, core section 6) and the worst-corner rows (nominal and the four band corners of rate.corner_list).
   3. A delay of N ticks on the DShot command is a pure delay of N T_s in the loop, as a latency of N samples is (the adapter's
      delay line applies the command of tick j - N at tick j; the IMU latency is the plant's sample delay line, both counted in
-     ticks), so the loop at command delay N and latency l is the loop at latency l + N. N_max is the largest N with every
-     N' <= N passing (worst PM >= PM_min); it is None if N = 0 already fails. The Ms column is information: Ms_max is not part
-     of decision 0046's N_max.
+     ticks), so the loop at command delay N and latency l is the loop at latency l + N.
+  4. N_max (decision 0046 item 2, as re-ruled): the largest N such that every N' <= N has every NOMINAL row meeting QF-3, worst
+     PM >= PM_min AND worst Ms <= Ms_max; None if N = 0 already fails. The worst-corner table is printed beside it, labelled
+     "worst corner: not a margin result for HIL": the gain rule puts the worst corner at PM_min, so its N_max is 0 by
+     construction.
 """
 
 from __future__ import annotations
@@ -39,7 +42,10 @@ ROOT = HERE.parents[1]
 FLIGHT_CARD = ROOT / "vehicles" / "marv_5in_fc3v2.yaml"
 FLIGHT_SCENARIO = ROOT / "fw" / "compositions" / "quad_fc" / "params" / "fc3v2_scenario_values.yaml"
 BUDGET = ROOT / "design" / "budget.yaml"
-EXTRA_DEFAULT = 20  # labelled: delays 0..20 ticks, twice the HIL S1 round-trip requirement of 10 (decision 0046 item 2)
+EXTRA_DEFAULT = 20  # labelled: the worst-corner table covers N = 0..20, twice the HIL S1 requirement of 10 (decision 0046 item 2)
+EXTRA_LISTED = 20  # labelled: rows listed one by one up to here
+NOMINAL_STRIDE = 25  # labelled: then every 25th row
+NOMINAL_SCAN_MAX = 4096  # labelled: the nominal scan stops at the first failing N; refused if none fails by here (a runaway guard)
 
 
 def flight_profile(card_path):
@@ -47,10 +53,13 @@ def flight_profile(card_path):
     return ROOT / "sensors" / "profiles" / f"{card['sensor_profile']}.yaml"
 
 
-def margins_at(result, latency, procs, card_path):
-    """(level, worst PM, label, axis, corner), (worst Ms, ...) over the flight configurations at IMU-equivalent latency."""
+def margins_at(result, latency, procs, card_path, nominal_only):
+    """(level, worst PM, worst Ms, configuration count): PM and Ms are (value, configuration label, axis, corner) over the flight
+    configurations at IMU-equivalent latency; nominal_only keeps the nominal corner (card J and tau) alone."""
     base = result["model"]
-    model = rate_lead.Model(base.t_s, base.divisor, latency, base.stages, base.corners, base.a, base.inertia)
+    corners = base.corners[:1] if nominal_only else base.corners
+    assert not nominal_only or corners[0][0] == "nominal"
+    model = rate_lead.Model(base.t_s, base.divisor, latency, base.stages, corners, base.a, base.inertia)
     cset = rate_lead.configuration_rows(model, result["chain"], result["axes32"], result["dts"], procs, card_path)
     flight = [row for row in cset["rows"] if row[0][1] == latency]
     pm, ms = rate_lead.set_worst(flight)
@@ -62,15 +71,24 @@ def table(card_path, profile_path, scenario_path, budget_path, extra, procs):
     result = rate_lead.design(card, budget, scenario, profile, str(card_path), str(profile_path), procs, "mean_period")
     inp = result["inputs"]
     base_latency = inp["latency"]
-    rows = []
-    for n in range(extra + 1):
-        level, pm, ms, count = margins_at(result, base_latency + n, procs, str(card_path))
-        rows.append({"n": n, "latency": base_latency + n, "level": level, "configs": count, "pm": pm, "ms": ms})
-    n_max = None
-    for r in rows:
-        if r["pm"][0] < inp["PM_min"]:
+    rows, n_max, n = [], None, 0
+    while True:
+        row = {"n": n, "latency": base_latency + n, "nom": margins_at(result, base_latency + n, procs, str(card_path), True)}
+        row["pass"] = row["nom"][1][0] >= inp["PM_min"] and row["nom"][2][0] <= inp["Ms_max"]
+        if n <= extra:
+            row["worst"] = margins_at(result, base_latency + n, procs, str(card_path), False)
+        rows.append(row)
+        if not row["pass"]:
             break
-        n_max = r["n"]
+        n_max = n
+        n += 1
+        if n > NOMINAL_SCAN_MAX:
+            raise gcd.DesignError(f"the nominal rows still pass at N = {NOMINAL_SCAN_MAX}; raise NOMINAL_SCAN_MAX")
+    while len(rows) <= extra:  # the nominal scan ended inside the worst-corner table
+        n = len(rows)
+        rows.append({"n": n, "latency": base_latency + n, "pass": False,
+                     "nom": margins_at(result, base_latency + n, procs, str(card_path), True),
+                     "worst": margins_at(result, base_latency + n, procs, str(card_path), False)})
     return result, rows, n_max
 
 
@@ -88,25 +106,46 @@ def lines(result, rows, n_max, card_path, profile_path, scenario_path):
     for ax, j, g in zip(rate_lead.AXES, inp["inertia"], result["axes32"]):
         out.append(f"  {ax:<5} J {j!r}: kp {g[0]!r}  ki {g[1]!r}  kd {g[2]!r}  T_f {g[3]!r}")
     out += [
-        "N = command delay in ticks; latency = profile latency + N samples; PM and Ms are the worst over the flight",
-        "configuration set (step 13: notch grid at the level resolved there, bypassed) x axes x the band corners x libm variants",
-        f"{'N':>3} {'latency':>7} {'level':>5} {'configs':>7} {'worst PM deg':>13} {'PM - PM_min deg':>16} {'worst Ms':>9}  "
-        "binding PM (configuration; axis; corner)",
+        "N = command delay in ticks; latency = profile latency + N samples. Worst over the flight configuration set (step 13:",
+        "notch grid at the level that step resolves, bypassed) x axes x libm variants.",
+        "NOMINAL rows (the card's nominal J and tau): the HIL/SIL plant. N_max is decided here: PM >= PM_min AND Ms <= Ms_max.",
+        "Worst corner (nominal and the four band corners): not a margin result for HIL.",
+        f"{'N':>3} {'latency':>7} | {'nominal PM deg':>14} {'PM-PM_min deg':>13} {'Ms':>9} {'level':>5} {'cfgs':>4} {'pass':>4} | "
+        f"{'worst-corner PM deg':>19} {'PM-PM_min deg':>13} {'Ms':>9} {'level':>5}  binding worst corner (configuration; axis; corner)",
     ]
+    last = rows[-1]["n"]
     for r in rows:
-        pm, ms = r["pm"], r["ms"]
-        out.append(f"{r['n']:>3} {r['latency']:>7} {r['level']:>5} {r['configs']:>7} {deg(pm[0]):>13.6f} "
-                   f"{deg(pm[0] - inp['PM_min']):>16.6f} {ms[0]:>9.6f}  {pm[1]}; {pm[2]}; {pm[3]}"
-                   f"{'' if pm[0] >= inp['PM_min'] else '   FAILS PM_min'}"
-                   f"{'' if ms[0] <= inp['Ms_max'] else '   (Ms above Ms_max)'}")
-    monotone = all(b["pm"][0] <= a["pm"][0] for a, b in zip(rows, rows[1:]))
+        if r["n"] > EXTRA_LISTED and r["n"] % NOMINAL_STRIDE and r["n"] < last - 1:
+            continue  # beyond the worst-corner table only every NOMINAL_STRIDE-th nominal row and the last two are listed
+        nl, npm, nms, ncfg = r["nom"]
+        head = (f"{r['n']:>3} {r['latency']:>7} | {deg(npm[0]):>14.6f} {deg(npm[0] - inp['PM_min']):>13.6f} {nms[0]:>9.6f} "
+                f"{nl:>5} {ncfg:>4} {'yes' if r['pass'] else 'NO':>4} | ")
+        if "worst" in r:
+            wl, wpm, wms, _ = r["worst"]
+            head += (f"{deg(wpm[0]):>19.6f} {deg(wpm[0] - inp['PM_min']):>13.6f} {wms[0]:>9.6f} {wl:>5}  "
+                     f"{wpm[1]}; {wpm[2]}; {wpm[3]}")
+        else:
+            head += "(not evaluated beyond --extra)"
+        out.append(head)
+    nominal = [r["nom"] for r in rows]
+    monotone = all(b[1][0] <= a[1][0] and b[2][0] >= a[2][0] for a, b in zip(nominal, nominal[1:]))
+    fail = rows[-1]
+    why = []
+    if fail["nom"][1][0] < inp["PM_min"]:
+        why.append("PM below PM_min")
+    if fail["nom"][2][0] > inp["Ms_max"]:
+        why.append("Ms above Ms_max")
     out += [
-        f"worst PM non-increasing in N over the table: {monotone}",
-        f"N_max = {n_max if n_max is not None else 'NONE: N = 0 already fails PM_min'}"
-        + ("" if n_max is None or n_max < rows[-1]["n"] else f" (the table's last row; extend --extra)"),
+        f"nominal worst PM non-increasing and worst Ms non-decreasing in N over the rows computed: {monotone}",
+        f"N_max (nominal rows, PM >= PM_min and Ms <= Ms_max) = {n_max if n_max is not None else 'NONE: N = 0 already fails'}"
+        f"; N = {fail['n']} is the first failure ({' and '.join(why)})",
     ]
-    first_ms = next((r["n"] for r in rows if r["ms"][0] > inp["Ms_max"]), None)
-    out.append(f"first N with Ms above Ms_max (information, not part of N_max): {first_ms if first_ms is not None else 'none in the table'}")
+    s1 = 10  # labelled: HIL S1 requirement, ceil(1.26 ms / 133.3 us = 9.5 ticks), branch hil-s1 tests/regression/quad/L09/results
+    out.append(f"HIL S1 requirement N >= {s1}: " + ("MET" if n_max is not None and n_max >= s1 else
+                                                      "NOT MET: N_max is below the link's required N; the choice is Luis's"))
+    first = next((r["n"] for r in rows if "worst" in r and r["worst"][1][0] < inp["PM_min"]), None)
+    out.append(f"worst corner (not a margin result for HIL): first N below PM_min {first if first is not None else 'none in the table'}"
+               f"; its N_max would be {first - 1 if first else 'beyond the table'}")
     return out
 
 

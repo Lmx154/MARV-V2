@@ -5,30 +5,44 @@ flight gains held fixed (rate_lead.design N* 4.057265779973702, w_c,nom 8.660221
   roll  J 0.00427: kp 0.03013591095805168  ki 0.06637393683195114  kd 0.002576019149273634  T_f 0.05732634663581848
   pitch J 0.00332: kp 0.0234312005341053  ki 0.05160690099000931  kd 0.002002900233492255  T_f 0.05732634663581848
   yaw   J 0.00734: kp 0.05180271342396736  ki 0.11409477144479752  kd 0.004428098443895578  T_f 0.05732634663581848
-N = command delay in ticks; latency = profile latency + N samples; PM and Ms are the worst over the flight
-configuration set (step 13: notch grid at the level resolved there, bypassed) x axes x the band corners x libm variants
-  N latency level configs  worst PM deg  PM - PM_min deg  worst Ms  binding PM (configuration; axis; corner)
-  0       3     0       4     45.004496         0.004496  1.999400  notches at 253.1669 rad/s, latency 3; pitch; J-,tau+
-  1       4     0       4     44.872656        -0.127344  2.007545  notches at 253.1669 rad/s, latency 4; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
-  2       5     0       4     44.740816        -0.259184  2.015749  notches at 253.1669 rad/s, latency 5; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
-  3       6     0       4     44.608976        -0.391024  2.024012  notches at 253.1669 rad/s, latency 6; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
-  4       7     0       4     44.477136        -0.522864  2.032335  notches at 253.1669 rad/s, latency 7; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
-  5       8     0       4     44.345296        -0.654704  2.040718  notches at 253.1669 rad/s, latency 8; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
-  6       9     0       4     44.213456        -0.786544  2.049164  notches at 253.1669 rad/s, latency 9; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
-  7      10     0       4     44.081617        -0.918383  2.057671  notches at 253.1669 rad/s, latency 10; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
-  8      11     0       4     43.949777        -1.050223  2.066240  notches at 253.1669 rad/s, latency 11; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
-  9      12     0       4     43.817937        -1.182063  2.074873  notches at 253.1669 rad/s, latency 12; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
- 10      13     0       4     43.686097        -1.313903  2.083571  notches at 253.1669 rad/s, latency 13; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
- 11      14     0       4     43.554257        -1.445743  2.092332  notches at 253.1669 rad/s, latency 14; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
- 12      15     0       4     43.422417        -1.577583  2.101159  notches at 253.1669 rad/s, latency 15; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
- 13      16     0       4     43.290577        -1.709423  2.110053  notches at 253.1669 rad/s, latency 16; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
- 14      17     0       4     43.158737        -1.841263  2.119013  notches at 253.1669 rad/s, latency 17; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
- 15      18     0       4     43.026898        -1.973102  2.128041  notches at 253.1669 rad/s, latency 18; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
- 16      19     0       4     42.895058        -2.104942  2.137137  notches at 253.1669 rad/s, latency 19; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
- 17      20     0       4     42.763218        -2.236782  2.146302  notches at 253.1669 rad/s, latency 20; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
- 18      21     0       4     42.631378        -2.368622  2.155537  notches at 253.1669 rad/s, latency 21; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
- 19      22     0       4     42.499538        -2.500462  2.164842  notches at 253.1669 rad/s, latency 22; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
- 20      23     0       4     42.367698        -2.632302  2.174219  notches at 253.1669 rad/s, latency 23; pitch; J-,tau+   FAILS PM_min   (Ms above Ms_max)
-worst PM non-increasing in N over the table: True
-N_max = 0
-first N with Ms above Ms_max (information, not part of N_max): 1
+N = command delay in ticks; latency = profile latency + N samples. Worst over the flight configuration set (step 13:
+notch grid at the level that step resolves, bypassed) x axes x libm variants.
+NOMINAL rows (the card's nominal J and tau): the HIL/SIL plant. N_max is decided here: PM >= PM_min AND Ms <= Ms_max.
+Worst corner (nominal and the four band corners): not a margin result for HIL.
+  N latency | nominal PM deg PM-PM_min deg        Ms level cfgs pass | worst-corner PM deg PM-PM_min deg        Ms level  binding worst corner (configuration; axis; corner)
+  0       3 |      73.126198     28.126198  1.398170     0    4  yes |           45.004496      0.004496  1.999400     0  notches at 253.1669 rad/s, latency 3; pitch; J-,tau+
+  1       4 |      73.060041     28.060041  1.400059     0    4  yes |           44.872656     -0.127344  2.007545     0  notches at 253.1669 rad/s, latency 4; pitch; J-,tau+
+  2       5 |      72.993885     27.993885  1.401952     0    4  yes |           44.740816     -0.259184  2.015749     0  notches at 253.1669 rad/s, latency 5; pitch; J-,tau+
+  3       6 |      72.927728     27.927728  1.403848     0    4  yes |           44.608976     -0.391024  2.024012     0  notches at 253.1669 rad/s, latency 6; pitch; J-,tau+
+  4       7 |      72.861571     27.861571  1.405748     0    4  yes |           44.477136     -0.522864  2.032335     0  notches at 253.1669 rad/s, latency 7; pitch; J-,tau+
+  5       8 |      72.795414     27.795414  1.407652     0    4  yes |           44.345296     -0.654704  2.040718     0  notches at 253.1669 rad/s, latency 8; pitch; J-,tau+
+  6       9 |      72.729257     27.729257  1.409559     0    4  yes |           44.213456     -0.786544  2.049164     0  notches at 253.1669 rad/s, latency 9; pitch; J-,tau+
+  7      10 |      72.663100     27.663100  1.411469     0    4  yes |           44.081617     -0.918383  2.057671     0  notches at 253.1669 rad/s, latency 10; pitch; J-,tau+
+  8      11 |      72.596943     27.596943  1.413383     0    4  yes |           43.949777     -1.050223  2.066240     0  notches at 253.1669 rad/s, latency 11; pitch; J-,tau+
+  9      12 |      72.530787     27.530787  1.415300     0    4  yes |           43.817937     -1.182063  2.074873     0  notches at 253.1669 rad/s, latency 12; pitch; J-,tau+
+ 10      13 |      72.464630     27.464630  1.417221     0    4  yes |           43.686097     -1.313903  2.083571     0  notches at 253.1669 rad/s, latency 13; pitch; J-,tau+
+ 11      14 |      72.398473     27.398473  1.419145     0    4  yes |           43.554257     -1.445743  2.092332     0  notches at 253.1669 rad/s, latency 14; pitch; J-,tau+
+ 12      15 |      72.332316     27.332316  1.421073     0    4  yes |           43.422417     -1.577583  2.101159     0  notches at 253.1669 rad/s, latency 15; pitch; J-,tau+
+ 13      16 |      72.266159     27.266159  1.423005     0    4  yes |           43.290577     -1.709423  2.110053     0  notches at 253.1669 rad/s, latency 16; pitch; J-,tau+
+ 14      17 |      72.200002     27.200002  1.424940     0    4  yes |           43.158737     -1.841263  2.119013     0  notches at 253.1669 rad/s, latency 17; pitch; J-,tau+
+ 15      18 |      72.133845     27.133845  1.426878     0    4  yes |           43.026898     -1.973102  2.128041     0  notches at 253.1669 rad/s, latency 18; pitch; J-,tau+
+ 16      19 |      72.067688     27.067688  1.428820     0    4  yes |           42.895058     -2.104942  2.137137     0  notches at 253.1669 rad/s, latency 19; pitch; J-,tau+
+ 17      20 |      72.001532     27.001532  1.430766     0    4  yes |           42.763218     -2.236782  2.146302     0  notches at 253.1669 rad/s, latency 20; pitch; J-,tau+
+ 18      21 |      71.935375     26.935375  1.432715     0    4  yes |           42.631378     -2.368622  2.155537     0  notches at 253.1669 rad/s, latency 21; pitch; J-,tau+
+ 19      22 |      71.869218     26.869218  1.434668     0    4  yes |           42.499538     -2.500462  2.164842     0  notches at 253.1669 rad/s, latency 22; pitch; J-,tau+
+ 20      23 |      71.803061     26.803061  1.436624     0    4  yes |           42.367698     -2.632302  2.174219     0  notches at 253.1669 rad/s, latency 23; pitch; J-,tau+
+ 25      28 |      71.472277     26.472277  1.446460     0    4  yes | (not evaluated beyond --extra)
+ 50      53 |      69.818355     24.818355  1.497016     0    4  yes | (not evaluated beyond --extra)
+ 75      78 |      68.164433     23.164433  1.549953     0    4  yes | (not evaluated beyond --extra)
+100     103 |      66.510512     21.510512  1.605403     0    4  yes | (not evaluated beyond --extra)
+125     128 |      64.856590     19.856590  1.663520     0    4  yes | (not evaluated beyond --extra)
+150     153 |      63.202668     18.202668  1.724474     0    4  yes | (not evaluated beyond --extra)
+175     178 |      61.548747     16.548747  1.788459     0    4  yes | (not evaluated beyond --extra)
+200     203 |      59.894825     14.894825  1.855693     0    4  yes | (not evaluated beyond --extra)
+225     228 |      58.240903     13.240903  1.926421     0    4  yes | (not evaluated beyond --extra)
+249     252 |      56.653138     11.653138  1.997864     0    4  yes | (not evaluated beyond --extra)
+250     253 |      56.586982     11.586982  2.000920     0    4   NO | (not evaluated beyond --extra)
+nominal worst PM non-increasing and worst Ms non-decreasing in N over the rows computed: True
+N_max (nominal rows, PM >= PM_min and Ms <= Ms_max) = 249; N = 250 is the first failure (Ms above Ms_max)
+HIL S1 requirement N >= 10: MET
+worst corner (not a margin result for HIL): first N below PM_min 1; its N_max would be 0

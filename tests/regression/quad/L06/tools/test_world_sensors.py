@@ -19,7 +19,8 @@ What is checked:
       clock corner rounds first and then goes outward, and a whole-ns tick's world has no odr_error without a corner.
   The command delay (decision 0046 item 2): command_delay_ticks = 0 is the world without the argument byte for byte (with
       and without a SensorSet), N > 0 inserts the one element <command_delay_ticks>N</command_delay_ticks> before
-      <log_path> and changes nothing else, and a negative, non-integer, boolean or above-the-bound N is refused.
+      <log_path> and changes nothing else, a negative, non-integer, boolean or above-the-bound N is refused, and the
+      generator's bound is the adapter header's kMaxCommandDelayTicks.
   The generator refuses a malformed SensorSet.
   The test-only clock allow of the plugin (ruling on Q6) is named by exactly two files: the plugin, which reads it, and the
       clock T1 test, its only user.
@@ -295,6 +296,14 @@ def test_the_command_delay_element_is_the_only_change_and_zero_is_none(sensors):
     # Control: the element is the change - removing it from the N > 0 world gives the default world, and it is not in it.
     assert re.sub(r"[ \t]*<command_delay_ticks>1</command_delay_ticks>\n", "", gen_world.generate(
         CARD, SCEN / "hover.yaml", "test", 1, "lo", LOG, sensors=sensors, command_delay_ticks=1)[1]) == base[1]
+
+
+def test_the_generators_delay_bound_is_the_adapters():
+    header = (ROOT / "sim" / "gz" / "adapter" / "include" / "marv" / "gz" / "adapter.hpp").read_text(encoding="utf-8")
+    found = re.findall(r"kMaxCommandDelayTicks = (\d+);", header)
+    assert len(found) == 1 and int(found[0]) == gen_world.COMMAND_DELAY_MAX_TICKS
+    # Control: a different bound is not equal (the check can fail).
+    assert int(found[0]) + 1 != gen_world.COMMAND_DELAY_MAX_TICKS
 
 
 @pytest.mark.parametrize("bad", (-1, gen_world.COMMAND_DELAY_MAX_TICKS + 1, 1.0, True, "3", None))
