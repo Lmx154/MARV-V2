@@ -16,6 +16,8 @@ lead summary here). Items marked (Luis) are pending his sign-off and gate merges
    their compiled values (list: Luis). New arming refusals ConfigRefused and Maintenance; reboot / bootloader reset only
    with a disarmed maintenance grant (Luis). G7: arming refuses a stored config not bound to this image's validation
    report (check list: Luis).
+   Frozen tests extended (unit 3, VALIDATE): tests/regression/quad/L09/unit/quad_fc_gate_test.cpp gains the validate cases
+   (the default table accepted, one rejecting table per parameter-dependent panic site, init panicking with validate's reason).
 3. **Storage format:** binary `.mcfg` on the device, JSON as the host view (GD-3, Luis); FatFs (BSD-style) over SPI0 for
    the SD card; pins from the madflight page, UNVERIFIED until the mount test.
 4. **Transport:** USB composite: CDC0 the existing console unchanged, CDC1 MAVLink; link serviced in the background loop
