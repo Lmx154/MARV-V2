@@ -41,6 +41,21 @@ option(MARV_FC3V2_COUNT_ONLY "FC3v2 bench image whose IMU tick does not call the
 option(MARV_FC3V2_BENCH_STATS "FC3v2 bench image that records stage cycle counts and still-bench IMU sums" OFF)
 option(MARV_FC3V2_BENCH_ACCEPT_SPACING "FC3v2 bench image whose rate loop accepts the board's sample spacing" OFF)
 target_compile_definitions(marv_hal_target PUBLIC $<$<BOOL:${MARV_FC3V2_BENCH_STATS}>:MARV_FC3V2_BENCH_STATS>)
+# MARV_FC3V2_IMU_LOG (bench only, default OFF, M3 P3a): the image copies every sample the composition's tick receives into
+# an SRAM ring and writes the ring to the USB CDC port as framed binary records (marv/hal_target/imu_log.hpp), with a
+# status record once per second in place of the text status line; tools/target/imu_log.py captures and checks it. The
+# default image does not compile or link the log. Mutually exclusive with MARV_FC3V2_COUNT_ONLY (the log is of the samples
+# the composition receives) and with MARV_FC3V2_BENCH_STATS (its text lines would interleave with the records).
+option(MARV_FC3V2_IMU_LOG "FC3v2 bench image that logs every IMU sample the estimator consumes to the host" OFF)
+if(MARV_FC3V2_IMU_LOG AND (MARV_FC3V2_COUNT_ONLY OR MARV_FC3V2_BENCH_STATS))
+  message(FATAL_ERROR "MARV_FC3V2_IMU_LOG excludes MARV_FC3V2_COUNT_ONLY and MARV_FC3V2_BENCH_STATS")
+endif()
+if(MARV_FC3V2_IMU_LOG)
+  target_sources(marv_hal_target PRIVATE src/imu_log.cpp)
+  target_compile_definitions(marv_hal_target PUBLIC MARV_FC3V2_IMU_LOG)
+  target_include_directories(marv_hal_target SYSTEM PRIVATE
+    $<TARGET_PROPERTY:pico_stdio_headers,INTERFACE_INCLUDE_DIRECTORIES>)
+endif()
 add_executable(marv_fc3v2 src/main.cpp)
 # Programmed to flash; the boot copies the whole image to SRAM and runs it there (core §4.1 EMB-1). Measured with code
 # executing from XIP flash the IMU interrupt failed EMB-3 (M1 P12a, tests/regression/quad/L09/results/p12_bench/).
