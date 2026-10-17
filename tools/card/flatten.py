@@ -308,7 +308,10 @@ def main(argv=None):
                 lead_rate_entries = rate_lead.entries_from(lead)
                 lead_rate_report = rate_lead.report_lines(lead)
             if args.out_attitude_lead:
-                today = attitude.design(card, budget, scenario_doc, args.card, lead["pi_l4"])
+                try:
+                    today = attitude.design(card, budget, scenario_doc, args.card, lead["pi_l4"])
+                except gpc.GenError as e:
+                    today = "; ".join(e.lines)  # the report's comparison column only; the flight rule below is unaffected
                 att = attitude_lead.design(card, budget, scenario_doc, args.card, attitude_lead.lead_inner(lead),
                                            lead["pi_l4"])
                 lead_attitude_entries = attitude_lead.entries_from(att)

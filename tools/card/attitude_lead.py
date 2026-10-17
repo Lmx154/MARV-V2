@@ -679,21 +679,26 @@ def report_lines(result, today, lead=None):
         "  0014), re-checked at L9 with measured WCETs)",
         f"{'':<30}{'new (this rule)':<28}today (attitude.py, live)",
     ]
-    new, old = summary(r), summary(today)
+    new = summary(r)
+    refused = isinstance(today, str)  # attitude.design refused: today is its refusal text and the column is not computed
+    old = None if refused else summary(today)
+    skip = f"not computed: {today}" if refused else ""
 
     def row(label, a, b):
-        lines.append(f"{label:<30}{a + ' ':<28}{b}")
+        lines.append(f"{label:<30}{a + ' ':<28}{skip or b}")
 
-    row("k (f32) 1/s", repr(new[0]), repr(old[0]))
-    row("k (double) 1/s", repr(new[1]), repr(old[1]))
+    row("k (f32) 1/s", repr(new[0]), "" if refused else repr(old[0]))
+    row("k (double) 1/s", repr(new[1]), "" if refused else repr(old[1]))
     for axis in AXES:
-        row(f"PM nominal {axis} (deg)", f"{deg(new[2][axis]):.6f}", f"{deg(old[2][axis]):.6f}")
-    row("PM worst (deg), loop", f"{deg(new[3][0]):.6f} {new[3][1]} {new[3][2]}", f"{deg(old[3][0]):.6f} {old[3][1]} {old[3][2]}")
-    row("crossover range (rad/s)", f"{new[4][0]:.6f} .. {new[4][1]:.6f}", f"{old[4][0]:.6f} .. {old[4][1]:.6f}")
-    row("w (f32)", repr(r["w32"]), repr(today["w32"]))
-    row("att_yaw_alpha_min (rad/s^2)", repr(r["alpha_min"]), repr(today["alpha_min"]))
-    row("att_yaw_t_cross (s)", repr(r["t_cross"]), repr(today["t_cross"]))
-    row("yaw effective gain", repr(r["k_yaw_effective"]), repr(today["k_yaw_effective"]))
+        row(f"PM nominal {axis} (deg)", f"{deg(new[2][axis]):.6f}", "" if refused else f"{deg(old[2][axis]):.6f}")
+    row("PM worst (deg), loop", f"{deg(new[3][0]):.6f} {new[3][1]} {new[3][2]}",
+        "" if refused else f"{deg(old[3][0]):.6f} {old[3][1]} {old[3][2]}")
+    row("crossover range (rad/s)", f"{new[4][0]:.6f} .. {new[4][1]:.6f}",
+        "" if refused else f"{old[4][0]:.6f} .. {old[4][1]:.6f}")
+    row("w (f32)", repr(r["w32"]), "" if refused else repr(today["w32"]))
+    row("att_yaw_alpha_min (rad/s^2)", repr(r["alpha_min"]), "" if refused else repr(today["alpha_min"]))
+    row("att_yaw_t_cross (s)", repr(r["t_cross"]), "" if refused else repr(today["t_cross"]))
+    row("yaw effective gain", repr(r["k_yaw_effective"]), "" if refused else repr(today["k_yaw_effective"]))
     lines += [
         f"guard (attitude.sup_rule): delta_num {f['delta_num']!r} rad, PM_worst(f32) - PM_min - delta_num "
         f"{f['pm_worst'] - r['inputs']['PM_min'] - f['delta_num']:+.3e} rad, stepped down {f['stepped_down']} "
