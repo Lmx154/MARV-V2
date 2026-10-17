@@ -1,6 +1,6 @@
 """The SIL launcher: starts and stops one Gazebo SIL run (tools/sim/run_quad_fc.py, which owns the world generation).
 
-The SIL's MAVLink service and UDP socket arrive with ground segment unit 6. Until then a launched run has no link:
+The SIL's link service and UDP socket arrive with ground segment unit 6. Until then a launched run has no link:
 `link_status` says so, and the UDP port the run is to serve is passed in the environment variable UDP_PORT_ENV so that
 unit 6 reads it from the launch contract (the scenario value of the port is set by whoever starts the helper).
 """
@@ -16,7 +16,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 UDP_PORT_ENV = "MARV_SIL_LINK_UDP_PORT"
-LINK_NOT_AVAILABLE = "link: not yet available (the SIL MAVLink service and UDP socket arrive with unit 6)"
+LINK_NOT_AVAILABLE = "link: not yet available (the SIL link service and UDP socket arrive with unit 6)"
 STOP_GRACE_S = 10.0  # labelled harness value: how long SIGTERM gets before SIGKILL
 
 

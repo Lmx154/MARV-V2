@@ -364,7 +364,7 @@ async def run(args: argparse.Namespace) -> int:
 def parse_args(argv=None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     dev = ap.add_mutually_exclusive_group()
-    dev.add_argument("--serial", help="open this serial path at start (the board's MAVLink CDC)")
+    dev.add_argument("--serial", help="open this serial path at start (the board's link CDC)")
     dev.add_argument("--udp", type=int, help="open the SIL's UDP socket 127.0.0.1:<port> at start (a scenario value)")
     ap.add_argument("--baud", type=int, default=DEFAULT_BAUD, help="serial baud rate, ignored by USB CDC (default %(default)s)")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT, help="helper port on 127.0.0.1; 0 picks a free one (default %(default)s)")
