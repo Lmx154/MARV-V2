@@ -1,0 +1,12 @@
+config: rate 7500 samples/s  batch 4  record 160 bytes
+downlink sent: 112500 records  450000 samples  18000000 bytes  over 59.999 s  = 7500.1 samples/s  300.0 kB/s on the wire
+send lateness vs schedule (us): min 0.1  median 0.1  mean 0.2  p99 1.9  p99.9 9.7  max 906.7  writes that hit a full tty buffer 0
+uplink received: 450000 reports  63 status records  18004536 bytes  = 300.1 kB/s over the send window
+uplink host-side: CRC failures 0  bad headers 0  sequence gaps 0 (records lost 0)  unframed bytes 0 (before the first record 0)  truncated tail 0 bytes
+downlink board-side (last status): down_records=112500  down_samples=450000  crc_failures=0  bad_headers=0  seq_gaps=0  seq_lost=0  tick_gaps=0  bytes_dropped=0  rx_bytes=18000000  up_reports=450000  max_arrival_gap_us=1463  max_send_us=286  board_time_us=143190687  max_batch=16
+report-counter cross-check: 63 status records, 0 whose up_reports differs from the reports decoded before them
+report content: 0 tick discontinuities, 0 DShot placeholder mismatches in 450000 reports
+round trip (us, 450000 echoes): min 432.9  median 543.2  mean 581.5  p99 814.0  p99.9 989.5  max 1260.1
+board arrival spacing of downlink records (us, board clock, 112499 spacings): min 353.0  median 531.0  mean 533.3  p99 636.0  p99.9 642.0  max 1463.0; expected 533.3
+board longest uplink write 286 us; longest arrival gap 1463 us
+LINK OK
