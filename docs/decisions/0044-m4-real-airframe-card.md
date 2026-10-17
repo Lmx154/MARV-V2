@@ -30,5 +30,6 @@ vertical PM 45.000003°, Ms 1.341. Regenerated gains and the profile entries: M4
 ## Approval
 
 Luis, 2026-10-17, approved the order ("1. OK"); the stick-vector change loosens nothing (the predicate is unchanged).
-Open for Luis: `idle_speed` is now 0 (from his speed_range ruling's minimum), so motors no longer spin when armed at
-zero throttle; Betaflight's `dshot_idle_value` keeps them spinning.
+`idle_speed` is now 0 (from his speed_range ruling's minimum); the armed zero-throttle output stays DShot 48, the same
+floor as the M2 image (mixer.hpp dshot_floor), so the motors idle as on the M2 bench (that the ESC spins at 48 is
+INFERRED from the M2 bench, not a committed test; QF-6 measures the minimum stable speed).
