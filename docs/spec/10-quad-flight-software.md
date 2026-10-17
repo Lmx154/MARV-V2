@@ -39,7 +39,8 @@ in lockstep with the physics, headless, as fast as the CPU allows, many runs in 
 before flight, not the place where tuning happens.
 
 Decision 0026 changes the gate: the first flights are gated by the bench (TB, core §7.1) and a flight test card,
-tethered first. HIL (L10) is deferred until after first flight; SIL stays the everyday loop.
+tethered first. L10's MVP subset is built in M4 before first flight (Luis, 2026-10-17); it rehearses the firmware and radio path and
+does not gate the flight. SIL stays the everyday loop.
 
 HIL with the real RP2354B can never run faster than real time: the MCU runs on its own crystal. Its job is to verify
 real timing on real silicon.
@@ -516,12 +517,15 @@ Built after L5 and beside L6 (it needs nothing from L6); numbered L11 because L0
 
 *MVP subset in §4.0; the rest is deferred until after M4 (decision 0026).*
 
-- **Needs from the ground segment:** phases G0 and G1 (the interface schema and a codec carrying IF-9). Activate them
-  when the spine reaches L9. The ground segment's trivial test codec (GS-3) is enough to start.
+- **Needs from the ground segment:** MVP: a bench-only framed USB link (decision 0046). Later: phases G0 and G1 (the
+  interface schema and a codec carrying IF-9). Activate them when the spine reaches L9. The ground segment's trivial
+  test codec (GS-3) is enough to start.
 - **Builds:** HIL mode on the target: tick-stamped sensor injection after the drivers, actuator output returned over
   USB.
 - **Pass bar (T6):**
-  - SIL and HIL traces of the same scenario agree within float tolerance, with `-ffp-contract=off` on both builds.
+  - SIL and HIL traces of the same scenario, with the stated N-tick command delay in both, agree within a stated
+    tolerance: the flight build keeps GCC's default contraction, the host build has `-ffp-contract=off` (core §4 allows a tolerance;
+    1 DShot count, the measured fused-build maximum, `L09/results/hil_s3b`; Luis, 2026-10-17, decision 0048).
   - EMB-3 holds under HIL load.
   - The link-rate cap (core §4) is computed; if the IMU rate is decimated, the report says so.
 - **Freezes:** the SIL-vs-HIL comparison scenarios.
