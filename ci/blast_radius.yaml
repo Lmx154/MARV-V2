@@ -93,6 +93,7 @@ ignore:
   - tools/target/**   # bench-only scripts (flashing); never run by CI (decision 0027)
   - docs/**
   - tests/regression/quad/L09/results/**   # bench logs (M1 P9, P11): evidence only, read by no test
+  - tests/regression/quad/L10/results/**   # HIL S2e run reports and traces: evidence only, read by no test
   - LICENSE
   - THIRD_PARTY_NOTICES.md
   - datasheets/**
@@ -556,6 +557,13 @@ rules:
     pytest_paths: [tests/regression/quad/L06/tools]
     gz_groups: []
     why: "the stage (e) models are imported by the L06 tools tests only"
+
+  - paths: [tools/sim/run_quad_fc.py]
+    ctest_labels: []
+    run_ci_steps: []
+    pytest_paths: []
+    gz_groups: [l7]
+    why: "run_quad_fc is the HIL S2e evidence runner (quad_fc flying the real card in gz); no test imports it, so only the l7 group (host-gz-quadfc plumbing) is selected as a margin"
 
   - paths: [tools/sim/measure_sim3.py]
     ctest_labels: []
