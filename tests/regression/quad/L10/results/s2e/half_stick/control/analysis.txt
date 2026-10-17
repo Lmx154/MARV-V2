@@ -1,0 +1,67 @@
+HIL S2e analysis: control run (att_kp = 0, rate_ki_roll = rate_ki_pitch = 0: the attitude loop disabled)
+Simulation on INFERRED / UNVERIFIED card values (vehicles/marv_5in_fc3v2.yaml), not a flight result.
+log sha256 bf807a6dd9a3cb8d44d09158203216f9900f3c308fdeb8766e52c308440c38ce
+tick 1953125/14649 us; host step 133328 ns (-1.602 ppm); command delay N = 10; ticks 161632
+angle_tilt_max (fc3v2) 60.000002 deg; step stick 0.5 -> setpoint 30.0000 deg
+
+Phases (SIL time):
+  ready         0.0000 s .. 2.7500 s  arm -1  roll 0.0  pitch 0.0  throttle 0.0
+  arm_idle      2.7500 s .. 3.0000 s  arm +1  roll 0.0  pitch 0.0  throttle 0.0
+  hold          3.0000 s .. 8.0000 s  arm +1  roll 0.0  pitch 0.0  throttle 0.07164270430803299
+  roll_step     8.0000 s .. 10.0000 s  arm +1  roll 0.5  pitch 0.0  throttle 0.07164270430803299
+  roll_centre   10.0000 s .. 13.0000 s  arm +1  roll 0.0  pitch 0.0  throttle 0.07164270430803299
+  pitch_step    13.0000 s .. 15.0000 s  arm +1  roll 0.0  pitch 0.5  throttle 0.07164270430803299
+  pitch_centre  15.0000 s .. 18.0000 s  arm +1  roll 0.0  pitch 0.0  throttle 0.07164270430803299
+  dip           18.0000 s .. 18.3000 s  arm +1  roll 0.0  pitch 0.0  throttle 0.0
+  hold2         18.3000 s .. 21.3000 s  arm +1  roll 0.0  pitch 0.0  throttle 0.07164270430803299
+  disarmed      21.3000 s .. 21.5500 s  arm -1  roll 0.0  pitch 0.0  throttle 0.07164270430803299
+
+PAD release (lift-off) at tick 27400, t = 3.6532 s; 653.193 ms after the throttle raise (3.0000 s).
+  vertical thrust of the logged rotor speeds (k w^2) at the release tick 7.178288253074888 N, at the tick before 7.178327965722016 N, the weight 7.178320316026612 N (the log's rotor_speed is the plant output of the tick after its step, sim/gz/plugin/src/lockstep.cpp:1224; the release rule tests the state the tick's IMU sample sees, i.e. the previous tick's logged one)
+first throttle command (armed) at tick 20642, t = 2.7522 s
+stop command after the disarm edge at tick 159788, t = 21.3042 s
+
+Hover stick derivation:
+  mass 0.732 kg, g(phi 0.82 rad, h 500.0 m) = 9.80644851916204 m/s^2, weight 7.178320316026612 N, k_T 2.8e-06, omega range [0.0, 2991.0] rad/s, idle 0.0
+  T_min 0.0 N, T_max 100.1961072 N, M_thrust 0.25; hover omega 800.5757033460923 rad/s, D* 583.0554433262582 (bracket 583..584)
+  stick s = (m g - T_min) / (T_max - T_min) = 0.07164270665424227; as the script writes it (binary32) 0.07164270430803299
+
+Per phase (tilt = angle between body z and NED z; from lift-off for the phases that contain it; z NED down, positive = lower):
+  phase          from      to        tilt mean/max deg   z start..end m          vz start..end (mean) m/s       hspeed end  dshot mean (min..max)   |cmd tau| max r/p/y Nm
+  hold            3.6532   8.0000    0.011    0.034       -0.000 ..     0.000     -0.000 ..    0.000 (   0.000)     0.008   583/583/583/583 (581..586)   0.0017/0.0015/0.0008
+  roll_step       8.0001   9.9999    0.047    0.060        0.000 ..     0.000      0.000 ..    0.000 (   0.000)     0.024   583/583/583/583 (581..586)   0.0017/0.0015/0.0007
+  roll_centre    10.0000  12.9999    0.085    0.107        0.000 ..     0.001      0.000 ..    0.000 (   0.000)     0.067   583/583/583/583 (580..586)   0.0017/0.0015/0.0009
+  pitch_step     13.0000  15.0000    0.120    0.134        0.001 ..     0.001      0.000 ..    0.000 (   0.000)     0.107   583/583/583/583 (581..585)   0.0017/0.0015/0.0006
+  pitch_centre   15.0001  18.0000    0.159    0.190        0.001 ..     0.002      0.000 ..    0.000 (   0.000)     0.188   583/583/583/583 (581..586)   0.0026/0.0015/0.0007
+  dip            18.0001  18.3000    0.193    0.196        0.002 ..     0.368      0.000 ..    2.666 (   1.222)     0.189   64/64/65/65 (48..109)   0.0009/0.0015/0.0005
+  hold2          18.3001  21.3000    0.246    0.295        0.369 ..    10.636      2.667 ..    3.438 (   3.423)     0.311   582/582/582/582 (48..586)   0.0026/0.0015/0.0007
+  disarmed       21.3001  21.5500    0.300    0.305       10.636 ..    11.735      3.438 ..    5.590 (   4.395)     0.313   10/10/10/10 (0..584)   0.0017/0.0015/0.0003
+
+Accelerometer (the estimator's input) and a binary64 replica of the Mahony estimate (mahony_replica, analysis only): tilt implied by the specific force (angle between it and -z of the body), mean, and |f|/g mean (estimator_accel_healthy window 0.9..1.1), against the truth tilt mean:
+  hold          accel-implied tilt   0.265 deg, |f|/g  1.000, truth tilt   0.011 deg; replica estimate vs truth (angle between the body z axes) mean   0.095 deg, max   0.146 deg
+  roll_step     accel-implied tilt   0.266 deg, |f|/g  1.000, truth tilt   0.047 deg; replica estimate vs truth (angle between the body z axes) mean   0.070 deg, max   0.076 deg
+  roll_centre   accel-implied tilt   0.264 deg, |f|/g  1.000, truth tilt   0.085 deg; replica estimate vs truth (angle between the body z axes) mean   0.096 deg, max   0.116 deg
+  pitch_step    accel-implied tilt   0.264 deg, |f|/g  1.000, truth tilt   0.120 deg; replica estimate vs truth (angle between the body z axes) mean   0.127 deg, max   0.141 deg
+  pitch_centre  accel-implied tilt   0.265 deg, |f|/g  1.000, truth tilt   0.159 deg; replica estimate vs truth (angle between the body z axes) mean   0.166 deg, max   0.198 deg
+  dip           accel-implied tilt  38.498 deg, |f|/g  0.098, truth tilt   0.193 deg; replica estimate vs truth (angle between the body z axes) mean   0.260 deg, max   0.405 deg
+  hold2         accel-implied tilt   0.540 deg, |f|/g  0.974, truth tilt   0.246 deg; replica estimate vs truth (angle between the body z axes) mean   0.376 deg, max   0.423 deg
+  disarmed      accel-implied tilt  41.879 deg, |f|/g  0.126, truth tilt   0.300 deg; replica estimate vs truth (angle between the body z axes) mean   0.401 deg, max   0.502 deg
+
+Hold 1 (from lift-off to the end of the phase, 4.347 s): tilt mean 0.0107 deg, max 0.0340 deg; vertical position -0.0000 -> 0.0001 m (down), velocity -0.0000 -> 0.0001 m/s; mean vertical acceleration 0.0000 m/s^2 (open-loop throttle: drift expected)
+
+roll_step: roll (x) stick 0.5 for 2.0 s; setpoint 30.0000 deg (heading frame, truth heading); error = |truth tilt vector - setpoint|: peak 29.9771 deg, steady (last 0.5 s) mean 29.9580 (signed on the step axis -29.9580, max 29.9612); cross-axis steady +0.0383; overshoot of the axis component -29.9551 deg (peak +0.0449); within 10% of the setpoint from never (not within the band at the end of the step); tilt max 0.0604 deg; replica-estimate setpoint error, last 0.5 s mean 29.9817 deg
+  roll_centre (2.0..5.0 s after): tilt mean 0.0846 deg, max 0.1074 deg; steady (last 0.5 s) tilt mean 0.1045, max 0.1074 deg; z 0.000 -> 0.001 m, vz 0.000 -> 0.000 m/s, horizontal speed at the end 0.067 m/s
+  roll_step z 0.000 -> 0.000 m (down), vz 0.000 -> 0.000 m/s, horizontal speed at the end 0.024 m/s
+pitch_step: pitch (y) stick 0.5 for 2.0 s; setpoint 30.0000 deg (heading frame, truth heading); error = |truth tilt vector - setpoint|: peak 29.9457 deg, steady (last 0.5 s) mean 29.9436 (signed on the step axis -29.9434, max 29.9440); cross-axis steady +0.1174; overshoot of the axis component -29.9417 deg (peak +0.0583); within 10% of the setpoint from never (not within the band at the end of the step); tilt max 0.1344 deg; replica-estimate setpoint error, last 0.5 s mean 30.0274 deg
+  pitch_centre (2.0..5.0 s after): tilt mean 0.1595 deg, max 0.1896 deg; steady (last 0.5 s) tilt mean 0.1832, max 0.1896 deg; z 0.001 -> 0.002 m, vz 0.000 -> 0.000 m/s, horizontal speed at the end 0.188 m/s
+  pitch_step z 0.001 -> 0.001 m (down), vz 0.000 -> 0.000 m/s, horizontal speed at the end 0.107 m/s
+
+dip (0.3 s, throttle stick 0, below arm_throttle_min 0.060546875):
+  z at dip start 0.0017 m, vz 0.0004 m/s; at the dip end z 0.3683 m (down +0.3666), vz 2.6657 m/s; altitude lost during the dip window 0.3666 m, descent speed gained +2.6653 m/s (the throttle returns to hover, the open-loop throttle does not take the speed back); by the end of hold2 (3.30 s after the dip start) 10.634 m lower than at the dip start, 10.633 m lower than continuing at the dip-start velocity; max downward speed 3.4379 m/s
+  tilt max in the dip 0.1964 deg, after it (to the end of hold2) 0.2953 deg, overall 0.2953 deg at 21.3000 s; max in the first second after the dip 0.2325 deg
+  DShot during the dip 48..109 (the SIL's command); rotor speed during the dip (plant, after the N-tick delay and the motor lag) 24.84..800.59 rad/s; |body rate| max in the dip 0.0016 rad/s, in the first second after 0.0027 rad/s
+  commanded torque (mixer DShot through the ESC map and B) max |roll/pitch/yaw|: in the dip 0.00086/0.00150/0.00055 Nm, in the first second after 0.00257/0.00150/0.00072 Nm; plant torque in the first second after 0.00012/0.00009/0.00004 Nm
+  The rate integrator is a firmware internal and is not in the log; only the outputs above are observable.
+
+overall: tilt max 0.3051 deg at 21.5500 s; final z 11.735 m (down), final speed 5.599 m/s
+tilt at 1 s intervals (deg): 0s:0.00 1s:0.00 2s:0.00 3s:0.00 4s:0.00 5s:0.00 6s:0.01 7s:0.02 8s:0.03 9s:0.05 10s:0.06 11s:0.08 12s:0.09 13s:0.11 14s:0.12 15s:0.13 16s:0.15 17s:0.17 18s:0.19 19s:0.23 20s:0.25 21s:0.28
