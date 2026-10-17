@@ -22,12 +22,17 @@ Architect ruling for quad §4.0 M3 (2026-10-16); this record implements nothing.
    f = (thrust along -z_FRD + R^T F_contact) / m, never by `marv_plant_step`; absent, every output is byte-identical.
    `tests/regression/quad/L06/imu/kat_test.cpp` gains at-rest cases (level reads (0, 0, -g); tilted reads R^T(0, 0, -g));
    existing cases unchanged. The plugin passes nothing; Gazebo ground contact joins the deferred list. (Luis)
-4. Hover predicate: a new gz test in `tests/regression/quad/L07/`: L5's angle mode and attitude law with the estimator
-   in authority on the model IMU (no `<attitude_source>`, no TRUTH_STATE, preset `host-gz-l7`), from level at hover
-   rotor speed with a roll-rate kick, sticks centred, L5's horizon; truth tilt from the log's STEP body records. S on
-   tilt: |tilt| <= s Delta + E + `attitude_tilt_error_max` at the last execution; heading not checked; control
-   `att_kp` = 0 must fail. `marv_sil_l5_attitude_scripted` and its compile closure do not change. (Luis: spec text)
-5. Validity and arming: valid iff q was initialised from a sample with |f| in (0.9 g, 1.1 g) and is finite and unit.
+4. Hover predicate: a new gz test in `tests/regression/quad/L07/`: L5's angle mode and attitude law with the estimator in
+   authority on the model IMU at the nominal corner (no turn-on bias; no `<attitude_source>`, no TRUTH_STATE, preset
+   `host-gz-l7`), from level at hover rotor speed with a body-rate kick [p0, p0, 0] (a pure roll kick sits on the
+   intermediate-axis separatrix), sticks centred, L5's horizon; truth tilt from the log's STEP body records. S on tilt:
+   |tilt| <= s Delta + E + `attitude_tilt_error_max` at the last execution; heading not checked. Control, the loop
+   disabled: `att_kp` = 0 and `rate_ki_roll` = `rate_ki_pitch` = 0, every gain that returns tilt to level (as 0032's
+   all-gains control); `att_kp` = 0 alone passes, because the rate integral restores the kick's tilt. The test shows the
+   loop stays stable and level with the estimate in authority; estimate accuracy and the gyro sign are T1's and item 2's.
+   `marv_sil_l5_attitude_scripted` and its compile closure do not change. (Amended by the architect after the P4
+   measurements.)
+5. Validity and arming: valid iff q was initialised from a sample with |f| in (0.9 g, 1.1 g) (one sample; no window) and is finite and unit.
    `ArmingInputs::estimator_valid` (default false); `ArmState::EstimatorInvalid` appended after `ArmedFailsafeCentred`;
    refusal order ImuStale, MotorTest, Failsafe, NoLink, ImuInvalid, Saturated, EstimatorInvalid, ThrottleUp, SwitchOff /
    SwitchNotCycled; it refuses and never disarms; the estimator steps before the arming step.
@@ -49,6 +54,10 @@ Architect ruling for quad §4.0 M3 (2026-10-16); this record implements nothing.
   plant reason. A kick from level hover is falsifiable; a level start alone is not (0031).
 - Betaflight 4.5.1 starts at identity, sets `attitudeIsEstablished` on the first update and gates arming on
   `isUpright()`; initialising from the first healthy sample is correct at the moment of validity, with no gain schedule.
+- The plant has no drag, so in flight the accelerometer never shows tilt: a gyro bias drifts the truth without bound
+  (0.044 rad over 6.3 s at 0.4 deg/s) and the tick-0 accelerometer noise stays as a fixed tilt (0.0098 rad at seed 1). On
+  hardware both are bounded (b / Kp; the init error decays at Kp on the ground before arming), so T4 flies the nominal
+  corner, and the gyro-bias budget is measured on the bench (item 2).
 
 ## Evidence
 
@@ -58,7 +67,9 @@ test_l5_sensors.py:19`; `docs/decisions/0031-l5-t4-predicates.md:43`; `fw/arming
 33-47, 70-84, 159-179`; `fw/compositions/quad_fc/src/quad_fc.cpp:290-307`; quad spec lines 98-99, 215-220, 452-463,
 645; core lines 74-77, 323-330, 399-410. Betaflight tag 4.5.1 (read 2026-10-16): `src/main/flight/imu.c`
 (`imuCalcKpGain`, `imuIsAccelerometerHealthy`, `attitudeIsEstablished`, `isUpright`; dcm_kp 2500, dcm_ki 0,
-small_angle 25) and `src/main/fc/core.c` `updateArmingStatus` (ANGLE, CALIBRATING).
+small_angle 25) and `src/main/fc/core.c` `updateArmingStatus` (ANGLE, CALIBRATING). P4 measurements (estimated run, att_kp = 0, att_kp = 0 with
+roll/pitch rate ki = 0, the bias corner): script, inputs and raw output committed under
+`tests/regression/quad/L07/results/` with P4.
 
 ## Approval
 
