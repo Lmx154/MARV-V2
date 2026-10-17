@@ -9,13 +9,18 @@
   - serves the built GCS (gcs/build) at /.
 
   uv run python tools/gs/helper.py [--serial PATH [--baud N] | --udp PORT] [--port N] [--runs-dir DIR] [--build-root DIR]
-                                   [--gcs-dir DIR] [--sil-udp-port N]
+                                   [--gcs-dir DIR] [--sil-udp-port N] [--sil-command CMD] [--extra-origin ORIGIN ...]
 
 Security. It binds 127.0.0.1 only. Every request must carry the Host `127.0.0.1:<port>`; an Origin header, when present, must
 be exactly `http://127.0.0.1:<port>` (the WebSocket requires it); and every request needs the per-session token (random, printed
 at start, never written to disk), as `?token=`, as `Authorization: Bearer`, or as the cookie the helper sets when the GCS page
 is first opened with `?token=` (HttpOnly, SameSite=Strict). The served HTML carries the token in a <meta name="marv-helper">.
-Anything else is refused: 403 for a wrong Host or Origin, 401 for a missing or wrong token. One WebSocket client at a time.
+Anything else is refused: 405 for a method other than GET, 403 for a wrong Host or Origin, 401 for a missing or wrong token.
+One WebSocket client at a time. A serial path chosen from the browser must be a tty device name (SERIAL_GLOBS).
+--extra-origin ORIGIN (repeatable, default none) additionally accepts that exact origin, e.g. a vite dev server
+`http://localhost:5173`: DEVELOPMENT ONLY. Such a page still needs the token (the cookie does not cross origins, so it
+passes `?token=`), and the helper answers it with Access-Control-Allow-Origin for that origin.
+SIGINT, SIGTERM and SIGHUP stop the helper cleanly: the SIL run is stopped and the ground log closed.
 
 Endpoints (all need the token):
   GET  /                          the built GCS (gcs/build), 404 when it is not built
@@ -34,11 +39,15 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import fnmatch
 import glob
 import hmac
 import json
 import mimetypes
+import os
 import secrets
+import shlex
+import signal
 import sys
 import time
 from datetime import datetime, timezone
@@ -72,8 +81,9 @@ def utc_stamp() -> str:
 
 class Helper:
     def __init__(self, *, runs_dir: Path, build_root: Path, gcs_dir: Path, sil_udp_port: int | None, token: str | None = None,
-                 sil_command: list[str] | None = None):
+                 sil_command: list[str] | None = None, extra_origins: tuple[str, ...] = ()):
         self.token = token or secrets.token_urlsafe(32)
+        self.extra_origins = frozenset(extra_origins)
         self.build_root, self.gcs_dir = Path(build_root), Path(gcs_dir)
         self.run_dir = Path(runs_dir) / utc_stamp()
         suffix = 0
@@ -148,8 +158,9 @@ class Helper:
             self.device = None
 
     async def open_serial(self, path: str, baud: int, *, from_browser: bool) -> None:
-        if from_browser and not str(Path(path).resolve()).startswith("/dev/"):
-            raise DeviceError("a serial path from the browser must be a device node under /dev")
+        if from_browser and not (os.path.normpath(path) == path and any(fnmatch.fnmatchcase(path, g) for g in SERIAL_GLOBS)
+                                 and os.path.realpath(path).startswith("/dev/")):
+            raise DeviceError("a serial path from the browser must be a tty device: " + ", ".join(SERIAL_GLOBS))
         self._require_no_device()
         self.device = SerialDevice(path, baud, self._device_rx, self._device_closed)
         self._opened()
@@ -274,7 +285,7 @@ class Helper:
         if request.headers.get("Host") != f"{LOOPBACK}:{self.port}":
             return self._refuse(HTTPStatus.FORBIDDEN, "wrong Host"), False
         origin = request.headers.get("Origin")
-        if (origin is None and websocket) or (origin is not None and origin != self.origin):
+        if (origin is None and websocket) or (origin is not None and origin != self.origin and origin not in self.extra_origins):
             return self._refuse(HTTPStatus.FORBIDDEN, "foreign Origin"), False
         token, in_query = self._token_of(request)
         if token is None or not hmac.compare_digest(token.encode(), self.token.encode()):
@@ -282,6 +293,16 @@ class Helper:
         return None, in_query
 
     def _process_request(self, connection: ServerConnection, request: Request) -> Response | None:
+        if request.method != "GET":
+            return self._response(HTTPStatus.METHOD_NOT_ALLOWED, b"only GET is served\n", "text/plain; charset=utf-8", [("Allow", "GET")])
+        response = self._route(request)
+        origin = request.headers.get("Origin")
+        if response is not None and origin in self.extra_origins and response.status_code < HTTPStatus.BAD_REQUEST:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Vary"] = "Origin"
+        return response
+
+    def _route(self, request: Request) -> Response | None:
         path = unquote(urlsplit(request.path).path)
         websocket = request.headers.get("Upgrade", "").lower() == "websocket"
         refusal, in_query = self._gate(request, websocket)
@@ -340,7 +361,8 @@ class Helper:
 
 
 async def run(args: argparse.Namespace) -> int:
-    helper = Helper(runs_dir=args.runs_dir, build_root=args.build_root, gcs_dir=args.gcs_dir, sil_udp_port=args.sil_udp_port)
+    helper = Helper(runs_dir=args.runs_dir, build_root=args.build_root, gcs_dir=args.gcs_dir, sil_udp_port=args.sil_udp_port,
+                    sil_command=shlex.split(args.sil_command) if args.sil_command else None, extra_origins=tuple(args.extra_origin))
     await helper.start(args.port)
     try:
         if args.serial:
@@ -354,11 +376,21 @@ async def run(args: argparse.Namespace) -> int:
     print(f"GCS:     {helper.url()}", flush=True)
     print(f"run dir: {helper.run_dir}", flush=True)
     print(f"device:  {helper.device.description if helper.device else 'none (open one from the GCS)'}", flush=True)
+    stopping = asyncio.Event()
+    for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        asyncio.get_running_loop().add_signal_handler(sig, stopping.set)
     try:
-        await asyncio.Event().wait()
+        await stopping.wait()
     finally:
         await helper.stop()
     return 0
+
+
+def origin_arg(text: str) -> str:
+    u = urlsplit(text)
+    if u.scheme not in ("http", "https") or not u.hostname or u.path or u.query or u.fragment or u.username or text.endswith("/"):
+        raise argparse.ArgumentTypeError(f"{text!r} is not an origin (scheme://host[:port], no path)")
+    return text
 
 
 def parse_args(argv=None) -> argparse.Namespace:
@@ -372,6 +404,9 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--build-root", type=Path, default=ROOT / "build", help="directory of the build trees the image library scans")
     ap.add_argument("--gcs-dir", type=Path, default=ROOT / "gcs" / "build", help="the built GCS served at /")
     ap.add_argument("--sil-udp-port", type=int, default=None, help="UDP port the launched SIL run is to serve (a scenario value)")
+    ap.add_argument("--sil-command", help="the command line `sil_start` runs instead of tools/sim/run_quad_fc.py (shell-style quoting; for tests)")
+    ap.add_argument("--extra-origin", action="append", default=[], type=origin_arg, metavar="ORIGIN",
+                    help="also accept this exact origin (repeatable), e.g. http://localhost:5173 for a vite dev server: DEVELOPMENT ONLY")
     return ap.parse_args(argv)
 
 

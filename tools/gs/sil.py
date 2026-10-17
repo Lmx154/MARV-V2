@@ -48,22 +48,29 @@ class SilLauncher:
         return self._proc is not None and self._proc.poll() is None
 
     def stop(self) -> int | None:
-        """SIGTERM the run's process group, SIGKILL after STOP_GRACE_S; returns the exit status."""
+        """SIGTERM the run's whole process group, SIGKILL what is left after STOP_GRACE_S; returns the leader's exit status.
+        The group is signalled whether or not the leader is still alive: children of an exited leader are stopped too."""
         proc = self._proc
         if proc is None:
             return None
-        if proc.poll() is None:
-            self._signal(proc, signal.SIGTERM)
-            deadline = time.monotonic() + STOP_GRACE_S
-            while proc.poll() is None and time.monotonic() < deadline:
-                time.sleep(0.05)
-            if proc.poll() is None:
-                self._signal(proc, signal.SIGKILL)
-                proc.wait()
+        self._signal(proc, signal.SIGTERM)
+        deadline = time.monotonic() + STOP_GRACE_S
+        while time.monotonic() < deadline and (proc.poll() is None or self._group_alive(proc)):
+            time.sleep(0.05)
+        self._signal(proc, signal.SIGKILL)
+        proc.wait()
         if self._log is not None:
             self._log.close()
             self._log = None
         return proc.returncode
+
+    @staticmethod
+    def _group_alive(proc: subprocess.Popen) -> bool:
+        try:
+            os.killpg(proc.pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
 
     @staticmethod
     def _signal(proc: subprocess.Popen, sig: int) -> None:

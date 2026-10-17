@@ -2,6 +2,7 @@
 relay both ways over a loopback UDP echo and a pty serial pair, the ground log round trip (GS-8), the image library and the
 SIL launcher's start and stop."""
 
+import argparse
 import asyncio
 import hashlib
 import http.client
@@ -29,11 +30,11 @@ import sil  # noqa: E402
 TIMEOUT_S = 10  # labelled harness value: bounds a hung relay only
 
 
-def run_with_helper(tmp_path, body, *, build_root=None, gcs_dir=None, sil_command=None, sil_udp_port=None):
+def run_with_helper(tmp_path, body, *, build_root=None, gcs_dir=None, sil_command=None, sil_udp_port=None, extra_origins=()):
     """Runs `await body(helper)` with a started helper on a free port; always stops the helper."""
     async def main():
         h = helper_mod.Helper(runs_dir=tmp_path / "runs", build_root=build_root or tmp_path / "build",
-                              gcs_dir=gcs_dir or tmp_path / "gcs", sil_udp_port=sil_udp_port, sil_command=sil_command)
+                              gcs_dir=gcs_dir or tmp_path / "gcs", sil_udp_port=sil_udp_port, sil_command=sil_command, extra_origins=extra_origins)
         await h.start(0)
         try:
             return await asyncio.wait_for(body(h), TIMEOUT_S * 3)
@@ -155,6 +156,60 @@ def test_one_client_at_a_time(tmp_path):
     run_with_helper(tmp_path, body)
 
 
+def test_methods_other_than_get_are_refused_with_405(tmp_path):
+    async def body(h):
+        def request(method, path):
+            c = http.client.HTTPConnection("127.0.0.1", h.port, timeout=TIMEOUT_S)
+            c.request(method, path, headers={"Origin": h.origin, "Authorization": f"Bearer {h.token}"})
+            r = c.getresponse()
+            out = (r.status, r.getheader("Allow"))
+            c.close()
+            return out
+        for method in ("POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"):
+            for path in ("/api/status", "/", "/ws", "/api/images"):
+                assert await asyncio.to_thread(request, method, path) == (405, "GET"), (method, path)
+        assert await asyncio.to_thread(request, "GET", "/api/status") == (200, None)
+        # refused before the token is looked at
+        def no_token():
+            c = http.client.HTTPConnection("127.0.0.1", h.port, timeout=TIMEOUT_S)
+            c.request("POST", "/api/status")
+            return c.getresponse().status
+        assert await asyncio.to_thread(no_token) == 405
+    run_with_helper(tmp_path, body)
+
+
+def test_extra_origin_is_accepted_only_when_given(tmp_path):
+    dev = "http://localhost:5173"
+
+    async def body(h):
+        status, headers, _ = await http_get(h, "/api/status", origin=dev)
+        assert status == 200 and headers["Access-Control-Allow-Origin"] == dev
+        assert (await http_get(h, "/api/status", origin=dev, token=None))[0] == 401  # the token is still needed
+        assert (await http_get(h, "/api/status", origin="http://localhost:5174"))[0] == 403
+        async with ws_connect(h, origin=dev):
+            pass
+        with pytest.raises(InvalidStatus):
+            async with ws_connect(h, origin="http://localhost:5174"):
+                pass
+        assert "Access-Control-Allow-Origin" not in (await http_get(h, "/api/status", origin=h.origin))[1]
+
+    async def refused(h):
+        assert (await http_get(h, "/api/status", origin=dev))[0] == 403
+        with pytest.raises(InvalidStatus):
+            async with ws_connect(h, origin=dev):
+                pass
+    run_with_helper(tmp_path / "with", body, extra_origins=(dev,))
+    run_with_helper(tmp_path / "without", refused)
+
+
+def test_extra_origin_argument_must_be_an_origin():
+    for good in ("http://localhost:5173", "https://example.org"):
+        assert helper_mod.origin_arg(good) == good
+    for bad in ("localhost:5173", "http://localhost:5173/", "http://localhost/x", "ftp://h", "http://", "http://u@h"):
+        with pytest.raises(argparse.ArgumentTypeError):
+            helper_mod.origin_arg(bad)
+
+
 # ---- the relay and the ground log -------------------------------------------------------------------------------------
 
 PAYLOAD = bytes((i * 131 + 7) % 256 for i in range(200_000))  # larger than one chunk, not valid in any protocol
@@ -205,8 +260,7 @@ def test_serial_relay_both_ways_over_a_pty_pair_and_ground_log(tmp_path):
         loop.add_reader(master, lambda: from_ws.extend(_read_all(master)))
         try:
             async with ws_connect(h) as ws:
-                reply = await control(ws, cmd="open", serial=path, baud=115200)
-                assert reply["ok"], reply
+                await h.open_serial(path, 115200, from_browser=False)  # /dev/pts is not a name the browser may choose
                 await ws.send(PAYLOAD)
                 deadline = time.monotonic() + TIMEOUT_S
                 while len(from_ws) < len(PAYLOAD) and time.monotonic() < deadline:
@@ -248,7 +302,7 @@ async def _write_all(fd, data):
             await asyncio.sleep(0.001)
 
 
-def test_second_device_is_refused_and_browser_serial_path_must_be_under_dev(tmp_path):
+def test_second_device_is_refused_and_browser_serial_path_must_be_a_tty_name(tmp_path):
     async def body(h):
         async with ws_connect(h) as ws:
             assert (await control(ws, cmd="open", udp_port=9))["ok"]
@@ -258,7 +312,13 @@ def test_second_device_is_refused_and_browser_serial_path_must_be_under_dev(tmp_
             elsewhere = tmp_path / "not_a_device"
             elsewhere.write_text("")
             refused = await control(ws, cmd="open", serial=str(elsewhere))
-            assert not refused["ok"] and "/dev" in refused["error"]
+            assert not refused["ok"] and "tty device" in refused["error"]
+            for path in ("/dev/null", "/dev/pts/0", "/dev/sda", "/dev/ttyACM0/../null", "/dev//ttyACM0", "ttyACM0", "/dev/serial/by-id/../../null"):
+                refused = await control(ws, cmd="open", serial=path)
+                assert not refused["ok"] and "tty device" in refused["error"], path
+            # a permitted name is attempted (and fails here only because no such device exists)
+            missing = await control(ws, cmd="open", serial="/dev/ttyACM99")
+            assert not missing["ok"] and "cannot open" in missing["error"]
     run_with_helper(tmp_path, body)
 
 
@@ -420,6 +480,39 @@ def test_helper_stop_stops_a_running_sil(tmp_path):
         os.kill(pids[0], 0)
 
 
+def test_sil_stop_signals_the_group_when_the_leader_has_already_exited(tmp_path):
+    """The leader starts a child in its group and exits; stop() must still end the child."""
+    command = ["sh", "-c", "sleep 600 & echo $!"]
+    launcher = sil.SilLauncher(tmp_path, None, command)
+    launcher.start()
+    launcher._proc.wait(TIMEOUT_S)
+    log = tmp_path / "sil" / "launcher.log"
+    child = int(log.read_text().split()[0])
+    os.kill(child, 0)  # alive although the leader is gone
+    assert launcher.stop() == 0
+    deadline = time.monotonic() + TIMEOUT_S
+    while time.monotonic() < deadline:
+        try:
+            os.kill(child, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.02)
+    with pytest.raises(ProcessLookupError):
+        os.kill(child, 0)
+
+
+def test_sil_stop_kills_a_run_that_ignores_sigterm(tmp_path, monkeypatch):
+    monkeypatch.setattr(sil, "STOP_GRACE_S", 0.3)
+    code = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print('up', flush=True); time.sleep(600)"
+    launcher = sil.SilLauncher(tmp_path, None, [sys.executable, "-c", code])
+    launcher.start()
+    log = tmp_path / "sil" / "launcher.log"
+    deadline = time.monotonic() + TIMEOUT_S
+    while not log.read_text() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert launcher.stop() == -signal.SIGKILL
+
+
 # ---- the command line -----------------------------------------------------------------------------------------------------
 
 def test_command_line_start_prints_the_url_and_serves(tmp_path):
@@ -441,4 +534,48 @@ def test_command_line_start_prints_the_url_and_serves(tmp_path):
     finally:
         proc.send_signal(signal.SIGINT)
         assert proc.wait(TIMEOUT_S) == 0
+        proc.stdout.close()
+
+
+@pytest.mark.parametrize("sig", [signal.SIGTERM, signal.SIGHUP, signal.SIGINT])
+def test_command_line_signal_stops_the_sil_run_and_closes_the_log(tmp_path, sig):
+    marker = tmp_path / "child.pid"
+    # the stand-in SIL: a leader and a child in one process group, both recorded
+    stand_in = f"sh -c 'sleep 600 & echo $! > {marker}; wait'"
+    proc = subprocess.Popen([sys.executable, str(ROOT / "tools" / "gs" / "helper.py"), "--port", "0", "--runs-dir", str(tmp_path / "runs"),
+                             "--build-root", str(tmp_path / "build"), "--gcs-dir", str(tmp_path / "gcs"), "--sil-command", stand_in],
+                            stdout=subprocess.PIPE, text=True)
+    try:
+        m = re.match(r"GCS:\s+http://127\.0\.0\.1:(\d+)/\?token=(\S+)$", proc.stdout.readline())
+        assert m
+        port, token = m.groups()
+
+        async def start_sil():
+            async with connect(f"ws://127.0.0.1:{port}/ws?token={token}", origin=f"http://127.0.0.1:{port}") as ws:
+                await ws.send(json.dumps({"cmd": "sil_start"}))
+                return json.loads(await asyncio.wait_for(ws.recv(), TIMEOUT_S))
+        assert asyncio.run(start_sil())["ok"]
+        deadline = time.monotonic() + TIMEOUT_S
+        while not (marker.exists() and marker.read_text().strip()) and time.monotonic() < deadline:
+            time.sleep(0.02)
+        child = int(marker.read_text())
+        os.kill(child, 0)
+        proc.send_signal(sig)
+        assert proc.wait(TIMEOUT_S) == 0
+        deadline = time.monotonic() + TIMEOUT_S
+        while time.monotonic() < deadline:
+            try:
+                os.kill(child, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.02)
+        with pytest.raises(ProcessLookupError):
+            os.kill(child, 0)
+        log = next((tmp_path / "runs").glob("*/ground.log"))
+        events = [r.data.decode() for r in groundlog.read_records(log) if r.kind == groundlog.EVENT]
+        assert events[-1] == "helper stopped"
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
         proc.stdout.close()
