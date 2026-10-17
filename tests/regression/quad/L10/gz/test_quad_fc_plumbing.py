@@ -7,7 +7,7 @@ process gets its own GZ_PARTITION and GZ_IP=127.0.0.1.
 The plugin of this build links marv_sil_quad_fc (the flight composition with the FC3v2 parameter set) and stages a
 <manual_control_script> into it through marv_sil_stage_manual_control before every tick. The world is the L2 hover world of the
 UZH card (member lo, m = 1, a whole-ns tick of 156250 ns) with the model gyro, without the open-loop DShot overrides (the
-FC3v2 set has no ol_dshot_m*), with rc_channel_angle = 6 through <sil_override> (the register's default is 0, acro) and the
+FC3v2 set has no ol_dshot_m*), with rc_channel_angle = 6 through <sil_override> (the register's default is 8, decision 0048) and the
 script. The world has <launch_pad/> (decision 0047): the body is held at its start pose, with the plant's contact force making
 the model IMU read R^T (0, 0, -g) and the gyro 0, until the vertical thrust reaches the weight. It is not ground contact: there is
 no ground in the world and no landing. Without the pad the vehicle falls from tick 0 with a specific force of zero and the
@@ -87,7 +87,7 @@ LOSS_US = register_value("failsafe_loss_us")
 DISARM_US = register_value("failsafe_disarm_us")
 READY_US = CAL_US + RECOVERY_US + MARGIN_US
 assert register_value("rc_channel_arm") == ARM_CHANNEL
-assert register_value("rc_channel_angle") == 0, "the world sets it: the test relies on the register default being acro"
+assert register_value("rc_channel_angle") == 8, "the world overrides it with ANGLE_CHANNEL; the register default is ch8 (decision 0048)"
 
 
 def stamp(tick):
