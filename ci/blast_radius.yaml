@@ -565,6 +565,13 @@ rules:
     gz_groups: [l7]
     why: "run_quad_fc is the HIL S2e evidence runner (quad_fc flying the real card in gz); no test imports it, so only the l7 group (host-gz-quadfc plumbing) is selected as a margin"
 
+  - paths: [tools/sim/run_hil_s4.py]
+    ctest_labels: []
+    run_ci_steps: []
+    pytest_paths: []
+    gz_groups: [l7]
+    why: "run_hil_s4 is the HIL S4 bench runner (the board flies the real card in gz; never run by CI); no test imports it, so only the l7 group (host-gz-quadfc plumbing) is selected as a margin"
+
   - paths: [tools/sim/measure_sim3.py]
     ctest_labels: []
     run_ci_steps: []
