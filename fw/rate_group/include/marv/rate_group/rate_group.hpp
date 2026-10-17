@@ -78,6 +78,9 @@ class RateGroupStep {
   // the tick whose execution must not apply state accumulated before it (the quad_fc composition: the arming edge).
   void reset_controller() noexcept { rate_.reset(); }
 
+  // Zeroes the rate loop's integrator and nothing else (RateLoop::zero_integrator). Call after the tick's execute.
+  void zero_integrator() noexcept { rate_.zero_integrator(); }
+
   // The sample held by the latest filter: what the tick's rate execution gets.
   [[nodiscard]] const ImuSample& rate_input() const noexcept { return filtered_; }
 

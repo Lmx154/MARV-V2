@@ -648,6 +648,38 @@ TEST(L4RateAntiWindup, TheBoundComesFromTheAllocatedVectorSoAZeroVectorHasNone) 
   EXPECT_TRUE(near(run_freeze(c, 1.0, req, collective)[0], kIncrement));
 }
 
+// zero_integrator (M4 C1, decision 0045) zeroes the integrator and nothing else. The hand table's executions n=1..3 (y = 1, 2, 2,
+// sp = 8, 8, 8 on every axis) leave I = 0.7; zeroed there, execution n=4 (y = 4, sp = 0) keeps the prefilter (r = 3.5, e = -0.5)
+// and the D (-4 * 2 = -8) of the table and integrates 100 * 5 * 0.001 = 0.5 from zero: u = -1 + 0.5 - 8 = -8.5. The control, the same
+// loop not zeroed, gives the table's -7.8 (I = 1.2).
+TEST(L4RateIntegratorHold, ZeroingLeavesEveryOtherStateAndTheNextIncrementStartsFromZero) {
+  REQUIRE_CARD();
+  Rig held;
+  Rig kept;
+  held.init(c, config(c, hand_gains()));
+  kept.init(c, config(c, hand_gains()));
+  for (const HandStep& h : {kHand[0], kHand[1], kHand[2], kHand[3]}) {
+    (void)held.step(all(h.y), all(h.sp));
+    (void)kept.step(all(h.y), all(h.sp));
+  }
+  for (std::size_t a = 0; a < kA; ++a) {
+    ASSERT_TRUE(near(static_cast<double>(kept.loop.integrator()[a]), 0.7)) << "the integrator holds something to zero";
+  }
+  held.loop.zero_integrator();
+  for (std::size_t a = 0; a < kA; ++a) {
+    EXPECT_EQ(held.loop.integrator()[a], 0.0F) << "axis " << a;
+  }
+  EXPECT_FALSE(held.loop.seeding());
+  EXPECT_FALSE(held.loop.fault_latched());
+  EXPECT_EQ(held.loop.fault_count(), 0U);
+  const V3 held_u = held.step(all(kHand[4].y), all(kHand[4].sp)).torque;
+  const V3 kept_u = kept.step(all(kHand[4].y), all(kHand[4].sp)).torque;
+  for (std::size_t a = 0; a < kA; ++a) {
+    EXPECT_TRUE(near(static_cast<double>(held_u[a]), -8.5)) << "axis " << a;
+    EXPECT_TRUE(near(static_cast<double>(kept_u[a]), kHand[4].u)) << "axis " << a;
+  }
+}
+
 TEST(L4RateEffectiveness, TheMixerTimesTheRateConfigEffectivenessIsTheIdentityWithinTheBound) {
   REQUIRE_CARD();
   const double eps = static_cast<double>(kEps);
