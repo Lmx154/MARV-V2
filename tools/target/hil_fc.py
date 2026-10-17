@@ -10,8 +10,9 @@
       OUT.summary.txt) and a verdict line, "SMOKE OK" or "SMOKE NOT OK: <reasons>". Exit status 0 only for SMOKE OK.
 
 What the verdict needs: one ManualControl-arrival record per ManualControl record sent; the board's counters show every record and sample received and ticked with no link fault; one
-DShot report per rate tick (ticks 0, d, 2d, ... for the rate divisor d of the hello); every DShot value 0 before ARM_AT_S
-and from DISARM_AT_S + DISARM_SLACK_S on, some value not 0 between (armed: the mixer's idle floor at zero throttle); no
+DShot report per rate tick (ticks 0, d, 2d, ... for the rate divisor d of the hello); every DShot value 0 before ARM_AT_S (less
+one record's span: the arm frame goes out ahead of the record whose last sample reaches ARM_AT_S) and from
+DISARM_AT_S + DISARM_SLACK_S on, some value not 0 between (armed: the mixer's idle floor at zero throttle); no
 IMU deadline miss while the stream runs, exactly one after it stops (no record for D_HIL); no rate-loop timing fault. The
 cycle counts are printed, not judged (EMB-3 is the S3 comparison's).
 
@@ -236,7 +237,8 @@ def analyse(up: Uplink, sent_records: int, sent_samples: int, sent_manual: int, 
                        f"({len(ticks)} reports, {len(expect)} expected)")
     t_s = lambda tick: stamp_us(tick, num, den) / US_PER_S  # noqa: E731
     armed = [(t, v) for t, v in up.reports if any(v)]
-    early = [t for t, _ in armed if t_s(t) < ARM_AT_S]
+    record_s = batch * num / den / US_PER_S  # a ManualControl goes out before the record whose last sample reaches its time
+    early = [t for t, _ in armed if t_s(t) < ARM_AT_S - record_s]
     late = [t for t, _ in armed if t_s(t) >= DISARM_AT_S + DISARM_SLACK_S]
     if not armed:
         reasons.append("no DShot value above 0: the board never armed")
