@@ -1,33 +1,30 @@
 {
+	"extends": "./.svelte-kit/tsconfig.json",
 	"compilerOptions": {
-		"target": "ES2022",
-		"module": "ESNext",
-		"moduleResolution": "bundler",
-		"lib": [
-			"ES2022",
-			"DOM"
-		],
-		"types": [
-			"node"
-		],
+		"allowJs": true,
+		"checkJs": true,
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true,
+		"resolveJsonModule": true,
+		"skipLibCheck": true,
+		"sourceMap": true,
 		"strict": true,
 		"noUncheckedIndexedAccess": true,
-		"skipLibCheck": true,
-		"noEmit": true,
-		"allowImportingTsExtensions": true,
-		"forceConsistentCasingInFileNames": true,
+		"moduleResolution": "bundler",
+		"types": ["node"],
 		"paths": {
-			"$link/*": [
-				"./src/lib/link/*"
-			],
-			"vitest": [
-				"./node_modules/vitest"
-			]
+			"$link": ["./src/lib/link"],
+			"$link/*": ["./src/lib/link/*"],
+			"$lib": ["./src/lib"],
+			"$lib/*": ["./src/lib/*"],
+			"$app/types": ["./.svelte-kit/types/index.d.ts"],
+			"vitest": ["./node_modules/vitest"]
 		}
 	},
 	"include": [
 		"src/**/*.ts",
+		"src/**/*.svelte",
 		"../tests/regression/quad/L00/link/ts/**/*.ts",
-		"vitest.config.ts"
+		"vite.config.ts"
 	]
 }

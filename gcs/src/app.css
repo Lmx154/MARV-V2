@@ -1,0 +1,199 @@
+/* Theme tokens and base rules adapted from the avionics toolbox, src/app.css, toolbox commit 88658504d69757eda042961d7f02d8319e568e64
+   (MARV V2 ground segment, decision 0053 Q5): the colour variables of the light and dark themes and the base typography; the
+   site-only parts are left out and the engineering-tool density is MARV's. */
+:root {
+	color-scheme: light dark;
+
+	--sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+	--mono: ui-monospace, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+	/* light (default) */
+	--bg: #f3f3f0;
+	--surface: #ffffff;
+	--surface-2: #e9e9e5;
+	--text: #17191c;
+	--muted: #5b626b;
+	--border: #d3d5d8;
+	--border-strong: #b8bcc1;
+	--accent: #a86200;
+	--accent-bg: rgba(168, 98, 0, 0.1);
+	--ok: #1f7a3f;
+	--warn: #9a6a00;
+	--bad: #b4232c;
+	--diff-bg: rgba(168, 98, 0, 0.14);
+	--lock-bg: rgba(91, 98, 107, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme='light']) {
+		--bg: #0d0f11;
+		--surface: #15181b;
+		--surface-2: #1c2024;
+		--text: #e7e9eb;
+		--muted: #96a0aa;
+		--border: #2a2f35;
+		--border-strong: #3b424a;
+		--accent: #f0b23a;
+		--accent-bg: rgba(240, 178, 58, 0.12);
+		--ok: #4fce7a;
+		--warn: #f0b23a;
+		--bad: #ff6b6b;
+		--diff-bg: rgba(240, 178, 58, 0.16);
+		--lock-bg: rgba(150, 160, 170, 0.1);
+	}
+}
+
+:root[data-theme='dark'] {
+	--bg: #0d0f11;
+	--surface: #15181b;
+	--surface-2: #1c2024;
+	--text: #e7e9eb;
+	--muted: #96a0aa;
+	--border: #2a2f35;
+	--border-strong: #3b424a;
+	--accent: #f0b23a;
+	--accent-bg: rgba(240, 178, 58, 0.12);
+	--ok: #4fce7a;
+	--warn: #f0b23a;
+	--bad: #ff6b6b;
+	--diff-bg: rgba(240, 178, 58, 0.16);
+	--lock-bg: rgba(150, 160, 170, 0.1);
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--sans);
+	font-size: 14px;
+	line-height: 1.4;
+	-webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+	font-weight: 650;
+	letter-spacing: -0.01em;
+	line-height: 1.2;
+	margin: 0;
+}
+
+h1 {
+	font-size: 1.25rem;
+}
+
+h2 {
+	font-size: 1.05rem;
+}
+
+h3 {
+	font-size: 0.95rem;
+}
+
+a {
+	color: var(--accent);
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+code,
+.mono {
+	font-family: var(--mono);
+}
+
+.mono,
+input,
+.readout-value {
+	font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+button,
+input,
+select,
+textarea {
+	font: inherit;
+	color: inherit;
+}
+
+button {
+	background: var(--surface-2);
+	border: 1px solid var(--border-strong);
+	border-radius: 4px;
+	padding: 0.2rem 0.6rem;
+	cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+	border-color: var(--accent);
+}
+
+button:disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
+
+button.primary {
+	background: var(--accent);
+	border-color: var(--accent);
+	color: var(--bg);
+	font-weight: 600;
+}
+
+input[type='text'],
+input[type='number'],
+input[type='search'],
+select,
+textarea {
+	background: var(--surface-2);
+	border: 1px solid var(--border);
+	border-radius: 4px;
+	padding: 0.2rem 0.4rem;
+	min-width: 0;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+	border-color: var(--accent);
+}
+
+.visually-hidden {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	white-space: nowrap;
+}
+
+.muted {
+	color: var(--muted);
+}
+
+.bad {
+	color: var(--bad);
+}
+
+.ok {
+	color: var(--ok);
+}
+
+.warn {
+	color: var(--warn);
+}
