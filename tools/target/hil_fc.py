@@ -9,7 +9,7 @@
       writes the uplink bytes exactly as received to OUT, prints the hello, every status record and a summary (also to
       OUT.summary.txt) and a verdict line, "SMOKE OK" or "SMOKE NOT OK: <reasons>". Exit status 0 only for SMOKE OK.
 
-What the verdict needs: the board's counters show every record and sample received and ticked with no link fault; one
+What the verdict needs: one ManualControl-arrival record per ManualControl record sent; the board's counters show every record and sample received and ticked with no link fault; one
 DShot report per rate tick (ticks 0, d, 2d, ... for the rate divisor d of the hello); every DShot value 0 before ARM_AT_S
 and from DISARM_AT_S + DISARM_SLACK_S on, some value not 0 between (armed: the mixer's idle floor at zero throttle); no
 IMU deadline miss while the stream runs, exactly one after it stops (no record for D_HIL); no rate-loop timing fault. The
@@ -36,12 +36,14 @@ SAMPLE_MAGIC = b"MHSM"
 MANUAL_MAGIC = b"MHMC"
 HELLO_MAGIC = b"MHHS"
 DSHOT_MAGIC = b"MHDS"
+ARRIVAL_MAGIC = b"MHMA"
 STATUS_MAGIC = b"MHST"
 SAMPLE = struct.Struct("<QQ6fI")  # tick, t_us, gyro xyz, accel xyz, flags
 MANUAL = struct.Struct("<I4f16ff")  # frames, roll pitch yaw throttle, channels 1..16, link_quality
-DSHOT_ITEM = struct.Struct("<Q4H")  # tick, DShot motor 1..4
+DSHOT_ITEM = struct.Struct("<Q4HQ")  # tick, DShot motor 1..4, board_us
+ARRIVAL_ITEM = struct.Struct("<IIQ")  # frames, downlink seq, board t_us
 # hil_format.hpp HelloField and StatusField, in order.
-HELLO_FIELDS = ("schema_hash_low", "schema_hash_high", "param_count", "tick_period_num_us", "tick_period_den",
+HELLO_FIELDS = ("schema_hash_low", "schema_hash_high", "param_count", "param_values_crc", "tick_period_num_us", "tick_period_den",
                 "rate_loop_divisor", "max_batch", "deadline_us", "clk_sys_hz", "version_bytes")
 STATUS_FIELDS = ("sample_records", "samples", "manual_records", "manual_refused", "crc_failures", "bad_headers",
                  "seq_gaps", "seq_lost", "tick_gaps", "bytes_dropped", "rx_bytes", "ticks_run", "queue_overflows",
@@ -79,6 +81,8 @@ class Uplink:
     hello: dict | None = None
     version: str = ""
     reports: list[tuple[int, tuple[int, ...]]] = field(default_factory=list)
+    report_board_us: list[int] = field(default_factory=list)
+    arrivals: list[tuple[int, int, int]] = field(default_factory=list)  # frames, downlink seq, board t_us
     status: list[dict] = field(default_factory=list)
     status_reports_before: list[int] = field(default_factory=list)
     crc_failures: int = 0
@@ -95,7 +99,7 @@ def parse_uplink(buf: bytes) -> Uplink:
     pos = start = 0
     seq_last: int | None = None
     text = bytearray()
-    magics = (HELLO_MAGIC, DSHOT_MAGIC, STATUS_MAGIC)
+    magics = (HELLO_MAGIC, DSHOT_MAGIC, ARRIVAL_MAGIC, STATUS_MAGIC)
     while True:
         cand = [i for i in (buf.find(m, pos) for m in magics) if i >= 0]
         if not cand:
@@ -104,13 +108,13 @@ def parse_uplink(buf: bytes) -> Uplink:
         if n - i < HEADER.size:
             break
         magic, seq, count = HEADER.unpack_from(buf, i)
-        legal = {HELLO_MAGIC: count >= len(HELLO_FIELDS), DSHOT_MAGIC: count >= 1,
+        legal = {HELLO_MAGIC: count >= len(HELLO_FIELDS), DSHOT_MAGIC: count >= 1, ARRIVAL_MAGIC: count == 1,
                  STATUS_MAGIC: count == len(STATUS_FIELDS)}[magic]
         if not legal:
             r.bad_headers += 1
             pos = i + 1
             continue
-        item = DSHOT_ITEM.size if magic == DSHOT_MAGIC else WORD
+        item = {DSHOT_MAGIC: DSHOT_ITEM.size, ARRIVAL_MAGIC: ARRIVAL_ITEM.size}.get(magic, WORD)
         end = i + HEADER.size + count * item + WORD
         if end > n:
             break
@@ -133,8 +137,11 @@ def parse_uplink(buf: bytes) -> Uplink:
             r.version = body[len(HELLO_FIELDS) * WORD:][:r.hello["version_bytes"]].decode(errors="replace")
         elif magic == DSHOT_MAGIC:
             for k in range(count):
-                tick, *d = DSHOT_ITEM.unpack_from(body, k * DSHOT_ITEM.size)
-                r.reports.append((tick, tuple(d)))
+                tick, d1, d2, d3, d4, board_us = DSHOT_ITEM.unpack_from(body, k * DSHOT_ITEM.size)
+                r.reports.append((tick, (d1, d2, d3, d4)))
+                r.report_board_us.append(board_us)
+        elif magic == ARRIVAL_MAGIC:
+            r.arrivals.append(ARRIVAL_ITEM.unpack(body))
         else:
             r.status.append(dict(zip(STATUS_FIELDS, struct.unpack(f"<{count}I", body))))
             r.status_reports_before.append(len(r.reports))
@@ -182,7 +189,7 @@ def analyse(up: Uplink, sent_records: int, sent_samples: int, sent_manual: int, 
     num, den, d = h["tick_period_num_us"], h["tick_period_den"], h["rate_loop_divisor"]
     clk = h["clk_sys_hz"]
     out.append(f"hello: version {up.version!r}  param schema hash 0x{(h['schema_hash_high'] << 32) | h['schema_hash_low']:016x}  "
-               f"params {h['param_count']}  tick {num}/{den} us  rate divisor {d}  max batch {h['max_batch']}  "
+               f"params {h['param_count']}  values CRC 0x{h['param_values_crc']:08x}  tick {num}/{den} us  rate divisor {d}  max batch {h['max_batch']}  "
                f"D_HIL {h['deadline_us']} us  clk_sys {clk} Hz")
     out.extend(status_line(s, clk) for s in up.status)
     out.append(f"sent: {sent_records} sample records ({batch} per record), {sent_samples} samples, {sent_manual} ManualControl records")
@@ -218,6 +225,10 @@ def analyse(up: Uplink, sent_records: int, sent_samples: int, sent_manual: int, 
     if mism:
         reasons.append(f"{len(mism)} status records whose report count differs from the reports decoded before them")
 
+    if len(up.arrivals) != sent_manual or [f for f, _, _ in up.arrivals] != list(range(1, sent_manual + 1)):
+        reasons.append(f"{len(up.arrivals)} ManualControl arrival records for {sent_manual} sent, or not frames 1, 2, ...")
+    if any(b <= a for a, b in zip(up.report_board_us, up.report_board_us[1:])):
+        reasons.append("DShot report board times not increasing")
     ticks = [t for t, _ in up.reports]
     expect = list(range(0, sent_samples, d))
     if ticks != expect:

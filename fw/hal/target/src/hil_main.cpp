@@ -1,3 +1,7 @@
+#include <array>
+#include <bit>
+#include <climits>
+#include <cstddef>
 #include <cstdint>
 
 #include <pico/stdio_usb.h>
@@ -8,6 +12,7 @@
 #include "marv/hal/tick.hpp"
 #include "marv/hal_target/hil.hpp"
 #include "marv/hal_target/imu.hpp"
+#include "marv/hal_target/imu_log_format.hpp"
 #include "marv/hal_target/lsm6dsv_decode.hpp"
 #include "marv/params/param.hpp"
 
@@ -17,6 +22,22 @@ namespace {
 marv::hal_target::RateCounts rate_counts() noexcept {
   const marv::composition::RateCounts c = marv::composition::rate_counts();
   return marv::hal_target::RateCounts{c.executions, c.timing_faults};
+}
+
+// CRC-32 over the loaded table's values in ParamId order (hil_format.hpp HelloField::ParamValuesCrc): each record's value,
+// the f32 bit pattern or the i32, 4 bytes little-endian.
+std::array<std::uint8_t, marv::kParamCount * sizeof(std::uint32_t)> g_values{};
+
+std::uint32_t param_values_crc() noexcept {
+  for (std::size_t i = 0; i < marv::kParamCount; ++i) {
+    const marv::ParamValue v = marv::param_get(static_cast<marv::ParamId>(i)).value;
+    const std::uint32_t bits =
+        v.type == marv::ParamType::F32 ? std::bit_cast<std::uint32_t>(v.f32) : static_cast<std::uint32_t>(v.i32);
+    for (std::size_t b = 0; b < sizeof(bits); ++b) {
+      g_values[i * sizeof(bits) + b] = static_cast<std::uint8_t>(bits >> (CHAR_BIT * b));
+    }
+  }
+  return marv::hal_target::imu_log::crc32(g_values);
 }
 
 marv::hal_target::HilCompositionStatus composition_status() noexcept {
@@ -45,6 +66,7 @@ int main() {
   cfg.composition_status = &composition_status;
   cfg.param_schema_hash = marv::kParamSchemaHash;
   cfg.param_count = static_cast<std::uint32_t>(marv::kParamCount);
+  cfg.param_values_crc = param_values_crc();
   cfg.tick_period_num_us = marv::param_value<ParamId::tick_period_num_us>();
   cfg.tick_period_den = marv::param_value<ParamId::tick_period_den>();
   cfg.rate_loop_divisor = marv::param_value<ParamId::rate_loop_divisor>();

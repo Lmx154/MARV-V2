@@ -19,7 +19,13 @@
 //     the image version string (HelloField::VersionBytes bytes of ASCII, no terminator) packed four bytes to a word,
 //     little-endian, the last word padded with zero bytes.
 //   DShot record, magic "MHDS": `count` reports, one per hal_actuators_write (one per rate tick), in order: tick (u64, the
-//     tick number of the sample whose composition tick wrote), the four DShot values (u16 each, logical motor 1 first).
+//     tick number of the sample whose composition tick wrote), the four DShot values (u16 each, logical motor 1 first),
+//     board_us (u64, hal_time_us() when hal_actuators_write ran: the end of that rate tick, after the composition read the
+//     clock and hal_manual_control()).
+//   ManualControl-arrival record, magic "MHMA", count = 1, one per ManualControl record published: frames (u32, as the host
+//     sent it), seq (u32, the downlink sequence number of the record), t_us (u64, the board stamp it was published with:
+//     hal_time_us() when the read that completed it returned). With board_us of the DShot reports it gives the frame age
+//     each rate tick saw.
 //   Status record, magic "MHST", once per second while the port is open: `count` = kStatusFields counters (u32 each), in
 //     StatusField order, cumulative since boot.
 
@@ -40,6 +46,7 @@ inline constexpr std::array kSampleMagic{std::uint8_t{'M'}, std::uint8_t{'H'}, s
 inline constexpr std::array kManualMagic{std::uint8_t{'M'}, std::uint8_t{'H'}, std::uint8_t{'M'}, std::uint8_t{'C'}};
 inline constexpr std::array kHelloMagic{std::uint8_t{'M'}, std::uint8_t{'H'}, std::uint8_t{'H'}, std::uint8_t{'S'}};
 inline constexpr std::array kDshotMagic{std::uint8_t{'M'}, std::uint8_t{'H'}, std::uint8_t{'D'}, std::uint8_t{'S'}};
+inline constexpr std::array kArrivalMagic{std::uint8_t{'M'}, std::uint8_t{'H'}, std::uint8_t{'M'}, std::uint8_t{'A'}};
 inline constexpr std::array kStatusMagic{std::uint8_t{'M'}, std::uint8_t{'H'}, std::uint8_t{'S'}, std::uint8_t{'T'}};
 
 inline constexpr std::size_t kMotors = kQuadXMotors;
@@ -51,8 +58,10 @@ inline constexpr std::size_t kManualBytes = sizeof(ManualControl::frames) + size
                                             sizeof(ManualControl::pitch) + sizeof(ManualControl::yaw) +
                                             sizeof(ManualControl::throttle) + sizeof(ManualControl::channels) +
                                             sizeof(ManualControl::link_quality);
-// tick, the four DShot values.
-inline constexpr std::size_t kDshotItemBytes = sizeof(std::uint64_t) + kMotors * sizeof(std::uint16_t);
+// tick, the four DShot values, board_us.
+inline constexpr std::size_t kDshotItemBytes = sizeof(std::uint64_t) + kMotors * sizeof(std::uint16_t) + sizeof(std::uint64_t);
+// frames, seq, t_us.
+inline constexpr std::size_t kArrivalItemBytes = sizeof(std::uint32_t) + sizeof(std::uint32_t) + sizeof(std::uint64_t);
 
 [[nodiscard]] constexpr std::size_t record_bytes(std::size_t count, std::size_t item_bytes) noexcept {
   return base::kHeaderBytes + count * item_bytes + base::kCrcBytes;
@@ -62,6 +71,8 @@ enum class HelloField : std::uint8_t {
   SchemaHashLow,    // kParamSchemaHash of the loaded table, low 32 bits
   SchemaHashHigh,   // and high 32 bits
   ParamCount,       // kParamCount
+  ParamValuesCrc,   // CRC-32 (imu_log crc32) over the loaded table's values in ParamId order, each 4 bytes little-endian: the
+                    // f32 bit pattern of an F32 record, the i32 of an I32 record
   TickPeriodNumUs,  // the tick period num / den us of the loaded table (tick_period_num_us, tick_period_den)
   TickPeriodDen,
   RateLoopDivisor,  // rate_loop_divisor of the loaded table: a DShot report every this many ticks

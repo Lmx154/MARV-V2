@@ -30,8 +30,10 @@
 // depth / ODR (imu_read_deadline_us, core EMB-6), computed by main from the table's tick period: the longest the flight
 // image lets the composition go without a fresh sample before counting a miss.
 //
-// Hello: on each port open the record names the image (version), the parameter table (kParamSchemaHash, count, the tick
-// period, the rate divisor) and the link (batch limit, D_HIL, clk_sys), so the host can refuse a mismatch.
+// Hello: on each port open the record names the image (version), the parameter table (kParamSchemaHash, count, the CRC of
+// its loaded values, the tick period, the rate divisor) and the link (batch limit, D_HIL, clk_sys), so the host can refuse
+// a mismatch. Each published ManualControl is answered with its board stamp (the arrival record) and each DShot report
+// carries the board time of its write, for the SIL replay of the frame ages.
 //
 // Send: the DShot reports a record's ticks wrote go out in one write as one record, the status record once per second.
 // The SDK's write waits for FIFO room and gives up after PICO_STDIO_USB_STDOUT_TIMEOUT_US (stdio_usb.c), so a host that
@@ -117,6 +119,7 @@ struct Queued {
 struct Report {
   std::uint64_t tick = 0;
   std::array<std::uint16_t, fmt::kMotors> dshot{};
+  TimeUs board_us = 0;
 };
 
 HilConfig g_cfg{};
@@ -227,6 +230,7 @@ void send_reports() noexcept {
     for (std::size_t m = 0; m < fmt::kMotors; m += 2) {
       w.put_u32(static_cast<std::uint32_t>(r.dshot[m]) | (static_cast<std::uint32_t>(r.dshot[m + 1]) << kU16Bits));
     }
+    w.put_u64(r.board_us);
     ++g_c.reports;
   }
   g_report_tail.store(tail, std::memory_order_release);
@@ -244,6 +248,7 @@ void send_hello() noexcept {
   at(fmt::HelloField::SchemaHashLow) = static_cast<std::uint32_t>(g_cfg.param_schema_hash);
   at(fmt::HelloField::SchemaHashHigh) = static_cast<std::uint32_t>(g_cfg.param_schema_hash >> (CHAR_BIT * kWord));
   at(fmt::HelloField::ParamCount) = g_cfg.param_count;
+  at(fmt::HelloField::ParamValuesCrc) = g_cfg.param_values_crc;
   at(fmt::HelloField::TickPeriodNumUs) = static_cast<std::uint32_t>(g_cfg.tick_period_num_us);
   at(fmt::HelloField::TickPeriodDen) = static_cast<std::uint32_t>(g_cfg.tick_period_den);
   at(fmt::HelloField::RateLoopDivisor) = static_cast<std::uint32_t>(g_cfg.rate_loop_divisor);
@@ -358,6 +363,13 @@ void accept_manual(const std::uint8_t* p, TimeUs rx_us) noexcept {
   m.link_t_us = rx_us;
   manual_control_publish(m);
   ++g_c.manual_records;
+  std::array<std::uint8_t, fmt::record_bytes(1, fmt::kArrivalItemBytes)> buf{};
+  fmt::base::RecordWriter w{buf};
+  w.begin(fmt::kArrivalMagic, g_up_seq++, 1);
+  w.put_u32(m.frames);
+  w.put_u32(get_u32(p + fmt::base::kMagicBytes));
+  w.put_u64(m.t_us);
+  send(std::span{buf}.first(w.end()));
 }
 
 // A valid sample record at `p` holding `count` samples, read at `rx_us`: queues the samples, runs their ticks (the
@@ -518,6 +530,7 @@ void hil_actuators_write(std::span<const DshotValue> motor) noexcept {
   for (std::size_t m = 0; m < fmt::kMotors; ++m) {
     r.dshot[m] = motor[m].raw();
   }
+  r.board_us = hal_time_us();
   g_report_head.store(head + 1, std::memory_order_release);
 }
 

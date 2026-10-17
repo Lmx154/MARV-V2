@@ -28,6 +28,7 @@ struct HilConfig {
   HilCompositionStatusSource composition_status = nullptr;
   std::uint64_t param_schema_hash = 0;             // reported in the hello record
   std::uint32_t param_count = 0;
+  std::uint32_t param_values_crc = 0;              // hil_format.hpp HelloField::ParamValuesCrc
   std::int32_t tick_period_num_us = 0;
   std::int32_t tick_period_den = 0;
   std::int32_t rate_loop_divisor = 0;
