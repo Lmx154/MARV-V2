@@ -38,6 +38,16 @@ constexpr double kSynthRotationS = 4.0;
 // protocol's ">= pi/2" with the axis not aligned (a noisy real log leaves the antipode on its own).
 constexpr double kSynthRotationRad = 5.0 * prim::kPi / 9.0;
 constexpr double kSynthMarginS = 1.0;
+// The slow start of the rotation of the ramp case: below the 15 deg/s still gate (Betaflight 4.5.1), so the segment's last
+// samples before the main rotation pass the per-sample gate, and long enough (0.3 s) to tilt the estimate by 3 degrees.
+constexpr double kSynthRampDegPerS = 10.0;
+constexpr double kSynthRampS = 0.3;
+// Test-harness scenario values for the still-segment merge and trim (the lead's decision on the M3 P3b review; rationale in
+// replay.hpp): gaps up to 50 ms inside a still segment are merged (hand tremor, single-sample spikes; 50 ms, about 375 samples
+// at the board tick, is far shorter than any deliberate hand rotation), 0.5 s is dropped from each end of each segment (the
+// slow start and the settle of the hand rotation).
+constexpr double kMergeGapS = 0.05;
+constexpr double kTrimS = 0.5;
 // Known-answer tolerance of the synthetic log: float32 rounding accumulated over the samples; the measured errors are far
 // below it and far below the share.
 constexpr double kKatTolRad = 1.0e-4;
@@ -53,13 +63,17 @@ Params read_params() {
   p.tick_num = static_cast<std::uint32_t>(param_value<ParamId::tick_period_num_us>());
   p.tick_den = static_cast<std::uint32_t>(param_value<ParamId::tick_period_den>());
   p.tol_us = static_cast<std::uint32_t>(param_value<ParamId::rate_period_tolerance_us>());
+  p.merge_gap_s = kMergeGapS;
+  p.trim_s = kTrimS;
   return p;
 }
 
 struct SynthSpec {
   double rotation_rad = kSynthRotationRad;
   double rotation_s = kSynthRotationS;
-  double still_s = 0.0;  // 0: the required T_s plus the margin
+  double still_s = 0.0;  // 0: the required T_s plus the margin plus the trim at both ends
+  double ramp_s = 0.0;   // a slow start of the rotation (kSynthRampDegPerS, inside the still gate) before the main rotation
+  bool spikes = false;   // single-sample outliers inside each still segment
 };
 
 double required_ts(double theta, const Params& p) { return std::log(theta / p.share) / static_cast<double>(p.mahony.kp); }
@@ -70,31 +84,50 @@ std::size_t samples_for(double seconds, const Params& p) {
   return static_cast<std::size_t>(std::ceil(seconds * prim::kMicrosecondsPerSecond * p.tick_den / p.tick_num));
 }
 
-// Level still, a constant-rate rotation about body x, level-rotated still. Specific force f = R^T (0, 0, -g) with
-// R = Rx(phi): (0, -g sin phi, -g cos phi); the gyro reads (omega, 0, 0) on the rotation samples; phi(t) = omega (t - t_start)
-// clamped to [0, rotation_rad], with omega = rotation_rad / (t_end - t_start) over the rotation samples' interval, so the
-// estimator, integrating omega over the stamp differences, covers exactly rotation_rad.
+// Level still, [a slow ramp,] a constant-rate rotation about body x, level-rotated still. Specific force f = R^T (0, 0, -g)
+// with R = Rx(phi): (0, -g sin phi, -g cos phi); the gyro reads (rate, 0, 0) with rate = ramp rate on the ramp samples and
+// omega on the rotation samples, 0 elsewhere. phi(t) integrates that rate over the stamps (the rate is constant on each phase
+// and phase boundaries are sample stamps), with omega = (rotation_rad - ramp rate x ramp interval) / (rotation interval), so
+// the estimator, integrating the gyro over the stamp differences, covers exactly rotation_rad. spikes: in each still segment
+// one sample with a specific-force outlier (0.7 g added on body x: |f| about 1.22 g, outside the healthy window) and, a
+// thousand samples later, one sample with a gyro spike (twice the still gate, body y).
 std::vector<ImuSample> synth_samples(const SynthSpec& spec, const Params& p) {
-  const double still_s = spec.still_s > 0.0 ? spec.still_s : std::ceil(required_ts(spec.rotation_rad, p)) + kSynthMarginS;
+  const double still_s = spec.still_s > 0.0
+                             ? spec.still_s
+                             : std::ceil(required_ts(spec.rotation_rad, p)) + kSynthMarginS + 2.0 * p.trim_s;
   const std::size_t n_still = samples_for(still_s, p);
+  const std::size_t n_ramp = spec.ramp_s > 0.0 ? samples_for(spec.ramp_s, p) : 0;
   const std::size_t n_rot = samples_for(spec.rotation_s, p);
-  const std::size_t total = 2 * n_still + n_rot;
-  const double t_start = static_cast<double>(stamp(n_still - 1, p));
-  const double t_end = static_cast<double>(stamp(n_still + n_rot - 1, p));
-  const double omega = spec.rotation_rad / ((t_end - t_start) / prim::kMicrosecondsPerSecond);
+  const std::size_t total = 2 * n_still + n_ramp + n_rot;
+  const double ramp_rate = spec.ramp_s > 0.0 ? kSynthRampDegPerS * prim::kPi / prim::kDegreesPerHalfTurn : 0.0;
+  const double t_a = static_cast<double>(stamp(n_still - 1, p));
+  const double t_b = static_cast<double>(stamp(n_still + n_ramp - 1, p));
+  const double t_c = static_cast<double>(stamp(n_still + n_ramp + n_rot - 1, p));
+  const double ramp_rad = ramp_rate * (t_b - t_a) / prim::kMicrosecondsPerSecond;
+  const double omega = (spec.rotation_rad - ramp_rad) / ((t_c - t_b) / prim::kMicrosecondsPerSecond);
   const double g = prim::kStandardGravity;
+  const float spike_gyro = static_cast<float>(2.0 * kStillGyroRadS);
+  constexpr std::size_t kSpikeSpacing = 1000;
   constexpr std::uint32_t kValid = imu_flag(ImuFlag::GyroValid) | imu_flag(ImuFlag::AccelValid);
   std::vector<ImuSample> out(total);
   for (std::size_t k = 0; k < total; ++k) {
     const double t = static_cast<double>(stamp(k, p));
-    const double phi = omega * (std::clamp(t, t_start, t_end) - t_start) / prim::kMicrosecondsPerSecond;
-    const bool rotating = k >= n_still && k < n_still + n_rot;
+    const double phi = (ramp_rate * (std::clamp(t, t_a, t_b) - t_a) + omega * (std::clamp(t, t_b, t_c) - t_b)) /
+                       prim::kMicrosecondsPerSecond;
+    const bool ramping = k >= n_still && k < n_still + n_ramp;
+    const bool rotating = k >= n_still + n_ramp && k < n_still + n_ramp + n_rot;
     ImuSample& s = out[k];
     s.t_us = stamp(k, p);
-    s.gyro_rad_s = {rotating ? static_cast<float>(omega) : 0.0F, 0.0F, 0.0F};
+    s.gyro_rad_s = {rotating ? static_cast<float>(omega) : ramping ? static_cast<float>(ramp_rate) : 0.0F, 0.0F, 0.0F};
     s.accel_m_s2 = {0.0F, static_cast<float>(-g * std::sin(phi)), static_cast<float>(-g * std::cos(phi))};
     s.temp_k = 0.0F;
     s.flags = kValid;
+  }
+  if (spec.spikes) {
+    for (const std::size_t base : {n_still / 2, n_still + n_ramp + n_rot + n_still / 2}) {
+      out[base].accel_m_s2[0] += static_cast<float>(0.7 * g);
+      out[base + kSpikeSpacing].gyro_rad_s[1] = spike_gyro;
+    }
   }
   return out;
 }
@@ -210,6 +243,54 @@ TEST(L07Replay, ControlRotationGyroAxisNegatedFailsCheckC) {
   EXPECT_FALSE(r.pass_c);
   EXPECT_GT(r.err_c, r.bound_c);
   EXPECT_TRUE(evaluate(samples, p).pass_c);
+}
+
+TEST(L07Replay, SingleSampleSpikesInsideTheStillSegmentsAreMerged) {
+  const Params p = read_params();
+  SynthSpec spec;
+  spec.spikes = true;
+  const std::vector<ImuSample> samples = synth_samples(spec, p);
+  const Report r = evaluate(samples, p);
+  print("spikes", r, p);
+  ASSERT_TRUE(r.valid()) << r.invalid;
+  EXPECT_NEAR(r.theta_rot, kSynthRotationRad, kKatTolRad);
+  EXPECT_TRUE(r.pass_a);
+  EXPECT_TRUE(r.pass_c);
+  // The control: without the merge each spike splits its segment, and the two longest pieces are not the two still segments.
+  Params no_merge = p;
+  no_merge.merge_gap_s = 0.0;
+  const Report split = evaluate(samples, no_merge);
+  std::printf("spikes, no merge: %s\n", split.valid() ? "valid" : split.invalid.c_str());
+  EXPECT_FALSE(split.valid() && split.pass_a && split.pass_c);
+}
+
+TEST(L07Replay, ASlowStartOfTheRotationInsideTheStillGateIsTrimmedOff) {
+  const Params p = read_params();
+  SynthSpec spec;
+  spec.ramp_s = kSynthRampS;
+  const std::vector<ImuSample> samples = synth_samples(spec, p);
+  const Report r = evaluate(samples, p);
+  print("slow start", r, p);
+  ASSERT_TRUE(r.valid()) << r.invalid;
+  EXPECT_NEAR(r.theta_rot, kSynthRotationRad, kKatTolRad);
+  EXPECT_TRUE(r.pass_a);
+  EXPECT_TRUE(r.pass_c);
+  // The control: untrimmed, still 1 ends 0.3 s into the ramp, where the estimate (which follows the exact gyro) is tilted
+  // 3 degrees against the segment's mean specific force.
+  Params no_trim = p;
+  no_trim.trim_s = 0.0;
+  const Report raw = evaluate(samples, no_trim);
+  print("slow start, no trim", raw, no_trim);
+  ASSERT_TRUE(raw.valid()) << raw.invalid;
+  EXPECT_FALSE(raw.pass_a);
+  EXPECT_GT(raw.err_a1, p.share);
+}
+
+TEST(L07Replay, AStillSegmentShorterThanTwiceTheTrimIsNotAValidT2Log) {
+  const Params p = read_params();
+  SynthSpec spec;
+  spec.still_s = 2.0 * kTrimS - 0.1;
+  EXPECT_FALSE(evaluate(synth_samples(spec, p), p).valid());
 }
 
 TEST(L07Replay, LeadingBytesAndAnIncompleteTailAreTolerated) {

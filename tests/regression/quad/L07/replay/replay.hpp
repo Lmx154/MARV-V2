@@ -21,8 +21,14 @@
 // Still samples. Both valid bits set, every gyro axis below kStillGyroRadS and |f| in the open interval (accel_healthy_min g,
 // accel_healthy_max g): the Betaflight 4.5.1 gates (src/main/flight/imu.c, quiet gyro below 15 deg/s, lines 87-88 and
 // 364-377; imuIsAccelerometerHealthy, 0.9 g - 1.1 g, lines 326-338; INFERRED from a source read, as in
-// fw/estimator/include/marv/estimator/mahony.hpp). A still segment is a maximal run of consecutive still samples; still 1
-// and still 2 are the two longest, in time order.
+// fw/estimator/include/marv/estimator/mahony.hpp). A still segment is a maximal run of still samples, where two runs
+// separated by a non-still gap of at most Params::merge_gap_s are one segment; still 1 and still 2 are the two longest, in
+// time order, and each is then trimmed by Params::trim_s at both ends. The mean f, check (a), check (c') and T_s all use the
+// trimmed segments (the protocol's rotation window uses the untrimmed ones).
+// The merge and the trim are test-harness scenario values (the lead's decision on the M3 P3b review, set by the caller): a
+// hand-held log has single-sample spikes and tremor that would split a run (theta_rot ~ 0 from two pieces of one segment),
+// and the segment's last samples can hold the slow start of the rotation, up to the 15 deg/s gate, which would leave the
+// estimate tilted against the segment's mean f for a sound estimator. 50 ms is far shorter than any deliberate hand rotation.
 //
 // Checks. (a) At the last sample of each still segment the angle between the estimate's down direction in body axes
 // (R^T e_z) and -mean(f)/|mean(f)| over that segment is at most share. (c') From a copy of the estimator at the last
@@ -67,6 +73,8 @@ struct Params {
   std::uint32_t tick_num = 0;   // tick period num / den us
   std::uint32_t tick_den = 1;
   std::uint32_t tol_us = 0;     // rate_period_tolerance_us
+  double merge_gap_s = 0.0;     // non-still gaps up to this long inside a still segment are merged (test-harness scenario value)
+  double trim_s = 0.0;          // dropped from each end of each merged still segment (test-harness scenario value)
 };
 
 // ---------------------------------------------------------------------------------------------------------- parse
@@ -296,14 +304,17 @@ struct Segment {
   return lo * lo < n2 && n2 < hi * hi;
 }
 
-// The two longest still segments (by sample count), in time order; fewer if the log has fewer.
+// The two longest still segments (by sample count) after merging runs closer than merge_gap_s, in time order; fewer if the
+// log has fewer. Not trimmed.
 [[nodiscard]] inline std::vector<Segment> two_longest_still(std::span<const ImuSample> s, const Params& p) {
   std::vector<Segment> runs;
+  const double gap_us = p.merge_gap_s * prim::kMicrosecondsPerSecond;
   for (std::size_t k = 0; k < s.size(); ++k) {
     if (!is_still(s[k], p)) {
       continue;
     }
-    if (!runs.empty() && runs.back().last + 1 == k) {
+    if (!runs.empty() &&
+        (runs.back().last + 1 == k || static_cast<double>(s[k].t_us - s[runs.back().last].t_us) <= gap_us)) {
       runs.back().last = k;
     } else {
       runs.push_back({k, k});
@@ -317,6 +328,24 @@ struct Segment {
   }
   std::sort(runs.begin(), runs.end(), [](const Segment& a, const Segment& b) { return a.first < b.first; });
   return runs;
+}
+
+// The segment without the first and last trim_s seconds; false if nothing is left.
+[[nodiscard]] inline bool trimmed(std::span<const ImuSample> s, const Segment& in, double trim_s, Segment& out) {
+  const double trim_us = trim_s * prim::kMicrosecondsPerSecond;
+  std::size_t a = in.first;
+  std::size_t b = in.last;
+  while (a <= in.last && static_cast<double>(s[a].t_us - s[in.first].t_us) < trim_us) {
+    ++a;
+  }
+  while (b >= in.first && b > a && static_cast<double>(s[in.last].t_us - s[b].t_us) < trim_us) {
+    --b;
+  }
+  if (a > in.last || b < a) {
+    return false;
+  }
+  out = {a, b};
+  return true;
 }
 
 [[nodiscard]] inline Dir mean_accel(std::span<const ImuSample> s, const Segment& g) {
@@ -338,8 +367,10 @@ enum class Control : std::uint8_t { None, NegateStill2Accel, NegateRotationGyro 
 
 struct Report {
   std::string invalid;  // empty: the log is a valid T2 log
-  Segment still1;
+  Segment still1;  // trimmed
   Segment still2;
+  Segment raw1;    // merged, untrimmed
+  Segment raw2;
   double theta_rot = 0.0;      // rad
   double rotation_s = 0.0;     // end of still 1 to start of still 2
   double ts_required_s = 0.0;  // ln(theta_rot / share) / Kp
@@ -361,12 +392,16 @@ struct Report {
     r.invalid = "fewer than two still segments";
     return r;
   }
-  r.still1 = segs[0];
-  r.still2 = segs[1];
+  r.raw1 = segs[0];
+  r.raw2 = segs[1];
+  if (!trimmed(samples, r.raw1, p.trim_s, r.still1) || !trimmed(samples, r.raw2, p.trim_s, r.still2)) {
+    r.invalid = "a still segment is empty after the trim";
+    return r;
+  }
   const Dir f1 = mean_accel(samples, r.still1);
   const Dir f2 = mean_accel(samples, r.still2);
   r.theta_rot = angle_between(f1, f2);
-  r.rotation_s = seconds(samples[r.still1.last], samples[r.still2.first]);
+  r.rotation_s = seconds(samples[r.raw1.last], samples[r.raw2.first]);
   r.still1_s = seconds(samples[r.still1.first], samples[r.still1.last]);
   r.still2_s = seconds(samples[r.still2.first], samples[r.still2.last]);
   if (!(p.mahony.kp > 0.0F) || !(p.share > 0.0)) {
