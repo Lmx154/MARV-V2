@@ -48,7 +48,7 @@ typedef struct marv_plant_config {
   double rotor_position_frd_m[MARV_PLANT_N_MOTORS][3];
   double thrust_coeff;                                /* k, N / (rad/s)^2 */
   double torque_ratio_m;                              /* yaw torque / thrust, m */
-  double omega_min_rad_s;                             /* > 0, ESC map at DShot 48 */
+  double omega_min_rad_s;                             /* >= 0, ESC map at DShot 48 */
   double omega_max_rad_s;                             /* > omega_min, ESC map at DShot 2047 */
   double motor_tau_s;                                 /* first-order motor time constant */
   double motor_substep_s;                             /* fixed motor sub-step h */

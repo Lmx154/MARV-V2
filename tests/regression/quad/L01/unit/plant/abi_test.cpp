@@ -81,7 +81,8 @@ TEST(PlantAbiCreate, RefusesEveryInvalidConfigField) {
   };
   for (const Field& f : scalars) {
     for (double v : bad_values) {
-      const bool physical = f.zero_ok && std::isfinite(v);
+      const bool physical = (f.zero_ok && std::isfinite(v)) ||
+                            (f.member == &marv_plant_config::omega_min_rad_s && v == 0.0);  // decision 0048 item 1
       marv_plant_config cfg = fixture_config();
       cfg.*(f.member) = v;
       EXPECT_EQ(create_status(cfg), physical ? MARV_PLANT_OK : MARV_PLANT_E_CONFIG) << f.name << " = " << v;

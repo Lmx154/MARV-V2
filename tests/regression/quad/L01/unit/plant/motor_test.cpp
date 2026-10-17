@@ -149,5 +149,35 @@ TEST(PlantMotor, NegativeControlLateCommandFailsTheComparison) {
   }
 }
 
+// Known answer for omega_min = 0 (decision 0048 item 1): the ESC map's low end is 0 rad/s, so DShot 48 settles to rotor
+// speed 0 (from omega_max, 50 tau: the residual exp(-50) is below eps) and DShot 2047 settles to omega_max. Tolerance
+// tol_of(n, omega_max) as above, the closed form evaluated at t = n h.
+TEST(PlantMotor, ZeroMinimumSpeedMapsDshot48ToZeroAndDshot2047ToMaximum) {
+  marv_plant_config cfg = fixture_config();
+  cfg.omega_min_rad_s = 0.0;
+  const std::size_t steps = static_cast<std::size_t>(std::llround(50.0 * kTau / cfg.motor_substep_s));
+  const marv_plant_body body = identity_body();
+  for (const std::uint16_t dshot : {static_cast<std::uint16_t>(kDshotMin), static_cast<std::uint16_t>(kDshotMax)}) {
+    const bool low = dshot == kDshotMin;
+    marv_plant_config c = cfg;
+    for (double& w : c.initial_omega_rad_s) {
+      w = low ? c.omega_max_rad_s : 0.0;
+    }
+    marv_plant* p = nullptr;
+    ASSERT_EQ(marv_plant_create(&c, &p), MARV_PLANT_OK);
+    const marv_plant_cmd cmd = make_cmd(dshot, dshot, dshot, dshot);
+    marv_plant_out out = make_out();
+    for (std::size_t n = 0; n < steps; ++n) {
+      ASSERT_EQ(marv_plant_step(p, &body, &cmd, c.motor_substep_s, &out), MARV_PLANT_OK);
+    }
+    const double expected = low ? 0.0 : c.omega_max_rad_s;
+    for (std::size_t i = 0; i < MARV_PLANT_N_MOTORS; ++i) {
+      EXPECT_NEAR(out.rotor_speed_rad_s[i], expected, tol_of(static_cast<double>(steps), c.omega_max_rad_s))
+          << "dshot = " << dshot << " motor = " << i;
+    }
+    marv_plant_destroy(p);
+  }
+}
+
 }  // namespace
 }  // namespace marv::plant::test

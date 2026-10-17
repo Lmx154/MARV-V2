@@ -69,9 +69,9 @@ bool config_valid(const marv_plant_config& c) {
     }
   }
   return positive(c.mass_kg) && positive(c.thrust_coeff) && positive(c.torque_ratio_m) &&
-         positive(c.omega_min_rad_s) && positive(c.omega_max_rad_s) && c.omega_min_rad_s < c.omega_max_rad_s &&
-         positive(c.motor_tau_s) && positive(c.motor_substep_s) && finite(c.site_lat_rad) &&
-         std::fabs(c.site_lat_rad) <= prim::kPi * 0.5 && finite(c.site_height_m);
+         finite(c.omega_min_rad_s) && c.omega_min_rad_s >= 0.0 && positive(c.omega_max_rad_s) &&
+         c.omega_min_rad_s < c.omega_max_rad_s && positive(c.motor_tau_s) && positive(c.motor_substep_s) &&
+         finite(c.site_lat_rad) && std::fabs(c.site_lat_rad) <= prim::kPi * 0.5 && finite(c.site_height_m);
 }
 
 bool body_valid(const marv_plant_body& b) {
