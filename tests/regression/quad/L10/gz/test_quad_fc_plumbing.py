@@ -1,4 +1,4 @@
-"""The plumbing of the quad_fc flight composition into the gz-sim 8 lockstep plugin (HIL S2d-2a, decision 0046 stage S2, item 4).
+"""The plumbing of the quad_fc flight composition into the gz-sim 8 lockstep plugin (HIL S2d-2a, decision 0046 stage S2, item 4; the launch pad, HIL S2d-2b, decision 0047).
 
 Skipped unless `gz sim --force-version 8` reports 8.x and the host-gz-quadfc build holds libmarv_gz_lockstep.so
 (`cmake --preset host-gz-quadfc && cmake --build --preset host-gz-quadfc`); the gz CI step fails on a skip. Every gz
@@ -8,11 +8,12 @@ The plugin of this build links marv_sil_quad_fc (the flight composition with the
 <manual_control_script> into it through marv_sil_stage_manual_control before every tick. The world is the L2 hover world of the
 UZH card (member lo, m = 1, a whole-ns tick of 156250 ns) with the model gyro, without the open-loop DShot overrides (the
 FC3v2 set has no ol_dshot_m*), with rc_channel_angle = 6 through <sil_override> (the register's default is 0, acro) and the
-script. There is no ground in the world, so the vehicle falls from tick 0 with a specific force of zero; the estimator would
-never initialise from that. Two harness values of this file only (labelled below) make the free-falling sample usable for the
-arming check: estimator_accel_healthy_min = 0 and the model accelerometer's turn-on bias at -1 x its bound on z (the FRD
-specific force of a level vehicle at rest is -z). Nothing here is a flight result; arming is read from the DShot values as
-tests/regression/quad/L09/unit/sil_quad_fc_test.cpp reads it: 0 is stop, a value of 48 or more is a throttle command.
+script. The world has <launch_pad/> (decision 0047): the body is held at its start pose, with the plant's contact force making
+the model IMU read R^T (0, 0, -g) and the gyro 0, until the vertical thrust reaches the weight. It is not ground contact: there is
+no ground in the world and no landing. Without the pad the vehicle falls from tick 0 with a specific force of zero and the
+estimator never initialises from that (a control below). The model IMU has no turn-on bias (the nominal corner). Nothing here is
+a flight result; arming is read from the DShot values as tests/regression/quad/L09/unit/sil_quad_fc_test.cpp reads it: 0 is
+stop, a value of 48 or more is a throttle command.
 
 What is checked:
   - A script whose arm channel stays low for the whole run: DShot is stop on every tick, and the log holds the staged frames
@@ -24,7 +25,13 @@ What is checked:
     link-off segment stages no frame and does not arm; after arming, a link-off segment stages nothing, the last staged frame
     persists (the output stays a throttle command) and its age brings the failsafe stop at failsafe_disarm_us; a run with no
     script has no record 11 and is stop throughout, and a script whose only segment is link off writes the same log as no script.
-  - Planted refusals of a malformed <manual_control_script>.
+  - On the pad, armed at idle (throttle stick 0) the vehicle stays put and the model accelerometer reads -g; the throttle stick
+    raised after arming lifts it off at the pad's release tick (record 13): the pose is bitwise the start pose up to and including
+    the host step of that tick and rises after it, and the output stays a throttle command throughout. Controls: the same raise
+    without the pad does not arm (the free-falling sample is not a valid estimator start) and the log has no pad records; a
+    world without the pad has no record 12 or 13.
+  - Planted refusals of a malformed <manual_control_script>, and of <launch_pad> with content, without the model gyro or with an
+    initial velocity.
 """
 
 import re
@@ -58,11 +65,13 @@ SWITCH_LOW, SWITCH_HIGH = -1.0, 1.0  # normalised channel values, [-1, 1] (fw/ty
 MARGIN_US = 1_000_000  # labelled harness value: the margin after calibration + recovery before the raise
 SETTLE_US = 250_000  # labelled harness value: sim time run after the raise before the output is read
 SLACK_US = 10_000  # labelled harness value: allowance on a failsafe edge, a few rate periods
-# Labelled harness values making the free-falling model-IMU sample usable (module docstring).
-ACCEL_HEALTHY_MIN_G = "0.0"
-BIAS_SIGNS = (0, 0, 0, 0, 0, -1)
+BIAS_SIGNS = (0,) * 6  # the nominal corner: no turn-on bias on any axis
 # The sticks of the scripted frames in the control that checks the log: exactly representable in binary32.
 STICKS = {"roll": 0.5, "pitch": -0.25, "yaw": 0.125, "throttle": 0.0}
+THROTTLE_UP = 0.9  # labelled harness value: a throttle stick well above the hover throttle, so the thrust passes the weight
+LIFT_US = 500_000  # labelled harness value: sim time run after the throttle is raised
+LIFT_LAG_STEPS = 100  # labelled harness value: host steps (15.6 ms) allowed for gz to publish the first pose change (11 measured)
+G_BAND = (9.78, 9.84)  # m/s^2: WGS 84 normal gravity at the surface runs from 9.780 (equator) to 9.832 (poles) (Somigliana)
 
 pytestmark = pytest.mark.skipif(not (PLUGIN.exists() and run_scenario.gz8_available()),
                                 reason="gz-sim 8 or the host-gz-quadfc build of libmarv_gz_lockstep.so is absent")
@@ -101,29 +110,29 @@ def script(segments, period=FRAME_PERIOD_US):
             f"<angle_channel>{ANGLE_CHANNEL}</angle_channel>{''.join(segments)}</manual_control_script>")
 
 
-def world(log, script_text):
+def world(log, script_text, pad=True):
     text = gen_world.generate(CARD, HOVER, "test", 1, "lo", str(log),
                               sensors=gen_world.SensorSet(gyro="model", bias_signs=BIAS_SIGNS))[1]
     text = re.sub(r'\s*<sil_override param="ol_dshot_m\d" type="i32">\d+</sil_override>', "", text)
-    add = (f'<sil_override param="rc_channel_angle" type="i32">{ANGLE_CHANNEL}</sil_override>\n'
-           f'<sil_override param="estimator_accel_healthy_min" type="f32">{ACCEL_HEALTHY_MIN_G}</sil_override>\n')
+    add = f'<sil_override param="rc_channel_angle" type="i32">{ANGLE_CHANNEL}</sil_override>\n'
+    add += "<launch_pad/>\n" if pad else ""
     add += (script_text + "\n") if script_text else ""
     assert text.count("<gyro_source>") == 1
     return text.replace("<gyro_source>", add + "<gyro_source>", 1)
 
 
-def run(tmp_path_factory, name, script_text, duration_us):
+def run(tmp_path_factory, name, script_text, duration_us, pad=True):
     tmp = tmp_path_factory.mktemp(name)
     log = tmp / "run.bin"
     sdf = tmp / "world.sdf"
-    sdf.write_text(world(log, script_text), encoding="utf-8")
+    sdf.write_text(world(log, script_text, pad), encoding="utf-8")
     n = iterations(duration_us)
     r = run_scenario.run_gz_process(sdf, n, SEED, PLUGIN_DIR, None, TIMEOUT_S)
     return r, log, n
 
 
-def read_ok(tmp_path_factory, name, script_text, duration_us):
-    r, log, n = run(tmp_path_factory, name, script_text, duration_us)
+def read_ok(tmp_path_factory, name, script_text, duration_us, pad=True):
+    r, log, n = run(tmp_path_factory, name, script_text, duration_us, pad)
     assert r.returncode == 0 and "REFUSED" not in r.stderr, run_scenario.stderr_tail(r.stderr)
     d = lockstep_log.read(log)
     assert len(d["ticks"]) == n and d["trailer"] == {"steps": n, "ticks": n, "applied": n}
@@ -229,6 +238,67 @@ def test_a_script_that_stages_nothing_writes_the_log_of_no_script(tmp_path_facto
     assert nothing["raw_records"] == none["raw_records"]
 
 
+RAISE_US = READY_US + SETTLE_US
+
+
+@pytest.fixture(scope="module")
+def liftoff_run(tmp_path_factory):
+    segs = [seg(0, READY_US, SWITCH_LOW), seg(READY_US, SETTLE_US, SWITCH_HIGH),
+            seg(RAISE_US, LIFT_US, SWITCH_HIGH, throttle=THROTTLE_UP)]
+    return read_ok(tmp_path_factory, "liftoff", script(segs), RAISE_US + LIFT_US)
+
+
+def accel_z(t):
+    return struct.unpack("<3f3f", t["imu"][:24])[5]  # marv_imu_meas: gyro 3 f32, accel 3 f32, temp f32, flags u32
+
+
+def test_on_the_pad_the_model_accelerometer_reads_minus_g_and_the_pose_does_not_move(raised_run):
+    assert raised_run["pad"] == {"release_tick": None}, "idle thrust is below the weight: the pad holds for the whole run"
+    ticks, steps = raised_run["ticks"], raised_run["steps"]
+    assert all(t["pad_held"] for t in ticks)
+    held = [accel_z(t) for t in ticks if CAL_US <= t["sil_t_us"]]
+    assert held
+    mean = sum(held) / len(held)
+    assert -G_BAND[1] < mean < -G_BAND[0], mean  # the FRD specific force of a still level vehicle is -g on z
+    # gz normalises the quaternion at its first physics step (one ulp on w and z), so the held pose is read from step 1 on
+    assert all(st["gz_pos_enu"] == steps[1]["gz_pos_enu"] and st["gz_q_wxyz"] == steps[1]["gz_q_wxyz"] for st in steps[1:])
+    assert all(st["gz_lin_vel_enu"] == (0.0, 0.0, 0.0) and st["gz_ang_vel_enu"] == (0.0, 0.0, 0.0) for st in steps)
+    assert all(a["force_enu"] == (0.0, 0.0, 0.0) and a["torque_enu"] == (0.0, 0.0, 0.0) for a in raised_run["applied"])
+
+
+def test_armed_at_idle_then_throttle_up_lifts_off_at_the_release_tick(liftoff_run):
+    d = liftoff_run
+    ticks, steps, applied = d["ticks"], d["steps"], d["applied"]
+    release = d["pad"]["release_tick"]
+    assert release is not None, "the throttle raise never lifted the vehicle off"
+    assert release < len(ticks) - 1
+    assert ticks[release]["sil_t_us"] >= RAISE_US, "released before the throttle was raised"
+    assert all(t["pad_held"] == (t["tick"] < release) for t in ticks)
+    # armed at idle on the pad before the raise
+    armed_from = next(t["tick"] for t in ticks if throttle(t))
+    assert ticks[armed_from]["sil_t_us"] < RAISE_US and armed_from < release
+    assert all(throttle(t) for t in ticks[armed_from:])
+    # m = 1: host step i is tick i. The read of step i precedes step i's wrench, so the pose is the start pose through the release
+    # step (the wrench applied from the release step on is the first nonzero one); gz publishes a pose change only after the
+    # body has moved a little, so the first changed read lags the release by a few host steps (11 measured) and never precedes it.
+    start = steps[1]  # step 0's quaternion differs by an ulp (see above)
+    for i in range(1, release + 1):
+        assert steps[i]["gz_pos_enu"] == start["gz_pos_enu"] and steps[i]["gz_lin_vel_enu"] == start["gz_lin_vel_enu"], i
+    assert all((applied[i]["force_enu"] == (0.0, 0.0, 0.0)) == (i < release) for i in range(release + 100))
+    first_moved = next(i for i in range(release, len(steps)) if steps[i]["gz_pos_enu"] != start["gz_pos_enu"])
+    assert release < first_moved <= release + LIFT_LAG_STEPS
+    assert steps[first_moved]["gz_pos_enu"][2] > start["gz_pos_enu"][2] and steps[first_moved]["gz_lin_vel_enu"][2] > 0.0
+    assert steps[-1]["gz_pos_enu"][2] > start["gz_pos_enu"][2]
+
+
+def test_control_without_the_pad_the_same_raise_does_not_arm_and_the_log_has_no_pad_records(tmp_path_factory):
+    segs = [seg(0, READY_US, SWITCH_LOW), seg(READY_US, SETTLE_US, SWITCH_HIGH)]
+    d = read_ok(tmp_path_factory, "nopad", script(segs), DURATION_US, pad=False)
+    assert d["pad"] is None and not any("pad_held" in t for t in d["ticks"])
+    assert all(stopped(t) for t in d["ticks"]), "free fall is not a valid estimator start; the raise must not arm"
+    assert any(m["channels"][ARM_CHANNEL - 1] == SWITCH_HIGH for m in d["manuals"])
+
+
 def mutate(pattern, repl):
     return lambda t: re.sub(pattern, repl, t, count=1, flags=re.S)
 
@@ -267,6 +337,30 @@ REFUSALS = [
     ("script_twice", GOOD_SEGS, lambda t: t.replace("</manual_control_script>", "</manual_control_script>" + script(GOOD_SEGS), 1),
      "plugin element <manual_control_script> appears twice"),
 ]
+
+
+PAD_REFUSALS = [
+    ("pad_content", mutate(r"<launch_pad/>", "<launch_pad>1</launch_pad>"), "<launch_pad> takes no content"),
+    ("pad_twice", mutate(r"<launch_pad/>", "<launch_pad/><launch_pad/>"), "plugin element <launch_pad> appears twice"),
+    ("pad_no_model_gyro", mutate(r"<gyro_source>model</gyro_source>", ""),
+     "<launch_pad> needs <gyro_source>model</gyro_source> (its contact force reaches the model IMU only)"),
+    ("pad_with_velocity", mutate(r"<launch_pad/>", "<launch_pad/><initial_velocity_ned_m_s>0 0 1</initial_velocity_ned_m_s>"),
+     "<launch_pad> is a held start and excludes <initial_velocity_ned_m_s> and <initial_body_rates_frd>"),
+]
+
+
+@pytest.mark.parametrize("name,edit,reason", PAD_REFUSALS, ids=[r[0] for r in PAD_REFUSALS])
+def test_planted_malformed_launch_pad_is_refused(tmp_path, name, edit, reason):
+    log = tmp_path / "run.bin"
+    good = world(log, script(GOOD_SEGS))
+    planted = edit(good)
+    assert planted != good, "the planted edit did not change the world"
+    sdf = tmp_path / "world.sdf"
+    sdf.write_text(planted, encoding="utf-8")
+    r = run_scenario.run_gz_process(sdf, 8, SEED, PLUGIN_DIR, None, TIMEOUT_S)
+    assert r.returncode != 0, "the run was not refused"
+    assert f"marv_gz_lockstep: REFUSED: {reason}" in r.stderr, run_scenario.stderr_tail(r.stderr)
+    assert not log.exists(), "a refused run wrote a log"
 
 
 def test_control_the_good_script_runs(tmp_path_factory):

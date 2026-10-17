@@ -44,15 +44,20 @@ def header_bytes(m=1, seed=1):
     return fixed.pack(ll.MAGIC, ll.VERSION, fixed.size + len(version), m, 625, 4, seed, len(version)) + version
 
 
-def log_bytes(reads, wrenches, m=1, seed=1, trailer=True):
+def log_bytes(reads, wrenches, m=1, seed=1, trailer=True, pad=False, release=None):
     """A log of len(reads) host steps: reads[i] is the 13-double gz read of step i, wrenches[i] the applied wrench (6
-    doubles) after it."""
+    doubles) after it. `pad`: a PAD record directly after the header; `release`: a RELEASE record of that tick after its TICK
+    record."""
     out = bytearray(header_bytes(m, seed))
+    if pad:
+        out += bytes([ll.PAD])
     tick = 0
     for i, (read, w) in enumerate(zip(reads, wrenches)):
         out += bytes([ll.STEP]) + ll._STEP.pack(i, i * 156250, *read, *([0.0] * 13))
         for _ in range(m):
             out += bytes([ll.TICK]) + ll._TICK.pack(tick, tick * 156, bytes(32), 48, 48, 48, 48, 1, 0, *([0.0] * 20))
+            if release == tick:
+                out += bytes([ll.RELEASE]) + ll._RELEASE.pack(tick)
             tick += 1
         out += bytes([ll.APPLIED]) + ll._APPLIED.pack(*w)
     if trailer:
@@ -99,6 +104,77 @@ def test_stale_negative_control_all_fresh_and_all_stale(tmp_path):
     frozen = [read_of(1.0)] * 5
     _, log = canned(tmp_path, frozen, [PUSH] * 5)
     assert rs.stale_report(log)["stale"] == 4 and rs.stale_report(log)["last_fresh_index"] == 0
+
+
+def test_launch_pad_records_are_read_and_a_log_without_them_has_no_pad(tmp_path):
+    reads = [read_of(0.0)] * 6
+    _, log = canned(tmp_path, reads, [ZERO] * 6, m=2, pad=True, release=7)
+    assert log["pad"] == {"release_tick": 7}
+    assert [t["pad_held"] for t in log["ticks"]] == [tick < 7 for tick in range(12)]
+    _, held_throughout = canned(tmp_path, reads, [ZERO] * 6, pad=True)
+    assert held_throughout["pad"] == {"release_tick": None} and all(t["pad_held"] for t in held_throughout["ticks"])
+    _, plain = canned(tmp_path, reads, [ZERO] * 6)
+    assert plain["pad"] is None and not any("pad_held" in t for t in plain["ticks"])
+
+
+@pytest.mark.parametrize("name", ["release_without_pad", "pad_after_a_step", "release_of_another_tick", "release_twice"])
+def test_malformed_launch_pad_records_are_refused(tmp_path, name):
+    good = log_bytes([read_of(0.0)] * 3, [ZERO] * 3, pad=True, release=1)
+    head = len(header_bytes())
+    release = bytes([ll.RELEASE]) + ll._RELEASE.pack(1)
+    if name == "release_without_pad":
+        data = good[:head] + good[head + 1:]
+    elif name == "pad_after_a_step":
+        data = good[:head] + good[head + 1:]
+        step = 1 + ll._STEP.size
+        data = data[:head + step] + bytes([ll.PAD]) + data[head + step:]
+    elif name == "release_of_another_tick":
+        data = good.replace(release, bytes([ll.RELEASE]) + ll._RELEASE.pack(2))
+    else:
+        at = good.index(release) + len(release)
+        data = good[:at] + release + good[at:]
+    p = tmp_path / "bad.bin"
+    p.write_bytes(data)
+    with pytest.raises(ll.LogError):
+        ll.read(p)
+    p.write_bytes(good)
+    assert ll.read(p)["pad"] == {"release_tick": 1}  # the unplanted log reads
+
+
+def test_stale_rule_excludes_the_steps_a_launch_pad_held(tmp_path):
+    reads = [read_of(0.0)] * 8
+    wrenches = [ZERO] * 4 + [PUSH] * 4  # held through step 3, released at tick 4 (m = 1)
+    _, with_pad = canned(tmp_path, reads, wrenches, pad=True, release=4)
+    st = rs.stale_report(with_pad)
+    # steps 1..4 follow a held step (0..3): excluded and counted apart; steps 5..7 follow a released step with a nonzero wrench
+    assert st["held"] == 4 and st["stale"] == 3 and st["unchanged_zero_wrench"] == 0
+    # a pad that never released holds every step
+    _, never = canned(tmp_path, reads, [ZERO] * 8, pad=True)
+    assert rs.stale_report(never)["held"] == 7 and rs.stale_report(never)["stale"] == 0
+    # control: the same reads and wrenches without the pad records are not excluded
+    _, no_pad = canned(tmp_path, reads, wrenches)
+    st = rs.stale_report(no_pad)
+    assert st["held"] == 0 and st["stale"] == 3 and st["unchanged_zero_wrench"] == 4
+    # m = 2: a step is held when all its ticks are before the release (tick 5: step 2 is partly free)
+    _, m2 = canned(tmp_path, reads, wrenches, m=2, pad=True, release=5)
+    assert rs.stale_report(m2)["held"] == 2  # steps 0 and 1 are held; steps 1 and 2 follow them
+
+
+def test_the_report_states_the_launch_pad_hold_and_what_it_is_not(tmp_path, monkeypatch, no_dpkg):
+    fake_gz(monkeypatch, pad=True, release=3)
+    r = rs.run(CARD, SCEN, 1, 1, "test", None, tmp_path, tmp_path / "noplugin", iterations=8)
+    text = Path(r.report_path).read_text(encoding="utf-8")
+    assert "launch pad hold until tick 3; not ground contact; no landing" in text
+    assert "the pad resists torques and lateral forces" in text
+    # no release within the run
+    fake_gz(monkeypatch, pad=True)
+    r = rs.run(CARD, SCEN, 1, 1, "test", None, tmp_path / "b", tmp_path / "noplugin", iterations=8)
+    assert "launch pad hold until tick none (not released within the run); not ground contact; no landing" in \
+        Path(r.report_path).read_text(encoding="utf-8")
+    # control: a run without the pad has no such line
+    fake_gz(monkeypatch)
+    r = rs.run(CARD, SCEN, 1, 1, "test", None, tmp_path / "c", tmp_path / "noplugin", iterations=8)
+    assert "launch pad" not in Path(r.report_path).read_text(encoding="utf-8")
 
 
 def test_freshness_is_bitwise(tmp_path):
@@ -216,7 +292,7 @@ def no_dpkg(monkeypatch):
     monkeypatch.setattr(rs, "_dpkg_query", lambda *a: None)
 
 
-def fake_gz(monkeypatch, returncode=0, stderr="", n_written=None, trailer=True, wall=2.0, cpu=1.0):
+def fake_gz(monkeypatch, returncode=0, stderr="", n_written=None, trailer=True, wall=2.0, cpu=1.0, pad=False, release=None):
     calls = []
 
     def fake(sdf_path, iterations, seed, plugin_dir=None, extra_env=None, timeout_s=None):
@@ -225,7 +301,8 @@ def fake_gz(monkeypatch, returncode=0, stderr="", n_written=None, trailer=True, 
         m = int(re.search(r"<ticks_per_step>(\d+)</ticks_per_step>", text).group(1))
         n = iterations if n_written is None else n_written
         reads = [read_of(float(i)) for i in range(n)]
-        Path(log_path).write_bytes(log_bytes(reads, [PUSH] * n, m=m, seed=seed, trailer=trailer))
+        Path(log_path).write_bytes(log_bytes(reads, [PUSH] * n, m=m, seed=seed, trailer=trailer, pad=pad,
+                                                                           release=release))
         calls.append({"iterations": iterations, "seed": seed, "sdf": text, "m": m})
         return rs.GzProcess(returncode, "", stderr, wall, cpu)
 
