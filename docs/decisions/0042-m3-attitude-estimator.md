@@ -29,7 +29,9 @@ Architect ruling for quad §4.0 M3 (2026-10-16); this record implements nothing.
    refusal order ImuStale, MotorTest, Failsafe, NoLink, ImuInvalid, Saturated, EstimatorInvalid, ThrottleUp, SwitchOff /
    SwitchNotCycled; it refuses and never disarms; the estimator steps before the arming step.
    `tests/regression/quad/L08/unit/arming_test.cpp`: the rig sets `estimator_valid = true`; one case added.
-   `tests/regression/quad/L09/unit/quad_fc_gate_test.cpp` feeds (0, 0, -9.8) m/s^2 and should not change.
+   `tests/regression/quad/L09/unit/quad_fc_gate_test.cpp` feeds (0, 0, -9.8) m/s^2; its cases do not change. Amended
+   (lead, M3 P2 fix): it gains one case, samples whose GyroValid / AccelValid flags are clear are not fed to the
+   estimator (gyro clear: no step, dt spans from the last stepped stamp; accel clear: no correction).
 
 ## Why
 
