@@ -41,11 +41,13 @@ struct AttitudeOutput {
 template <class T>
 class AttitudeLaw {
  public:
-  // pre: validate(cfg) and validate_timing(cfg) are None. Clears the period history, the fault latch and the fault
-  // counters.
+  // pre: validate(cfg) == None. A config failing validate_timing (an unset or invalid tick period, period ticks or
+  // tolerance) makes every execution a counted timing fault: the spacing check never runs silently off. Clears the
+  // period history, the fault latch and the fault counters.
   void init(AttitudeConfig<T> cfg) noexcept {
     cfg_ = cfg;
     k_yaw_ = cfg.kp / cfg.yaw_weight;
+    timing_ok_ = validate_timing(cfg) == ConfigError::None;
     // T_a = D_a num / den µs exactly: |dt − T_a| > tol  ⇔  |den·dt − D_a·num| > den·tol, all integers.
     den_ = static_cast<std::uint64_t>(cfg.tick_period_den);
     target_ = static_cast<std::uint64_t>(cfg.period_ticks) * static_cast<std::uint64_t>(cfg.tick_period_num_us);
@@ -70,8 +72,8 @@ class AttitudeLaw {
     using std::cos;
     using std::isfinite;
     using std::sin;
-    bool off_period = false;
-    if (have_t_) {
+    bool off_period = !timing_ok_;
+    if (timing_ok_ && have_t_) {
       const std::uint64_t dt_us = a.t_us - t_us_;
       // A spacing whose den·dt overflows (a stamp going backwards wraps to one) is outside the bound.
       if (dt_us > dt_max_) {
@@ -160,6 +162,7 @@ class AttitudeLaw {
 
   AttitudeConfig<T> cfg_{};
   T k_yaw_{};  // k / w, computed once at init (PX4 setProportionalGain)
+  bool timing_ok_ = false;
   std::uint64_t den_ = 1;
   std::uint64_t target_ = 0;
   std::uint64_t slack_ = 0;

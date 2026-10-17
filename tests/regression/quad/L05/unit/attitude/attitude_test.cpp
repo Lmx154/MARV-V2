@@ -825,6 +825,40 @@ TEST(L5AttitudePeriod, NothingIsCheckedAtTheFirstExecutionAfterInitOrReset) {
   EXPECT_TRUE(refused(law.execute(jump2, kRolledSetpoint, 0.0F), 1));
 }
 
+TEST(L5AttitudePeriod, AnUnsetOrInvalidTimingConfigNeverProducesAnOutput) {
+  const AttitudeConfig<float> good = test_config();
+  const std::int64_t period = static_cast<std::int64_t>(kPeriodUs);
+  expect_accepted(good, {period, period});  // control: the same law with the fields set runs normally
+  const auto never_runs = [&](const AttitudeConfig<float>& cfg) {
+    ASSERT_NE(attitude::validate_timing(cfg), ConfigError::None);
+    const std::vector<AttitudeOutput<float>> out = run_spacings(cfg, {period, period});
+    for (std::size_t i = 0; i < out.size(); ++i) {  // every execution, the first included
+      EXPECT_TRUE(refused(out[i], static_cast<std::uint32_t>(i + 1))) << "execution " << i;
+    }
+  };
+  AttitudeConfig<float> unset = good;
+  unset.tick_period_num_us = 0;
+  unset.tick_period_den = 0;
+  unset.period_ticks = 0;
+  unset.period_tolerance_us = 0;
+  never_runs(unset);
+  AttitudeConfig<float> c = good;
+  c.tick_period_num_us = 0;
+  never_runs(c);
+  c = good;
+  c.tick_period_den = 0;
+  never_runs(c);
+  c = good;
+  c.period_ticks = 0;
+  never_runs(c);
+  c = good;
+  c.period_tolerance_us = -1;
+  never_runs(c);
+  c = good;
+  c.period_tolerance_us = static_cast<std::int32_t>(kPeriodUs);  // not below half a tick
+  never_runs(c);
+}
+
 TEST(L5AttitudePeriod, TheSpacingAfterAFaultIsStillChecked) {
   const AttitudeConfig<float> cfg = test_config();
   AttitudeLaw<float> law;

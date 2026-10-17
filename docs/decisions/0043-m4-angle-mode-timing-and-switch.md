@@ -9,7 +9,13 @@
    `kPeriodToleranceUs` are deleted. Frozen files: `tests/regression/quad/L05/unit/attitude/attitude_test.cpp`, the
    L5AttitudePeriod death tests become refused-and-counted at unchanged boundaries (±1 µs accepted; ±2 µs, repeated,
    backwards, dropped and after-fault refused; 312/313 accepted and 311/314 refused at 312.5 µs; nothing checked after
-   reset); `tests/regression/quad/L09/unit/quad_fc_gate_test.cpp`, the off-period test with angle selected: nothing halts
+   reset; a law initialised with an unset or invalid timing config refuses every execution as a counted timing fault,
+   so the check never runs silently off); `AttitudeConfig` gains four timing fields (`tick_period_num_us`,
+   `tick_period_den`, `period_ticks`, `period_tolerance_us`), so the hand-built configs that run the law also set them,
+   fields added and nothing loosened: `tests/regression/quad/L05/unit/angle/angle_test.cpp` (`test_config`: 1000/1 µs,
+   one tick, 1 µs) and `tests/regression/quad/L05/t3/t3_test.cpp` (from the fixture's tick period, divisor and ratio,
+   tolerance 1 µs as in the SIL register; `attitude_t3_inputs.txt`, its checksums and every threshold and golden are
+   unchanged); `tests/regression/quad/L09/unit/quad_fc_gate_test.cpp`, the off-period test with angle selected: nothing halts
    and the attitude timing count equals the rate timing count.
 2. No failsafe phase forces angle mode; the mode channel holds the newest valid frame through ArmedHold and
    ArmedFailsafeCentred. Decision 0041 is unchanged.

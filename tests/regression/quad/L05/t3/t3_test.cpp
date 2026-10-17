@@ -258,6 +258,13 @@ const Product* product() {
     p.att.yaw_deadband = v.at("yaw_deadband");
     p.att.yaw_alpha_min = v.at("att_yaw_alpha_min");
     p.att.yaw_t_cross = v.at("att_yaw_t_cross");
+    // The spacing check of the attitude law (decision 0043): the fixture's tick period and D_a = divisor * ratio ticks per
+    // execution, with the tolerance of the SIL register (rate_period_tolerance_us = 1 us, the hal_sim truncation bound; the
+    // stamps below are floor(tick num / den)). The fixture is unchanged: the tolerance is no T3 input.
+    p.att.tick_period_num_us = static_cast<std::int32_t>(v.at("tick_period_num_us"));
+    p.att.tick_period_den = static_cast<std::int32_t>(v.at("tick_period_den"));
+    p.att.period_ticks = static_cast<std::int32_t>(v.at("rate_loop_divisor") * v.at("att_loop_ratio"));
+    p.att.period_tolerance_us = 1;
     // The chain as rate_group::chain_from_params forms it: the tick period one float quotient in microseconds, then one
     // division; the first finite sample seeds the states.
     p.chain.period = v.at("tick_period_num_us") / v.at("tick_period_den") / static_cast<float>(prim::kMicrosecondsPerSecond);
@@ -270,6 +277,7 @@ const Product* product() {
     p.period_s = static_cast<double>(p.divisor) * p.tick_s;
     p.att_period_s = static_cast<double>(p.ratio) * p.period_s;
     return rate::validate(p.rate) == rate::ConfigError::None && attitude::validate(p.att) == attitude::ConfigError::None &&
+                   attitude::validate_timing(p.att) == attitude::ConfigError::None &&
                    gyro_chain::validate(p.chain) == gyro_chain::ConfigError::None
                ? &p
                : nullptr;
