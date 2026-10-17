@@ -1,0 +1,3 @@
+                   armed  timer 3629299310  frame age 4599 us  frames 129289
+IMU interrupt cleared at timer 3634299255 us
+polls 34022 in 12000 ms: 353 us per poll (the timing resolution)

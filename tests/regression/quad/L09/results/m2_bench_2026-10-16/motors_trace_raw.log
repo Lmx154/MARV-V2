@@ -1,0 +1,40 @@
+Open On-Chip Debugger 0.12.0+dev-gacff23f (2026-09-17-01:21)
+Licensed under GNU GPL v2
+For bug reports, read
+	http://openocd.org/doc/doxygen/bugs.html
+Info : [rp2350.cm0] Hardware thread awareness created
+Info : [rp2350.cm1] Hardware thread awareness created
+ocd_process_reset_inner
+adapter speed: 5000 kHz
+Info : Using CMSIS-DAPv2 interface with VID:PID=0x2e8a:0x000c, serial=900678EF479C3A0E
+Info : CMSIS-DAP: SWD supported
+Info : CMSIS-DAP: Atomic commands supported
+Info : CMSIS-DAP: Test domain timer supported
+Info : CMSIS-DAP: FW Version = 2.0.0
+Info : CMSIS-DAP: Interface Initialised (SWD)
+Info : SWCLK/TCK = 0 SWDIO/TMS = 0 TDI = 0 TDO = 0 nTRST = 0 nRESET = 0
+Info : CMSIS-DAP: Interface ready
+Info : clock speed 5000 kHz
+Info : SWD DPIDR 0x4c013477 DPv3
+Info : [rp2350.cm0] Cortex-M33 r1p0 processor detected
+Info : [rp2350.cm0] target has 8 breakpoints, 4 watchpoints
+Info : [rp2350.cm0] Examination succeed
+Info : [rp2350.cm1] Cortex-M33 r1p0 processor detected
+Info : [rp2350.cm1] target has 8 breakpoints, 4 watchpoints
+Info : [rp2350.cm1] Examination succeed
+Info : [rp2350.cm0] starting gdb server on 3333
+Info : Listening on port 3333 for gdb connections
+trace
+T 1 0x13c073a0 0x13c06886 0xa18b 1 0
+T 10 0x142a9e1b 0x142a9c90 0xa4f0 19803 6958
+T 1 0x144ff8cb 0x144ff73d 0xa622 26818 9406
+T 10 0x1460b2a0 0x1460b055 0xa6aa 29830 10502
+T 1 0x147f759e 0x147f73d4 0xa7a6 35593 12518
+T 10 0x148baa6b 0x148ba8e3 0xa80a 37893 13318
+T 1 0x14cf89ca 0x14cf8806 0xaa35 50903 17766
+T 10 0x16510b5a 0x1651099e 0xb686 124271 43031
+T 11 0x167f9d95 0x167e157a 0xb7f6 133050 46083
+T 12 0x1682ab6b 0x167e157a 0xb7f6 133626 46283
+T 8 0x1694fa88 0x167e157a 0xb7f6 137068 47483
+N 259847 90000
+shutdown command invoked
