@@ -474,6 +474,13 @@ rules:
     gz_groups: [l2, l4, l5, l7, l11]
     why: "every card-based parameter set's generation depends on the whole tools/card/*.py glob (fw/params/CMakeLists.txt)"
 
+  - paths: [tools/config/**]
+    ctest_labels: [L00]
+    run_ci_steps: ["@host", m33_build, tools_tests]
+    pytest_paths: [tests/regression/quad/L00/tools]
+    gz_groups: []
+    why: "tools/config/mcfg.py writes every parameter set's factory .mcfg in the build (fw/params/CMakeLists.txt marv_add_param_set; the host and m33 builds fail if it does), and its L00 tools test"
+
   - paths:
       - tools/sim/hover.py
       - tools/sim/prim_constants.py
