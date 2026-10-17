@@ -3,11 +3,11 @@
 # directory links Pico SDK targets: the library takes the SDK *_headers targets PRIVATE (they add include directories to
 # this library alone), the image links the full SDK libraries it needs.
 add_library(marv_hal_target STATIC src/hal_target.cpp src/lsm6dsv.cpp src/motor_output.cpp src/motor_test.cpp
-  src/manual_control.cpp src/receiver.cpp src/bench_stats.cpp)
+  src/manual_control.cpp src/receiver.cpp src/bench_stats.cpp src/storage_stub.cpp)
 target_include_directories(marv_hal_target PUBLIC include)
 target_link_libraries(marv_hal_target
   PUBLIC marv_hal marv_types marv_dshot marv_crsf_decode
-  PRIVATE marv_lsm6dsv_decode
+  PRIVATE marv_lsm6dsv_decode marv_hal_storage
           pico_base_headers pico_time_headers pico_sync_headers hardware_timer_headers hardware_sync_headers
           hardware_gpio_headers hardware_irq_headers hardware_structs_headers hardware_spi_headers
           hardware_pio_headers hardware_clocks_headers hardware_uart_headers)

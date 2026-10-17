@@ -21,6 +21,15 @@
 
 #include "param_override.hpp"
 #include "sil_session.hpp"
+#include "sil_storage.hpp"
+
+#if !defined(MARV_SIL_STORAGE)
+// A library built without STORAGE (fw/sil/CMakeLists.txt): no config store, the compiled table.
+std::span<const marv::ParamRecord, marv::kParamCount> marv::sil::boot_table(
+    std::span<const marv::ParamRecord, marv::kParamCount> defaults) noexcept {
+  return defaults;
+}
+#endif
 
 namespace marv::sil {
 namespace {
@@ -237,7 +246,7 @@ extern "C" {
   g_session.period = period;
   hal_sim::setup(period, std::span<DshotValue>{g_session.motor_latch}, std::span<ServoUs>{g_session.servo_latch});
   const OverrideStatus applied =
-      apply_overrides(param_defaults(), overrides, std::span<ParamRecord, kParamCount>{g_session.merged});
+      apply_overrides(boot_table(param_defaults()), overrides, std::span<ParamRecord, kParamCount>{g_session.merged});
   if (!applied.ok) {
     hal_panic("marv_sil_init: validated overrides were rejected");
   }
@@ -381,6 +390,8 @@ extern "C" {
       return "E_COUNT: k is 0 or exceeds the output capacity";
     case MARV_SIL_E_INPUT:
       return "E_INPUT: an IMU or rotor-speed sample, or the manual control, is invalid (see marv_sil_error_index for a sample)";
+    case MARV_SIL_E_STORAGE:
+      return "E_STORAGE: the run directory cannot be used for the config storage";
     default:
       return "unknown status";
   }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 
@@ -136,6 +137,41 @@ inline constexpr double kSecondsPerMinute = 60.0;
 // entry, Greg Cook's CRC RevEng catalogue).
 // Kind: standard.
 inline constexpr std::uint32_t kCrc32PolyReflected = 0xEDB88320;
+
+// SHA-256 (the config file's payload and config hashes, fw/store/include/marv/store/sha256.hpp). Citation for every entry
+// below: NIST FIPS 180-4, "Secure Hash Standard (SHS)", August 2015. Section 2.2: the digest is 256 bits (32 bytes) and the
+// algorithm works on 32-bit words. Section 4.1.2: Sigma0(x) = ROTR^2 ^ ROTR^13 ^ ROTR^22, Sigma1(x) = ROTR^6 ^ ROTR^11 ^
+// ROTR^25, sigma0(x) = ROTR^7 ^ ROTR^18 ^ SHR^3, sigma1(x) = ROTR^17 ^ ROTR^19 ^ SHR^10. Section 4.2.2: the 64 round
+// constants K. Section 5.1.1: padding appends one 1 bit (the byte 0x80 for a message of whole bytes), zeros, and the
+// message length in bits as a 64-bit big-endian integer, to a multiple of the 512-bit (64-byte) block. Section 5.3.3: the
+// initial hash value H(0). Section 6.2.2: the message schedule W_t = sigma1(W_{t-2}) + W_{t-7} + sigma0(W_{t-15}) +
+// W_{t-16} for t = 16..63, W_0..W_15 being the block's sixteen big-endian words.
+// Kind: standard.
+inline constexpr std::size_t kSha256DigestBytes = 32;
+inline constexpr std::size_t kSha256BlockBytes = 64;
+inline constexpr std::size_t kSha256LengthBytes = 8;
+inline constexpr std::uint8_t kSha256PadByte = 0x80;
+inline constexpr std::array<unsigned, 3> kSha256BigSigma0Rotr{2, 13, 22};
+inline constexpr std::array<unsigned, 3> kSha256BigSigma1Rotr{6, 11, 25};
+inline constexpr std::array<unsigned, 2> kSha256SmallSigma0Rotr{7, 18};
+inline constexpr unsigned kSha256SmallSigma0Shr = 3;
+inline constexpr std::array<unsigned, 2> kSha256SmallSigma1Rotr{17, 19};
+inline constexpr unsigned kSha256SmallSigma1Shr = 10;
+inline constexpr std::size_t kSha256LagSigma1 = 2;
+inline constexpr std::size_t kSha256LagPlain = 7;
+inline constexpr std::size_t kSha256LagSigma0 = 15;
+inline constexpr std::size_t kSha256LagOldest = 16;
+inline constexpr std::array<std::uint32_t, 64> kSha256K{
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2};
+inline constexpr std::array<std::uint32_t, 8> kSha256H0{0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                                                        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
 
 // Microseconds per second. Citation: SI definition (the prefix micro is exactly 10^-6, so one second is exactly
 // 10^6 microseconds).
