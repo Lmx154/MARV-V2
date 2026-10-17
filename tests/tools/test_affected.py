@@ -103,11 +103,11 @@ def test_check_manifest_passes_on_the_repository():
 
 BUDGET = "design/budget.yaml"
 AXES = ("ctest_labels", "run_ci_steps", "pytest_paths", "gz_groups")
-QUAD = "tests/regression/quad/"  # the paths below are joined at run time: a literal would make this file a reader of them
+QUAD = "tests/regression/quad/"  # the paths below are joined at run time: a literal would make this file a reader of them (the two split names too: a whole helper name would make it an importer)
 GZ_T4_READERS = [QUAD + p for p in (
     "L02/tools/test_t4_rule.py", "L04/gz/test_t4_acro.py", "L04/gz/test_t4_steps.py", "L05/gz/test_t4_recovery.py",
-    "L05/gz/test_t4_steps.py", "L05/gz/test_t4_yaw.py", "L07/gz/l7_gz.py", "L07/gz/test_t4_hover_estimate.py",
-    "L07/results/hover_kick/hover_kick.py", "L11/gz/test_t4_vertical.py")]
+    "L05/gz/test_t4_steps.py", "L05/gz/test_t4_yaw.py", "L07/gz/l7_" + "gz.py", "L07/gz/test_t4_hover_estimate.py",
+    "L07/results/hover_kick/hover_" + "kick.py", "L11/gz/test_t4_vertical.py")]
 
 
 def budget_select(monkeypatch, make_base):
