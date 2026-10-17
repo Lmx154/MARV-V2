@@ -141,6 +141,7 @@ struct Parsed {
   std::optional<marv_plant_rotor_speed_config> rotor_speed;
   std::optional<std::int32_t> clock_corner;
   std::optional<double> odr_error;
+  std::optional<std::uint32_t> command_delay_ticks;
 };
 
 std::string text_of(const sdf::ElementPtr& e) { return e->Get<std::string>(); }
@@ -448,6 +449,13 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
     } else if (name == "odr_error") {
       once(name);
       p.odr_error = number_of(e);
+    } else if (name == "command_delay_ticks") {
+      once(name);
+      p.command_delay_ticks = integer_of<std::uint32_t>(e);
+      if (*p.command_delay_ticks > kMaxCommandDelayTicks) {
+        refuse("<command_delay_ticks> " + std::to_string(*p.command_delay_ticks) + " is above the bound kMaxCommandDelayTicks = " +
+               std::to_string(kMaxCommandDelayTicks));
+      }
     } else if (name == "attitude_source") {
       once(name);
       if (trim(text_of(e)) != "truth") {
@@ -492,6 +500,30 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
     refuse("a required plugin element is missing (esc_map, ticks_per_step, tick_period_num_us, tick_period_den, seed)");
   }
   return p;
+}
+
+// The host step of a tick that is not a whole number of nanoseconds (decision 0046 item 1): round(m num_ns / den) ns, a
+// tie rounded up, exactly in unsigned 128-bit integers. The firmware's stamps stay the exact rational; only the host's
+// step is rounded.
+std::uint64_t rounded_host_step_ns(std::uint64_t m, std::uint64_t num_ns, std::uint64_t den) {
+  __extension__ using Wide = unsigned __int128;
+  const Wide exact_num = static_cast<Wide>(m) * num_ns;
+  const Wide q = (2 * exact_num + den) / (2 * static_cast<Wide>(den));
+  if (q > std::numeric_limits<std::uint64_t>::max()) {
+    refuse("the rounded host step does not fit in 64 bits of nanoseconds");
+  }
+  return static_cast<std::uint64_t>(q);
+}
+
+// The relative error (host_ns - m num_ns / den) / (m num_ns / den) of a rounded host step, one rounding to binary64.
+double host_step_error(std::uint64_t host_ns, std::uint64_t m, std::uint64_t num_ns, std::uint64_t den) {
+  __extension__ using Wide = unsigned __int128;
+  const Wide exact_num = static_cast<Wide>(m) * num_ns;
+  const Wide scaled = static_cast<Wide>(host_ns) * den;
+  const bool negative = scaled < exact_num;
+  const Wide magnitude = negative ? exact_num - scaled : scaled - exact_num;
+  const double rel = static_cast<double>(magnitude) / static_cast<double>(exact_num);
+  return negative ? -rel : rel;
 }
 
 // The realised host step of a clock corner (decision 0019, ruling 10): n_true = outward(n / (1 + c e)) ns, exactly. The
@@ -755,15 +787,28 @@ class Lockstep final : public gzs::System,
       refuse("the tick period is not positive");
     }
     const std::uint64_t num_ns = static_cast<std::uint64_t>(p.num_us) * kNanosecondsPerMicrosecond;
-    if (num_ns % p.den != 0) {
-      refuse("tick_ns = num*1000/den is not an integer");
-    }
     tick_ns_ = num_ns / p.den;
     t_tick_s_ = tick_period_s(p.num_us, p.den);
     if (!same_bits(p.plant.motor_substep_s, t_tick_s_)) {
       refuse("motor_substep_s is not the tick period");
     }
     host_ns_ = m_ * tick_ns_;
+    if (num_ns % p.den != 0) {
+      // Decision 0046 item 1: the host step is round(m tick) ns, at most <odr_error> from m tick.
+      if (!p.odr_error) {
+        refuse("tick_ns = num*1000/den is not an integer and <odr_error>, the bound of the rounding error, is absent");
+      }
+      check_odr_error(*p.odr_error);
+      host_ns_ = rounded_host_step_ns(m_, num_ns, p.den);
+      rounded_ = true;
+      round_exact_ns_ = static_cast<double>(m_) * static_cast<double>(num_ns) / static_cast<double>(p.den);
+      round_error_ = host_step_error(host_ns_, m_, num_ns, p.den);
+      if (!(std::fabs(round_error_) <= *p.odr_error)) {
+        refuse("the host step " + std::to_string(host_ns_) + " ns rounds m*tick by " +
+               std::to_string(round_error_ * kPartsPerMillion) + " ppm, above the profile's odr_error " +
+               std::to_string(*p.odr_error * kPartsPerMillion) + " ppm");
+      }
+    }
     check_sensors(p);
 
     check_world(entity, ecm, p);
@@ -872,12 +917,14 @@ class Lockstep final : public gzs::System,
     const std::chrono::nanoseconds host_dt{host_ns_};
     if (info.dt != host_dt) {
       refuse("UpdateInfo dt " + std::to_string(std::chrono::nanoseconds(info.dt).count()) + " ns is not " +
-             (clock_ ? "the realised host step n_true " : "m*tick ") + std::to_string(host_dt.count()) + " ns");
+             (clock_ ? "the realised host step n_true " : rounded_ ? "the rounded host step " : "m*tick ") +
+                 std::to_string(host_dt.count()) + " ns");
     }
     const std::chrono::nanoseconds expected_sim{(steps_ + 1) * host_ns_};
     if (info.simTime != expected_sim) {
       refuse("simTime " + std::to_string(std::chrono::nanoseconds(info.simTime).count()) + " ns is not " +
-             (clock_ ? "steps*n_true " : "ticks*tick ") + std::to_string(expected_sim.count()) + " ns");
+             (clock_ ? "steps*n_true " : rounded_ ? "steps*the rounded host step " : "ticks*tick ") +
+                 std::to_string(expected_sim.count()) + " ns");
     }
 
     const auto* pose_c = ecm.Component<gzs::components::WorldPose>(link_.Entity());
@@ -1025,7 +1072,16 @@ class Lockstep final : public gzs::System,
         refuse("physics max_step_size is not the realised host step n_true = " + std::to_string(host_ns_) +
                " ns (clock corner " + std::to_string(clock_corner_) + ")");
       }
+      if (rounded_) {
+        refuse("physics max_step_size is not the rounded host step " + std::to_string(host_ns_) + " ns");
+      }
       refuse("physics max_step_size is not m*tick");
+    }
+  }
+
+  static void check_odr_error(double e) {
+    if (!std::isfinite(e) || e < 0.0 || !(e < 1.0)) {
+      refuse("<odr_error> is not a finite magnitude in [0, 1)");
     }
   }
 
@@ -1051,8 +1107,11 @@ class Lockstep final : public gzs::System,
         refuse("<rotor_speed_model> needs a nonzero <pole_count> (0 is unknown)");
       }
     }
-    if (p.clock_corner.has_value() != p.odr_error.has_value()) {
+    if (p.clock_corner && !p.odr_error) {
       refuse("<clock_corner> and <odr_error> go together; one of them is missing");
+    }
+    if (p.odr_error) {
+      odr_error_ = *p.odr_error;
     }
     if (p.clock_corner) {
       const std::int32_t c = *p.clock_corner;
@@ -1060,9 +1119,7 @@ class Lockstep final : public gzs::System,
       if (c < -1 || c > 1) {
         refuse("<clock_corner> is " + std::to_string(c) + ", not -1, 0 or +1");
       }
-      if (!std::isfinite(e) || e < 0.0 || !(e < 1.0)) {
-        refuse("<odr_error> is not a finite magnitude in [0, 1)");
-      }
+      check_odr_error(e);
       // Exists only for the clock T1 test, tests/regression/quad/L06/gz/test_sensor_clock.py (decision 0019, ruling on
       // Q6): with it set, a clock corner is accepted with the truth gyro or the zeroed sample. Never set outside that test;
       // tests/regression/quad/L06/tools/test_world_sensors.py checks that no other file names it.
@@ -1072,9 +1129,11 @@ class Lockstep final : public gzs::System,
       host_ns_ = realised_host_step_ns(host_ns_, c, e);
       clock_ = true;
       clock_corner_ = c;
-      odr_error_ = e;
     }
-    sensors_ = p.model_gyro || p.rotor_speed.has_value() || clock_;
+    if (p.command_delay_ticks) {
+      delay_ticks_ = *p.command_delay_ticks;
+    }
+    sensors_ = p.model_gyro || p.rotor_speed.has_value() || clock_ || rounded_ || delay_ticks_ > 0;
   }
 
   // The adapter of a world with a sensor element (decision 0019), the source's model path and record 6.
@@ -1088,8 +1147,10 @@ class Lockstep final : public gzs::System,
     ac.t_tick_nominal_s = t_tick_s_;
     ac.imu = p.imu_model ? &p.imu_model->cfg : nullptr;
     ac.rotor_speed = p.rotor_speed ? &rotor : nullptr;
-    // t_true = n_true / (m * 1e9), rounded once: at c = 0, and without the element, the same rational as t_tick_s_.
-    ac.t_tick_true_s = clock_ ? static_cast<double>(host_ns_) / (static_cast<double>(m_) * kNanosecondsPerSecond) : 0.0;
+    // t_true = n_true / (m * 1e9), rounded once: at c = 0, and without the element, the same rational as t_tick_s_. With a
+    // rounded host step (decision 0046 item 1) it is the plant's tick time as well.
+    ac.command_delay_ticks = delay_ticks_;
+    ac.t_tick_true_s = (clock_ || rounded_) ? static_cast<double>(host_ns_) / (static_cast<double>(m_) * kNanosecondsPerSecond) : 0.0;
     adapter_ = std::make_unique<Adapter>(plant, source_, ac);
     if (adapter_->imu_attach_status() != MARV_PLANT_OK) {
       refuse(std::string("marv_plant_imu_attach: ") + marv_plant_status_str(adapter_->imu_attach_status()));
@@ -1101,6 +1162,19 @@ class Lockstep final : public gzs::System,
       source_.use_model_gyro();
     }
     log_rotor_ = p.rotor_speed.has_value();
+    if (rounded_) {
+      rounding_record_.u8(static_cast<std::uint8_t>(LogRecord::kRounding));
+      rounding_record_.f64(round_exact_ns_);
+      rounding_record_.f64(round_error_ * kPartsPerMillion);
+    }
+
+    if (delay_ticks_ > 0) {
+      delay_record_.u8(static_cast<std::uint8_t>(LogRecord::kDelay));
+      delay_record_.u32(delay_ticks_);
+      for (const std::uint16_t d : Dshot{}) {
+        delay_record_.u16(d);
+      }
+    }
 
     LogBuffer& b = sensors_record_;
     b.u8(static_cast<std::uint8_t>(LogRecord::kSensors));
@@ -1150,6 +1224,12 @@ class Lockstep final : public gzs::System,
       refuse(error);
     }
     if (sensors_ && !log_.write(sensors_record_)) {
+      refuse("cannot write the log");
+    }
+    if (rounded_ && !log_.write(rounding_record_)) {
+      refuse("cannot write the log");
+    }
+    if (delay_ticks_ > 0 && !log_.write(delay_record_)) {
       refuse("cannot write the log");
     }
   }
@@ -1226,8 +1306,17 @@ class Lockstep final : public gzs::System,
   bool clock_ = false;
   std::int32_t clock_corner_ = 0;
   double odr_error_ = 0.0;
+  // Decision 0046 item 1: the tick is not a whole number of ns and the host step is rounded; record 9 holds the exact
+  // m * tick in ns and the relative rounding error.
+  bool rounded_ = false;
+  double round_exact_ns_ = 0.0;
+  double round_error_ = 0.0;
+  // Decision 0046 item 2: the adapter's command delay N (0 = none) and record 10 (N and the initial command).
+  std::uint32_t delay_ticks_ = 0;
   bool log_rotor_ = false;
   LogBuffer sensors_record_;
+  LogBuffer rounding_record_;
+  LogBuffer delay_record_;
   std::optional<std::string> log_path_;
   struct LogParams {
     std::uint32_t m, num_us, den;

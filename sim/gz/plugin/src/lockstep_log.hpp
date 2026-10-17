@@ -23,6 +23,16 @@
 //              rotor_speed 1): u32 pole_count, latency_ticks, exponent_bits, mantissa_bits, f64 period_unit_s. The
 //              plant's bias state is not logged. A log of a run without those elements has no type 6 or 7 record.
 //
+//   9 ROUNDING only when the tick is not a whole number of nanoseconds (decision 0046 item 1), once, directly after the
+//              SENSORS record (which that case writes): f64 exact_host_step_ns (m * num_us * 1000 / den, one rounding);
+//              f64 error_ppm ((host step - exact) / exact * 1e6, signed, one rounding; the host step is the rounded
+//              step before any clock corner). The plugin refuses a run whose error is above the profile's odr_error.
+//   10 DELAY   only with <command_delay_ticks> N > 0 (decision 0046 item 2), once, directly after the SENSORS record (or the
+//              ROUNDING record when there is one); that case writes the SENSORS record: u32 N; u16 initial_dshot[4] (the
+//              command applied for ticks j < N, 0: the plant's stop command). The plant is stepped at tick j with the
+//              TICK record's dshot of tick j - N (the initial command for j < N); the TICK record's dshot stays the one the
+//              SIL issued at that tick. A log of a run without the element (or with N = 0) has no type 10 record.
+//
 //   Per host step, in this order:
 //   1 STEP     u64 iteration (gz UpdateInfo::iterations); u64 sim_time_ns; then doubles: the raw gz reads, pose position
 //              ENU [3], quaternion FLU->ENU [w x y z], world linear velocity ENU [3], world angular velocity ENU [3];
@@ -30,7 +40,7 @@
 //   2 TICK     (m of them) u64 tick; u64 sil_t_us (the SIL's stamp of that tick); the 32 bytes of the marv_imu_meas
 //              passed (zeroed, no valid bit set, unless the plugin has <gyro_source>truth</gyro_source>: then the gyro is
 //              the float cast of the step's body omega FRD and flags is GyroValid only; with <gyro_source>model
-//              </gyro_source> the plant IMU model's bytes verbatim); u16 dshot[4] (motor 1..4); u32 erpm_valid; u32 0; then doubles: plant
+//              </gyro_source> the plant IMU model's bytes verbatim); u16 dshot[4] (motor 1..4, the SIL's command of this tick); u32 erpm_valid; u32 0; then doubles: plant
 //              force NED [3], torque NED [3], rotor speed [4], erpm [4], and the per-tick wrench in ENU, force [3],
 //              torque [3].
 //   5 TRUTH    only with the plugin's <attitude_source>truth</attitude_source>, directly after that tick's TICK record:
@@ -63,7 +73,7 @@
 
 namespace marv::gz {
 
-enum class LogRecord : std::uint8_t { kStep = 1, kTick, kApplied, kTrailer, kTruth, kSensors, kRotor, kVertical };
+enum class LogRecord : std::uint8_t { kStep = 1, kTick, kApplied, kTrailer, kTruth, kSensors, kRotor, kVertical, kRounding, kDelay };
 // Record 6's gyro_source byte.
 enum class LogGyroSource : std::uint8_t { kNone = 0, kTruth, kModel };
 

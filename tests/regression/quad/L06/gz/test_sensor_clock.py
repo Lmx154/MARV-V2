@@ -14,6 +14,21 @@ is the default log byte for byte once record 6 is removed.
 
 Negative controls: at c = +1 a world whose max_step_size is the nearest step (156240 / 312480 ns) or the nominal one is
 refused; and the c = +1 log without record 6 is not the default log.
+
+The rounded host step (decision 0046 item 1), at the board's tick 1953125/14649 us = 133328.2135 ns (not a whole number of
+ns), m in {1, 2}: the host step is round(m tick) = 133328 / 266656 ns, record 6 holds it with t_true = n / (m 1e9) and
+no clock, record 9 holds the exact m tick and the error -1.601536 ppm, and the SIL stamps stay floor(j 1953125 / 14649) us.
+A whole-ns tick (625/4 us) with an <odr_error> element alone is the default log byte for byte. Negative controls: a bound
+just under the error (1.6 ppm) is refused and one just over it (1.61 ppm) runs; no <odr_error> is refused; a max_step_size
+of the next ns is refused.
+
+The command delay (decision 0046 item 2), <command_delay_ticks> N on the L2 hover world (member lo), m in {1, 2}: record 10
+holds N and the initial command (0 0 0 0), record 6 is written (host step m 156250 ns, no clock), every tick's dshot_applied is
+the dshot N ticks earlier (the stop command before that), the SIL's own dshot and stamps are the default run's, and the plant
+rotor speed of tick j + N is the default run's of tick j (the rotors start at rest and DShot 0 holds them there, so the delay
+is a pure shift of the rotor state). N = 0 is accepted and its log is the default log byte for byte. Negative controls: the
+default run's rotors have started at tick 0 while the delayed run's are at rest, and the shift is not zero; a negative N, a
+non-integer and an N above the plugin's bound are refused.
 """
 
 import re
@@ -148,4 +163,187 @@ def test_control_the_nearest_or_the_nominal_step_at_c_plus_1_is_refused(tmp_path
     assert r.returncode != 0
     assert (f"marv_gz_lockstep: REFUSED: physics max_step_size is not the realised host step n_true = {TABLE[m][1][0]} ns"
             in r.stderr), run_scenario.stderr_tail(r.stderr)
+    assert not log.exists()
+
+
+# ---- the rounded host step (decision 0046 item 1) ---------------------------------------------------------------------
+
+FC3_NUM_US, FC3_DEN = 1953125, 14649  # the board's tick period, us (fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml)
+ROUNDED = {1: 133328, 2: 266656}  # round(m * 1953125000 / 14649) ns
+ROUNDED_PPM = -1.601536  # (n - m tick) / (m tick) * 1e6 at m = 1 and m = 2, exact rationals -3128/1953125000 and -6256/3906250000
+
+
+def fc3_scenario(tmp):
+    text = HOVER.read_text(encoding="utf-8")
+    text, k1 = re.subn(r"(tick_period_num_us:\n  value: )625", rf"\g<1>{FC3_NUM_US}", text)
+    text, k2 = re.subn(r"(tick_period_den:\n  value: )4\n", rf"\g<1>{FC3_DEN}\n", text)
+    assert (k1, k2) == (1, 1)
+    path = tmp / "hover.yaml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def run_rounded(tmp_path_factory, m, edit=None):
+    tmp = tmp_path_factory.mktemp(f"rounded_m{m}")
+    log = tmp / "run.bin"
+    text = gen_world.generate(CARD, fc3_scenario(tmp), "test", m, "lo", str(log))[1]
+    if edit is not None:
+        text = edit(text)
+    sdf = tmp / "world.sdf"
+    sdf.write_text(text, encoding="utf-8")
+    return run_scenario.run_gz_process(sdf, ITERATIONS, SEED, PLUGIN_DIR, None, TIMEOUT_S), log
+
+
+def odr_edit(value):
+    def edit(text):
+        out, k = re.subn(r"(<odr_error>)[^<]*", rf"\g<1>{value!r}", text, count=1)
+        assert k == 1
+        return out
+    return edit
+
+
+@pytest.fixture(scope="module")
+def rounded_runs(tmp_path_factory):
+    out = {}
+    for m in ROUNDED:
+        r, log = run_rounded(tmp_path_factory, m)
+        assert r.returncode == 0, run_scenario.stderr_tail(r.stderr)
+        out[m] = lockstep_log.read(log)
+    return out
+
+
+@pytest.mark.parametrize("m", sorted(ROUNDED))
+def test_the_host_step_is_the_rounded_step_and_the_logs_state_the_error(rounded_runs, m):
+    d = rounded_runs[m]
+    n = ROUNDED[m]
+    assert [s["sim_time_ns"] for s in d["steps"]] == [(i + 1) * n for i in range(ITERATIONS)]
+    s6 = d["sensors"]
+    assert s6["host_step_ns"] == n and s6["clock"] == 0 and s6["clock_corner"] == 0 and s6["gyro_source"] == "none"
+    assert bits(s6["tick_s"]) == bits(n / (m * 1e9)) == bits(float(Fraction(n, m * 10 ** 9)))  # the plant's t_true
+    assert bits(s6["odr_error"]) == bits(gic.imu_config(PROFILE)[0]["odr_error"])
+    r9 = d["rounding"]
+    assert bits(r9["exact_host_step_ns"]) == bits(m * FC3_NUM_US * 1000 / FC3_DEN)
+    assert round(r9["error_ppm"], 6) == ROUNDED_PPM
+    assert abs(r9["error_ppm"] * 1e-6) <= s6["odr_error"]
+    assert Fraction(n * FC3_DEN, m * FC3_NUM_US * 1000) - 1 == Fraction(-3128 * m, m * 1953125000)
+
+
+@pytest.mark.parametrize("m", sorted(ROUNDED))
+def test_the_sil_stamps_stay_the_exact_rational(rounded_runs, m):
+    d = rounded_runs[m]
+    assert (d["header"]["tick_period_num_us"], d["header"]["tick_period_den"]) == (FC3_NUM_US, FC3_DEN)
+    assert [t["sil_t_us"] for t in d["ticks"]] == [j * FC3_NUM_US // FC3_DEN for j in range(ITERATIONS * m)]
+
+
+@pytest.mark.parametrize("m", sorted(TABLE))
+def test_a_whole_ns_tick_with_an_odr_error_element_alone_is_the_default_log_byte_for_byte(runs, tmp_path_factory, m):
+    def add_odr_error(text):
+        out, k = re.subn(r"(\n\s*)(<seed>)", rf"\g<1><odr_error>{gic.imu_config(PROFILE)[0]['odr_error']!r}</odr_error>\g<1>\g<2>",
+                         text, count=1)
+        assert k == 1
+        return out
+    r, log = run(tmp_path_factory, m, None, add_odr_error)
+    assert r.returncode == 0, run_scenario.stderr_tail(r.stderr)
+    default = runs[(m, None)][0]
+    assert log.read_bytes() == default
+    assert lockstep_log.read(log)["sensors"] is None and lockstep_log.read(log)["rounding"] is None
+
+
+def test_control_a_bound_under_the_rounding_error_is_refused_and_one_over_it_runs(tmp_path_factory):
+    r, log = run_rounded(tmp_path_factory, 1, odr_edit(1.6e-6))
+    assert r.returncode != 0
+    assert ("marv_gz_lockstep: REFUSED: the host step 133328 ns rounds m*tick by -1.601536 ppm, above the profile's "
+            "odr_error 1.600000 ppm") in r.stderr, run_scenario.stderr_tail(r.stderr)
+    assert not log.exists()
+    r, log = run_rounded(tmp_path_factory, 1, odr_edit(1.61e-6))
+    assert r.returncode == 0, run_scenario.stderr_tail(r.stderr)
+    assert lockstep_log.read(log)["rounding"] is not None
+
+
+def test_control_a_rounded_tick_without_odr_error_is_refused(tmp_path_factory):
+    r, log = run_rounded(tmp_path_factory, 1, lambda t: re.sub(r"\s*<odr_error>[^<]*</odr_error>", "", t, count=1))
+    assert r.returncode != 0
+    assert "marv_gz_lockstep: REFUSED: tick_ns = num*1000/den is not an integer and <odr_error>" in r.stderr, \
+        run_scenario.stderr_tail(r.stderr)
+    assert not log.exists()
+
+
+@pytest.mark.parametrize("n", (ROUNDED[1] + 1, ROUNDED[1] - 1))
+def test_control_a_step_of_the_next_ns_is_refused(tmp_path_factory, n):
+    r, log = run_rounded(tmp_path_factory, 1, step_edit(n))
+    assert r.returncode != 0
+    assert "marv_gz_lockstep: REFUSED: physics max_step_size is not the rounded host step 133328 ns" in r.stderr, \
+        run_scenario.stderr_tail(r.stderr)
+    assert not log.exists()
+
+
+# ---- the command delay (decision 0046 item 2) -------------------------------------------------------------------------------
+
+DELAY = 3  # labelled harness value: any N >= 1 shows the shift; 3 keeps the first ticks readable
+
+
+def add_delay(value):
+    def edit(text):
+        out, k = re.subn(r"(\n\s*)(<seed>)", rf"\g<1><command_delay_ticks>{value}</command_delay_ticks>\g<1>\g<2>", text, count=1)
+        assert k == 1
+        return out
+    return edit
+
+
+@pytest.fixture(scope="module")
+def delay_runs(tmp_path_factory):
+    out = {}
+    for m in TABLE:
+        tmp = tmp_path_factory.mktemp(f"delay_m{m}")
+        log = tmp / "run.bin"
+        sdf = tmp / "world.sdf"
+        sdf.write_text(gen_world.generate(CARD, HOVER, "test", m, "lo", str(log), command_delay_ticks=DELAY)[1], encoding="utf-8")
+        r = run_scenario.run_gz_process(sdf, ITERATIONS, SEED, PLUGIN_DIR, None, TIMEOUT_S)
+        assert r.returncode == 0, run_scenario.stderr_tail(r.stderr)
+        out[m] = lockstep_log.read(log)
+    return out
+
+
+@pytest.mark.parametrize("m", sorted(TABLE))
+def test_the_log_states_the_delay_and_every_tick_applies_the_dshot_n_ticks_earlier(runs, delay_runs, m):
+    d = delay_runs[m]
+    assert d["delay"] == {"ticks": DELAY, "initial_dshot": (0, 0, 0, 0)}
+    assert d["sensors"]["host_step_ns"] == m * 156250 and d["sensors"]["clock"] == 0 and d["rounding"] is None
+    assert len(d["ticks"]) == ITERATIONS * m
+    for j, t in enumerate(d["ticks"]):
+        assert t["dshot_applied"] == (d["ticks"][j - DELAY]["dshot"] if j >= DELAY else (0, 0, 0, 0))
+    default = runs[(m, None)][1]
+    assert [t["dshot"] for t in d["ticks"]] == [t["dshot"] for t in default["ticks"]]  # the SIL's own command is unchanged
+    assert [t["sil_t_us"] for t in d["ticks"]] == [t["sil_t_us"] for t in default["ticks"]]
+    assert default["delay"] is None and "dshot_applied" not in default["ticks"][0]
+    assert d["ticks"][DELAY]["dshot_applied"] != (0, 0, 0, 0)  # the hover command does arrive, at tick N
+
+
+@pytest.mark.parametrize("m", sorted(TABLE))
+def test_the_plant_feels_the_delay_as_a_shift_of_exactly_n_ticks(runs, delay_runs, m):
+    d, default = delay_runs[m]["ticks"], runs[(m, None)][1]["ticks"]
+    assert all(r == 0.0 for t in d[:DELAY] for r in t["rotor_speed"])  # stop held at rest
+    assert default[0]["rotor_speed"] != (0.0, 0.0, 0.0, 0.0)  # control: without the delay the rotors have started
+    for j in range(ITERATIONS * m - DELAY):
+        assert d[j + DELAY]["rotor_speed"] == default[j]["rotor_speed"], j
+    assert d[DELAY + 1]["rotor_speed"] != default[DELAY + 1]["rotor_speed"]  # control: the shift is not zero
+
+
+@pytest.mark.parametrize("m", sorted(TABLE))
+def test_a_delay_of_zero_is_accepted_and_the_log_is_the_default_log_byte_for_byte(runs, tmp_path_factory, m):
+    r, log = run(tmp_path_factory, m, None, add_delay(0))
+    assert r.returncode == 0, run_scenario.stderr_tail(r.stderr)
+    assert log.read_bytes() == runs[(m, None)][0]
+    assert lockstep_log.read(log)["delay"] is None
+
+
+@pytest.mark.parametrize("value, message", (
+    ("-1", "<command_delay_ticks> is not an integer of the expected range: '-1'"),
+    ("2.5", "<command_delay_ticks> is not an integer of the expected range: '2.5'"),
+    ("257", "<command_delay_ticks> 257 is above the bound kMaxCommandDelayTicks = 256"),
+))
+def test_control_a_negative_fractional_or_too_large_delay_is_refused(tmp_path_factory, value, message):
+    r, log = run(tmp_path_factory, 1, None, add_delay(value))
+    assert r.returncode != 0
+    assert message in r.stderr, run_scenario.stderr_tail(r.stderr)
     assert not log.exists()

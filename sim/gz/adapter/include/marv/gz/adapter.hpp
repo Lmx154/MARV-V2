@@ -31,6 +31,13 @@
 // freshness as the IMU sample; (3) the command source takes both and gives dshot_j; (4) marv_plant_step. The rotor sample
 // reaches the SIL as the bytes the plant produced, through RotorSilCommandSource (marv_sil_tick_with_rotor_speed). A source
 // that does not override the rotor-speed form ignores the sample. No truth symbol.
+//
+// Opt-in command delay (AdapterConfig::command_delay_ticks = N, decision 0046 item 2; N = 0, the default, leaves every output
+// as without it). The plant is stepped at tick j with the command the source gave at tick j - N (a delay line of N commands,
+// kept across step calls); for j < N it is the initial command, all four DShot values 0 (the plant's stop command: ESC map
+// DShot 0 -> commanded rotor speed 0, marv_plant.h; "no command yet"). The source's own command of tick j is TickOutput::dshot
+// (what the SIL issued, the quantity a HIL run records); the command the plant was stepped with is TickOutput::dshot_applied.
+// The source and its sample (the IMU and rotor-speed samples above) are unchanged: only the actuation is late.
 
 #include <array>
 #include <cstdint>
@@ -56,6 +63,15 @@ double clock_error(int corner, double odr_error);
 // The sim-side true tick time t_nom_s / (1 + e): the only place e is applied. NaN if e is non-finite or 1 + e <= 0
 // (t_nom_s is not checked: marv_plant_step validates dt). e = 0 returns t_nom_s bitwise (division by exactly 1).
 double true_tick_period_s(double t_nom_s, double e);
+
+// The largest N the adapter accepts: a memory and typo bound on the delay line, not a design limit. 256 ticks are 40 ms at the
+// SIL tick (256 x 156.25 us) and 34.1 ms at the fc3v2 tick (256 x 1953125/14649 us = 34.13 ms). The design limit is N_max of
+// decision 0046 item 2 (tools/card/hil_delay_margin.py: 249 on the nominal rows at the fc3v2 timing, regenerated output in
+// tests/regression/quad/L09/results/hil_s2/); this bound only has to lie above the N a run asks for.
+// Kind: PLACEHOLDER (256 = 2^8, the power of two above N_max = 249; no source). Replaced by a bound derived from N_max once
+// the HIL's N is chosen (Luis, decision 0046 item 2). tools/card/gen_world.py COMMAND_DELAY_MAX_TICKS repeats it and
+// tests/regression/quad/L06/tools/test_world_sensors.py checks that the two are equal.
+inline constexpr std::uint32_t kMaxCommandDelayTicks = 256;
 
 class CommandSource {
  public:
@@ -130,14 +146,15 @@ class RotorSilCommandSource final : public CommandSource {
 
 struct TickOutput {
   std::uint64_t tick = 0;
-  Dshot dshot{};
+  Dshot dshot{};          // the command the source gave at this tick
+  Dshot dshot_applied{};  // the command marv_plant_step took: the source's of tick - N (the initial command before that)
   marv_plant_imu_out imu{};  // the sample of this tick; zero unless the IMU path is enabled
   marv_plant_rotor_speed_out rotor_speed{};  // the rotor-speed sample of this tick; zero unless that path is enabled
   marv_plant_out out{};  // as marv_plant_step returned it, NED
   Wrench wrench_enu{};   // W_j
 };
 
-enum class Status { kOk, kZeroTicks, kCommandSource, kPlant };
+enum class Status { kOk, kZeroTicks, kCommandSource, kPlant, kBadDelay };
 
 struct StepResult {
   Status status = Status::kOk;
@@ -157,6 +174,8 @@ struct AdapterConfig {
   // 0019: the lockstep plugin's host step n_true ns divided by m * 1e9, rounded once); clock_corner and odr_error are
   // then not used. The plant's clock only: the SIL's period and stamps stay nominal.
   double t_tick_true_s = 0.0;
+  // N, the command delay in ticks (above); 0 is none. Above kMaxCommandDelayTicks step() does nothing and returns kBadDelay.
+  std::uint32_t command_delay_ticks = 0;
 };
 
 class Adapter {
@@ -175,7 +194,9 @@ class Adapter {
   bool rotor_speed_enabled() const { return rotor_speed_enabled_; }
   marv_plant_status rotor_speed_attach_status() const { return rotor_speed_attach_status_; }  // OK when it is off
 
-  // m >= 1 else kZeroTicks with nothing done. A failed IMU or rotor-speed attach is kPlant with that status
+  std::uint32_t command_delay_ticks() const { return delay_; }
+
+  // m >= 1 else kZeroTicks with nothing done; a command delay above kMaxCommandDelayTicks is kBadDelay, nothing done. A failed IMU or rotor-speed attach is kPlant with that status
   // (the IMU's first), nothing done. On a
   // failure part-way the plant has already advanced by the completed ticks and `ticks` holds them.
   StepResult step(const marv_plant_body& body, std::uint64_t first_tick, std::uint32_t m);
@@ -188,6 +209,9 @@ class Adapter {
   marv_plant_status imu_attach_status_ = MARV_PLANT_OK;
   bool rotor_speed_enabled_ = false;
   marv_plant_status rotor_speed_attach_status_ = MARV_PLANT_OK;
+  std::uint32_t delay_ = 0;
+  std::vector<Dshot> delay_line_;  // delay_ commands, oldest at delay_head_; empty when delay_ is 0 or refused
+  std::size_t delay_head_ = 0;
 };
 
 }  // namespace marv::gz

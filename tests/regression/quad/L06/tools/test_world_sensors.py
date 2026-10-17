@@ -13,6 +13,14 @@ What is checked:
       design (outward rounding, ruling 10 of decision 0019), max_step_size maps back to n_true through gz-sim's
       duration_cast<ns> truncation (INFERRED from gz-sim 8.15; the plugin's UpdateInfo dt check is the guard), and at c = 0
       t_true = n_true / (m 1e9) is the nominal tick bitwise.
+  The rounded host step (decision 0046 item 1): at the board's tick 1953125/14649 us the world's max_step_size is
+      fl(round(m tick_ns) / 1e9) (133328 / 266656 / 399985 / 533313 ns at m = 1..4, errors -1.601536 / -1.601536 /
+      +0.89856 / +0.273536 ppm), the profile's odr_error is the one inserted element (the bound the plugin checks), the
+      clock corner rounds first and then goes outward, and a whole-ns tick's world has no odr_error without a corner.
+  The command delay (decision 0046 item 2): command_delay_ticks = 0 is the world without the argument byte for byte (with
+      and without a SensorSet), N > 0 inserts the one element <command_delay_ticks>N</command_delay_ticks> before
+      <log_path> and changes nothing else, a negative, non-integer, boolean or above-the-bound N is refused, and the
+      generator's bound is the adapter header's kMaxCommandDelayTicks.
   The generator refuses a malformed SensorSet.
   The test-only clock allow of the plugin (ruling on Q6) is named by exactly two files: the plugin, which reads it, and the
       clock T1 test, its only user.
@@ -229,6 +237,79 @@ def test_the_realised_host_step_is_the_designs_table():
             nearest = round(Fraction(m * 156250) / (1 + c * Fraction(e)))
             assert nearest != row[c][0]
     assert {m: round(Fraction(m * 156250) / (1 + Fraction(e))) for m in (1, 2)} == {1: 156240, 2: 312480}
+
+
+ROUNDED_TABLE = {1: (133328, -1.601536), 2: (266656, -1.601536), 3: (399985, 0.89856), 4: (533313, 0.273536)}
+
+
+def fc3_scenario(tmp_path):
+    text = (SCEN / "hover.yaml").read_text(encoding="utf-8")
+    text, k1 = re.subn(r"(tick_period_num_us:\n  value: )625", r"\g<1>1953125", text)
+    text, k2 = re.subn(r"(tick_period_den:\n  value: )4\n", r"\g<1>14649\n", text)
+    assert (k1, k2) == (1, 1)
+    path = tmp_path / "hover.yaml"
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_the_rounded_host_step_of_the_boards_tick_is_the_table(tmp_path):
+    path = fc3_scenario(tmp_path)
+    doc = scn.load(path, CARD)
+    e = odr_error()
+    for m, (n, ppm) in ROUNDED_TABLE.items():
+        assert gen_world.rounded_host_step_ns(doc, m) == n
+        assert round(float(Fraction(n - m * gen_world.tick_ns_exact(doc)) / (m * gen_world.tick_ns_exact(doc)) * 10 ** 6), 6) == ppm
+        assert gen_world.realised_host_step_ns(doc, m, 0, e) == n
+        for c in (-1, 1):  # the corner goes outward from the rounded step
+            exact = Fraction(n) / (1 + c * Fraction(e))
+            assert gen_world.realised_host_step_ns(doc, m, c, e) == (math.floor(exact) if c > 0 else math.ceil(exact))
+        if m not in scn.values(doc)["m_sequence"]:
+            continue
+        text = gen_world.generate(CARD, path, "test", m, "lo", LOG)[1]
+        assert re.findall(r"<max_step_size>([^<]*)</max_step_size>", text) == [repr(float(Fraction(n, 10 ** 9)))]
+        plugin = ET.fromstring(text).find(".//plugin[@filename='marv_gz_lockstep']")
+        assert [c.tag for c in plugin if c.tag in NEW_TAGS] == ["odr_error"]
+        assert float(plugin.find("odr_error").text) == e
+        corner = gen_world.generate(CARD, path, "test", m, "lo", LOG, sensors=gen_world.SensorSet(clock_corner=1))[1]
+        assert re.findall(r"<max_step_size>([^<]*)</max_step_size>", corner) == [
+            repr(float(Fraction(gen_world.realised_host_step_ns(doc, m, 1, e), 10 ** 9)))]
+        assert corner.count("<odr_error>") == 1 and "<clock_corner>1</clock_corner>" in corner
+    # Control: a whole-ns tick has no odr_error element without a corner, and the default world is unchanged.
+    assert "<odr_error>" not in world("hover", "lo", 1)
+
+
+@pytest.mark.parametrize("sensors", (None, gen_world.SensorSet(gyro="model", bias_signs=(0,) * 6)))
+def test_the_command_delay_element_is_the_only_change_and_zero_is_none(sensors):
+    base = gen_world.generate(CARD, SCEN / "hover.yaml", "test", 1, "lo", LOG, sensors=sensors)
+    assert gen_world.generate(CARD, SCEN / "hover.yaml", "test", 1, "lo", LOG, sensors=sensors, command_delay_ticks=0) == base
+    assert "command_delay_ticks" not in base[1]
+    for n in (1, 10, gen_world.COMMAND_DELAY_MAX_TICKS):
+        name, text = gen_world.generate(CARD, SCEN / "hover.yaml", "test", 1, "lo", LOG, sensors=sensors, command_delay_ticks=n)
+        assert name == base[0]
+        element = f"<command_delay_ticks>{n}</command_delay_ticks>"
+        assert text.count(element) == 1
+        plugin = ET.fromstring(text).find(".//plugin[@filename='marv_gz_lockstep']")
+        tags = [c.tag for c in plugin]
+        assert tags.index("command_delay_ticks") == tags.index("log_path") - 1
+        stripped = re.sub(r"[ \t]*<command_delay_ticks>\d+</command_delay_ticks>\n", "", text)
+        assert stripped == base[1]
+    # Control: the element is the change - removing it from the N > 0 world gives the default world, and it is not in it.
+    assert re.sub(r"[ \t]*<command_delay_ticks>1</command_delay_ticks>\n", "", gen_world.generate(
+        CARD, SCEN / "hover.yaml", "test", 1, "lo", LOG, sensors=sensors, command_delay_ticks=1)[1]) == base[1]
+
+
+def test_the_generators_delay_bound_is_the_adapters():
+    header = (ROOT / "sim" / "gz" / "adapter" / "include" / "marv" / "gz" / "adapter.hpp").read_text(encoding="utf-8")
+    found = re.findall(r"kMaxCommandDelayTicks = (\d+);", header)
+    assert len(found) == 1 and int(found[0]) == gen_world.COMMAND_DELAY_MAX_TICKS
+    # Control: a different bound is not equal (the check can fail).
+    assert int(found[0]) + 1 != gen_world.COMMAND_DELAY_MAX_TICKS
+
+
+@pytest.mark.parametrize("bad", (-1, gen_world.COMMAND_DELAY_MAX_TICKS + 1, 1.0, True, "3", None))
+def test_the_generator_refuses_a_bad_command_delay(bad):
+    with pytest.raises(gpc.GenError):
+        gen_world.generate(CARD, SCEN / "hover.yaml", "test", 1, "lo", LOG, command_delay_ticks=bad)
 
 
 def test_the_generator_refuses_a_malformed_sensor_set():
