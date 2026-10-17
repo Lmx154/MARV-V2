@@ -26,13 +26,14 @@ FRAME_PERIOD_US; the arm switch is channel 5 at -1 / +1 (-100 / 100), the angle 
   7 dip      throttle stick 0 for DIP_S (below arm_throttle_min: the decision 0045 integrator hold applies), then hover again
   8 hold     HOLD2_S
   9 disarm   arm off for TAIL_US, then the run ends
-The hover stick (derived, no tuning). quad_fc: thrust request T = T_min + s (T_max - T_min) with T_min = 4 k omega_idle^2, T_max =
-4 k omega_max^2 (fw/compositions/quad_fc/src/quad_fc.cpp:438-440; g_thrust_min and g_thrust_max, :357-358, are 4 f_min and 4 f_max of the mixer,
+The hover stick (derived, no tuning). quad_fc: the throttle stick s is linear in rotor speed (decision 0052): thrust request
+T = (sqrt(T_min) + s (sqrt(T_max) - sqrt(T_min)))^2 with T_min = 4 k omega_idle^2, T_max = 4 k omega_max^2 (fw/compositions/quad_fc/src/quad_fc.cpp:455-456;
+g_thrust_root_min and g_thrust_root_max, :368-369, are the square roots of 4 f_min and 4 f_max of the mixer,
 fw/mixer/include/marv/mixer/mixer.hpp:76-84), the mixer at zero torque gives each motor f = c M_thrust = T / 4 (mixer.hpp:216 and
 :226; M_thrust = 0.25 in the fc3v2 table), omega = sqrt(f / k), DShot = 48 + (omega - omega_min) / (omega_max - omega_min) 1999
 (mixer.hpp:246-251 and :263-265, the linear-in-omega ESC map, 48 and 2047 = prim kDshotThrottleMin and Max, omega range = the card's
-rotors.speed_range [0, 2991], idle_speed = omega_min = 0), rounded with the DshotDiffuser carry (fw/rate_group, decision 0017).
-Hover: T = m g(phi, h0) (tools/sim/hover.py, the L2 site) gives s = (m g - T_min) / (T_max - T_min).
+rotors.speed_range [0, 2297], idle_speed = omega_min = 0), rounded with the DshotDiffuser carry (fw/rate_group, decision 0017).
+Hover: T = m g(phi, h0) (tools/sim/hover.py, the L2 site) gives s = (sqrt(m g) - sqrt(T_min)) / (sqrt(T_max) - sqrt(T_min)).
 
 The integrator-hold script (--script ihold, M4 S2f, decision 0045; evidence for tests/regression/quad/L10/results/ihold). The same world,
 card, firmware and N, with a constant disturbance torque and one dip:
@@ -156,7 +157,7 @@ def derive_hover():
     k, w0, w1 = cfg["thrust_coeff"], cfg["omega_min_rad_s"], cfg["omega_max_rad_s"]
     t_min, t_max = 4.0 * k * idle * idle, 4.0 * k * w1 * w1
     weight = cfg["mass_kg"] * g
-    stick = (weight - t_min) / (t_max - t_min)
+    stick = (math.sqrt(weight) - math.sqrt(t_min)) / (math.sqrt(t_max) - math.sqrt(t_min))
     assert card["mass"]["value"] == cfg["mass_kg"]
     return Hover(cfg["mass_kg"], k, w0, w1, idle, g, omega_h, d_star, d_lo, d_hi, weight, t_min, t_max, stick, f32(stick),
                  m_thrust)
@@ -601,7 +602,7 @@ def analyse(label, log, hover, phases, tilt_max, log_sha, out_stem):
              f"omega range [{hover.omega_min}, {hover.omega_max}] rad/s, idle {hover.omega_idle}")
     L.append(f"  T_min {hover.t_min!r} N, T_max {hover.t_max!r} N, M_thrust {hover.m_thrust!r}; hover omega {hover.omega_h!r} rad/s, "
              f"D* {hover.d_star!r} (bracket {hover.d_lo}..{hover.d_hi})")
-    L.append(f"  stick s = (m g - T_min) / (T_max - T_min) = {hover.stick!r}; as the script writes it (binary32) {hover.stick_f32!r}")
+    L.append(f"  stick s = (sqrt(m g) - sqrt(T_min)) / (sqrt(T_max) - sqrt(T_min)) = {hover.stick!r}; as the script writes it (binary32) {hover.stick_f32!r}")
     L.append("")
     L.append("Per phase (tilt = angle between body z and NED z; from lift-off for the phases that contain it; z NED down, "
              "positive = lower):")

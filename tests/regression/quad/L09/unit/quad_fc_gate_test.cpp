@@ -731,12 +731,10 @@ class ArmedGateTest : public MotorTestGateTest {
   }
 
   // The expected armed output for `want` (sticks as the pilot holds them), from the beside rate group: setpoint through
-  // the curve, thrust linear in the throttle between 4 f_min and 4 f_max of the mixer.
+  // the curve, thrust from the throttle linear in rotor speed between 4 f_min and 4 f_max of the mixer (thrust_of).
   std::array<DshotValue, composition::kMotors> reference(const Sticks& want) {
-    const float t_min = static_cast<float>(composition::kMotors) * mixer::f_min(mixer_);
-    const float t_max = static_cast<float>(composition::kMotors) * mixer::f_max(mixer_);
     const prim::Vec3<float> sp = stick_rates::rate_setpoint(rates_, prim::Vec3<float>(want.roll, want.pitch, want.yaw));
-    const float thrust = t_min + want.throttle * (t_max - t_min);
+    const float thrust = thrust_of(want);
     const auto mixed = ref_.execute(sp, prim::Vec3<float>(), thrust).dshot;
     integrating_ = integ_.execute(sp, prim::Vec3<float>(), thrust).dshot;
     hold_integrator(want);
@@ -774,9 +772,10 @@ class ArmedGateTest : public MotorTestGateTest {
   }
 
   float thrust_of(const Sticks& want) const {
-    const float t_min = static_cast<float>(composition::kMotors) * mixer::f_min(mixer_);
-    const float t_max = static_cast<float>(composition::kMotors) * mixer::f_max(mixer_);
-    return t_min + want.throttle * (t_max - t_min);
+    const float root_min = std::sqrt(static_cast<float>(composition::kMotors) * mixer::f_min(mixer_));
+    const float root_max = std::sqrt(static_cast<float>(composition::kMotors) * mixer::f_max(mixer_));
+    const float root = root_min + want.throttle * (root_max - root_min);
+    return root * root;
   }
 
   // The beside side of entering armed-and-angle: the composition resets both on that rate tick.
@@ -962,6 +961,56 @@ TEST_F(ArmedGateTest, ASwitchCycleArmsAndThenTheMixerOutputForTheSticksIsWritten
   // The switch off disarms on that rate tick.
   expect_all_stop(hold(fly, kSwitchOff, fly).out);
   EXPECT_EQ(composition::arming_status(), arming::ArmState::SwitchOff);
+}
+
+// The throttle stick is linear in rotor speed (decision 0052, Betaflight's throttle to motor output map): known answers from the
+// mixer configuration alone, stated here independently of the composition's own arithmetic. With the sticks centred and a still
+// gyro the mixer's torques are zero, each motor carries T / 4 and omega = sqrt(T / (4 k)); the ESC map then gives the DShot value.
+// s = 0 is T_min (omega_idle), s = 1 is T_max (omega_max), s = 1/2 is T = 4 k (omega_idle + (omega_max - omega_idle) / 2)^2, and
+// the hover stick of the real card is s = (sqrt(m g) - sqrt(T_min)) / (sqrt(T_max) - sqrt(T_min)) for the all-up mass m of the card
+// (vehicles/marv_5in_fc3v2.yaml, 0.732 kg) and standard gravity. One DShot count of tolerance covers the rounding and the diffuser's carry.
+TEST_F(ArmedGateTest, TheThrottleStickIsLinearInRotorSpeedKnownAnswers) {
+  constexpr double kCardMassKg = 0.732;
+  constexpr double kStandardGravity = 9.80665;
+  const double k = static_cast<double>(mixer_.thrust_coeff);
+  const double w_idle = static_cast<double>(mixer_.omega_idle);
+  const double w_min = static_cast<double>(mixer_.omega_min);
+  const double w_max = static_cast<double>(mixer_.omega_max);
+  const double d_min = static_cast<double>(prim::kDshotThrottleMin);
+  const double d_max = static_cast<double>(prim::kDshotThrottleMax);
+  const auto dshot_of_thrust = [&](double thrust) {
+    return d_min + (std::sqrt(thrust / (4.0 * k)) - w_min) / (w_max - w_min) * (d_max - d_min);
+  };
+  const double t_min = 4.0 * k * w_idle * w_idle;
+  const double t_max = 4.0 * k * w_max * w_max;
+  const double hover_stick = (std::sqrt(kCardMassKg * kStandardGravity) - std::sqrt(t_min)) / (std::sqrt(t_max) - std::sqrt(t_min));
+  EXPECT_GT(hover_stick, 0.0);
+  EXPECT_LT(hover_stick, 0.5);
+  const double half = w_idle + 0.5 * (w_max - w_idle);
+  struct Case {
+    double stick;
+    double thrust;
+  };
+  const Case cases[] = {{0.0, t_min},
+                        {1.0, t_max},
+                        {0.5, 4.0 * k * half * half},
+                        {hover_stick, kCardMassKg * kStandardGravity}};
+  for (const Case& c : cases) {
+    link_up();
+    (void)hold({}, kSwitchOn, {});
+    ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed) << "stick " << c.stick;
+    const Sticks at{0.0F, 0.0F, 0.0F, static_cast<float>(c.stick)};
+    RateOut r;
+    for (std::size_t tick = 0; tick < 200; ++tick) {
+      r = hold(at, kSwitchOn, at);
+    }
+    ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed) << "stick " << c.stick;
+    const double want = std::max(dshot_of_thrust(c.thrust), static_cast<double>(mixer::dshot_floor(mixer_)));
+    for (const DshotValue& m : r.out.motor) {
+      EXPECT_NEAR(static_cast<double>(m.raw()), want, 1.0) << "stick " << c.stick;
+    }
+    EXPECT_EQ(r.out.motor, r.mixed) << "stick " << c.stick;
+  }
 }
 
 TEST_F(ArmedGateTest, TheThrottleUpRefusesAndALateCycleArms) {
