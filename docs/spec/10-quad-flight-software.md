@@ -232,6 +232,12 @@ adding more complex features gradually" (decision 0026).
   23.68 Wh). Commit scripts and raw data; update the card;
   regenerate gains. A tethered first hover may use the current card.
 - A flight test card (pre-flight checks, tethered hover, free hover, angle, acro, abort criteria).
+- Before the stand and safety gear arrive (Luis, 2026-10-17: "1. OK 2. yes"), in this order: the card carries the real
+  airframe (measured mass and motor positions; sourced thrust, torque and inertia estimates marked INFERRED or
+  UNVERIFIED until measured) and the gains regenerated from it; angle mode on the board (the attitude law in `quad_fc`,
+  sticks to angle setpoints, `angle_tilt_max`); the rate integrator held at zero at minimum throttle (Betaflight without
+  airmode); then L10 HIL, pulled forward from the deferred list: the board's flight code flies the Gazebo sim from
+  simulated IMU samples, driven by the ELRS radio, built in stages behind a bench-only image.
 - *Done when:* the T3 QF-3 margins pass on the updated card; tethered hover in angle mode, then free hover, then acro,
   each with its log and card update committed.
 
@@ -244,7 +250,7 @@ adding more complex features gradually" (decision 0026).
 
 **Deferred until after M4** (resumed in the order Luis picks): the rest of L6 (c)–(e) (feed-forward, DShot diffusion,
 noise Monte Carlo, C6a); L7 shadow mode and its Monte Carlo; L8's Gazebo pilot and joystick bridge; the rest of L9
-(eRPM, core split, SRAM placement if timing holds without them); L10 HIL; an in-process `marv_plant` closed loop
+(eRPM, core split, SRAM placement if timing holds without them); an in-process `marv_plant` closed loop
 with truth dispersed inside the card's uncertainties, replacing Gazebo for development checks; plant fidelity (rotor
 inertia, battery and duty-mode ESC, rotor and body drag, IMU lever arm); Gazebo ground contact (a ground plane and its
 contact force into `marv_plant`'s specific force, decision 0042); vertical-loop tilt compensation; the
