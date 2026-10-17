@@ -37,3 +37,17 @@ add_executable(unit_sil_quad_fc sil_quad_fc_test.cpp)
 target_link_libraries(unit_sil_quad_fc PRIVATE marv_sil_quad_fc marv_params_fc3v2_runtime marv_params_fc3v2_generated marv_types marv_hal_sim GTest::gtest_main)
 marv_apply_flags(unit_sil_quad_fc)
 marv_frozen_suite(unit_sil_quad_fc)
+
+# marv_sil_quad_fc must resolve the FC3v2 parameter table, not the product set's that marv_attitude, marv_rate and marv_mixer
+# also link (the link order decides): the size of the linked marv::generated::kParamDefaults. The control swaps the sets: the
+# library's table is not the product set's, so the check must fail.
+add_test(NAME sil_quad_fc_param_table
+  COMMAND "${CMAKE_COMMAND}" -DLIB=$<TARGET_FILE:marv_sil_quad_fc> -DNM=${CMAKE_NM}
+          -DEXPECT=$<TARGET_FILE:marv_params_fc3v2_generated> -DOTHER=$<TARGET_FILE:marv_params_generated>
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/check_param_table.cmake")
+add_test(NAME sil_quad_fc_param_table_negative_control
+  COMMAND "${CMAKE_COMMAND}" -DLIB=$<TARGET_FILE:marv_sil_quad_fc> -DNM=${CMAKE_NM}
+          -DEXPECT=$<TARGET_FILE:marv_params_generated> -DOTHER=$<TARGET_FILE:marv_params_fc3v2_generated>
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/check_param_table.cmake")
+set_tests_properties(sil_quad_fc_param_table sil_quad_fc_param_table_negative_control PROPERTIES LABELS frozen)
+set_tests_properties(sil_quad_fc_param_table_negative_control PROPERTIES WILL_FAIL TRUE)

@@ -11,6 +11,7 @@
 //  - StagedSticksArmAndDisarm: still IMU samples, a fresh frame staged on every tick; with the arm switch low through the gyro
 //    calibration and the link recovery the output stays stop, ch5 high with throttle low gives a throttle command on every
 //    motor, a higher throttle stick gives a higher command on every motor, ch5 low gives stop again.
+//  - TheStagedFrameAppliesFromTheVeryNextTick: the arm switch staged before one rate tick arms on that tick.
 //  - NoStagingMeansNoLink: nothing staged (the HAL's frames 0): the output stays stop (NoLink); the first test is its control.
 //  - FrameAgeBelowLossArms / FrameAgeAtLossNeverArms: each staged frame stamped `age` before its tick (a replay keeps the
 //    recorded frame ages): an age one microsecond below failsafe_loss_us arms, an age of failsafe_loss_us never does.
@@ -224,6 +225,21 @@ TEST(SilQuadFc, StagedSticksArmAndDisarm) {
   });
 }
 
+TEST(SilQuadFc, TheStagedFrameAppliesFromTheVeryNextTick) {
+  in_child([] {
+    Sil sil;
+    sil.run_to(Sil::ready_us(), true, 0, kSwitchLow, 0.0F);
+    while (!sil.rate_tick(sil.next_tick())) {
+      sil.stage(sil.frame(0, kSwitchLow, 0.0F));
+      sil.tick();
+    }
+    ASSERT_TRUE(all_stop(sil.out()));
+    sil.stage(sil.frame(0, kSwitchHigh, 0.0F));
+    sil.tick();  // a rate tick: the arming edge is seen on it
+    EXPECT_TRUE(all_throttle(sil.out())) << "armed on the tick the frame was staged for";
+  });
+}
+
 TEST(SilQuadFc, NoStagingMeansNoLink) {
   in_child([] {
     Sil sil;
@@ -327,7 +343,21 @@ TEST(SilQuadFc, StageManualControlValidation) {
     rejected([&](marv_manual_control& b) { b.throttle = std::nextafter(1.0F, 2.0F); });
     rejected([&](marv_manual_control& b) { b.channels[0] = std::nextafter(1.0F, 2.0F); });
     rejected([&](marv_manual_control& b) { b.link_quality = std::nextafter(1.0F, 2.0F); });
-    rejected([&](marv_manual_control& b) { b.frames = 0; });  // frames 0: every RC field is 0, and good has t_us / sticks set
+    // frames 0: t_us, the sticks, the throttle and every channel are 0, each term of the rule on its own
+    const auto no_frame_with = [&](auto mutate) {
+      marv_manual_control bad{};
+      bad.struct_size = sizeof(marv_manual_control);
+      EXPECT_EQ(marv_sil_stage_manual_control(&bad), MARV_SIL_OK);
+      mutate(bad);
+      EXPECT_EQ(marv_sil_stage_manual_control(&bad), MARV_SIL_E_INPUT);
+    };
+    no_frame_with([](marv_manual_control& b) { b.t_us = 1; });
+    no_frame_with([](marv_manual_control& b) { b.roll = 1.0F; });
+    no_frame_with([](marv_manual_control& b) { b.pitch = 1.0F; });
+    no_frame_with([](marv_manual_control& b) { b.yaw = 1.0F; });
+    no_frame_with([](marv_manual_control& b) { b.throttle = 1.0F; });
+    no_frame_with([](marv_manual_control& b) { b.channels[MARV_RC_CH_01] = 1.0F; });
+    no_frame_with([](marv_manual_control& b) { b.channels[MARV_RC_CH_16] = -1.0F; });
 
     marv_manual_control none{};  // no frame yet: frames 0, every RC field 0, a link-statistics frame may have set the quality
     none.struct_size = sizeof(marv_manual_control);
