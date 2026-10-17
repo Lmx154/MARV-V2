@@ -27,6 +27,7 @@
 #include <array>
 #include <cstdint>
 
+#include "marv/params/param_types.hpp"
 #include "marv/gyro_chain/gyro_chain.hpp"
 #include "marv/mixer/mixer.hpp"
 #include "marv/prim/vec.hpp"
@@ -41,6 +42,12 @@ namespace marv::rate_group {
 // value below 1 is read as 0, which validate refuses) and seed_first_sample set (decision 0014, c1: the D term sees no
 // start-up transient). Not validated. pre: params_init succeeded.
 [[nodiscard]] gyro_chain::GyroChainConfig<float> chain_from_params() noexcept;
+
+// The same read from `table` (a candidate table of the set's kParamCount records) instead of the runtime table.
+[[nodiscard]] gyro_chain::GyroChainConfig<float> chain_from_params(ParamTable table) noexcept;
+
+// nullptr if gyro_chain::validate(c) == None, else the text naming the violated rule (the text require_valid panics with).
+[[nodiscard]] const char* reject_reason(const gyro_chain::GyroChainConfig<float>& c) noexcept;
 
 // hal_panic naming the violated rule unless gyro_chain::validate(c) == None.
 void require_valid(const gyro_chain::GyroChainConfig<float>& c) noexcept;

@@ -77,6 +77,8 @@
 #include <marv/estimator/mahony.hpp>
 #include <marv/hal/hal.hpp>
 #include <marv/hal/tick.hpp>
+#include <marv/hal_target/dshot.hpp>
+#include <marv/hal_target/rc_input.hpp>
 #include <marv/mixer/mixer.hpp>
 #include <marv/params/param.hpp>
 #include <marv/prim/constants.hpp>
@@ -277,28 +279,111 @@ void update_motor_test(TimeUs now) noexcept {
   return x < lo ? lo : (x > 1.0F ? 1.0F : x);
 }
 
+// The checks init and the target's start-ups make, in their order, on `t`; the first failure's text, else null.
+[[nodiscard]] const char* reject_reason(ParamTable t) noexcept {
+  if (t.size() != kParamCount) {
+    return "quad_fc composition: the parameter table does not have one record per parameter";
+  }
+  if (const char* why = rate::reject_reason(rate::from_params(t)); why != nullptr) {
+    return why;
+  }
+  if (const char* why = mixer::reject_reason(mixer::from_params(t)); why != nullptr) {
+    return why;
+  }
+  const std::int32_t divisor = param_value<ParamId::rate_loop_divisor>(t);
+  if (divisor < 1) {
+    return "quad_fc composition: rate_loop_divisor is below 1";
+  }
+  if (const char* why = rate_group::reject_reason(rate_group::chain_from_params(t)); why != nullptr) {
+    return why;
+  }
+  const std::int64_t cap = param_value<ParamId::motor_test_dshot_max>(t);
+  const std::int64_t max_ms = param_value<ParamId::motor_test_duration_max_ms>(t);
+  if (cap < prim::kDshotThrottleMin || cap > prim::kDshotThrottleMax || max_ms < 1) {
+    return "quad_fc composition: motor_test_dshot_max is outside the DShot throttle range or the duration is below 1 ms";
+  }
+  if (param_value<ParamId::tick_period_num_us>(t) < 1 || param_value<ParamId::tick_period_den>(t) < 1) {
+    return "quad_fc composition: the tick period is below 1";
+  }
+  stick_rates::RatesConfig<float> rates;
+  rates.roll = {param_value<ParamId::rates_centre_roll>(t), param_value<ParamId::rate_max_roll>(t),
+                param_value<ParamId::rates_expo_roll>(t)};
+  rates.pitch = {param_value<ParamId::rates_centre_pitch>(t), param_value<ParamId::rate_max_pitch>(t),
+                 param_value<ParamId::rates_expo_pitch>(t)};
+  rates.yaw = {param_value<ParamId::rates_centre_yaw>(t), param_value<ParamId::rate_max_yaw>(t),
+               param_value<ParamId::rates_expo_yaw>(t)};
+  if (stick_rates::validate(rates) != stick_rates::ConfigError::None) {
+    return "quad_fc composition: the rates curve is invalid (0 < centre <= max, 0 <= expo <= 1, finite)";
+  }
+  const std::int32_t channel = param_value<ParamId::rc_channel_arm>(t);
+  if (channel < 1 || static_cast<std::size_t>(channel) > prim::kCrsfRcChannels) {
+    return "quad_fc composition: rc_channel_arm is outside 1..16";
+  }
+  const std::int32_t angle_channel = param_value<ParamId::rc_channel_angle>(t);
+  if (angle_channel < 0 || static_cast<std::size_t>(angle_channel) > prim::kCrsfRcChannels) {
+    return "quad_fc composition: rc_channel_angle is outside 0..16";
+  }
+  if (angle_channel != 0 &&
+      (angle_channel == channel || angle_channel == param_value<ParamId::rc_channel_roll>(t) ||
+       angle_channel == param_value<ParamId::rc_channel_pitch>(t) ||
+       angle_channel == param_value<ParamId::rc_channel_throttle>(t) ||
+       angle_channel == param_value<ParamId::rc_channel_yaw>(t))) {
+    return "quad_fc composition: rc_channel_angle is the arm channel or a stick channel";
+  }
+  if (param_value<ParamId::att_loop_ratio>(t) != 1) {
+    return "quad_fc composition: att_loop_ratio is not 1 (the attitude law runs once per rate tick)";
+  }
+  if (const char* why = attitude::reject_reason(attitude::from_params(t)); why != nullptr) {
+    return why;
+  }
+  if (const char* why = arming::reject_reason(t); why != nullptr) {
+    return why;
+  }
+  const std::int32_t cal_us = param_value<ParamId::gyro_cal_duration_us>(t);
+  const float cal_movement_max = param_value<ParamId::gyro_cal_movement_max>(t);
+  if (cal_us < 1 || !(cal_movement_max >= 0.0F)) {
+    return "quad_fc composition: gyro_cal_duration_us is below 1 or gyro_cal_movement_max is negative or not a number";
+  }
+  const float small_angle = param_value<ParamId::arm_small_angle>(t);
+  if (!(small_angle > 0.0F && small_angle <= static_cast<float>(prim::kPi))) {
+    return "quad_fc composition: arm_small_angle is outside (0, pi]";
+  }
+  // The target's start-ups after init (fw/hal/target/src/main.cpp): motor_output_start, then receiver_start.
+  hal_target::PadMap pad{};
+  if (!hal_target::make_pad_map({param_value<ParamId::motor_pad_m1>(t), param_value<ParamId::motor_pad_m2>(t),
+                                 param_value<ParamId::motor_pad_m3>(t), param_value<ParamId::motor_pad_m4>(t)},
+                                pad)) {
+    return "motor_pad is not a permutation of the motor outputs";
+  }
+  if (!hal_target::rc_channel_map_valid({param_value<ParamId::rc_channel_roll>(t), param_value<ParamId::rc_channel_pitch>(t),
+                                         param_value<ParamId::rc_channel_throttle>(t),
+                                         param_value<ParamId::rc_channel_yaw>(t)})) {
+    return "the rc_channel_* parameters are not channel numbers 1 .. 16";
+  }
+  return nullptr;
+}
+
 }  // namespace
 
+Verdict validate(ParamTable table) noexcept { return Verdict{reject_reason(table)}; }
+
 void init() noexcept {
+  const Verdict verdict = validate(param_active_table());
+  if (!verdict.ok()) {
+    hal_panic(verdict.reason);
+  }
+  // From here the table is accepted: every check the loaders and this function used to make has passed in validate.
   const rate::RateConfig<float> rate_cfg = rate::load_config();
   const mixer::MixerConfig<float> mixer_cfg = mixer::load_config();
 
   const std::int32_t divisor = param_value<ParamId::rate_loop_divisor>();
-  if (divisor < 1 || !g_groups.init({static_cast<std::uint32_t>(divisor)})) {
-    hal_panic("quad_fc composition: rate_loop_divisor is below 1");
-  }
+  static_cast<void>(g_groups.init({static_cast<std::uint32_t>(divisor)}));
   g_step.init(rate_cfg, mixer_cfg, rate_group::load_chain_config());
 
   g_cap = param_value<ParamId::motor_test_dshot_max>();
   g_max_ms = param_value<ParamId::motor_test_duration_max_ms>();
-  if (g_cap < prim::kDshotThrottleMin || g_cap > prim::kDshotThrottleMax || g_max_ms < 1) {
-    hal_panic("quad_fc composition: motor_test_dshot_max is outside the DShot throttle range or the duration is below 1 ms");
-  }
   const std::int32_t num = param_value<ParamId::tick_period_num_us>();
   const std::int32_t den = param_value<ParamId::tick_period_den>();
-  if (num < 1 || den < 1) {
-    hal_panic("quad_fc composition: the tick period is below 1");
-  }
   g_rate_num = static_cast<std::int64_t>(divisor) * num;
   g_rate_den = den;
 
@@ -308,33 +393,14 @@ void init() noexcept {
                    param_value<ParamId::rates_expo_pitch>()};
   g_rates.yaw = {param_value<ParamId::rates_centre_yaw>(), param_value<ParamId::rate_max_yaw>(),
                  param_value<ParamId::rates_expo_yaw>()};
-  if (stick_rates::validate(g_rates) != stick_rates::ConfigError::None) {
-    hal_panic("quad_fc composition: the rates curve is invalid (0 < centre <= max, 0 <= expo <= 1, finite)");
-  }
   const std::int32_t channel = param_value<ParamId::rc_channel_arm>();
-  if (channel < 1 || static_cast<std::size_t>(channel) > prim::kCrsfRcChannels) {
-    hal_panic("quad_fc composition: rc_channel_arm is outside 1..16");
-  }
   g_arm_channel = static_cast<std::size_t>(channel) - 1;
   const std::int32_t angle_channel = param_value<ParamId::rc_channel_angle>();
-  if (angle_channel < 0 || static_cast<std::size_t>(angle_channel) > prim::kCrsfRcChannels) {
-    hal_panic("quad_fc composition: rc_channel_angle is outside 0..16");
-  }
-  if (angle_channel != 0 &&
-      (angle_channel == channel || angle_channel == param_value<ParamId::rc_channel_roll>() ||
-       angle_channel == param_value<ParamId::rc_channel_pitch>() ||
-       angle_channel == param_value<ParamId::rc_channel_throttle>() ||
-       angle_channel == param_value<ParamId::rc_channel_yaw>())) {
-    hal_panic("quad_fc composition: rc_channel_angle is the arm channel or a stick channel");
-  }
   g_angle_switch = angle_channel != 0;
   g_angle_channel = g_angle_switch ? static_cast<std::size_t>(angle_channel) - 1 : 0;
   g_angle_threshold = param_value<ParamId::angle_switch_threshold>();
   g_throttle_min = param_value<ParamId::arm_throttle_min>();
   g_airmode_threshold = param_value<ParamId::airmode_activate_throttle>();
-  if (param_value<ParamId::att_loop_ratio>() != 1) {
-    hal_panic("quad_fc composition: att_loop_ratio is not 1 (the attitude law runs once per rate tick)");
-  }
   const attitude::AttitudeConfig<float> attitude_cfg = attitude::load_config();
   g_angle.init(attitude_cfg);
   g_attitude.init(attitude_cfg);
@@ -347,14 +413,8 @@ void init() noexcept {
       param_value<ParamId::estimator_accel_healthy_min>(), param_value<ParamId::estimator_accel_healthy_max>()});
   const std::int32_t cal_us = param_value<ParamId::gyro_cal_duration_us>();
   const float cal_movement_max = param_value<ParamId::gyro_cal_movement_max>();
-  if (cal_us < 1 || !(cal_movement_max >= 0.0F)) {
-    hal_panic("quad_fc composition: gyro_cal_duration_us is below 1 or gyro_cal_movement_max is negative or not a number");
-  }
   g_gyro_cal.init(estimator::GyroCalConfig<float>{static_cast<std::uint64_t>(cal_us), cal_movement_max});
   const float small_angle = param_value<ParamId::arm_small_angle>();
-  if (!(small_angle > 0.0F && small_angle <= static_cast<float>(prim::kPi))) {
-    hal_panic("quad_fc composition: arm_small_angle is outside (0, pi]");
-  }
   g_upright_cos = std::cos(small_angle);
   g_estimator_prev_us = 0;
   g_estimator_started = false;

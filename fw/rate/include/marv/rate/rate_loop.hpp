@@ -398,6 +398,13 @@ class RateLoop {
 // rate_ff_filter_tau (the feed-forward); any other value leaves them 0. Not validated. pre: params_init succeeded.
 [[nodiscard]] RateConfig<float> from_params() noexcept;
 
+// The same read from `table` (a candidate table of the set's kParamCount records) instead of the runtime table.
+[[nodiscard]] RateConfig<float> from_params(ParamTable table) noexcept;
+
+// nullptr if validate(c) and validate_timing(c) are None, else the text naming the violated rule (the text require_valid
+// panics with).
+[[nodiscard]] const char* reject_reason(const RateConfig<float>& c) noexcept;
+
 // hal_panic naming the violated rule unless validate(c) and validate_timing(c) are None.
 void require_valid(const RateConfig<float>& c) noexcept;
 

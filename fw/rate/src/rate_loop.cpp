@@ -12,17 +12,17 @@ template ConfigError validate<float>(const RateConfig<float>&) noexcept;
 namespace {
 
 template <ParamId Roll, ParamId Pitch, ParamId Yaw>
-prim::Vec3<float> load_axes() noexcept {
-  return prim::Vec3<float>(param_value<Roll>(), param_value<Pitch>(), param_value<Yaw>());
+prim::Vec3<float> load_axes(const ParamTable& t) noexcept {
+  return prim::Vec3<float>(param_value<Roll>(t), param_value<Pitch>(t), param_value<Yaw>(t));
 }
 
 template <ParamId X1, ParamId Y1, ParamId S1, ParamId X2, ParamId Y2, ParamId S2, ParamId X3, ParamId Y3, ParamId S3,
           ParamId X4, ParamId Y4, ParamId S4>
-void load_geometry(RateConfig<float>& c) noexcept {
-  c.rotor_x = {param_value<X1>(), param_value<X2>(), param_value<X3>(), param_value<X4>()};
-  c.rotor_y = {param_value<Y1>(), param_value<Y2>(), param_value<Y3>(), param_value<Y4>()};
-  c.yaw_sign = {static_cast<float>(param_value<S1>()), static_cast<float>(param_value<S2>()),
-                static_cast<float>(param_value<S3>()), static_cast<float>(param_value<S4>())};
+void load_geometry(RateConfig<float>& c, const ParamTable& t) noexcept {
+  c.rotor_x = {param_value<X1>(t), param_value<X2>(t), param_value<X3>(t), param_value<X4>(t)};
+  c.rotor_y = {param_value<Y1>(t), param_value<Y2>(t), param_value<Y3>(t), param_value<Y4>(t)};
+  c.yaw_sign = {static_cast<float>(param_value<S1>(t)), static_cast<float>(param_value<S2>(t)),
+                static_cast<float>(param_value<S3>(t)), static_cast<float>(param_value<S4>(t))};
 }
 
 const char* message(ConfigError e) noexcept {
@@ -49,46 +49,53 @@ const char* message(ConfigError e) noexcept {
 
 }  // namespace
 
-RateConfig<float> from_params() noexcept {
+RateConfig<float> from_params(ParamTable t) noexcept {
   RateConfig<float> c;
-  c.kp = load_axes<ParamId::rate_kp_roll, ParamId::rate_kp_pitch, ParamId::rate_kp_yaw>();
-  c.ki = load_axes<ParamId::rate_ki_roll, ParamId::rate_ki_pitch, ParamId::rate_ki_yaw>();
-  c.kd = load_axes<ParamId::rate_kd_roll, ParamId::rate_kd_pitch, ParamId::rate_kd_yaw>();
-  c.tau_ref = load_axes<ParamId::rate_tau_ref_roll, ParamId::rate_tau_ref_pitch, ParamId::rate_tau_ref_yaw>();
+  c.kp = load_axes<ParamId::rate_kp_roll, ParamId::rate_kp_pitch, ParamId::rate_kp_yaw>(t);
+  c.ki = load_axes<ParamId::rate_ki_roll, ParamId::rate_ki_pitch, ParamId::rate_ki_yaw>(t);
+  c.kd = load_axes<ParamId::rate_kd_roll, ParamId::rate_kd_pitch, ParamId::rate_kd_yaw>(t);
+  c.tau_ref = load_axes<ParamId::rate_tau_ref_roll, ParamId::rate_tau_ref_pitch, ParamId::rate_tau_ref_yaw>(t);
   c.d_filter_tau =
-      load_axes<ParamId::rate_d_filter_tau_roll, ParamId::rate_d_filter_tau_pitch, ParamId::rate_d_filter_tau_yaw>();
+      load_axes<ParamId::rate_d_filter_tau_roll, ParamId::rate_d_filter_tau_pitch, ParamId::rate_d_filter_tau_yaw>(t);
   // T in microseconds is an exact float quotient (an integer product over an integer), so the one division below is
   // the only rounding of the period.
-  const float period_us = static_cast<float>(param_value<ParamId::rate_loop_divisor>()) *
-                          static_cast<float>(param_value<ParamId::tick_period_num_us>()) /
-                          static_cast<float>(param_value<ParamId::tick_period_den>());
+  const float period_us = static_cast<float>(param_value<ParamId::rate_loop_divisor>(t)) *
+                          static_cast<float>(param_value<ParamId::tick_period_num_us>(t)) /
+                          static_cast<float>(param_value<ParamId::tick_period_den>(t));
   c.period = period_us / static_cast<float>(prim::kMicrosecondsPerSecond);
-  c.tick_period_num_us = param_value<ParamId::tick_period_num_us>();
-  c.tick_period_den = param_value<ParamId::tick_period_den>();
-  c.rate_loop_divisor = param_value<ParamId::rate_loop_divisor>();
-  c.period_tolerance_us = param_value<ParamId::rate_period_tolerance_us>();
+  c.tick_period_num_us = param_value<ParamId::tick_period_num_us>(t);
+  c.tick_period_den = param_value<ParamId::tick_period_den>(t);
+  c.rate_loop_divisor = param_value<ParamId::rate_loop_divisor>(t);
+  c.period_tolerance_us = param_value<ParamId::rate_period_tolerance_us>(t);
   load_geometry<ParamId::rotor_position_m1_x, ParamId::rotor_position_m1_y, ParamId::rotor_yaw_sign_m1,
                 ParamId::rotor_position_m2_x, ParamId::rotor_position_m2_y, ParamId::rotor_yaw_sign_m2,
                 ParamId::rotor_position_m3_x, ParamId::rotor_position_m3_y, ParamId::rotor_yaw_sign_m3,
-                ParamId::rotor_position_m4_x, ParamId::rotor_position_m4_y, ParamId::rotor_yaw_sign_m4>(c);
-  c.torque_ratio = param_value<ParamId::rotor_torque_ratio>();
+                ParamId::rotor_position_m4_x, ParamId::rotor_position_m4_y, ParamId::rotor_yaw_sign_m4>(c, t);
+  c.torque_ratio = param_value<ParamId::rotor_torque_ratio>(t);
   // The feed-forward only while rate_ff_enable is 1; otherwise J, tau_m and T_ff keep RateConfig's 0, the exact PID law
   // (decision 0014, owner decision 2: inert until stage (e)).
-  if (param_value<ParamId::rate_ff_enable>() == 1) {
-    c.inertia = load_axes<ParamId::inertia_xx, ParamId::inertia_yy, ParamId::inertia_zz>();
-    c.motor_tau = param_value<ParamId::motor_tau>();
-    c.ff_filter_tau = param_value<ParamId::rate_ff_filter_tau>();
+  if (param_value<ParamId::rate_ff_enable>(t) == 1) {
+    c.inertia = load_axes<ParamId::inertia_xx, ParamId::inertia_yy, ParamId::inertia_zz>(t);
+    c.motor_tau = param_value<ParamId::motor_tau>(t);
+    c.ff_filter_tau = param_value<ParamId::rate_ff_filter_tau>(t);
   }
   return c;
 }
 
-void require_valid(const RateConfig<float>& c) noexcept {
+RateConfig<float> from_params() noexcept { return from_params(param_active_table()); }
+
+const char* reject_reason(const RateConfig<float>& c) noexcept {
   ConfigError e = validate(c);
   if (e == ConfigError::None) {
     e = validate_timing(c);
   }
-  if (e != ConfigError::None) {
-    hal_panic(message(e));
+  return e == ConfigError::None ? nullptr : message(e);
+}
+
+void require_valid(const RateConfig<float>& c) noexcept {
+  const char* const why = reject_reason(c);
+  if (why != nullptr) {
+    hal_panic(why);
   }
 }
 

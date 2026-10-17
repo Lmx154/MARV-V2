@@ -43,26 +43,33 @@ bool gyro_usable(const ImuSample& s) noexcept {
 
 }  // namespace
 
-gyro_chain::GyroChainConfig<float> chain_from_params() noexcept {
+gyro_chain::GyroChainConfig<float> chain_from_params(ParamTable t) noexcept {
   gyro_chain::GyroChainConfig<float> c;
   // The tick period in microseconds is one float quotient of two integers, and the conversion to seconds one division.
-  const float period_us = static_cast<float>(param_value<ParamId::tick_period_num_us>()) /
-                          static_cast<float>(param_value<ParamId::tick_period_den>());
+  const float period_us = static_cast<float>(param_value<ParamId::tick_period_num_us>(t)) /
+                          static_cast<float>(param_value<ParamId::tick_period_den>(t));
   c.period = period_us / static_cast<float>(prim::kMicrosecondsPerSecond);
-  const std::int32_t divisor = param_value<ParamId::rate_loop_divisor>();
+  const std::int32_t divisor = param_value<ParamId::rate_loop_divisor>(t);
   c.rate_divisor = divisor < 1 ? 0 : static_cast<std::uint32_t>(divisor);
-  c.cutoff_hz = param_value<ParamId::gyro_lpf_cutoff_hz>();
-  c.notch_q = {param_value<ParamId::gyro_notch_q_h1>(), param_value<ParamId::gyro_notch_q_h2>(),
-               param_value<ParamId::gyro_notch_q_h3>()};
-  c.omega_threshold_rad_s = param_value<ParamId::gyro_notch_omega_min>();
+  c.cutoff_hz = param_value<ParamId::gyro_lpf_cutoff_hz>(t);
+  c.notch_q = {param_value<ParamId::gyro_notch_q_h1>(t), param_value<ParamId::gyro_notch_q_h2>(t),
+               param_value<ParamId::gyro_notch_q_h3>(t)};
+  c.omega_threshold_rad_s = param_value<ParamId::gyro_notch_omega_min>(t);
   c.seed_first_sample = true;
   return c;
 }
 
-void require_valid(const gyro_chain::GyroChainConfig<float>& c) noexcept {
+gyro_chain::GyroChainConfig<float> chain_from_params() noexcept { return chain_from_params(param_active_table()); }
+
+const char* reject_reason(const gyro_chain::GyroChainConfig<float>& c) noexcept {
   const gyro_chain::ConfigError e = gyro_chain::validate(c);
-  if (e != gyro_chain::ConfigError::None) {
-    hal_panic(message(e));
+  return e == gyro_chain::ConfigError::None ? nullptr : message(e);
+}
+
+void require_valid(const gyro_chain::GyroChainConfig<float>& c) noexcept {
+  const char* const why = reject_reason(c);
+  if (why != nullptr) {
+    hal_panic(why);
   }
 }
 

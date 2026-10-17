@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "marv/params/param_types.hpp"
 #include "marv/prim/constants.hpp"
 #include "marv/prim/vec.hpp"
 
@@ -109,6 +110,10 @@ template <class T>
   return ConfigError::None;
 }
 
+// nullptr if validate(c) == None and validate_timing(c) == None, else the text naming the violated rule (the text
+// require_valid panics with).
+[[nodiscard]] const char* reject_reason(const AttitudeConfig<float>& c) noexcept;
+
 // hal_panic naming the violated rule unless validate(c) == None and validate_timing(c) == None.
 void require_valid(const AttitudeConfig<float>& c) noexcept;
 
@@ -117,6 +122,9 @@ void require_valid(const AttitudeConfig<float>& c) noexcept;
 // tick_period_num_us / tick_period_den microseconds, in seconds, and the spacing check's tick_period_num_us,
 // tick_period_den, period_ticks = rate_loop_divisor * att_loop_ratio and rate_period_tolerance_us. Not validated.
 [[nodiscard]] AttitudeConfig<float> from_params() noexcept;
+
+// The same read from `table` (a candidate table of the set's kParamCount records) instead of the runtime table.
+[[nodiscard]] AttitudeConfig<float> from_params(ParamTable table) noexcept;
 
 // from_params, then require_valid: the firmware-facing init.
 [[nodiscard]] AttitudeConfig<float> load_config() noexcept;

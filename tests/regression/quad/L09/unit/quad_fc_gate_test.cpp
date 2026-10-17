@@ -36,6 +36,7 @@
 #include <cstdlib>
 #include <limits>
 #include <span>
+#include <string>
 #include <vector>
 
 #include <marv/attitude/angle_mode.hpp>
@@ -1735,6 +1736,116 @@ TEST(QuadFcAngleInitDeathTest, InitRefusesAnAttitudeLoopRatioOtherThanOne) {
     EXPECT_EXIT(init_with_angle_channel(kAngleChannel, ratio), ::testing::KilledBySignal(SIGABRT),
                 "hal_panic: quad_fc composition: att_loop_ratio is not 1")
         << ratio;
+  }
+}
+
+// ---- composition::validate: the table-parametric validator, and init panicking iff it rejects (the ground segment, decision 0053) ----
+
+// The default table with parameter `id` set to `value` (the record keeps its type; a whole number for an i32 parameter).
+std::span<const ParamRecord, kParamCount> table_with(ParamId id, double value) {
+  const std::span<const ParamRecord, kParamCount> d = param_defaults();
+  std::copy(d.begin(), d.end(), g_table.begin());
+  ParamRecord& r = g_table[static_cast<std::size_t>(id)];
+  r.value = r.value.type == ParamType::F32 ? ParamValue{ParamType::F32, static_cast<float>(value), 0}
+                                           : ParamValue{ParamType::I32, 0.0F, static_cast<std::int32_t>(value)};
+  return std::span<const ParamRecord, kParamCount>(g_table);
+}
+
+// One parameter-dependent hal_panic site reachable at boot: the value that trips it and a piece of the text it gives.
+struct RejectCase {
+  const char* site;
+  ParamId id;
+  double value;
+  const char* reason;
+};
+
+// Every site (the panic function and the file it is in) that a parameter value can reach before the first tick. The rate
+// divisor below 1 and the tick period below 1 of quad_fc.cpp are shadowed by the rate loop's own checks, which run first in
+// init as in validate, so a table reaches them only through that text.
+const RejectCase kRejectCases[] = {
+    {"rate::require_valid (rate_loop.cpp)", ParamId::rate_kp_roll, -1.0, "rate: a gain kp, ki or kd is negative"},
+    {"rate::require_valid, divisor (rate_loop.cpp, shadows quad_fc.cpp rate_loop_divisor)", ParamId::rate_loop_divisor, 0.0,
+     "rate: the design period is not positive"},
+    {"rate::require_valid, tick period (rate_loop.cpp, shadows quad_fc.cpp tick period)", ParamId::tick_period_den, 0.0,
+     "rate: a gain, tau_ref, the period or an effectiveness entry is not finite"},
+    {"mixer::require_valid (mixer.cpp)", ParamId::rotor_thrust_coeff, 0.0, "mixer: rotor_thrust_coeff is not positive"},
+    {"rate_group::require_valid (rate_group.cpp)", ParamId::gyro_lpf_cutoff_hz, 0.0,
+     "gyro chain: gyro_lpf_cutoff_hz is not in (0, f_s / (2 D))"},
+    {"quad_fc motor_test_dshot_max", ParamId::motor_test_dshot_max, 0.0, "motor_test_dshot_max is outside the DShot throttle range"},
+    {"quad_fc motor_test_duration_max_ms", ParamId::motor_test_duration_max_ms, 0.0, "the duration is below 1 ms"},
+    {"quad_fc rates curve", ParamId::rates_expo_roll, 2.0, "the rates curve is invalid"},
+    {"quad_fc rc_channel_arm", ParamId::rc_channel_arm, 0.0, "rc_channel_arm is outside 1..16"},
+    {"quad_fc rc_channel_angle range", ParamId::rc_channel_angle, 17.0, "rc_channel_angle is outside 0..16"},
+    {"quad_fc rc_channel_angle collision", ParamId::rc_channel_angle, 5.0, "rc_channel_angle is the arm channel or a stick channel"},
+    {"quad_fc att_loop_ratio", ParamId::att_loop_ratio, 2.0, "att_loop_ratio is not 1"},
+    {"attitude::require_valid (attitude.cpp)", ParamId::att_kp, -1.0, "attitude: the gain att_kp is negative"},
+    {"arming::load_config, failsafe time (arming.cpp)", ParamId::failsafe_loss_us, 0.0, "arming: a failsafe time is below 1 us"},
+    {"arming::load_config, order (arming.cpp)", ParamId::failsafe_hold_us, 1.0,
+     "arming: the failsafe times are not ordered loss < hold < disarm"},
+    {"quad_fc gyro calibration", ParamId::gyro_cal_duration_us, 0.0, "gyro_cal_duration_us is below 1"},
+    {"quad_fc arm_small_angle", ParamId::arm_small_angle, 0.0, "arm_small_angle is outside (0, pi]"},
+    {"motor_output_start motor_pad (motor_output.cpp)", ParamId::motor_pad_m1, 4.0, "motor_pad is not a permutation"},
+    {"receiver_start channel map (receiver.cpp)", ParamId::rc_channel_roll, 17.0, "the rc_channel_* parameters are not channel numbers"},
+};
+
+TEST(QuadFcValidateTest, TheDefaultTableIsAccepted) {
+  const composition::Verdict v = composition::validate(param_defaults());
+  EXPECT_TRUE(v.ok());
+  EXPECT_EQ(v.reason, nullptr);
+}
+
+TEST(QuadFcValidateTest, EachParameterDependentPanicSiteRejectsItsTableWithItsReason) {
+  for (const RejectCase& c : kRejectCases) {
+    const composition::Verdict v = composition::validate(table_with(c.id, c.value));
+    ASSERT_FALSE(v.ok()) << c.site;
+    EXPECT_NE(std::string(v.reason).find(c.reason), std::string::npos) << c.site << ": " << v.reason;
+  }
+}
+
+TEST(QuadFcValidateTest, ATableOfTheWrongSizeIsRejected) {
+  const std::span<const ParamRecord, kParamCount> d = param_defaults();
+  EXPECT_FALSE(composition::validate(ParamTable(d.data(), kParamCount - 1)).ok());
+}
+
+// init on the table of one case in a fresh process, which first sets the sim clock from the default table's tick period (a
+// case may break the table's own).
+void init_with_case(const RejectCase& c) {
+  (void)prctl(PR_SET_DUMPABLE, 0);
+  if (!params_init(table_with(c.id, c.value))) {
+    std::exit(2);
+  }
+  const std::span<const ParamRecord, kParamCount> d = param_defaults();
+  std::array<DshotValue, composition::kMotors> motor_latch{};
+  std::array<ServoUs, composition::kServos> servo_latch{};
+  hal_sim::setup({static_cast<std::uint32_t>(d[static_cast<std::size_t>(ParamId::tick_period_num_us)].value.i32),
+                  static_cast<std::uint32_t>(d[static_cast<std::size_t>(ParamId::tick_period_den)].value.i32)},
+                 motor_latch, servo_latch);
+  composition::init();
+  std::exit(0);
+}
+
+// `text` as a regular expression that matches exactly it (the death test's pattern language, POSIX extended).
+std::string regex_escaped(const std::string& text) {
+  std::string out;
+  for (const char ch : text) {
+    if (std::string("\\^$.|?*+()[]{}").find(ch) != std::string::npos) {
+      out += '\\';
+    }
+    out += ch;
+  }
+  return out;
+}
+
+// V-1: init panics iff validate rejects, and with validate's reason. The accepted side is the default table (every other
+// death test in this file, and the fixtures, run init on it).
+TEST(QuadFcValidateDeathTest, InitPanicsWithTheReasonValidateGives) {
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  for (const RejectCase& c : kRejectCases) {
+    const composition::Verdict v = composition::validate(table_with(c.id, c.value));
+    ASSERT_FALSE(v.ok()) << c.site;
+    EXPECT_EXIT(init_with_case(c), ::testing::KilledBySignal(SIGABRT),
+                std::string("hal_panic: ") + regex_escaped(v.reason))
+        << c.site;
   }
 }
 

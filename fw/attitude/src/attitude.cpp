@@ -44,37 +44,44 @@ const char* message(ConfigError e) noexcept {
 
 }  // namespace
 
-AttitudeConfig<float> from_params() noexcept {
+AttitudeConfig<float> from_params(ParamTable t) noexcept {
   AttitudeConfig<float> c;
-  c.kp = param_value<ParamId::att_kp>();
-  c.yaw_weight = param_value<ParamId::att_yaw_weight>();
-  c.tilt_max = param_value<ParamId::angle_tilt_max>();
-  c.yaw_deadband = param_value<ParamId::yaw_deadband>();
-  c.yaw_alpha_min = param_value<ParamId::att_yaw_alpha_min>();
-  c.yaw_t_cross = param_value<ParamId::att_yaw_t_cross>();
-  c.rate_max = prim::Vec3<float>(param_value<ParamId::rate_max_roll>(), param_value<ParamId::rate_max_pitch>(),
-                                 param_value<ParamId::rate_max_yaw>());
+  c.kp = param_value<ParamId::att_kp>(t);
+  c.yaw_weight = param_value<ParamId::att_yaw_weight>(t);
+  c.tilt_max = param_value<ParamId::angle_tilt_max>(t);
+  c.yaw_deadband = param_value<ParamId::yaw_deadband>(t);
+  c.yaw_alpha_min = param_value<ParamId::att_yaw_alpha_min>(t);
+  c.yaw_t_cross = param_value<ParamId::att_yaw_t_cross>(t);
+  c.rate_max = prim::Vec3<float>(param_value<ParamId::rate_max_roll>(t), param_value<ParamId::rate_max_pitch>(t),
+                                 param_value<ParamId::rate_max_yaw>(t));
   // The attitude period in microseconds is an integer product over an integer, so one float quotient (the rate loop's
   // rule), and the conversion to seconds is one division.
-  const float ticks = static_cast<float>(param_value<ParamId::att_loop_ratio>()) *
-                      static_cast<float>(param_value<ParamId::rate_loop_divisor>());
-  const float period_us = ticks * static_cast<float>(param_value<ParamId::tick_period_num_us>()) /
-                          static_cast<float>(param_value<ParamId::tick_period_den>());
+  const float ticks = static_cast<float>(param_value<ParamId::att_loop_ratio>(t)) *
+                      static_cast<float>(param_value<ParamId::rate_loop_divisor>(t));
+  const float period_us = ticks * static_cast<float>(param_value<ParamId::tick_period_num_us>(t)) /
+                          static_cast<float>(param_value<ParamId::tick_period_den>(t));
   c.period = period_us / static_cast<float>(prim::kMicrosecondsPerSecond);
-  c.tick_period_num_us = param_value<ParamId::tick_period_num_us>();
-  c.tick_period_den = param_value<ParamId::tick_period_den>();
-  c.period_ticks = param_value<ParamId::att_loop_ratio>() * param_value<ParamId::rate_loop_divisor>();
-  c.period_tolerance_us = param_value<ParamId::rate_period_tolerance_us>();
+  c.tick_period_num_us = param_value<ParamId::tick_period_num_us>(t);
+  c.tick_period_den = param_value<ParamId::tick_period_den>(t);
+  c.period_ticks = param_value<ParamId::att_loop_ratio>(t) * param_value<ParamId::rate_loop_divisor>(t);
+  c.period_tolerance_us = param_value<ParamId::rate_period_tolerance_us>(t);
   return c;
 }
 
-void require_valid(const AttitudeConfig<float>& c) noexcept {
+AttitudeConfig<float> from_params() noexcept { return from_params(param_active_table()); }
+
+const char* reject_reason(const AttitudeConfig<float>& c) noexcept {
   ConfigError e = validate(c);
   if (e == ConfigError::None) {
     e = validate_timing(c);
   }
-  if (e != ConfigError::None) {
-    hal_panic(message(e));
+  return e == ConfigError::None ? nullptr : message(e);
+}
+
+void require_valid(const AttitudeConfig<float>& c) noexcept {
+  const char* const why = reject_reason(c);
+  if (why != nullptr) {
+    hal_panic(why);
   }
 }
 

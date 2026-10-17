@@ -15,11 +15,11 @@ template class DshotDiffuser<float>;
 namespace {
 
 template <ParamId Thrust, ParamId Roll, ParamId Pitch, ParamId Yaw>
-void load_row(MixerConfig<float>& c, std::size_t row) noexcept {
-  c.m(row, kThrust) = param_value<Thrust>();
-  c.m(row, kRoll) = param_value<Roll>();
-  c.m(row, kPitch) = param_value<Pitch>();
-  c.m(row, kYaw) = param_value<Yaw>();
+void load_row(MixerConfig<float>& c, std::size_t row, const ParamTable& t) noexcept {
+  c.m(row, kThrust) = param_value<Thrust>(t);
+  c.m(row, kRoll) = param_value<Roll>(t);
+  c.m(row, kPitch) = param_value<Pitch>(t);
+  c.m(row, kYaw) = param_value<Yaw>(t);
 }
 
 const char* message(ConfigError e) noexcept {
@@ -48,27 +48,34 @@ const char* message(ConfigError e) noexcept {
 
 }  // namespace
 
-MixerConfig<float> from_params() noexcept {
+MixerConfig<float> from_params(ParamTable t) noexcept {
   MixerConfig<float> c;
   load_row<ParamId::mixer_m1_thrust, ParamId::mixer_m1_roll, ParamId::mixer_m1_pitch, ParamId::mixer_m1_yaw>(
-      c, motor_index(Motor::M1FrontRight));
+      c, motor_index(Motor::M1FrontRight), t);
   load_row<ParamId::mixer_m2_thrust, ParamId::mixer_m2_roll, ParamId::mixer_m2_pitch, ParamId::mixer_m2_yaw>(
-      c, motor_index(Motor::M2RearLeft));
+      c, motor_index(Motor::M2RearLeft), t);
   load_row<ParamId::mixer_m3_thrust, ParamId::mixer_m3_roll, ParamId::mixer_m3_pitch, ParamId::mixer_m3_yaw>(
-      c, motor_index(Motor::M3FrontLeft));
+      c, motor_index(Motor::M3FrontLeft), t);
   load_row<ParamId::mixer_m4_thrust, ParamId::mixer_m4_roll, ParamId::mixer_m4_pitch, ParamId::mixer_m4_yaw>(
-      c, motor_index(Motor::M4RearRight));
-  c.thrust_coeff = param_value<ParamId::rotor_thrust_coeff>();
-  c.omega_idle = param_value<ParamId::idle_speed>();
-  c.omega_min = param_value<ParamId::rotor_speed_min>();
-  c.omega_max = param_value<ParamId::rotor_speed_max>();
+      c, motor_index(Motor::M4RearRight), t);
+  c.thrust_coeff = param_value<ParamId::rotor_thrust_coeff>(t);
+  c.omega_idle = param_value<ParamId::idle_speed>(t);
+  c.omega_min = param_value<ParamId::rotor_speed_min>(t);
+  c.omega_max = param_value<ParamId::rotor_speed_max>(t);
   return c;
 }
 
-void require_valid(const MixerConfig<float>& c) noexcept {
+MixerConfig<float> from_params() noexcept { return from_params(param_active_table()); }
+
+const char* reject_reason(const MixerConfig<float>& c) noexcept {
   const ConfigError e = validate(c);
-  if (e != ConfigError::None) {
-    hal_panic(message(e));
+  return e == ConfigError::None ? nullptr : message(e);
+}
+
+void require_valid(const MixerConfig<float>& c) noexcept {
+  const char* const why = reject_reason(c);
+  if (why != nullptr) {
+    hal_panic(why);
   }
 }
 

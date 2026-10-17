@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "marv/params/param_types.hpp"
 #include "marv/prim/constants.hpp"
 #include "marv/prim/mat.hpp"
 #include "marv/prim/vec.hpp"
@@ -386,6 +387,12 @@ std::array<DshotValue, kMotors> DshotDiffuser<T>::apply_unrounded(const std::arr
 // The product parameter set's mixer: idle_speed, mixer_m<i>_*, rotor_thrust_coeff, rotor_speed_min/max. Not
 // validated. pre: params_init succeeded.
 [[nodiscard]] MixerConfig<float> from_params() noexcept;
+
+// The same read from `table` (a candidate table of the set's kParamCount records) instead of the runtime table.
+[[nodiscard]] MixerConfig<float> from_params(ParamTable table) noexcept;
+
+// nullptr if validate(c) == None, else the text naming the violated rule (the text require_valid panics with).
+[[nodiscard]] const char* reject_reason(const MixerConfig<float>& c) noexcept;
 
 // hal_panic naming the violated rule unless validate(c) == None.
 void require_valid(const MixerConfig<float>& c) noexcept;

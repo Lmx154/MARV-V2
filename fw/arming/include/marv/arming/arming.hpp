@@ -29,6 +29,8 @@
 
 #include <cstdint>
 
+#include "marv/params/param_types.hpp"
+
 namespace marv::arming {
 
 enum class ArmState : std::uint8_t {
@@ -237,6 +239,12 @@ class Arming {
 
 // The six parameters of the quad_fc register; panics (hal_panic) on a configuration that is not valid().
 [[nodiscard]] ArmingConfig<float> load_config() noexcept;
+
+// The same read from `table` (a candidate table of the set's kParamCount records) instead of the runtime table.
+[[nodiscard]] ArmingConfig<float> load_config(ParamTable table) noexcept;
+
+// nullptr if load_config(table) would not panic, else the text it panics with.
+[[nodiscard]] const char* reject_reason(ParamTable table) noexcept;
 
 extern template class Arming<float>;
 

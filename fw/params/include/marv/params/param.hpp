@@ -23,6 +23,21 @@ template <ParamId Id>
   }
 }
 
+// The typed value of `table`'s record: param_value's read on a given table. No range check: the caller passes a table of
+// the full kParamCount records.
+template <ParamId Id>
+[[nodiscard]] typename ParamTraits<Id>::value_type param_value(const ParamTable& table) noexcept {
+  const ParamValue v = table[static_cast<std::size_t>(Id)].value;
+  if constexpr (ParamTraits<Id>::type == ParamType::F32) {
+    return v.f32;
+  } else {
+    return v.i32;
+  }
+}
+
+// The runtime table that params_init loaded. A call before a successful params_init is a hal_panic.
+[[nodiscard]] ParamTable param_active_table() noexcept;
+
 // The generated name of a parameter. An invalid id is a hal_panic.
 [[nodiscard]] const char* param_name(ParamId id) noexcept;
 

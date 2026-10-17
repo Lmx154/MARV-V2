@@ -38,6 +38,13 @@ ParamRecord param_get(ParamId id) noexcept {
   return g_table[static_cast<std::size_t>(id)];
 }
 
+ParamTable param_active_table() noexcept {
+  if (!g_loaded) {
+    hal_panic("param_active_table before params_init");
+  }
+  return ParamTable{g_table};
+}
+
 const char* param_name(ParamId id) noexcept {
   if (!id_valid(id)) {
     hal_panic("param_name with an invalid parameter id");

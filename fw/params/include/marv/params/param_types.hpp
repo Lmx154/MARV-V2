@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <span>
 
 namespace marv {
 
@@ -40,6 +41,11 @@ struct ParamRecord {
   const char* unit;    // SI symbol, static storage; "1" if dimensionless
   const char* source;  // source text, or the rule for Derived; static storage
 };
+
+// A table of records addressed by ParamId: the runtime table or any other table of the set's kParamCount records (a
+// candidate being validated). The extent is dynamic so that a library compiled against another parameter set's header
+// still takes it.
+using ParamTable = std::span<const ParamRecord>;
 
 // Invariant I1 (docs/decisions/0001), the one implementation: a record is consistent iff (kind Known and sigma finite
 // and > 0) or (kind Exact, Unknown or Choice and sigma exactly +0.0f); any other kind value is inconsistent. Usable in

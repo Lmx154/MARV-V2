@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include "marv/arming/arming.hpp"
+#include "marv/params/param_types.hpp"
 #include "marv/types/actuator.hpp"
 
 namespace marv::composition {
@@ -12,6 +13,20 @@ namespace marv::composition {
 inline constexpr std::size_t kMotors = kQuadXMotors;
 inline constexpr std::size_t kServos = 0;
 inline constexpr const char* kName = "quad_fc";
+
+// The outcome of validate: `reason` is null if the table is accepted, else the text init panics with.
+struct Verdict {
+  const char* reason = nullptr;
+  [[nodiscard]] bool ok() const noexcept { return reason == nullptr; }
+};
+
+// Whether `table` (a candidate of the quad_fc parameter set's kParamCount records) is a configuration the board boots with:
+// it runs, in the order init and the target's start-ups run them, every check that ends in a hal_panic on a parameter value
+// (the rate, mixer, gyro chain, attitude and arming configurations, the composition's own limits and channel numbers, and
+// the motor_pad permutation and the receiver channel map of the target's start-up), and returns the first that fails.
+// Reads only `table`; never calls hal_panic or a HAL function, and changes nothing. init calls it on the runtime
+// table and panics with its reason, so init panics iff validate rejects the runtime table (invariant V-1).
+[[nodiscard]] Verdict validate(ParamTable table) noexcept;
 
 // The rate group's counters since init: rate executions and the rate loop's timing faults (decision 0034). Call from the
 // tick's context (on the target, the IMU interrupt).
