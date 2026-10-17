@@ -607,6 +607,10 @@ constexpr float kSwitchOff = -1.0F;
 // Betaflight 4.5.1 gyro.c:107, gyroCalibrationDuration 125 x 10 ms: the boot calibration window, as the test states it
 // independently of the parameter table.
 constexpr TimeUs kCalibrationUs = 1250000;
+// Betaflight 4.5.1 pg/rx.c:91 mincheck 1050 us, normalized (1050 - 988) / 1024 under the receive contract throttle = (us - 988) / 1024
+// (CRSF 172 -> 988 us, 1811 -> 2012 us): below it, armed, the rate integrator is held at zero (M4 C1, decision 0045). Stated here
+// independently of the parameter table.
+constexpr float kMinCheck = 0.060546875F;
 
 struct Sticks {
   float roll = 0;
@@ -630,6 +634,7 @@ class ArmedGateTest : public MotorTestGateTest {
     MotorTestGateTest::SetUp();
     mixer_ = mixer::load_config();
     ref_.init(rate::load_config(), mixer_, rate_group::load_chain_config());
+    integ_.init(rate::load_config(), mixer_, rate_group::load_chain_config());
     rates_.roll = {param_value<ParamId::rates_centre_roll>(), param_value<ParamId::rate_max_roll>(),
                    param_value<ParamId::rates_expo_roll>()};
     rates_.pitch = {param_value<ParamId::rates_centre_pitch>(), param_value<ParamId::rate_max_pitch>(),
@@ -690,6 +695,7 @@ class ArmedGateTest : public MotorTestGateTest {
       beside.gyro_rad_s = beside.gyro_rad_s - ref_bias_;
     }
     ref_.filter(beside, n_ % divisor_ == 0);
+    integ_.filter(beside, n_ % divisor_ == 0);
     fresh_.filter(s, n_ % divisor_ == 0);
     if ((beside.flags & imu_flag(ImuFlag::GyroValid)) != 0) {  // the beside estimator, stepped as the composition steps its own
       const std::uint64_t since = est_ref_started_ && beside.t_us > est_ref_prev_us_ ? beside.t_us - est_ref_prev_us_ : 0;
@@ -709,6 +715,7 @@ class ArmedGateTest : public MotorTestGateTest {
     const bool armed = arming::is_armed(composition::arming_status());
     if (armed && !was_armed_ && reset_ref_) {
       ref_.reset_controller();  // as the composition does at the arming edge
+      integ_.reset_controller();
     }
     was_armed_ = armed;
     hal_sim::end_tick();
@@ -725,7 +732,18 @@ class ArmedGateTest : public MotorTestGateTest {
     const float t_min = static_cast<float>(composition::kMotors) * mixer::f_min(mixer_);
     const float t_max = static_cast<float>(composition::kMotors) * mixer::f_max(mixer_);
     const prim::Vec3<float> sp = stick_rates::rate_setpoint(rates_, prim::Vec3<float>(want.roll, want.pitch, want.yaw));
-    return ref_.execute(sp, prim::Vec3<float>(), t_min + want.throttle * (t_max - t_min)).dshot;
+    const float thrust = t_min + want.throttle * (t_max - t_min);
+    const auto mixed = ref_.execute(sp, prim::Vec3<float>(), thrust).dshot;
+    integrating_ = integ_.execute(sp, prim::Vec3<float>(), thrust).dshot;
+    hold_integrator(want);
+    return mixed;
+  }
+
+  // The beside side of the low-throttle hold: armed below min_check, the integrator is zeroed after the tick's output.
+  void hold_integrator(const Sticks& want) {
+    if (was_armed_ && want.throttle < kMinCheck) {
+      ref_.zero_integrator();
+    }
   }
 
   // The rate setpoint the attitude law gives for `want` from the beside estimator's state of the latest tick, through the
@@ -739,7 +757,10 @@ class ArmedGateTest : public MotorTestGateTest {
   // test resets them where the composition does, on entering armed-and-angle) through execute_bypass, with acro's thrust.
   std::array<DshotValue, composition::kMotors> reference_angle(const Sticks& want) {
     angle_sp_ = angle_setpoint(want, ref_angle_, ref_att_);
-    return ref_.execute_bypass(angle_sp_, prim::Vec3<float>(), thrust_of(want)).dshot;
+    const auto mixed = ref_.execute_bypass(angle_sp_, prim::Vec3<float>(), thrust_of(want)).dshot;
+    integrating_ = integ_.execute_bypass(angle_sp_, prim::Vec3<float>(), thrust_of(want)).dshot;
+    hold_integrator(want);
+    return mixed;
   }
 
   float thrust_of(const Sticks& want) const {
@@ -817,6 +838,25 @@ class ArmedGateTest : public MotorTestGateTest {
     EXPECT_EQ(r.out.motor, r.mixed);
   }
 
+  struct Both {
+    RateOut r;
+    std::array<DshotValue, composition::kMotors> integrating{};  // the output of `integ_`, which never zeroes its integrator
+  };
+
+  Both hold_both(const Sticks& k, float arm) {
+    Both b;
+    b.r = hold(k, arm, k);
+    b.integrating = integrating_;
+    return b;
+  }
+
+  void arm_both() {
+    link_up();
+    const Both b = hold_both({}, kSwitchOn);
+    ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+    EXPECT_EQ(b.r.out.motor, b.r.mixed);
+  }
+
   static bool is_armed_output(const Out& o) {
     for (const DshotValue& m : o.motor) {
       if (m == DshotValue::stop()) {
@@ -828,6 +868,10 @@ class ArmedGateTest : public MotorTestGateTest {
 
   mixer::MixerConfig<float> mixer_{};
   rate_group::RateGroupStep ref_;
+  // As ref_ in every respect (the same samples, the same arming-edge restart, the same setpoint and thrust) but the low-throttle
+  // hold: its integrator is never zeroed. The control of the hold cases.
+  rate_group::RateGroupStep integ_;
+  std::array<DshotValue, composition::kMotors> integrating_{};
   stick_rates::RatesConfig<float> rates_{};
   std::uint32_t frames_ = 0;
   Kind kind_ = Kind::Quiet;
@@ -1109,6 +1153,70 @@ TEST_F(ArmedGateTest, ArmingStartsTheRateLoopFromZeroStateNotFromWhatWasAccumula
   EXPECT_EQ(first.motor, fresh);
 }
 
+// ---- Low throttle holds the rate integrator at zero (M4 C1, decision 0045) ----
+// A constant gyro bias (scenario values, rad/s, from after the calibration) gives the rate loop a constant error. Armed, the
+// throttle just below min_check: the output equals the beside group whose integrator is zeroed after each tick (`mixed`) and,
+// after the first tick, differs from the beside group that integrates (the control). At min_check, and above, it integrates.
+const prim::Vec3<float> kHoldBias(0.2F, -0.3F, 0.15F);
+const float kJustBelowMinCheck = std::nextafter(kMinCheck, 0.0F);
+constexpr std::size_t kHoldTicks = 400;
+
+TEST_F(ArmedGateTest, ArmedJustBelowMinCheckTheIntegratorStaysZeroAndTheOutputDiffersFromAnIntegratingGroup) {
+  bias_ = kHoldBias;
+  arm_both();
+  const Sticks low{0.0F, 0.0F, 0.0F, kJustBelowMinCheck};
+  std::size_t apart = 0;
+  for (std::size_t k = 0; k < kHoldTicks; ++k) {
+    const Both b = hold_both(low, kSwitchOn);
+    ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+    ASSERT_EQ(b.r.out.motor, b.r.mixed) << k;
+    apart += b.r.out.motor != b.integrating ? 1U : 0U;
+  }
+  EXPECT_GT(apart, kHoldTicks / 2) << "an integrating group would give the same output: the test is insensitive to the hold";
+}
+
+TEST_F(ArmedGateTest, ArmedAtMinCheckAndAboveTheIntegratorRunsAsBefore) {
+  bias_ = kHoldBias;
+  arm_both();
+  for (const float throttle : {kMinCheck, 0.5F}) {
+    const Sticks at{0.0F, 0.0F, 0.0F, throttle};
+    for (std::size_t k = 0; k < kHoldTicks; ++k) {
+      const Both b = hold_both(at, kSwitchOn);
+      ASSERT_EQ(b.r.out.motor, b.r.mixed) << "throttle " << throttle << " tick " << k;
+      ASSERT_EQ(b.r.out.motor, b.integrating) << "throttle " << throttle << " tick " << k;
+    }
+  }
+}
+
+// The transition. The integrator wound at throttle 0.5 is in the first low tick's output (Betaflight zeroes it after the output)
+// and not in the next; back above min_check it integrates from zero, so the output differs from the group that kept it.
+TEST_F(ArmedGateTest, TheTransitionToLowThrottleAndBackZeroesAfterTheFirstLowTickOutput) {
+  bias_ = kHoldBias;
+  arm_both();
+  const Sticks high{0.0F, 0.0F, 0.0F, 0.5F};
+  const Sticks low{0.0F, 0.0F, 0.0F, kJustBelowMinCheck};
+  for (std::size_t k = 0; k < kHoldTicks; ++k) {
+    const Both b = hold_both(high, kSwitchOn);
+    ASSERT_EQ(b.r.out.motor, b.integrating) << k;
+  }
+  const Both first = hold_both(low, kSwitchOn);
+  EXPECT_EQ(first.r.out.motor, first.r.mixed);
+  EXPECT_EQ(first.r.out.motor, first.integrating) << "the wound integrator is in the first low tick's output";
+  const Both second = hold_both(low, kSwitchOn);
+  EXPECT_EQ(second.r.out.motor, second.r.mixed);
+  EXPECT_NE(second.r.out.motor, second.integrating) << "the integrator was not wound, or the test is insensitive to it";
+  for (std::size_t k = 0; k < 20; ++k) {
+    const Both b = hold_both(low, kSwitchOn);
+    ASSERT_EQ(b.r.out.motor, b.r.mixed) << k;
+  }
+  for (std::size_t k = 0; k < 20; ++k) {
+    const Both b = hold_both(high, kSwitchOn);
+    ASSERT_EQ(b.r.out.motor, b.r.mixed) << "back above " << k;
+    if (k == 19) {
+      EXPECT_NE(b.r.out.motor, b.integrating);
+    }
+  }
+}
 
 // ---- Angle mode (M4 A2, decision 0043 item 3) ----
 
@@ -1299,6 +1407,22 @@ TEST_F(AngleGateTest, TheRateIntegratorIsNotResetByAModeSwitch) {
     const RateOut r = hold(centred, kSwitchOn, centred);
     EXPECT_EQ(r.out.motor, r.mixed) << "back in acro " << k;
   }
+}
+
+// (h) The low-throttle hold applies in angle mode as in acro: the same two outputs, the beside group's bypassed execution.
+TEST_F(AngleGateTest, ArmedJustBelowMinCheckInAngleModeTheIntegratorStaysZero) {
+  bias_ = kHoldBias;
+  arm_both();
+  enter_angle();
+  const Sticks low{0.0F, 0.0F, 0.0F, kJustBelowMinCheck};
+  std::size_t apart = 0;
+  for (std::size_t k = 0; k < kHoldTicks; ++k) {
+    const Both b = hold_both(low, kSwitchOn);
+    ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+    ASSERT_EQ(b.r.out.motor, b.r.mixed) << k;
+    apart += b.r.out.motor != b.integrating ? 1U : 0U;
+  }
+  EXPECT_GT(apart, kHoldTicks / 2);
 }
 
 // (g) With angle selected and armed, one rate-tick sample off its stamp (as OffPeriodStampsNeverHaltAndAreCountedTimingFaults)

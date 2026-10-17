@@ -210,6 +210,12 @@ class RateLoop {
     return step<false>(imu, reference);
   }
 
+  // Zeroes the integrator I and nothing else: the prefilter, D, feed-forward and freeze state, the seed, the fault latch
+  // and the counters are kept. Called after an execution it leaves that execution's output as computed and makes the
+  // next increment start from zero, the placement of Betaflight's pidResetIterm (the end of pidController) while
+  // throttle is low without airmode.
+  void zero_integrator() noexcept { integral_ = prim::Vec3<T>(); }
+
   // Records the freeze that gates the next execution's integrator increment. `requested` is the torque passed to
   // the mixer, `al` the mixer's allocation of it. For each axis
   //   freeze = flag  and  |req - ach| > b  and  e_n (req - ach) > 0,

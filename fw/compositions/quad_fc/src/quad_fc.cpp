@@ -43,6 +43,11 @@
 // the rate loop's controller state restarts (RateGroupStep::reset_controller; the gyro chain keeps running), so the
 // integrator wound up on a gyro bias while disarmed is not applied.
 //
+// Low throttle (M4 C1, decision 0045). While armed and the throttle is below arm_throttle_min (Betaflight min_check), the rate
+// loop's integrator is zeroed after each rate execution (RateGroupStep::zero_integrator), in acro and in angle mode: the output
+// of that execution holds at most one increment over a zero integrator, and P, D and the filters run as above. This is
+// Betaflight 4.5.1 with airmode off (pidResetIterm at the end of pidController while the throttle is low); there is no latch.
+//
 // The motor-test request comes from the HAL (hal_motor_test), is read only on a rate tick and is validated here, never
 // by the console: motor 1..4, value in [kDshotThrottleMin, motor_test_dshot_max], duration in [1 ms,
 // motor_test_duration_max_ms]; otherwise it is refused (the gate stays as it was, a refusal is counted and reported). A
@@ -120,6 +125,7 @@ std::size_t g_arm_channel = 0;  // index into ManualControl::channels (rc_channe
 bool g_angle_switch = false;    // rc_channel_angle is not 0
 std::size_t g_angle_channel = 0;  // index into ManualControl::channels (rc_channel_angle - 1), when g_angle_switch
 float g_angle_threshold = 0.0F;   // angle_switch_threshold
+float g_throttle_min = 0.0F;      // arm_throttle_min, Betaflight min_check: below it the rate integrator is held at zero
 bool g_angle_running = false;     // the latest rate tick was armed and angle
 attitude::AngleMode<float> g_angle;
 attitude::AttitudeLaw<float> g_attitude;
@@ -318,6 +324,7 @@ void init() noexcept {
   g_angle_switch = angle_channel != 0;
   g_angle_channel = g_angle_switch ? static_cast<std::size_t>(angle_channel) - 1 : 0;
   g_angle_threshold = param_value<ParamId::angle_switch_threshold>();
+  g_throttle_min = param_value<ParamId::arm_throttle_min>();
   if (param_value<ParamId::att_loop_ratio>() != 1) {
     hal_panic("quad_fc composition: att_loop_ratio is not 1 (the attitude law runs once per rate tick)");
   }
@@ -425,9 +432,12 @@ void tick(const ImuSample& raw) noexcept {
   prim::Vec3<float> setpoint;
   float thrust = 0.0F;
   bool angle_run = false;
+  bool throttle_low = false;
   if (g_gate == MotorGate::Armed) {
     const prim::Vec3<float> sticks(limited(out.roll, -1.0F), limited(out.pitch, -1.0F), limited(out.yaw, -1.0F));
-    thrust = g_thrust_min + limited(out.throttle, 0.0F) * (g_thrust_max - g_thrust_min);
+    const float throttle = limited(out.throttle, 0.0F);
+    throttle_low = throttle < g_throttle_min;
+    thrust = g_thrust_min + throttle * (g_thrust_max - g_thrust_min);
     angle_run = g_angle_switch && mc.channels[g_angle_channel] >= g_angle_threshold;
     if (angle_run) {
       if (!g_angle_running) {
@@ -448,6 +458,9 @@ void tick(const ImuSample& raw) noexcept {
   g_angle_running = angle_run;
   const rate_group::Execution e = angle_run ? g_step.execute_bypass(setpoint, prim::Vec3<float>(), thrust)
                                             : g_step.execute(setpoint, prim::Vec3<float>(), thrust);
+  if (throttle_low) {
+    g_step.zero_integrator();  // armed below min_check: zeroed after the output, as Betaflight's pidResetIterm (decision 0045)
+  }
   hal_tick_stage(TickStage::Gate);
   update_motor_test(s.t_us);
   hal_actuators_write(gate_output(g_gate, g_run, e.dshot));
