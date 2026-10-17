@@ -25,7 +25,9 @@ the report as without the argument.
 Stale steps (0003 item 11). Step i is stale when its raw gz read (position, attitude, linear and angular velocity: 13
 doubles) is bitwise equal to step i-1's while the wrench applied between the two reads (APPLIED record i-1) was nonzero.
 A step is fresh when its read differs from the previous step's (step 0 is fresh). The report gives the count of stale
-steps and the last fresh step's index and time.
+steps and the last fresh step's index and time. With a launch pad (decision 0047) the steps that follow a step held for all
+its ticks are excluded from the check and counted apart ("held"): the pad holds the body, so an unchanged read is the hold,
+not a stale one.
 
 SIM-3 (0003 item 2). measure_rtf runs the test world for the full duration and a 10-iteration run of the same world in
 separate processes. Per-core RTF assumes one process = one core (checked, not assumed: the CPU time of the child,
@@ -276,14 +278,23 @@ def fresh_steps(log):
 
 
 def stale_report(log):
-    """{"stale": count, "steps": n, "unchanged_zero_wrench": count, "last_fresh_index", "last_fresh_time_ns"}."""
+    """{"stale": count, "steps": n, "unchanged_zero_wrench": count, "held": count, "last_fresh_index",
+    "last_fresh_time_ns"}. "held" counts the unchanged steps that follow a step the launch pad held for all its ticks; they
+    are in neither of the other two counts."""
     steps, applied = log["steps"], log["applied"]
     fresh = set(fresh_steps(log))
-    stale = sum(1 for i in range(1, len(steps)) if i not in fresh and _wrench_nonzero(applied[i - 1]))
-    zero = sum(1 for i in range(1, len(steps)) if i not in fresh and not _wrench_nonzero(applied[i - 1]))
+    pad, m = log.get("pad"), log["header"]["m"]
+
+    def held(i):  # step i is held for all its m ticks
+        return pad is not None and (pad["release_tick"] is None or (i + 1) * m <= pad["release_tick"])
+
+    unchanged = [i for i in range(1, len(steps)) if i not in fresh]
+    pad_held = [i for i in unchanged if held(i - 1)]
+    stale = sum(1 for i in unchanged if i not in pad_held and _wrench_nonzero(applied[i - 1]))
+    zero = sum(1 for i in unchanged if i not in pad_held and not _wrench_nonzero(applied[i - 1]))
     last = max(fresh) if fresh else None
-    return {"stale": stale, "steps": len(steps), "unchanged_zero_wrench": zero, "last_fresh_index": last,
-            "last_fresh_time_ns": steps[last]["sim_time_ns"] if last is not None else None}
+    return {"stale": stale, "steps": len(steps), "unchanged_zero_wrench": zero, "held": len(pad_held),
+            "last_fresh_index": last, "last_fresh_time_ns": steps[last]["sim_time_ns"] if last is not None else None}
 
 
 def locate_offset(data, offset):
@@ -561,6 +572,11 @@ def _run_block(r, ver):
         f"  log sha256: {r.log_sha256}",
         f"  log records: steps {len(r.log['steps'])}, ticks {len(r.log['ticks'])}, applied {len(r.log['applied'])}; "
         f"trailer {_fmt_value(trailer)}",
+        *([f"  launch pad (decision 0047): launch pad hold until tick "
+           f"{r.log['pad']['release_tick'] if r.log['pad']['release_tick'] is not None else 'none (not released within the run)'}"
+           "; not ground contact; no landing; the pad resists torques and lateral forces (the body is held and no wrench "
+           f"is applied while it holds); steps excluded from the stale check as held: {st['held']}"]
+          if r.log.get("pad") else []),
         *(["  vertical source: truth (<vertical_source>, decision 0020)"] if any(isinstance(t, dict) and "vertical" in t for t in r.log.get("ticks", ())) else []),
         f"  stale steps: {st['stale']} of {st['steps']} (raw gz read bitwise equal to the previous step's while the "
         f"applied wrench was nonzero; 0003 item 11); unchanged with a zero wrench: {st['unchanged_zero_wrench']}",

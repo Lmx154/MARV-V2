@@ -165,6 +165,7 @@ struct Parsed {
   std::optional<double> odr_error;
   std::optional<std::uint32_t> command_delay_ticks;
   std::optional<ManualScript> manual_script;
+  bool launch_pad = false;
 };
 
 std::string text_of(const sdf::ElementPtr& e) { return e->Get<std::string>(); }
@@ -570,6 +571,12 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
     } else if (name == "manual_control_script") {
       once(name);
       p.manual_script = manual_script_of(e);
+    } else if (name == "launch_pad") {
+      once(name);
+      if (e->GetFirstElement() || !trim(text_of(e)).empty()) {
+        refuse("<launch_pad> takes no content");
+      }
+      p.launch_pad = true;
     } else if (name == "attitude_source") {
       once(name);
       if (trim(text_of(e)) != "truth") {
@@ -989,6 +996,15 @@ class Lockstep final : public gzs::System,
     if (p.truth_vertical && !p.truth_attitude) {
       refuse("<vertical_source> needs <attitude_source>truth</attitude_source>");
     }
+    if (p.launch_pad) {
+      // Decision 0047: the pad's contact force reaches the model IMU's specific force only, and a held start has no motion.
+      if (!p.model_gyro) {
+        refuse("<launch_pad> needs <gyro_source>model</gyro_source> (its contact force reaches the model IMU only)");
+      }
+      if (p.v_ned || p.w_frd) {
+        refuse("<launch_pad> is a held start and excludes <initial_velocity_ned_m_s> and <initial_body_rates_frd>");
+      }
+    }
 #ifndef MARV_GZ_TRUTH_VERTICAL
     if (p.truth_vertical) {
       refuse("<vertical_source> needs a SIL library with marv_truth_vertical_set (built with TRUTH_VERTICAL, target "
@@ -1244,6 +1260,10 @@ class Lockstep final : public gzs::System,
           b.u32(std::bit_cast<std::uint32_t>(v));
         }
       }
+      if (adapter_->release_tick() && *adapter_->release_tick() == t.tick) {
+        b.u8(static_cast<std::uint8_t>(LogRecord::kRelease));
+        b.u64(t.tick);
+      }
     }
     if (r.status == Status::kOk) {
       b.u8(static_cast<std::uint8_t>(LogRecord::kApplied));
@@ -1383,6 +1403,7 @@ class Lockstep final : public gzs::System,
     // t_true = n_true / (m * 1e9), rounded once: at c = 0, and without the element, the same rational as t_tick_s_. With a
     // rounded host step (decision 0046 item 1) it is the plant's tick time as well.
     ac.command_delay_ticks = delay_ticks_;
+    ac.launch_pad = p.launch_pad;
     ac.t_tick_true_s = (clock_ || rounded_) ? static_cast<double>(host_ns_) / (static_cast<double>(m_) * kNanosecondsPerSecond) : 0.0;
     adapter_ = std::make_unique<Adapter>(plant, source_, ac);
     if (adapter_->imu_attach_status() != MARV_PLANT_OK) {
@@ -1395,6 +1416,9 @@ class Lockstep final : public gzs::System,
       source_.use_model_gyro();
     }
     log_rotor_ = p.rotor_speed.has_value();
+    if (p.launch_pad) {
+      pad_record_.u8(static_cast<std::uint8_t>(LogRecord::kPad));
+    }
     if (rounded_) {
       rounding_record_.u8(static_cast<std::uint8_t>(LogRecord::kRounding));
       rounding_record_.f64(round_exact_ns_);
@@ -1463,6 +1487,9 @@ class Lockstep final : public gzs::System,
       refuse("cannot write the log");
     }
     if (delay_ticks_ > 0 && !log_.write(delay_record_)) {
+      refuse("cannot write the log");
+    }
+    if (!pad_record_.data().empty() && !log_.write(pad_record_)) {
       refuse("cannot write the log");
     }
   }
@@ -1550,6 +1577,7 @@ class Lockstep final : public gzs::System,
   LogBuffer sensors_record_;
   LogBuffer rounding_record_;
   LogBuffer delay_record_;
+  LogBuffer pad_record_;
   std::optional<std::string> log_path_;
   struct LogParams {
     std::uint32_t m, num_us, den;

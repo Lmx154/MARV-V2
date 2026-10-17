@@ -40,6 +40,14 @@
 //              link_t_us staged are 0 and not logged. The trailer's counts do not include it. A log of a run without the
 //              element has no type 11 record.
 //
+//   12 PAD     only with <launch_pad> (decision 0047), once, directly after the SENSORS record (or the ROUNDING and DELAY
+//              records when there are any); no payload. The body is held until the release (tick 0 on); the plant's contact
+//              force makes the IMU read R^T (0, 0, -g(h)); held ticks add nothing to the applied wrench. A log of a run
+//              without the element has no type 12 or 13 record.
+//   13 RELEASE only with <launch_pad>, once, if the pad released within the run: after the TICK record of the first free tick
+//              (and after that tick's TRUTH, VERTICAL, ROTOR and MANUAL records, if any): u64 tick. Ticks before it were
+//              held, ticks from it on were not. The trailer's counts do not include it.
+//
 //   Per host step, in this order:
 //   1 STEP     u64 iteration (gz UpdateInfo::iterations); u64 sim_time_ns; then doubles: the raw gz reads, pose position
 //              ENU [3], quaternion FLU->ENU [w x y z], world linear velocity ENU [3], world angular velocity ENU [3];
@@ -80,7 +88,7 @@
 
 namespace marv::gz {
 
-enum class LogRecord : std::uint8_t { kStep = 1, kTick, kApplied, kTrailer, kTruth, kSensors, kRotor, kVertical, kRounding, kDelay, kManual };
+enum class LogRecord : std::uint8_t { kStep = 1, kTick, kApplied, kTrailer, kTruth, kSensors, kRotor, kVertical, kRounding, kDelay, kManual, kPad, kRelease };
 // Record 6's gyro_source byte.
 enum class LogGyroSource : std::uint8_t { kNone = 0, kTruth, kModel };
 

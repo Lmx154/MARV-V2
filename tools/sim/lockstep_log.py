@@ -32,6 +32,12 @@ record, m TICK records, one APPLIED record. A TRAILER record is the last record 
             was staged before (and after its TRUTH, VERTICAL and ROTOR records, if any), at most one per tick: u64 tick; u32
             frames; u64 t_us (the frame stamp = that tick's SIL stamp); f32 roll, pitch, yaw, throttle; 16 x f32 channels
             (channel_01 first); the trailer's counts do not include it
+  PAD 12    only with <launch_pad> (decision 0047), once, before the first STEP record, directly after the SENSORS record (or the
+            ROUNDING and DELAY records; the plugin's pad needs the model gyro, so the SENSORS record is always there): no payload. The body is held at its start pose until the release, the plant's contact force makes the IMU read
+            R^T (0, 0, -g(h)), and held ticks add nothing to the applied wrench (the pad resists torques and lateral forces
+            too); not ground contact
+  RELEASE 13 only with <launch_pad>, once, if the pad released within the run, after the TICK record of the first free tick
+            (and its TRUTH, VERTICAL, ROTOR and MANUAL records, if any): u64 tick; the trailer's counts do not include it
   ROTOR 7   only with <rotor_speed_model>, after that tick's TICK record (and its TRUTH and VERTICAL records, if any): u64
             tick; the 20 bytes of marv_rotor_speed_meas (4 x f32 omega, u32 flags); the trailer's counts do not include it
   VERTICAL 8 only when the plugin has <vertical_source>truth</vertical_source> (decision 0020), directly after that tick's
@@ -40,7 +46,9 @@ record, m TICK records, one APPLIED record. A TRAILER record is the last record 
 
 read() returns {"header": dict, "steps": [dict], "ticks": [dict], "applied": [dict], "truths": [dict],
 "trailer": dict or None, "raw_records": bytes (everything after the header, for byte comparison), "sensors": dict or None,
-"rotors": [dict], "rounding": dict or None, "delay": dict or None, "manuals": [dict]}; with a DELAY record every dict in "ticks" also has
+"rotors": [dict], "rounding": dict or None, "delay": dict or None, "manuals": [dict], "pad": dict or None}; with a PAD record "pad" is
+{"release_tick": the RELEASE record's tick or None} and every dict in "ticks" also has "pad_held" (the tick is before the release
+tick, or there is none); without one "pad" is None and the tick dicts have no "pad_held" key; with a DELAY record every dict in "ticks" also has
 "dshot_applied" (the dshot of the tick N before, else initial_dshot), a VERTICAL record is the "vertical" dict of its tick's dict in "ticks" (a tick without one has no
 "vertical" key). A file that is cut inside a record, has an
 unknown record type, a record after the trailer or a TRUTH record that does not directly follow the TICK record of
@@ -56,7 +64,8 @@ import sys
 
 MAGIC = b"MARVLOCK"
 VERSION = 1
-STEP, TICK, APPLIED, TRAILER, TRUTH, SENSORS, ROTOR, VERTICAL, ROUNDING, DELAY, MANUAL = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
+STEP, TICK, APPLIED, TRAILER, TRUTH, SENSORS, ROTOR, VERTICAL, ROUNDING, DELAY, MANUAL, PAD, RELEASE = (
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)
 _STEP = struct.Struct("<QQ26d")
 _TICK = struct.Struct("<QQ32s4HII20d")
 _APPLIED = struct.Struct("<6d")
@@ -68,9 +77,11 @@ _VERTICAL = struct.Struct("<QffI")
 _ROUNDING = struct.Struct("<2d")
 _DELAY = struct.Struct("<I4H")
 _MANUAL = struct.Struct("<QIQ4f16f")
+_PAD = struct.Struct("<")
+_RELEASE = struct.Struct("<Q")
 _SIZES = {STEP: _STEP.size, TICK: _TICK.size, APPLIED: _APPLIED.size, TRAILER: _TRAILER.size, TRUTH: _TRUTH.size,
           SENSORS: _SENSORS.size, ROTOR: _ROTOR.size, VERTICAL: _VERTICAL.size, ROUNDING: _ROUNDING.size, DELAY: _DELAY.size,
-          MANUAL: _MANUAL.size}
+          MANUAL: _MANUAL.size, PAD: _PAD.size, RELEASE: _RELEASE.size}
 GYRO_SOURCES = ("none", "truth", "model")
 
 
@@ -119,7 +130,7 @@ def read(path):
     header = _header(data)
     pos = header["header_size"]
     steps, ticks, applied, truths, trailer = [], [], [], [], None
-    sensors, rotors, rounding, delay, manuals = None, [], None, None, []
+    sensors, rotors, rounding, delay, manuals, pad = None, [], None, None, [], None
     last_kind = None
     while pos < len(data):
         if trailer is not None:
@@ -160,6 +171,18 @@ def read(path):
                 raise LogError(f"DELAY record at byte {pos} does not directly follow the SENSORS or ROUNDING record")
             v = _DELAY.unpack_from(data, pos + 1)
             delay = {"ticks": v[0], "initial_dshot": v[1:5]}
+        elif kind == PAD:
+            if pad is not None or last_kind not in (None, SENSORS, ROUNDING, DELAY):
+                raise LogError(f"PAD record at byte {pos} is a second one or does not come before the first STEP record, "
+                               "directly after the header or the SENSORS, ROUNDING or DELAY record")
+            pad = {"release_tick": None}
+        elif kind == RELEASE:
+            v = _RELEASE.unpack_from(data, pos + 1)
+            if (pad is None or pad["release_tick"] is not None or not ticks or v[0] != ticks[-1]["tick"]
+                    or last_kind not in (TICK, TRUTH, VERTICAL, ROTOR, MANUAL)):
+                raise LogError(f"RELEASE record of tick {v[0]} at byte {pos} is not the pad's first release after that tick's "
+                               "TICK record")
+            pad["release_tick"] = v[0]
         elif kind == ROTOR:
             v = _ROTOR.unpack_from(data, pos + 1)
             if last_kind not in (TICK, TRUTH, VERTICAL) or v[0] != ticks[-1]["tick"]:
@@ -188,9 +211,12 @@ def read(path):
     if delay is not None:
         for i, t in enumerate(ticks):
             t["dshot_applied"] = ticks[i - delay["ticks"]]["dshot"] if i >= delay["ticks"] else delay["initial_dshot"]
+    if pad is not None:
+        for t in ticks:
+            t["pad_held"] = pad["release_tick"] is None or t["tick"] < pad["release_tick"]
     return {"header": header, "steps": steps, "ticks": ticks, "applied": applied, "truths": truths, "trailer": trailer,
             "raw_records": data[header["header_size"]:], "sensors": sensors, "rotors": rotors, "rounding": rounding,
-            "delay": delay, "manuals": manuals}
+            "delay": delay, "manuals": manuals, "pad": pad}
 
 
 def main(argv=None):
