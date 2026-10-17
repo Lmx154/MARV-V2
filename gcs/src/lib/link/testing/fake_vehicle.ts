@@ -7,7 +7,7 @@ import type { Envelope } from '../codec';
 import { MarvParamSourceOp, type MarvParamMethod, type MarvParamOrigin, type MarvParamSigmaKind, type Message } from '../generated/messages';
 import { MavlinkParser, encodeMavlink } from '../mavlink';
 import type { ByteLink } from '../transport';
-import { bitsToF32, wireNumberToBits, bitsToWireNumber } from '../bits';
+import { bitsToF32, paramValueBits, paramValueFields } from '../bits';
 
 export interface FakeParam {
 	id: number;
@@ -132,7 +132,7 @@ export class FakeVehicle {
 
 	private paramValue(s: Slot): Message {
 		return {
-			kind: 'ParamValue', param_id: pad(s.linkId, 16), param_value: bitsToWireNumber(s.staged),
+			kind: 'ParamValue', param_id: pad(s.linkId, 16), ...paramValueFields(s.staged),
 			param_type: s.type === 'f32' ? PARAM_TYPE_REAL32 : PARAM_TYPE_INT32, param_count: this.slots.length, param_index: s.id
 		};
 	}
@@ -202,7 +202,7 @@ export class FakeVehicle {
 		const s = this.slots.find((x) => x.linkId === id);
 		if (!s) return this.status(`refused: no parameter ${id}`);
 		const type = m.param_type === PARAM_TYPE_REAL32 ? 'f32' : m.param_type === PARAM_TYPE_INT32 ? 'i32' : null;
-		const bits = wireNumberToBits(m.param_value);
+		const bits = paramValueBits(m);
 		let why: string | null = null;
 		if (type !== s.type) why = `${id}: type differs from the record`;
 		else if (s.locked) why = `${id}: locked, keeps its compiled value`;

@@ -70,7 +70,7 @@ export function parseValueText(text: string, type: ParamType): ParsedValue {
 	return { ok: true, bits };
 }
 
-/** The PARAM_SET / PARAM_VALUE value field is a JavaScript number holding the 4 bytes as a float. */
+/** The numeric view of the PARAM_SET / PARAM_VALUE value field: the 4 bytes read as a float (a signalling NaN may be quietened). */
 export function bitsToWireNumber(bits: number): number {
 	return bitsToF32(bits);
 }
@@ -79,7 +79,12 @@ export function wireNumberToBits(value: number): number {
 	return f32ToBits(value);
 }
 
-/** True when the 32 bits survive the trip through that float field (a signalling-NaN pattern does not: it is quietened). */
-export function carriedExactly(bits: number): boolean {
-	return wireNumberToBits(bitsToWireNumber(bits)) === bits >>> 0;
+/** The value field of a parameter message as the raw 32 bits the vehicle sent: every pattern, signalling NaNs included. */
+export function paramValueBits(message: { param_value: number; param_value_bits?: number }): number {
+	return message.param_value_bits ?? wireNumberToBits(message.param_value);
+}
+
+/** The value fields that carry `bits` in a PARAM_SET / PARAM_VALUE exactly. */
+export function paramValueFields(bits: number): { param_value: number; param_value_bits: number } {
+	return { param_value: bitsToWireNumber(bits), param_value_bits: bits >>> 0 };
 }

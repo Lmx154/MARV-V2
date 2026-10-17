@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-	bitsHex, bitsToF32, bitsToI32, bitsToWireNumber, carriedExactly, f32ToBits, formatF32, formatValue, i32ToBits, parseValueText,
+	bitsHex, bitsToF32, bitsToI32, bitsToWireNumber, f32ToBits, formatF32, formatValue, i32ToBits, paramValueBits, paramValueFields, parseValueText,
 	wireNumberToBits
 } from './bits';
 
@@ -28,7 +28,7 @@ describe('byte-wise value encoding', () => {
 		for (const v of values) {
 			const bits = i32ToBits(v);
 			expect(bitsToI32(bits)).toBe(v);
-			if (carriedExactly(bits)) expect(wireNumberToBits(bitsToWireNumber(bits))).toBe(bits);
+			expect(paramValueBits(paramValueFields(bits))).toBe(bits);
 		}
 	});
 
@@ -38,11 +38,11 @@ describe('byte-wise value encoding', () => {
 		}
 	});
 
-	it('says which bit patterns the float field cannot carry (a signalling NaN is quietened on the way)', () => {
-		expect(carriedExactly(0x7f800001)).toBe(false);
-		expect(carriedExactly(0xff800001)).toBe(false);
-		expect(carriedExactly(0xffffffff)).toBe(true); // int -1
-		expect(carriedExactly(0x7fc00001)).toBe(true);
+	it('reads the raw bits of a value field and falls back to the numeric view without them', () => {
+		for (const bits of [0x7f800001, 0xff800001, 0x7fbfffff, 0xffbfffff, 0xffffffff, 0x7fc00001]) {
+			expect(paramValueBits(paramValueFields(bits))).toBe(bits);
+		}
+		expect(paramValueBits({ param_value: 0.25 })).toBe(f32ToBits(0.25));
 	});
 
 	it('rejects an int outside the int32 range and a non-integer', () => {

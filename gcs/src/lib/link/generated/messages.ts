@@ -146,12 +146,16 @@ export interface ParamSet {
 	target_component: number;
 	param_id: Uint8Array;
 	param_value: number;
+	/** The raw 32 bits of param_value: used instead of it when set (encode), always present on a decoded message. */
+	param_value_bits?: number;
 	param_type: number;
 }
 
 export interface ParamValue {
 	param_id: Uint8Array;
 	param_value: number;
+	/** The raw 32 bits of param_value: used instead of it when set (encode), always present on a decoded message. */
+	param_value_bits?: number;
 	param_type: number;
 	param_count: number;
 	param_index: number;
@@ -170,12 +174,26 @@ export interface CommandLong {
 	command: number;
 	confirmation: number;
 	param1: number;
+	/** The raw 32 bits of param1: used instead of it when set (encode), always present on a decoded message. */
+	param1_bits?: number;
 	param2: number;
+	/** The raw 32 bits of param2: used instead of it when set (encode), always present on a decoded message. */
+	param2_bits?: number;
 	param3: number;
+	/** The raw 32 bits of param3: used instead of it when set (encode), always present on a decoded message. */
+	param3_bits?: number;
 	param4: number;
+	/** The raw 32 bits of param4: used instead of it when set (encode), always present on a decoded message. */
+	param4_bits?: number;
 	param5: number;
+	/** The raw 32 bits of param5: used instead of it when set (encode), always present on a decoded message. */
+	param5_bits?: number;
 	param6: number;
+	/** The raw 32 bits of param6: used instead of it when set (encode), always present on a decoded message. */
+	param6_bits?: number;
 	param7: number;
+	/** The raw 32 bits of param7: used instead of it when set (encode), always present on a decoded message. */
+	param7_bits?: number;
 }
 
 export interface CommandAck {
@@ -203,6 +221,8 @@ export interface MarvParamRecord {
 	active_bits: number;
 	staged_bits: number;
 	sigma: number;
+	/** The raw 32 bits of sigma: used instead of it when set (encode), always present on a decoded message. */
+	sigma_bits?: number;
 	param_index: number;
 	param_count: number;
 	source_length: number;

@@ -11,7 +11,7 @@
 //   - answer MARV_PARAM_SOURCE READ with MARV_PARAM_SOURCE DATA chunks;
 //   - answer a REQUEST_MESSAGE command for MARV_IDENTITY and AUTOPILOT_VERSION with that message.
 import { get, writable, type Readable } from 'svelte/store';
-import { bitsToWireNumber, carriedExactly, wireNumberToBits, type ParamType } from './bits';
+import { paramValueBits, paramValueFields, type ParamType } from './bits';
 import { MarvConfigAction, MarvParamSourceOp, MESSAGES, type Message } from './generated/messages';
 import { type LinkSession } from './session';
 
@@ -365,7 +365,6 @@ export class VehicleClient {
 		if (row.type !== type) throw new Error(`${linkId} is ${row.type}, not ${type}`);
 		if (row.locked) throw new Error(`${linkId} is locked`);
 		if (this.identityRaw === null) throw new Error('the vehicle identity is not known yet');
-		if (!carriedExactly(bits)) throw new Error('this bit pattern cannot be carried exactly in the float field of the write');
 		const sourceBytes = encoder.encode(source);
 		const armed = get(this.session.state).armed;
 		if (armed) throw new Error('the vehicle is armed: parameters are written only while disarmed');
@@ -376,7 +375,7 @@ export class VehicleClient {
 		const echo = this.waitFor('ParamValue', (m) => textOf(m.param_id) === linkId, this.timing.replyMs);
 		this.session.send({
 			kind: 'ParamSet', target_system: target.systemId, target_component: target.componentId,
-			param_id: encodeLinkId(linkId), param_value: bitsToWireNumber(bits), param_type: type === 'f32' ? PARAM_TYPE_REAL32 : PARAM_TYPE_INT32
+			param_id: encodeLinkId(linkId), ...paramValueFields(bits), param_type: type === 'f32' ? PARAM_TYPE_REAL32 : PARAM_TYPE_INT32
 		});
 		const answer = await echo.promise;
 		let result: StageResult;
@@ -384,7 +383,7 @@ export class VehicleClient {
 			if (!answer) {
 				result = { accepted: false, sentBits: bits, echoBits: null, reasons: [], sourceStored: null, note: 'the vehicle did not answer the write', at: startedAt };
 			} else {
-				const echoBits = wireNumberToBits(answer.param_value);
+				const echoBits = paramValueBits(answer);
 				const echoType = answer.param_type === PARAM_TYPE_REAL32 ? 'f32' : answer.param_type === PARAM_TYPE_INT32 ? 'i32' : null;
 				const accepted = echoBits === bits && echoType === type;
 				if (!accepted) await this.sleep(this.timing.refusalGraceMs);
@@ -490,7 +489,7 @@ export class VehicleClient {
 		if (type === null) return;
 		this.count = m.param_count;
 		const row = this.rows.get(index) ?? emptyParam(index);
-		this.rows.set(index, { ...row, linkId, type, stagedBits: wireNumberToBits(m.param_value) });
+		this.rows.set(index, { ...row, linkId, type, stagedBits: paramValueBits(m) });
 		this.touch();
 		this.publish();
 	}

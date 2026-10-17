@@ -5,6 +5,9 @@ import { MAVLINK_VERSION, type FieldInfo, type Message, type MessageInfo } from 
 type FieldValue = number | bigint | Uint8Array;
 type Fields = Record<string, FieldValue>;
 
+/** Suffix of the raw-bits companion of a float field: a float as a JavaScript number cannot hold every 32-bit pattern. */
+const RAW_BITS = '_bits';
+
 export function encodePayload(info: MessageInfo, message: Message): Uint8Array {
 	const bytes = new Uint8Array(info.maxLength);
 	const view = new DataView(bytes.buffer);
@@ -15,7 +18,10 @@ export function encodePayload(info: MessageInfo, message: Message): Uint8Array {
 			continue;
 		}
 		const value = fields[f.name];
-		if (f.length > 0) {
+		const rawBits = f.type === 'f32' ? fields[f.name + RAW_BITS] : undefined;
+		if (typeof rawBits === 'number') {
+			view.setUint32(f.offset, rawBits >>> 0, true);
+		} else if (f.length > 0) {
 			const array = value as Uint8Array;
 			if (array.length !== f.length) throw new RangeError(`${info.name}.${f.name} needs ${f.length} bytes`);
 			bytes.set(array, f.offset);
@@ -37,7 +43,12 @@ export function decodePayload(info: MessageInfo, payload: Uint8Array): Message {
 		if (f.type === 'version') continue;
 		fields[f.name] = f.length > 0 ? padded.slice(f.offset, f.offset + f.length) : readScalar(view, f);
 	}
-	return { kind: info.kind, ...fields } as unknown as Message;
+	const message = { kind: info.kind, ...fields };
+	for (const f of info.fields) {
+		// non-enumerable: the decoded message compares equal to one built from the numeric view alone
+		if (f.type === 'f32') Object.defineProperty(message, f.name + RAW_BITS, { value: view.getUint32(f.offset, true), enumerable: false });
+	}
+	return message as unknown as Message;
 }
 
 function writeScalar(view: DataView, f: FieldInfo, value: number | bigint): void {

@@ -8,7 +8,10 @@ CRC_EXTRA/length table of every message of the dialect, so that the parser verif
 carry exactly as the C++ codec does. The MAVLink v2 framing, the CRC and the table-driven encode and decode are in
 gcs/src/lib/link/ (hand written, no runtime dependency); this generator has none either.
 
-Arrays are Uint8Array (char arrays too: the bytes on the wire, no text decoding); 64-bit integers are bigint.
+Arrays are Uint8Array (char arrays too: the bytes on the wire, no text decoding); 64-bit integers are bigint. A float field
+also has an optional `<name>_bits` (the raw uint32): a JavaScript number view of a float cannot hold a signalling-NaN pattern, and
+the byte-wise parameter encoding carries INT32 values in a float field, so the codec writes `<name>_bits` when it is set and
+sets it on every decoded message.
 """
 
 import argparse
@@ -97,6 +100,9 @@ def emit(dialect: mavxml.Dialect, scope: list[str]) -> str:
             if f.ctype == "uint8_t_mavlink_version":
                 continue
             out.append(f"\t{f.name}: {field_ts_type(f, own)};")
+            if not f.is_array and f.ctype == "float":
+                out.append(f"\t/** The raw 32 bits of {f.name}: used instead of it when set (encode), always present on a decoded message. */")
+                out.append(f"\t{f.name}_bits?: number;")
         out.append("}")
         out.append("")
     out.append("export type Message =")

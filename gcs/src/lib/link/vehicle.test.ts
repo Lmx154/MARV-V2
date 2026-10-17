@@ -162,11 +162,15 @@ describe('staging', () => {
 		expect(setsSent(vehicle)).toHaveLength(0);
 	});
 
-	it('does not send a bit pattern the float field would change', async () => {
+	it('stages an INT32 whose bits are a signalling-NaN pattern and reads the same bits back', async () => {
 		const { vehicle, client } = await setup();
 		await client.requestAll();
-		await expect(client.stage('rotor_yaw_s_2713', 'i32', 0x7f800001, 'x')).rejects.toThrow('cannot be carried exactly');
-		expect(setsSent(vehicle)).toHaveLength(0);
+		const slot = vehicle.slots[index('rotor_yaw_s_2713')]!;
+		for (const bits of [0x7f800001, 0x7fbfffff, 0xff800001, 0xffbfffff]) {
+			expect(await client.stage('rotor_yaw_s_2713', 'i32', bits, 'a pattern in the signalling-NaN range')).toMatchObject({ accepted: true, echoBits: bits });
+			expect(slot.staged).toBe(bits);
+			expect(row(client, 'rotor_yaw_s_2713').stagedBits).toBe(bits);
+		}
 	});
 
 	it('does not send while the heartbeat says armed', async () => {
