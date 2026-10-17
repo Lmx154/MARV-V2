@@ -23,6 +23,15 @@
    `angle_switch_threshold`; angle iff value ≥ threshold, NaN is acro; init refuses the arm or a stick channel. On entering
    armed-and-angle: `AngleMode::reset()` and `AttitudeLaw::reset()`; the law runs only there; the rate integrator is not
    reset on a mode change.
+   Cases added to the frozen `tests/regression/quad/L09/unit/quad_fc_gate_test.cpp` (no existing case or threshold changed): in `AngleGateTest`
+   (over `ArmedGateTest`, whose beside `reference_angle` is an estimator, `AngleMode`, `AttitudeLaw` and `execute_bypass`):
+   `TheAngleSwitchDefaultsToNoSwitchAndTheThresholdIsTheArmSwitchsRule`, `TheSwitchBelowTheThresholdFliesAcro` (control),
+   `TheSwitchAtOrAboveTheThresholdWithCentredSticksFliesTheAttitudeLaw`, `ARollStickInAngleModeGivesTheAttitudeLawsOutputAndNotAcros`,
+   `ANotANumberSwitchFliesAcro`, `TheResetsHappenOnTheEntryTickOnly`, `TheRateIntegratorIsNotResetByAModeSwitch`; in
+   `AngleTimingTest` four cases (late, early, repeated, backwards stamp) with angle armed: nothing halts, the attitude timing count
+   equals the rate loop's (a missing sample is not covered); `QuadFcAngleInitDeathTest.InitRefusesABadAngleChannelAndAcceptsTheOthers`.
+   `tests/regression/quad/L09/unit/CMakeLists.txt` links `marv_attitude` and `marv_estimator` into the test for the reference.
+   The test process loads the default table with `rc_channel_angle` = 6 (the register's default stays 0).
 
 ## Why
 

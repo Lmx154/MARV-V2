@@ -4,7 +4,7 @@
 add_executable(unit_quad_fc_gate quad_fc_gate_test.cpp)
 target_link_libraries(unit_quad_fc_gate PRIVATE
   marv_composition_quad_fc marv_params_fc3v2_runtime marv_params_fc3v2_generated
-  marv_rate_group marv_mixer marv_stick_rates marv_types marv_hal_sim GTest::gtest_main)
+  marv_attitude marv_estimator marv_rate_group marv_mixer marv_stick_rates marv_types marv_hal_sim GTest::gtest_main)
 marv_apply_flags(unit_quad_fc_gate)
 marv_frozen_suite(unit_quad_fc_gate)
 

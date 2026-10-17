@@ -33,7 +33,7 @@
 #
 # Dependency facts behind the rules (target_link_libraries and the readers of each file):
 #   libraries      sched -> compositions l0, l4, l5, l11, quad_fc (tested by L09). gyro_chain, rate, rate_group -> l4, l5, l11 and L06 (the rate_group
-#                  tests link sil_l4). mixer -> L03, L04, L05, L06, L11. attitude -> L05, L11. vertical -> L11.
+#                  tests link sil_l4). mixer -> L03, L04, L05, L06, L11. attitude -> L05, L09 (quad_fc), L11. vertical -> L11.
 #   compositions   l0 -> L00 (and gz l4, l5: the L06 gz_compositions tests build marv_sil_l0 as a control). l2_open_loop -> L02,
 #                  L04 (truth_gyro), L06 (adapter); gz l2 and l4 (both build host-gz). l4_rate_scripted -> L04, L06.
 #                  l5_attitude_scripted -> L05; gz l5, l11 (the L11 group builds host-gz-l5). l11_vertical_scripted -> L11.
@@ -317,11 +317,11 @@ rules:
     why: "estimator is the pure Mahony attitude filter and the boot gyro calibration, tested by the L07 unit_mahony and unit_gyro_cal host tests and linked by the quad_fc composition (the L09 gate test)"
 
   - paths: [fw/attitude/**]
-    ctest_labels: [L05, L11]
+    ctest_labels: [L05, L09, L11]
     run_ci_steps: ["@flight_gates"]
     pytest_paths: []
     gz_groups: [l5, l7, l11]
-    why: "attitude is linked by the compositions l5 and l11"
+    why: "attitude is linked by the compositions l5, l11 and quad_fc (angle mode, the L09 gate test)"
 
   - paths: [fw/stick_rates/**]
     ctest_labels: [L08, L09]
