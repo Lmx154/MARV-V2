@@ -6,7 +6,10 @@ Architect ruling for quad §4.0 M3 (2026-10-16); this record implements nothing.
 
 1. Register: `attitude_tilt_error_max` (rad, design-budget), the angle between the estimate's down direction in body
    axes and the reference's; heading excluded (no magnetometer). PLACEHOLDER 0.0209 rad = `t4_settle_fraction` x
-   `angle_tilt_max` until Luis rules; it blocks M4's angle-mode flight, not M3's commits. (Luis)
+   `angle_tilt_max` until Luis rules; it blocks M4's angle-mode flight, not M3's commits. (Luis) Amended (lead, M3
+   P3b): the entry is in `design/budget.yaml`, so the product id set gains it:
+   `tests/regression/quad/L06/product_params/marv_params_product_table.txt` (regenerated in the CI image, identical to
+   the host build) and the new manifest `tests/regression/quad/L07/param_ids`.
 2. T2 bench replay, new in `tests/regression/quad/L07/`. The committed log holds every ImuSample the estimator consumes on
    the target, with no deadline miss, FIFO overflow or stamp gap. Protocol: still T_s, a hand rotation >= pi/2 about a
    horizontal axis within 10 s, still T_s; T_s = ln(theta_rot / share) / Kp at the gain that flies. The firmware
