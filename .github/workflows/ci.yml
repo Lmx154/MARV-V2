@@ -239,6 +239,63 @@ jobs:
           path: ${{ runner.temp }}/marv-cache
           key: ${{ runner.os }}-marv-cache-gz-l5-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}
 
+  gz-l7:
+    runs-on: ubuntu-24.04
+    services:
+      registry:
+        image: registry:3
+        ports:
+          - 5000:5000
+    steps:
+      - uses: actions/checkout@v4
+      - name: Runner resources
+        run: |
+          nproc
+          free -b
+          head -3 /proc/meminfo
+      - name: Create the cache directory
+        run: mkdir -p "${{ runner.temp }}/marv-cache"
+      - name: Restore the cache directory
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/marv-cache
+          key: ${{ runner.os }}-marv-cache-gz-l7-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-marv-cache-gz-l7-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          # network=host: the builder reaches the registry service on localhost:5000.
+          driver-opts: network=host
+      - name: Build CI image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ci/Dockerfile
+          tags: localhost:5000/marv-ci:latest
+          push: true
+          cache-from: type=gha,scope=marv-ci
+          cache-to: type=gha,scope=marv-ci,mode=max
+      - name: Build Gazebo CI image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ci/Dockerfile.gz
+          build-contexts: |
+            marv-ci=docker-image://localhost:5000/marv-ci:latest
+          tags: marv-ci-gz
+          load: true
+          cache-from: type=gha,scope=marv-ci-gz
+          cache-to: type=gha,scope=marv-ci-gz,mode=max
+      - name: Run Gazebo CI (group l7)
+        run: docker run --rm -e MARV_CI_MODE -e MARV_CACHE_DIR=/cache -v "$PWD":/src -v "${{ runner.temp }}/marv-cache":/cache -w /src marv-ci-gz bash -c 'git config --global --add safe.directory /src; ccache -z >/dev/null 2>&1 || true; "$@"; s=$?; echo "##### ccache -s"; ccache -s || true; exit "$s"' bash ci/run_ci_gz.sh l7
+      - name: Save the cache directory
+        if: ${{ always() }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/marv-cache
+          key: ${{ runner.os }}-marv-cache-gz-l7-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}
+
   gz-l11:
     runs-on: ubuntu-24.04
     services:

@@ -1118,6 +1118,13 @@ rules:
     gz_groups: []
     why: "param_ids manifests are read by the L01 flatten/lint tests and the L04/L05 design tests"
 
+  - paths: [tests/regression/quad/L07/param_ids]
+    ctest_labels: [L07]
+    run_ci_steps: ["@host", tools_tests]
+    pytest_paths: [tests/regression/quad/L01/tools, tests/regression/quad/L04/tools, tests/regression/quad/L05/tools]
+    gz_groups: []
+    why: "param_ids manifests are read by the L01 flatten/lint tests and the L04/L05 design tests; the L07 replay test reads the attitude_tilt_error_max it lists"
+
   - paths: [tests/regression/quad/L11/param_ids]
     ctest_labels: [L11]
     run_ci_steps: ["@host", tools_tests]

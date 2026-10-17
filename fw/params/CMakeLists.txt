@@ -279,6 +279,16 @@ marv_add_card_param_set(marv_params_l5_attitude_scripted CARD "${MARV_VEHICLE_CA
   EXTRA_REGISTER "${MARV_RATE_TIMING_REGISTER}"
                  "${PROJECT_SOURCE_DIR}/fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml")
 
+# The L7 attitude-estimated composition's parameter set (M3 P4, decision 0042 item 4): the L5 composition's set (the product
+# set, then the L5 register: thrust, stick script) followed by the quad_fc register, which holds the estimator gains
+# (estimator_kp, estimator_ki, estimator_accel_healthy_min and _max) the flight composition reads, so the SIL runs the gain
+# that flies. The quad_fc register's other entries are present and unread by this composition.
+marv_add_card_param_set(marv_params_l7_attitude_estimated CARD "${MARV_VEHICLE_CARD}" BUDGET "${MARV_DESIGN_BUDGET}"
+  SCENARIO "${MARV_SCENARIO_VALUES}"
+  EXTRA_REGISTER "${MARV_RATE_TIMING_REGISTER}"
+                 "${PROJECT_SOURCE_DIR}/fw/compositions/l5_attitude_scripted/params/l5_attitude_scripted_register.yaml"
+                 "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml")
+
 # The L11 vertical-scripted composition's parameter set: the product set (card, budget, mixer, rate, attitude, vertical,
 # scenario values) followed by the composition's own register (hover thrust, stick and height script, thrust
 # disturbance, torque pulse; neutral defaults). marv_attitude, marv_rate and marv_mixer read the product ids, which this
