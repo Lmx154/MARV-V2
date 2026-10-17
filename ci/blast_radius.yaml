@@ -314,7 +314,7 @@ rules:
     run_ci_steps: ["@host"]
     pytest_paths: []
     gz_groups: [l7]
-    why: "estimator is the pure Mahony attitude filter, tested by the L07 unit_mahony host test and linked by the quad_fc composition (the L09 gate test)"
+    why: "estimator is the pure Mahony attitude filter and the boot gyro calibration, tested by the L07 unit_mahony and unit_gyro_cal host tests and linked by the quad_fc composition (the L09 gate test)"
 
   - paths: [fw/attitude/**]
     ctest_labels: [L05, L11]

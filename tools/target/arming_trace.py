@@ -29,6 +29,7 @@ from pathlib import Path
 STATES = [
     "boot", "switch_off", "switch_not_cycled", "throttle_up", "imu_stale", "imu_invalid", "saturated", "no_link",
     "failsafe", "motor_test", "armed", "armed_hold", "armed_failsafe_centred", "estimator_invalid",
+    "calibrating", "not_upright",
 ]
 TIMER0_TIMERAWL = 0x400B0028  # RP2350 datasheet: TIMER0 base 0x400b0000, TIMERAWL offset 0x28
 NVIC_ICER0 = 0xE000E180  # Armv8-M ARM: NVIC_ICER0, write 1 to clear an enable

@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -42,15 +43,29 @@ constexpr double kSynthMarginS = 1.0;
 // samples before the main rotation pass the per-sample gate, and long enough (0.3 s) to tilt the estimate by 3 degrees.
 constexpr double kSynthRampDegPerS = 10.0;
 constexpr double kSynthRampS = 0.3;
-// Test-harness scenario values for the still-segment merge and trim (the lead's decision on the M3 P3b review; rationale in
-// replay.hpp): gaps up to 50 ms inside a still segment are merged (hand tremor, single-sample spikes; 50 ms, about 375 samples
-// at the board tick, is far shorter than any deliberate hand rotation), 0.5 s is dropped from each end of each segment (the
-// slow start and the settle of the hand rotation).
-constexpr double kMergeGapS = 0.05;
+// The gentle start of the rotation, as a bench dry run showed it (gyro 5 to 28 deg/s, dipping below the still gate several times):
+// pieces that alternate 5 deg/s (inside the gate) and 25 deg/s (outside it). A piece is 49.5 ms (the lead's "50 ms pieces", a
+// little shorter so the whole gap, 373 sample spacings = 49.7 ms, stays within the replaced fixed 50 ms merge rule, which the
+// test keeps only as a control), and 30 pieces make 1.5 s, longer than twice the trim, so that the old rule's still 1 ends well
+// inside the lead-in after the trim. A fast piece turns the board by 25 deg/s x 49.7 ms = 0.0217 rad, above the share.
+constexpr double kGentleSlowDegPerS = 5.0;
+constexpr double kGentleFastDegPerS = 25.0;
+constexpr double kGentlePieceS = 0.0495;
+constexpr std::size_t kGentlePieces = 30;
+// The replaced still-segment merge rule (runs with a non-still gap of at most 50 ms were one segment), kept only as a control.
+constexpr double kReplacedMergeGapS = 0.05;
+// Test-harness scenario value for the still-segment trim (the lead's decision on the M3 P3b review; rationale in replay.hpp): 0.5 s
+// is dropped from each end of each segment (the slow start and the settle of the hand rotation).
 constexpr double kTrimS = 0.5;
 // Known-answer tolerance of the synthetic log: float32 rounding accumulated over the samples; the measured errors are far
 // below it and far below the share.
 constexpr double kKatTolRad = 1.0e-4;
+// A constant gyro bias of the board's measured size, 0.35 deg/s perpendicular to gravity: the FC3v2 at rest read
+// (-0.175, 0.307, -0.10) deg/s (M3 P6 bench measurement). Test-harness scenario value.
+constexpr std::array<double, prim::kSpatialDim> kBoardGyroBiasDegPerS = {-0.175, 0.307, -0.10};
+// Shaking of the first still segment of the invalid-calibration case: the gyro y axis alternates +-10 deg/s sample by sample, inside
+// the 15 deg/s still gate and above the calibration's movement limit (3.36 deg/s standard deviation).
+constexpr double kShakeDegPerS = 10.0;
 
 Params read_params() {
   static const bool ok = params_init(param_defaults());
@@ -59,11 +74,12 @@ Params read_params() {
   p.mahony = estimator::MahonyConfig<float>{param_value<ParamId::estimator_kp>(), param_value<ParamId::estimator_ki>(),
                                             param_value<ParamId::estimator_accel_healthy_min>(),
                                             param_value<ParamId::estimator_accel_healthy_max>()};
+  p.gyro_cal = estimator::GyroCalConfig<float>{static_cast<std::uint64_t>(param_value<ParamId::gyro_cal_duration_us>()),
+                                               param_value<ParamId::gyro_cal_movement_max>()};
   p.share = static_cast<double>(param_value<ParamId::attitude_tilt_error_max>());
   p.tick_num = static_cast<std::uint32_t>(param_value<ParamId::tick_period_num_us>());
   p.tick_den = static_cast<std::uint32_t>(param_value<ParamId::tick_period_den>());
   p.tol_us = static_cast<std::uint32_t>(param_value<ParamId::rate_period_tolerance_us>());
-  p.merge_gap_s = kMergeGapS;
   p.trim_s = kTrimS;
   return p;
 }
@@ -74,6 +90,9 @@ struct SynthSpec {
   double still_s = 0.0;  // 0: the required T_s plus the margin plus the trim at both ends
   double ramp_s = 0.0;   // a slow start of the rotation (kSynthRampDegPerS, inside the still gate) before the main rotation
   bool spikes = false;   // single-sample outliers inside each still segment
+  bool gentle_start = false;  // a lead-in that dips below the still gate many times (kGentlePieces pieces)
+  std::array<double, prim::kSpatialDim> gyro_bias_deg_s{};  // added to every sample's gyro (the sensor's constant bias)
+  bool shaky_still1 = false;  // gyro y alternates +-kShakeDegPerS over the whole of still 1: the calibration cannot complete
 };
 
 double required_ts(double theta, const Params& p) { return std::log(theta / p.share) / static_cast<double>(p.mahony.kp); }
@@ -84,47 +103,70 @@ std::size_t samples_for(double seconds, const Params& p) {
   return static_cast<std::size_t>(std::ceil(seconds * prim::kMicrosecondsPerSecond * p.tick_den / p.tick_num));
 }
 
-// Level still, [a slow ramp,] a constant-rate rotation about body x, level-rotated still. Specific force f = R^T (0, 0, -g)
-// with R = Rx(phi): (0, -g sin phi, -g cos phi); the gyro reads (rate, 0, 0) with rate = ramp rate on the ramp samples and
-// omega on the rotation samples, 0 elsewhere. phi(t) integrates that rate over the stamps (the rate is constant on each phase
-// and phase boundaries are sample stamps), with omega = (rotation_rad - ramp rate x ramp interval) / (rotation interval), so
-// the estimator, integrating the gyro over the stamp differences, covers exactly rotation_rad. spikes: in each still segment
-// one sample with a specific-force outlier (0.7 g added on body x: |f| about 1.22 g, outside the healthy window) and, a
-// thousand samples later, one sample with a gyro spike (twice the still gate, body y).
+// Level still, [a slow lead-in,] a constant-rate rotation about body x, level-rotated still. Specific force f = R^T (0, 0, -g)
+// with R = Rx(phi): (0, -g sin phi, -g cos phi); the gyro reads (rate, 0, 0) with rate = the lead-in's rate on the lead-in
+// samples, omega on the rotation samples, 0 elsewhere. phi accumulates rate x (stamp difference) sample by sample, as the
+// estimator integrates, with omega = (rotation_rad - lead-in rotation) / (rotation interval), so the estimator covers exactly
+// rotation_rad. Lead-ins: ramp_s, a constant kSynthRampDegPerS; gentle_start, kGentlePieces pieces of kGentlePieceS that
+// alternate kGentleSlowDegPerS (inside the still gate) and kGentleFastDegPerS (outside it), the slow piece first.
+// spikes: in each still segment one sample with a specific-force outlier (0.7 g added on body x: |f| about 1.22 g, outside the
+// healthy window) and, a thousand samples later, one sample with a gyro spike (twice the still gate, body y).
 std::vector<ImuSample> synth_samples(const SynthSpec& spec, const Params& p) {
   const double still_s = spec.still_s > 0.0
                              ? spec.still_s
                              : std::ceil(required_ts(spec.rotation_rad, p)) + kSynthMarginS + 2.0 * p.trim_s;
   const std::size_t n_still = samples_for(still_s, p);
-  const std::size_t n_ramp = spec.ramp_s > 0.0 ? samples_for(spec.ramp_s, p) : 0;
+  const std::size_t piece = samples_for(kGentlePieceS, p);
+  const std::size_t n_lead = spec.gentle_start ? kGentlePieces * piece : spec.ramp_s > 0.0 ? samples_for(spec.ramp_s, p) : 0;
   const std::size_t n_rot = samples_for(spec.rotation_s, p);
-  const std::size_t total = 2 * n_still + n_ramp + n_rot;
-  const double ramp_rate = spec.ramp_s > 0.0 ? kSynthRampDegPerS * prim::kPi / prim::kDegreesPerHalfTurn : 0.0;
-  const double t_a = static_cast<double>(stamp(n_still - 1, p));
-  const double t_b = static_cast<double>(stamp(n_still + n_ramp - 1, p));
-  const double t_c = static_cast<double>(stamp(n_still + n_ramp + n_rot - 1, p));
-  const double ramp_rad = ramp_rate * (t_b - t_a) / prim::kMicrosecondsPerSecond;
-  const double omega = (spec.rotation_rad - ramp_rad) / ((t_c - t_b) / prim::kMicrosecondsPerSecond);
+  const std::size_t total = 2 * n_still + n_lead + n_rot;
+  const auto deg = [](double d) { return d * prim::kPi / prim::kDegreesPerHalfTurn; };
+  const auto lead_rate = [&](std::size_t i) {
+    if (spec.gentle_start) {
+      return deg((i / piece) % 2 == 0 ? kGentleSlowDegPerS : kGentleFastDegPerS);
+    }
+    return deg(kSynthRampDegPerS);
+  };
   const double g = prim::kStandardGravity;
   const float spike_gyro = static_cast<float>(2.0 * kStillGyroRadS);
   constexpr std::size_t kSpikeSpacing = 1000;
   constexpr std::uint32_t kValid = imu_flag(ImuFlag::GyroValid) | imu_flag(ImuFlag::AccelValid);
+  const auto dt_s = [&](std::size_t k) {
+    return k == 0 ? 0.0 : static_cast<double>(stamp(k, p) - stamp(k - 1, p)) / prim::kMicrosecondsPerSecond;
+  };
+  double lead_rad = 0.0;
+  double rot_s = 0.0;
+  for (std::size_t i = 0; i < n_lead; ++i) {
+    lead_rad += lead_rate(i) * dt_s(n_still + i);
+  }
+  for (std::size_t i = 0; i < n_rot; ++i) {
+    rot_s += dt_s(n_still + n_lead + i);
+  }
+  const double omega = (spec.rotation_rad - lead_rad) / rot_s;
   std::vector<ImuSample> out(total);
+  double phi = 0.0;
   for (std::size_t k = 0; k < total; ++k) {
-    const double t = static_cast<double>(stamp(k, p));
-    const double phi = (ramp_rate * (std::clamp(t, t_a, t_b) - t_a) + omega * (std::clamp(t, t_b, t_c) - t_b)) /
-                       prim::kMicrosecondsPerSecond;
-    const bool ramping = k >= n_still && k < n_still + n_ramp;
-    const bool rotating = k >= n_still + n_ramp && k < n_still + n_ramp + n_rot;
+    double rate = 0.0;
+    if (k >= n_still && k < n_still + n_lead) {
+      rate = lead_rate(k - n_still);
+    } else if (k >= n_still + n_lead && k < n_still + n_lead + n_rot) {
+      rate = omega;
+    }
+    phi += rate * dt_s(k);
     ImuSample& s = out[k];
     s.t_us = stamp(k, p);
-    s.gyro_rad_s = {rotating ? static_cast<float>(omega) : ramping ? static_cast<float>(ramp_rate) : 0.0F, 0.0F, 0.0F};
+    double shake = 0.0;
+    if (spec.shaky_still1 && k < n_still) {
+      shake = (k % 2 == 0 ? 1.0 : -1.0) * deg(kShakeDegPerS);
+    }
+    s.gyro_rad_s = {static_cast<float>(rate + deg(spec.gyro_bias_deg_s[0])), static_cast<float>(shake + deg(spec.gyro_bias_deg_s[1])),
+                    static_cast<float>(deg(spec.gyro_bias_deg_s[2]))};
     s.accel_m_s2 = {0.0F, static_cast<float>(-g * std::sin(phi)), static_cast<float>(-g * std::cos(phi))};
     s.temp_k = 0.0F;
     s.flags = kValid;
   }
   if (spec.spikes) {
-    for (const std::size_t base : {n_still / 2, n_still + n_ramp + n_rot + n_still / 2}) {
+    for (const std::size_t base : {n_still / 2, n_still + n_lead + n_rot + n_still / 2}) {
       out[base].accel_m_s2[0] += static_cast<float>(0.7 * g);
       out[base + kSpikeSpacing].gyro_rad_s[1] = spike_gyro;
     }
@@ -195,6 +237,13 @@ std::vector<ImuSample> head_samples(const Params& p) {
 }
 
 void print(const char* name, const Report& r, const Params& p) {
+  if (r.calibrated) {
+    std::printf("%s: calibration completed %.3f s after the first sample, bias (%.4f, %.4f, %.4f) deg/s\n", name, r.cal_done_s,
+                r.cal_bias_rad_s[0] * prim::kDegreesPerHalfTurn / prim::kPi, r.cal_bias_rad_s[1] * prim::kDegreesPerHalfTurn / prim::kPi,
+                r.cal_bias_rad_s[2] * prim::kDegreesPerHalfTurn / prim::kPi);
+  } else {
+    std::printf("%s: no calibration applied\n", name);
+  }
   std::printf(
       "%s: theta_rot %.6f rad, T_s required %.3f s (kp %.4f, share %.5f rad), still1 %.3f s, still2 %.3f s, rotation %.3f s\n"
       "  (a) err1 %.3e err2 %.3e rad (<= %.5f): %s;  (c') err %.3e rad (<= theta_rot/2 = %.5f): %s\n",
@@ -221,6 +270,40 @@ TEST(L07Replay, SyntheticKnownAnswerPassesBothChecks) {
   EXPECT_LT(r.err_a1, kKatTolRad);
   EXPECT_LT(r.err_a2, kKatTolRad);
   EXPECT_LT(r.err_c, kKatTolRad);
+}
+
+TEST(L07Replay, ABoardSizedGyroBiasIsCalibratedOutAndWithoutTheCalibrationFailsCheckA) {
+  const Params p = read_params();
+  SynthSpec spec;
+  spec.gyro_bias_deg_s = kBoardGyroBiasDegPerS;
+  const std::vector<ImuSample> samples = synth_samples(spec, p);
+  const Report r = evaluate(samples, p);
+  print("biased", r, p);
+  ASSERT_TRUE(r.valid()) << r.invalid;
+  ASSERT_TRUE(r.calibrated);
+  for (std::size_t a = 0; a < prim::kSpatialDim; ++a) {
+    EXPECT_NEAR(r.cal_bias_rad_s[a], spec.gyro_bias_deg_s[a] * prim::kPi / prim::kDegreesPerHalfTurn, kKatTolRad);
+  }
+  EXPECT_NEAR(r.theta_rot, kSynthRotationRad, kKatTolRad);
+  EXPECT_TRUE(r.pass_a);
+  EXPECT_TRUE(r.pass_c);
+  // The control: the same log replayed without the calibration, the bias tilts the estimate by about bias / Kp.
+  const Report off = evaluate(samples, p, Control::NoCalibration);
+  print("biased, no calibration", off, p);
+  ASSERT_TRUE(off.valid()) << off.invalid;
+  EXPECT_FALSE(off.pass_a);
+  EXPECT_GT(off.err_a1, p.share);
+}
+
+TEST(L07Replay, ALogWhoseCalibrationCannotCompleteInStill1IsNotAValidT2Log) {
+  const Params p = read_params();
+  SynthSpec spec;
+  spec.shaky_still1 = true;
+  const Report r = evaluate(synth_samples(spec, p), p);
+  EXPECT_FALSE(r.valid());
+  EXPECT_NE(r.invalid.find("calibration"), std::string::npos) << r.invalid;
+  // The same log without the calibration is a valid T2 log: only the calibration rejects it.
+  EXPECT_TRUE(evaluate(synth_samples(spec, p), p, Control::NoCalibration).valid());
 }
 
 TEST(L07Replay, ControlStill2AccelAxisNegatedFailsCheckA) {
@@ -257,11 +340,46 @@ TEST(L07Replay, SingleSampleSpikesInsideTheStillSegmentsAreMerged) {
   EXPECT_TRUE(r.pass_a);
   EXPECT_TRUE(r.pass_c);
   // The control: without the merge each spike splits its segment, and the two longest pieces are not the two still segments.
-  Params no_merge = p;
-  no_merge.merge_gap_s = 0.0;
-  const Report split = evaluate(samples, no_merge);
+  const Report split = evaluate(samples, p, Control::None, two_longest(still_runs(samples, p)));
   std::printf("spikes, no merge: %s\n", split.valid() ? "valid" : split.invalid.c_str());
   EXPECT_FALSE(split.valid() && split.pass_a && split.pass_c);
+}
+
+// The replaced rule: runs with a non-still gap of at most kReplacedMergeGapS (time from the last still sample to the next).
+std::vector<Segment> replaced_rule_segments(std::span<const ImuSample> s, const Params& p) {
+  std::vector<Segment> out;
+  for (const Segment& r : still_runs(s, p)) {
+    if (!out.empty() && static_cast<double>(s[r.first].t_us - s[out.back().last].t_us) <= kReplacedMergeGapS * 1.0e6) {
+      out.back().last = r.last;
+    } else {
+      out.push_back(r);
+    }
+  }
+  return two_longest(out);
+}
+
+TEST(L07Replay, AGentleStartThatDipsBelowTheStillGateIsNotMergedIntoStill1) {
+  const Params p = read_params();
+  SynthSpec spec;
+  spec.gentle_start = true;
+  const std::vector<ImuSample> samples = synth_samples(spec, p);
+  const Report r = evaluate(samples, p);
+  print("gentle start", r, p);
+  ASSERT_TRUE(r.valid()) << r.invalid;
+  EXPECT_NEAR(r.theta_rot, kSynthRotationRad, kKatTolRad);
+  EXPECT_TRUE(r.pass_a);
+  EXPECT_TRUE(r.pass_c);
+  EXPECT_LT(r.err_a1, kKatTolRad);
+  EXPECT_LT(r.err_a2, kKatTolRad);
+  // The control: the replaced 50 ms rule merges the dips into still 1, whose trimmed end then lies inside the rotation.
+  const std::vector<Segment> old_segs = replaced_rule_segments(samples, p);
+  ASSERT_EQ(old_segs.size(), 2U);
+  EXPECT_GT(old_segs[0].last, r.raw1.last) << "the old rule must have merged some of the lead-in into still 1";
+  const Report old = evaluate(samples, p, Control::None, old_segs);
+  print("gentle start, replaced 50 ms rule", old, p);
+  ASSERT_TRUE(old.valid()) << old.invalid;
+  EXPECT_FALSE(old.pass_a);
+  EXPECT_GT(old.err_a1, p.share);
 }
 
 TEST(L07Replay, ASlowStartOfTheRotationInsideTheStillGateIsTrimmedOff) {

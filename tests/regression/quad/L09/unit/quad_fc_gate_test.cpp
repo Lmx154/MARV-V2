@@ -14,6 +14,11 @@
 // failsafe disarm, or on an IMU deadline miss) every rate tick writes stop, armed it writes the mixer's output for the
 // stick rates and the throttle; a motor test starts only from Disarmed (a request while armed is refused, reason Armed)
 // and arming is refused while a test runs.
+//
+// The boot gyro calibration and the upright check (M3 P6, decision 0042): arming is refused (Calibrating) until a calibration
+// duration of still samples has passed, the calibrated bias is then subtracted from the gyro before the estimator and the rate
+// loop's chain, and a tilt above the small angle refuses arming (NotUpright). Every armed-gate case starts after the
+// calibration (ArmedGateTest::warm_up).
 #include <gtest/gtest.h>
 
 #include <array>
@@ -567,6 +572,9 @@ constexpr TimeUs kDisarmUs = 1500000;
 constexpr TimeUs kRecoveryUs = 500000;
 constexpr float kSwitchOn = 1.0F;
 constexpr float kSwitchOff = -1.0F;
+// Betaflight 4.5.1 gyro.c:107, gyroCalibrationDuration 125 x 10 ms: the boot calibration window, as the test states it
+// independently of the parameter table.
+constexpr TimeUs kCalibrationUs = 1250000;
 
 struct Sticks {
   float roll = 0;
@@ -593,16 +601,34 @@ class ArmedGateTest : public MotorTestGateTest {
     rates_.yaw = {param_value<ParamId::rates_centre_yaw>(), param_value<ParamId::rate_max_yaw>(),
                   param_value<ParamId::rates_expo_yaw>()};
     frames_ = 0;
+    accel_ = sample_of(Kind::Quiet, 0).accel_m_s2;
+    warm_up();
   }
 
-  // One tick, as tick_once, with the beside rate group fed the same sample.
+  // M3 P6: the boot gyro calibration refuses arming until a calibration duration of still samples has passed (with the link down
+  // the state reads NoLink, which comes first in the refusal order), so the cases that arm start after it: quiet samples, the
+  // link down, through the first rate tick whose stamp is past the duration.
+  virtual void warm_up() {
+    const TimeUs first_us = hal_sim::stamp_us(period_, n_);
+    while (hal_sim::stamp_us(period_, n_) - first_us <= kCalibrationUs) {
+      (void)rate_tick(nullptr, {});
+    }
+  }
+
+  // One tick, as tick_once, with the beside rate group fed the same sample (with ref_bias_ subtracted from the tick
+  // ref_bias_from_ on, as the composition subtracts its calibrated bias).
   Out step_tick() {
     motor_latch_.fill(sentinel());
     hal_sim::begin_tick(n_);
     ImuSample s = sample_of(kind_, n_);
+    s.accel_m_s2 = accel_;
     s.gyro_rad_s = s.gyro_rad_s + bias_;
     composition::tick(s);
-    ref_.filter(s, n_ % divisor_ == 0);
+    ImuSample beside = s;
+    if (n_ >= ref_bias_from_) {
+      beside.gyro_rad_s = beside.gyro_rad_s - ref_bias_;
+    }
+    ref_.filter(beside, n_ % divisor_ == 0);
     fresh_.filter(s, n_ % divisor_ == 0);
     const bool armed = arming::is_armed(composition::arming_status());
     if (armed && !was_armed_ && reset_ref_) {
@@ -692,6 +718,9 @@ class ArmedGateTest : public MotorTestGateTest {
   std::uint32_t frames_ = 0;
   Kind kind_ = Kind::Quiet;
   prim::Vec3<float> bias_{};  // added to every sample's gyro
+  prim::Vec3<float> accel_{};  // every sample's accelerometer: level, (0, 0, -9.8) m/s^2, unless a case tilts it
+  prim::Vec3<float> ref_bias_{};  // what ref_ is fed less, from tick ref_bias_from_ on
+  Tick ref_bias_from_ = std::numeric_limits<Tick>::max();
   rate_group::RateGroupStep fresh_;
   bool was_armed_ = false;
   bool reset_ref_ = true;  // ref_ restarts its controller at the arming edge as the composition does
@@ -931,7 +960,7 @@ TEST_F(ArmedGateTest, ArmingStartsTheRateLoopFromZeroStateNotFromWhatWasAccumula
   // A constant gyro bias while disarmed winds the rate loop's integrator (the beside group `ref_` runs as the composition
   // would without the reset). The first armed output, sticks centred and throttle low, equals that of a freshly
   // initialised rate group fed the same samples.
-  bias_ = prim::Vec3<float>(2.0F, -3.0F, 1.5F);
+  bias_ = prim::Vec3<float>(0.2F, -0.3F, 0.15F);
   reset_ref_ = false;
   link_up();
   fresh_.init(rate::load_config(), mixer_, rate_group::load_chain_config());
@@ -950,6 +979,133 @@ TEST_F(ArmedGateTest, ArmingStartsTheRateLoopFromZeroStateNotFromWhatWasAccumula
   const auto wound = reference({});
   EXPECT_NE(wound, fresh) << "the bias must have wound the integrator, or the test proves nothing";
   EXPECT_EQ(first.motor, fresh);
+}
+
+// ---- The boot gyro calibration and the upright check (M3 P6, decision 0042) ----
+
+// The fixture without the warm-up: the case itself runs the calibration.
+class CalibrationGateTest : public ArmedGateTest {
+ protected:
+  void warm_up() override {}
+
+  // Ticks (from tick 0, level samples, the link up, the switch low) to the first rate tick at or after `until_us` on the stamps
+  // and returns the state there; every rate tick on the way writes stop.
+  arming::ArmState run_to(TimeUs until_us) {
+    while (hal_sim::stamp_us(period_, n_) < until_us) {
+      expect_all_stop(hold({}, kSwitchOff, {}).out);
+    }
+    return composition::arming_status();
+  }
+};
+
+// Arming is refused (Calibrating) until the calibration duration of still samples has passed, counted from the first sample's
+// stamp: from the recovery time of the link (before it NoLink) up to the last rate tick before the duration the state is
+// Calibrating and at the first rate tick at or after it the state is SwitchOff (everything else ready). Betaflight's duration is
+// the number the test states (kCalibrationUs); the table must hold it.
+TEST_F(CalibrationGateTest, ArmingIsRefusedUntilTheCalibrationDurationOfStillSamplesHasPassed) {
+  EXPECT_EQ(param_value<ParamId::gyro_cal_duration_us>(), static_cast<std::int32_t>(kCalibrationUs));
+  const TimeUs first_us = hal_sim::stamp_us(period_, 0);
+  bool left = false;
+  while (!left) {
+    const Out o = hold({}, kSwitchOff, {}).out;
+    const TimeUs age = hal_sim::stamp_us(period_, n_ - 1) - first_us;
+    expect_all_stop(o);
+    const arming::ArmState state = composition::arming_status();
+    if (age < kRecoveryUs) {
+      EXPECT_EQ(state, arming::ArmState::NoLink) << "age " << age;
+    } else if (age < kCalibrationUs) {
+      EXPECT_EQ(state, arming::ArmState::Calibrating) << "age " << age;
+    } else {
+      EXPECT_EQ(state, arming::ArmState::SwitchOff) << "age " << age;
+      left = true;
+    }
+  }
+  // Calibrated: the switch cycle now arms, and Calibrating does not return.
+  EXPECT_EQ(run_to(hal_sim::stamp_us(period_, n_) + kRecoveryUs), arming::ArmState::SwitchOff);
+  EXPECT_TRUE(is_armed_output(hold({}, kSwitchOn, {}).out));
+  EXPECT_EQ(composition::arming_status(), arming::ArmState::Armed);
+}
+
+// A constant gyro bias is subtracted once the calibration is complete, from the rate loop's chain as well as the estimator's
+// input. Rate loop: the bias is 0.2, -0.3, 0.1 rad/s on the three axes (scenario values, 1 % to 3 % of the rate loop's
+// range; far above what the integrator's reset would hide); the first armed output equals that of a beside rate group
+// (ref_) fed the same samples less the bias from the first tick the calibration is complete, with sticks centred. Control:
+// the same group fed the samples as they are, from then on, gives a different output after the same ticks, so the equality
+// is the subtraction and not an insensitive output.
+TEST_F(CalibrationGateTest, TheCalibratedBiasIsSubtractedFromTheRateLoopsGyroChain) {
+  bias_ = prim::Vec3<float>(0.2F, -0.3F, 0.1F);
+  const TimeUs first_us = hal_sim::stamp_us(period_, 0);
+  Tick done = 0;  // the first tick whose stamp is a calibration duration after tick 0's: the first with the bias subtracted
+  while (hal_sim::stamp_us(period_, done) - first_us < kCalibrationUs) {
+    ++done;
+  }
+  ref_bias_ = bias_;
+  ref_bias_from_ = done;
+  EXPECT_EQ(run_to(first_us + kCalibrationUs + kRecoveryUs), arming::ArmState::SwitchOff);
+  RateOut r = hold({}, kSwitchOn, {});
+  ASSERT_EQ(composition::arming_status(), arming::ArmState::Armed);
+  for (std::size_t k = 0; k < 50; ++k) {
+    EXPECT_EQ(r.out.motor, r.mixed) << k;
+    r = hold({}, kSwitchOn, {});
+  }
+  ref_bias_from_ = n_;
+  ref_bias_ = prim::Vec3<float>();
+  for (std::size_t k = 0; k < 50; ++k) {
+    r = hold({}, kSwitchOn, {});
+  }
+  EXPECT_NE(r.out.motor, r.mixed) << "a group fed the bias gives the same output: the test is insensitive to it";
+}
+
+// The estimator's input is the corrected gyro: a constant bias (0.02, -0.03, 0.01 rad/s, scenario values) fed from boot tilts
+// the estimate while the calibration runs (the correction holds it to about bias / Kp), and from the first corrected sample on
+// the estimator sees a zero rate, so the tilt decays at Kp: after T more seconds it is at most tilt_at_calibration
+// x exp(-Kp T) x 1.1 (the small-angle decay, 10 % margin) + 1e-4 rad. Fed uncorrected the tilt would settle near |bias_xy| / Kp
+// = 0.14 rad instead; here T = 12 s, so the bound is about 2e-3 rad.
+TEST_F(CalibrationGateTest, TheCalibratedBiasIsSubtractedFromTheEstimatorsInput) {
+  bias_ = prim::Vec3<float>(0.02F, -0.03F, 0.01F);
+  const TimeUs first_us = hal_sim::stamp_us(period_, 0);
+  TimeUs at_cal_us = 0;
+  float tilt_at_cal = 0.0F;
+  const TimeUs end_us = first_us + kCalibrationUs + 12000000;
+  bool calibrated = false;
+  while (hal_sim::stamp_us(period_, n_) < end_us) {
+    expect_all_stop(hold({}, kSwitchOff, {}).out);
+    if (!calibrated && composition::arming_status() == arming::ArmState::SwitchOff) {
+      calibrated = true;
+      at_cal_us = hal_sim::stamp_us(period_, n_ - 1);
+      tilt_at_cal = composition::attitude_status().tilt_rad;
+    }
+  }
+  ASSERT_TRUE(calibrated);
+  const double tilt_end = static_cast<double>(composition::attitude_status().tilt_rad);
+  const double seconds = static_cast<double>(hal_sim::stamp_us(period_, n_ - 1) - at_cal_us) / 1.0e6;
+  EXPECT_GT(tilt_at_cal, 0.01F) << "the bias did not tilt the estimate while the calibration ran";
+  EXPECT_LE(tilt_end, 1.1 * static_cast<double>(tilt_at_cal) * std::exp(-static_cast<double>(param_value<ParamId::estimator_kp>()) * seconds) + 1.0e-4);
+}
+
+// The upright check (Betaflight 4.5.1 imu.c:856-859 isUpright, small_angle 25 deg, imu.c:119-121): the estimate's tilt above
+// arm_small_angle refuses arming (NotUpright), below it does not. The vehicle sits rolled by 30 deg and by 20 deg (scenario
+// values, 5 deg either side of the limit) from boot, the estimate initialised from the first sample.
+TEST_F(CalibrationGateTest, ATiltAboveTheSmallAngleRefusesArmingAndBelowItDoesNot) {
+  constexpr double kPi = 3.14159265358979323846;
+  EXPECT_NEAR(static_cast<double>(param_value<ParamId::arm_small_angle>()), 25.0 * kPi / 180.0, 1.0e-6);
+  for (const double roll_deg : {30.0, 20.0}) {
+    hal_sim::setup(period_, motor_latch_, servo_latch_);
+    composition::init();
+    n_ = 0;
+    frames_ = 0;
+    const double roll = roll_deg * kPi / 180.0;
+    const float g = -accel_[2];
+    accel_ = prim::Vec3<float>(0.0F, -g * static_cast<float>(std::sin(roll)), -g * static_cast<float>(std::cos(roll)));
+    const arming::ArmState state = run_to(kCalibrationUs + kRecoveryUs);
+    EXPECT_EQ(state, roll_deg > 25.0 ? arming::ArmState::NotUpright : arming::ArmState::SwitchOff) << roll_deg << " deg";
+    EXPECT_NEAR(static_cast<double>(composition::attitude_status().tilt_rad), roll, 1.0e-3) << roll_deg << " deg";
+    for (std::size_t k = 0; k < 5; ++k) {
+      const Out o = hold({}, kSwitchOn, {}).out;
+      EXPECT_EQ(is_armed_output(o), roll_deg < 25.0) << roll_deg << " deg";
+    }
+    accel_ = sample_of(Kind::Quiet, 0).accel_m_s2;
+  }
 }
 
 }  // namespace

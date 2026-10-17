@@ -39,7 +39,13 @@ Architect ruling for quad §4.0 M3 (2026-10-16); this record implements nothing.
    `tests/regression/quad/L08/unit/arming_test.cpp`: the rig sets `estimator_valid = true`; one case added.
    `tests/regression/quad/L09/unit/quad_fc_gate_test.cpp` feeds (0, 0, -9.8) m/s^2; its cases do not change. Amended
    (lead, M3 P2 fix): it gains one case, samples whose GyroValid / AccelValid flags are clear are not fed to the
-   estimator (gyro clear: no step, dt spans from the last stepped stamp; accel clear: no correction).
+   estimator (gyro clear: no step, dt spans from the last stepped stamp; accel clear: no correction). Amended
+   (lead, M3 P6, boot gyro calibration and the upright check): `ArmedGateTest::SetUp` runs a warm-up of quiet samples
+   through the calibration (1.25 s) before every existing armed-gate case; `step_tick` gains accel and reference-bias
+   plumbing whose defaults change nothing; in `ArmingStartsTheRateLoopFromZeroState...` the scenario gyro bias goes from
+   (2, -3, 1.5) to (0.2, -0.3, 0.15) rad/s (after calibration a bias is real rotation to the estimator, and the larger one
+   tilted it past 25 deg before arming); no assertion, threshold or expected value changes; a new `CalibrationGateTest`
+   fixture adds four cases. `tests/regression/quad/L08/unit/arming_test.cpp` gains one case (Calibrating, NotUpright).
 
 ## Why
 
