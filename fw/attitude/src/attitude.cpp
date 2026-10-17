@@ -36,19 +36,13 @@ const char* message(ConfigError e) noexcept {
       return "attitude: att_yaw_t_cross is not positive";
     case ConfigError::RateMax:
       return "attitude: a rate limit is not positive";
+    case ConfigError::Timing:
+      return "attitude: the tick period or period ticks is below 1, or rate_period_tolerance_us is not in [0, half a tick)";
   }
   return "attitude: unknown configuration error";
 }
 
 }  // namespace
-
-namespace detail {
-
-void panic_period() noexcept {
-  hal_panic("attitude: execution spacing differs from the design period by more than 1 us");
-}
-
-}  // namespace detail
 
 AttitudeConfig<float> from_params() noexcept {
   AttitudeConfig<float> c;
@@ -67,11 +61,18 @@ AttitudeConfig<float> from_params() noexcept {
   const float period_us = ticks * static_cast<float>(param_value<ParamId::tick_period_num_us>()) /
                           static_cast<float>(param_value<ParamId::tick_period_den>());
   c.period = period_us / static_cast<float>(prim::kMicrosecondsPerSecond);
+  c.tick_period_num_us = param_value<ParamId::tick_period_num_us>();
+  c.tick_period_den = param_value<ParamId::tick_period_den>();
+  c.period_ticks = param_value<ParamId::att_loop_ratio>() * param_value<ParamId::rate_loop_divisor>();
+  c.period_tolerance_us = param_value<ParamId::rate_period_tolerance_us>();
   return c;
 }
 
 void require_valid(const AttitudeConfig<float>& c) noexcept {
-  const ConfigError e = validate(c);
+  ConfigError e = validate(c);
+  if (e == ConfigError::None) {
+    e = validate_timing(c);
+  }
   if (e != ConfigError::None) {
     hal_panic(message(e));
   }
