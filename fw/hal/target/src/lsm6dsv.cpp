@@ -10,12 +10,20 @@
 // rate); WTM counts words (§9.5 Table 33). INT1 is FIFO_WTM_IA, high while the FIFO holds at least that many words
 // (§6.10.3), taken as a level interrupt: a handler that leaves a full sample behind runs again, so none is stranded.
 // Temperature: OUT_TEMP (20h-21h) read when STATUS_REG TDA is set (§9.28), and carried by the samples after it.
+//
+// Stale IMU (decision 0040 Q2). The read deadline is D = FIFO depth / ODR (core EMB-6; imu_read_deadline_us). (a) A FIFO
+// overrun seen at an interrupt entry increments the deadline-miss count (hal_imu_deadline_misses) before the batch is
+// delivered. (b) A hardware alarm is re-armed at every delivered sample for D later; if it expires, or if an interrupt
+// entry finds that D has passed since the last delivery (a stuck-high INT1 line starves a lower-priority alarm, and the
+// entry check needs no alarm), hal_panic stops the motors with stop frames. The alarm's priority equals the IMU
+// interrupt's, so it never preempts the tick: the panic path is the only other writer of the motor output.
 #include <array>
 #include <atomic>
 #include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <span>
 
 #include <hardware/gpio.h>
@@ -44,6 +52,7 @@ constexpr ImuMounting kMounting{
 
 // FIFO words per sample: one gyroscope and one accelerometer word.
 constexpr std::uint8_t kWatermarkWords = 2;
+static_assert(kWatermarkWords == lsm6dsv::kFifoWordsPerSample, "the deadline's words per sample is the driver's batching");
 // The largest DIFF_FIFO_[8:0] value (a 9-bit field): the most words one handler entry can be told to read.
 constexpr std::size_t kMaxWords = (std::size_t{1} << (lsm6dsv::kDiffFifo8Shift + 1)) - 1;
 // FIFO_STATUS1 (1Bh) through STATUS_REG (1Eh), one burst.
@@ -88,6 +97,44 @@ std::atomic<std::uint32_t> g_seq{0};
 ImuStats g_published{};
 std::atomic<bool> g_window_reset{false};
 
+// The read deadline D in µs, the count of misses, the low 32 bits of hal_time_us() at the last delivery (or at arming) and the
+// claimed hardware alarm. g_watch is set before the alarm is armed; the IMU and alarm handlers share a priority, so neither
+// preempts the other.
+std::uint32_t g_deadline_us = 0;
+std::uint32_t g_last_delivery = 0;
+unsigned g_alarm = 0;
+bool g_watch = false;
+std::atomic<std::uint32_t> g_deadline_misses{0};
+
+[[noreturn]] void deadline_panic(std::uint32_t elapsed_us, const char* where) noexcept {
+  static constexpr char kFormat[] =
+      "IMU read deadline missed: %lu us without a delivered sample, limit D = %lu us = %lu samples of FIFO depth (INFERRED) "
+      "x tick period (EMB-6), found by the %s";
+  constexpr std::size_t kNumber = sizeof("4294967295");  // the widest of the three numbers
+  static std::array<char, sizeof(kFormat) + kNumber + kNumber + kNumber + sizeof("interrupt entry")> msg{};
+  static_cast<void>(std::snprintf(msg.data(), msg.size(), kFormat, static_cast<unsigned long>(elapsed_us),
+                                  static_cast<unsigned long>(g_deadline_us), static_cast<unsigned long>(kFifoDepthSamples),
+                                  where));
+  hal_panic(msg.data());
+}
+
+// Re-arms the alarm for D after now and records now as the last delivery. A pending expiry from the earlier target is
+// cleared; one that still reaches the handler finds the deadline not passed and returns.
+void rearm_alarm() noexcept {
+  const std::uint32_t now = timer_hw->timerawl;
+  g_last_delivery = now;
+  timer_hw->intr = 1U << g_alarm;
+  timer_hw->alarm[g_alarm] = now + g_deadline_us;
+}
+
+void on_alarm() {
+  timer_hw->intr = 1U << g_alarm;
+  const std::uint32_t elapsed = timer_hw->timerawl - g_last_delivery;
+  if (g_watch && elapsed >= g_deadline_us) {
+    deadline_panic(elapsed, "alarm");
+  }
+}
+
 void transfer(std::span<const std::uint8_t> tx, std::span<std::uint8_t> rx) noexcept {
   gpio_put(kCsPin, false);
   static_cast<void>(spi_write_read_blocking(imu_spi(), tx.data(), rx.data(), tx.size()));
@@ -129,6 +176,7 @@ void publish() noexcept {
 }
 
 void deliver(ImuSample& s, TimeUs t) noexcept {
+  rearm_alarm();
   s.t_us = t;
   if (g_have_prev) {
     if (t <= g_prev_t) {
@@ -167,6 +215,9 @@ void on_int1() {
     return;
   }
   const TimeUs t_irq = hal_time_us();
+  if (g_watch && static_cast<std::uint32_t>(t_irq) - g_last_delivery >= g_deadline_us) {
+    deadline_panic(static_cast<std::uint32_t>(t_irq) - g_last_delivery, "interrupt entry");
+  }
   ++g_acc.irqs;
   if (g_window_reset.exchange(false, std::memory_order_relaxed)) {
     g_acc.spacing_min_us = 0;
@@ -178,6 +229,7 @@ void on_int1() {
   const std::uint8_t status2 = st[lsm6dsv::kRegFifoStatus2 - lsm6dsv::kRegFifoStatus1];
   if ((status2 & lsm6dsv::kFifoStatus2OvrLatched) != 0) {
     ++g_acc.fifo_overflows;
+    g_deadline_misses.fetch_add(1, std::memory_order_relaxed);
   }
   if ((st[lsm6dsv::kRegStatusReg - lsm6dsv::kRegFifoStatus1] & lsm6dsv::kStatusTda) != 0) {
     std::array<std::uint8_t, kTempBytes> t{};
@@ -301,6 +353,21 @@ ImuBoot imu_start(ImuSink sink, RateCountsSource rate_counts, TickPeriod design_
     hal_panic(msg.data());
   }
 
+  // The tick source runs (FIFO continuous, above): claim the alarm, arm it for D and only then enable the interrupts.
+  const TimeUs deadline = imu_read_deadline_us(trim_period.num, trim_period.den);
+  if (deadline < 1 || deadline >= std::numeric_limits<std::uint32_t>::max()) {
+    hal_panic("LSM6DSV: the IMU read deadline D = FIFO depth / ODR is not a positive 32-bit microsecond count");
+  }
+  g_deadline_us = static_cast<std::uint32_t>(deadline);
+  g_alarm = static_cast<unsigned>(hardware_alarm_claim_unused(true));
+  const unsigned alarm_irq = hardware_alarm_get_irq_num(g_alarm);
+  irq_set_exclusive_handler(alarm_irq, &on_alarm);
+  irq_set_priority(alarm_irq, PICO_HIGHEST_IRQ_PRIORITY);
+  hw_set_bits(&timer_hw->inte, 1U << g_alarm);
+  g_watch = true;
+  rearm_alarm();
+  irq_set_enabled(alarm_irq, true);
+
   gpio_add_raw_irq_handler(kIntPin, &on_int1);
   gpio_set_irq_enabled(kIntPin, GPIO_IRQ_LEVEL_HIGH, true);
   irq_set_priority(IO_IRQ_BANK0, PICO_HIGHEST_IRQ_PRIORITY);
@@ -326,3 +393,11 @@ ImuStats imu_stats() noexcept {
 }
 
 }  // namespace marv::hal_target
+
+namespace marv {
+
+std::uint32_t hal_imu_deadline_misses() noexcept {
+  return hal_target::g_deadline_misses.load(std::memory_order_relaxed);
+}
+
+}  // namespace marv

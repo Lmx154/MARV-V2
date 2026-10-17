@@ -6,6 +6,7 @@
 
 #include "marv/hal/motor_test.hpp"
 #include "marv/types/actuator.hpp"
+#include "marv/types/manual_control.hpp"
 #include "marv/types/rotor_speed_sample.hpp"
 #include "marv/types/time.hpp"
 
@@ -24,6 +25,19 @@ namespace marv {
 // a cancel is visible to the next call after the console received it. hal_sim: what the host staged before the tick
 // began; all counts 0 before any.
 [[nodiscard]] MotorTestPoll hal_motor_test() noexcept;
+
+// The pilot's input, a pull read (decision 0040 Q3; manual_control.hpp): the newest valid RC frame's stamp and sticks.
+// Wait-free and one consistent snapshot, callable from the tick. Never decides validity: frames == 0 is "none yet" and
+// the consumer ages t_us itself. hal_sim: what the host staged before the tick began (a value-initialised struct,
+// frames 0, before any).
+[[nodiscard]] ManualControl hal_manual_control() noexcept;
+
+// The IMU read-deadline misses since init, a pull read (decision 0040 Q2): a count of the IMU interrupt entries that found
+// the sensor FIFO overrun (samples lost because a read came later than FIFO depth / ODR, core EMB-6). The driver increments
+// it before it delivers that batch, so the tick of the batch's first sample already sees it. Cumulative and never reset;
+// the consumer latches it. Wait-free, callable from the tick. A sensor that delivers nothing for that long does not reach
+// the tick: the target halts through hal_panic. hal_sim: the count the host staged before the tick began (0 before any).
+[[nodiscard]] std::uint32_t hal_imu_deadline_misses() noexcept;
 
 // The composition's reply to the console: one event per accepted request, refused request or end of a test. May be
 // called in a tick; never blocks; the console prints it from the background loop.

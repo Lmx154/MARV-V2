@@ -17,6 +17,7 @@
 #include "marv/hal_target/imu.hpp"
 #include "marv/hal_target/motor_output.hpp"
 #include "marv/hal_target/motor_test.hpp"
+#include "marv/hal_target/receiver.hpp"
 #include "marv/params/param.hpp"
 #include "marv/prim/constants.hpp"
 #include "marv/types/imu_sample.hpp"
@@ -72,9 +73,10 @@ constexpr auto kPrintPeriodUs = static_cast<marv::TimeUs>(marv::prim::kMicroseco
 
 // How far boot got, printed at boot and again whenever a host opens the CDC port, so a host that attaches late still
 // reads it (the lines printed at boot are lost when no host has the port open).
-enum class Stage { kStart, kParamsOk, kInitOk, kMotorsOk, kImuOk };
+enum class Stage { kStart, kParamsOk, kInitOk, kMotorsOk, kReceiverOk, kImuOk };
 Stage stage = Stage::kStart;
 marv::hal_target::MotorOutputBoot motor_boot;
+marv::hal_target::ReceiverBoot receiver_boot;
 marv::hal_target::ImuBoot imu_boot;
 
 void print_progress() {
@@ -91,6 +93,12 @@ void print_progress() {
                 static_cast<unsigned long>(motor_boot.clk_sys_hz), static_cast<unsigned long>(motor_boot.div_int),
                 static_cast<unsigned>(motor_boot.div_frac8));
   }
+  if (stage >= Stage::kReceiverOk) {
+    std::printf("receiver ok: CRSF on UART0 (GPIO 0/1), 8N1, %lu Hz requested (ExpressLRS default), %lu Hz set, RX IRQ priority %lu\n",
+                static_cast<unsigned long>(receiver_boot.baud_requested),
+                static_cast<unsigned long>(receiver_boot.baud_actual),
+                static_cast<unsigned long>(receiver_boot.irq_priority));
+  }
   if (stage >= Stage::kImuOk) {
     std::printf("imu ok: LSM6DSV, SPI %lu Hz, FREQ_FINE %d (ODR %.1f Hz by DS13476 9.49), tick %s\n",
                 static_cast<unsigned long>(imu_boot.spi_hz), static_cast<int>(imu_boot.freq_fine),
@@ -101,6 +109,39 @@ void print_progress() {
   }
 }
 
+const char* arming_text(marv::arming::ArmState s) {
+  using marv::arming::ArmState;
+  switch (s) {
+    case ArmState::Boot:
+      return "boot";
+    case ArmState::SwitchOff:
+      return "switch_off";
+    case ArmState::SwitchNotCycled:
+      return "switch_not_cycled";
+    case ArmState::ThrottleUp:
+      return "throttle_up";
+    case ArmState::ImuStale:
+      return "imu_stale";
+    case ArmState::ImuInvalid:
+      return "imu_invalid";
+    case ArmState::Saturated:
+      return "saturated";
+    case ArmState::NoLink:
+      return "no_link";
+    case ArmState::Failsafe:
+      return "failsafe";
+    case ArmState::MotorTest:
+      return "motor_test";
+    case ArmState::Armed:
+      return "armed";
+    case ArmState::ArmedHold:
+      return "armed_hold";
+    case ArmState::ArmedFailsafeCentred:
+      return "armed_failsafe_centred";
+  }
+  return "";
+}
+
 // Console counters, background loop only: lines refused by the parser, motor-test requests forwarded.
 std::uint32_t console_refused = 0;
 std::uint32_t console_forwarded = 0;
@@ -109,17 +150,24 @@ std::uint32_t events_printed = 0;
 
 // One line per second: the per-second differences of the counters over the measured interval, the running totals of
 // the fault counters, the stamp spacing since the previous line and the newest sample (FRD, SI).
-void print_stats(const marv::hal_target::ImuStats& now, const marv::hal_target::ImuStats& before, marv::TimeUs dt_us) {
+void print_stats(const marv::hal_target::ImuStats& now, const marv::hal_target::ImuStats& before,
+                 const marv::hal_target::ReceiverStats& rc_now, const marv::hal_target::ReceiverStats& rc_before,
+                 marv::TimeUs dt_us) {
   const auto per_s = [dt_us](std::uint64_t a, std::uint64_t b) {
     return static_cast<double>(a - b) * marv::prim::kMicrosecondsPerSecond / static_cast<double>(dt_us);
   };
   const marv::ImuSample& s = now.last;
   const marv::hal_target::MotorTestStatus test = marv::hal_target::motor_test_status();
+  const marv::ManualControl& rc = rc_now.last;
+  const marv::TimeUs t_now = marv::hal_time_us();
+  const long long rc_age_us = rc.frames == 0 ? -1 : static_cast<long long>(t_now > rc.t_us ? t_now - rc.t_us : 0);
   std::printf(
       "imu dt=%lluus irq/s=%.1f words/s=%.1f samples/s=%.1f ticks/s=%.1f writes/s=%.1f motor_drops=%llu | total samples=%llu ovr=%lu "
       "spi=%lu partial=%lu clamp=%lu order=%lu empty=%lu | spacing=[%llu,%llu]us | t=%llu gyro=(%+.4f,%+.4f,%+.4f) "
       "accel=(%+.3f,%+.3f,%+.3f) temp=%.2fK flags=0x%03lx | motor_test console_refused=%lu forwarded=%lu accepted=%lu "
-      "refused=%lu stopped=%lu | rate executions/s=%.1f executions=%llu timing_faults=%lu\n",
+      "refused=%lu stopped=%lu | rate executions/s=%.1f executions=%llu timing_faults=%lu | rc frames/s=%.1f total=%lu "
+      "link_frames=%lu bad_crc=%lu bad_length=%lu dropped_bytes=%lu uart_errors=%lu age_us=%lld roll=%+.3f pitch=%+.3f "
+      "throttle=%.3f yaw=%+.3f | arming=%s\n",
       static_cast<unsigned long long>(dt_us), per_s(now.irqs, before.irqs), per_s(now.words, before.words),
       per_s(now.samples, before.samples), per_s(now.ticks, before.ticks),
       per_s(now.actuator_writes, before.actuator_writes), static_cast<unsigned long long>(now.actuator_drops),
@@ -134,7 +182,14 @@ void print_stats(const marv::hal_target::ImuStats& now, const marv::hal_target::
       static_cast<unsigned long>(console_forwarded), static_cast<unsigned long>(test.last.accepted),
       static_cast<unsigned long>(test.last.refused), static_cast<unsigned long>(test.last.stopped),
       per_s(now.rate.executions, before.rate.executions), static_cast<unsigned long long>(now.rate.executions),
-      static_cast<unsigned long>(now.rate.timing_faults));
+      static_cast<unsigned long>(now.rate.timing_faults),
+      per_s(rc_now.counters.rc_frames, rc_before.counters.rc_frames),
+      static_cast<unsigned long>(rc_now.counters.rc_frames),
+      static_cast<unsigned long>(rc_now.counters.link_stats_frames), static_cast<unsigned long>(rc_now.counters.bad_crc),
+      static_cast<unsigned long>(rc_now.counters.bad_length), static_cast<unsigned long>(rc_now.counters.dropped_bytes),
+      static_cast<unsigned long>(rc_now.uart_errors), rc_age_us, static_cast<double>(rc.roll),
+      static_cast<double>(rc.pitch), static_cast<double>(rc.throttle), static_cast<double>(rc.yaw),
+      arming_text(marv::composition::arming_status()));
 }
 
 #if defined(MARV_FC3V2_BENCH_STATS)
@@ -223,6 +278,8 @@ const char* reason_text(marv::MotorTestReason r) {
       return "cancel";
     case MotorTestReason::Disconnect:
       return "disconnect";
+    case MotorTestReason::Armed:
+      return "the vehicle is armed";
   }
   return "";
 }
@@ -281,9 +338,9 @@ void print_motor_test_events() {
 
 }  // namespace
 
-// The M1 image: stdio over USB CDC, a banner, the default parameters, the composition's init, then the IMU: from then
+// The M1 image: stdio over USB CDC, a banner, the default parameters, the composition's init, the motor output, the receiver UART (CRSF, M2 P5b), then the IMU: from then
 // on the IMU interrupt ticks the composition once per sample (marv/hal_target/imu.hpp). The idle loop prints the IMU
-// counters once per second; console output never runs in the tick (decision 0027 item 6).
+// and receiver counters once per second; console output never runs in the tick (decision 0027 item 6).
 int main() {
   stdio_init_all();
   marv::hal_target::bench::start();
@@ -305,6 +362,12 @@ int main() {
                                          marv::param_value<ParamId::tick_period_den>()));
   stage = Stage::kMotorsOk;
   std::printf("motors ok\n");
+  receiver_boot = marv::hal_target::receiver_start({marv::param_value<ParamId::rc_channel_roll>(),
+                                                    marv::param_value<ParamId::rc_channel_pitch>(),
+                                                    marv::param_value<ParamId::rc_channel_throttle>(),
+                                                    marv::param_value<ParamId::rc_channel_yaw>()});
+  stage = Stage::kReceiverOk;
+  std::printf("receiver ok\n");
   imu_boot = marv::hal_target::imu_start(
       kSink, &rate_counts,
       {marv::param_value<ParamId::tick_period_num_us>(), marv::param_value<ParamId::tick_period_den>()});
@@ -313,6 +376,7 @@ int main() {
 
   bool was_connected = false;
   marv::hal_target::ImuStats before = marv::hal_target::imu_stats();
+  marv::hal_target::ReceiverStats rc_before = marv::hal_target::receiver_stats();
   marv::TimeUs t_before = marv::hal_time_us();
   for (;;) {
     const bool connected = stdio_usb_connected();
@@ -332,9 +396,11 @@ int main() {
     const marv::TimeUs t = marv::hal_time_us();
     if (t - t_before >= kPrintPeriodUs) {
       const marv::hal_target::ImuStats now = marv::hal_target::imu_stats();
-      print_stats(now, before, t - t_before);
+      const marv::hal_target::ReceiverStats rc_now = marv::hal_target::receiver_stats();
+      print_stats(now, before, rc_now, rc_before, t - t_before);
       print_bench(t);
       before = now;
+      rc_before = rc_now;
       t_before = t;
     }
     tight_loop_contents();

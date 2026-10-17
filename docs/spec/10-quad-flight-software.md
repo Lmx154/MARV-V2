@@ -203,9 +203,11 @@ adding more complex features gradually" (decision 0026).
   estimator valid once M3 lands.
 - Link-loss failsafe: Betaflight 4.5's defaults, cited parameters (Luis, 2026-10-15: "yes keep betaflight failsafes";
   [Betaflight Failsafe guide](https://www.betaflight.com/docs/wiki/guides/current/Failsafe)): the link is lost after
-  100 ms without a valid frame; the last stick values are held until 400 ms; then sticks centred and throttle at
-  minimum; at 1.5 s (`failsafe_delay`) the vehicle disarms (`failsafe_procedure` Drop); after a loss, control returns
-  only once the link has been valid for 0.5 s (`failsafe_recovery_delay`). A stale IMU disarms at once: the first
+  100 ms without a valid frame; the last stick values are held until 300 ms after the last valid frame; then sticks
+  centred and throttle at minimum; at 1.5 s (`failsafe_delay`) the vehicle disarms (`failsafe_procedure` Drop). A link
+  that returns before the disarm returns control at once; after the disarm, arming is possible again only once the link
+  has been valid for 0.5 s (`failsafe_recovery_delay`) and the arm switch has been cycled off and on (Betaflight 4.5.1
+  source, decision 0041). A stale IMU disarms at once: the first
   missed IMU read deadline (EMB-6) is the trigger, a derived rule with no tunable.
 - *Done when:* T1 tests of the arming and failsafe state machine pass; on the bench (TB) a receiver loss disarms at
   its stated time, and arming is refused with the throttle up or the IMU stale.

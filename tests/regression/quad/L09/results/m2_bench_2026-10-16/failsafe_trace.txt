@@ -1,0 +1,11 @@
+       switch_not_cycled  timer 3513072372  frame age 1866 us  frames 116088
+              switch_off  timer 3520487365  frame age 596 us  frames 117013  +7414993 us since previous
+                   armed  timer 3521935414  frame age 618 us  frames 117194  +1448049 us since previous
+              armed_hold  timer 3531723804  frame age 100824 us  frames 118403  +9788390 us since previous
+  armed_failsafe_centred  timer 3531923354  frame age 300374 us  frames 118403  +199550 us since previous
+                failsafe  timer 3533123403  frame age 1500423 us  frames 118403  +1200049 us since previous
+                 no_link  timer 3542077144  frame age 362 us  frames 118404  +8953741 us since previous
+       switch_not_cycled  timer 3542577294  frame age 4440 us  frames 118466  +500150 us since previous
+              switch_off  timer 3545861541  frame age 562 us  frames 118877  +3284247 us since previous
+                   armed  timer 3548533438  frame age 446 us  frames 119210  +2671897 us since previous
+polls 215733 in 75000 ms: 348 us per poll (the timing resolution)

@@ -38,6 +38,88 @@ inline constexpr unsigned kDshotT0hOfBitNum = 3;
 inline constexpr unsigned kDshotT1hOfBitNum = 6;
 inline constexpr unsigned kDshotBitFractionDen = 8;
 
+// CRSF frame construction. Citation: TBS CRSF spec (https://github.com/tbs-fpv/tbs-crsf-spec/blob/main/crsf.md), sections
+// "Frame Construction" / "Frame Details": a frame is sync byte, frame length, type, payload, CRC; the sync byte is the
+// serial sync byte 0xC8 or the broadcast device address 0x00 (or a device address); the frame length counts the bytes
+// after the sync and length bytes (type, payload, CRC), valid range 2 to 62, anything else is discarded; a frame is at
+// most 64 bytes including the sync and CRC bytes. Section "CRC": CRC8, polynomial x7 + x6 + x4 + x2 + x0 = 0xD5, over type
+// and payload.
+// Kind: standard.
+inline constexpr std::uint8_t kCrsfSyncSerial = 0xC8;
+inline constexpr std::uint8_t kCrsfAddrBroadcast = 0x00;
+inline constexpr std::size_t kCrsfFrameBytesMax = 64;
+inline constexpr std::uint8_t kCrsfLengthMin = 2;
+inline constexpr std::uint8_t kCrsfLengthMax = 62;
+inline constexpr std::uint8_t kCrsfCrc8Poly = 0xD5;
+
+// CRSF frame types. Citation: TBS CRSF spec (https://github.com/tbs-fpv/tbs-crsf-spec/blob/main/crsf.md), section
+// "Broadcast Frame Types": "0x14 Link Statistics" and "0x16 RC Channels Packed Payload".
+// Kind: standard.
+inline constexpr std::uint8_t kCrsfTypeLinkStatistics = 0x14;
+inline constexpr std::uint8_t kCrsfTypeRcChannelsPacked = 0x16;
+
+// CRSF 0x16 RC Channels Packed Payload. Citation: TBS CRSF spec
+// (https://github.com/tbs-fpv/tbs-crsf-spec/blob/main/crsf.md), section "0x16 RC Channels Packed Payload": "16 channels
+// packed into 22 bytes", the struct lists channel_01 .. channel_16 as 11-bit fields back to back (16 * 11 = 176 bits =
+// 22 bytes). The spec does not state the bit order; least significant bit first (little-endian bit packing) is that of
+// the struct as a C bit-field on a little-endian target and of the CRSF working group's example frame
+// (https://github.com/crsf-wg/crsf/wiki/CRSF_FRAMETYPE_RC_CHANNELS_PACKED: "LSB-first, little endian").
+// Kind: standard.
+inline constexpr std::size_t kCrsfRcChannels = 16;
+inline constexpr unsigned kCrsfRcChannelBits = 11;
+inline constexpr std::size_t kCrsfRcPayloadBytes = 22;
+
+// CRSF 0x14 Link Statistics payload layout. Citation: TBS CRSF spec
+// (https://github.com/tbs-fpv/tbs-crsf-spec/blob/main/crsf.md), section "0x14 Link Statistics": ten one-byte fields in this
+// order, the SNR fields being int8_t: up_rssi_ant1, up_rssi_ant2, up_link_quality, up_snr, active_antenna, rf_profile,
+// up_rf_power, down_rssi, down_link_quality, down_snr. The value is the byte offset into the payload.
+// Kind: standard.
+inline constexpr std::size_t kCrsfLsUpRssiAnt1 = 0;
+inline constexpr std::size_t kCrsfLsUpRssiAnt2 = 1;
+inline constexpr std::size_t kCrsfLsUpLinkQuality = 2;
+inline constexpr std::size_t kCrsfLsUpSnr = 3;
+inline constexpr std::size_t kCrsfLsActiveAntenna = 4;
+inline constexpr std::size_t kCrsfLsRfProfile = 5;
+inline constexpr std::size_t kCrsfLsUpRfPower = 6;
+inline constexpr std::size_t kCrsfLsDownRssi = 7;
+inline constexpr std::size_t kCrsfLsDownLinkQuality = 8;
+inline constexpr std::size_t kCrsfLsDownSnr = 9;
+inline constexpr std::size_t kCrsfLinkStatsPayloadBytes = 10;
+
+// CRSF serial link to a flight controller. Citation: ExpressLRS master (dd96654), src/lib/OPTIONS/options.cpp:197, the
+// receiver's UART baud rate defaults to 420000 ("rcvr-uart-baud" | 420000), and src/user_defines.txt:44-47 ("Changing this
+// will prevent flashing via_BetaflightPassthrough, which expects a 420000 baud RX"); the receiver is configured for 8N1
+// on its CRSF output (src/src/rx_main.cpp:1347, Serial.begin(serialBaud, serialConfig, ...)). The TBS CRSF spec
+// (https://github.com/tbs-fpv/tbs-crsf-spec/blob/main/crsf.md) differs: section "Frame Details" gives 416666 baud 8N1 for a
+// device-to-flight-controller link (line 138) and 400 kbaud 8N1 for the handset link (line 134). UNVERIFIED: the two
+// sources disagree (420000 against 416666, 0.8 %); the ELRS figure is used because the ELRS receiver transmits at it, and
+// the 8N1 frame (8 data bits, 1 stop bit, no parity) is common to both. The bench shows which the receiver link needs.
+// Kind: standard.
+inline constexpr std::uint32_t kCrsfBaudElrs = 420000;
+inline constexpr std::uint32_t kCrsfBaudTbs = 416666;
+inline constexpr unsigned kCrsfUartDataBits = 8;
+inline constexpr unsigned kCrsfUartStopBits = 1;
+
+// CRSF channel ticks to pulse width. Citation: TBS CRSF spec (https://github.com/tbs-fpv/tbs-crsf-spec/blob/main/crsf.md),
+// section "0x16 RC Channels Packed Payload": TICKS_TO_US(x) = ((x - 992) * 5 / 8 + 1500), "Center (1500us) = 992". ELRS
+// master src/include/crsf_protocol.h:20-24 gives the standard range: 172 = 988 us (-100 %), 992 = 1500 us, 1811 = 2012 us
+// (+100 %); the spec's formula gives 987.5 us and 2011.875 us there. The normalisation used by the pilot-input contract
+// (decision 0040, quad spec 4.0 M2): stick x = (us - 1500) / 512 with 512 us the half span of the 988 .. 2012 us range;
+// throttle = (us - 988) / 1024 with 1024 us its span.
+// Kind: standard.
+inline constexpr std::int32_t kCrsfTickCentre = 992;
+inline constexpr float kCrsfUsCentre = 1500.0F;
+inline constexpr float kCrsfUsPerTickNum = 5.0F;
+inline constexpr float kCrsfUsPerTickDen = 8.0F;
+inline constexpr float kRcUsHalfSpan = 512.0F;
+inline constexpr float kRcUsThrottleMin = 988.0F;
+inline constexpr float kRcUsThrottleSpan = 1024.0F;
+
+// Percent. Citation: the definition of the percent, one hundredth (CRSF link quality is reported in percent, TBS CRSF spec
+// "0x14 Link Statistics").
+// Kind: math.
+inline constexpr float kPercentPerUnit = 100.0F;
+
 // Pi. Citation: the mathematical constant, the ratio of a circle's circumference to its diameter.
 // Kind: math.
 inline constexpr double kPi = 3.14159265358979323846;

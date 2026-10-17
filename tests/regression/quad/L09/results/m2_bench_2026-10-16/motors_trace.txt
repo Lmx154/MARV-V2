@@ -1,0 +1,12 @@
+              switch_off  timer 331379616  frame age 2842 us  frames 41355
+                   armed  timer 338337307  frame age 395 us  frames 42224  +6957691 us since previous
+              switch_off  timer 340785355  frame age 398 us  frames 42530  +2448048 us since previous
+                   armed  timer 341881504  frame age 587 us  frames 42666  +1096149 us since previous
+              switch_off  timer 343897502  frame age 458 us  frames 42918  +2015998 us since previous
+                   armed  timer 344697451  frame age 392 us  frames 43018  +799949 us since previous
+              switch_off  timer 349145546  frame age 452 us  frames 43573  +4448095 us since previous
+                   armed  timer 374410074  frame age 444 us  frames 46726  +25264528 us since previous
+              armed_hold  timer 377462165  frame age 100379 us  frames 47094  +3052091 us since previous
+  armed_failsafe_centred  timer 377662315  frame age 300529 us  frames 47094  +200150 us since previous
+                failsafe  timer 378862216  frame age 1500430 us  frames 47094  +1199901 us since previous
+polls 259847 in 90000 ms: 346 us per poll (the timing resolution)

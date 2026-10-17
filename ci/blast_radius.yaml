@@ -301,12 +301,26 @@ rules:
     gz_groups: [l4, l5, l11]
     why: "mixer is linked by the L03 and L09 tests, rate, rate_group, vertical and the compositions; L06 tools compile with fw/mixer/include"
 
+  - paths: [fw/arming/**]
+    ctest_labels: [L08, L09]
+    run_ci_steps: ["@host"]
+    pytest_paths: []
+    gz_groups: []
+    why: "arming is the pure arming and failsafe machine, tested by the L08 unit_arming host test and linked by the quad_fc composition (the L09 gate test)"
+
   - paths: [fw/attitude/**]
     ctest_labels: [L05, L11]
     run_ci_steps: ["@flight_gates"]
     pytest_paths: []
     gz_groups: [l5, l11]
     why: "attitude is linked by the compositions l5 and l11"
+
+  - paths: [fw/stick_rates/**]
+    ctest_labels: [L08, L09]
+    run_ci_steps: ["@host"]
+    pytest_paths: []
+    gz_groups: []
+    why: "stick_rates (the QF-1 rates curve) is linked by the L08 unit test and by the quad_fc composition (the L09 gate test)"
 
   - paths: [fw/vertical/**]
     ctest_labels: [L11]
@@ -417,7 +431,7 @@ rules:
 
   # ---------------------------------------------------------------- tools
   - paths: [tools/card/**]
-    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L09, L11]
+    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L08, L09, L11]
     run_ci_steps: ["@card_gates"]
     pytest_paths:
       - tests/regression/quad/L01/tools
@@ -434,7 +448,7 @@ rules:
       - tools/sim/prim_constants.py
       - tools/sim/reference.py
       - tools/sim/t4_rule.py
-    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L09, L11]
+    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L08, L09, L11]
     run_ci_steps: ["@card_gates"]
     pytest_paths:
       - tests/regression/quad/L01/tools
@@ -996,6 +1010,13 @@ rules:
     why: "L06 tools tests and the committed L06 measurements they read"
 
   # ---------------------------------------------------------------- L11
+  - paths: [tests/regression/quad/L08/CMakeLists.txt, tests/regression/quad/L08/unit/**]
+    ctest_labels: [L08]
+    run_ci_steps: ["@host"]
+    pytest_paths: []
+    gz_groups: []
+    why: "the L08 unit tests (the CRSF decoder, the QF-1 rates curve, the manual-control pull, the arming machine) are host ctest entries"
+
   - paths: [tests/regression/quad/L09/CMakeLists.txt, tests/regression/quad/L09/unit/**]
     ctest_labels: [L09]
     run_ci_steps: ["@host"]
