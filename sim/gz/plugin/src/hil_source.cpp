@@ -98,6 +98,10 @@ const char* arm_text(std::uint32_t code) {
       return "calibrating";
     case ArmState::NotUpright:
       return "not_upright";
+    case ArmState::ConfigRefused:
+      return "config_refused";
+    case ArmState::Maintenance:
+      return "maintenance";
   }
   return "unknown";
 }

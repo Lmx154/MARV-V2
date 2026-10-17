@@ -154,6 +154,10 @@ void print_progress() {
       return "calibrating";
     case ArmState::NotUpright:
       return "not_upright";
+    case ArmState::ConfigRefused:
+      return "config_refused";
+    case ArmState::Maintenance:
+      return "maintenance";
   }
   return "";
 }

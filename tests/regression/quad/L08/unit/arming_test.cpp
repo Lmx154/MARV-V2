@@ -619,5 +619,110 @@ TEST(Arming, FailsafeReasonClearsWhenTheLinkIsValid) {
   EXPECT_EQ(r.live(Rig::kArmedAt + kDisarm + 2).state, ArmState::NoLink);
 }
 
+// Ground segment refusals (decision 0053, Luis 2026-10-17; unit 4a). The new codes follow NotUpright: every existing code is
+// unchanged.
+TEST(Arming, ConfigRefusedAndMaintenanceFollowNotUprightInTheCodes) {
+  EXPECT_EQ(static_cast<int>(ArmState::NotUpright), 15);
+  EXPECT_EQ(static_cast<int>(ArmState::ConfigRefused), 16);
+  EXPECT_EQ(static_cast<int>(ArmState::Maintenance), 17);
+}
+
+// A config status other than Ok, fixed at init, refuses arming with every other condition good (the control, the same run with
+// Ok, arms), names itself even with no link at all, and sits after ImuStale and MotorTest in the refusal order. An armed
+// machine cannot be config-refused: the status exists only from init, which disarms.
+TEST(Arming, ConfigRefusedRefusesWithEveryOtherConditionGoodForEveryStatus) {
+  for (const ConfigStatus status :
+       {ConfigStatus::Corrupt, ConfigStatus::SchemaMismatch, ConfigStatus::Invalid, ConfigStatus::NotValidated}) {
+    Rig r;
+    r.machine_.init(test_config(), status);
+    EXPECT_EQ(r.machine_.config_status(), status);
+    // No frame at all: ConfigRefused, not NoLink.
+    EXPECT_EQ(r.at(kT0 - 1).state, ArmState::ConfigRefused);
+    r.in_.arm = kOff;
+    (void)r.run(kT0, kT0 + kRecovery - Rig::kStepUs);
+    for (std::uint64_t t = kT0 + kRecovery; t < kT0 + kRecovery + 8 * Rig::kStepUs; t += Rig::kStepUs) {
+      // Every condition good, the switch cycled on every other step.
+      r.in_.arm = ((t - kT0 - kRecovery) / Rig::kStepUs) % 2 == 0 ? kOn : kOff;
+      const ArmingOutput<float> o = r.live(t);
+      EXPECT_FALSE(o.armed);
+      EXPECT_EQ(o.state, ArmState::ConfigRefused);
+      expect_zero_sticks(o);
+    }
+    // The order: ImuStale and MotorTest come first.
+    r.in_.motor_test_active = true;
+    EXPECT_EQ(r.live(kT0 + 20 * kRecovery).state, ArmState::MotorTest);
+    r.in_.imu_deadline_missed = true;
+    EXPECT_EQ(r.live(kT0 + 20 * kRecovery + 1).state, ArmState::ImuStale);
+    // A reset (a reboot) keeps the status given to init.
+    r.machine_.reset();
+    EXPECT_EQ(r.machine_.config_status(), status);
+  }
+  Rig ok;
+  ok.machine_.init(test_config(), ConfigStatus::Ok);
+  EXPECT_EQ(ok.machine_.config_status(), ConfigStatus::Ok);
+  EXPECT_TRUE(ok.arm().armed);
+}
+
+// A maintenance request on a step that starts armed is not granted and changes nothing: the vehicle stays armed with live
+// sticks, the request is not remembered (after a disarm the machine arms as if it had not been made).
+TEST(Arming, AMaintenanceRequestWhileArmedIsNotGrantedAndChangesNothing) {
+  Rig r;
+  (void)r.arm();
+  r.in_.maintenance_request = true;
+  for (std::uint64_t t = Rig::kArmedAt + Rig::kStepUs; t < Rig::kArmedAt + 5 * Rig::kStepUs; t += Rig::kStepUs) {
+    const ArmingOutput<float> o = r.live(t);
+    EXPECT_TRUE(o.armed);
+    EXPECT_EQ(o.state, ArmState::Armed);
+    EXPECT_EQ(o.throttle, r.in_.throttle);
+    EXPECT_FALSE(r.machine_.maintenance());
+  }
+  r.in_.maintenance_request = false;
+  // Disarm by the switch and arm again by a cycle: the earlier requests left nothing behind.
+  r.in_.arm = kOff;
+  EXPECT_EQ(r.live(Rig::kArmedAt + 5 * Rig::kStepUs).state, ArmState::SwitchOff);
+  r.in_.arm = kOn;
+  EXPECT_TRUE(r.live(Rig::kArmedAt + 6 * Rig::kStepUs).armed);
+  EXPECT_FALSE(r.machine_.maintenance());
+}
+
+// A request disarmed is granted: arming is refused whatever the switch does, the grant persists and the sticks are zero. Only
+// reset() (a reboot) ends it. The request on the very step of an arming edge wins over the edge.
+TEST(Arming, AMaintenanceRequestWhileDisarmedIsGrantedAndPersistsUntilReset) {
+  Rig r;
+  (void)r.run(kT0, kT0 + kRecovery - Rig::kStepUs);
+  r.in_.arm = kOff;
+  EXPECT_EQ(r.live(kT0 + kRecovery).state, ArmState::SwitchOff);
+  EXPECT_FALSE(r.machine_.maintenance());
+  r.in_.maintenance_request = true;
+  ArmingOutput<float> o = r.live(kT0 + kRecovery + 1);
+  EXPECT_FALSE(o.armed);
+  EXPECT_EQ(o.state, ArmState::Maintenance);
+  EXPECT_TRUE(r.machine_.maintenance());
+  r.in_.maintenance_request = false;
+  // The switch cycled, many times, with everything else good: stays disarmed, Maintenance.
+  for (std::uint64_t k = 0; k < 40; ++k) {
+    r.in_.arm = k % 2 == 0 ? kOn : kOff;
+    o = r.live(kT0 + kRecovery + 2 + k * Rig::kStepUs);
+    EXPECT_FALSE(o.armed);
+    EXPECT_EQ(o.state, ArmState::Maintenance);
+    expect_zero_sticks(o);
+  }
+  // A later long silence of the link does not change the state's meaning: still granted.
+  EXPECT_EQ(r.at(kT0 + 100 * kDisarm).state, ArmState::Maintenance);
+  EXPECT_TRUE(r.machine_.maintenance());
+  // reset() is the only end.
+  r.machine_.reset();
+  EXPECT_FALSE(r.machine_.maintenance());
+  EXPECT_EQ(r.machine_.state(), ArmState::Boot);
+
+  Rig e;
+  (void)e.run(kT0, kT0 + kRecovery - Rig::kStepUs);
+  e.in_.arm = kOn;
+  e.in_.maintenance_request = true;
+  o = e.live(kT0 + kRecovery);  // the edge step: everything good, and the request
+  EXPECT_FALSE(o.armed);
+  EXPECT_EQ(o.state, ArmState::Maintenance);
+}
+
 }  // namespace
 }  // namespace marv::arming

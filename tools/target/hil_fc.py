@@ -62,7 +62,7 @@ STATUS_FIELDS = ("sample_records", "samples", "manual_records", "manual_refused"
 # fw/arming/include/marv/arming/arming.hpp ArmState, in order.
 ARM_STATES = ("boot", "switch_off", "switch_not_cycled", "throttle_up", "imu_stale", "imu_invalid", "saturated", "no_link",
               "failsafe", "motor_test", "armed", "armed_hold", "armed_failsafe_centred", "estimator_invalid", "calibrating",
-              "not_upright")
+              "not_upright", "config_refused", "maintenance")
 LINK_FAULTS = ("manual_refused", "crc_failures", "bad_headers", "seq_gaps", "tick_gaps", "bytes_dropped", "queue_overflows",
                "report_overflows")
 
