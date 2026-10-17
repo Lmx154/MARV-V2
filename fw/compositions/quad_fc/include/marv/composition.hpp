@@ -21,6 +21,14 @@ struct RateCounts {
 };
 [[nodiscard]] RateCounts rate_counts() noexcept;
 
+// The attitude law's counters since init (angle mode, decision 0043): its faults and, of them, its spacing faults. Atomic
+// reads of values published after each execution, callable from any context (the target's background loop prints them).
+struct AttitudeCounts {
+  std::uint32_t faults = 0;
+  std::uint32_t timing_faults = 0;
+};
+[[nodiscard]] AttitudeCounts attitude_counts() noexcept;
+
 // The arming machine's state after the latest rate tick: Armed, ArmedHold and ArmedFailsafeCentred when armed, else the
 // cause of the latest disarm or the first refusing condition (arming.hpp); Boot before the first rate tick. A single
 // atomic read, callable from any context (the target's background loop prints it).

@@ -1,7 +1,7 @@
 // The quad flight composition, M2 subset (quad spec 4.0 M2): the gyro chain, the rate loop and the mixer through the
 // shared rate-group step (marv::rate_group), the arming and failsafe machine (marv::arming), the stick rates curve
-// (marv::stick_rates), then the motor output gate. There is no attitude or vertical loop here: the pilot flies the rate
-// loop (acro).
+// (marv::stick_rates), then the motor output gate. There is no vertical loop here. The pilot flies the rate loop (acro) or,
+// with the angle switch selecting it, the attitude law (angle mode, M4 A2, decision 0043 item 3), below.
 //
 // Every tick: the boot gyro calibration (marv::estimator::GyroCal, M3 P6) takes the sample's gyro until it completes; once
 // complete, its bias is subtracted from the gyro of every sample, before both the estimator and the rate loop's gyro chain,
@@ -16,6 +16,17 @@
 // collective thrust of the throttle, below; disarmed: zero setpoint and zero thrust, so the filters keep running); the
 // motor test is updated; the gate then decides the motor values written. On the other ticks nothing is written: the HAL
 // latch holds the last command.
+//
+// Angle mode. Selected on a rate tick iff rc_channel_angle is not 0 and ManualControl.channels[rc_channel_angle - 1] >=
+// angle_switch_threshold (a value that is not a number is acro). While armed and selected, the sticks the arming machine
+// decides (the same limited sticks acro uses, so centred in ArmedFailsafeCentred) go through marv::attitude::AngleMode (roll,
+// pitch, yaw sticks to a setpoint quaternion and a yaw-rate command), marv::attitude::AttitudeLaw (to a rate setpoint) and
+// RateGroupStep::execute_bypass, with the same collective thrust as acro, from the estimator's quaternion, the calibrated gyro
+// and the estimator's validity. On the first rate tick of armed-and-selected both are reset (AngleMode::reset, which drops the
+// heading lock; AttitudeLaw::reset, so the first execution carries no spacing check); the law runs only there. The rate loop's
+// controller state is not reset on a change of mode. No failsafe phase forces angle mode: the mode channel is the newest valid
+// frame's. The law runs on every rate tick, which is its period only when att_loop_ratio is 1 (the product set's value). The
+// law's faults and timing faults are counted (attitude_counts).
 //
 // Collective thrust. T = T_min + throttle * (T_max - T_min), linear in collective thrust between the mixer's own limits
 // (lead decision, M2 P4), with T_min = sum over the motors of k omega_idle^2 and T_max = sum of k omega_max^2, k the
@@ -49,6 +60,9 @@
 #include <limits>
 
 #include <marv/arming/arming.hpp>
+#include <marv/attitude/angle_mode.hpp>
+#include <marv/attitude/attitude_law.hpp>
+#include <marv/attitude/config.hpp>
 #include <marv/composition.hpp>
 #include <marv/estimator/gyro_cal.hpp>
 #include <marv/estimator/mahony.hpp>
@@ -64,6 +78,7 @@
 #include <marv/sched/rate_groups.hpp>
 #include <marv/stick_rates/stick_rates.hpp>
 #include <marv/types/actuator.hpp>
+#include <marv/types/attitude_state.hpp>
 #include <marv/types/imu_sample.hpp>
 #include <marv/types/time.hpp>
 
@@ -102,6 +117,14 @@ stick_rates::RatesConfig<float> g_rates;
 float g_thrust_min = 0.0F;  // T_min, N
 float g_thrust_max = 0.0F;  // T_max, N
 std::size_t g_arm_channel = 0;  // index into ManualControl::channels (rc_channel_arm - 1)
+bool g_angle_switch = false;    // rc_channel_angle is not 0
+std::size_t g_angle_channel = 0;  // index into ManualControl::channels (rc_channel_angle - 1), when g_angle_switch
+float g_angle_threshold = 0.0F;   // angle_switch_threshold
+bool g_angle_running = false;     // the latest rate tick was armed and angle
+attitude::AngleMode<float> g_angle;
+attitude::AttitudeLaw<float> g_attitude;
+std::atomic<std::uint32_t> g_attitude_faults{0};         // the law's fault_count, published after each execution
+std::atomic<std::uint32_t> g_attitude_timing_faults{0};  // and its timing_fault_count
 bool g_imu_invalid = false;     // a sample since the previous rate tick lacked GyroValid or AccelValid
 bool g_imu_saturated = false;   // a sample since the previous rate tick had a saturation bit
 std::atomic<std::uint8_t> g_arming_state{static_cast<std::uint8_t>(arming::ArmState::Boot)};
@@ -281,6 +304,26 @@ void init() noexcept {
     hal_panic("quad_fc composition: rc_channel_arm is outside 1..16");
   }
   g_arm_channel = static_cast<std::size_t>(channel) - 1;
+  const std::int32_t angle_channel = param_value<ParamId::rc_channel_angle>();
+  if (angle_channel < 0 || static_cast<std::size_t>(angle_channel) > prim::kCrsfRcChannels) {
+    hal_panic("quad_fc composition: rc_channel_angle is outside 0..16");
+  }
+  if (angle_channel != 0 &&
+      (angle_channel == channel || angle_channel == param_value<ParamId::rc_channel_roll>() ||
+       angle_channel == param_value<ParamId::rc_channel_pitch>() ||
+       angle_channel == param_value<ParamId::rc_channel_throttle>() ||
+       angle_channel == param_value<ParamId::rc_channel_yaw>())) {
+    hal_panic("quad_fc composition: rc_channel_angle is the arm channel or a stick channel");
+  }
+  g_angle_switch = angle_channel != 0;
+  g_angle_channel = g_angle_switch ? static_cast<std::size_t>(angle_channel) - 1 : 0;
+  g_angle_threshold = param_value<ParamId::angle_switch_threshold>();
+  const attitude::AttitudeConfig<float> attitude_cfg = attitude::load_config();
+  g_angle.init(attitude_cfg);
+  g_attitude.init(attitude_cfg);
+  g_angle_running = false;
+  g_attitude_faults.store(0, std::memory_order_relaxed);
+  g_attitude_timing_faults.store(0, std::memory_order_relaxed);
   g_arming.init(arming::load_config());
   g_estimator.init(estimator::MahonyConfig<float>{
       param_value<ParamId::estimator_kp>(), param_value<ParamId::estimator_ki>(),
@@ -378,12 +421,30 @@ void tick(const ImuSample& raw) noexcept {
 
   prim::Vec3<float> setpoint;
   float thrust = 0.0F;
+  bool angle_run = false;
   if (g_gate == MotorGate::Armed) {
-    setpoint = stick_rates::rate_setpoint(
-        g_rates, prim::Vec3<float>(limited(out.roll, -1.0F), limited(out.pitch, -1.0F), limited(out.yaw, -1.0F)));
+    const prim::Vec3<float> sticks(limited(out.roll, -1.0F), limited(out.pitch, -1.0F), limited(out.yaw, -1.0F));
     thrust = g_thrust_min + limited(out.throttle, 0.0F) * (g_thrust_max - g_thrust_min);
+    angle_run = g_angle_switch && mc.channels[g_angle_channel] >= g_angle_threshold;
+    if (angle_run) {
+      if (!g_angle_running) {
+        g_angle.reset();
+        g_attitude.reset();
+      }
+      const AttitudeState<float> state{s.t_us, q, s.gyro_rad_s, in.estimator_valid};
+      const attitude::AngleOutput<float> angle =
+          g_angle.execute(attitude::AngleSticks<float>{sticks[0], sticks[1], sticks[2]}, state);
+      const attitude::AttitudeOutput<float> law = g_attitude.execute(state, angle.q_sp, angle.yaw_rate_cmd);
+      g_attitude_faults.store(law.fault_count, std::memory_order_relaxed);
+      g_attitude_timing_faults.store(law.timing_fault_count, std::memory_order_relaxed);
+      setpoint = law.rate_setpoint;
+    } else {
+      setpoint = stick_rates::rate_setpoint(g_rates, sticks);
+    }
   }
-  const rate_group::Execution e = g_step.execute(setpoint, prim::Vec3<float>(), thrust);
+  g_angle_running = angle_run;
+  const rate_group::Execution e = angle_run ? g_step.execute_bypass(setpoint, prim::Vec3<float>(), thrust)
+                                            : g_step.execute(setpoint, prim::Vec3<float>(), thrust);
   hal_tick_stage(TickStage::Gate);
   update_motor_test(s.t_us);
   hal_actuators_write(gate_output(g_gate, g_run, e.dshot));
@@ -397,6 +458,11 @@ AttitudeStatus attitude_status() noexcept {
   const float xy2 = g_tilt_xy2.load(std::memory_order_relaxed);
   const float wz2 = g_tilt_wz2.load(std::memory_order_relaxed);
   return AttitudeStatus{2.0F * std::atan2(std::sqrt(xy2), std::sqrt(wz2)), g_estimator_valid.load(std::memory_order_relaxed)};
+}
+
+AttitudeCounts attitude_counts() noexcept {
+  return AttitudeCounts{g_attitude_faults.load(std::memory_order_relaxed),
+                        g_attitude_timing_faults.load(std::memory_order_relaxed)};
 }
 
 RateCounts rate_counts() noexcept { return RateCounts{g_step.execution_count(), g_step.timing_fault_count()}; }
