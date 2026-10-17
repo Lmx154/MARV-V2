@@ -44,7 +44,7 @@ enum class StatusField : std::uint8_t {
   OrderFaults,     // samples whose t_us did not exceed the previous one
   SpiErrors,       // FIFO words with a bad tag
   Delivered,       // samples the driver handed to the composition (low 32 bits)
-  Logged,          // samples the ring accepted
+  Logged,          // samples taken out of the ring: packed into records sent before this status record, or discarded while no host held the port
   Count
 };
 inline constexpr std::size_t kStatusFields = static_cast<std::size_t>(StatusField::Count);

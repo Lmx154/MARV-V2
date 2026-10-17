@@ -38,9 +38,11 @@ SAMPLE = struct.Struct("<Q6fI")  # t_us, gyro xyz, accel xyz, flags
 # imu_log_format.hpp StatusField, in order.
 STATUS_FIELDS = ("ring_overflows", "ring_high_water", "deadline_misses", "fifo_overflows", "timing_faults",
                  "stamp_clamps", "order_faults", "spi_errors", "delivered", "logged")
-# A count above this is not a record: it bounds a corrupt header's claimed length (the largest real record is a status
-# record of len(STATUS_FIELDS) words or a data record of a few tens of samples).
-MAX_COUNT = 1 << 16
+# The largest legal data record: the firmware packs the samples that arrive in one stdio USB background task interval,
+# ceil(ODR x interval) = ceil(7680 Hz x 1000 us / 1e6) = 8 (imu_log.cpp kFrameSamples; boards/parts/lsm6dsv.hpp kOdrHz,
+# the SDK's PICO_STDIO_USB_TASK_INTERVAL_US). A header claiming more, or no sample, cannot be a record: it is a framing
+# error, counted against validity, and parsing resyncs on the next magic. A status record has exactly len(STATUS_FIELDS).
+MAX_DATA_SAMPLES = -(-7680 * 1000 // 1000000)
 # Counters that must stay at zero for a valid log (decision 0042 item 2: no deadline miss, FIFO overflow or stamp gap;
 # the ring, timing, clamp, order and bad-tag counters are the other ways the sample stream can differ from the target's).
 MUST_BE_ZERO = ("ring_overflows", "deadline_misses", "fifo_overflows", "timing_faults", "stamp_clamps", "order_faults",
@@ -101,6 +103,7 @@ class Result:
     data_records: int = 0
     status_records: int = 0
     crc_failures: int = 0
+    bad_headers: int = 0  # a magic followed by a count that no record has
     unframed_bytes: int = 0  # bytes outside valid records after the first valid one
     leading_bytes: int = 0  # bytes before the first valid record
     truncated_tail: int = 0
@@ -146,8 +149,8 @@ def parse(buf: bytes) -> Result:
             break
         magic, seq, count = HEADER.unpack_from(buf, i)
         item = SAMPLE.size if magic == DATA_MAGIC else WORD
-        if count > MAX_COUNT or (magic == STATUS_MAGIC and count != len(STATUS_FIELDS)):
-            r.crc_failures += 1  # a header that cannot be a record: counted with the corrupt ones
+        if not (1 <= count <= MAX_DATA_SAMPLES if magic == DATA_MAGIC else count == len(STATUS_FIELDS)):
+            r.bad_headers += 1
             pos = i + 1
             continue
         end = i + HEADER.size + count * item + WORD
@@ -215,13 +218,25 @@ def report(r: Result, num: int, den: int, tol_us: int) -> tuple[list[str], bool]
     last = r.status[-1] if r.status else {}
     duration = (r.samples[-1][0] - r.samples[0][0]) / 1e6 if len(r.samples) > 1 else 0.0
     out.append(f"bytes {r.size}  data records {r.data_records}  status records {r.status_records}")
-    out.append(f"CRC failures {r.crc_failures}  sequence gaps {r.seq_gaps} (records lost {r.seq_lost})  "
+    out.append(f"CRC failures {r.crc_failures}  bad headers {r.bad_headers}  sequence gaps {r.seq_gaps} (records lost {r.seq_lost})  "
                f"unframed bytes {r.unframed_bytes} (before the first record {r.leading_bytes})  "
                f"truncated tail {r.truncated_tail} bytes")
     out.append(f"samples {len(r.samples)}  duration {duration:.3f} s  mean rate "
                f"{(len(r.samples) - 1) / duration if duration > 0 else 0.0:.1f} samples/s")
     out.append(f"tick period {num}/{den} us = {num / den:.3f} us, tolerance {tol_us} us (fc3v2 registers); spacing "
                f"min {lo} max {hi} us; stamp gaps {gaps}" + (f", first at (sample index, spacing us): {first}" if first else ""))
+    mismatches = 0
+    for k in range(1, len(r.status)):
+        decoded = r.status_at_sample[k] - r.status_at_sample[k - 1]
+        delta = (r.status[k]["logged"] - r.status[k - 1]["logged"]) & 0xFFFFFFFF
+        if decoded != delta:
+            mismatches += 1
+            if mismatches <= 3:
+                out.append(f"status interval {k}: {decoded} samples decoded, logged counter advanced {delta}")
+    out.append(f"logged-counter cross-check: {max(len(r.status) - 1, 0)} intervals, {mismatches} mismatches")
+    if r.truncated_tail:
+        out.append(f"final record truncated after {r.truncated_tail} bytes (allowed: a capture stops mid-record; its "
+                   f"header is legal and fewer than one whole record, at most {HEADER.size + MAX_DATA_SAMPLES * SAMPLE.size + WORD} bytes, remains)")
     if r.status:
         out.append("status (last record, cumulative since boot): " + "  ".join(f"{k}={last[k]}" for k in STATUS_FIELDS))
         tail = len(r.samples) - r.status_at_sample[-1]
@@ -229,7 +244,7 @@ def report(r: Result, num: int, den: int, tol_us: int) -> tuple[list[str], bool]
     else:
         out.append("status: no status record")
     if r.text:
-        printable = r.text.decode(errors="replace").replace("\r", "").strip()
+        printable = "".join(c if c.isprintable() or c == "\n" else "." for c in r.text.decode(errors="replace")).strip()
         if printable:
             out.append("text outside the records: " + printable[:300])
     reasons: list[str] = []
@@ -239,6 +254,10 @@ def report(r: Result, num: int, den: int, tol_us: int) -> tuple[list[str], bool]
         reasons.append("no status record")
     if r.crc_failures:
         reasons.append(f"{r.crc_failures} CRC failures")
+    if r.bad_headers:
+        reasons.append(f"{r.bad_headers} headers with an impossible count")
+    if mismatches:
+        reasons.append(f"{mismatches} status intervals whose decoded samples differ from the logged delta")
     if r.seq_gaps:
         reasons.append(f"{r.seq_gaps} sequence gaps")
     if r.unframed_bytes:
@@ -277,10 +296,20 @@ def record(magic: bytes, seq: int, items: bytes, count: int) -> bytes:
 
 
 def synth(n_records: int = 6, per: int = 8, drop: int | None = None, flip: int | None = None, jump: int | None = None,
-          overflow: int = 0, tick: tuple[int, int] = (1953125, 14649)) -> bytes:
+          overflow: int = 0, tick: tuple[int, int] = (1953125, 14649), count_at: tuple[int, int] | None = None,
+          logged_skew: int = 0, status_every: int = 3, first_logged: int = 1000) -> bytes:
+    """A log of n_records data records of `per` samples, a status record after every status_every of them and at the end.
+    first_logged: the samples discarded before the host connected (in the first status record's cumulative `logged`)."""
     out = bytearray()
     seq = 0
     k = 0
+
+    def status(overflow_count: int, logged: int) -> bytes:
+        f = [0] * len(STATUS_FIELDS)
+        f[0] = overflow_count
+        f[STATUS_FIELDS.index("logged")] = (first_logged + logged) & 0xFFFFFFFF
+        return record(STATUS_MAGIC, seq, struct.pack(f"<{len(f)}I", *f), len(f))
+
     for rec in range(n_records):
         items = bytearray()
         for _ in range(per):
@@ -290,39 +319,63 @@ def synth(n_records: int = 6, per: int = 8, drop: int | None = None, flip: int |
         data = record(DATA_MAGIC, seq, bytes(items), per)
         if flip == rec:
             data = data[:20] + bytes([data[20] ^ 1]) + data[21:]
+        if count_at is not None and count_at[0] == rec:
+            data = data[:8] + struct.pack("<I", count_at[1]) + data[12:]  # the CRC is stale too: only the count matters
         if drop != rec:
             out += data
         seq += 1
-    f = [0] * len(STATUS_FIELDS)
-    f[0] = overflow
-    out += record(STATUS_MAGIC, seq, struct.pack(f"<{len(f)}I", *f), len(f))
+        if (rec + 1) % status_every == 0 and rec + 1 < n_records:
+            out += status(0, k)
+            seq += 1
+    out += status(overflow, k + logged_skew)  # the skew is on the last record only: the earlier ones are consistent
     return bytes(out)
 
 
 def selftest() -> int:
     assert zlib.crc32(b"123456789") == 0xCBF43926  # the CRC-32 check value (constants.hpp kCrc32PolyReflected)
     num, den, tol = tick_period()
-    cases = [("clean", synth(), True, {}), ("crc failure", synth(flip=2), False, {"crc_failures": 1, "seq_gaps": 1}),
-             ("sequence gap", synth(drop=3), False, {"seq_gaps": 1, "seq_lost": 1}),
-             ("stamp gap", synth(jump=20), False, {"stamp_gaps": 1}),
-             ("ring overflow count", synth(overflow=1), False, {})]
+    whole = synth()
+    partial = record(DATA_MAGIC, 99, b"\0" * (SAMPLE.size * MAX_DATA_SAMPLES), MAX_DATA_SAMPLES)[:100]
+    cases = [
+        ("clean", whole, True, {}),
+        ("crc failure", synth(flip=2), False, {"crc_failures": 1, "seq_gaps": 1}),
+        ("sequence gap", synth(drop=3), False, {"seq_gaps": 1, "seq_lost": 1}),
+        ("stamp gap", synth(jump=20), False, {"stamp_gaps": 1}),
+        ("ring overflow count", synth(overflow=1), False, {}),
+        ("count too large mid-log", synth(count_at=(2, 5000)), False, {"bad_headers": 1}),
+        ("count zero mid-log", synth(count_at=(4, 0)), False, {"bad_headers": 1}),
+        ("count corrupted to a legal smaller one", synth(count_at=(2, 3)), False, {"crc_failures": 1}),
+        ("trailing garbage", whole + b"garbage!", False, {}),
+        ("zero samples", record(STATUS_MAGIC, 0, struct.pack(f"<{len(STATUS_FIELDS)}I", *([0] * len(STATUS_FIELDS))),
+                                len(STATUS_FIELDS)), False, {}),
+        ("empty file", b"", False, {}),
+        ("logged-delta mismatch", synth(logged_skew=1), False, {}),
+        ("truncated final record", whole + partial, True, {"truncated_tail": len(partial)}),
+        ("truncated record with an impossible count", whole + partial[:8] + struct.pack("<I", 5000), False, {}),
+    ]
     for name, buf, valid, expect in cases:
         r = parse(buf)
         lines, ok = report(r, num, den, tol)
         gaps = stamp_gaps(r.samples, num, den, tol)[0]
-        got = {"crc_failures": r.crc_failures, "seq_gaps": r.seq_gaps, "seq_lost": r.seq_lost, "stamp_gaps": gaps}
+        got = {"crc_failures": r.crc_failures, "bad_headers": r.bad_headers, "seq_gaps": r.seq_gaps,
+               "seq_lost": r.seq_lost, "stamp_gaps": gaps, "truncated_tail": r.truncated_tail}
         for k, v in expect.items():
             assert got[k] == v, (name, k, got[k], v)
         if name == "clean":
-            assert got == {"crc_failures": 0, "seq_gaps": 0, "seq_lost": 0, "stamp_gaps": 0} and len(r.samples) == 48
+            assert got == {"crc_failures": 0, "bad_headers": 0, "seq_gaps": 0, "seq_lost": 0, "stamp_gaps": 0,
+                           "truncated_tail": 0} and len(r.samples) == 48 and r.status_records == 2
         if name == "ring overflow count":
             assert r.status[-1]["ring_overflows"] == 1
+        if name == "count too large mid-log":
+            assert len(r.samples) < 48  # the records after the corrupt header are not silently kept as valid
+        if name == "logged-delta mismatch":
+            assert any("logged counter advanced" in x for x in lines), lines
         assert ok == valid, (name, lines)
         assert ("LOG VALID" in lines[-1]) == valid and (valid or lines[-1].startswith("LOG INVALID")), lines[-1]
         print(f"selftest {name}: {lines[-1]}")
-    junk = b"PANIC: x\r\n" + synth() + b"tail"
+    junk = b"PANIC: x\r\n" + whole
     r = parse(junk)
-    assert r.leading_bytes == 10 and r.unframed_bytes == 4 and not report(r, num, den, tol)[1]
+    assert r.leading_bytes == 10 and r.unframed_bytes == 0 and report(r, num, den, tol)[1]
     print("selftest ok")
     return 0
 

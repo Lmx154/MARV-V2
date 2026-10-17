@@ -70,7 +70,7 @@ void send_status() noexcept {
   at(fmt::StatusField::OrderFaults) = s.order_faults;
   at(fmt::StatusField::SpiErrors) = s.spi_errors;
   at(fmt::StatusField::Delivered) = static_cast<std::uint32_t>(s.samples);
-  at(fmt::StatusField::Logged) = g_head.load(std::memory_order_relaxed);
+  at(fmt::StatusField::Logged) = g_tail.load(std::memory_order_relaxed);
   std::array<std::uint8_t, fmt::kStatusRecordBytes> buf{};
   fmt::RecordWriter w{buf};
   w.begin(fmt::kStatusMagic, g_seq++, static_cast<std::uint32_t>(f.size()));
