@@ -1,6 +1,6 @@
 # Quad L7 scenario 'hover' (docs/spec/10-quad-flight-software.md section 4 L7 and section 4.0 M3 done-when; docs/decisions/0042 item 4).
 # Level at hover rotor speed with a roll-rate kick and the sticks centred throughout, flown by the l7_attitude_estimated composition
-# (angle mode, the attitude law, the rate loop in bypass) on the model IMU with the Mahony estimator as the only attitude source
+# (angle mode, the attitude law, the rate loop in bypass) on the model IMU at the nominal corner with the Mahony estimator as the only attitude source
 # (no <attitude_source>, no TRUTH_STATE): the L5 hover predicate on the estimate. The accelerometer reads (0, 0, -g) along body z from
 # tick 0 (level, thrust m g). Same L5 schema as scenarios/quad/L05 (tools/sim/l5_scenario.py), same horizon as recover_tumble. Every
 # number is a labelled scenario value or a derived value. Frames NED / FRD, SI.
@@ -52,10 +52,10 @@ initial_state:
     label: scenario
     rationale: "as scenarios/quad/L05/step_roll.yaml: every host step moves the link 1.5625e-4 m north, 156 times the 1e-6 pose change below which gz-sim 8 leaves a read stale (docs/decisions/0003 item 11), so every read is fresh (INFERRED; the test fails on a stale read in the window); marv_plant v0 has no drag or position-dependent torque"
   body_rates_frd_rad_s:
-    value: [1.0, 1.0, 0.0]
+    value: [0.5, 0.5, 0.0]
     unit: rad/s
     label: scenario
-    rationale: "the roll-rate kick: PLACEHOLDER sizing run"
+    rationale: "the body-rate kick [p0, p0, 0], p0 = 0.5 rad/s (decision 0042 item 4). Roll and pitch together because a pure roll kick lies exactly on the L2 separatrix (roll is the card's intermediate inertia axis, Ixx 0.0025 between 0.0021 and 0.0043 kg m^2: margin 0, refused by the L2 entry rules) and a pure pitch kick rounds to 1.0000000000000002; with both the margin is Iyy/(Ixx + Iyy) = 0.457. Size: with the loop disabled (att_kp, rate_ki_roll, rate_ki_pitch 0) the kick leaves a tilt of 0.114 rad, 5 times the band attitude_tilt_error_max + 0.02 Delta (about 0.023 rad); the run on the estimate peaks at 0.063 rad. Measurements: tests/regression/quad/L07/results/hover_kick. The IMU is the nominal corner (no turn-on bias, bias_signs all 0): the plant has no drag, so the accelerometer never shows tilt and a turn-on bias would drift the truth without bound (0.044 rad over 6.3 s at 0.4 deg/s)"
   rotor_speed_rad_s:
     value: hover
     unit: rad/s
