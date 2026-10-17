@@ -968,7 +968,7 @@ TEST_F(ArmedGateTest, ASwitchCycleArmsAndThenTheMixerOutputForTheSticksIsWritten
 // gyro the mixer's torques are zero, each motor carries T / 4 and omega = sqrt(T / (4 k)); the ESC map then gives the DShot value.
 // s = 0 is T_min (omega_idle), s = 1 is T_max (omega_max), s = 1/2 is T = 4 k (omega_idle + (omega_max - omega_idle) / 2)^2, and
 // the hover stick of the real card is s = (sqrt(m g) - sqrt(T_min)) / (sqrt(T_max) - sqrt(T_min)) for the all-up mass m of the card
-// (vehicles/marv_5in_fc3v2.yaml, 0.732 kg) and standard gravity. One DShot count of tolerance covers the rounding and the diffuser's carry.
+// (the real FC3V2 vehicle card, 0.732 kg) and standard gravity. One DShot count of tolerance covers the rounding and the diffuser's carry.
 TEST_F(ArmedGateTest, TheThrottleStickIsLinearInRotorSpeedKnownAnswers) {
   constexpr double kCardMassKg = 0.732;
   constexpr double kStandardGravity = 9.80665;
