@@ -11,7 +11,7 @@
 2. New register parameter `airmode_activate_throttle` = 0.29296875 (`fw/compositions/quad_fc/params/quad_fc_register.yaml`), derived: Betaflight 4.5.1
    `pg/rx.c:103` `airModeActivateThreshold` 25 percent; `fc/core.c:715-744` `calculateThrottlePercentAbs()` =
    `constrain(((rcData[THROTTLE] - mincheck) * 100) / (PWM_RANGE_MAX - mincheck), 0, 100)` in integer arithmetic, `mincheck` 1050 (`pg/rx.c:91`),
-   `PWM_RANGE_MAX` 2000 (`pg/rx.h:33`); the first whole microsecond at 25 is 1288 us (1287 us gives 24); normalized (1288 - 988) / 1024 under the
+   `PWM_RANGE_MAX` 2000 (`rx/rx.h:33`); the first whole microsecond at 25 is 1288 us (1287 us gives 24); normalized (1288 - 988) / 1024 under the
    receive contract. Airmode is on by default: `config/feature.c:35` (`FEATURE_AIRMODE`); the latch: `fc/core.c:776-783`; the reset decision
    `fc/core.c:790-796`.
 3. Quad spec 10, section 4.0 M4: "(Betaflight without airmode)" becomes the latch (Luis, 2026-10-17, decision 0050).
