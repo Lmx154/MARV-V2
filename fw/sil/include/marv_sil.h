@@ -22,6 +22,23 @@ enum { MARV_ROTOR_SPEED_M1_VALID = 0, MARV_ROTOR_SPEED_M2_VALID, MARV_ROTOR_SPEE
        MARV_ROTOR_SPEED_FLAG_COUNT };
 enum { MARV_ROTOR_SPEED_MOTORS = MARV_ROTOR_SPEED_FLAG_COUNT };
 typedef struct marv_rotor_speed_meas { float omega_rad_s[MARV_ROTOR_SPEED_MOTORS]; uint32_t flags; } marv_rotor_speed_meas;
+/* Manual control (HIL S2c, decision 0046 item 4): the pilot's input as hal_manual_control() returns it, same fields as
+ * ManualControl (fw/types). struct_size is sizeof(marv_manual_control), checked (E_ABI). t_us is the frame stamp on the
+ * board clock (hal_time_us() at the frame's completion; in SIL hal_time_us() is the tick stamp, so a replay keeps each tick's
+ * frame age = tick stamp - t_us). frames counts valid RC frames (0 = none yet; then t_us, the sticks, throttle and channels
+ * are 0). channels are [-1, 1], channel_01 at index 0 (the arm switch is channel 5, index 4). */
+enum { MARV_RC_CH_01 = 0, MARV_RC_CH_02, MARV_RC_CH_03, MARV_RC_CH_04, MARV_RC_CH_05, MARV_RC_CH_06, MARV_RC_CH_07,
+       MARV_RC_CH_08, MARV_RC_CH_09, MARV_RC_CH_10, MARV_RC_CH_11, MARV_RC_CH_12, MARV_RC_CH_13, MARV_RC_CH_14,
+       MARV_RC_CH_15, MARV_RC_CH_16, MARV_RC_CHANNELS };   /* index = channel - 1; the count is checked against the CRSF 16 */
+typedef struct marv_manual_control {
+  uint32_t struct_size;
+  uint32_t frames;
+  uint64_t t_us;
+  float roll, pitch, yaw, throttle;
+  float channels[MARV_RC_CHANNELS];
+  float link_quality;
+  uint64_t link_t_us;
+} marv_manual_control;
 enum { MARV_PARAM_F32 = 0, MARV_PARAM_I32 };
 typedef struct marv_sil_param_override { uint32_t id; uint32_t type; float f32; int32_t i32; float sigma; } marv_sil_param_override;
 typedef struct marv_sil_config {
@@ -41,6 +58,13 @@ marv_sil_status marv_sil_tick(uint64_t first_tick, uint32_t k, const marv_imu_me
  * then reports every motor invalid. READY. */
 marv_sil_status marv_sil_tick_with_rotor_speed(uint64_t first_tick, uint32_t k, const marv_imu_meas* imu,
                                                const marv_rotor_speed_meas* rotor, marv_sil_out* out);
+/* Stages the manual control that hal_manual_control() returns from the next tick on, verbatim; it holds for every following
+ * tick until the next call replaces it (the HAL's sticky stage). Never staged: no frame (frames 0, every field 0), so the
+ * link is down (arming state NoLink). READY, between tick calls. Validated: struct_size (E_ABI); every float finite, sticks
+ * and channels in [-1, 1], throttle and link_quality in [0, 1], and frames == 0 with t_us, sticks, throttle and channels
+ * all 0 (E_INPUT). The ticks' IMU deadline-miss count is always 0 and the rotor-speed read reports no sample
+ * (marv_sil_tick) or the tick's (marv_sil_tick_with_rotor_speed). */
+marv_sil_status marv_sil_stage_manual_control(const marv_manual_control* mc);
 marv_sil_status marv_sil_shutdown(void);                          /* READY -> DONE (terminal) */
 const char*     marv_sil_status_str(marv_sil_status s);
 uint32_t        marv_sil_error_index(void);

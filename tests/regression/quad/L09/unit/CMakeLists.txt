@@ -28,3 +28,26 @@ add_executable(unit_console console_test.cpp)
 target_link_libraries(unit_console PRIVATE marv_console_decode marv_types GTest::gtest_main)
 marv_apply_flags(unit_console)
 marv_frozen_suite(unit_console)
+
+# The quad_fc composition as a SIL library (sim/quad_fc, HIL S2c, decision 0046 item 4): the staged ManualControl reaches
+# the composition through the C ABI, and the staged frame stamp drives the failsafe. The library is linked, init succeeds once
+# per process, so every test that initialises runs in a forked child. The test reads the set's default table (the library's
+# set, marv_params_fc3v2) for the tick rational and the failsafe times.
+add_executable(unit_sil_quad_fc sil_quad_fc_test.cpp)
+target_link_libraries(unit_sil_quad_fc PRIVATE marv_sil_quad_fc marv_params_fc3v2_runtime marv_params_fc3v2_generated marv_types marv_hal_sim GTest::gtest_main)
+marv_apply_flags(unit_sil_quad_fc)
+marv_frozen_suite(unit_sil_quad_fc)
+
+# marv_sil_quad_fc must resolve the FC3v2 parameter table, not the product set's that marv_attitude, marv_rate and marv_mixer
+# also link (the link order decides): the size of the linked marv::generated::kParamDefaults. The control swaps the sets: the
+# library's table is not the product set's, so the check must fail.
+add_test(NAME sil_quad_fc_param_table
+  COMMAND "${CMAKE_COMMAND}" -DLIB=$<TARGET_FILE:marv_sil_quad_fc> -DNM=${CMAKE_NM}
+          -DEXPECT=$<TARGET_FILE:marv_params_fc3v2_generated> -DOTHER=$<TARGET_FILE:marv_params_generated>
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/check_param_table.cmake")
+add_test(NAME sil_quad_fc_param_table_negative_control
+  COMMAND "${CMAKE_COMMAND}" -DLIB=$<TARGET_FILE:marv_sil_quad_fc> -DNM=${CMAKE_NM}
+          -DEXPECT=$<TARGET_FILE:marv_params_generated> -DOTHER=$<TARGET_FILE:marv_params_fc3v2_generated>
+          -P "${CMAKE_CURRENT_SOURCE_DIR}/check_param_table.cmake")
+set_tests_properties(sil_quad_fc_param_table sil_quad_fc_param_table_negative_control PROPERTIES LABELS frozen)
+set_tests_properties(sil_quad_fc_param_table_negative_control PROPERTIES WILL_FAIL TRUE)
