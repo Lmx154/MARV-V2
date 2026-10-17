@@ -21,14 +21,20 @@
 // Still samples. Both valid bits set, every gyro axis below kStillGyroRadS and |f| in the open interval (accel_healthy_min g,
 // accel_healthy_max g): the Betaflight 4.5.1 gates (src/main/flight/imu.c, quiet gyro below 15 deg/s, lines 87-88 and
 // 364-377; imuIsAccelerometerHealthy, 0.9 g - 1.1 g, lines 326-338; INFERRED from a source read, as in
-// fw/estimator/include/marv/estimator/mahony.hpp). A still segment is a maximal run of still samples, where two runs
-// separated by a non-still gap of at most Params::merge_gap_s are one segment; still 1 and still 2 are the two longest, in
-// time order, and each is then trimmed by Params::trim_s at both ends. The mean f, check (a), check (c') and T_s all use the
-// trimmed segments (the protocol's rotation window uses the untrimmed ones).
-// The merge and the trim are test-harness scenario values (the lead's decision on the M3 P3b review, set by the caller): a
-// hand-held log has single-sample spikes and tremor that would split a run (theta_rot ~ 0 from two pieces of one segment),
-// and the segment's last samples can hold the slow start of the rotation, up to the 15 deg/s gate, which would leave the
-// estimate tilted against the segment's mean f for a sound estimator. 50 ms is far shorter than any deliberate hand rotation.
+// fw/estimator/include/marv/estimator/mahony.hpp). A still run is a maximal run of consecutive still samples. A run joins the
+// still segment before it if the rotation over the segment's gaps, summed including the new gap, stays at most Params::share.
+// The rotation over a gap is the sum of |gyro| (the vector norm) times the stamp difference over the samples after the earlier
+// run's last up to the later run's first. A segment whose gaps turn the board by no more than the tilt budget in all cannot
+// have moved the reference of check (a) by more than the budget through them. Still 1 and still 2 are the two longest
+// segments, in time order, and each is then trimmed by Params::trim_s at both ends. The mean f, check (a), check (c') and T_s
+// all use the trimmed segments (the protocol's rotation window uses the untrimmed ones).
+// The trim is a test-harness scenario value (the lead's decision on the M3 P3b review, set by the caller). Why the merge: a
+// hand-held log has single-sample spikes and tremor that would split a run (theta_rot ~ 0 from two pieces of one segment). A
+// fixed time gap (50 ms) failed on a bench log whose rotation started gently, dipping below the gate many times: the short
+// gaps were merged and still 1 ended inside the rotation. A bound on each gap alone failed the same way (bench dry run 2: every
+// gap of the gentle start turned the board by less than the budget, and the chain of them ran 1 s into the rotation), so the
+// bound is on the sum over the segment. Why the trim: the segment's last samples can hold the slow start of the rotation, up to
+// the 15 deg/s gate, which would leave the estimate tilted against the segment's mean f for a sound estimator.
 //
 // Checks. (a) At the last sample of each still segment the angle between the estimate's down direction in body axes
 // (R^T e_z) and -mean(f)/|mean(f)| over that segment is at most share. (c') From a copy of the estimator at the last
@@ -50,6 +56,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "marv/estimator/mahony.hpp"
@@ -73,7 +80,6 @@ struct Params {
   std::uint32_t tick_num = 0;   // tick period num / den us
   std::uint32_t tick_den = 1;
   std::uint32_t tol_us = 0;     // rate_period_tolerance_us
-  double merge_gap_s = 0.0;     // non-still gaps up to this long inside a still segment are merged (test-harness scenario value)
   double trim_s = 0.0;          // dropped from each end of each merged still segment (test-harness scenario value)
 };
 
@@ -304,22 +310,59 @@ struct Segment {
   return lo * lo < n2 && n2 < hi * hi;
 }
 
-// The two longest still segments (by sample count) after merging runs closer than merge_gap_s, in time order; fewer if the
-// log has fewer. Not trimmed.
-[[nodiscard]] inline std::vector<Segment> two_longest_still(std::span<const ImuSample> s, const Params& p) {
+[[nodiscard]] inline double seconds(const ImuSample& a, const ImuSample& b) {
+  return static_cast<double>(b.t_us - a.t_us) / prim::kMicrosecondsPerSecond;
+}
+
+// The still runs (maximal runs of consecutive still samples), in time order.
+[[nodiscard]] inline std::vector<Segment> still_runs(std::span<const ImuSample> s, const Params& p) {
   std::vector<Segment> runs;
-  const double gap_us = p.merge_gap_s * prim::kMicrosecondsPerSecond;
   for (std::size_t k = 0; k < s.size(); ++k) {
     if (!is_still(s[k], p)) {
       continue;
     }
-    if (!runs.empty() &&
-        (runs.back().last + 1 == k || static_cast<double>(s[k].t_us - s[runs.back().last].t_us) <= gap_us)) {
+    if (!runs.empty() && runs.back().last + 1 == k) {
       runs.back().last = k;
     } else {
       runs.push_back({k, k});
     }
   }
+  return runs;
+}
+
+// The rotation over the samples first .. last (inclusive): the sum of |gyro| times the stamp difference to the previous sample.
+[[nodiscard]] inline double rotation_over(std::span<const ImuSample> s, std::size_t first, std::size_t last) {
+  double rot = 0.0;
+  for (std::size_t k = std::max<std::size_t>(first, 1); k <= last; ++k) {
+    double n2 = 0.0;
+    for (std::size_t a = 0; a < prim::kSpatialDim; ++a) {
+      n2 += static_cast<double>(s[k].gyro_rad_s[a]) * static_cast<double>(s[k].gyro_rad_s[a]);
+    }
+    rot += std::sqrt(n2) * seconds(s[k - 1], s[k]);
+  }
+  return rot;
+}
+
+// Runs are merged while the rotation over the segment's gaps, summed, stays at most max_rotation_rad.
+[[nodiscard]] inline std::vector<Segment> merge_runs(std::span<const ImuSample> s, const std::vector<Segment>& runs,
+                                                     double max_rotation_rad) {
+  std::vector<Segment> out;
+  double used = 0.0;
+  for (const Segment& r : runs) {
+    const double gap = out.empty() ? 0.0 : rotation_over(s, out.back().last + 1, r.first);
+    if (!out.empty() && used + gap <= max_rotation_rad) {
+      out.back().last = r.last;
+      used += gap;
+    } else {
+      out.push_back(r);
+      used = 0.0;
+    }
+  }
+  return out;
+}
+
+// The two longest segments (by sample count), in time order; fewer if there are fewer. Not trimmed.
+[[nodiscard]] inline std::vector<Segment> two_longest(std::vector<Segment> runs) {
   std::stable_sort(runs.begin(), runs.end(), [](const Segment& a, const Segment& b) {
     return a.last - a.first > b.last - b.first;
   });
@@ -359,10 +402,6 @@ struct Segment {
   return {m[0] / c, m[1] / c, m[2] / c};
 }
 
-[[nodiscard]] inline double seconds(const ImuSample& a, const ImuSample& b) {
-  return static_cast<double>(b.t_us - a.t_us) / prim::kMicrosecondsPerSecond;
-}
-
 enum class Control : std::uint8_t { None, NegateStill2Accel, NegateRotationGyro };
 
 struct Report {
@@ -385,9 +424,12 @@ struct Report {
   [[nodiscard]] bool valid() const { return invalid.empty(); }
 };
 
-[[nodiscard]] inline Report evaluate(std::span<const ImuSample> samples, const Params& p, Control control = Control::None) {
+// segments: the two still segments to use; empty: the log's own (still runs merged by the gap rotation, the two longest).
+[[nodiscard]] inline Report evaluate(std::span<const ImuSample> samples, const Params& p, Control control = Control::None,
+                                     std::vector<Segment> segments = {}) {
   Report r;
-  const std::vector<Segment> segs = two_longest_still(samples, p);
+  const std::vector<Segment> segs =
+      segments.empty() ? two_longest(merge_runs(samples, still_runs(samples, p), p.share)) : std::move(segments);
   if (segs.size() < 2) {
     r.invalid = "fewer than two still segments";
     return r;
