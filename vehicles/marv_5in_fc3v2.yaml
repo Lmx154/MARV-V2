@@ -1,65 +1,70 @@
-# Vehicle card: Luis's 5-inch quad on the madflight FC3v2 Rev-C (quad spec §4.0 M1, M4; core contracts 2.1). Schema and
+# Vehicle card: Luis's 7-inch quad on the madflight FC3v2 Rev-C (quad spec §4.0 M1, M4; core contracts 2.1). Schema and
 # sigma policy: tools/card/schema.py. Frames: FRD body, CM origin. Spin: ccw = counter-clockwise viewed from above.
-# Hardware (Luis, 2026-10-15): madflight FC3v2 Rev-C, Goku G55M 55A AM32 4-in-1 ESC, flight pack 4S1P 1600 mAh 120C LiPo,
-# 14.8 V nominal, 23.68 Wh (quad spec §4.0 M4). Luis, 2026-10-16: motors Emax ECO II Series 2807-1700KV; frame HGLRC
-# MY7 7-inch, 335 mm wheelbase, 217 g frame only (this card still carries the UZH 5-inch physics as placeholders). The card schema (tools/card/lint.py) has no pack field, so the pack is
+# The file name says 5in for history (the first card of this board carried a 5-inch placeholder physics); the airframe is
+# the 7-inch below. Noticed, not renamed (M4 P1 packet).
+# Hardware (Luis, 2026-10-15/16/17): madflight FC3v2 Rev-C, Flywoo Goku G55M 55A AM32 4-in-1 ESC, motors Emax ECO II Series
+# 2807-1700KV, props HQProp 7x3.5x3 polycarbonate (36 g for four), frame HGLRC MY7 7-inch (335 mm wheelbase, 217 g +- 5 g
+# frame only, plates 2/3/3 mm, arms 6 mm), flight pack Ovonic 4S1P 1600 mAh 120C LiPo (172 g, "battery is mounted on top";
+# 14.8 V nominal, 23.68 Wh, quad spec §4.0 M4). The card schema (tools/card/lint.py) has no pack field, so the pack is
 # recorded in this comment only and no tool reads it.
-# Physics: every entry is the published value of the UZH NeuroBEM 5-inch card (vehicles/uzh_neurobem_5in.yaml), carried
-# as a PLACEHOLDER until the M4 measurements replace it; rotors.speed_range is Luis's ruling of 2026-10-16 (see its source).
+# Physics (M4 P1): mass and motor x, y are Luis's measurements. Thrust coefficient, torque ratio, motor lag, inertia and
+# the motors' z are sourced estimates (INFERRED, PLACEHOLDER) until the thrust stand and the bifilar pendulum (quad spec
+# §4.0 M4) replace them. rotors.speed_range and rotors.esc_map are unchanged from M1 (Luis's ruling of 2026-10-16).
 vehicle: marv_5in_fc3v2
 
 mass:
-  value: 0.772
+  value: 0.732
   unit: kg
-  method: published
-  source: "NeuroBEM dataset readme, https://rpg.ifi.uzh.ch/neuro_bem/Readme.html ('Our drone has a mass of 0.772 kg')"
-  sigma: 0.010
-  sigma_rule: "half the spread between the conflicting sources: |0.772 - 0.752| / 2"
+  method: measured
+  source: "Luis, 2026-10-16/17: 'the drone is 696 grams', 'add 36 grams i forgot to add the prop weight', 'yes the 732 includes the battery' (696 g + 36 g of props = 732 g all-up: frame, motors, ESC, FC, wiring, pack and props)"
+  sigma: UNKNOWN
   status: [UNVERIFIED, PLACEHOLDER]
-  placeholder: &uzh_placeholder
-    reason: "other airframe (UZH NeuroBEM 5in): the published value of vehicles/uzh_neurobem_5in.yaml, not a measurement of this airframe"
-    replaced_by: "the M4 thrust stand and bifilar pendulum measurements (quad spec §4.0 M4)"
-  conflict:
-    - value: 0.752
-      unit: kg
-      source: "Bauersfeld et al., NeuroBEM, RSS 2021, arXiv:2106.08015v1 §IV-B ('total weight of 752 g')"
-      state: open
-    - value: 0.752
-      unit: kg
-      source: "uzh-rpg/agile_flight envsim/parameters/quads/blackbird.yaml @ 24f21c4 (mass)"
-      state: open
-  note: "the UZH card's mass entry with its open conflict"
+  placeholder:
+    reason: "Luis's sum of a weighed 696 g and 36 g of props added by hand; the scale, its resolution and a weighing of the flight-ready quad are not recorded"
+    replaced_by: "a recorded weighing of the flight-ready quad (scale, resolution, pack and props on) before the first flight"
+  check: "a recorded weighing of the flight-ready quad (scale, its resolution, the pack and the props on), or the thrust stand's hover thrust; the prop weight was added to the weighed 696 g by hand, not weighed with the props on"
+  note: "the scale and its resolution are not recorded, so the sigma is UNKNOWN (an invented one is refused by the sigma policy). The part masses used by the inertia model: pack 172 g (Luis 'battery weight - 172 grams'), props 9 g each, motors 47.9 g each, frame 217 g +- 5 g (HGLRC MY7 frame only), ESC 15 g; the remainder 100.4 g is the stack, receiver, wiring and the rest"
 
 inertia_diag:
-  value: [0.0025, 0.0021, 0.0043]
+  value: [0.00427, 0.00332, 0.00734]
   shape: diag3
   unit: kg m^2
-  method: published
-  source: "NeuroBEM dataset readme; uzh-rpg/agile_flight blackbird.yaml @ 24f21c4 (inertia) — agree"
-  sigma: UNKNOWN
-  status: [PLACEHOLDER]
-  placeholder: *uzh_placeholder
-  note: "source frame FLU; a diagonal inertia is unchanged by FLU→FRD (180° about x)"
+  method: "derived(point-mass model vehicles/marv_5in_fc3v2_inertia_model.py: Ixx = sum m (y^2 + (h - h_cg)^2), Iyy = sum m (x^2 + (h - h_cg)^2), Izz = sum m (x^2 + y^2) about the model's own CG; masses and motor x, y as in the model, heights ASSUMED there)"
+  source: "vehicles/marv_5in_fc3v2_inertia_model.py, run without arguments (nominal result: J = 4.2670e-03, 3.3214e-03, 7.3361e-03 kg m^2, CG 16.67 mm above the arm mid-plane); inputs: Luis's masses (this card's mass note) and ruler-measured motor spacing (rotors.m<n>.position); the split of the 217 g frame (50 % arms as point masses at their midpoints, 50 % plates at the centre) and every height above the arm plane are ASSUMED in the script, not measured"
+  sigma: [0.00107, 0.00083, 0.00184]
+  sigma_rule: "25 % of the value: the upper end of the 20-25 % bound set for a point-mass model of an unweighed airframe (lead, M4 P1 packet). The script's modelled variants account for 4.3-4.7 % (assumed split and heights, root-sum-square of one-at-a-time half-spreads) and a +-5 mm error of each motor coordinate for up to 9 % of Ixx, Iyy and Izz; the rest allows for the unmodelled parts (camera, VTX, antennas, wiring, the pack's exact place, the arms' and rotors' own inertias)"
+  status: [INFERRED, PLACEHOLDER]
+  placeholder:
+    reason: "a point-mass estimate with assumed heights and frame split; the airframe has not been put on a pendulum"
+    replaced_by: "the M4 bifilar pendulum measurement of the flight-ready quad (quad spec §4.0 M4)"
+  note: "diagonal only: the products of inertia (the pack, camera and wiring are not exactly centred) are neglected. Roll inertia is the largest of the two tilt axes because the y span (255 mm) is wider than the x span (224 mm). Source frame FRD"
 
 rotors:
   layout: quad_x
   thrust_coeff:
-    value: 1.562522e-6
+    value: 2.8e-6
     unit: N/(rad/s)^2
-    method: published
-    source: "uzh-rpg/agile_flight envsim/parameters/quads/blackbird.yaml @ 24f21c4, thrust_map[0]"
-    sigma: UNKNOWN
+    method: "derived(k_T = T / omega^2 on the rows of the Emax ECO II 2807-1300KV test table with an Avia 7040-3 prop at 25 V, scaled by the pitch ratio 3.5 / 4 for the HQProp 7x3.5x3; the midpoint of the scaled rows, the range widened to include the unscaled rows)"
+    source: "Emax ECO II 2807 1300KV table with the Avia 7040-3 prop at 25 V as posted at https://rcdrone.top/de/products/avia-7035-7-inch-7035-3-fpv-propeller-1cw-1ccw-copy (analyst's reading, M4 P1 packet; rows thrust g / rpm: 480 / 11942, 1000 / 16835, 1640 / 21080, 1990 / 23008, which give k_T = 3.0, 3.2, 3.3, 3.4e-6 N/(rad/s)^2). The pitch ratio 3.5 / 4 is a rough rule (INFERRED); the scaled rows are 2.6-3.0e-6. No published table exists for the 1700KV motor or for the HQProp 7x3.5x3"
+    sigma: 0.45e-6
+    sigma_rule: "half of the stated range 2.5e-6..3.4e-6: (3.4e-6 - 2.5e-6) / 2"
     status: [INFERRED, PLACEHOLDER]
-    placeholder: *uzh_placeholder
-    note: "reading thrust_map as [c2, c1, c0] of T = c2 ω² + c1 ω + c0 and its unit are inferred; the file states neither"
+    placeholder:
+      reason: "scaled from a third-party table of another motor (1300KV) and prop (Avia 7040-3); the table starts at 1250 rad/s, above this airframe's hover speed of about 800 rad/s, and k_T rises with speed in it"
+      replaced_by: "the M4 thrust stand measurement of this motor, ESC and prop (quad spec §4.0 M4)"
+    check: "the thrust stand: thrust against rotor speed at hover speed and above"
   torque_ratio:
-    value: 0.022
+    value: 0.012
     unit: m
-    method: published
-    source: "blackbird.yaml @ 24f21c4, kappa ('# [Nm/N]')"
-    sigma: UNKNOWN
-    status: [PLACEHOLDER]
-    placeholder: *uzh_placeholder
+    method: "derived(c_q = Q / T, Q = eta P_el / omega with an assumed drive efficiency eta = 0.80 and P_el = V I of the same Emax table rows as thrust_coeff)"
+    source: "the Emax ECO II 2807 1300KV / Avia 7040-3 table at 25 V posted at https://rcdrone.top/de/products/avia-7035-7-inch-7035-3-fpv-propeller-1cw-1ccw-copy (analyst's reading): rows 480 g (96.25 W), 1000 g (252.5 W), 1640 g (517.5 W), 1990 g (707.5 W) give c_q = 0.0131, 0.0117, 0.0117, 0.0120 m at eta = 0.80 (eta ASSUMED, INFERRED); no pitch scaling is applied"
+    sigma: 0.0025
+    sigma_rule: "half of the stated range 0.010..0.015 m: (0.015 - 0.010) / 2"
+    status: [INFERRED, PLACEHOLDER]
+    placeholder:
+      reason: "from a third-party table's electrical power at an assumed drive efficiency, for another motor and prop"
+      replaced_by: "the M4 thrust stand's torque and thrust measurement (quad spec §4.0 M4)"
+    check: "the thrust stand: reaction torque against thrust"
   speed_range:
     value: [0, 2991]
     shape: range
@@ -72,13 +77,16 @@ rotors:
   motor_lag:
     model: first_order
     tau:
-      value: 0.033
+      value: 0.05
       unit: s
-      method: published
-      source: "Bauersfeld et al. 2021 §V-D eq. (20) ('τ_Ω = 33 ms'); blackbird.yaml @ 24f21c4 motor_tau — agree"
-      sigma: UNKNOWN
-      status: [PLACEHOLDER]
-      placeholder: *uzh_placeholder
+      method: "derived(midpoint of the INFERRED range 0.03..0.08 s, which is scaled from the UZH 5-inch motor's 33 ms; no published value for the ECO II 2807 with a 7-inch prop on a Goku G55M)"
+      source: "analyst's estimate, M4 P1 packet: no source gives this airframe's motor lag; the UZH NeuroBEM 5-inch value is 33 ms (Bauersfeld et al. 2021 §V-D eq. (20) 'τ_Ω = 33 ms'; blackbird.yaml @ 24f21c4 motor_tau), and a 7-inch prop on a 2807 has more rotor inertia"
+      sigma: 0.025
+      sigma_rule: "half of the INFERRED range 0.03..0.08 s: (0.08 - 0.03) / 2"
+      status: [INFERRED, PLACEHOLDER]
+      placeholder:
+        reason: "no published value for this motor, ESC and prop; scaled by judgement from another airframe"
+        replaced_by: "the M4 thrust stand step response of rotor speed (quad spec §4.0 M4)"
   esc_map:
     model: linear_in_omega
     method: scenario
@@ -91,15 +99,16 @@ rotors:
     note: "endpoints are the DShot throttle range (core §4) and rotors.speed_range (Luis 2026-10-16, [0, 2991] rad/s)"
   m1:
     position:
-      value: [0.075, 0.10, 0.0]
+      value: [0.112, 0.1275, -0.0233]
       shape: frd3
       unit: m
-      method: "derived(FLU→FRD: y_FRD = −y_FLU, z_FRD = −z_FLU, from blackbird.yaml @ 24f21c4 tbm_*)"
-      source: "uzh-rpg/agile_flight blackbird.yaml @ 24f21c4, tbm_fr/tbm_bl/tbm_fl/tbm_br"
-      sigma: UNKNOWN
-      status: [PLACEHOLDER]
-      placeholder: *uzh_placeholder
-      note: "tbm_fr"
+      method: measured
+      source: "Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (front-right motor, the M1 measured map and motor_pad); z from vehicles/marv_5in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)"
+      sigma: [0.005, 0.005, 0.010]
+      sigma_rule: "the '~' of Luis's ruler readings taken as +-5 mm on each coordinate (1 sigma, conservative: the half-span would be +-2.5 mm); z: the +-10 mm spread of the model's assumed prop-plane height"
+      status: [UNVERIFIED, INFERRED]
+      check: "a caliper measurement of the four motor centres; the diagonal from the spans is 339 mm, Luis's ruler diagonal rear-left to front-right is ~330 mm and the published wheelbase is 335 mm (9 mm spread, more than the +-5 mm per coordinate), so the rectangle is UNVERIFIED"
+      note: "front-right; the centre of the rectangle is taken as the CG in x and y (battery on top, assumed centred); z is INFERRED from the inertia model"
     spin:
       value: ccw
       method: scenario
@@ -108,15 +117,16 @@ rotors:
       note: &spin_note "set at the ESC (AM32 reverse setting), never inverted in firmware (core §3)"
   m2:
     position:
-      value: [-0.075, -0.10, 0.0]
+      value: [-0.112, -0.1275, -0.0233]
       shape: frd3
       unit: m
-      method: "derived(FLU→FRD: y_FRD = −y_FLU, z_FRD = −z_FLU, from blackbird.yaml @ 24f21c4 tbm_*)"
-      source: "uzh-rpg/agile_flight blackbird.yaml @ 24f21c4, tbm_fr/tbm_bl/tbm_fl/tbm_br"
-      sigma: UNKNOWN
-      status: [PLACEHOLDER]
-      placeholder: *uzh_placeholder
-      note: "tbm_bl"
+      method: measured
+      source: "Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (rear-left motor, the M1 measured map and motor_pad); z from vehicles/marv_5in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)"
+      sigma: [0.005, 0.005, 0.010]
+      sigma_rule: "the '~' of Luis's ruler readings taken as +-5 mm on each coordinate (1 sigma, conservative: the half-span would be +-2.5 mm); z: the +-10 mm spread of the model's assumed prop-plane height"
+      status: [UNVERIFIED, INFERRED]
+      check: "a caliper measurement of the four motor centres; the diagonal from the spans is 339 mm, Luis's ruler diagonal rear-left to front-right is ~330 mm and the published wheelbase is 335 mm (9 mm spread, more than the +-5 mm per coordinate), so the rectangle is UNVERIFIED"
+      note: "rear-left; the centre of the rectangle is taken as the CG in x and y (battery on top, assumed centred); z is INFERRED from the inertia model"
     spin:
       value: ccw
       method: scenario
@@ -125,15 +135,16 @@ rotors:
       note: *spin_note
   m3:
     position:
-      value: [0.075, -0.10, 0.0]
+      value: [0.112, -0.1275, -0.0233]
       shape: frd3
       unit: m
-      method: "derived(FLU→FRD: y_FRD = −y_FLU, z_FRD = −z_FLU, from blackbird.yaml @ 24f21c4 tbm_*)"
-      source: "uzh-rpg/agile_flight blackbird.yaml @ 24f21c4, tbm_fr/tbm_bl/tbm_fl/tbm_br"
-      sigma: UNKNOWN
-      status: [PLACEHOLDER]
-      placeholder: *uzh_placeholder
-      note: "tbm_fl"
+      method: measured
+      source: "Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (front-left motor, the M1 measured map and motor_pad); z from vehicles/marv_5in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)"
+      sigma: [0.005, 0.005, 0.010]
+      sigma_rule: "the '~' of Luis's ruler readings taken as +-5 mm on each coordinate (1 sigma, conservative: the half-span would be +-2.5 mm); z: the +-10 mm spread of the model's assumed prop-plane height"
+      status: [UNVERIFIED, INFERRED]
+      check: "a caliper measurement of the four motor centres; the diagonal from the spans is 339 mm, Luis's ruler diagonal rear-left to front-right is ~330 mm and the published wheelbase is 335 mm (9 mm spread, more than the +-5 mm per coordinate), so the rectangle is UNVERIFIED"
+      note: "front-left; the centre of the rectangle is taken as the CG in x and y (battery on top, assumed centred); z is INFERRED from the inertia model"
     spin:
       value: cw
       method: scenario
@@ -142,15 +153,16 @@ rotors:
       note: *spin_note
   m4:
     position:
-      value: [-0.075, 0.10, 0.0]
+      value: [-0.112, 0.1275, -0.0233]
       shape: frd3
       unit: m
-      method: "derived(FLU→FRD: y_FRD = −y_FLU, z_FRD = −z_FLU, from blackbird.yaml @ 24f21c4 tbm_*)"
-      source: "uzh-rpg/agile_flight blackbird.yaml @ 24f21c4, tbm_fr/tbm_bl/tbm_fl/tbm_br"
-      sigma: UNKNOWN
-      status: [PLACEHOLDER]
-      placeholder: *uzh_placeholder
-      note: "tbm_br"
+      method: measured
+      source: "Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (rear-right motor, the M1 measured map and motor_pad); z from vehicles/marv_5in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)"
+      sigma: [0.005, 0.005, 0.010]
+      sigma_rule: "the '~' of Luis's ruler readings taken as +-5 mm on each coordinate (1 sigma, conservative: the half-span would be +-2.5 mm); z: the +-10 mm spread of the model's assumed prop-plane height"
+      status: [UNVERIFIED, INFERRED]
+      check: "a caliper measurement of the four motor centres; the diagonal from the spans is 339 mm, Luis's ruler diagonal rear-left to front-right is ~330 mm and the published wheelbase is 335 mm (9 mm spread, more than the +-5 mm per coordinate), so the rectangle is UNVERIFIED"
+      note: "rear-right; the centre of the rectangle is taken as the CG in x and y (battery on top, assumed centred); z is INFERRED from the inertia model"
     spin:
       value: cw
       method: scenario
