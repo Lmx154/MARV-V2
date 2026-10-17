@@ -17,7 +17,9 @@
 # marv_collect_flight_targets(<out-var>)
 #   Every target of any type defined anywhere in the project whose source directory is under fw/, except fw/hal/sim
 #   and fw/sil. Derived from the directory tree, so a new fw/ target is a flight target without any list to update;
-#   a type the checker cannot handle fails the checker rather than being skipped.
+#   a type the checker cannot handle fails the checker rather than being skipped. The one exception is the UTILITY type
+#   (add_custom_target, e.g. marv_link_generated): it has no object, library, include directory or usage requirement, so
+#   there is nothing in it to check; what its commands generate is compiled into the targets that are checked.
 #
 # marv_collect_sil_libraries(<out-var>)
 #   Every SHARED or MODULE library defined in the project (all of them are SIL entry libraries), except the negative
@@ -45,6 +47,10 @@ function(marv_collect_flight_targets out)
   set(sil_dir "${fw_dir}/sil")
   set(flight "")
   foreach(tgt IN LISTS all_targets)
+    get_target_property(type ${tgt} TYPE)
+    if(type STREQUAL "UTILITY")
+      continue()
+    endif()
     get_target_property(src_dir ${tgt} SOURCE_DIR)
     cmake_path(IS_PREFIX fw_dir "${src_dir}" NORMALIZE in_fw)
     cmake_path(IS_PREFIX hal_sim_dir "${src_dir}" NORMALIZE in_hal_sim)
