@@ -2,7 +2,7 @@
 
 Tool: `tools/target/hil_compare.py` (bench only, standard library only; `python3 tools/target/hil_compare.py --help`).
 Pass bar (0046): a recorded SIL sample stream replayed to the board gives DShot outputs equal to the SIL's within float
-tolerance; EMB-3 reported. Board results: added by the lead below ("Board run"); none yet.
+tolerance; EMB-3 reported. Board results: below.
 
 ## Commands
 
@@ -105,11 +105,11 @@ through a pty to a stand-in board that parses the replay's records with the boar
 in the board's record formats gave HIL MATCH with 0 counts over both scenarios' streams (a stand-in: it shows the record
 encoding, pacing, hello check and compare chain agree, nothing about the board).
 
-## Board run
-
-(The lead adds the image, the commands, `compare` output, and EMB-3 numbers here.)
-
 ## Board results, 2026-10-17 (lead)
+
+The 1-count comparison is a gross-defect and integration check (signs, axes, mixer, stick timing: errors of tens of counts), not a proof of numerical equivalence: a 1-3 % code-side gain error or a one-tick stale sample would not show.
+
+`compare` rebuilds the counts the replay sent (samples = the reference's ticks, ManualControl records = its frames, records = ticks / batch) from the reference and the batch size (the sidecar's, else the board's last status); the committed `.bin` and `.npz` alone reproduce the full verdict, and `*.bin.sent.json` are the replay's own record of them. Duplicate report ticks fail the verdict.
 
 HIL image `quad-L2-pass-267-g3ac0d4b` (sha256 28cd9f19…7b08), board reset before each replay, battery unplugged.
 

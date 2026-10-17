@@ -1,0 +1,20 @@
+{
+ "batch": 4,
+ "sample_records": 15930,
+ "samples": 63720,
+ "manual_records": 1062,
+ "aborted": "",
+ "hello": {
+  "schema_hash_low": 2784769430,
+  "schema_hash_high": 804482333,
+  "param_count": 136,
+  "param_values_crc": 2548916716,
+  "tick_period_num_us": 1953125,
+  "tick_period_den": 14649,
+  "rate_loop_divisor": 2,
+  "max_batch": 16,
+  "deadline_us": 14532,
+  "clk_sys_hz": 150000000,
+  "version_bytes": 25
+ }
+}

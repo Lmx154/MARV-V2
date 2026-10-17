@@ -77,7 +77,7 @@ import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from hil_fc import (ARM_STATES, CHANNELS, DRAIN_S, FLAGS_VALID, G0, HELLO_WAIT_S, LINK_FAULTS, MANUAL, MANUAL_MAGIC, SAMPLE,
+from hil_fc import (STATUS_FIELDS as STATUS_FIELDS_T, ARM_STATES, CHANNELS, DRAIN_S, FLAGS_VALID, G0, HELLO_WAIT_S, LINK_FAULTS, MANUAL, MANUAL_MAGIC, SAMPLE,
                     SAMPLE_MAGIC, STALL_S, US_PER_S, Uplink, parse_uplink, stamp_us, status_line)
 from hil_link import open_port, record
 
@@ -547,6 +547,7 @@ class Result:
     ref_ticks: int = 0
     common: int = 0
     missing: list[int] = field(default_factory=list)
+    dup: int = 0
     extra: list[int] = field(default_factory=list)
     values: int = 0
     exact_values: int = 0
@@ -569,6 +570,7 @@ def compare(ref_reports: list[tuple[int, tuple[int, ...]]], board_reports: list[
         dup += t in board
         board[t] = v
     ref = dict(ref_reports)
+    r.dup = dup
     r.missing = sorted(set(ref) - set(board))
     r.extra = sorted(set(board) - set(ref))
     common = sorted(set(ref) & set(board))
@@ -610,10 +612,14 @@ def verdict(r: Result, up: Uplink | None, sent: dict | None, tol: int, ticks: in
     reasons: list[str] = []
     if r.missing or r.extra:
         reasons.append(f"report ticks differ: {len(r.missing)} missing, {len(r.extra)} extra")
+    if r.dup:
+        reasons.append(f"{r.dup} duplicate report ticks")
     if r.max_diff > tol:
         reasons.append(f"max |difference| {r.max_diff} counts exceeds the tolerance {tol}")
     if r.ref_transitions != r.board_transitions:
         reasons.append("arming transitions differ")
+    if up is not None and sent is None:
+        reasons.append("sent counts missing")
     if up is not None and sent is not None:
         if not up.status:
             reasons.append("no status record")
@@ -643,11 +649,32 @@ def verdict(r: Result, up: Uplink | None, sent: dict | None, tol: int, ticks: in
     return reasons, not reasons
 
 
+def expected_counts(ref: dict, up: Uplink, sidecar: dict | None) -> dict | None:
+    """What the replay sent, from the reference (samples = its ticks, ManualControl records = its frames) and the batch size:
+    the sidecar's, or else the one the board's last status implies (samples / sample records). None if there is no batch
+    size that is consistent: it must divide the frame spacing and the ticks and give that record count."""
+    batch = sidecar["batch"] if sidecar else None
+    if batch is None and up.status and up.status[-1]["sample_records"]:
+        last = up.status[-1]
+        batch = last["samples"] // last["sample_records"]
+        if batch * last["sample_records"] != last["samples"]:
+            return None
+    if not batch or FRAME_TICKS % batch or ref["ticks"] % batch:
+        return None
+    out = {"batch": batch, "sample_records": ref["ticks"] // batch, "samples": ref["ticks"],
+           "manual_records": len(ref["frame_tick"]), "aborted": sidecar["aborted"] if sidecar else ""}
+    if sidecar and (sidecar["samples"], sidecar["sample_records"], sidecar["manual_records"]) != (
+            out["samples"], out["sample_records"], out["manual_records"]):
+        return None
+    return out
+
+
 def compare_cmd(args) -> int:
     ref = load_ref(Path(args.ref))
     up = parse_uplink(Path(args.out).read_bytes())
     sidecar = Path(str(args.out) + ".sent.json")
-    sent = json.loads(sidecar.read_text()) if sidecar.exists() else None
+    sidecar_data = json.loads(sidecar.read_text()) if sidecar.exists() else None
+    sent = expected_counts(ref, up, sidecar_data)
     lines: list[str] = []
     h = up.hello
     num, den = ref["tick_period_num_us"], ref["tick_period_den"]
@@ -669,6 +696,10 @@ def compare_cmd(args) -> int:
         last = up.status[-1]
         lines.append(status_line(last, clk))
         batch = sent["batch"] if sent else 4
+        lines.append("sent counts: " + (f"{sent['sample_records']} sample records / {sent['samples']} samples / "
+                     f"{sent['manual_records']} ManualControl, batch {sent['batch']} (from the reference and "
+                     + ("the sidecar)" if sidecar_data else "the board's last status; no sidecar)")
+                     if sent else "missing: no consistent batch size"))
         period = num / den
         us = lambda c: c * US_PER_S / clk  # noqa: E731
         lines.append(f"EMB-3 inputs: longest tick {last['max_tick_cycles']} cycles = {us(last['max_tick_cycles']):.1f} us "
@@ -731,6 +762,26 @@ def selftest() -> int:
     reasonsa, oka = verdict(ra, None, None, 1, 80)
     expect(not oka and ra.board_transitions[0] == (22, "armed") and any("transitions" in x for x in reasonsa),
            "an arming tick mismatch fails even though no armed value differs by more than the tolerance would allow")
+    # duplicate report ticks
+    rd = compare(ref, ref + [ref[5]], 1)
+    reasonsd, okd = verdict(rd, None, None, 1, 80)
+    expect(rd.dup == 1 and not okd and any("duplicate" in x for x in reasonsd), "a duplicate report tick fails")
+    # the counter gate: not skippable, reconstructable from the reference
+    fref = {"ticks": 80, "frame_tick": [0, 60]}
+    st = dict.fromkeys(STATUS_FIELDS_T, 0)
+    st.update(sample_records=20, samples=80, manual_records=2, ticks_run=80, deadline_misses=1)
+    upg = Uplink(status=[st])
+    exp = expected_counts(fref, upg, None)
+    expect(exp == {"batch": 4, "sample_records": 20, "samples": 80, "manual_records": 2, "aborted": ""},
+           "counts rebuilt from the reference and the status when there is no sidecar")
+    expect(verdict(r, upg, exp, 0, 80)[1], "counters of this run pass the gate")
+    rg = verdict(r, upg, None, 0, 80)
+    expect(not rg[1] and "sent counts missing" in rg[0], "no sent counts fails the gate")
+    expect(expected_counts(fref, Uplink(status=[{**st, "samples": 81}]), None) is None, "an inconsistent batch gives no counts")
+    stale = Uplink(status=[{**st, "samples": 160, "sample_records": 40, "ticks_run": 160}])
+    expect(not verdict(r, stale, exp, 0, 80)[1], "a board not reset fails the gate")
+    expect(expected_counts(fref, upg, {"batch": 4, "sample_records": 21, "samples": 80, "manual_records": 2, "aborted": ""}) is None,
+           "a sidecar that contradicts the reference gives no counts")
     # missing and extra reports
     rm = compare(ref, ref[:-1] + [(999, (0, 0, 0, 0))], 1)
     expect(rm.missing == [78] and rm.extra == [999] and not verdict(rm, None, None, 1, 80)[1], "missing and extra report ticks fail")
