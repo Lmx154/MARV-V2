@@ -20,10 +20,11 @@ complex features gradually" (decision 0026).
 
 ## ACTIVE-spec rule
 
-- Work only from ACTIVE specs in `docs/spec/`: `00-core-contracts.md` and `10-quad-flight-software.md`.
-  `20-ground-segment.md` and `30-rocket.md` are PARKED: read them for context, never implement from them. Only Luis
-  changes a spec's status (core §0).
-- The four specs are the only planning documents; quad §4.0 is the roadmap. Do not create other roadmap, plan,
+- Work only from ACTIVE specs in `docs/spec/`: `00-core-contracts.md`, `10-quad-flight-software.md` and
+  `20-ground-segment.md` (its params-first scope only, decision 0051).
+  The rest of `20-ground-segment.md` and all of `30-rocket.md` are PARKED: read them for context, never implement from
+  them. Only Luis changes a spec's status (core §0).
+- The four specs are the only planning documents; quad §4.0 is the roadmap, and ground §5 for the ground segment. Do not create other roadmap, plan,
   milestone or ledger files. A task names the milestone it executes and adds no scope.
 - If a product spec contradicts the core, the core wins; report the contradiction.
 - Draft 0 is retired and archived outside this repository. Do not read it, and do not read or reuse earlier projects

@@ -16,7 +16,7 @@ Board evidence: `/home/luis/Documents/kicad/MARV-V2`.
 | --- | --- | --- |
 | `00-core-contracts.md` | **ACTIVE** | Everything two products share: number rules, conventions, the firmware boundary and embedded requirements, sensor classes, physics ownership, testing and freezing, the functional interface |
 | `10-quad-flight-software.md` | **ACTIVE** | Quad firmware, its Gazebo simulation, the spine build order and its branches |
-| `20-ground-segment.md` | PARKED | GCS, link codec, config-file system, flashing |
+| `20-ground-segment.md` | **ACTIVE** (params-first scope, Luis 2026-10-17, decision 0051) | GCS, link codec, config-file system, flashing |
 | `30-rocket.md` | PARKED | Rocket firmware, RocketPy harness, apogee MPC, CFD, recovery |
 
 **Rules:**

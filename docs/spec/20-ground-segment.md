@@ -1,6 +1,9 @@
 # MARV V2 — Ground segment
 
-**Status: PARKED.** Read for context; do not implement from it until Luis marks it ACTIVE in the core's table.
+**Status: ACTIVE, params-first scope** (Luis, 2026-10-17: "go ahead and make the ground station gui with all of its
+parameters. Be sure to use mavlink for the parameters and store them in the SD card"; decision 0051): G0, G1 (USB CDC and
+the SIL socket; the radio UART later), G3, and from G5 the parameter and provenance pages with live plots. The rest of G2
+(mission planner), G4 and the rest of G5 stay PARKED until Luis activates them.
 Depends on `00-core-contracts.md`, which owns the functional interface (core §8) and the parameter interface (core
 §4). Split 1, 2026-09-28.
 
