@@ -15,6 +15,7 @@
 #include "marv/hal_target/console.hpp"
 #include "marv/hal_target/dshot.hpp"
 #include "marv/hal_target/imu.hpp"
+#include "marv/hal_target/imu_log.hpp"
 #include "marv/hal_target/motor_output.hpp"
 #include "marv/hal_target/motor_test.hpp"
 #include "marv/hal_target/receiver.hpp"
@@ -30,6 +31,15 @@ namespace {
 void count_only(const marv::ImuSample&) noexcept {}
 constexpr marv::hal_target::ImuSink kSink = &count_only;
 constexpr const char* kTickMode = "count-only (MARV_FC3V2_COUNT_ONLY)";
+#elif defined(MARV_FC3V2_IMU_LOG)
+// The bench log (fw/hal/target/CMakeLists.txt): the one call that hands the composition a sample first copies it to the
+// log ring, so the log holds exactly the stream the composition's tick receives, flags included.
+void log_then_tick(const marv::ImuSample& s) noexcept {
+  marv::hal_target::imu_log_push(s);
+  marv::composition::tick(s);
+}
+constexpr marv::hal_target::ImuSink kSink = &log_then_tick;
+constexpr const char* kTickMode = "quad_fc + IMU log (MARV_FC3V2_IMU_LOG)";
 #else
 constexpr marv::hal_target::ImuSink kSink = &marv::composition::tick;
 constexpr const char* kTickMode = "quad_fc";
@@ -109,7 +119,7 @@ void print_progress() {
   }
 }
 
-const char* arming_text(marv::arming::ArmState s) {
+[[maybe_unused]] const char* arming_text(marv::arming::ArmState s) {
   using marv::arming::ArmState;
   switch (s) {
     case ArmState::Boot:
@@ -138,6 +148,12 @@ const char* arming_text(marv::arming::ArmState s) {
       return "armed_hold";
     case ArmState::ArmedFailsafeCentred:
       return "armed_failsafe_centred";
+    case ArmState::EstimatorInvalid:
+      return "estimator_invalid";
+    case ArmState::Calibrating:
+      return "calibrating";
+    case ArmState::NotUpright:
+      return "not_upright";
   }
   return "";
 }
@@ -150,7 +166,7 @@ std::uint32_t events_printed = 0;
 
 // One line per second: the per-second differences of the counters over the measured interval, the running totals of
 // the fault counters, the stamp spacing since the previous line and the newest sample (FRD, SI).
-void print_stats(const marv::hal_target::ImuStats& now, const marv::hal_target::ImuStats& before,
+[[maybe_unused]] void print_stats(const marv::hal_target::ImuStats& now, const marv::hal_target::ImuStats& before,
                  const marv::hal_target::ReceiverStats& rc_now, const marv::hal_target::ReceiverStats& rc_before,
                  marv::TimeUs dt_us) {
   const auto per_s = [dt_us](std::uint64_t a, std::uint64_t b) {
@@ -160,6 +176,7 @@ void print_stats(const marv::hal_target::ImuStats& now, const marv::hal_target::
   const marv::hal_target::MotorTestStatus test = marv::hal_target::motor_test_status();
   const marv::ManualControl& rc = rc_now.last;
   const marv::TimeUs t_now = marv::hal_time_us();
+  const marv::composition::AttitudeStatus attitude = marv::composition::attitude_status();
   const long long rc_age_us = rc.frames == 0 ? -1 : static_cast<long long>(t_now > rc.t_us ? t_now - rc.t_us : 0);
   std::printf(
       "imu dt=%lluus irq/s=%.1f words/s=%.1f samples/s=%.1f ticks/s=%.1f writes/s=%.1f motor_drops=%llu | total samples=%llu ovr=%lu "
@@ -167,7 +184,7 @@ void print_stats(const marv::hal_target::ImuStats& now, const marv::hal_target::
       "accel=(%+.3f,%+.3f,%+.3f) temp=%.2fK flags=0x%03lx | motor_test console_refused=%lu forwarded=%lu accepted=%lu "
       "refused=%lu stopped=%lu | rate executions/s=%.1f executions=%llu timing_faults=%lu | rc frames/s=%.1f total=%lu "
       "link_frames=%lu bad_crc=%lu bad_length=%lu dropped_bytes=%lu uart_errors=%lu age_us=%lld roll=%+.3f pitch=%+.3f "
-      "throttle=%.3f yaw=%+.3f | arming=%s\n",
+      "throttle=%.3f yaw=%+.3f tilt=%.4f est_valid=%d | arming=%s\n",
       static_cast<unsigned long long>(dt_us), per_s(now.irqs, before.irqs), per_s(now.words, before.words),
       per_s(now.samples, before.samples), per_s(now.ticks, before.ticks),
       per_s(now.actuator_writes, before.actuator_writes), static_cast<unsigned long long>(now.actuator_drops),
@@ -189,7 +206,7 @@ void print_stats(const marv::hal_target::ImuStats& now, const marv::hal_target::
       static_cast<unsigned long>(rc_now.counters.bad_length), static_cast<unsigned long>(rc_now.counters.dropped_bytes),
       static_cast<unsigned long>(rc_now.uart_errors), rc_age_us, static_cast<double>(rc.roll),
       static_cast<double>(rc.pitch), static_cast<double>(rc.throttle), static_cast<double>(rc.yaw),
-      arming_text(marv::composition::arming_status()));
+      static_cast<double>(attitude.tilt_rad), attitude.valid ? 1 : 0, arming_text(marv::composition::arming_status()));
 }
 
 #if defined(MARV_FC3V2_BENCH_STATS)
@@ -209,7 +226,7 @@ void print_axes(const char* name, const std::array<std::int64_t, marv::prim::kSp
 
 // Two lines per second, cumulative since start except the window figures (bench_stats.hpp): the cycle counts per timed
 // quantity with the nonzero histogram buckets as bucket:count, the interrupt-entry spacing, and the still-bench sums.
-void print_bench(marv::TimeUs t) {
+[[maybe_unused]] void print_bench(marv::TimeUs t) {
   namespace bench = marv::hal_target::bench;
   const bench::Snapshot& b = bench::snapshot();
   std::printf("bench_stages t=%llu", static_cast<unsigned long long>(t));
@@ -239,7 +256,7 @@ void print_bench(marv::TimeUs t) {
   std::printf("\n");
 }
 #else
-void print_bench(marv::TimeUs) {}
+[[maybe_unused]] void print_bench(marv::TimeUs) {}
 #endif
 
 const char* refusal_text(marv::hal_target::LineRefusal r) {
@@ -375,14 +392,18 @@ int main() {
   print_progress();
 
   bool was_connected = false;
+#if !defined(MARV_FC3V2_IMU_LOG)
   marv::hal_target::ImuStats before = marv::hal_target::imu_stats();
   marv::hal_target::ReceiverStats rc_before = marv::hal_target::receiver_stats();
   marv::TimeUs t_before = marv::hal_time_us();
+#endif
   for (;;) {
     const bool connected = stdio_usb_connected();
+#if !defined(MARV_FC3V2_IMU_LOG)
     if (connected && !was_connected) {
       print_progress();
     }
+#endif
     if (was_connected && !connected) {
       marv::hal_target::motor_test_post_cancel(marv::MotorTestCancel::Disconnect);
     }
@@ -393,6 +414,10 @@ int main() {
         console_byte(static_cast<char>(c));
       }
     }
+#if defined(MARV_FC3V2_IMU_LOG)
+    // The log variant prints no text status line or banner: the port carries binary records (imu_log_format.hpp).
+    marv::hal_target::imu_log_service();
+#else
     const marv::TimeUs t = marv::hal_time_us();
     if (t - t_before >= kPrintPeriodUs) {
       const marv::hal_target::ImuStats now = marv::hal_target::imu_stats();
@@ -403,6 +428,7 @@ int main() {
       rc_before = rc_now;
       t_before = t;
     }
+#endif
     tight_loop_contents();
   }
 }

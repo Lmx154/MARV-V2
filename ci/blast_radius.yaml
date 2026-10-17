@@ -23,13 +23,13 @@
 # (including none) and a trailing `**` matches the rest of the path.
 #
 # Identifiers:
-#   ctest_labels   L00 L01 L02 L03 L04 L05 L06 L11 (one per tests/regression/quad/Lnn directory).
+#   ctest_labels   L00 L01 L02 L03 L04 L05 L06 L07 L11 (one per tests/regression/quad/Lnn directory).
 #   run_ci_steps   the function name passed to `step` in ci/run_ci.sh; host_preset is split by argument
 #                  (host_preset:host-debug, host_preset:host-release). `uv sync --frozen` always runs and is not selectable.
 #                  An entry `@name` expands the named list under step_groups.
 #   pytest_paths   a pytest directory run by the tools_tests step (tests/regression/quad/Lnn/tools, tests/tools). L02/tools
 #                  runs in the gz group l2, not here.
-#   gz_groups      the groups of ci/run_ci_gz.sh: l2 l4 l5 l11.
+#   gz_groups      the groups of ci/run_ci_gz.sh: l2 l4 l5 l7 l11.
 #
 # Dependency facts behind the rules (target_link_libraries and the readers of each file):
 #   libraries      sched -> compositions l0, l4, l5, l11, quad_fc (tested by L09). gyro_chain, rate, rate_group -> l4, l5, l11 and L06 (the rate_group
@@ -37,6 +37,7 @@
 #   compositions   l0 -> L00 (and gz l4, l5: the L06 gz_compositions tests build marv_sil_l0 as a control). l2_open_loop -> L02,
 #                  L04 (truth_gyro), L06 (adapter); gz l2 and l4 (both build host-gz). l4_rate_scripted -> L04, L06.
 #                  l5_attitude_scripted -> L05; gz l5, l11 (the L11 group builds host-gz-l5). l11_vertical_scripted -> L11.
+#                  l7_attitude_estimated -> gz l7 (host-gz-l7; it includes l5_script.hpp and reads the l5 and quad_fc registers).
 #   plant, adapter marv_plant and marv_gz_adapter are linked by the L01, L02, L04 (truth_gyro), L05 (truth_attitude), L06 and
 #                  L11 (truth_vertical_source) tests.
 
@@ -270,35 +271,35 @@ rules:
     ctest_labels: [L00, L04, L05, L06, L09, L11]
     run_ci_steps: ["@flight_gates"]
     pytest_paths: []
-    gz_groups: [l4, l5, l11]
+    gz_groups: [l4, l5, l7, l11]
     why: "sched is linked by the compositions l0, l4, l5, l11 and quad_fc"
 
   - paths: [fw/gyro_chain/**]
     ctest_labels: [L04, L05, L06, L09, L11]
     run_ci_steps: ["@flight_gates", tools_tests]
     pytest_paths: [tests/regression/quad/L06/tools]
-    gz_groups: [l4, l5, l11]
+    gz_groups: [l4, l5, l7, l11]
     why: "gyro_chain is linked by rate_group (so by the quad_fc L09 test) and the L04/L05/L06 T3 tests; L06 tools compile fw/gyro_chain/src"
 
   - paths: [fw/rate/**]
     ctest_labels: [L04, L05, L06, L09, L11]
     run_ci_steps: ["@flight_gates", tools_tests]
     pytest_paths: [tests/regression/quad/L06/tools]
-    gz_groups: [l4, l5, l11]
+    gz_groups: [l4, l5, l7, l11]
     why: "rate is linked by rate_group (so by the quad_fc L09 test) and the L04/L05 tests; L06 tools drive RateLoop"
 
   - paths: [fw/rate_group/**]
     ctest_labels: [L04, L05, L06, L09, L11]
     run_ci_steps: ["@flight_gates"]
     pytest_paths: []
-    gz_groups: [l4, l5, l11]
+    gz_groups: [l4, l5, l7, l11]
     why: "rate_group is linked by the compositions l4, l5, l11 and quad_fc and by the L06 rate_group tests"
 
   - paths: [fw/mixer/**]
     ctest_labels: [L03, L04, L05, L06, L09, L11]
     run_ci_steps: ["@flight_gates", tools_tests]
     pytest_paths: [tests/regression/quad/L06/tools]
-    gz_groups: [l4, l5, l11]
+    gz_groups: [l4, l5, l7, l11]
     why: "mixer is linked by the L03 and L09 tests, rate, rate_group, vertical and the compositions; L06 tools compile with fw/mixer/include"
 
   - paths: [fw/arming/**]
@@ -308,11 +309,18 @@ rules:
     gz_groups: []
     why: "arming is the pure arming and failsafe machine, tested by the L08 unit_arming host test and linked by the quad_fc composition (the L09 gate test)"
 
+  - paths: [fw/estimator/**]
+    ctest_labels: [L07, L09]
+    run_ci_steps: ["@host"]
+    pytest_paths: []
+    gz_groups: [l7]
+    why: "estimator is the pure Mahony attitude filter and the boot gyro calibration, tested by the L07 unit_mahony and unit_gyro_cal host tests and linked by the quad_fc composition (the L09 gate test)"
+
   - paths: [fw/attitude/**]
     ctest_labels: [L05, L11]
     run_ci_steps: ["@flight_gates"]
     pytest_paths: []
-    gz_groups: [l5, l11]
+    gz_groups: [l5, l7, l11]
     why: "attitude is linked by the compositions l5 and l11"
 
   - paths: [fw/stick_rates/**]
@@ -355,8 +363,15 @@ rules:
     ctest_labels: [L05]
     run_ci_steps: ["@flight_gates"]
     pytest_paths: []
-    gz_groups: [l5, l11]
+    gz_groups: [l5, l7, l11]
     why: "l5_attitude_scripted is the L05 SIL; the L11 gz group builds host-gz-l5"
+
+  - paths: [fw/compositions/l7_attitude_estimated/**]
+    ctest_labels: [L07]
+    run_ci_steps: ["@flight_gates"]
+    pytest_paths: []
+    gz_groups: [l7]
+    why: "l7_attitude_estimated is the L07 SIL (the estimator the only attitude source), the plugin of host-gz-l7; it includes l5_script.hpp and reads the l5 and quad_fc registers"
 
   - paths: [fw/compositions/l11_vertical_scripted/**]
     ctest_labels: [L11]
@@ -369,7 +384,7 @@ rules:
     ctest_labels: [L09]
     run_ci_steps: ["@flight_gates"]
     pytest_paths: []
-    gz_groups: []
+    gz_groups: [l7]
     why: "quad_fc is the flight composition of the m33 image and is linked by the L09 gate test only; its register and its scenario-values register are read by the marv_params_fc3v2 set built by the same tests"
 
   # ---------------------------------------------------------------- sim
@@ -377,14 +392,14 @@ rules:
     ctest_labels: [L01, L02, L04, L05, L06, L11]
     run_ci_steps: ["@host", tools_tests]
     pytest_paths: [tests/regression/quad/L01/tools, tests/regression/quad/L06/tools]
-    gz_groups: [l2, l4, l5, l11]
+    gz_groups: [l2, l4, l5, l7, l11]
     why: "marv_plant is linked by every plant, adapter and plugin test; L01 and L06 tools read its sources"
 
   - paths: [sim/gz/**]
     ctest_labels: [L02, L04, L05, L06, L11]
     run_ci_steps: ["@host", tools_tests]
     pytest_paths: [tests/regression/quad/L04/tools, tests/regression/quad/L05/tools, tests/regression/quad/L06/tools]
-    gz_groups: [l2, l4, l5, l11]
+    gz_groups: [l2, l4, l5, l7, l11]
     why: "the adapter and the plugin are linked by the L02/L04/L05/L06/L11 tests and are every gz group's plugin"
 
   - paths: [sim/common/**, sim/l6_noise_run/**]
@@ -422,6 +437,13 @@ rules:
     gz_groups: [l5, l11]
     why: "the SIL library marv_sil_l5_attitude_scripted is the plugin of host-gz-l5 (gz l5 and l11)"
 
+  - paths: [sim/l7_attitude_estimated/**]
+    ctest_labels: [L07]
+    run_ci_steps: ["@sil_gates"]
+    pytest_paths: []
+    gz_groups: [l7]
+    why: "the SIL library marv_sil_l7_attitude_estimated is the plugin of host-gz-l7"
+
   - paths: [sim/l11_vertical_scripted/**]
     ctest_labels: [L11]
     run_ci_steps: ["@sil_gates"]
@@ -431,7 +453,7 @@ rules:
 
   # ---------------------------------------------------------------- tools
   - paths: [tools/card/**]
-    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L08, L09, L11]
+    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L07, L08, L09, L11]
     run_ci_steps: ["@card_gates"]
     pytest_paths:
       - tests/regression/quad/L01/tools
@@ -440,7 +462,7 @@ rules:
       - tests/regression/quad/L05/tools
       - tests/regression/quad/L06/tools
       - tests/regression/quad/L11/tools
-    gz_groups: [l2, l4, l5, l11]
+    gz_groups: [l2, l4, l5, l7, l11]
     why: "every card-based parameter set's generation depends on the whole tools/card/*.py glob (fw/params/CMakeLists.txt)"
 
   - paths:
@@ -448,7 +470,7 @@ rules:
       - tools/sim/prim_constants.py
       - tools/sim/reference.py
       - tools/sim/t4_rule.py
-    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L08, L09, L11]
+    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L07, L08, L09, L11]
     run_ci_steps: ["@card_gates"]
     pytest_paths:
       - tests/regression/quad/L01/tools
@@ -457,7 +479,7 @@ rules:
       - tests/regression/quad/L05/tools
       - tests/regression/quad/L06/tools
       - tests/regression/quad/L11/tools
-    gz_groups: [l2, l4, l5, l11]
+    gz_groups: [l2, l4, l5, l7, l11]
     why: "these modules are in the import closure of tools/card/flatten.py (vertical, rate_lead, attitude), so they change every generated parameter set"
 
   - paths:
@@ -475,21 +497,21 @@ rules:
       - tests/regression/quad/L05/tools
       - tests/regression/quad/L06/tools
       - tests/regression/quad/L11/tools
-    gz_groups: [l2, l4, l5, l11]
+    gz_groups: [l2, l4, l5, l7, l11]
     why: "the shared run and scenario modules are imported by the tests of every layer; the L05 T3 oracle imports run_l4"
 
   - paths: [tools/sim/l5_scenario.py, tools/sim/run_l5.py]
     ctest_labels: []
     run_ci_steps: [tools_tests, att_t3_reference_reproduces, att_t3_reference_control]
     pytest_paths: [tests/regression/quad/L05/tools, tests/regression/quad/L06/tools]
-    gz_groups: [l5, l11]
+    gz_groups: [l5, l7, l11]
     why: "run_l5 and l5_scenario are imported by the L05 and L06 tools tests, the L05 and L11 gz suites and the L05 T3 oracle"
 
   - paths: [tools/sim/l5_scenario.py]
     ctest_labels: []
     run_ci_steps: [tools_tests]
     pytest_paths: [tests/regression/quad/L04/tools]
-    gz_groups: []
+    gz_groups: [l7]
     why: "l5_scenario is one of the three schemas of the shared refusal tests (L04/tools/test_scenario_schema.py)"
 
   - paths: [tools/sim/l11_scenario.py, tools/sim/run_l11.py]
@@ -498,6 +520,13 @@ rules:
     pytest_paths: [tests/regression/quad/L04/tools]
     gz_groups: [l11]
     why: "l11_scenario is one of the schemas of the shared refusal tests (L04/tools/test_scenario_schema.py); run_l11 drives the L11 T4 gz runs"
+
+  - paths: [scenarios/quad/L07/**]
+    ctest_labels: []
+    run_ci_steps: []
+    pytest_paths: []
+    gz_groups: [l7]
+    why: "the L07 scenario is read by the L07 gz hover test and its measurement record"
 
   - paths: [scenarios/quad/L11/**]
     ctest_labels: []
@@ -864,7 +893,7 @@ rules:
     ctest_labels: [L04]
     run_ci_steps: ["@host", t3_reference_reproduces, t3_reference_control, tools_tests]
     pytest_paths: [tests/regression/quad/L04/tools, tests/regression/quad/L05/tools, tests/regression/quad/L06/tools]
-    gz_groups: [l4, l5, l11]
+    gz_groups: [l4, l5, l7, l11]
     why: "the L04 T3 oracle and inputs, their reproduction step and control; the oracle is imported by L04 gz and tools tests and run by refdata for the L05 tests, which the l11 T4 test imports"
 
   - paths: [tests/regression/quad/L04/gz/**]
@@ -929,7 +958,7 @@ rules:
       - vert_t3_reference_control
       - tools_tests
     pytest_paths: [tests/regression/quad/L05/tools, tests/regression/quad/L06/tools]
-    gz_groups: [l5, l11]
+    gz_groups: [l5, l7, l11]
     why: "the L05 T3 oracle and inputs, their reproduction step and control; imported by L05 gz (recovery_model, so also l11), L06 tools tests and the L11 T3 oracle (its method constants)"
 
   - paths: [tests/regression/quad/L05/controls/**]
@@ -943,7 +972,7 @@ rules:
     ctest_labels: []
     run_ci_steps: [tools_tests]
     pytest_paths: [tests/regression/quad/L05/tools, tests/regression/quad/L06/tools]
-    gz_groups: [l5, l11]
+    gz_groups: [l5, l7, l11]
     why: "the L05 gz tests run in gz group l5; recovery_model.py is imported by L05 and L06 tools tests and the L11 gz suite"
 
   - paths: [tests/regression/quad/L05/tools/**]
@@ -1010,6 +1039,14 @@ rules:
     why: "L06 tools tests and the committed L06 measurements they read"
 
   # ---------------------------------------------------------------- L11
+  - paths: [tests/regression/quad/L07/CMakeLists.txt, tests/regression/quad/L07/unit/**, tests/regression/quad/L07/replay/**,
+            tests/regression/quad/L07/results/**]
+    ctest_labels: [L07]
+    run_ci_steps: ["@host"]
+    pytest_paths: []
+    gz_groups: []
+    why: "the L07 unit tests (the Mahony attitude filter) and the T2 bench-log replay (unit_l07_replay, which reads the committed logs under results/) are host ctest entries"
+
   - paths: [tests/regression/quad/L08/CMakeLists.txt, tests/regression/quad/L08/unit/**]
     ctest_labels: [L08]
     run_ci_steps: ["@host"]
@@ -1046,6 +1083,13 @@ rules:
     pytest_paths: []
     gz_groups: []
     why: "the planted truth_vertical libraries of the L11 G3 controls"
+
+  - paths: [tests/regression/quad/L07/gz/**]
+    ctest_labels: []
+    run_ci_steps: []
+    pytest_paths: []
+    gz_groups: [l7]
+    why: "the L07 gz tests run in gz group l7 on the host-gz-l7 build; l7_gz.py is also imported by the measurement record under results/hover_kick"
 
   - paths: [tests/regression/quad/L11/gz/**, tests/regression/quad/L11/i1/**]
     ctest_labels: []
@@ -1104,6 +1148,13 @@ rules:
     gz_groups: []
     why: "param_ids manifests are read by the L01 flatten/lint tests and the L04/L05 design tests"
 
+  - paths: [tests/regression/quad/L07/param_ids]
+    ctest_labels: [L07]
+    run_ci_steps: ["@host", tools_tests]
+    pytest_paths: [tests/regression/quad/L01/tools, tests/regression/quad/L04/tools, tests/regression/quad/L05/tools]
+    gz_groups: []
+    why: "param_ids manifests are read by the L01 flatten/lint tests and the L04/L05 design tests; the L07 replay test reads the attitude_tilt_error_max it lists"
+
   - paths: [tests/regression/quad/L11/param_ids]
     ctest_labels: [L11]
     run_ci_steps: ["@host", tools_tests]
@@ -1129,7 +1180,7 @@ rules:
       - tests/regression/quad/L05/tools
       - tests/regression/quad/L06/tools
       - tests/regression/quad/L11/tools
-    gz_groups: [l2, l4, l5, l11]
+    gz_groups: [l2, l4, l5, l7, l11]
     why: "the committed card is the vehicle of every product and composition parameter set (MARV_VEHICLE_CARD in fw/params/CMakeLists.txt), of the plant card configuration and of every card test and T3/T4 suite; the profile is the one the card names (sensor_profile) and is read by the gyro-chain, rate-lead and IMU generators and the world sensors; L00 uses its own fixtures"
 
   # Any card or profile that nothing consumes (card_files above) selects the card lint only; one that is consumed also

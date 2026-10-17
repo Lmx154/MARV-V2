@@ -1,0 +1,3 @@
+                 no_link  timer 72733  frame age 1719 us  frames 8
+             calibrating  timer 570831  frame age 3698 us  frames 70  +498098 us since previous
+polls 72689 in 25000 ms: 344 us per poll (the timing resolution)

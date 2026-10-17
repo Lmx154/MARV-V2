@@ -281,6 +281,21 @@ noise_term_confidence:
     (2026-10-04, decision 0019, rulings 3 and 4).
   used_by: [quad L6 stage (e) T3 Monte Carlo (envelope noise term)]
 
+attitude_tilt_error_max:
+  value: 0.0209
+  unit: rad
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    PLACEHOLDER (budget entries carry no placeholder field, tools/card/schema.py: the reason and the replacement are
+    stated here). The largest angle between the estimate's down direction in body axes and the reference's, heading
+    excluded (no magnetometer): the attitude estimator's tilt error share (decision 0042 item 1). Reason: L7's "derived
+    from QF-3's allowance" gives no number, because QF-3 bounds phase margin and M_s and a constant tilt error changes
+    neither. The value is t4_settle_fraction x angle_tilt_max = 0.02 x 1.0471975511965976 = 0.020943951 rad, rounded to
+    0.0209 rad, the angle-mode settle band Luis already chose. Replaced by: Luis's ruling on the share (decision 0042
+    item 1, pending). It blocks M4's angle-mode flight, not M3's commits. Used by test code only; no firmware reads it.
+  used_by: [quad L7 T2 bench replay (a), quad L7 hover predicate]
+
 t4_settle_fraction:
   value: 0.02
   unit: "1"

@@ -128,6 +128,15 @@ inline constexpr double kPi = 3.14159265358979323846;
 // Kind: standard.
 inline constexpr double kSecondsPerMinute = 60.0;
 
+// CRC-32 (the bench IMU log's frame check, fw/hal/target/include/marv/hal_target/imu_log_format.hpp). Citation: ITU-T
+// V.42 (03/2002) 8.1.1.6.2 and ISO/IEC 3309 (the IEEE 802.3 frame check sequence): generator polynomial x32 + x26 + x23 +
+// x22 + x16 + x12 + x11 + x10 + x8 + x7 + x5 + x4 + x2 + x + 1, which is 0x04C11DB7 and 0xEDB88320 with its bits reversed;
+// the register starts at all ones, the bytes are processed least significant bit first (the reflected form) and the
+// result is complemented. The check value over the ASCII bytes "123456789" is 0xCBF43926 (the CRC-32/ISO-HDLC catalogue
+// entry, Greg Cook's CRC RevEng catalogue).
+// Kind: standard.
+inline constexpr std::uint32_t kCrc32PolyReflected = 0xEDB88320;
+
 // Microseconds per second. Citation: SI definition (the prefix micro is exactly 10^-6, so one second is exactly
 // 10^6 microseconds).
 // Kind: standard.

@@ -216,8 +216,14 @@ adding more complex features gradually" (decision 0026).
 - `marv_plant`'s specific force includes the contact force, so a vehicle at rest reads −g along z, as a real
   accelerometer does.
 - Mahony on the IMU, with authority directly (shadow mode and its Monte Carlo are deferred).
+- Gyro calibration at power-on, with arming refused while it runs, and Betaflight's upright check, arming refused above
+  `small_angle` 25° (Betaflight 4.5.1; Luis, 2026-10-16: "Yes" to both).
 - *Done when:* T1 known-answer tests (at rest, constant rotation) pass; a committed bench log (still, then rotated by
-  hand) replays (T2) within the attitude budget share; the L5 Gazebo hover predicate passes on the estimate.
+  hand) replays (T2) within the attitude budget share `attitude_tilt_error_max`, 1.2° (Luis, 2026-10-16); the L7
+  Gazebo hover passes on the estimate: L5's angle mode with the estimator in authority on the model IMU at the nominal
+  corner, from level hover with a body-rate kick and sticks centred, the true tilt settles within
+  s·Δ + E + `attitude_tilt_error_max`; control, the loop disabled (`att_kp` and the roll/pitch rate integrals 0)
+  (decision 0042).
 
 **M4 — First flight**
 - Build or buy a thrust stand and a bifilar pendulum set-up (Luis has neither, 2026-10-15). Measure what sets the
@@ -240,7 +246,8 @@ adding more complex features gradually" (decision 0026).
 noise Monte Carlo, C6a); L7 shadow mode and its Monte Carlo; L8's Gazebo pilot and joystick bridge; the rest of L9
 (eRPM, core split, SRAM placement if timing holds without them); L10 HIL; an in-process `marv_plant` closed loop
 with truth dispersed inside the card's uncertainties, replacing Gazebo for development checks; plant fidelity (rotor
-inertia, battery and duty-mode ESC, rotor and body drag, IMU lever arm); vertical-loop tilt compensation; the
+inertia, battery and duty-mode ESC, rotor and body drag, IMU lever arm); Gazebo ground contact (a ground plane and its
+contact force into `marv_plant`'s specific force, decision 0042); vertical-loop tilt compensation; the
 RP2350 hardware watchdog (2048 ms, a recovery feature: the AM32 ESC already stops on a silent DShot line, decision
 0039; work on branch `m1-wdt`); the branches of §6.3.
 
@@ -456,8 +463,8 @@ Built after L5 and beside L6 (it needs nothing from L6); numbered L11 because L0
 - **Builds:** Mahony complementary filter, fed from the L6 sensor models; shadow mode first, then authority handoff.
 - **Opening:** attitude quaternion, body rates and a validity flag to L5.
 - **Pass bar:**
-  - T4 shadow: across a Monte Carlo set, attitude error against truth stays within its budget share (a register entry
-    derived from QF-3's allowance).
+  - T4 shadow: across a Monte Carlo set, attitude error against truth stays within its budget share
+    (`attitude_tilt_error_max`, 1.2°, Luis 2026-10-16; QF-3's margins give no tilt number, decision 0042).
   - T4 authority: with the estimator in the loop, margins still meet QF-3 and L5's scenarios pass.
   - G3 on the link map: the firmware build contains no truth symbol.
 - **Freezes:** all of the above.

@@ -1,0 +1,80 @@
+# Quad L7 scenario 'hover' (docs/spec/10-quad-flight-software.md section 4 L7 and section 4.0 M3 done-when; docs/decisions/0042 item 4).
+# Level at hover rotor speed with a roll-rate kick and the sticks centred throughout, flown by the l7_attitude_estimated composition
+# (angle mode, the attitude law, the rate loop in bypass) on the model IMU at the nominal corner with the Mahony estimator as the only attitude source
+# (no <attitude_source>, no TRUTH_STATE): the L5 hover predicate on the estimate. The accelerometer reads (0, 0, -g) along body z from
+# tick 0 (level, thrust m g). Same L5 schema as scenarios/quad/L05 (tools/sim/l5_scenario.py), same horizon as recover_tumble. Every
+# number is a labelled scenario value or a derived value. Frames NED / FRD, SI.
+scenario: hover
+site_latitude_rad:
+  value: 0.82
+  unit: rad
+  label: scenario
+  rationale: "the L2 hover site (scenarios/quad/L02/hover.yaml): mid-latitude, so the latitude term of g is exercised"
+site_height_m:
+  value: 500.0
+  unit: m
+  label: scenario
+  rationale: "the L2 hover site height (scenarios/quad/L02/hover.yaml); a plausible flying site height, not vehicle data"
+seed:
+  value: 1
+  unit: "1"
+  label: scenario
+  rationale: "the IMU model's noise seed of the run (tools/sim/run_scenario.py); the plant draws no other random numbers"
+tick_period_num_us:
+  value: 625
+  unit: us
+  label: derived
+  rule: "design/scenario_values.yaml tick_period_num_us; the rate loop checks each execution's spacing against the period built from it, so the runner refuses a world tick that differs from the build's"
+tick_period_den:
+  value: 4
+  unit: "1"
+  label: derived
+  rule: "design/scenario_values.yaml tick_period_den, as tick_period_num_us"
+m_sequence:
+  value: [2, 1]
+  unit: "1"
+  label: derived
+  rule: "decision 0005 'T4 envelope widening' as at L5: E = |y(m=1) - y(m=2)|; both divide the attitude divisor (decision 0006 B, Runner), so every attitude sample is fresh"
+initial_state:
+  position_ned_m:
+    value: [0.0, 0.0, 0.0]
+    unit: m
+    label: scenario
+    rationale: "the NED origin, the site itself; the generated world has no ground and no contact"
+  attitude_q_wxyz:
+    value: [1.0, 0.0, 0.0, 0.0]
+    unit: "1"
+    label: scenario
+    rationale: "level, the identity quaternion (canonical sign w >= 0): the model accelerometer reads (0, 0, -g) from tick 0 and the estimator initialises level"
+  velocity_ned_m_s:
+    value: [1.0, 0.0, 0.0]
+    unit: m/s
+    label: scenario
+    rationale: "as scenarios/quad/L05/step_roll.yaml: every host step moves the link 1.5625e-4 m north, 156 times the 1e-6 pose change below which gz-sim 8 leaves a read stale (docs/decisions/0003 item 11), so every read is fresh (INFERRED; the test fails on a stale read in the window); marv_plant v0 has no drag or position-dependent torque"
+  body_rates_frd_rad_s:
+    value: [0.5, 0.5, 0.0]
+    unit: rad/s
+    label: scenario
+    rationale: "the body-rate kick [p0, p0, 0], p0 = 0.5 rad/s (decision 0042 item 4). Roll and pitch together because a pure roll kick lies exactly on the L2 separatrix (roll is the card's intermediate inertia axis, Ixx 0.0025 between 0.0021 and 0.0043 kg m^2: margin 0, refused by the L2 entry rules) and a pure pitch kick rounds to 1.0000000000000002; with both the margin is Iyy/(Ixx + Iyy) = 0.457. Size: with the loop disabled (att_kp, rate_ki_roll, rate_ki_pitch 0) the kick leaves a tilt of 0.114 rad, 5 times the band attitude_tilt_error_max + 0.02 Delta (about 0.023 rad); the run on the estimate peaks at 0.063 rad. Measurements: tests/regression/quad/L07/results/hover_kick. The IMU is the nominal corner (no turn-on bias, bias_signs all 0): the plant has no drag, so the accelerometer never shows tilt and a turn-on bias would drift the truth without bound (0.044 rad over 6.3 s at 0.4 deg/s)"
+  rotor_speed_rad_s:
+    value: hover
+    unit: rad/s
+    label: derived
+    rule: "decision 0007: the card's hover rotor speed per motor, sqrt(T_i / k), T_i the firmware mixer allocation M[i, thrust] m g(phi, h0) at zero torque (tools/sim/run_l5.py hover_rotor_speeds), so the motors start at the thrust the composition requests and the accelerometer reads -g along z from tick 0"
+thrust:
+  value: hover
+  unit: "1"
+  label: derived
+  rule: "the collective request is the float32 of m g(phi, h0), the card's mass and tools/sim/hover.py normal_gravity (tools/sim/run_l4.py hover_thrust), as at L4"
+script:
+  settle_s:
+    value: 0.0003125
+    unit: s
+    label: derived
+    rule: "one attitude period T_a = rate_loop_divisor * att_loop_ratio * tick = 312.5 us: the run starts at the initial state, so nothing settles; the origin execution is only the first execution that keeps the T3 stamp phase (tools/sim/run_l5.py plan)"
+  segments: []
+  end_attitude_execution:
+    value: 20292
+    unit: "1"
+    label: derived
+    rule: "L5's horizon (scenarios/quad/L05/recover_tumble.yaml): executions 0 .. 20292, ten attitude time constants 1/att_kp = 10146 executions doubled once (core 7.5)"

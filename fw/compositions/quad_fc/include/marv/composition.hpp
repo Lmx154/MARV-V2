@@ -26,4 +26,14 @@ struct RateCounts {
 // atomic read, callable from any context (the target's background loop prints it).
 [[nodiscard]] arming::ArmState arming_status() noexcept;
 
+// The attitude estimate as of the latest rate tick: its tilt, the angle between body down and NED down (rad, [0, pi]), and
+// its validity (estimator::Mahony::valid). The tilt is 0 until the estimator is initialised. Callable from any context
+// (the target's background loop prints it); the tilt is from two values published one after the other, so a read that
+// overlaps a rate tick can mix two ticks.
+struct AttitudeStatus {
+  float tilt_rad = 0.0F;
+  bool valid = false;
+};
+[[nodiscard]] AttitudeStatus attitude_status() noexcept;
+
 }  // namespace marv::composition

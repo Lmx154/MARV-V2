@@ -47,6 +47,16 @@
       }
     },
     {
+      "name": "host-gz-l7",
+      "inherits": "host-gz",
+      "displayName": "Host, Debug, gz-sim 8 plugin on the l7_attitude_estimated composition",
+      "binaryDir": "${sourceDir}/build/host-gz-l7",
+      "cacheVariables": {
+        "MARV_GZ_SIL": "marv_sil_l7_attitude_estimated",
+        "MARV_GZ_PARAMS": "marv_params_l7_attitude_estimated"
+      }
+    },
+    {
       "name": "host-gz-l11",
       "inherits": "host-gz",
       "displayName": "Host, Debug, gz-sim 8 plugin on the l11_vertical_scripted composition",
@@ -95,6 +105,7 @@
     { "name": "host-gz", "configurePreset": "host-gz" },
     { "name": "host-gz-l4", "configurePreset": "host-gz-l4" },
     { "name": "host-gz-l5", "configurePreset": "host-gz-l5" },
+    { "name": "host-gz-l7", "configurePreset": "host-gz-l7" },
     { "name": "host-gz-l11", "configurePreset": "host-gz-l11" },
     { "name": "host-gz-release", "configurePreset": "host-gz-release" },
     { "name": "m33", "configurePreset": "m33" }

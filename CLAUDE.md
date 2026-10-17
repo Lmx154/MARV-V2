@@ -92,7 +92,7 @@ CI enforces these whether or not anyone reads this file (core §7.4):
   (also `host-release`); target build: `cmake --preset m33 && cmake --build --preset m33`.
 - Development check, the definition of verified for a commit: `ci/dev_check.sh` (`ci/smoke.sh`, then what
   `uv run python ci/affected.py` selects from the diff against `master`, in your own incremental build trees).
-- Merge gate, the definition of verified for a merge into `master`: `ci/local_ci.sh [--commit <rev>] [core|gz-l2|gz-l4|gz-l5|gz-l11 ...]`
+- Merge gate, the definition of verified for a merge into `master`: `ci/local_ci.sh [--commit <rev>] [core|gz-l2|gz-l4|gz-l5|gz-l7|gz-l11 ...]`
   (fresh clone, the Actions containers, the runner's limits; at most `--parallel 2`). Goldens are regenerated only
   inside these images until M0 replaces bit-exact goldens with tolerance compares.
 - Gazebo hover demonstration (gz-sim 8 on PATH; quad §4.1 L2 and L5; run reports land in `<dir>`):

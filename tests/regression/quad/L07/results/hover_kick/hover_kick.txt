@@ -1,0 +1,23 @@
+scenario scenarios/quad/L07/hover.yaml sha256 e6e76b95c35a0b9513ed8fec5149b3e1772164de7d796a34323146fe1bb5431a
+s = t4_settle_fraction 0.02, share = attitude_tilt_error_max 0.0209 rad
+build parameters: att_kp 3.1539721488952637, rate_ki_roll 0.07708850502967834, rate_ki_pitch 0.06475434452295303, estimator_kp 0.25, estimator_ki 0.0 (host-gz-l7 table)
+
+estimate: overrides none, bias_signs [0, 0, 0, 0, 0, 0]
+  estimate               PASS  S tilt ok 0.00983 <= 0.02216 rad (s Delta 0.00126 + E 5.52e-06 + share 0.0209), margin +0.01233 rad, peak 0.06282 rad, stale {'m2': 0, 'm1': 0}, N 20293, gz wall 5.94 s
+  truth tilt (rad) at window executions 0: 0.00044, 10: 0.00265, 100: 0.02163, 1000: 0.04182, 2000: 0.03245, 5000: 0.00918, 10000: 0.00948, 20292: 0.00983
+  final tilt m = 1 0.009833, m = 2 0.009827; peak 0.062817
+
+att_kp = 0: overrides ['att_kp'], bias_signs [0, 0, 0, 0, 0, 0]
+  att_kp = 0             PASS  S tilt ok 0.00054 <= 0.02242 rad (s Delta 0.00148 + E 3.73e-05 + share 0.0209), margin +0.02188 rad, peak 0.07399 rad, stale {'m2': 0, 'm1': 0}, N 20293, gz wall 5.92 s
+  truth tilt (rad) at window executions 0: 0.00044, 10: 0.00265, 100: 0.02165, 1000: 0.07076, 2000: 0.02829, 5000: 0.00177, 10000: 0.00025, 20292: 0.00054
+  final tilt m = 1 0.000539, m = 2 0.000502; peak 0.073986
+
+loop disabled: overrides ['att_kp', 'rate_ki_pitch', 'rate_ki_roll'], bias_signs [0, 0, 0, 0, 0, 0]
+  loop disabled          FAIL  S tilt FAIL 0.11416 <= 0.02329 rad (s Delta 0.00228 + E 1.10e-04 + share 0.0209), margin -0.09086 rad, peak 0.11416 rad, stale {'m2': 0, 'm1': 0}, N 20293, gz wall 5.91 s
+  truth tilt (rad) at window executions 0: 0.00044, 10: 0.00265, 100: 0.02167, 1000: 0.09818, 2000: 0.11143, 5000: 0.11371, 10000: 0.11392, 20292: 0.11416
+  final tilt m = 1 0.114158, m = 2 0.114048; peak 0.114158
+
+estimate, bias corner: overrides none, bias_signs [1, 1, 1, 1, 1, 1]
+  estimate, bias corner  FAIL  S tilt FAIL 0.08403 <= 0.02266 rad (s Delta 0.00168 + E 8.40e-05 + share 0.0209), margin -0.06137 rad, peak 0.08403 rad, stale {'m2': 0, 'm1': 0}, N 20293, gz wall 5.94 s
+  truth tilt (rad) at window executions 0: 0.00044, 10: 0.00265, 100: 0.02162, 1000: 0.04047, 2000: 0.04281, 5000: 0.02888, 10000: 0.04713, 20292: 0.08403
+  final tilt m = 1 0.084032, m = 2 0.084116; peak 0.084032

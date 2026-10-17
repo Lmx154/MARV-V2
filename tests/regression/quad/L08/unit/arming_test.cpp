@@ -49,6 +49,9 @@ class Rig {
   Rig() {
     machine_.init(test_config());
     in_.imu_samples_valid = true;
+    in_.gyro_calibrated = true;
+    in_.estimator_valid = true;
+    in_.upright = true;
     in_.arm = kOff;
     in_.throttle = 0.0F;
   }
@@ -358,6 +361,77 @@ TEST(Arming, InvalidImuSamplesRefuseButDoNotDisarm) {
   const ArmingOutput<float> o = a.live(Rig::kArmedAt + 1);
   EXPECT_TRUE(o.armed);
   EXPECT_EQ(o.state, ArmState::Armed);
+}
+
+TEST(Arming, InvalidEstimatorRefusesInItsOrderButNeverDisarms) {
+  Rig r;
+  (void)r.run(kT0, kT0 + kRecovery - Rig::kStepUs);
+  r.in_.estimator_valid = false;
+  r.in_.arm = kOn;
+  EXPECT_EQ(r.live(kT0 + kRecovery).state, ArmState::EstimatorInvalid);
+  // After ImuInvalid and Saturated, before ThrottleUp (a high throttle with an invalid estimate reads EstimatorInvalid).
+  r.in_.throttle = 1.0F;
+  EXPECT_EQ(r.live(kT0 + kRecovery + 1).state, ArmState::EstimatorInvalid);
+  r.in_.imu_saturated = true;
+  EXPECT_EQ(r.live(kT0 + kRecovery + 2).state, ArmState::Saturated);
+  r.in_.imu_saturated = false;
+  r.in_.imu_samples_valid = false;
+  EXPECT_EQ(r.live(kT0 + kRecovery + 3).state, ArmState::ImuInvalid);
+  // Valid again, switch still on: the refused edge is spent.
+  r.in_.imu_samples_valid = true;
+  r.in_.estimator_valid = true;
+  r.in_.throttle = 0.0F;
+  EXPECT_EQ(r.live(kT0 + kRecovery + 4).state, ArmState::SwitchNotCycled);
+  // Losing validity while armed does not disarm.
+  Rig a;
+  (void)a.arm();
+  a.in_.estimator_valid = false;
+  for (std::uint64_t t = Rig::kArmedAt + 1; t < Rig::kArmedAt + 5; ++t) {
+    const ArmingOutput<float> o = a.live(t);
+    EXPECT_TRUE(o.armed);
+    EXPECT_EQ(o.state, ArmState::Armed);
+  }
+}
+
+// M3 P6 (decision 0042, Luis 2026-10-16): the boot gyro calibration and Betaflight's upright check refuse in their order and
+// never disarm.
+TEST(Arming, CalibratingAndNotUprightRefuseInTheirOrderButNeverDisarm) {
+  Rig r;
+  (void)r.run(kT0, kT0 + kRecovery - Rig::kStepUs);
+  r.in_.arm = kOn;
+  r.in_.throttle = 1.0F;
+  r.in_.gyro_calibrated = false;
+  r.in_.estimator_valid = false;
+  r.in_.upright = false;
+  // Calibrating comes after Saturated and before EstimatorInvalid, NotUpright and ThrottleUp.
+  r.in_.imu_saturated = true;
+  EXPECT_EQ(r.live(kT0 + kRecovery).state, ArmState::Saturated);
+  r.in_.imu_saturated = false;
+  EXPECT_EQ(r.live(kT0 + kRecovery + 1).state, ArmState::Calibrating);
+  r.in_.gyro_calibrated = true;
+  EXPECT_EQ(r.live(kT0 + kRecovery + 2).state, ArmState::EstimatorInvalid);
+  // NotUpright comes after EstimatorInvalid and before ThrottleUp.
+  r.in_.estimator_valid = true;
+  EXPECT_EQ(r.live(kT0 + kRecovery + 3).state, ArmState::NotUpright);
+  r.in_.upright = true;
+  EXPECT_EQ(r.live(kT0 + kRecovery + 4).state, ArmState::ThrottleUp);
+  // Every refusal spends the switch edge.
+  r.in_.throttle = 0.0F;
+  EXPECT_EQ(r.live(kT0 + kRecovery + 5).state, ArmState::SwitchNotCycled);
+  // Neither disarms.
+  Rig a;
+  (void)a.arm();
+  a.in_.gyro_calibrated = false;
+  a.in_.upright = false;
+  for (std::uint64_t t = Rig::kArmedAt + 1; t < Rig::kArmedAt + 5; ++t) {
+    const ArmingOutput<float> o = a.live(t);
+    EXPECT_TRUE(o.armed);
+    EXPECT_EQ(o.state, ArmState::Armed);
+  }
+  // The new codes follow EstimatorInvalid: the existing integer codes are unchanged.
+  EXPECT_EQ(static_cast<int>(ArmState::EstimatorInvalid), 13);
+  EXPECT_EQ(static_cast<int>(ArmState::Calibrating), 14);
+  EXPECT_EQ(static_cast<int>(ArmState::NotUpright), 15);
 }
 
 TEST(Arming, SaturationRefusesButNeverDisarms) {
