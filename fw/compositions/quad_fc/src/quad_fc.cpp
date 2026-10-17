@@ -3,11 +3,15 @@
 // (marv::stick_rates), then the motor output gate. There is no attitude or vertical loop here: the pilot flies the rate
 // loop (acro).
 //
-// Every tick: the attitude estimator (marv::estimator, the Mahony filter, M3 P2) steps on the sample with dt from the stamps
-// (decision 0042), skipping a sample whose GyroValid bit is clear (the next step's dt spans the gap from the last stamp it
-// stepped on) and taking no correction from one whose AccelValid bit is clear; step.filter(sample, due); the sample's
+// Every tick: the boot gyro calibration (marv::estimator::GyroCal, M3 P6) takes the sample's gyro until it completes; once
+// complete, its bias is subtracted from the gyro of every sample, before both the estimator and the rate loop's gyro chain,
+// and until then nothing is subtracted. The attitude estimator (marv::estimator, the Mahony filter, M3 P2) steps on the sample
+// with dt from the stamps (decision 0042), skipping a sample whose GyroValid bit is clear (the next step's dt spans the gap from
+// the last stamp it stepped on) and taking no correction from one whose AccelValid bit is clear; step.filter(sample, due); the sample's
 // validity and saturation bits are accumulated since the previous rate tick. On the ticks the rate group is due (every rate_loop_divisor ticks, tick 0 included): the pilot's input
-// (hal_manual_control), the clock (hal_time_us) and the estimator's validity go to the arming machine (decision 0040), which decides armed and the
+// (hal_manual_control), the clock (hal_time_us), the calibration's completion, the estimator's validity and its tilt against arm_small_angle (upright:
+// the cosine of the tilt, 1 - 2 (x^2 + y^2) of the estimate's quaternion, above the cosine of the angle, as Betaflight's isUpright)
+// go to the arming machine (decisions 0040 and 0042), which decides armed and the
 // effective sticks; the rate group executes (armed: the rate setpoint of the sticks through the QF-1 curve and the
 // collective thrust of the throttle, below; disarmed: zero setpoint and zero thrust, so the filters keep running); the
 // motor test is updated; the gate then decides the motor values written. On the other ticks nothing is written: the HAL
@@ -46,6 +50,7 @@
 
 #include <marv/arming/arming.hpp>
 #include <marv/composition.hpp>
+#include <marv/estimator/gyro_cal.hpp>
 #include <marv/estimator/mahony.hpp>
 #include <marv/hal/hal.hpp>
 #include <marv/hal/tick.hpp>
@@ -101,6 +106,8 @@ bool g_imu_invalid = false;     // a sample since the previous rate tick lacked 
 bool g_imu_saturated = false;   // a sample since the previous rate tick had a saturation bit
 std::atomic<std::uint8_t> g_arming_state{static_cast<std::uint8_t>(arming::ArmState::Boot)};
 estimator::Mahony<float> g_estimator;
+estimator::GyroCal<float> g_gyro_cal;
+float g_upright_cos = 0.0F;  // cos(arm_small_angle): upright iff the cosine of the estimate's tilt is above it
 TimeUs g_estimator_prev_us = 0;  // the stamp of the previous sample the estimator stepped on
 bool g_estimator_started = false;
 // The accelerometer a sample whose AccelValid bit is clear gives the estimator: no direction, so no correction that step.
@@ -278,6 +285,17 @@ void init() noexcept {
   g_estimator.init(estimator::MahonyConfig<float>{
       param_value<ParamId::estimator_kp>(), param_value<ParamId::estimator_ki>(),
       param_value<ParamId::estimator_accel_healthy_min>(), param_value<ParamId::estimator_accel_healthy_max>()});
+  const std::int32_t cal_us = param_value<ParamId::gyro_cal_duration_us>();
+  const float cal_movement_max = param_value<ParamId::gyro_cal_movement_max>();
+  if (cal_us < 1 || !(cal_movement_max >= 0.0F)) {
+    hal_panic("quad_fc composition: gyro_cal_duration_us is below 1 or gyro_cal_movement_max is negative or not a number");
+  }
+  g_gyro_cal.init(estimator::GyroCalConfig<float>{static_cast<std::uint64_t>(cal_us), cal_movement_max});
+  const float small_angle = param_value<ParamId::arm_small_angle>();
+  if (!(small_angle > 0.0F && small_angle <= static_cast<float>(prim::kPi))) {
+    hal_panic("quad_fc composition: arm_small_angle is outside (0, pi]");
+  }
+  g_upright_cos = std::cos(small_angle);
   g_estimator_prev_us = 0;
   g_estimator_started = false;
   g_tilt_xy2.store(0.0F, std::memory_order_relaxed);
@@ -298,10 +316,15 @@ void init() noexcept {
   g_n = 0;
 }
 
-void tick(const ImuSample& s) noexcept {
+void tick(const ImuSample& raw) noexcept {
   const std::uint32_t due = g_groups.due(g_n);
   ++g_n;
   const bool rate_due = fired(due, kRate);
+  g_gyro_cal.update(raw.gyro_rad_s, (raw.flags & imu_flag(ImuFlag::GyroValid)) != 0, raw.t_us);
+  ImuSample s = raw;
+  if (g_gyro_cal.complete()) {
+    s.gyro_rad_s = raw.gyro_rad_s - g_gyro_cal.bias();
+  }
   if ((s.flags & imu_flag(ImuFlag::GyroValid)) != 0) {
     const std::uint64_t since = g_estimator_started && s.t_us > g_estimator_prev_us ? s.t_us - g_estimator_prev_us : 0;
     g_estimator_prev_us = s.t_us;
@@ -332,9 +355,11 @@ void tick(const ImuSample& s) noexcept {
   in.imu_deadline_missed = hal_imu_deadline_misses() > 0;
   in.imu_samples_valid = !g_imu_invalid;
   in.imu_saturated = g_imu_saturated;
+  in.gyro_calibrated = g_gyro_cal.complete();
   in.estimator_valid = g_estimator.valid();
   in.motor_test_active = g_gate == MotorGate::MotorTest;
   const prim::Quat<float>& q = g_estimator.quat();
+  in.upright = in.estimator_valid && 1.0F - 2.0F * (q.x * q.x + q.y * q.y) > g_upright_cos;
   g_tilt_xy2.store(q.x * q.x + q.y * q.y, std::memory_order_relaxed);
   g_tilt_wz2.store(q.w * q.w + q.z * q.z, std::memory_order_relaxed);
   g_estimator_valid.store(in.estimator_valid, std::memory_order_relaxed);
