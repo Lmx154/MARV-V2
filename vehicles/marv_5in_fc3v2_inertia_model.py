@@ -25,7 +25,6 @@ NOMINAL = {
     "h_motor": 0.015,      # ASSUMED m: motor mass centre (2807 on top of a 6 mm arm: 3 + ~12 mm)
     "h_prop": 0.040,       # ASSUMED m: prop plane (thrust application point) above the arm mid-plane
     "h_pack": 0.035,       # ASSUMED m: pack mass centre (pack on the top plate, ~30 mm tall: top plate ~20 mm + 15 mm)
-    "r_stack": 0.0,        # ASSUMED m: radius of the remainder mass about the centre (0: a point at the centre)
 }
 
 
@@ -56,20 +55,16 @@ def main():
     print(f"nominal J = ({nom['ixx']:.4e}, {nom['iyy']:.4e}, {nom['izz']:.4e}) kg m^2")
     lo, hi = {}, {}
     variants = {"arm_fraction": (0.3, 0.7), "h_plates": (0.0, 0.010), "h_stack": (0.0, 0.025), "h_esc": (0.0, 0.016),
-                "h_motor": (0.005, 0.025), "h_prop": (0.030, 0.050), "h_pack": (0.025, 0.045), "r_stack": (0.0, 0.04)}
+                "h_motor": (0.005, 0.025), "h_prop": (0.030, 0.050), "h_pack": (0.025, 0.045)}
     for key, (a, b) in variants.items():
         for val in (a, b):
             p = dict(NOMINAL, **{key: val})
-            if key == "r_stack":
-                continue
             r = model(p)
             print(f"  {key}={val}: J = ({r['ixx']:.4e}, {r['iyy']:.4e}, {r['izz']:.4e}) CG {r['cg_h'] * 1e3:.1f} mm")
     # all-corner spread, one-at-a-time variants root-sum-squared
     for axis in ("ixx", "iyy", "izz"):
         dev = 0.0
         for key, (a, b) in variants.items():
-            if key == "r_stack":
-                continue
             ra, rb = model(dict(NOMINAL, **{key: a}))[axis], model(dict(NOMINAL, **{key: b}))[axis]
             dev += ((rb - ra) / 2.0) ** 2
         print(f"{axis}: rss of one-at-a-time half-spreads = {dev ** 0.5:.3e} ({100 * dev ** 0.5 / nom[axis]:.1f} %)")
