@@ -1,0 +1,201 @@
+<?xml version="1.0"?>
+<!--
+  The MARV dialect (ground segment unit 5; docs/decisions/0053; core section 8 rows IF-1, IF-5, IF-11).
+
+  What it carries: only what the standard messages have no field for (core section 8: "Where MAVLink has no field for a
+  semantic, it goes in the MARV dialect, never into a reinterpreted standard field"). Everything else is the standard
+  common.xml / standard.xml / minimal.xml, fetched at configure time at the commit pinned in link/mavlink_pin.cmake
+  (never vendored).
+
+  Message ids 15200 to 15299. MAVLink reserves no block for private use: mavlink.io (guide/define_xml_element) allocates
+  ranges to the public dialects and says "for private dialects, you can use whatever range you like". 15200 to 15299 is
+  free in every dialect file of mavlink/mavlink at the pinned commit (the ids used there above 9000 are 9005, 10001 to
+  10008, 10151, 11000 to 11060, 12900 to 12920, 17000 to 17158, 42000, 42001, 50001 to 50005, 52000 to 52601 and 60000
+  to 60047), clear of common.xml's range (300 to 10000) and below the 24-bit limit of MAVLink 2.
+
+  No MAV_CMD entries: a command here carries a 32-byte hash and a 32-byte report id, and COMMAND_LONG carries seven
+  floats, so the config commands are a message (MARV_CONFIG_COMMAND) and an acknowledgement (MARV_CONFIG_ACK). Staging
+  a value is the standard PARAM_SET (core section 8 IF-5).
+
+  Licence: this file is MARV's own. Code generated from it by pymavlink's mavgen is MIT under the exception in
+  pymavlink's COPYING (see THIRD_PARTY_NOTICES.md).
+-->
+<mavlink>
+  <include>common.xml</include>
+  <enums>
+    <enum name="MARV_CONFIG_SOURCE">
+      <description>Where the running configuration came from.</description>
+      <entry value="0" name="MARV_CONFIG_SOURCE_FACTORY">
+        <description>The factory table compiled into the image: no stored config is active.</description>
+      </entry>
+      <entry value="1" name="MARV_CONFIG_SOURCE_ACTIVE">
+        <description>A stored config (the active internal-flash slot) is running.</description>
+      </entry>
+    </enum>
+    <enum name="MARV_CONFIG_STATE">
+      <description>Whether the boot step accepted the config it found.</description>
+      <entry value="0" name="MARV_CONFIG_STATE_OK">
+        <description>The running config passed the boot step.</description>
+      </entry>
+      <entry value="1" name="MARV_CONFIG_STATE_REFUSED">
+        <description>The boot step refused a config; MARV_IDENTITY.config_refusal says why. The vehicle does not arm.</description>
+      </entry>
+    </enum>
+    <enum name="MARV_CONFIG_REFUSAL">
+      <description>Why the boot step refused a config. The first set; later values append.</description>
+      <entry value="0" name="MARV_CONFIG_REFUSAL_NONE">
+        <description>Not refused.</description>
+      </entry>
+      <entry value="1" name="MARV_CONFIG_REFUSAL_FORMAT">
+        <description>The file is not a well-formed config (magic, version, sizes or payload hash).</description>
+      </entry>
+      <entry value="2" name="MARV_CONFIG_REFUSAL_SCHEMA">
+        <description>A section's schema hash is not this image's parameter schema hash.</description>
+      </entry>
+      <entry value="3" name="MARV_CONFIG_REFUSAL_IMAGE_BINDING">
+        <description>The config is bound to a different firmware image.</description>
+      </entry>
+      <entry value="4" name="MARV_CONFIG_REFUSAL_REPORT_BINDING">
+        <description>The config is not bound to a validation report for this image.</description>
+      </entry>
+      <entry value="5" name="MARV_CONFIG_REFUSAL_VALIDATION">
+        <description>A value fails the validator.</description>
+      </entry>
+    </enum>
+    <enum name="MARV_ACTIVATION_RESULT">
+      <description>The outcome of the last activation.</description>
+      <entry value="0" name="MARV_ACTIVATION_RESULT_NONE">
+        <description>No activation since the config was last reset.</description>
+      </entry>
+      <entry value="1" name="MARV_ACTIVATION_RESULT_ACTIVATED">
+        <description>The staged config was verified at boot and copied into the active slot.</description>
+      </entry>
+      <entry value="2" name="MARV_ACTIVATION_RESULT_REFUSED_AT_BOOT">
+        <description>The boot step refused the staged config; the previous config runs.</description>
+      </entry>
+      <entry value="3" name="MARV_ACTIVATION_RESULT_WRITE_FAILED">
+        <description>Writing the staged config to the SD card or the slot failed.</description>
+      </entry>
+    </enum>
+    <enum name="MARV_PARAM_ORIGIN">
+      <description>How a parameter's current value came about (tools/config/mcfg.py, ParamOrigin).</description>
+      <entry value="0" name="MARV_PARAM_ORIGIN_DEFAULT_FROM_CARD">
+        <description>The default derived from the vehicle card.</description>
+      </entry>
+      <entry value="1" name="MARV_PARAM_ORIGIN_DEFAULT_FROM_REGISTER">
+        <description>The default from a parameter register.</description>
+      </entry>
+      <entry value="2" name="MARV_PARAM_ORIGIN_MANUAL">
+        <description>Set by a person.</description>
+      </entry>
+      <entry value="3" name="MARV_PARAM_ORIGIN_IDENTIFIED">
+        <description>Written by an identification or calibration run.</description>
+      </entry>
+    </enum>
+    <enum name="MARV_PARAM_METHOD">
+      <description>How a parameter's value was obtained (tools/config/mcfg.py, ParamMethod).</description>
+      <entry value="0" name="MARV_PARAM_METHOD_PUBLISHED"><description>Published source.</description></entry>
+      <entry value="1" name="MARV_PARAM_METHOD_MEASURED"><description>Measured.</description></entry>
+      <entry value="2" name="MARV_PARAM_METHOD_IDENTIFIED"><description>Identified from data.</description></entry>
+      <entry value="3" name="MARV_PARAM_METHOD_DATASHEET"><description>Datasheet.</description></entry>
+      <entry value="4" name="MARV_PARAM_METHOD_DERIVED"><description>Derived by a rule.</description></entry>
+      <entry value="5" name="MARV_PARAM_METHOD_DESIGN_BUDGET"><description>A design-budget entry.</description></entry>
+      <entry value="6" name="MARV_PARAM_METHOD_SCENARIO"><description>A labelled scenario value.</description></entry>
+    </enum>
+    <enum name="MARV_PARAM_SIGMA_KIND">
+      <description>What the sigma of a parameter means (tools/config/mcfg.py, SigmaKind).</description>
+      <entry value="0" name="MARV_PARAM_SIGMA_KIND_KNOWN"><description>Sigma is the 1-sigma uncertainty.</description></entry>
+      <entry value="1" name="MARV_PARAM_SIGMA_KIND_EXACT"><description>The value is exact; sigma is 0.</description></entry>
+      <entry value="2" name="MARV_PARAM_SIGMA_KIND_UNKNOWN"><description>The uncertainty is not known; sigma is 0.</description></entry>
+      <entry value="3" name="MARV_PARAM_SIGMA_KIND_CHOICE"><description>The value is a design choice; sigma is 0.</description></entry>
+    </enum>
+    <enum name="MARV_PARAM_SOURCE_OP">
+      <description>What a MARV_PARAM_SOURCE message does.</description>
+      <entry value="0" name="MARV_PARAM_SOURCE_OP_READ">
+        <description>Request the chunk of the parameter's source text at offset (GCS to FC).</description>
+      </entry>
+      <entry value="1" name="MARV_PARAM_SOURCE_OP_DATA">
+        <description>A chunk of the source text (FC to GCS, the answer to READ and to SET).</description>
+      </entry>
+      <entry value="2" name="MARV_PARAM_SOURCE_OP_SET">
+        <description>Stage a chunk of the parameter's source text at offset (GCS to FC; offset 0 starts a new text of total_length bytes).</description>
+      </entry>
+    </enum>
+    <enum name="MARV_CONFIG_ACTION">
+      <description>A config command (core section 8 IF-11). Staging is PARAM_SET, not an action.</description>
+      <entry value="1" name="MARV_CONFIG_ACTION_ACTIVATE">
+        <description>Activate the staged config: write it, reboot, verify and copy it at boot. Needs report_id and expected_config_sha256.</description>
+      </entry>
+      <entry value="2" name="MARV_CONFIG_ACTION_REVERT_LAST_GOOD">
+        <description>Make the last good config the staged config and activate it.</description>
+      </entry>
+      <entry value="3" name="MARV_CONFIG_ACTION_RESET_FACTORY">
+        <description>Make the factory table the staged config and activate it.</description>
+      </entry>
+    </enum>
+    <enum name="MARV_CONFIG_RESULT">
+      <description>The answer to a config command. ACCEPTED means the action started; its outcome is MARV_IDENTITY.last_activation_result.</description>
+      <entry value="0" name="MARV_CONFIG_RESULT_ACCEPTED"><description>Accepted.</description></entry>
+      <entry value="1" name="MARV_CONFIG_RESULT_DENIED_ARMED"><description>Denied: the vehicle is not disarmed.</description></entry>
+      <entry value="2" name="MARV_CONFIG_RESULT_DENIED_REPORT"><description>Denied: report_id is not the validation report of the staged config.</description></entry>
+      <entry value="3" name="MARV_CONFIG_RESULT_DENIED_HASH"><description>Denied: the staged config does not hash to expected_config_sha256.</description></entry>
+      <entry value="4" name="MARV_CONFIG_RESULT_DENIED_UNAVAILABLE"><description>Denied: there is no last good config to revert to.</description></entry>
+      <entry value="5" name="MARV_CONFIG_RESULT_FAILED"><description>The action started and failed.</description></entry>
+    </enum>
+  </enums>
+  <messages>
+    <message id="15200" name="MARV_IDENTITY">
+      <description>Identity and config state of the vehicle (core section 8 IF-1): the hashes and the validation report id that HEARTBEAT and AUTOPILOT_VERSION have no field for. Sent at a stream rate the GCS sets and on request.</description>
+      <field type="uint64_t" name="param_schema_hash">The image's generated kParamSchemaHash.</field>
+      <field type="uint8_t[32]" name="image_sha256">SHA-256 of the firmware image.</field>
+      <field type="uint8_t[32]" name="config_sha256">The config hash (tools/config/mcfg.py, the sections this image reads) of the config that is running.</field>
+      <field type="uint8_t[32]" name="validation_report_id">The validation report the running config is bound to (the report's SHA-256, or its id zero-padded on the right); all zero = none.</field>
+      <field type="uint8_t" name="config_source" enum="MARV_CONFIG_SOURCE">Factory table or active stored config.</field>
+      <field type="uint8_t" name="config_state" enum="MARV_CONFIG_STATE">Whether the boot step accepted the config.</field>
+      <field type="uint8_t" name="config_refusal" enum="MARV_CONFIG_REFUSAL">Why the boot step refused a config; NONE when config_state is OK.</field>
+      <field type="uint8_t" name="last_activation_result" enum="MARV_ACTIVATION_RESULT">The outcome of the last activation.</field>
+      <field type="uint8_t" name="staged_differs">1 when the staged config differs from the running one, else 0.</field>
+    </message>
+    <message id="15201" name="MARV_PARAM_RECORD">
+      <description>The provenance, lock and the active and staged values of one parameter (core section 8 IF-5). param_index is the parameter id, as in PARAM_VALUE. The values are the raw 32 bits (IEEE-754 binary32 for an f32 parameter, two's complement for an i32 parameter). The source text is read in chunks with MARV_PARAM_SOURCE.</description>
+      <field type="uint32_t" name="active_bits">The value in the running config, as raw bits.</field>
+      <field type="uint32_t" name="staged_bits">The value in the staged config, as raw bits.</field>
+      <field type="float" name="sigma" units="parameter unit">The 1-sigma uncertainty; 0 unless sigma_kind is KNOWN.</field>
+      <field type="uint16_t" name="param_index">Parameter id.</field>
+      <field type="uint16_t" name="param_count">Total number of parameters.</field>
+      <field type="uint16_t" name="source_length" units="bytes">Length of the source text.</field>
+      <field type="uint8_t" name="origin" enum="MARV_PARAM_ORIGIN">How the staged value came about.</field>
+      <field type="uint8_t" name="method" enum="MARV_PARAM_METHOD">How the value was obtained.</field>
+      <field type="uint8_t" name="sigma_kind" enum="MARV_PARAM_SIGMA_KIND">What sigma means.</field>
+      <field type="uint8_t" name="lock">1 when the parameter is locked (keeps its compiled value; PARAM_SET is refused), else 0.</field>
+      <field type="uint8_t" name="source_chunk_length" units="bytes">Number of valid bytes in source_chunk (at most source_length).</field>
+      <field type="char[64]" name="source_chunk">The first chunk of the source text (UTF-8, no null terminator).</field>
+    </message>
+    <message id="15202" name="MARV_PARAM_SOURCE">
+      <description>Read or stage the source text of one parameter in chunks (core section 8 IF-5).</description>
+      <field type="uint16_t" name="param_index">Parameter id.</field>
+      <field type="uint16_t" name="offset" units="bytes">Offset of the chunk in the source text.</field>
+      <field type="uint16_t" name="total_length" units="bytes">Length of the whole source text.</field>
+      <field type="uint8_t" name="target_system">System ID.</field>
+      <field type="uint8_t" name="target_component">Component ID.</field>
+      <field type="uint8_t" name="operation" enum="MARV_PARAM_SOURCE_OP">READ, DATA or SET.</field>
+      <field type="uint8_t" name="chunk_length" units="bytes">Number of valid bytes in chunk (0 in a READ).</field>
+      <field type="char[64]" name="chunk">The chunk (UTF-8, no null terminator).</field>
+    </message>
+    <message id="15203" name="MARV_CONFIG_COMMAND">
+      <description>A config command (core section 8 IF-11): activate the staged config, revert to the last good config, or reset to the factory table. Accepted only while disarmed, over USB.</description>
+      <field type="uint8_t[32]" name="report_id">The validation report id of the staged config (ACTIVATE); all zero otherwise.</field>
+      <field type="uint8_t[32]" name="expected_config_sha256">The config hash the GCS expects the staged config to have (ACTIVATE); all zero otherwise.</field>
+      <field type="uint8_t" name="target_system">System ID.</field>
+      <field type="uint8_t" name="target_component">Component ID.</field>
+      <field type="uint8_t" name="action" enum="MARV_CONFIG_ACTION">The action.</field>
+    </message>
+    <message id="15204" name="MARV_CONFIG_ACK">
+      <description>The answer to MARV_CONFIG_COMMAND.</description>
+      <field type="uint8_t" name="target_system">System ID of the commander.</field>
+      <field type="uint8_t" name="target_component">Component ID of the commander.</field>
+      <field type="uint8_t" name="action" enum="MARV_CONFIG_ACTION">The action answered.</field>
+      <field type="uint8_t" name="result" enum="MARV_CONFIG_RESULT">The result.</field>
+    </message>
+  </messages>
+</mavlink>

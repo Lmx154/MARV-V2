@@ -1,0 +1,17 @@
+# The messages the codecs carry in the params-first scope (ground segment unit 5). One MAVLink message name per line.
+# tools/link/gen_ts.py and tools/link/gen_cpp_structs.py read this file; fw/link/src/codec_mavlink.cpp and
+# gcs/src/lib/link/ handle exactly these.
+HEARTBEAT
+AUTOPILOT_VERSION
+PARAM_REQUEST_LIST
+PARAM_REQUEST_READ
+PARAM_SET
+PARAM_VALUE
+STATUSTEXT
+COMMAND_LONG
+COMMAND_ACK
+MARV_IDENTITY
+MARV_PARAM_RECORD
+MARV_PARAM_SOURCE
+MARV_CONFIG_COMMAND
+MARV_CONFIG_ACK
