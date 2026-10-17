@@ -69,10 +69,13 @@ constexpr std::int32_t kAngleChannel = 6;
 
 std::array<ParamRecord, kParamCount> g_table;
 
-// The default table with rc_channel_angle = `angle_channel` (and nothing else changed).
-std::span<const ParamRecord, kParamCount> table_with_angle_channel(std::int32_t angle_channel) {
+// The default table with rc_channel_angle = `angle_channel` (and att_loop_ratio = `att_loop_ratio` if not 0; nothing else changed).
+std::span<const ParamRecord, kParamCount> table_with_angle_channel(std::int32_t angle_channel, std::int32_t att_loop_ratio = 0) {
   const std::span<const ParamRecord, kParamCount> d = param_defaults();
   std::copy(d.begin(), d.end(), g_table.begin());
+  if (att_loop_ratio != 0) {
+    g_table[static_cast<std::size_t>(ParamId::att_loop_ratio)].value = ParamValue{ParamType::I32, 0.0F, att_loop_ratio};
+  }
   g_table[static_cast<std::size_t>(ParamId::rc_channel_angle)].value = ParamValue{ParamType::I32, 0.0F, angle_channel};
   return std::span<const ParamRecord, kParamCount>(g_table);
 }
@@ -1333,9 +1336,9 @@ TEST_F(AngleTimingTest, ABackwardsStampIsCountedByBothLoopsAndNeverHalts) { run(
 // (h) init refuses an angle channel outside 0..16 and the arm or a stick channel (the register's AETR map: sticks 1 to 4, arm
 // 5), and accepts the others, 0 (no switch) included. Each case is a fresh process (threadsafe death tests), since the
 // parameter table loads once per process.
-void init_with_angle_channel(std::int32_t angle_channel) {
+void init_with_angle_channel(std::int32_t angle_channel, std::int32_t att_loop_ratio = 0) {
   (void)prctl(PR_SET_DUMPABLE, 0);
-  if (!params_init(table_with_angle_channel(angle_channel))) {
+  if (!params_init(table_with_angle_channel(angle_channel, att_loop_ratio))) {
     std::exit(2);
   }
   std::array<DshotValue, composition::kMotors> motor_latch{};
@@ -1484,6 +1487,16 @@ TEST_F(CalibrationGateTest, ATiltAboveTheSmallAngleRefusesArmingAndBelowItDoesNo
       EXPECT_EQ(is_armed_output(o), roll_deg < 25.0) << roll_deg << " deg";
     }
     accel_ = sample_of(Kind::Quiet, 0).accel_m_s2;
+  }
+}
+
+// The law runs once per rate tick, which is its period only for att_loop_ratio 1: init refuses another ratio.
+TEST(QuadFcAngleInitDeathTest, InitRefusesAnAttitudeLoopRatioOtherThanOne) {
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
+  for (const std::int32_t ratio : {2, 3}) {
+    EXPECT_EXIT(init_with_angle_channel(kAngleChannel, ratio), ::testing::KilledBySignal(SIGABRT),
+                "hal_panic: quad_fc composition: att_loop_ratio is not 1")
+        << ratio;
   }
 }
 

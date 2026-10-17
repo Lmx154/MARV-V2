@@ -1,6 +1,6 @@
-# quad_fc composition (fw/compositions/quad_fc) parameters. The composition's rate setpoint and collective thrust are the
-# constants 0, so the tunables are the motor-test limits (P11) and the pad map (P10); the later packets' entries (arming)
-# append after the product ids (marv_add_card_param_set EXTRA_REGISTER).
+# quad_fc composition (fw/compositions/quad_fc) parameters: the motor-test limits (P11), the pad map (P10), the rates curve,
+# arming and failsafe, the channel map, the estimator and the angle switch; the entries append after the product ids
+# (marv_add_card_param_set EXTRA_REGISTER).
 #
 # motor_pad (M1 P10, the FC3v2 board's wiring): the pad of each logical motor, a permutation of the board outputs
 # OUT0 .. OUT3 (GPIO 6 .. 9, boards/madflight_fc3v2_revc.h). Applied once, at motor output start-up (hal_target); the

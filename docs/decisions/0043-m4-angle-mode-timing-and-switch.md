@@ -29,7 +29,8 @@
    `TheSwitchAtOrAboveTheThresholdWithCentredSticksFliesTheAttitudeLaw`, `ARollStickInAngleModeGivesTheAttitudeLawsOutputAndNotAcros`,
    `ANotANumberSwitchFliesAcro`, `TheResetsHappenOnTheEntryTickOnly`, `TheRateIntegratorIsNotResetByAModeSwitch`; in
    `AngleTimingTest` four cases (late, early, repeated, backwards stamp) with angle armed: nothing halts, the attitude timing count
-   equals the rate loop's (a missing sample is not covered); `QuadFcAngleInitDeathTest.InitRefusesABadAngleChannelAndAcceptsTheOthers`.
+   equals the rate loop's (a missing sample is not covered); `QuadFcAngleInitDeathTest.InitRefusesABadAngleChannelAndAcceptsTheOthers` and `.InitRefusesAnAttitudeLoopRatioOtherThanOne`
+   (init panics unless att_loop_ratio is 1: the law runs once per rate tick, so that is its period).
    `tests/regression/quad/L09/unit/CMakeLists.txt` links `marv_attitude` and `marv_estimator` into the test for the reference.
    The test process loads the default table with `rc_channel_angle` = 6 (the register's default stays 0).
 

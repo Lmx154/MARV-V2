@@ -25,7 +25,7 @@
 // and the estimator's validity. On the first rate tick of armed-and-selected both are reset (AngleMode::reset, which drops the
 // heading lock; AttitudeLaw::reset, so the first execution carries no spacing check); the law runs only there. The rate loop's
 // controller state is not reset on a change of mode. No failsafe phase forces angle mode: the mode channel is the newest valid
-// frame's. The law runs on every rate tick, which is its period only when att_loop_ratio is 1 (the product set's value). The
+// frame's. The law runs on every rate tick, which is its period only when att_loop_ratio is 1 (the product set's value); init panics otherwise. The
 // law's faults and timing faults are counted (attitude_counts).
 //
 // Collective thrust. T = T_min + throttle * (T_max - T_min), linear in collective thrust between the mixer's own limits
@@ -318,6 +318,9 @@ void init() noexcept {
   g_angle_switch = angle_channel != 0;
   g_angle_channel = g_angle_switch ? static_cast<std::size_t>(angle_channel) - 1 : 0;
   g_angle_threshold = param_value<ParamId::angle_switch_threshold>();
+  if (param_value<ParamId::att_loop_ratio>() != 1) {
+    hal_panic("quad_fc composition: att_loop_ratio is not 1 (the attitude law runs once per rate tick)");
+  }
   const attitude::AttitudeConfig<float> attitude_cfg = attitude::load_config();
   g_angle.init(attitude_cfg);
   g_attitude.init(attitude_cfg);
