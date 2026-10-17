@@ -73,6 +73,10 @@ roll/pitch rate ki = 0, the bias corner): script, inputs and raw output committe
 
 ## Approval
 
-Pending Luis: the share (item 1); spec text for L7 (lines 459-460), M3's done-when (line 220) and the deferred list
-(item 3); optionally Betaflight's upright check (`small_angle` 25 deg) and boot gyro calibration as arming refusals.
-Items 3 and 5 add cases and set a new input in frozen files; no threshold or predicate is loosened.
+Luis, 2026-10-16, answering four questions (each "(Recommended)"): tilt budget "1.2° (Recommended)" (item 1:
+`attitude_tilt_error_max` 0.0209 rad is his ruling, no longer a PLACEHOLDER); spec text "Yes (Recommended)" (L7 names the
+entry, M3's done-when names the L7 hover and its control, the deferred list gains Gazebo ground contact; applied in this
+change); Betaflight's upright check "Yes (Recommended)" (arming refused above `small_angle` 25°); boot gyro calibration
+"Yes (Recommended)" (arming refused while it runs). The bench measured the board's still gyro bias at 0.35 deg/s
+perpendicular to gravity, b / Kp = 1.41° against the 1.2° budget (`tests/regression/quad/L09/results/m3_bench/`, with
+the M3 bench card).
