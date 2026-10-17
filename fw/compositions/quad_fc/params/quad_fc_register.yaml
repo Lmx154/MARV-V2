@@ -71,9 +71,9 @@ rc_channel_arm:
 # switch (acro always). Angle iff ManualControl.channels[rc_channel_angle - 1] >= angle_switch_threshold (a value that is not a
 # number is acro); init panics outside 0..16 and on the arm channel or a stick channel.
 rc_channel_angle:
-  {type: i32, value: 0, unit: "1", method: scenario, source: "Betaflight 4.5.1 configures no flight mode by default (the mode ranges are empty, rc_modes.c, INFERRED from the parameter-group pattern), so the default is no switch: acro; decision 0043 item 3. Luis chooses the channel (pending)", sigma: choice}
+  {type: i32, value: 8, unit: "1", method: scenario, source: "Luis 2026-10-17: 'ch8 is another 2 mode switch with same values as ch5' (-100 / 100 on the RadioMaster Pocket); angle at 100, acro at -100, the same sense as the arm switch; decision 0048. Before: 0 (no switch, Betaflight 4.5.1's empty mode ranges, decision 0043 item 3)", sigma: choice}
 angle_switch_threshold:
-  {type: f32, value: 0.390625, unit: "1", method: scenario, source: "The same comparison rule as the arm switch (arm_switch_threshold above): angle at or above 1700 us, normalized (1700 us - 1500 us) / 512 us = 0.390625, under the receive contract aux x = (us - 1500) / 512 (CRSF 172 -> 988 us, 992 -> 1500 us, 1811 -> 2012 us, TBS CRSF spec, RC channels); decision 0043 item 3. Luis's switch position and threshold: pending", sigma: choice}
+  {type: f32, value: 0.390625, unit: "1", method: scenario, source: "The same comparison rule as the arm switch (arm_switch_threshold above): angle at or above 1700 us, normalized (1700 us - 1500 us) / 512 us = 0.390625, under the receive contract aux x = (us - 1500) / 512 (CRSF 172 -> 988 us, 992 -> 1500 us, 1811 -> 2012 us, TBS CRSF spec, RC channels); decision 0043 item 3; Luis 2026-10-17 accepted the recommended threshold (decision 0048)", sigma: choice}
 
 # The attitude estimator (M3 P2, decision 0042, fw/estimator): the Mahony filter's gains and the healthy-sample window that
 # gates its initialisation (and with it the estimate's validity and arming). Betaflight 4.5.1
