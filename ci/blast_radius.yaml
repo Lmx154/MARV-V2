@@ -385,7 +385,7 @@ rules:
     run_ci_steps: ["@flight_gates"]
     pytest_paths: []
     gz_groups: [l7]
-    why: "quad_fc is the flight composition of the m33 image and is linked by the L09 gate test only; its register and its scenario-values register are read by the marv_params_fc3v2 set built by the same tests"
+    why: "quad_fc is the flight composition of the m33 image and is linked by the L09 gate test and the SIL library sim/quad_fc (the L09 SIL test); its register and its scenario-values register are read by the marv_params_fc3v2 set built by the same tests"
 
   # ---------------------------------------------------------------- sim
   - paths: [sim/plant/**]
@@ -450,6 +450,13 @@ rules:
     pytest_paths: []
     gz_groups: [l11]
     why: "the SIL library marv_sil_l11_vertical_scripted is the plugin of host-gz-l11"
+
+  - paths: [sim/quad_fc/**]
+    ctest_labels: [L09]
+    run_ci_steps: ["@sil_gates"]
+    pytest_paths: []
+    gz_groups: []
+    why: "the SIL library marv_sil_quad_fc (the flight composition with the FC3v2 set and the staged ManualControl, HIL S2c) is linked by the L09 SIL test only; no gz group loads it yet"
 
   # ---------------------------------------------------------------- tools
   - paths: [tools/card/**]

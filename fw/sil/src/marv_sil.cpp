@@ -13,8 +13,10 @@
 #include <marv/hal/tick.hpp>
 #include <marv/hal_sim/hal_sim.hpp>
 #include <marv/params/param.hpp>
+#include <marv/prim/constants.hpp>
 #include <marv/types/actuator.hpp>
 #include <marv/types/imu_sample.hpp>
+#include <marv/types/manual_control.hpp>
 #include <marv/types/rotor_speed_sample.hpp>
 
 #include "param_override.hpp"
@@ -58,6 +60,9 @@ static_assert(static_cast<std::uint32_t>(MARV_ROTOR_SPEED_M4_VALID) == static_ca
 static_assert(static_cast<std::uint32_t>(MARV_ROTOR_SPEED_FLAG_COUNT) == static_cast<std::uint32_t>(RotorSpeedFlag::Count));
 static_assert(static_cast<std::uint32_t>(MARV_PARAM_F32) == static_cast<std::uint32_t>(ParamType::F32));
 static_assert(static_cast<std::uint32_t>(MARV_PARAM_I32) == static_cast<std::uint32_t>(ParamType::I32));
+
+static_assert(static_cast<std::size_t>(MARV_RC_CHANNELS) == prim::kCrsfRcChannels);
+static_assert(sizeof(marv_manual_control::channels) == sizeof(ManualControl::channels));
 
 constexpr std::size_t kMotors = composition::kMotors;
 constexpr std::size_t kServos = composition::kServos;
@@ -141,6 +146,35 @@ Session g_session;
   s.temp_k = m.temp_k;
   s.flags = m.flags;
   return s;
+}
+
+[[nodiscard]] bool in_range(float v, float lo) noexcept { return std::isfinite(v) && v >= lo && v <= 1.0f; }
+
+// The ManualControl contract (fw/types/manual_control.hpp): sticks and channels in [-1, 1], throttle and link quality in
+// [0, 1], all finite; frames == 0 means no RC frame yet, then t_us, the sticks, the throttle and every channel are 0.
+[[nodiscard]] bool manual_valid(const marv_manual_control& m) noexcept {
+  bool ok = in_range(m.roll, -1.0f) && in_range(m.pitch, -1.0f) && in_range(m.yaw, -1.0f) &&
+            in_range(m.throttle, 0.0f) && in_range(m.link_quality, 0.0f);
+  bool all_zero = m.t_us == 0 && m.roll == 0.0f && m.pitch == 0.0f && m.yaw == 0.0f && m.throttle == 0.0f;
+  for (const float c : m.channels) {
+    ok = ok && in_range(c, -1.0f);
+    all_zero = all_zero && c == 0.0f;
+  }
+  return ok && (m.frames != 0 || all_zero);
+}
+
+[[nodiscard]] ManualControl to_manual(const marv_manual_control& m) noexcept {
+  ManualControl c{};
+  c.t_us = m.t_us;
+  c.frames = m.frames;
+  c.roll = m.roll;
+  c.pitch = m.pitch;
+  c.yaw = m.yaw;
+  c.throttle = m.throttle;
+  std::copy(std::begin(m.channels), std::end(m.channels), c.channels.begin());
+  c.link_quality = m.link_quality;
+  c.link_t_us = m.link_t_us;
+  return c;
 }
 
 [[nodiscard]] bool present(const void* p, std::size_t count) noexcept { return count == 0 || p != nullptr; }
@@ -298,6 +332,24 @@ extern "C" {
   return run_ticks(first_tick, k, imu, true, rotor, out);
 }
 
+[[gnu::visibility("default")]] marv_sil_status marv_sil_stage_manual_control(const marv_manual_control* mc) {
+  using namespace marv::sil;
+  if (g_session.state != Lifecycle::Ready) {
+    return MARV_SIL_E_STATE;
+  }
+  if (mc == nullptr) {
+    return MARV_SIL_E_NULL;
+  }
+  if (mc->struct_size != sizeof(marv_manual_control)) {
+    return MARV_SIL_E_ABI;
+  }
+  if (!manual_valid(*mc)) {
+    return MARV_SIL_E_INPUT;
+  }
+  marv::hal_sim::stage_manual_control(to_manual(*mc));
+  return MARV_SIL_OK;
+}
+
 [[gnu::visibility("default")]] marv_sil_status marv_sil_shutdown(void) {
   using namespace marv::sil;
   if (g_session.state != Lifecycle::Ready) {
@@ -328,7 +380,7 @@ extern "C" {
     case MARV_SIL_E_COUNT:
       return "E_COUNT: k is 0 or exceeds the output capacity";
     case MARV_SIL_E_INPUT:
-      return "E_INPUT: an IMU sample is invalid (see marv_sil_error_index)";
+      return "E_INPUT: an IMU or rotor-speed sample, or the manual control, is invalid (see marv_sil_error_index for a sample)";
     default:
       return "unknown status";
   }

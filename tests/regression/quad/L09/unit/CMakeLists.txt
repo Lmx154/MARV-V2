@@ -28,3 +28,12 @@ add_executable(unit_console console_test.cpp)
 target_link_libraries(unit_console PRIVATE marv_console_decode marv_types GTest::gtest_main)
 marv_apply_flags(unit_console)
 marv_frozen_suite(unit_console)
+
+# The quad_fc composition as a SIL library (sim/quad_fc, HIL S2c, decision 0046 item 4): the staged ManualControl reaches
+# the composition through the C ABI, and the staged frame stamp drives the failsafe. The library is linked, init succeeds once
+# per process, so every test that initialises runs in a forked child. The test reads the set's default table (the library's
+# set, marv_params_fc3v2) for the tick rational and the failsafe times.
+add_executable(unit_sil_quad_fc sil_quad_fc_test.cpp)
+target_link_libraries(unit_sil_quad_fc PRIVATE marv_sil_quad_fc marv_params_fc3v2_runtime marv_params_fc3v2_generated marv_types marv_hal_sim GTest::gtest_main)
+marv_apply_flags(unit_sil_quad_fc)
+marv_frozen_suite(unit_sil_quad_fc)
