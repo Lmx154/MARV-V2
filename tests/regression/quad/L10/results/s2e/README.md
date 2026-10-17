@@ -13,6 +13,9 @@ Each run: ~6 s wall (RTF 3.5), 161 632 ticks (21.55 s), deterministic (two fligh
 not committed, their sha256 is in each `analysis.txt`: flight 2aeb8293..., control b27f7e4b..., tenth-stick flight bf807a6d...).
 Per run dir: `world.sdf`, `report.txt` (L2 run report), `analysis.txt` (all numbers below), `traces.csv.xz` (234 Hz), `scenario/hover.yaml`.
 
+Superseded for tilt behaviour: there is no drag in this plant (decision 0049). The re-run on the drag plant is `../s2e_drag/README.md`
+(truth tilt 3.8 deg at the end of roll_centre, 3.3 deg at the end of pitch_centre, 5.8 deg at the end of the run, against 13.0, 18.6 and 18.9 deg here).
+
 ## Result
 - Hover works. Armed at 2.7522 s; throttle raised to the DERIVED hover stick 0.0716427 at 3.0 s (m g(0.82 rad, 500 m) = 7.1783 N;
   s = (m g - T_min)/(T_max - T_min), T_min = 0, T_max = 100.196 N; omega_h 800.58 rad/s, D* 583.06); **lift-off (pad release) at tick

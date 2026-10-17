@@ -34,6 +34,17 @@ fw/mixer/include/marv/mixer/mixer.hpp:76-84), the mixer at zero torque gives eac
 rotors.speed_range [0, 2991], idle_speed = omega_min = 0), rounded with the DshotDiffuser carry (fw/rate_group, decision 0017).
 Hover: T = m g(phi, h0) (tools/sim/hover.py, the L2 site) gives s = (m g - T_min) / (T_max - T_min).
 
+The integrator-hold script (--script ihold, M4 S2f, decision 0045; evidence for tests/regression/quad/L10/results/ihold). The same world,
+card, firmware and N, with a constant disturbance torque and one dip:
+  ready, arm and hover as above; hold IHOLD_HOLD_S from the throttle raise (the rate integrator settles against the disturbance);
+  dip     throttle stick DIP_BELOW_STICK = 0 (below arm_throttle_min: the decision 0045 hold zeroes the integrator) or DIP_ABOVE_STICK =
+          arm_throttle_min + 2 / 1024 (2 us of the receive contract throttle = (us - 988) / 1024 above min_check: the hold never engages),
+          for DIP_S; then hover again for IHOLD_HOLD2_S, then disarm. No roll, pitch or yaw stick at any time.
+The disturbance is --com-offset-m: every rotor position of the plugin element is shifted by that distance along x and y (the rotors move
+with respect to the centre of mass, which is the plant's origin), so the plant torque is r x F with F = -T on body z: tau_x = -T d,
+tau_y = +T d for rotor positions + d, proportional to the thrust. The firmware's mixer comes from the unshifted card, so the shift is
+an unmodelled constant trim torque. No plant, plugin or card change: the rotor positions are inputs of the plugin element.
+
 The control run (decision 0042's amended control, tests/regression/quad/L07/gz/test_t4_hover_estimate.py): the same script with
 att_kp = 0, rate_ki_roll = 0 and rate_ki_pitch = 0 through <sil_override>, so no gain returns the tilt to level.
 """
@@ -91,6 +102,12 @@ DECIMATE = 32  # labelled analysis value: one trace row per 32 ticks (about 234 
 DSHOT_MIN, DSHOT_MAX = 48, 2047  # DShot protocol, core section 4
 CONTROL_OVERRIDES = (("att_kp", "0.0"), ("rate_ki_roll", "0.0"), ("rate_ki_pitch", "0.0"))
 STAMP_FIELD = "sil_t_us"
+IHOLD_HOLD_S = 20.0  # labelled scenario value: time at hover from the throttle raise to the dip (the integrator settles in a fraction of it; the lift-off transient and the horizontal drift decay)
+IHOLD_HOLD2_S = 6.0  # labelled scenario value: time at hover after the dip
+IHOLD_COM_OFFSET_M = 0.005  # labelled scenario value, PLACEHOLDER: a 5 mm rotor-to-centre-of-mass offset on x and y (battery placement tolerance)
+DIP_BELOW_STICK = 0.0  # the dip stick that engages the decision 0045 integrator hold (below arm_throttle_min)
+IHOLD_PRE_S = 1.0  # labelled analysis value: the pre-dip window is the last second before the dip
+IHOLD_RETURN_FRACTION = 0.1  # labelled analysis value: the return band is the pre-dip envelope or 10 % of the post-dip excursion, whichever is wider
 
 
 def register_value(name):
@@ -192,6 +209,28 @@ def build_phases(hover, step_stick):
     return phases
 
 
+def dip_above_stick():
+    """arm_throttle_min + 2 / 1024: 2 us above min_check of the receive contract throttle = (us - 988) / 1024 (the register's source)."""
+    return register_value("arm_throttle_min") + 2.0 / 1024.0
+
+
+def build_phases_ihold(hover, dip_stick):
+    cal, recovery = register_value("gyro_cal_duration_us"), register_value("failsafe_recovery_us")
+    ready = cal + recovery + MARGIN_US
+    hv = hover.stick_f32
+    spec = [("ready", ready, SWITCH_LOW, 0.0),
+            ("arm_idle", ARM_IDLE_US, SWITCH_HIGH, 0.0),
+            ("hold", us(IHOLD_HOLD_S), SWITCH_HIGH, hv),
+            ("dip", us(DIP_S), SWITCH_HIGH, dip_stick),
+            ("hold2", us(IHOLD_HOLD2_S), SWITCH_HIGH, hv),
+            ("disarmed", TAIL_US, SWITCH_LOW, hv)]
+    phases, t = [], 0
+    for name, dur, arm, thr in spec:
+        phases.append(Phase(name, t, dur, arm, 0.0, 0.0, thr))
+        t += dur
+    return phases
+
+
 def script_xml(phases):
     segs = "".join(
         f"<segment><start_us>{p.start_us}</start_us><duration_us>{p.duration_us}</duration_us><link>on</link>"
@@ -201,8 +240,16 @@ def script_xml(phases):
             f"<angle_channel>{ANGLE_CHANNEL}</angle_channel>{segs}</manual_control_script>")
 
 
-def sdf_edit_for(phases, overrides):
+def com_offset_edit(text, d):
+    pat = re.compile(r'(<position_frd_m unit="m">)(\S+) (\S+) (\S+)(</position_frd_m>)')
+    assert len(pat.findall(text)) == 4
+    return pat.sub(lambda m: f"{m[1]}{float(m[2]) + d!r} {float(m[3]) + d!r} {m[4]}{m[5]}", text)
+
+
+def sdf_edit_for(phases, overrides, com_offset_m=0.0):
     def edit(text):
+        if com_offset_m:
+            text = com_offset_edit(text, com_offset_m)
         text = re.sub(r'\s*<sil_override param="ol_dshot_m\d" type="i32">\d+</sil_override>', "", text)
         add = "<launch_pad/>\n" + script_xml(phases) + "\n"
         for name, value in overrides:
@@ -638,6 +685,89 @@ def analyse(label, log, hover, phases, tilt_max, log_sha, out_stem):
     return text
 
 
+def band_return(s, i0, i1, vals, pre_lo, pre_hi, peak_excursion, pre_mean):
+    """(half-width, seconds after index i0's time of the last sample outside the band, None if the band is not reached by i1)."""
+    half = max(pre_hi - pre_mean, pre_mean - pre_lo, IHOLD_RETURN_FRACTION * peak_excursion)
+    out = [i for i in range(i0, i1) if abs(vals[i] - pre_mean) > half]
+    if not out:
+        return half, 0.0
+    if out[-1] == i1 - 1:
+        return half, None
+    return half, (s.t_us[out[-1] + 1] - s.t_us[i0]) / 1e6
+
+
+def analyse_ihold(label, log, hover, phases, tilt_max, log_sha, out_stem, dip_stick, com_offset_m):
+    s = series_of(log, hover, tilt_max)
+    pad = log["pad"]
+    rel_tick = pad["release_tick"] if pad else None
+    release_us = log["ticks"][rel_tick]["sil_t_us"] if rel_tick is not None else None
+    P = {p.name: p for p in phases}
+    dip, hold2 = P["dip"], P["hold2"]
+    rate = [math.sqrt(sum(x * x for x in o)) for o in s.omega]
+    L = [f"HIL S2f integrator-hold analysis: {label}",
+         "Simulation on INFERRED / UNVERIFIED / PLACEHOLDER card values (vehicles/marv_5in_fc3v2.yaml), not a flight result.",
+         f"log sha256 {log_sha}",
+         f"tick {log['header']['tick_period_num_us']}/{log['header']['tick_period_den']} us; command delay N = {log['delay']['ticks']}; ticks {len(log['ticks'])}",
+         f"disturbance: every rotor position shifted by {com_offset_m!r} m on x and y (plant torque tau_x = -T d, tau_y = +T d); at hover T = {hover.weight_n!r} N: "
+         f"|tau| = {hover.weight_n * com_offset_m:.5f} Nm per axis",
+         f"dip: throttle stick {dip_stick!r} for {DIP_S} s; arm_throttle_min {register_value('arm_throttle_min')!r} (quad_fc.cpp:439 throttle_low = throttle < g_throttle_min): "
+         f"the decision 0045 hold {'ENGAGES' if dip_stick < register_value('arm_throttle_min') else 'does NOT engage'}", "", "Phases (SIL time):"]
+    for p in phases:
+        L.append(f"  {p.name:9s} {fmt_s(p.start_us)} .. {fmt_s(p.end_us)}  arm {p.arm:+.0f}  throttle {p.throttle!r}")
+    L.append(f"PAD release (lift-off) at {fmt_s(release_us) if release_us is not None else 'never'}")
+    L.append("")
+    i0, i1 = window(s, dip.start_us, dip.end_us)  # the dip window
+    ip0, _ = window(s, dip.start_us - us(IHOLD_PRE_S), dip.start_us)  # the pre-dip window [ip0, i0)
+    _, ie = window(s, dip.start_us, hold2.end_us)  # the dip start to the end of hold2
+    tilt = [deg(x) for x in s.tilt]
+    pre_t, pre_r = tilt[ip0:i0], rate[ip0:i0]
+    pt_mean, pr_mean = mean(pre_t), mean(pre_r)
+    tx = [deg(v[0]) for v in s.tvec]
+    ty = [deg(v[1]) for v in s.tvec]
+    L.append(f"Pre-dip (the last {IHOLD_PRE_S} s before the dip, {fmt_s(s.t_us[ip0])} .. {fmt_s(s.t_us[i0 - 1])}):")
+    L.append(f"  tilt mean {pt_mean:.4f} deg (min {min(pre_t):.4f}, max {max(pre_t):.4f}); heading-frame tilt vector x (roll) {mean(tx[ip0:i0]):+.4f}, y (pitch) {mean(ty[ip0:i0]):+.4f} deg")
+    L.append(f"  |body rate| mean {pr_mean:.5f} rad/s (min {min(pre_r):.5f}, max {max(pre_r):.5f})")
+    L.append(f"  commanded torque (mixer DShot through the ESC map and B), mean roll/pitch/yaw {mean(c[1] for c in s.cmd[ip0:i0]):+.5f}/{mean(c[2] for c in s.cmd[ip0:i0]):+.5f}/"
+             f"{mean(c[3] for c in s.cmd[ip0:i0]):+.5f} Nm; plant torque mean {mean(c[1] for c in s.wrench[ip0:i0]):+.5f}/{mean(c[2] for c in s.wrench[ip0:i0]):+.5f}/"
+             f"{mean(c[3] for c in s.wrench[ip0:i0]):+.5f} Nm (the integrator is not in the log; the commanded torque against the disturbance torque above is its trace)")
+    L.append(f"  z {s.pos[i0][2]:.4f} m (down), vz {s.vel[i0][2]:.5f} m/s at the dip start")
+    L.append("")
+    it = max(range(i0, ie), key=lambda i: tilt[i])
+    ir = max(range(i0, ie), key=lambda i: rate[i])
+    ihi = max(range(i1, ie), key=lambda i: tilt[i])  # peak after the dip window
+    irhi = max(range(i1, ie), key=lambda i: rate[i])
+    th, tr = band_return(s, i1, ie, tilt, min(pre_t), max(pre_t), tilt[it] - pt_mean, pt_mean)
+    rh, rr = band_return(s, i1, ie, rate, min(pre_r), max(pre_r), rate[ir] - pr_mean, pr_mean)
+    L.append(f"After the dip start (to the end of hold2, {(hold2.end_us - dip.start_us) / 1e6:.2f} s):")
+    L.append(f"  peak tilt {tilt[it]:.4f} deg at {fmt_s(s.t_us[it])} (in the dip window: max {max(tilt[i0:i1]):.4f}); peak after the dip window {tilt[ihi]:.4f} deg at {fmt_s(s.t_us[ihi])}; "
+             f"heading-frame x/y at the peak {tx[it]:+.4f}/{ty[it]:+.4f} deg")
+    L.append(f"  peak |body rate| {rate[ir]:.5f} rad/s at {fmt_s(s.t_us[ir])} (in the dip window: max {max(rate[i0:i1]):.5f}); peak after the dip window {rate[irhi]:.5f} rad/s at {fmt_s(s.t_us[irhi])}")
+    L.append(f"  return rule: the last sample outside the band pre-dip mean +- max(pre-dip envelope, {IHOLD_RETURN_FRACTION:.0%} of the peak excursion), measured from the dip end ({fmt_s(dip.end_us)})")
+    L.append(f"  tilt returns within +-{th:.4f} deg of {pt_mean:.4f}: " + ("never within the run" if tr is None else f"{tr:.3f} s after the dip end"))
+    L.append(f"  |body rate| returns within +-{rh:.5f} rad/s of {pr_mean:.5f}: " + ("never within the run" if rr is None else f"{rr:.3f} s after the dip end"))
+    z0 = s.pos[i0][2]
+    zs = {}
+    for name, t_us in (("dip end", dip.end_us), ("dip end + 1 s", dip.end_us + us(1.0)), ("end of hold2", hold2.end_us)):
+        j = min(next((i for i, x in enumerate(s.t_us) if x >= t_us), len(s.t_us) - 1), len(s.t_us) - 1)
+        dt = (s.t_us[j] - s.t_us[i0]) / 1e6
+        zs[name] = (s.pos[j][2] - z0, s.pos[j][2] - z0 - s.vel[i0][2] * dt, s.vel[j][2])
+    L.append("  altitude lost (down positive, relative to the dip start / to continuing at the dip-start velocity; the throttle is open-loop and the pre-dip descent speed is "
+             f"{s.vel[i0][2]:.5f} m/s): " + "; ".join(f"{k}: {v[0]:.3f} / {v[1]:.3f} m (vz {v[2]:.3f} m/s)" for k, v in zs.items()))
+    L.append(f"  DShot during the dip {min(min(d) for d in s.dshot[i0:i1])}..{max(max(d) for d in s.dshot[i0:i1])}; rotor speed in the dip "
+             f"{min(min(r) for r in s.rotor[i0:i1]):.2f}..{max(max(r) for r in s.rotor[i0:i1]):.2f} rad/s; stick throttle in the dip (logged frame) {min(x[2] for x in s.stick[i0:i1])!r}..{max(x[2] for x in s.stick[i0:i1])!r}")
+    for tag, a, b in (("in the first second after the dip", i1, next((i for i, x in enumerate(s.t_us) if x >= dip.end_us + us(1.0)), ie)),):
+        L.append(f"  commanded torque max |roll/pitch/yaw| {tag}: {max(abs(c[1]) for c in s.cmd[a:b]):.5f}/{max(abs(c[2]) for c in s.cmd[a:b]):.5f}/{max(abs(c[3]) for c in s.cmd[a:b]):.5f} Nm; "
+                 f"plant torque {max(abs(c[1]) for c in s.wrench[a:b]):.5f}/{max(abs(c[2]) for c in s.wrench[a:b]):.5f}/{max(abs(c[3]) for c in s.wrench[a:b]):.5f} Nm")
+    L.append("")
+    L.append("tilt (deg) at 0.5 s steps from 1 s before the dip: " + " ".join(
+        f"{(t_us - dip.start_us) / 1e6:+.1f}s:{tilt[next(i for i, x in enumerate(s.t_us) if x >= t_us)]:.3f}"
+        for t_us in range(dip.start_us - us(1.0), hold2.end_us + 1, us(0.5)) if t_us <= s.t_us[-1]))
+    text = "\n".join(L) + "\n"
+    Path(f"{out_stem}.analysis.txt").write_text(text, encoding="utf-8")
+    write_traces(f"{out_stem}.traces.csv", s, release_us)
+    return text
+
+
 def gen_site():
     sc = scn.values(scn.load(BASE_SCENARIO, CARD))
     return f"phi {sc['site_latitude_rad']} rad, h {sc['site_height_m']} m"
@@ -653,20 +783,23 @@ def tilt_max_param():
     return float(m.group(1))
 
 
-def run_one(label, out_dir, plugin_dir, overrides, max_s, step_stick):
+def run_one(label, out_dir, plugin_dir, overrides, max_s, step_stick, ihold_dip_stick=None, com_offset_m=0.0):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     assert register_value("rc_channel_arm") == ARM_CHANNEL and register_value("rc_channel_angle") == ANGLE_CHANNEL
     hover = derive_hover()
-    phases = build_phases(hover, step_stick)
+    phases = build_phases(hover, step_stick) if ihold_dip_stick is None else build_phases_ihold(hover, ihold_dip_stick)
     scenario, num, den = fc3_scenario(out_dir)
     total_us = phases[-1].end_us if max_s is None else min(phases[-1].end_us, us(max_s))
     iterations = -(-total_us * den // num)  # ticks (= host steps at m = 1) that reach total_us
     sensors = gen_world.SensorSet(gyro="model", bias_signs=(0,) * 6)
-    r = run_scenario.run(CARD, scenario, SEED, M, "test", "lo", out_dir, plugin_dir, sdf_edit_for(phases, overrides),
+    r = run_scenario.run(CARD, scenario, SEED, M, "test", "lo", out_dir, plugin_dir, sdf_edit_for(phases, overrides, com_offset_m),
                          iterations=iterations, timeout_s=TIMEOUT_S, sensors=sensors, command_delay_ticks=COMMAND_DELAY_TICKS)
     stem = str(Path(r.log_path).with_suffix(""))
-    text = analyse(label, r.log, hover, phases, tilt_max_param(), r.log_sha256, stem)
+    if ihold_dip_stick is None:
+        text = analyse(label, r.log, hover, phases, tilt_max_param(), r.log_sha256, stem)
+    else:
+        text = analyse_ihold(label, r.log, hover, phases, tilt_max_param(), r.log_sha256, stem, ihold_dip_stick, com_offset_m)
     print(text)
     print(f"files: {stem}.{{sdf,bin,report.txt,analysis.txt,traces.csv}}; wall {r.wall_s:.1f} s, RTF {r.rtf:.3f}")
     return r
@@ -678,8 +811,21 @@ def main(argv=None):
     ap.add_argument("--plugin-dir", default=str(PLUGIN_DIR))
     ap.add_argument("--runs", choices=("flight", "control", "both"), default="both")
     ap.add_argument("--step-stick", type=float, default=STEP_STICK, help="roll and pitch step stick (a scenario value, default %(default)s)")
+    ap.add_argument("--script", choices=("s2e", "ihold"), default="s2e",
+                    help="s2e: the roll / pitch step script (default). ihold: hover with a constant disturbance torque and one throttle dip; "
+                         "--runs flight = the dip to stick 0 (the integrator hold engages), control = the dip to arm_throttle_min + 2/1024 (it does not)")
+    ap.add_argument("--com-offset-m", type=float, default=IHOLD_COM_OFFSET_M,
+                    help="ihold only: the rotor-position shift on x and y, m, the disturbance torque is thrust x this (a PLACEHOLDER scenario value, default %(default)s)")
     ap.add_argument("--max-s", type=float, default=None, help="end the run early at this SIM time (debugging only)")
     a = ap.parse_args(argv)
+    if a.script == "ihold":
+        if a.runs in ("flight", "both"):
+            run_one("integrator hold engaged (dip to stick 0)", Path(a.out_dir) / "dip_below_mincheck", a.plugin_dir, (), a.max_s, a.step_stick,
+                    DIP_BELOW_STICK, a.com_offset_m)
+        if a.runs in ("control", "both"):
+            run_one("integrator hold not engaged (dip to arm_throttle_min + 2/1024)", Path(a.out_dir) / "dip_above_mincheck", a.plugin_dir, (), a.max_s,
+                    a.step_stick, dip_above_stick(), a.com_offset_m)
+        return 0
     if a.runs in ("flight", "both"):
         run_one("flight run (angle mode, the loop closed)", Path(a.out_dir) / "flight", a.plugin_dir, (), a.max_s, a.step_stick)
     if a.runs in ("control", "both"):
