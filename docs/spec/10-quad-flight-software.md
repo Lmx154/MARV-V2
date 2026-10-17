@@ -238,7 +238,9 @@ adding more complex features gradually" (decision 0026).
   UNVERIFIED until measured) and the gains regenerated from it; angle mode on the board (the attitude law in `quad_fc`,
   sticks to angle setpoints, `angle_tilt_max`); the rate integrator held at zero at minimum throttle (Betaflight without
   airmode); then L10 HIL, pulled forward from the deferred list: the board's flight code flies the Gazebo sim from
-  simulated IMU samples, driven by the ELRS radio, built in stages behind a bench-only image.
+  simulated IMU samples, driven by the ELRS radio, built in stages behind a bench-only image; before its closed-loop
+  stage (S4), rotor and body drag in the plant, pulled forward from the deferred list (Luis, 2026-10-17: "yes pull drag
+  forward"; decision 0049).
 - *Done when:* the T3 QF-3 margins pass on the updated card; tethered hover in angle mode, then free hover, then acro,
   each with its log and card update committed.
 
@@ -253,7 +255,7 @@ adding more complex features gradually" (decision 0026).
 noise Monte Carlo, C6a); L7 shadow mode and its Monte Carlo; L8's Gazebo pilot and joystick bridge; the rest of L9
 (eRPM, core split, SRAM placement if timing holds without them); an in-process `marv_plant` closed loop
 with truth dispersed inside the card's uncertainties, replacing Gazebo for development checks; plant fidelity (rotor
-inertia, battery and duty-mode ESC, rotor and body drag, IMU lever arm); Gazebo ground contact (a ground plane and its
+inertia, battery and duty-mode ESC, IMU lever arm; drag moved into M4, decision 0049); Gazebo ground contact (a ground plane and its
 contact force into `marv_plant`'s specific force, decision 0042); vertical-loop tilt compensation; the
 RP2350 hardware watchdog (2048 ms, a recovery feature: the AM32 ESC already stops on a silent DShot line, decision
 0039; work on branch `m1-wdt`); the branches of §6.3.
