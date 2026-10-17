@@ -1,0 +1,85 @@
+run_hil_s4: rebooting the board through probe 900678EF479C3A0E (flash.sh --probe-only)
+run_hil_s4: world /dev/shm/s4a_60/marv_5in_fc3v2_hover_lo_test_m1_hil_n25.sdf; 450018 ticks (60.0 s), N = 25, F = 4
+marv_gz_lockstep: hil board /dev/serial/by-id/usb-Raspberry_Pi_Pico_B2189353BDF6DD1E-if00: version quad-L2-pass-328-gd46f7f6, schema hash 3ae00eb50938acba, values CRC 94b19251, tick 1953125/14649 us, rate divisor 2, batch limit 16, D_HIL 14532 us; F = 4 samples per record, N = 25 ticks
+marv_gz_lockstep: hil t=    0.0 s | board boot | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 0 us lag 0.0 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=    1.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1928 us lag 1.4 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=    2.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1928 us lag 1.5 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=    3.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1928 us lag 1.6 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=    4.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1928 us lag 1.8 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=    5.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1928 us lag 1.9 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=    6.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1928 us lag 2.1 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=    7.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1928 us lag 2.3 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=    8.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1927 us lag 2.3 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=    9.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1927 us lag 2.3 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   10.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1927 us lag 2.4 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   11.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.4 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   12.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.5 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   13.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.5 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   14.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.5 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   15.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.6 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   16.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.6 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   17.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.6 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   18.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.6 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   19.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.6 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   20.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.6 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   21.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.6 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   22.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.6 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   23.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.7 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   24.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.7 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   25.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.7 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   26.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.8 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   27.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.8 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   28.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.8 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   29.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.8 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   30.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.9 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   31.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.9 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   32.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.9 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   33.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.9 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   34.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 2.9 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   35.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.0 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   36.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.0 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   37.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.0 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   38.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.0 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   39.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.0 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   40.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.4 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   41.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.4 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   42.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.4 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   43.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.5 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   44.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.5 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   45.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.5 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   46.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.5 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   47.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.5 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   48.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.6 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   49.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.7 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   50.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.7 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   51.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.7 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   52.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.7 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   53.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.8 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   54.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.8 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   55.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.8 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   56.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.8 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   57.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 3.8 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   58.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 5.3 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil t=   59.0 s | board no_link | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 1912 us lag 5.5 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: hil summary: N 25, F 4, rate divisor 2; sample records sent 112504, DShot reports received 225008, used 224997; command margin (needed - arrived) min 1912.3 us, max 4044.9 us; send lateness max 217.0 us; lag absorbed 5537.2 us in 83 ticks (largest 1496.1 us); uplink CRC failures 0, sequence gaps 0, unframed bytes 0; board: arming no_link, deadline misses 1, ticks 450016, receiver frames 0
+HIL S4 run marv_5in_fc3v2_hover_lo_test_m1_hil_n25: N = 25 ticks, F = 4 samples per record, 60.0 s requested (450018 ticks at m = 1); gz exit 0, wall 64.6 s
+marv_gz_lockstep: hil board /dev/serial/by-id/usb-Raspberry_Pi_Pico_B2189353BDF6DD1E-if00: version quad-L2-pass-328-gd46f7f6, schema hash 3ae00eb50938acba, values CRC 94b19251, tick 1953125/14649 us, rate divisor 2, batch limit 16, D_HIL 14532 us; F = 4 samples per record, N = 25 ticks
+marv_gz_lockstep: hil summary: N 25, F 4, rate divisor 2; sample records sent 112504, DShot reports received 225008, used 224997; command margin (needed - arrived) min 1912.3 us, max 4044.9 us; send lateness max 217.0 us; lag absorbed 5537.2 us in 83 ticks (largest 1496.1 us); uplink CRC failures 0, sequence gaps 0, unframed bytes 0; board: arming no_link, deadline misses 1, ticks 450016, receiver frames 0
+board: version 'quad-L2-pass-328-gd46f7f6', schema hash 0x3ae00eb50938acba, values CRC 0x94b19251, tick 1953125/14649 us (133.3282 us), rate divisor 2, D_HIL 14532 us; receiver boot {'baud_requested': 420000, 'baud_actual': 419874, 'irq_priority': 64}
+downlink: 112504 sample records, 450016 samples; send time after the record's (lag-shifted) instant (us): min 4.2  median 9.3  p99 13.8  max 217.0  (n 112504)
+wall-clock pacing: schedule lag absorbed 5.537 ms over 60.000 s of stamps (sim / wall rate 0.999908)
+turnaround, frame sent -> its rate tick's DShot report read (us): min 487.3  median 738.9  p99 860.7  max 1842.0  (n 224997); max = 13.82 ticks
+N rule (decision 0046 item 2): N >= F + ceil(max turnaround / tick) = 4 + 14 = 18; N = 25: met, 7 ticks to spare
+command margin, needed - arrived, per rate tick (us): min 1912.3  median 2364.3  p99 2684.3  max 4044.9  (n 224997)
+QF-3 at command delay N = 25 (nominal rows, tests/regression/quad/L09/results/hil_s2/hil_delay_margin.txt): PM 71.472 deg (PM_min 45), Ms 1.4465 (Ms_max 2.0), pass yes; N_max 249
+worst-corner rows: not a margin result (decision 0046 item 2): the gain rule puts the worst corner at PM_min at N = 0, so any N > 0 is below it there (hil_delay_margin.txt: -0.13 deg at N = 1)
+board status records: 64; last: status t=76441497 records=112504 samples=450016 mc=0 ticks=450016 reports=225008 arming=no_link rate_exec=225008 rate_timing_faults=0 att_faults=0/0 deadline_misses=1 max_tick=5553cy (37.0 us) max_record=15391cy (102.6 us) max_gap=1943us max_send=296us faults=
+board counters before the stream (the plugin's first status; another writer such as a ModemManager probe shows here): all zero
+arming states in order (board us): boot @13441499, no_link @14441570
+DShot reports 225008, non-zero 0
+receiver: frames received 0; last receiver status {'rc_frames': 0, 'link_stats_frames': 0, 'skipped_frames': 0, 'bad_crc': 0, 'bad_length': 0, 'dropped_bytes': 0, 'uart_errors': 0, 'frames_sent': 0, 'frames_missed': 0}
+gz log: 450018 steps, 450018 ticks (60.000 s of sim time), trailer {'steps': 450018, 'ticks': 450018, 'applied': 450018}; launch pad present, release none: held the whole run
+body z NED over the run: -0.000000 .. -0.000000 m; applied DShot non-zero ticks 0
+uplink host-side faults: none
+VERDICT OK (s4a)
+

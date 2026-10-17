@@ -1,0 +1,55 @@
+run_hil_s4: rebooting the board through probe 900678EF479C3A0E (flash.sh --probe-only)
+run_hil_s4: world /dev/shm/s4a_late/marv_5in_fc3v2_hover_lo_test_m1_hil_n4.sdf; 75003 ticks (10.0 s), N = 4, F = 4
+marv_gz_lockstep: hil board /dev/serial/by-id/usb-Raspberry_Pi_Pico_B2189353BDF6DD1E-if00: version quad-L2-pass-328-gd46f7f6, schema hash 3ae00eb50938acba, values CRC 94b19251, tick 1953125/14649 us, rate divisor 2, batch limit 16, D_HIL 14532 us; F = 4 samples per record, N = 4 ticks
+marv_gz_lockstep: hil t=    0.0 s | board boot | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 0 us lag 0.0 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: REFUSED: HIL late command: tick 4 needs the board's command of tick 0 (j - N, N = 4), its DShot report of rate tick 0, which arrived 577 us after it was needed (no command is reused: the run stops)
+Stack trace (most recent call last):
+#26   Object "[0xffffffffffffffff]", at 0xffffffffffffffff, in 
+#25   Object "gz sim -s -r --iterations 75003 --seed 1 /dev/shm/s4a_late/marv_5in_fc3v2_hover_lo_test_m1_hil_n4.sdf", at 0x599cca2861d4, in _start
+#24   Object "/lib/x86_64-linux-gnu/libc.so.6", at 0x71b84962a28a, in __libc_start_main
+#23   Object "/lib/x86_64-linux-gnu/libc.so.6", at 0x71b84962a1c9, in 
+#22   Object "gz sim -s -r --iterations 75003 --seed 1 /dev/shm/s4a_late/marv_5in_fc3v2_hover_lo_test_m1_hil_n4.sdf", at 0x599cca286186, in 
+#21   Object "/lib/x86_64-linux-gnu/libruby-3.2.so.3.2", at 0x71b849ab9152, in ruby_run_node
+#20   Object "/lib/x86_64-linux-gnu/libruby-3.2.so.3.2", at 0x71b849ab4e2b, in 
+#19   Object "/lib/x86_64-linux-gnu/libruby-3.2.so.3.2", at 0x71b849c57b49, in rb_vm_exec
+#18   Object "/lib/x86_64-linux-gnu/libruby-3.2.so.3.2", at 0x71b849c5462b, in 
+#17   Object "/lib/x86_64-linux-gnu/libruby-3.2.so.3.2", at 0x71b849c5013e, in 
+#16   Object "/lib/x86_64-linux-gnu/libruby-3.2.so.3.2", at 0x71b849c4d92f, in 
+#15   Object "/usr/lib/x86_64-linux-gnu/ruby/3.2.0/fiddle.so", at 0x71b849827b13, in 
+#14   Object "/lib/x86_64-linux-gnu/libruby-3.2.so.3.2", at 0x71b849c1637b, in rb_nogvl
+#13   Object "/usr/lib/x86_64-linux-gnu/ruby/3.2.0/fiddle.so", at 0x71b84982743b, in 
+#12   Object "/lib/x86_64-linux-gnu/libffi.so.8", at 0x71b84981b0bd, in ffi_call
+#11   Object "/lib/x86_64-linux-gnu/libffi.so.8", at 0x71b8498183ee, in 
+#10   Object "/lib/x86_64-linux-gnu/libffi.so.8", at 0x71b84981bb15, in 
+#9    Object "/usr/lib/x86_64-linux-gnu/libgz-sim8-gz.so.8.15.0", at 0x71b843da63ec, in runServer
+#8    Object "/lib/x86_64-linux-gnu/libgz-sim8.so.8", at 0x71b843758dbc, in 
+#7    Object "/lib/x86_64-linux-gnu/libgz-sim8.so.8", at 0x71b843763b9e, in gz::sim::v8::SimulationRunner::Run(unsigned long)
+#6    Object "/lib/x86_64-linux-gnu/libgz-sim8.so.8", at 0x71b84376b6f5, in gz::sim::v8::SimulationRunner::Step(gz::sim::v8::UpdateInfo const&)
+#5    Object "/lib/x86_64-linux-gnu/libgz-sim8.so.8", at 0x71b843762a39, in gz::sim::v8::SimulationRunner::UpdateSystems()
+#4    Object "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-m4/build/host-gz-quadfc/sim/gz/plugin/libmarv_gz_lockstep.so", at 0x71b82234fa73, in marv::gz::Lockstep::PreUpdate(gz::sim::v8::UpdateInfo const&, gz::sim::v8::EntityComponentManager&)
+#3    Object "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-m4/build/host-gz-quadfc/sim/gz/plugin/libmarv_gz_lockstep.so", at 0x71b82233b0e1, in 
+#2    Object "/lib/x86_64-linux-gnu/libc.so.6", at 0x71b8496288fe, in abort
+#1    Object "/lib/x86_64-linux-gnu/libc.so.6", at 0x71b84964527d, in gsignal
+#0    Object "/lib/x86_64-linux-gnu/libc.so.6", at 0x71b84969ec0c, in pthread_kill
+Aborted (Signal sent by tkill() 2272886 1000)
+HIL S4 run marv_5in_fc3v2_hover_lo_test_m1_hil_n4: N = 4 ticks, F = 4 samples per record, 10.0 s requested (75003 ticks at m = 1); gz exit -6, wall 3.2 s
+marv_gz_lockstep: hil board /dev/serial/by-id/usb-Raspberry_Pi_Pico_B2189353BDF6DD1E-if00: version quad-L2-pass-328-gd46f7f6, schema hash 3ae00eb50938acba, values CRC 94b19251, tick 1953125/14649 us, rate divisor 2, batch limit 16, D_HIL 14532 us; F = 4 samples per record, N = 4 ticks
+gz refused / stopped: HIL late command: tick 4 needs the board's command of tick 0 (j - N, N = 4), its DShot report of rate tick 0, which arrived 577 us after it was needed (no command is reused: the run stops)
+board: version 'quad-L2-pass-328-gd46f7f6', schema hash 0x3ae00eb50938acba, values CRC 0x94b19251, tick 1953125/14649 us (133.3282 us), rate divisor 2, D_HIL 14532 us; receiver boot {'baud_requested': 420000, 'baud_actual': 419874, 'irq_priority': 64}
+downlink: 1 sample records, 4 samples; send time after the record's (lag-shifted) instant (us): min 50.6  median 50.6  p99 50.6  max 50.6  (n 1)
+wall-clock pacing: schedule lag absorbed 1.241 ms over 0.000 s of stamps (sim / wall rate 0.243740)
+turnaround: no report
+command margin, needed - arrived, per rate tick (us): none
+QF-3 at command delay N = 4 (nominal rows, tests/regression/quad/L09/results/hil_s2/hil_delay_margin.txt): PM 72.862 deg (PM_min 45), Ms 1.4057 (Ms_max 2.0), pass yes; N_max 249
+worst-corner rows: not a margin result (decision 0046 item 2): the gain rule puts the worst corner at PM_min at N = 0, so any N > 0 is below it there (hil_delay_margin.txt: -0.13 deg at N = 1)
+board status records: 1; last: status t=13442047 records=0 samples=0 mc=0 ticks=0 reports=0 arming=boot rate_exec=0 rate_timing_faults=0 att_faults=0/0 deadline_misses=0 max_tick=0cy (0.0 us) max_record=0cy (0.0 us) max_gap=0us max_send=19us faults=
+board counters before the stream (the plugin's first status; another writer such as a ModemManager probe shows here): all zero
+arming states in order (board us): boot @13442047
+DShot reports 2, non-zero 0
+receiver: frames received 0; last receiver status {'rc_frames': 0, 'link_stats_frames': 0, 'skipped_frames': 0, 'bad_crc': 0, 'bad_length': 0, 'dropped_bytes': 0, 'uart_errors': 0, 'frames_sent': 0, 'frames_missed': 0}
+gz log: 5 steps, 4 ticks (0.001 s of sim time), trailer None; launch pad present, release none: held the whole run
+body z NED over the run: -0.000000 .. -0.000000 m; applied DShot non-zero ticks 0
+uplink host-side faults: none
+late-command fault at tick 4; the gz log's last stepped tick 3 (4 ticks): tick 4 was never stepped, no command reused
+VERDICT OK (late)
+

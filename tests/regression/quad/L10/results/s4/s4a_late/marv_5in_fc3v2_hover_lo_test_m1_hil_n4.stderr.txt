@@ -1,0 +1,260 @@
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/time.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/header.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/entity.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/vector3d.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/quaternion.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/pose.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/actor.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/actuators.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/sensor_noise.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/air_pressure_sensor.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/air_speed.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/air_speed_sensor.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/altimeter.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/altimeter_sensor.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/vector2d.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/axis_aligned_2d_box.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/annotated_axis_aligned_2d_box.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/annotated_axis_aligned_2d_box_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/oriented_3d_box.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/annotated_oriented_3d_box.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/annotated_oriented_3d_box_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/color.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/any.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/atmosphere.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/axis.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/axis_aligned_box.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/battery.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/battery_state.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/boolean.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/boxgeom.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/bytes.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/camera_cmd.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/camera_info.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/camera_lens.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/distortion.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/double.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/image.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/lens.proto
+[libprotobuf ERROR google/protobuf/descriptor.cc:4201] Invalid proto descriptor for file "gz/msgs/camerasensor.proto":
+[libprotobuf ERROR google/protobuf/descriptor.cc:4204]   gz/msgs/camerasensor.proto: A file with this name is already in the pool.
+DynamicFactory(). Unable to place descriptors from [/usr/share/gz/protos/gz-msgs10.gz_desc] in the descriptor pool
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/cameratrack.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/capsulegeom.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/cessna.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/clock.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/cmd_vel2d.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/conegeom.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/cylindergeom.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/ellipsoidgeom.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/heightmapgeom.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/imagegeom.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/meshgeom.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/planegeom.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/polylinegeom.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/spheregeom.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/geometry.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/friction.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/surface.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/material.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/plugin.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/visual.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/collision.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/wrench.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/joint_wrench.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/contact.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/contacts.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/contactsensor.proto
+[libprotobuf ERROR google/protobuf/descriptor.cc:4201] Invalid proto descriptor for file "gz/msgs/spherical_coordinates.proto":
+[libprotobuf ERROR google/protobuf/descriptor.cc:4204]   gz/msgs/spherical_coordinates.proto: A file with this name is already in the pool.
+DynamicFactory(). Unable to place descriptors from [/usr/share/gz/protos/gz-msgs10.gz_desc] in the descriptor pool
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/data_load_options.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/dataframe.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/density.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/diagnostics.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/discovery.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/double_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/duration.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/dvl_kinematic_estimate.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/dvl_range_estimate.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/dvl_beam_state.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/dvl_tracking_target.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/dvl_velocity_tracking.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/empty.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/light.proto
+[libprotobuf ERROR google/protobuf/descriptor.cc:4201] Invalid proto descriptor for file "gz/msgs/gps_sensor.proto":
+[libprotobuf ERROR google/protobuf/descriptor.cc:4204]   gz/msgs/gps_sensor.proto: A file with this name is already in the pool.
+DynamicFactory(). Unable to place descriptors from [/usr/share/gz/protos/gz-msgs10.gz_desc] in the descriptor pool
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/imu_sensor.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/lidar_sensor.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/logical_camera_sensor.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/magnetometer_sensor.proto
+[libprotobuf ERROR google/protobuf/descriptor.cc:4201] Invalid proto descriptor for file "gz/msgs/sensor.proto":
+[libprotobuf ERROR google/protobuf/descriptor.cc:4204]   gz/msgs/sensor.proto: A file with this name is already in the pool.
+DynamicFactory(). Unable to place descriptors from [/usr/share/gz/protos/gz-msgs10.gz_desc] in the descriptor pool
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/joint.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/inertial.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/float.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/stringmsg.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/particle_emitter.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/projector.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/link.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/model.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/entity_factory.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/entity_factory_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/entity_plugin_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/entity_wrench.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/entity_wrench_map.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/float_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/fluid.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/fluid_pressure.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/fog.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/version.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/version_range.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/versioned_name.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/fuel_metadata.proto
+[libprotobuf ERROR google/protobuf/descriptor.cc:4201] Invalid proto descriptor for file "gz/msgs/gps.proto":
+[libprotobuf ERROR google/protobuf/descriptor.cc:4204]   gz/msgs/gps.proto: A file with this name is already in the pool.
+DynamicFactory(). Unable to place descriptors from [/usr/share/gz/protos/gz-msgs10.gz_desc] in the descriptor pool
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/track_visual.proto
+[libprotobuf ERROR google/protobuf/descriptor.cc:4201] Invalid proto descriptor for file "gz/msgs/gui_camera.proto":
+[libprotobuf ERROR google/protobuf/descriptor.cc:4204]   gz/msgs/gui_camera.proto: A file with this name is already in the pool.
+DynamicFactory(). Unable to place descriptors from [/usr/share/gz/protos/gz-msgs10.gz_desc] in the descriptor pool
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/gui.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/hydra.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/imu.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/int32.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/int32_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/int64.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/int64_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/joint_animation.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/pid.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/joint_cmd.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/joint_trajectory_point.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/joint_trajectory.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/joy.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/joystick.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/laserscan.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/link_data.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/log_control.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/log_playback_control.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/log_playback_stats.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/log_status.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/logical_camera_image.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/magnetometer.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/marker.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/marker_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/material_color.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/model_configuration.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/model_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/navsat.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/navsat_sensor.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/occupancy_grid.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/twist.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/odometry.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/pose_with_covariance.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/twist_with_covariance.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/odometry_with_covariance.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/pose_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/stringmsg_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/web_request.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/world_stats.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/packet.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/param.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/param_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: google/protobuf/any.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/parameter.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/parameter_declaration.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/parameter_declarations.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/parameter_error.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/parameter_name.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/parameter_value.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/particle_emitter_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/performance_sensor_metrics.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/physics.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/plugin_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/pointcloud.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/pointcloud_packed.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/pose_animation.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/pose_trajectory.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/propagation_particle.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/propagation_grid.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/publish.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/publishers.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/raysensor.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/request.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/response.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/rest_login.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/rest_logout.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/rest_post.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/rest_response.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/road.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/sky.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/scene.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/sdf_generator_config.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/selection.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/sensor_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/serialized.proto
+[libprotobuf ERROR google/protobuf/descriptor.cc:4201] Invalid proto descriptor for file "gz/msgs/serialized_map.proto":
+[libprotobuf ERROR google/protobuf/descriptor.cc:4204]   gz/msgs/serialized_map.proto: A file with this name is already in the pool.
+DynamicFactory(). Unable to place descriptors from [/usr/share/gz/protos/gz-msgs10.gz_desc] in the descriptor pool
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/server_control.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/shadows.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/sim_event.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/sonar.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/statistic.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/subscribe.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/tactile.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/test.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/topic_info.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/uint32.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/uint32_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/uint64.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/uint64_v.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/undo_redo.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/world_reset.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/world_control.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/user_cmd.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/user_cmd_stats.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/video_record.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/visual_v.proto
+[libprotobuf ERROR google/protobuf/descriptor.cc:4201] Invalid proto descriptor for file "gz/msgs/wheel_slip_parameters_cmd.proto":
+[libprotobuf ERROR google/protobuf/descriptor.cc:4204]   gz/msgs/wheel_slip_parameters_cmd.proto: A file with this name is already in the pool.
+DynamicFactory(). Unable to place descriptors from [/usr/share/gz/protos/gz-msgs10.gz_desc] in the descriptor pool
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/wind.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/wireless_node.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/wireless_nodes.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/world_control_state.proto
+[libprotobuf ERROR google/protobuf/descriptor_database.cc:121] File already exists in database: gz/msgs/world_modify.proto
+marv_gz_lockstep: hil board /dev/serial/by-id/usb-Raspberry_Pi_Pico_B2189353BDF6DD1E-if00: version quad-L2-pass-328-gd46f7f6, schema hash 3ae00eb50938acba, values CRC 94b19251, tick 1953125/14649 us, rate divisor 2, batch limit 16, D_HIL 14532 us; F = 4 samples per record, N = 4 ticks
+marv_gz_lockstep: hil t=    0.0 s | board boot | rc frames 0 lq 0.00 throttle 0.00 | dshot 0 0 0 0 | height +0.00 m vz +0.00 m/s tilt 0.0 deg | margin min 0 us lag 0.0 ms | deadline misses 0 link faults 0
+marv_gz_lockstep: REFUSED: HIL late command: tick 4 needs the board's command of tick 0 (j - N, N = 4), its DShot report of rate tick 0, which arrived 577 us after it was needed (no command is reused: the run stops)
+Stack trace (most recent call last):
+#26   Object "[0xffffffffffffffff]", at 0xffffffffffffffff, in 
+#25   Object "gz sim -s -r --iterations 75003 --seed 1 /dev/shm/s4a_late/marv_5in_fc3v2_hover_lo_test_m1_hil_n4.sdf", at 0x599cca2861d4, in _start
+#24   Object "/lib/x86_64-linux-gnu/libc.so.6", at 0x71b84962a28a, in __libc_start_main
+#23   Object "/lib/x86_64-linux-gnu/libc.so.6", at 0x71b84962a1c9, in 
+#22   Object "gz sim -s -r --iterations 75003 --seed 1 /dev/shm/s4a_late/marv_5in_fc3v2_hover_lo_test_m1_hil_n4.sdf", at 0x599cca286186, in 
+#21   Object "/lib/x86_64-linux-gnu/libruby-3.2.so.3.2", at 0x71b849ab9152, in ruby_run_node
+#20   Object "/lib/x86_64-linux-gnu/libruby-3.2.so.3.2", at 0x71b849ab4e2b, in 
+#19   Object "/lib/x86_64-linux-gnu/libruby-3.2.so.3.2", at 0x71b849c57b49, in rb_vm_exec
+#18   Object "/lib/x86_64-linux-gnu/libruby-3.2.so.3.2", at 0x71b849c5462b, in 
+#17   Object "/lib/x86_64-linux-gnu/libruby-3.2.so.3.2", at 0x71b849c5013e, in 
+#16   Object "/lib/x86_64-linux-gnu/libruby-3.2.so.3.2", at 0x71b849c4d92f, in 
+#15   Object "/usr/lib/x86_64-linux-gnu/ruby/3.2.0/fiddle.so", at 0x71b849827b13, in 
+#14   Object "/lib/x86_64-linux-gnu/libruby-3.2.so.3.2", at 0x71b849c1637b, in rb_nogvl
+#13   Object "/usr/lib/x86_64-linux-gnu/ruby/3.2.0/fiddle.so", at 0x71b84982743b, in 
+#12   Object "/lib/x86_64-linux-gnu/libffi.so.8", at 0x71b84981b0bd, in ffi_call
+#11   Object "/lib/x86_64-linux-gnu/libffi.so.8", at 0x71b8498183ee, in 
+#10   Object "/lib/x86_64-linux-gnu/libffi.so.8", at 0x71b84981bb15, in 
+#9    Object "/usr/lib/x86_64-linux-gnu/libgz-sim8-gz.so.8.15.0", at 0x71b843da63ec, in runServer
+#8    Object "/lib/x86_64-linux-gnu/libgz-sim8.so.8", at 0x71b843758dbc, in 
+#7    Object "/lib/x86_64-linux-gnu/libgz-sim8.so.8", at 0x71b843763b9e, in gz::sim::v8::SimulationRunner::Run(unsigned long)
+#6    Object "/lib/x86_64-linux-gnu/libgz-sim8.so.8", at 0x71b84376b6f5, in gz::sim::v8::SimulationRunner::Step(gz::sim::v8::UpdateInfo const&)
+#5    Object "/lib/x86_64-linux-gnu/libgz-sim8.so.8", at 0x71b843762a39, in gz::sim::v8::SimulationRunner::UpdateSystems()
+#4    Object "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-m4/build/host-gz-quadfc/sim/gz/plugin/libmarv_gz_lockstep.so", at 0x71b82234fa73, in marv::gz::Lockstep::PreUpdate(gz::sim::v8::UpdateInfo const&, gz::sim::v8::EntityComponentManager&)
+#3    Object "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-m4/build/host-gz-quadfc/sim/gz/plugin/libmarv_gz_lockstep.so", at 0x71b82233b0e1, in 
+#2    Object "/lib/x86_64-linux-gnu/libc.so.6", at 0x71b8496288fe, in abort
+#1    Object "/lib/x86_64-linux-gnu/libc.so.6", at 0x71b84964527d, in gsignal
+#0    Object "/lib/x86_64-linux-gnu/libc.so.6", at 0x71b84969ec0c, in pthread_kill
+Aborted (Signal sent by tkill() 2272886 1000)
