@@ -23,7 +23,7 @@
 # (including none) and a trailing `**` matches the rest of the path.
 #
 # Identifiers:
-#   ctest_labels   L00 L01 L02 L03 L04 L05 L06 L11 (one per tests/regression/quad/Lnn directory).
+#   ctest_labels   L00 L01 L02 L03 L04 L05 L06 L07 L11 (one per tests/regression/quad/Lnn directory).
 #   run_ci_steps   the function name passed to `step` in ci/run_ci.sh; host_preset is split by argument
 #                  (host_preset:host-debug, host_preset:host-release). `uv sync --frozen` always runs and is not selectable.
 #                  An entry `@name` expands the named list under step_groups.
@@ -308,6 +308,13 @@ rules:
     gz_groups: []
     why: "arming is the pure arming and failsafe machine, tested by the L08 unit_arming host test and linked by the quad_fc composition (the L09 gate test)"
 
+  - paths: [fw/estimator/**]
+    ctest_labels: [L07]
+    run_ci_steps: ["@host"]
+    pytest_paths: []
+    gz_groups: []
+    why: "estimator is the pure Mahony attitude filter, tested by the L07 unit_mahony host test and linked by no composition yet"
+
   - paths: [fw/attitude/**]
     ctest_labels: [L05, L11]
     run_ci_steps: ["@flight_gates"]
@@ -431,7 +438,7 @@ rules:
 
   # ---------------------------------------------------------------- tools
   - paths: [tools/card/**]
-    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L08, L09, L11]
+    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L07, L08, L09, L11]
     run_ci_steps: ["@card_gates"]
     pytest_paths:
       - tests/regression/quad/L01/tools
@@ -448,7 +455,7 @@ rules:
       - tools/sim/prim_constants.py
       - tools/sim/reference.py
       - tools/sim/t4_rule.py
-    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L08, L09, L11]
+    ctest_labels: [L00, L01, L02, L03, L04, L05, L06, L07, L08, L09, L11]
     run_ci_steps: ["@card_gates"]
     pytest_paths:
       - tests/regression/quad/L01/tools
@@ -1010,6 +1017,13 @@ rules:
     why: "L06 tools tests and the committed L06 measurements they read"
 
   # ---------------------------------------------------------------- L11
+  - paths: [tests/regression/quad/L07/CMakeLists.txt, tests/regression/quad/L07/unit/**]
+    ctest_labels: [L07]
+    run_ci_steps: ["@host"]
+    pytest_paths: []
+    gz_groups: []
+    why: "the L07 unit tests (the Mahony attitude filter) are host ctest entries"
+
   - paths: [tests/regression/quad/L08/CMakeLists.txt, tests/regression/quad/L08/unit/**]
     ctest_labels: [L08]
     run_ci_steps: ["@host"]
