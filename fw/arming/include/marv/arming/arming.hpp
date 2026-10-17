@@ -14,17 +14,17 @@
 // first tick counts as preceded by a high switch) when, on that tick: the link has been valid on every tick for at least
 // `recovery_us` (the run starts on the first tick that sees the link valid), the throttle is below `throttle_min`, no IMU
 // read deadline has been missed since init, the IMU samples are valid, no saturation bit was set since the previous
-// tick, the attitude estimate is valid, and no motor test runs. A switch already high when the conditions become true does not arm; a refused edge needs
+// tick, the gyro calibration is complete, the attitude estimate is valid, the vehicle is upright, and no motor test runs. A switch already high when the conditions become true does not arm; a refused edge needs
 // the switch cycled again. Disarm on the same tick: switch below the threshold, Failsafe, an IMU deadline miss (latched
 // until reset(): arming stays refused), a motor test running. Saturation refuses arming and never disarms. Invalid IMU
-// samples refuse arming and do not disarm. An invalid estimate (quad spec section 4.0 M3, decision 0042) refuses arming and
-// never disarms. A NaN switch or throttle is a low switch and a throttle that is not below the
+// samples refuse arming and do not disarm. A gyro calibration still running, an invalid estimate and a tilt above the small angle (quad spec section 4.0 M3,
+// decision 0042; Betaflight's ARMING_DISABLED_CALIBRATING and ARMING_DISABLED_ANGLE) refuse arming and never disarm. A NaN switch or throttle is a low switch and a throttle that is not below the
 // minimum.
 //
 // While disarmed the effective sticks and throttle are 0. The state names the cause of the last disarm on that tick,
 // and otherwise the first refusing condition in the order ImuStale, MotorTest, Failsafe (set by a failsafe disarm,
 // cleared on the first tick with a valid link), NoLink (no valid link, or valid for less than `recovery_us`),
-// ImuInvalid, Saturated, EstimatorInvalid, ThrottleUp, then SwitchOff (switch low, everything else ready) or SwitchNotCycled (switch high
+// ImuInvalid, Saturated, Calibrating, EstimatorInvalid, NotUpright, ThrottleUp, then SwitchOff (switch low, everything else ready) or SwitchNotCycled (switch high
 // without a rising edge, everything else ready). Boot is the state before the first step.
 
 #include <cstdint>
@@ -46,6 +46,8 @@ enum class ArmState : std::uint8_t {
   ArmedHold,
   ArmedFailsafeCentred,
   EstimatorInvalid,
+  Calibrating,
+  NotUpright,
 };
 
 [[nodiscard]] constexpr bool is_armed(ArmState s) noexcept {
@@ -82,7 +84,9 @@ struct ArmingInputs {
   bool imu_deadline_missed = false;  // any missed IMU read deadline since init
   bool imu_samples_valid = false;    // both valid bits of the sample
   bool imu_saturated = false;        // any saturation bit since the previous rate tick
+  bool gyro_calibrated = false;      // the boot gyro calibration is complete (marv::estimator::GyroCal::complete)
   bool estimator_valid = false;      // the attitude estimate is valid (marv::estimator::Mahony::valid)
+  bool upright = false;              // the estimate's tilt is below the small angle
   bool motor_test_active = false;
 };
 
@@ -173,8 +177,12 @@ class Arming {
       refusal = ArmState::ImuInvalid;
     } else if (in.imu_saturated) {
       refusal = ArmState::Saturated;
+    } else if (!in.gyro_calibrated) {
+      refusal = ArmState::Calibrating;
     } else if (!in.estimator_valid) {
       refusal = ArmState::EstimatorInvalid;
+    } else if (!in.upright) {
+      refusal = ArmState::NotUpright;
     } else if (!(in.throttle < cfg_.throttle_min)) {
       refusal = ArmState::ThrottleUp;
     } else if (!switch_on) {

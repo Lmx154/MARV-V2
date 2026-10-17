@@ -150,6 +150,10 @@ void print_progress() {
       return "armed_failsafe_centred";
     case ArmState::EstimatorInvalid:
       return "estimator_invalid";
+    case ArmState::Calibrating:
+      return "calibrating";
+    case ArmState::NotUpright:
+      return "not_upright";
   }
   return "";
 }
