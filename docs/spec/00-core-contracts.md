@@ -241,12 +241,11 @@ hardware (tilt the board, spin each motor) before anything depends on it.
     flag. IF-5 carries the same fields.
   - **SIL override.** Only the SIL harness can override a value before a run starts (§2 rule 5). The override
     path is not built into flight compositions.
-  - **Final form:** values come from the universal config file (`20-ground-segment.md`).
+  - **Final form:** values come from the active config, which the FC loads at boot from internal flash (`20-ground-segment.md` GS-11). A parameter changes only by activating a config, and the change takes effect at the next boot. A locked parameter keeps the value and provenance compiled into the image; a config that differs from them is refused.
   - **Bootstrap, until that system exists:** values come from a struct generated from the card and the budget
     register (from quad L1; at L0 the generator runs on a test fixture). SIL and target build the same generated
     source; SIL may then apply the harness override.
-  - This is a **declared, time-limited exception to guardrail G2** (§7.4). It ends when ground segment phase G3
-    passes. The parameter interface does not change when it ends, so nothing above it changes either.
+  - This is a **declared, time-limited exception to guardrail G2** (§7.4). Until it ends, the generated table is the image's factory config: it is loaded only when no MARV config is stored, and IF-1 reports it as such. It ends when the flight image compiles no unlocked value (the last unit of ground segment G3), after the quad's first flight or earlier if Luis says so. The parameter interface does not change when it ends, so nothing above it changes either.
 
 ### 4.1 Embedded requirements (EMB)
 
@@ -538,17 +537,17 @@ MIT-licensed when embedded in a binary (the generator is LGPL-3 with that except
 
 | ID | Function | What must be carried (semantics) | MAVLink today |
 | --- | --- | --- | --- |
-| IF-1 | Identity and health | Vehicle kind, image hash, config hash (the sections this image reads), firmware commit, validation report id, mode, arming and failsafe state, pyro arm state and per-channel continuity (rocket), heartbeat | `HEARTBEAT`, `AUTOPILOT_VERSION`, `SYS_STATUS`; dialect for the hashes and report id |
+| IF-1 | Identity and health | Vehicle kind, image hash, config hash (the sections this image reads), firmware commit, validation report id, mode, arming and failsafe state, pyro arm state and per-channel continuity (rocket), heartbeat | `HEARTBEAT`, `AUTOPILOT_VERSION`, `SYS_STATUS`; dialect for the hashes and report id, config source (factory or active) and state (refused, with the reason), last activation result, and whether the staged config differs from the active one |
 | IF-2 | Telemetry | Named streams: navigation state, estimate with covariance summary, estimator consistency (NIS), sensor health, battery, GNC block signals. Each stream's rate is set by the GCS. | `ATTITUDE_QUATERNION`, `LOCAL_POSITION_NED`, `GLOBAL_POSITION_INT`, `ESTIMATOR_STATUS`, `BATTERY_STATUS`, `NAMED_VALUE_FLOAT`; dialect for block signals |
 | IF-3 | Commands | Arm / disarm, mode, hold, RTL, land, abort; each acknowledged by sequence | `COMMAND_LONG` / `COMMAND_ACK` |
 | IF-4 | Missions | Waypoints, routes, hold, RTL, geofence, CV lock / verify / abort. Uploads are transactional, with read-back. | `MISSION_COUNT` / `MISSION_REQUEST_INT` / `MISSION_ITEM_INT` / `MISSION_ACK`; geofence as `MAV_MISSION_TYPE_FENCE`; dialect for the CV handshake |
-| IF-5 | Parameters | Get / set live, with value, unit, **provenance** (method, source, σ) and lock; a set is written back to the active config file | `PARAM_EXT_REQUEST_READ` / `PARAM_EXT_SET` / `PARAM_EXT_VALUE`; dialect for provenance and lock |
+| IF-5 | Parameters | Get and stage, with value, unit, **provenance** (method, source, σ) and lock. A set changes the staged config only, only while disarmed, and never a locked parameter; it takes effect when the staged config is activated (IF-11). | `PARAM_REQUEST_LIST` / `PARAM_REQUEST_READ` / `PARAM_SET` / `PARAM_VALUE`, byte-wise encoding; `param_id` is the generated link id (at most 16 characters) and `param_index` the parameter id; dialect for provenance, lock and the active and staged values |
 | IF-6 | Configuration | GNC block composition read-back; hardware configuration (IMU pose, ports, motor order and direction, pole and cell count); motor test; calibration stages with results and σ | `MAV_CMD_DO_MOTOR_TEST`; dialect for the rest |
 | IF-7 | Logs | List and download the full-rate logs | `LOG_REQUEST_LIST` / `LOG_DATA`, or `FILE_TRANSFER_PROTOCOL` |
 | IF-8 | Manual control | Stick axes and switches from the radio connected to the GCS; **accepted only in Freestyle** | `MANUAL_CONTROL` |
 | IF-9 | HIL | Tick-stamped sensor injection and actuator output for lockstep (§4) | `HIL_SENSOR`, `HIL_GPS`, `HIL_ACTUATOR_CONTROLS`; dialect for the tick stamp |
 | IF-10 | Time | Clock synchronization for aligning ground and vehicle logs | `TIMESYNC`, `SYSTEM_TIME` |
-| IF-11 | Config files | List, upload, download, validate and activate config files on the FC; activation only while disarmed | `FILE_TRANSFER_PROTOCOL`; dialect for validate and activate |
+| IF-11 | Config files | List, upload, download, validate and activate config files on the FC; activation only while disarmed | dialect for stage, activate (with the validation report id and the expected config hash), revert to the last good config and reset to factory; `FILE_TRANSFER_PROTOCOL` for the config library on the SD card |
 
 **What each image compiles.** Handlers an image does not need are not built into it:
 
@@ -556,7 +555,7 @@ MIT-licensed when embedded in a binary (the generator is LGPL-3 with that except
 | --- | --- | --- |
 | IF-1, IF-2 | USB and radio | USB and radio, **downlink only** |
 | IF-3, IF-4, IF-8 | USB and radio (IF-8 only in Freestyle) | **not compiled** |
-| IF-5 live parameters | USB and radio; while armed, only the in-flight allow-list | **not compiled**: parameters change only through the config file |
+| IF-5 live parameters | USB and radio; while armed, none (the in-flight allow-list is empty until a parameter is read in the tick) | **not compiled**: parameters change only through the config file |
 | IF-6, IF-7, IF-11 | USB; over the radio only while disarmed | USB only, disarmed |
 | IF-9, IF-10 | USB (IF-10 also over the radio) | USB only |
 
@@ -604,8 +603,8 @@ No image, on any port, has a command that fires a charge.
 | C-4 | **Decided 2026-09-29:** BSD-3-Clause. Borrow code only from BSD / MIT / Apache projects (PX4, RocketPy, MuJoCo, Gazebo); use GPL-3.0 projects (Betaflight, ArduPilot, INDIflight) as references for ideas only. |
 | C-5 | **Decided 2026-09-29:** Draft 0 archived at `~/Documents/Notes/marv-archive/` (§0 rule 3). |
 | C-6 | Values for the design-budget register (§2.2), as their layers are specified. |
-| C-7 | **Decided 2026-09-29:** one repository holds the firmware, `marv_plant`, cards, generators, the Gazebo plugin and worlds, and (when active) the RocketPy harness. |
-| C-8 | **Decided 2026-09-29:** build and CI. CMake + Ninja with presets `host-debug`, `host-release`, `m33` (arm-none-eabi, compile-only until quad L9); GoogleTest pinned by hash; Python 3.12 + uv lockfile + pytest for generators; GitHub Actions running every job in one pinned Docker image, which is also the only place goldens are regenerated. `hal_sim` is plain C++; nothing above the HAL includes Pico SDK headers. |
+| C-7 | **Decided 2026-09-29:** one repository holds the firmware, `marv_plant`, cards, generators, the Gazebo plugin and worlds, and (when active) the RocketPy harness, and the GCS (`gcs/`) with its helper (`tools/gs/`). |
+| C-8 | **Decided 2026-09-29:** build and CI. CMake + Ninja with presets `host-debug`, `host-release`, `m33` (arm-none-eabi, compile-only until quad L9); GoogleTest pinned by hash; Python 3.12 + uv lockfile + pytest for generators; GitHub Actions running every job in one pinned Docker image, which is also the only place goldens are regenerated. `hal_sim` is plain C++; nothing above the HAL includes Pico SDK headers. `gcs/` uses Node (pinned in the CI image) and its npm lockfile; pymavlink (pinned in `uv.lock`) generates the C codec at build time. |
 
 ---
 
