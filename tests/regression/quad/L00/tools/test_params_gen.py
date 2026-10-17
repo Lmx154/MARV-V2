@@ -260,7 +260,8 @@ def test_manifest_agrees_with_header(tmp_path):
     traits = dict(re.findall(r"ParamTraits<ParamId::(\w+)> \{\s*using value_type = ([\w:]+);", header))
     for name, info in manifest["params"].items():
         assert traits[name] == {"f32": "float", "i32": "std::int32_t"}[info["type"]]
-    assert manifest["params"]["fixture_motor_count"] == {"id": 1, "type": "i32", "unit": "1"}
+    count = manifest["params"]["fixture_motor_count"]
+    assert {k: count[k] for k in ("id", "type", "unit")} == {"id": 1, "type": "i32", "unit": "1"}
     assert manifest["params"]["fixture_drag_ratio"]["unit"] == "1"
 
 
@@ -268,3 +269,111 @@ def test_manifest_excludes_values(tmp_path):
     a = hash_of(tmp_path, good_entry("mass", value=1.0), "a")
     text_b = json.loads((tmp_path / "a" / "params_manifest.json").read_text())
     assert "value" not in text_b["params"]["mass"] and a == int(text_b["schema_hash"], 16)
+
+
+LOCK = "{by: t, on: 2026-10-17, via: manual}"
+
+
+def manifest_of(tmp_path, text, out="out"):
+    src = write(tmp_path, text, f"{out}.yaml")
+    r = run_gen(tmp_path, ("card", src), out=out)
+    assert r.returncode == 0, r.stderr
+    return json.loads((tmp_path / out / "params_manifest.json").read_text())["params"]
+
+
+def link_id_of(name):
+    import hashlib
+
+    return name if len(name) <= 16 else name[:11] + "_" + hashlib.sha256(name.encode()).hexdigest()[:4]
+
+
+def test_link_id_rule(tmp_path):
+    names = ["mass", "exactly_16_chars_", "a" * 16, "a" * 17, "rotor_position_m1_x", "rotor_position_m1_y",
+             "rate_d_filter_tau_roll", "rate_d_filter_tau_pitch"]
+    params = manifest_of(tmp_path, "".join(good_entry(n) for n in names))
+    ids = {n: params[n]["link_id"] for n in names}
+    assert ids["mass"] == "mass" and ids["a" * 16] == "a" * 16
+    assert ids["rotor_position_m1_x"] == "rotor_posit_" + ids["rotor_position_m1_x"][-4:]
+    assert ids == {n: link_id_of(n) for n in names}
+    assert all(len(i) <= 16 for i in ids.values())
+    assert len(set(ids.values())) == len(names), "names that share their first 16 characters get distinct ids"
+    assert ids["rotor_position_m1_x"] != ids["rotor_position_m1_y"]
+
+
+def test_link_ids_are_in_the_generated_cpp_in_id_order(tmp_path):
+    assert run_gen(tmp_path, *fixture_sources()).returncode == 0
+    out = read_out(tmp_path)
+    cpp = out["param_defaults.cpp"].decode()
+    block = re.search(r"kParamLinkIds\[kParamCount\] = \{(.*?)\};", cpp, re.S).group(1)
+    ids = re.findall(r'"([^"]*)",', block)
+    manifest = json.loads(out["params_manifest.json"])["params"]
+    assert ids == [e["link_id"] for e in manifest.values()]
+    assert "kParamLinkIds[kParamCount]" in out["param_ids.hpp"].decode()
+
+
+def test_adding_a_parameter_changes_no_other_link_id(tmp_path):
+    base = ["alpha_long_parameter_name", "beta", "gamma_long_parameter_name"]
+    more = ["alpha_long_parameter_name", "delta_long_parameter_name", "beta", "gamma_long_parameter_name"]
+    a = manifest_of(tmp_path, "".join(good_entry(n) for n in base), "a")
+    b = manifest_of(tmp_path, "".join(good_entry(n) for n in more), "b")
+    assert {n: a[n]["link_id"] for n in base} == {n: b[n]["link_id"] for n in base}
+    assert b["gamma_long_parameter_name"]["id"] != a["gamma_long_parameter_name"]["id"]
+
+
+def test_link_id_does_not_change_the_schema_hash(tmp_path):
+    base = hash_of(tmp_path, good_entry("mass"), "base")
+    assert hash_of(tmp_path, good_entry("mass", mav_id='"MASS"', lock=LOCK), "marked") == base
+
+
+def test_mav_id_override(tmp_path):
+    params = manifest_of(tmp_path, good_entry("a_very_long_parameter_name", mav_id='"VLPN"') + good_entry("b"))
+    assert params["a_very_long_parameter_name"]["link_id"] == "VLPN" and params["b"]["link_id"] == "b"
+
+
+@pytest.mark.parametrize(
+    ("mav_id", "needle"),
+    [('"seventeen_chars_xx"', "at most 16"), ('"has space"', "outside [A-Za-z0-9_]"), ('"naïve"', "outside"),
+     ('"a-b"', "outside"), ('""', "non-empty"), ("12", "non-empty string")],
+)
+def test_bad_mav_id_is_refused(tmp_path, mav_id, needle):
+    refused(tmp_path, good_entry("mass", mav_id=mav_id), "mass", "field 'mav_id'", needle)
+
+
+def test_mav_id_on_a_vector_is_refused(tmp_path):
+    refused(tmp_path, good_entry("pos", value="[1.0, 2.0, 3.0]", shape="frd3", sigma="[0.1, 0.1, 0.1]", mav_id='"P"'),
+            "pos", "field 'mav_id'", "scalar")
+
+
+def test_duplicate_link_id_is_refused(tmp_path):
+    refused(tmp_path, good_entry("a_long_parameter_name_1", mav_id='"SAME"') + good_entry("b", mav_id='"SAME"'),
+            "link id 'SAME' duplicate", "a_long_parameter_name_1")
+
+
+def test_link_id_equal_to_another_full_name_is_refused(tmp_path):
+    long_name = "x" * 17
+    clash = link_id_of(long_name)
+    refused(tmp_path, good_entry(long_name) + good_entry(clash), f"link id '{clash}' is the full name of parameter",
+            long_name)
+    refused(tmp_path, good_entry("a_long_parameter_name_1", mav_id='"mass"') + good_entry("mass"),
+            "link id 'mass' is the full name of parameter 'mass'")
+
+
+def test_manifest_carries_lock_default_bits_and_provenance(tmp_path):
+    text = (good_entry("locked_f", value=-0.5, lock=LOCK, method='"measured"', source='"s1"', sigma="0.25")
+            + good_entry("free_i", type="i32", value=-7, sigma="0", method='"scenario"', source='"s2"')
+            + good_entry("vec", value="[1, 2]", shape="range", type="i32", sigma="exact", method='"derived(r)"',
+                         source='"s3"', lock=LOCK))
+    params = manifest_of(tmp_path, text)
+    locked = params["locked_f"]
+    assert locked["lock"] is True and params["free_i"]["lock"] is False
+    assert params["vec_min"]["lock"] is True and params["vec_max"]["lock"] is True
+    assert locked["default_bits"] == f"0x{struct.unpack('<I', struct.pack('<f', -0.5))[0]:08x}"
+    assert params["free_i"]["default_bits"] == "0xfffffff9"
+    assert (locked["method"], locked["sigma_kind"], locked["sigma"], locked["source"]) == ("measured", "Known", 0.25, "s1")
+    assert locked["sigma_bits"] == f"0x{struct.unpack('<I', struct.pack('<f', 0.25))[0]:08x}"
+    assert (params["free_i"]["sigma_kind"], params["free_i"]["sigma_bits"], params["free_i"]["origin"]) == (
+        "Exact", "0x00000000", "DefaultFromCard")
+    assert params["vec_min"]["method"] == "derived" and params["vec_min"]["source"] == "r; s3"
+    assert params["vec_max"]["source_file"] == "out.yaml"
+    cpp = read_out(tmp_path)["param_defaults.cpp"].decode()
+    assert cpp.count(", true,") == 3

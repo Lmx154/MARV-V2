@@ -18,6 +18,12 @@ lead summary here). Items marked (Luis) were signed by him on 2026-10-17 (Approv
    report (check list: Luis).
 3. **Storage format:** binary `.mcfg` on the device, JSON as the host view (GD-3, Luis); FatFs (BSD-style) over SPI0 for
    the SD card; pins from the madflight page, UNVERIFIED until the mount test.
+   Unit 2 (GEN) frozen-test changes: `tests/regression/quad/L00/tools/test_params_gen.py` (extended: the manifest
+   entry assertion checks id, type and unit; new link-id, lock and manifest-field tests) and
+   `tests/regression/quad/L01/tools/test_params_gen_l1.py` (three manifest comparisons now compare id, type, unit and
+   link id, or ignore `source_file`, because `params_manifest.json` entries gain link_id, lock, default_bits, method,
+   sigma_kind, sigma, sigma_bits, origin, source and source_file). Their requirements are unchanged: the schema hash and
+   the header do not depend on value, sigma, lock or shape.
 4. **Transport:** USB composite: CDC0 the existing console unchanged, CDC1 MAVLink; link serviced in the background loop
    below every interrupt; the tick publishes one telemetry snapshot through a seqlock. SIL speaks the same link over UDP
    127.0.0.1 via a new `marv_sil_link_service()`; runs without a GCS stay byte-identical.
