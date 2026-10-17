@@ -3,9 +3,10 @@
 // (marv::stick_rates), then the motor output gate. There is no attitude or vertical loop here: the pilot flies the rate
 // loop (acro).
 //
-// Every tick: step.filter(sample, due); the sample's validity and saturation bits are accumulated since the previous rate
+// Every tick: the attitude estimator (marv::estimator, the Mahony filter, M3 P2) steps on the sample with dt from the stamps
+// (decision 0042); step.filter(sample, due); the sample's validity and saturation bits are accumulated since the previous rate
 // tick. On the ticks the rate group is due (every rate_loop_divisor ticks, tick 0 included): the pilot's input
-// (hal_manual_control) and the clock (hal_time_us) go to the arming machine (decision 0040), which decides armed and the
+// (hal_manual_control), the clock (hal_time_us) and the estimator's validity go to the arming machine (decision 0040), which decides armed and the
 // effective sticks; the rate group executes (armed: the rate setpoint of the sticks through the QF-1 curve and the
 // collective thrust of the throttle, below; disarmed: zero setpoint and zero thrust, so the filters keep running); the
 // motor test is updated; the gate then decides the motor values written. On the other ticks nothing is written: the HAL
@@ -40,14 +41,17 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #include <marv/arming/arming.hpp>
 #include <marv/composition.hpp>
+#include <marv/estimator/mahony.hpp>
 #include <marv/hal/hal.hpp>
 #include <marv/hal/tick.hpp>
 #include <marv/mixer/mixer.hpp>
 #include <marv/params/param.hpp>
 #include <marv/prim/constants.hpp>
+#include <marv/prim/quat.hpp>
 #include <marv/prim/vec.hpp>
 #include <marv/rate/rate_loop.hpp>
 #include <marv/rate_group/rate_group.hpp>
@@ -95,6 +99,12 @@ std::size_t g_arm_channel = 0;  // index into ManualControl::channels (rc_channe
 bool g_imu_invalid = false;     // a sample since the previous rate tick lacked GyroValid or AccelValid
 bool g_imu_saturated = false;   // a sample since the previous rate tick had a saturation bit
 std::atomic<std::uint8_t> g_arming_state{static_cast<std::uint8_t>(arming::ArmState::Boot)};
+estimator::Mahony<float> g_estimator;
+TimeUs g_estimator_prev_us = 0;  // the stamp of the previous sample the estimator stepped on
+bool g_estimator_started = false;
+std::atomic<float> g_tilt_xy2{0.0F};  // x^2 + y^2 of the estimate's quaternion, published on rate ticks
+std::atomic<float> g_tilt_wz2{1.0F};  // w^2 + z^2
+std::atomic<bool> g_estimator_valid{false};
 
 // The saturation bits of ImuSample::flags (gyro and accel, every axis), GyroSatX .. AccelSatZ.
 [[nodiscard]] constexpr std::uint32_t saturation_mask() noexcept {
@@ -261,6 +271,14 @@ void init() noexcept {
   }
   g_arm_channel = static_cast<std::size_t>(channel) - 1;
   g_arming.init(arming::load_config());
+  g_estimator.init(estimator::MahonyConfig<float>{
+      param_value<ParamId::estimator_kp>(), param_value<ParamId::estimator_ki>(),
+      param_value<ParamId::estimator_accel_healthy_min>(), param_value<ParamId::estimator_accel_healthy_max>()});
+  g_estimator_prev_us = 0;
+  g_estimator_started = false;
+  g_tilt_xy2.store(0.0F, std::memory_order_relaxed);
+  g_tilt_wz2.store(1.0F, std::memory_order_relaxed);
+  g_estimator_valid.store(false, std::memory_order_relaxed);
   g_thrust_min = static_cast<float>(kMotors) * mixer::f_min(mixer_cfg);
   g_thrust_max = static_cast<float>(kMotors) * mixer::f_max(mixer_cfg);
   g_imu_invalid = false;
@@ -280,6 +298,12 @@ void tick(const ImuSample& s) noexcept {
   const std::uint32_t due = g_groups.due(g_n);
   ++g_n;
   const bool rate_due = fired(due, kRate);
+  const std::uint64_t since = g_estimator_started && s.t_us > g_estimator_prev_us ? s.t_us - g_estimator_prev_us : 0;
+  g_estimator_prev_us = s.t_us;
+  g_estimator_started = true;
+  g_estimator.step(s.gyro_rad_s, s.accel_m_s2,
+                   since > std::numeric_limits<std::uint32_t>::max() ? std::numeric_limits<std::uint32_t>::max()
+                                                                     : static_cast<std::uint32_t>(since));
   g_step.filter(s, rate_due);
   constexpr std::uint32_t kValid = imu_flag(ImuFlag::GyroValid) | imu_flag(ImuFlag::AccelValid);
   g_imu_invalid = g_imu_invalid || (s.flags & kValid) != kValid;
@@ -301,7 +325,12 @@ void tick(const ImuSample& s) noexcept {
   in.imu_deadline_missed = hal_imu_deadline_misses() > 0;
   in.imu_samples_valid = !g_imu_invalid;
   in.imu_saturated = g_imu_saturated;
+  in.estimator_valid = g_estimator.valid();
   in.motor_test_active = g_gate == MotorGate::MotorTest;
+  const prim::Quat<float>& q = g_estimator.quat();
+  g_tilt_xy2.store(q.x * q.x + q.y * q.y, std::memory_order_relaxed);
+  g_tilt_wz2.store(q.w * q.w + q.z * q.z, std::memory_order_relaxed);
+  g_estimator_valid.store(in.estimator_valid, std::memory_order_relaxed);
   g_imu_invalid = false;
   g_imu_saturated = false;
   const arming::ArmingOutput<float> out = g_arming.step(in);
@@ -330,6 +359,12 @@ void tick(const ImuSample& s) noexcept {
 
 arming::ArmState arming_status() noexcept {
   return static_cast<arming::ArmState>(g_arming_state.load(std::memory_order_relaxed));
+}
+
+AttitudeStatus attitude_status() noexcept {
+  const float xy2 = g_tilt_xy2.load(std::memory_order_relaxed);
+  const float wz2 = g_tilt_wz2.load(std::memory_order_relaxed);
+  return AttitudeStatus{2.0F * std::atan2(std::sqrt(xy2), std::sqrt(wz2)), g_estimator_valid.load(std::memory_order_relaxed)};
 }
 
 RateCounts rate_counts() noexcept { return RateCounts{g_step.execution_count(), g_step.timing_fault_count()}; }

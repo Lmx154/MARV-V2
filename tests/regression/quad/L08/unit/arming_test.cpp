@@ -49,6 +49,7 @@ class Rig {
   Rig() {
     machine_.init(test_config());
     in_.imu_samples_valid = true;
+    in_.estimator_valid = true;
     in_.arm = kOff;
     in_.throttle = 0.0F;
   }
@@ -358,6 +359,36 @@ TEST(Arming, InvalidImuSamplesRefuseButDoNotDisarm) {
   const ArmingOutput<float> o = a.live(Rig::kArmedAt + 1);
   EXPECT_TRUE(o.armed);
   EXPECT_EQ(o.state, ArmState::Armed);
+}
+
+TEST(Arming, InvalidEstimatorRefusesInItsOrderButNeverDisarms) {
+  Rig r;
+  (void)r.run(kT0, kT0 + kRecovery - Rig::kStepUs);
+  r.in_.estimator_valid = false;
+  r.in_.arm = kOn;
+  EXPECT_EQ(r.live(kT0 + kRecovery).state, ArmState::EstimatorInvalid);
+  // After ImuInvalid and Saturated, before ThrottleUp (a high throttle with an invalid estimate reads EstimatorInvalid).
+  r.in_.throttle = 1.0F;
+  EXPECT_EQ(r.live(kT0 + kRecovery + 1).state, ArmState::EstimatorInvalid);
+  r.in_.imu_saturated = true;
+  EXPECT_EQ(r.live(kT0 + kRecovery + 2).state, ArmState::Saturated);
+  r.in_.imu_saturated = false;
+  r.in_.imu_samples_valid = false;
+  EXPECT_EQ(r.live(kT0 + kRecovery + 3).state, ArmState::ImuInvalid);
+  // Valid again, switch still on: the refused edge is spent.
+  r.in_.imu_samples_valid = true;
+  r.in_.estimator_valid = true;
+  r.in_.throttle = 0.0F;
+  EXPECT_EQ(r.live(kT0 + kRecovery + 4).state, ArmState::SwitchNotCycled);
+  // Losing validity while armed does not disarm.
+  Rig a;
+  (void)a.arm();
+  a.in_.estimator_valid = false;
+  for (std::uint64_t t = Rig::kArmedAt + 1; t < Rig::kArmedAt + 5; ++t) {
+    const ArmingOutput<float> o = a.live(t);
+    EXPECT_TRUE(o.armed);
+    EXPECT_EQ(o.state, ArmState::Armed);
+  }
 }
 
 TEST(Arming, SaturationRefusesButNeverDisarms) {

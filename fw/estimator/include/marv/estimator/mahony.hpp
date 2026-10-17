@@ -27,13 +27,23 @@
 // rotation about the gravity direction, the yaw, and the bias along it are not corrected).
 //
 // Accelerometer use. The correction runs only when |f|^2 is finite and greater than 0; otherwise that step follows the gyro
-// alone (a zero vector has no direction, a non-finite one carries none). No other gating is applied: not a norm window
-// around g, not a rate limit on the integral, no gain schedule. The first valid sample initialises the attitude from its
-// tilt, with yaw 0 (the tilt is the roll phi and pitch theta of R = Rz(0) Ry(theta) Rx(phi), for which
-// f = g (sin theta, -cos theta sin phi, -cos theta cos phi), so phi = atan2(-fy, -fz) and theta = atan2(fx, sqrt(fy^2 + fz^2))).
-// Until then step() changes nothing and initialised() is false.
+// alone (a zero vector has no direction, a non-finite one carries none). No other gating is applied to the correction: not a
+// norm window around g, not a rate limit on the integral, no gain schedule.
 //
-// Gains. The configuration carries Kp (1/s) and Ki (1/s^2); this library compiles none in. Candidate source for the
+// Initialisation and validity (decision 0042 item 5). q is initialised only from a healthy sample: one whose specific-force
+// norm lies in the open interval (accel_healthy_min g, accel_healthy_max g), g the standard gravity (constants.hpp), and
+// whose gyro is finite. Betaflight 4.5.1 src/main/flight/imu.c lines 326-338, imuIsAccelerometerHealthy(): the squared norm in
+// g, 0.81 < |f|^2 < 1.21 ("Accept accel readings only in range 0.9g - 1.1g"), called at line 690 to decide useAcc (INFERRED
+// from a source read; the bounds here are the same open interval, supplied by the caller). The initial attitude is the
+// sample's tilt with yaw 0 (the tilt is the roll phi and pitch theta of R = Rz(0) Ry(theta) Rx(phi), for which
+// f = g (sin theta, -cos theta sin phi, -cos theta cos phi), so phi = atan2(-fy, -fz) and theta = atan2(fx, sqrt(fy^2 + fz^2))),
+// at any tilt including inverted. Until then step() changes nothing and valid() and initialised() are false: a free-fall
+// sample (|f| = 0), a norm outside the interval or a non-finite vector does not initialise. valid() is true iff q was
+// initialised from such a sample and is finite and unit (it is normalised every step). A non-finite gyro, or a step whose
+// quaternion is not finite, clears the state (q identity, bias 0, valid() false) until the next healthy sample initialises
+// it again; a non-finite gyro is never taken for zero rotation.
+//
+// Gains. The configuration carries Kp (1/s), Ki (1/s^2) and the two health bounds (in g); this library compiles none in. Candidate source for the
 // parameters of the flight composition (INFERRED until a committed test shows them suit this filter): Betaflight 4.5.1
 // (tag 4.5.1 of github.com/betaflight/betaflight), src/main/flight/imu.c,
 //   line 125   .imu_dcm_kp = 2500,   default Kp, stored x 10000 (line 176: imuDcmKp = imu_dcm_kp / 10000.0f), so Kp = 0.25
@@ -59,8 +69,10 @@ namespace marv::estimator {
 
 template <class T>
 struct MahonyConfig {
-  T kp{};  // proportional gain, 1/s
-  T ki{};  // integral gain, 1/s^2
+  T kp{};                // proportional gain, 1/s
+  T ki{};                // integral gain, 1/s^2
+  T accel_healthy_min{};  // lower bound of the healthy specific-force norm, in g (open)
+  T accel_healthy_max{};  // upper bound of the healthy specific-force norm, in g (open)
 };
 
 template <class T>
@@ -79,10 +91,14 @@ class Mahony {
 
   // gyro rad/s and specific force m/s^2, both body FRD; dt_us the time since the previous step, in microseconds.
   void step(const prim::Vec3<T>& gyro, const prim::Vec3<T>& accel, std::uint32_t dt_us) noexcept {
+    if (!(std::isfinite(gyro[0]) && std::isfinite(gyro[1]) && std::isfinite(gyro[2]))) {
+      reset();
+      return;
+    }
     const T n2 = accel.dot(accel);
     const bool accel_ok = std::isfinite(n2) && n2 > T(0);
     if (!initialised_) {
-      if (accel_ok) {
+      if (healthy(n2)) {
         q_ = from_tilt(accel);
         initialised_ = true;
       }
@@ -98,14 +114,32 @@ class Mahony {
     }
     const prim::Vec3<T> omega = gyro - bias_ + e * cfg_.kp;
     bias_ = bias_ - e * (cfg_.ki * dt);
-    q_ = (q_ * exp_half(omega * dt)).normalized().canonical();
+    const prim::Quat<T> next = q_ * exp_half(omega * dt);
+    const T next_n2 = next.norm2();
+    if (!(std::isfinite(next_n2) && next_n2 > T(0))) {
+      reset();
+      return;
+    }
+    q_ = next.normalized().canonical();
   }
 
   [[nodiscard]] const prim::Quat<T>& quat() const noexcept { return q_; }
   [[nodiscard]] const prim::Vec3<T>& bias() const noexcept { return bias_; }  // rad/s, the gyro reads omega + bias
   [[nodiscard]] bool initialised() const noexcept { return initialised_; }
+  // q was initialised from a healthy sample and is finite and unit.
+  [[nodiscard]] bool valid() const noexcept {
+    return initialised_ && std::isfinite(q_.w) && std::isfinite(q_.x) && std::isfinite(q_.y) && std::isfinite(q_.z);
+  }
 
  private:
+  // The squared specific-force norm n2 (m^2/s^4) lies in the open interval (min g, max g)^2; false for a non-finite n2.
+  [[nodiscard]] bool healthy(T n2) const noexcept {
+    const T g = static_cast<T>(prim::kStandardGravity);
+    const T lo = cfg_.accel_healthy_min * g;
+    const T hi = cfg_.accel_healthy_max * g;
+    return std::isfinite(n2) && lo * lo < n2 && n2 < hi * hi;
+  }
+
   // exp(1/2 phi) for the rotation vector phi: (cos(|phi|/2), phi sin(|phi|/2) / |phi|).
   static prim::Quat<T> exp_half(const prim::Vec3<T>& phi) noexcept {
     const T angle = phi.norm();

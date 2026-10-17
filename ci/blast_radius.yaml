@@ -309,11 +309,11 @@ rules:
     why: "arming is the pure arming and failsafe machine, tested by the L08 unit_arming host test and linked by the quad_fc composition (the L09 gate test)"
 
   - paths: [fw/estimator/**]
-    ctest_labels: [L07]
+    ctest_labels: [L07, L09]
     run_ci_steps: ["@host"]
     pytest_paths: []
     gz_groups: []
-    why: "estimator is the pure Mahony attitude filter, tested by the L07 unit_mahony host test and linked by no composition yet"
+    why: "estimator is the pure Mahony attitude filter, tested by the L07 unit_mahony host test and linked by the quad_fc composition (the L09 gate test)"
 
   - paths: [fw/attitude/**]
     ctest_labels: [L05, L11]

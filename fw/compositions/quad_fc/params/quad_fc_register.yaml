@@ -66,3 +66,15 @@ rc_channel_yaw:
 # is its threshold). ManualControl.channels[rc_channel_arm - 1]; init panics outside 1..16 (the CRSF channel count).
 rc_channel_arm:
   {type: i32, value: 5, unit: "1", method: scenario, source: "Luis 2026-10-16: 'arm switch : ch 5 at 100 is armed ch5 at -100 is disarmed'", sigma: choice}
+
+# The attitude estimator (M3 P2, decision 0042, fw/estimator): the Mahony filter's gains and the healthy-sample window that
+# gates its initialisation (and with it the estimate's validity and arming). Betaflight 4.5.1
+# (github.com/betaflight/betaflight, tag 4.5.1, read 2026-10-16); INFERRED until a committed test shows them suit this filter.
+estimator_kp:
+  {type: f32, value: 0.25, unit: "1/s", method: scenario, source: "Betaflight 4.5.1 src/main/flight/imu.c:125 .imu_dcm_kp = 2500 and :176 imuDcmKp = imu_dcm_kp / 10000.0f, so Kp = 2500 / 10000 = 0.25 1/s (the line-175 comment: 'our normal or baseline value for imuDcmKp is 0.25'); Betaflight's gain schedule (100x / 10x while disarmed) is not implemented; INFERRED from a source read, decision 0042", sigma: choice}
+estimator_ki:
+  {type: f32, value: 0.0, unit: "1/s2", method: scenario, source: "Betaflight 4.5.1 src/main/flight/imu.c:126 .imu_dcm_ki = 0 and :177 imuDcmKi = imu_dcm_ki / 10000.0f, so Ki = 0 1/s^2 (no gyro-bias estimate); INFERRED from a source read, decision 0042", sigma: choice}
+estimator_accel_healthy_min:
+  {type: f32, value: 0.9, unit: "1", method: scenario, source: "Betaflight 4.5.1 src/main/flight/imu.c:326-338 imuIsAccelerometerHealthy(): 'Accept accel readings only in range 0.9g - 1.1g', 0.81f < |f|^2 < 1.21f with |f| in g; the lower bound of the open interval, in g (g = kStandardGravity); INFERRED from a source read, decision 0042", sigma: choice}
+estimator_accel_healthy_max:
+  {type: f32, value: 1.1, unit: "1", method: scenario, source: "Betaflight 4.5.1 src/main/flight/imu.c:326-338 imuIsAccelerometerHealthy(): 'Accept accel readings only in range 0.9g - 1.1g', 0.81f < |f|^2 < 1.21f with |f| in g; the upper bound of the open interval, in g (g = kStandardGravity); INFERRED from a source read, decision 0042", sigma: choice}

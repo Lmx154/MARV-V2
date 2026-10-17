@@ -6,6 +6,8 @@
 //   - the tick, 130 us, is the whole-microsecond value of the board's 7680 Hz tick (1e6 / 7680 = 130.2 us,
 //     fc3v2_scenario_values.yaml); the filter takes the step in whole microseconds;
 //   - Kp = 2 1/s and Ki = 1 1/s^2: critical damping, Kp = 2 sqrt(Ki), the closed-loop poles are a double pole at -Kp / 2 = -1 1/s;
+//   - the health bounds, 0.9 g and 1.1 g, are Betaflight 4.5.1's imuIsAccelerometerHealthy window (imu.c:326-338), the value of
+//     the quad_fc register's estimator_accel_healthy_min and _max (decision 0042);
 //   - the attitudes, rates and biases are chosen to exercise every axis and a rotation past half a turn.
 // g is kStandardGravity (constants.hpp). Tolerances are in float epsilon (kEps = 2^-23), each stated where used.
 #include <gtest/gtest.h>
@@ -34,12 +36,14 @@ constexpr double kEps = std::numeric_limits<float>::epsilon();
 constexpr double kG = marv::prim::kStandardGravity;
 constexpr float kKp = 2.0F;
 constexpr float kKi = 1.0F;
+constexpr float kHealthyMin = 0.9F;  // g
+constexpr float kHealthyMax = 1.1F;  // g
 
 int steps_for(double seconds) { return static_cast<int>(std::lround(seconds / kDt)); }
 
 Filter make(float kp, float ki) {
   Filter f;
-  f.init(MahonyConfig<float>{kp, ki});
+  f.init(MahonyConfig<float>{kp, ki, kHealthyMin, kHealthyMax});
   return f;
 }
 
@@ -277,7 +281,7 @@ TEST(Mahony, ZeroOrNonFiniteAccelerationSkipsTheCorrection) {
   EXPECT_GT(max_diff(control.quat(), expected), 1.0e-2);
 }
 
-// Before the first valid sample nothing is initialised and the gyro is not integrated; the first valid sample then sets the tilt.
+// Before the first healthy sample nothing is initialised and the gyro is not integrated; the first healthy sample then sets the tilt.
 TEST(Mahony, InvalidFirstSamplesDoNotInitialise) {
   Filter f = make(kKp, kKi);
   const float nan = std::numeric_limits<float>::quiet_NaN();
@@ -290,8 +294,104 @@ TEST(Mahony, InvalidFirstSamplesDoNotInitialise) {
   EXPECT_EQ(f.quat().x, 0.0F);
   EXPECT_EQ(f.quat().y, 0.0F);
   EXPECT_EQ(f.quat().z, 0.0F);
+  EXPECT_FALSE(f.valid());
   f.step(v3(1, 2, 3), specific_force(0.3, -0.2), kTickUs);
   EXPECT_TRUE(f.initialised());
+  EXPECT_TRUE(f.valid());
+  EXPECT_LE(max_diff(f.quat(), tilt_quat(0.3, -0.2)), 16.0 * kEps);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// f. Validity (decision 0042 item 5). q is initialised, and valid() true, only from a sample whose specific-force norm is in the
+// open interval (0.9 g, 1.1 g), at any tilt. The first healthy sample gives the exact tilt (the bound of b above, 16 epsilon)
+// for the three tilts of b, an inverted one (roll pi, pitch 0: f = (0, 0, +g)) and a steep one near the singular pitch. For the
+// inverted tilt w is 0 in exact arithmetic and the sign of the float w (6e-17 against the float rounding of pi, -4e-8) picks the
+// canonical sign, q or -q, the same rotation: the comparison there is up to that sign; the down check below is not.
+TEST(Mahony, FirstHealthySampleGivesTheTiltAndIsValidAtAnyTilt) {
+  const Tilt tilts[] = {{0.0, 0.0}, {0.3, -0.2}, {-1.0, 0.5}, {3.0, 0.1}, {3.14159265358979, 0.0}, {0.2, 1.5}};
+  for (const Tilt& t : tilts) {
+    SCOPED_TRACE(testing::Message() << "roll " << t.roll << " pitch " << t.pitch);
+    Filter f = make(kKp, kKi);
+    EXPECT_FALSE(f.valid());
+    f.step(v3(0, 0, 0), specific_force(t.roll, t.pitch), kTickUs);
+    EXPECT_TRUE(f.initialised());
+    EXPECT_TRUE(f.valid());
+    const Quat<double> ref = tilt_quat(t.roll, t.pitch);
+    const Quat<double> q(f.quat().w, f.quat().x, f.quat().y, f.quat().z);
+    const double plus = std::max({std::fabs(q.w - ref.w), std::fabs(q.x - ref.x), std::fabs(q.y - ref.y), std::fabs(q.z - ref.z)});
+    const double minus = std::max({std::fabs(q.w + ref.w), std::fabs(q.x + ref.x), std::fabs(q.y + ref.y), std::fabs(q.z + ref.z)});
+    EXPECT_LE(std::min(plus, minus), 16.0 * kEps);
+    const Vec3<float> a = specific_force(t.roll, t.pitch);
+    const Vec3<float> down = f.quat().rotate(a);
+    EXPECT_LE(std::fabs(static_cast<double>(down[0])), kG * 16.0 * kEps);
+    EXPECT_LE(std::fabs(static_cast<double>(down[1])), kG * 16.0 * kEps);
+    EXPECT_LE(std::fabs(static_cast<double>(down[2]) + kG), kG * 16.0 * kEps);
+  }
+}
+
+// Free fall (|f| = 0), norms outside (0.9 g, 1.1 g) and the bounds themselves (open interval) leave the filter uninitialised and
+// invalid, however many samples arrive, and the gyro is not integrated. Norms: 0.5 g, 0.8 g, 1.2 g, 3 g, 0.9 g x (1 - 1e-3) and
+// 1.1 g x (1 + 1e-3) (inside float rounding of the bound is not tested; a thousandth is far above it). Control: 0.9 g x (1 + 1e-3)
+// and 1.1 g x (1 - 1e-3) initialise, so the bounds are what the test exercises.
+TEST(Mahony, UnhealthyNormsLeaveItInvalidAndUninitialised) {
+  const double outside[] = {0.0, 0.5, 0.8, 1.2, 3.0, 0.9 * (1.0 - 1.0e-3), 1.1 * (1.0 + 1.0e-3)};
+  for (const double norm : outside) {
+    SCOPED_TRACE(testing::Message() << "|f| = " << norm << " g");
+    Filter f = make(kKp, kKi);
+    const Vec3<float> a = specific_force(0.3, -0.2) * static_cast<float>(norm);
+    run(f, v3(1, 2, 3), a, 100);
+    EXPECT_FALSE(f.initialised());
+    EXPECT_FALSE(f.valid());
+    EXPECT_EQ(f.quat().w, 1.0F);
+    EXPECT_EQ(f.quat().x, 0.0F);
+  }
+  const double inside[] = {0.9 * (1.0 + 1.0e-3), 1.1 * (1.0 - 1.0e-3)};
+  for (const double norm : inside) {
+    SCOPED_TRACE(testing::Message() << "|f| = " << norm << " g");
+    Filter f = make(kKp, kKi);
+    f.step(v3(0, 0, 0), specific_force(0.3, -0.2) * static_cast<float>(norm), kTickUs);
+    EXPECT_TRUE(f.valid());
+  }
+}
+
+// A non-finite gyro (NaN or infinite, any axis) makes the estimate invalid and uninitialised and it stays so while the input
+// lasts, even with a healthy accelerometer; the next healthy sample initialises it again from its own tilt. A NaN gyro is not
+// taken for zero rotation: the attitude after recovery is the new sample's tilt, not the old estimate.
+TEST(Mahony, NonFiniteGyroInvalidatesUntilTheNextHealthySample) {
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  const float inf = std::numeric_limits<float>::infinity();
+  const Vec3<float> bad[] = {with_vec(nan, 0, 0), with_vec(0, nan, 0), with_vec(0, 0, nan), with_vec(inf, 0, 0),
+                             with_vec(0, -inf, 0)};
+  for (const Vec3<float>& g : bad) {
+    SCOPED_TRACE(testing::Message() << "gyro " << g[0] << " " << g[1] << " " << g[2]);
+    Filter f = make(kKp, kKi);
+    f.step(v3(0, 0, 0), specific_force(0.3, -0.2), kTickUs);
+    run(f, v3(0, 0, 0), specific_force(0.3, -0.2), 10);
+    ASSERT_TRUE(f.valid());
+    f.step(g, specific_force(0.3, -0.2), kTickUs);
+    EXPECT_FALSE(f.valid());
+    EXPECT_FALSE(f.initialised());
+    run(f, g, specific_force(0.3, -0.2), 10);
+    EXPECT_FALSE(f.valid());
+    f.step(v3(0, 0, 0), specific_force(-0.5, 0.4), kTickUs);
+    EXPECT_TRUE(f.valid());
+    EXPECT_LE(max_diff(f.quat(), tilt_quat(-0.5, 0.4)), 16.0 * kEps);
+  }
+}
+
+// A finite gyro so large that the rotation angle overflows (the largest float on every axis: the norm of the increment is
+// infinite and the sine of an infinite half angle is NaN) makes the step's q non-finite: invalid and uninitialised, and valid
+// again from the next healthy sample.
+TEST(Mahony, NonFiniteQuaternionInvalidatesUntilTheNextHealthySample) {
+  const float huge = std::numeric_limits<float>::max();
+  Filter f = make(kKp, kKi);
+  f.step(v3(0, 0, 0), specific_force(0.3, -0.2), kTickUs);
+  ASSERT_TRUE(f.valid());
+  f.step(v3(huge, huge, huge), specific_force(0.3, -0.2), kTickUs);
+  EXPECT_FALSE(f.valid());
+  EXPECT_FALSE(f.initialised());
+  f.step(v3(0, 0, 0), specific_force(0.3, -0.2), kTickUs);
+  EXPECT_TRUE(f.valid());
   EXPECT_LE(max_diff(f.quat(), tilt_quat(0.3, -0.2)), 16.0 * kEps);
 }
 
