@@ -3,7 +3,7 @@
 ## What changed
 
 Architect ruling for decision 0051's scope (full text: Serena memory `ground-segment/architect-params-first-2026-10-17`;
-lead summary here). Items marked (Luis) are pending his sign-off and gate merges, not drafting.
+lead summary here). Items marked (Luis) were signed by him on 2026-10-17 (Approval).
 
 1. **MAVLink parameters:** standard PARAM_REQUEST_LIST/READ/SET/VALUE, byte-wise encoding (REAL32 / INT32 bits);
    param_index = ParamId; param_id = a generated link id (the name if ≤ 16 chars, else name[:11] + "_" + 4 hex of
@@ -20,6 +20,12 @@ lead summary here). Items marked (Luis) are pending his sign-off and gate merges
    (the default table accepted, one rejecting table per parameter-dependent panic site, init panicking with validate's reason).
 3. **Storage format:** binary `.mcfg` on the device, JSON as the host view (GD-3, Luis); FatFs (BSD-style) over SPI0 for
    the SD card; pins from the madflight page, UNVERIFIED until the mount test.
+   Unit 2 (GEN) frozen-test changes: `tests/regression/quad/L00/tools/test_params_gen.py` (extended: the manifest
+   entry assertion checks id, type and unit; new link-id, lock and manifest-field tests) and
+   `tests/regression/quad/L01/tools/test_params_gen_l1.py` (three manifest comparisons now compare id, type, unit and
+   link id, or ignore `source_file`, because `params_manifest.json` entries gain link_id, lock, default_bits, method,
+   sigma_kind, sigma, sigma_bits, origin, source and source_file). Their requirements are unchanged: the schema hash and
+   the header do not depend on value, sigma, lock or shape.
 4. **Transport:** USB composite: CDC0 the existing console unchanged, CDC1 MAVLink; link serviced in the background loop
    below every interrupt; the tick publishes one telemetry snapshot through a seqlock. SIL speaks the same link over UDP
    127.0.0.1 via a new `marv_sil_link_service()`; runs without a GCS stay byte-identical.
@@ -44,5 +50,7 @@ The architect's file:line index (memory above): quad_fc.cpp init :282-379; lsm6d
 
 ## Approval
 
-Design: architect (2026-10-17), accepted by the lead. Pending Luis: GD-1, GD-2, GD-3, the arming refusals and grant, the
-locked list, the G7 check list, and the spec sentences the ruling drafts (core §4, §8, §10; ground §1, §3, §4, §5, §6).
+Design: architect (2026-10-17), accepted by the lead. Luis, 2026-10-17, all "Approve (Recommended)": the storage model;
+the arming refusals and the disarmed-only maintenance grant; the locked list plus airmode_activate_throttle and the rotor
+speed limits ("Approve, lock both too"); the G7 check list including the Gazebo run; GD-1, GD-2, GD-3, the two-port USB,
+`gcs/` in this repo, and the drafted spec sentences (applied: core §4, §8, §10; ground §1, §3, §4, §5, §6).

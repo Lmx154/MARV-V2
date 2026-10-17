@@ -5,8 +5,9 @@ Reads YAML parameter sources and writes, into --out-dir:
 
   param_ids.hpp         ParamId (dense enum), kParamCount, kParamSchemaHash, ParamTraits specialisations,
                         declarations of the generated tables
-  param_defaults.cpp    the const ParamRecord defaults table and the names table
-  params_manifest.json  name -> id, type, unit, plus the schema hash, for the harness
+  param_defaults.cpp    the const ParamRecord defaults table, the names table and the link-id table (kParamLinkIds)
+  params_manifest.json  name -> id, type, unit, link id, lock, default value bits, method, sigma kind, sigma, source,
+                        source file, plus the schema hash, for the harness and tools/config/mcfg.py
   params_provenance.json  per source entry: name, shape, component names, sigma kind of each component, lock
   <--out-table file>    optional: the human-readable table of every record (id, type, exact value, sigma, unit, method,
                         origin, lock, source), whose header names this generator and the --table-input paths
@@ -37,7 +38,14 @@ Source file: a YAML mapping, parameter name -> entry. One entry:
             the single token UNKNOWN / choice / exact for all components; a single number is refused. Every component
             shares type, unit, method and source. Expansion happens before the duplicate-name check and the schema
             hash, which therefore see the scalar records.
+  mav_id    optional, a scalar entry only: the link id (below) in place of the generated one
   conflict, status, check   accepted and ignored (core 2.1 card fields)
+
+Link id (docs/decisions/0053 item 1): the 16-character MAVLink param_id of each record. It is the name if the name has
+at most 16 characters, else name[:11] + "_" + the first 4 hexadecimal digits (lower case) of SHA-256 of the UTF-8
+name; a scalar entry may give its own with `mav_id`. An id has at most 16 characters of [A-Za-z0-9_]. Two records
+with the same id, and an id equal to the full name of another record, are refused. An id depends on its own name
+(or override) only, so adding a parameter changes no other id. The ids are not part of the schema hash.
 
 Origin is not an entry field: it is default-from-card for --card files and default-from-register for --register
 files. Parameter ids follow the order the sources are given (--card / --register in command-line order, entries in
@@ -60,7 +68,7 @@ import math
 import re
 import struct
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 
@@ -82,7 +90,7 @@ METHODS = {
 DERIVED = re.compile(r"derived\((.*)\)", re.DOTALL)
 ORIGINS = {"card": "DefaultFromCard", "register": "DefaultFromRegister"}
 REQUIRED = ("type", "value", "unit", "method", "source", "sigma")
-OPTIONAL = ("lock", "shape")
+OPTIONAL = ("lock", "shape", "mav_id")
 SIGMA_TOKENS = {"UNKNOWN": "Unknown", "choice": "Choice", "exact": "Exact"}
 LIST_SIGMA_TOKENS = {"UNKNOWN": "Unknown"}
 UNCERTAIN_METHODS = frozenset({"published", "measured", "identified", "datasheet"})
@@ -95,6 +103,9 @@ SIGMA_ASSERT_MESSAGE = ("param_defaults: a record violates invariant I1 (SigmaKi
 ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 IGNORED = ("conflict", "status", "check")
 IDENTIFIER = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
+LINK_ID_MAX = 16
+LINK_ID_CHARS = re.compile(r"[A-Za-z0-9_]+")
+LINK_ID_PREFIX = LINK_ID_MAX - 5  # name[:11] + "_" + 4 hex digits
 CXX_KEYWORDS = frozenset(
     """alignas alignof and and_eq asm auto bitand bitor bool break case catch char char8_t char16_t char32_t class
     compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default
@@ -155,6 +166,8 @@ class Param:
     origin: str
     sigma_kind: str = "Known"
     locked: bool = False
+    link_id: str = ""
+    source_file: str = ""
 
 
 @dataclass(frozen=True)
@@ -195,6 +208,23 @@ def _check_name(name) -> None:
     if not isinstance(name, str) or not IDENTIFIER.fullmatch(name) or "__" in name or name in CXX_KEYWORDS:
         raise Refusal(f"field 'name': {name!r} is not a valid enumerator (letter first, letters/digits/_ only, "
                       "no '__', not a C++ keyword)")
+
+
+def link_id_of(name: str) -> str:
+    """The generated link id of a parameter name (module docstring)."""
+    if len(name) <= LINK_ID_MAX:
+        return name
+    return name[:LINK_ID_PREFIX] + "_" + hashlib.sha256(name.encode("utf-8")).hexdigest()[:4]
+
+
+def _parse_mav_id(mav_id) -> str:
+    if not isinstance(mav_id, str) or not mav_id:
+        raise Refusal(f"field 'mav_id': must be a non-empty string, got {mav_id!r}")
+    if len(mav_id) > LINK_ID_MAX:
+        raise Refusal(f"field 'mav_id': {mav_id!r} has {len(mav_id)} characters, at most {LINK_ID_MAX}")
+    if not LINK_ID_CHARS.fullmatch(mav_id):
+        raise Refusal(f"field 'mav_id': {mav_id!r} has characters outside [A-Za-z0-9_]")
+    return mav_id
 
 
 def _parse_value(ptype: str, value, what: str):
@@ -330,6 +360,10 @@ def parse_entry(name: str, entry, origin: str) -> tuple[list[Param], Entry]:
         raise Refusal("field 'source': must be a non-empty string")
 
     lock = _parse_lock(entry["lock"]) if "lock" in entry else None
+    if "mav_id" in entry and "shape" in entry:
+        raise Refusal("field 'mav_id': only a scalar entry may give one; the components of a vector entry get "
+                      "generated link ids")
+    mav_id = _parse_mav_id(entry["mav_id"]) if "mav_id" in entry else None
 
     sigma = entry["sigma"]
     value = entry["value"]
@@ -356,9 +390,29 @@ def parse_entry(name: str, entry, origin: str) -> tuple[list[Param], Entry]:
 
     full_method = "derived(" + rule + ")" if m else method
     full_source = f"{rule}; {source}" if m else source
-    params = [Param(comp, ptype, v, unit, full_method, full_source, sig, origin, kind, lock is not None)
+    params = [Param(comp, ptype, v, unit, full_method, full_source, sig, origin, kind, lock is not None,
+                    mav_id if mav_id is not None else link_id_of(comp))
               for comp, v, (kind, sig) in zip(names, stored, sigmas, strict=True)]
     return params, Entry(name, "", shape, names, tuple(k for k, _ in sigmas), lock)
+
+
+def check_link_ids(params: list[Param]) -> list[str]:
+    """Refusals for link ids: two records with one id, or an id that is another record's full name."""
+    errors: list[str] = []
+    by_name = {p.name: p for p in params}
+    by_id: dict[str, Param] = {}
+    for p in params:
+        other = by_id.get(p.link_id)
+        if other is not None:
+            errors.append(f"{p.source_file}: entry '{p.name}': link id '{p.link_id}' duplicate, already the link id "
+                          f"of '{other.name}' ({other.source_file}); give one of them a different `mav_id`")
+        else:
+            by_id[p.link_id] = p
+        named = by_name.get(p.link_id)
+        if named is not None and named is not p:
+            errors.append(f"{p.source_file}: entry '{p.name}': link id '{p.link_id}' is the full name of parameter "
+                          f"'{named.name}' ({named.source_file}); give '{p.name}' a different `mav_id`")
+    return errors
 
 
 def load_sources(sources: list[tuple[str, Path]]) -> tuple[list[Param], list[Entry]]:
@@ -394,13 +448,15 @@ def load_sources(sources: list[tuple[str, Path]]) -> tuple[list[Param], list[Ent
                 continue
             for p in expanded:
                 where[p.name] = label
-            params += expanded
+            params += [replace(p, source_file=label) for p in expanded]
             entries.append(Entry(described.name, label, described.shape, described.components,
                                  described.sigma_kinds, described.lock))
     if not errors and not params:
         errors.append("no parameters: the sources define nothing")
     if not errors and len(params) > MAX_PARAMS:
         errors.append(f"{len(params)} parameters exceed the uint16 id space ({MAX_PARAMS})")
+    if not errors:
+        errors += check_link_ids(params)
     if errors:
         raise Refusal("\n".join(errors))
     return params, entries
@@ -496,6 +552,8 @@ def render_header(params: list[Param], digest: int) -> str:
         "namespace generated {",
         "extern const ParamRecord kParamDefaults[kParamCount];",
         "extern const char* const kParamNames[kParamCount];",
+        "// The 16-character MAVLink param_id of each record (tools/gen/params_gen.py, link id rule); not read by the tick.",
+        "extern const char* const kParamLinkIds[kParamCount];",
         "}  // namespace generated",
         "",
         "}  // namespace marv",
@@ -537,6 +595,8 @@ def render_defaults(params: list[Param]) -> str:
         "const char* const kParamNames[kParamCount] = {",
     ]
     lines += [f"    {c_string(p.name)}," for p in params]
+    lines += ["};", "", "const char* const kParamLinkIds[kParamCount] = {"]
+    lines += [f"    {c_string(p.link_id)}," for p in params]
     lines += ["};", "", "}  // namespace marv::generated", ""]
     return "\n".join(lines)
 
@@ -593,12 +653,37 @@ def render_provenance(entries: list[Entry], digest: int) -> str:
     return json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
 
 
+def value_bits(ptype: str, value: float | int) -> int:
+    """The 32 bits of a value: the IEEE-754 binary32 pattern of an f32, the two's complement of an i32."""
+    if ptype == "f32":
+        return struct.unpack("<I", struct.pack("<f", value))[0]
+    return value & 0xFFFFFFFF
+
+
+def manifest_entry(i: int, p: Param) -> dict:
+    return {
+        "id": i,
+        "type": p.type,
+        "unit": p.unit,
+        "link_id": p.link_id,
+        "lock": p.locked,
+        "default_bits": f"0x{value_bits(p.type, p.value):08x}",
+        "method": "derived" if p.method.startswith("derived(") else p.method,
+        "sigma_kind": p.sigma_kind,
+        "sigma": p.sigma,
+        "sigma_bits": f"0x{value_bits('f32', p.sigma):08x}",
+        "origin": p.origin,
+        "source": p.source,
+        "source_file": p.source_file,
+    }
+
+
 def render_manifest(params: list[Param], digest: int) -> str:
     doc = {
         "schema_hash": f"0x{digest:016x}",
         "schema_hash_algorithm": "first 8 bytes big-endian of SHA-256 over ordered (name, type, unit)",
         "count": len(params),
-        "params": {p.name: {"id": i, "type": p.type, "unit": p.unit} for i, p in enumerate(params)},
+        "params": {p.name: manifest_entry(i, p) for i, p in enumerate(params)},
     }
     return json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
 

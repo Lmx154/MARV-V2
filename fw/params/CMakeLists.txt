@@ -24,6 +24,7 @@ if(NOT _marv_yaml_result EQUAL 0)
 endif()
 
 set(MARV_PARAMS_GEN_SCRIPT "${PROJECT_SOURCE_DIR}/tools/gen/params_gen.py")
+set(MARV_MCFG_SCRIPT "${PROJECT_SOURCE_DIR}/tools/config/mcfg.py")
 set(MARV_PARAMS_RUNTIME_SOURCE "${CMAKE_CURRENT_LIST_DIR}/src/param.cpp")
 
 # marv_add_param_set(<name> CARD <files...> REGISTER <files...> [TABLE <out.txt> TABLE_INPUTS <repository-relative paths...>])
@@ -36,6 +37,8 @@ set(MARV_PARAMS_RUNTIME_SOURCE "${CMAKE_CURRENT_LIST_DIR}/src/param.cpp")
 # Its target property MARV_PARAM_MANIFEST on <name>_generated is the path of the set's params_manifest.json, and
 # MARV_PARAM_CARD_FILES / MARV_PARAM_REGISTER_FILES hold the sources. Sets are independent: a binary must link
 # the generated and runtime library of one set only, since every set defines the same marv::generated symbols.
+# Next to the generated files every set also gets its factory config file ${CMAKE_BINARY_DIR}/generated/<name>/<name>.mcfg
+# (tools/config/mcfg.py encode: the compiled defaults of the set as the quad section; docs/decisions/0053 item 3).
 # With TABLE the generator also writes the human-readable table of every record to <out.txt> (params_gen.py --out-table;
 # its header names TABLE_INPUTS); the table is a source of <name>_generated, so every build produces it.
 # Call it from fw/params (the targets take the calling directory as SOURCE_DIR, which puts them under fw/ for G3).
@@ -74,9 +77,19 @@ function(marv_add_param_set name)
     COMMENT "Generating parameter ids, defaults, manifest and provenance (${name})"
     VERBATIM)
 
+  set(mcfg_file "${gen_root}/${name}.mcfg")
+  add_custom_command(
+    OUTPUT "${mcfg_file}"
+    COMMAND "${MARV_PYTHON}" "${MARV_MCFG_SCRIPT}" encode --manifest "${gen_dir}/params_manifest.json"
+            --section quad --out "${mcfg_file}"
+    DEPENDS "${gen_dir}/params_manifest.json" "${MARV_MCFG_SCRIPT}"
+    COMMENT "Writing the factory config file (${name})"
+    VERBATIM)
+
   add_library(${name}_generated STATIC
     "${gen_dir}/param_defaults.cpp"
     "${gen_dir}/param_ids.hpp"
+    "${mcfg_file}"
     ${table_sources})
   target_include_directories(${name}_generated PUBLIC "${gen_root}")
   target_link_libraries(${name}_generated PUBLIC marv_params)
@@ -305,7 +318,7 @@ marv_add_card_param_set(marv_params_l11_vertical_scripted CARD "${MARV_VEHICLE_C
 # fixed to vehicles/marv_5in_fc3v2.yaml, the real airframe (M4 P1; not MARV_VEHICLE_CARD, which stays the UZH card of the SIL).
 # marv_rate, marv_mixer and marv_rate_group read the product ids, which this set keeps.
 marv_add_card_param_set(marv_params_fc3v2 CARD "vehicles/marv_5in_fc3v2.yaml" BUDGET "${MARV_DESIGN_BUDGET}"
-  RATE_GUARD mean_period
+  RATE_GUARD mean_period PRODUCT_TABLE
   SCENARIO "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml"
   EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml"
                  "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml")

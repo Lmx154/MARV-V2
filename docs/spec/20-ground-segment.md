@@ -92,8 +92,7 @@ MARV V2 is that, in C++, with the flight-software side flashed to the RP2354B.
    - **Flash** a UF2 from the GCS over USB, **only when the structure changes**. The GCS keeps a library of built,
      validated images.
    - **Config file:** saved in the GCS, edited as text, uploaded or downloaded over USB, over the radio (drone image
-     only, disarmed), or by moving the SD card. Activation copies it into a region of internal flash no image covers,
-     so flashing never touches it, and the FC boots from that copy (GS-11).
+     only, disarmed), or by moving the SD card. Activation, only disarmed and only over USB, writes the config to the SD card and reboots the FC; at that boot, before the IMU, receiver and motor outputs start, the FC verifies the file and copies it into a region of internal flash no image covers, so flashing never touches it, and the FC boots from that copy (GS-11). The FC never needs the SD card to boot or to arm.
 
    The GCS refuses to flash or activate anything whose (image, config) pair has no passing report. The FC reports both
    hashes at boot and in every log.
@@ -137,7 +136,7 @@ The flight controller knows its **ports** (USB, the radio UART) but not what is 
 
 ## 3. The GCS: the toolbox's Lab UI, extended
 
-It runs locally, as its own build of the toolbox's UI, not as the public site.
+It lives in this repository (`gcs/`): a SvelteKit application that takes the toolbox components named below, run locally with a helper (`tools/gs/`) that owns the serial port and the SIL socket, flashes with picotool, runs the generators and the validation, and records the ground log (GS-8). It is not the public site.
 
 **Keep and reuse:** `BlockChain`, `BlockCard`, `ParamSlider` (the configurator, now fed by the **registry manifest
 exported by the C++ build**: families, kinds, `ParamSpec`s with sources, `compatible()`, qualification levels; the
@@ -164,8 +163,7 @@ GCS keeps no block list of its own); `CompareTable`, `Diagnosis`; `ViewTriptych`
 **Remove from the GCS build:** the site-only parts (ads, affiliate disclosure, support button, SEO) and teaching pages
 the operator does not need.
 
-**Device access from the browser.** Web Serial works for the USB port and the ground radio module in Chromium-based
-browsers. Flashing the RP2354B needs USB access to its bootloader or a small local helper (GD-2).
+**Device access.** The browser reaches devices only through the helper, over a localhost WebSocket that accepts only the GCS's own origin and the helper's session token. Web Serial is not used.
 
 ---
 
@@ -176,14 +174,14 @@ browsers. Flashing the RP2354B needs USB access to its bootloader or a small loc
 | GS-1 | One functional interface end to end. | The same typed messages at the vehicle, the GCS and the simulators; transport adapters and one codec only. The GCS cannot tell SIL from the vehicle; it is tested against the simulators first. |
 | GS-2 | Functions before encoding. | The IF table (core §8) is signed off before the codec mapping is finalized. |
 | GS-3 | Codec isolation. | CI fails if any module outside the codec includes a MAVLink header or refers to a MAVLink message. A second, trivial codec (for tests) passes the same conformance suite. |
-| GS-4 | Flash only on the USB port, only disarmed; config activation only disarmed. | Enforced on the vehicle by port and arming state, not merely hidden in the GCS. Writing flash stalls the other core, so internal-flash writes happen only disarmed. |
+| GS-4 | Flash only on the USB port, only disarmed; config activation only disarmed. | Enforced on the vehicle by port and arming state, not merely hidden in the GCS. Internal-flash writes happen only in the boot step that applies an activation, before the IMU, receiver and motor outputs start. A reboot, an activation or a reset to the bootloader needs the tick's maintenance grant, which is given only while disarmed and refuses arming until the reset. |
 | GS-5 | Authority (drone). | Manual control (IF-8) accepted only in Freestyle. Mode changes are explicit, acknowledged commands. While armed, parameter writes outside an explicit in-flight allow-list are rejected. |
 | GS-6 | Link loss (drone). | Detected from missing traffic; timeout from the configured heartbeat rate and a false-alarm budget; triggers a QX failsafe. |
 | GS-7 | Telemetry fits the connection. | The GCS measures each connection's throughput and refuses a stream configuration that exceeds it. |
 | GS-8 | The ground log is replayable. | Everything sent and received is logged with timestamps and can be replayed against a SIL run. |
 | GS-9 | No remote control of the rocket. | The rocket image compiles no IF-3, IF-4, IF-5 or IF-8 handler, and its radio port is downlink only. No image has a fire command on any port. CI checks the image's link map for those handlers. A SIL test sends every uplink message to the rocket's radio port and finds its state, outputs and configuration unchanged. |
-| GS-10 | One config file for every image. | Both images load the same file; each writes back only its own sections, preserves the others byte for byte, and reports a config hash over its own sections. Test: flash the rocket image, change the target apogee, flash the drone image: the drone's sections and hash are unchanged. |
-| GS-11 | The config file cannot fail silently. | Each section carries a schema version; an image refuses a version it does not know; the GCS migrates files forward with migrations generated from registry changes (a new parameter takes its value from its rule, with provenance). Activation writes into one of two internal-flash slots, verifies by SHA-256 read-back (the RP2350's hardware SHA-256, datasheet §12.13), then switches; the other slot stays as the last good file. The FC always boots from internal flash. If the active slot fails its hash at boot, the FC refuses to arm and says why; returning to the last good file is an explicit, disarmed activation. |
+| GS-10 | One config file for every image. | Both images load the same file; each writes back only its own sections, preserves the others byte for byte, and reports a config hash over its own sections. Test: flash the rocket image, change the target apogee, flash the drone image: the drone's sections and hash are unchanged. Until the rocket image exists, the test is: a config carrying an extra section the drone image does not read is activated, a drone parameter is changed and activated again, and the extra section is unchanged byte for byte while the reported config hash covers only the drone's sections. |
+| GS-11 | The config file cannot fail silently. | Each section carries a schema version; an image refuses a version it does not know; the GCS migrates files forward with migrations generated from registry changes (a new parameter takes its value from its rule, with provenance). Activation writes into one of two internal-flash slots, verifies by SHA-256 read-back (the RP2350's hardware SHA-256, datasheet §12.13), then switches (at the boot that applies the activation); the other slot stays as the last good file. The FC always boots from internal flash. If the active slot fails its hash at boot, the FC refuses to arm and says why; returning to the last good file is an explicit, disarmed activation. A config the FC cannot use (corrupt, unknown schema, invalid, or not validated for the running image) refuses arming with its reason. |
 
 ---
 
@@ -192,9 +190,9 @@ browsers. Flashing the RP2354B needs USB access to its bootloader or a small loc
 | Phase | Work | Exit test |
 | --- | --- | --- |
 | G0 Functional interface | Complete and sign off the IF table (core §8): every GCS function, its data, its semantics. The schema that generates the C++ and TypeScript types. | Every GCS function maps to interface messages; Luis signs off. No encoding decisions yet. |
-| G1 Codec and transports | MAVLink v2 codec plus the MARV dialect; transports for USB CDC, the radio UART and the SIL socket. | Round-trip conformance tests pass; GS-3 passes; the trivial test codec passes the same suite. Quad L10 can carry IF-9. |
+| G1 Codec and transports | MAVLink v2 codec plus the MARV dialect; transports for USB CDC, the radio UART and the SIL socket. | Round-trip conformance tests pass; GS-3 passes; the trivial test codec passes the same suite. Quad L10 can carry IF-9. (in the params-first scope IF-9 stays on the HIL format of decision 0046) |
 | G2 GCS over SIL | Connection manager, telemetry, mission planner and controller passthrough, driving Gazebo SIL through the socket. | A waypoint mission is planned, checked, uploaded, read back and flown in SIL entirely from the GCS. |
-| G3 Configurator, flash and config files | Configurator rendered from the registry manifest; UF2 build and flash over USB; config-file library, editor, upload, download and activation (IF-11). | An unvalidated pair is refused. A validated UF2 flashes and reports its hash. A config file round-trips through SD and internal flash unchanged and survives a flash. GS-10 passes. **Ends the core §4 bootstrap exception.** |
+| G3 Configurator, flash and config files | Configurator rendered from the registry manifest; UF2 build and flash over USB; config-file library, editor, upload, download and activation (IF-11). | An unvalidated pair is refused. A validated UF2 flashes and reports its hash. A config file round-trips through SD and internal flash unchanged and survives a flash. GS-10 passes. **Its last unit ends the core §4 bootstrap exception** (core §4); until the rocket image exists, GS-10 is tested in its extra-section form. |
 | G4 Link robustness | Stream rates per connection; link degradation emulated in SIL (throughput limit, loss, latency, values measured on the real link); link-loss failsafe. | GS-5 to GS-7 and GS-9 pass in SIL, then on the bench over the radio modules. |
 | G5 Configuration and bench calibration | Hardware, firmware and parameter pages; motor tests; S1–S2 self-calibration from the GCS. | Every parameter shows its provenance; locked parameters cannot be overwritten; GS-4 and GS-5 rejections verified on the vehicle. |
 
@@ -205,5 +203,5 @@ browsers. Flashing the RP2354B needs USB access to its bootloader or a small loc
 | ID | Decision |
 | --- | --- |
 | GD-1 | Sign-off of the functional interface (core §8) before the codec mapping is finalized. |
-| GD-2 | Flashing from the GCS: browser USB access to the RP2354B bootloader, or a small local helper. |
-| GD-3 | Config file format. JSON with a schema generated from the registry is proposed (small parser on the RP2354B, native to the Lab UI); TOML is friendlier to hand-edit. |
+| GD-2 | Flashing from the GCS: browser USB access to the RP2354B bootloader, or a small local helper. **Decided 2026-10-17 (Luis, decision 0053):** a local helper with picotool. |
+| GD-3 | Config file format. JSON with a schema generated from the registry is proposed (small parser on the RP2354B, native to the Lab UI); TOML is friendlier to hand-edit. **Decided 2026-10-17 (Luis, decision 0053):** binary `.mcfg` on the device, JSON as the host view. |

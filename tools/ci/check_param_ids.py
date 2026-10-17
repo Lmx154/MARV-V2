@@ -13,6 +13,10 @@ every added id starts with a prefix. Exit 2 on a usage error.
 import json
 import sys
 
+# The fields that identify a record across sets; the manifests' provenance fields (source file, lock, sigma ...) are
+# per set and may differ.
+IDENTITY = ("id", "type", "unit")
+
 
 def main(argv: list[str]) -> int:
     if len(argv) < 3:
@@ -25,8 +29,9 @@ def main(argv: list[str]) -> int:
     prefixes = tuple(argv[3:])
     failed = False
     for name, rec in product.items():
-        if extended.get(name) != rec:
-            print(f"product parameter {name}: {rec} != extended {extended.get(name)}", file=sys.stderr)
+        got = extended.get(name)
+        if got is None or {k: got.get(k) for k in IDENTITY} != {k: rec.get(k) for k in IDENTITY}:
+            print(f"product parameter {name}: {rec} != extended {got}", file=sys.stderr)
             failed = True
     added = [name for name in extended if name not in product]
     if not added:

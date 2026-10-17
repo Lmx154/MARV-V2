@@ -244,14 +244,28 @@ def test_shape_expands_to_named_scalar_records(tmp_path, shape, values, names):
     assert prov[0]["components"] == names and prov[0]["sigma_kind"] == ["Unknown"] * len(names)
 
 
+def without_source_file(manifest_text):
+    doc = json.loads(manifest_text)
+    for e in doc["params"].values():
+        del e["source_file"]
+    return doc
+
+
+def schema_part(manifest_text):
+    """What the schema hash covers (id, type, unit) and the link id of each record."""
+    return {n: {k: e[k] for k in ("id", "type", "unit", "link_id")}
+            for n, e in json.loads(manifest_text)["params"].items()}
+
+
 def test_expanded_vector_is_identical_to_hand_written_scalars(tmp_path):
     vec = generate(tmp_path, entry("v", value="[1.5, -2.5, 0.0]", shape="frd3", sigma="[0.1, UNKNOWN, 0.3]"),
                    out="vec")
     scalars = generate(tmp_path,
                        entry("v_x", value="1.5", sigma="0.1") + entry("v_y", value="-2.5", sigma="UNKNOWN") +
                        entry("v_z", value="0.0", sigma="0.3"), out="sca")
-    for name in ("param_ids.hpp", "param_defaults.cpp", "params_manifest.json"):
+    for name in ("param_ids.hpp", "param_defaults.cpp"):
         assert vec[name] == scalars[name], name
+    assert without_source_file(vec["params_manifest.json"]) == without_source_file(scalars["params_manifest.json"])
 
 
 def test_schema_hash_runs_over_the_expanded_scalars(tmp_path):
@@ -366,7 +380,7 @@ def test_provenance_lists_every_source_entry_in_order(tmp_path):
 def test_manifest_entry_format_is_unchanged(tmp_path):
     out = generate(tmp_path, entry("v", value="[1.0, 2.0]", shape="range", unit="m", sigma="UNKNOWN", lock=LOCK))
     manifest = json.loads(out["params_manifest.json"])
-    assert manifest["params"]["v_min"] == {"id": 0, "type": "f32", "unit": "m"}
+    assert {k: manifest["params"]["v_min"][k] for k in ("id", "type", "unit")} == {"id": 0, "type": "f32", "unit": "m"}
     assert set(manifest) == {"schema_hash", "schema_hash_algorithm", "count", "params"}
 
 
@@ -374,7 +388,9 @@ def test_header_text_is_unchanged_by_kind_lock_and_shape_metadata(tmp_path):
     plain = generate(tmp_path, entry("p", sigma="0.01"), out="plain")
     rich = generate(tmp_path, entry("p", sigma="UNKNOWN", lock=LOCK), out="rich")
     assert plain["param_ids.hpp"] == rich["param_ids.hpp"]
-    assert plain["params_manifest.json"] == rich["params_manifest.json"]
+    schema = {k: json.loads(plain["params_manifest.json"])[k] for k in ("schema_hash", "count")}
+    assert schema == {k: json.loads(rich["params_manifest.json"])[k] for k in schema}
+    assert schema_part(plain["params_manifest.json"]) == schema_part(rich["params_manifest.json"])
 
 
 def test_l1_fixture_set_generates_and_covers_every_kind(tmp_path):

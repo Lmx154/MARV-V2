@@ -27,8 +27,16 @@ add_library(marv_gz_lockstep SHARED
   src/lockstep.cpp
   src/lockstep_log.cpp
   src/lockstep_log.hpp
+  src/hil_source.cpp
+  src/hil_source.hpp
   src/constants.hpp)
 target_include_directories(marv_gz_lockstep PRIVATE src "${PROJECT_SOURCE_DIR}/fw/sil/include")
+# The HIL command source (src/hil_source.hpp, HIL stage S4) shares the board's record formats and arming states: the two
+# header-only, Pico-free files fw/hal/target/include/marv/hal_target/hil_format.hpp (with imu_log_format.hpp) and
+# fw/arming/include/marv/arming/arming.hpp. Only their include directories are added; no firmware object is linked for them.
+target_include_directories(marv_gz_lockstep PRIVATE "${PROJECT_SOURCE_DIR}/fw/hal/target/include"
+  "${PROJECT_SOURCE_DIR}/fw/arming/include")
+target_link_libraries(marv_gz_lockstep PRIVATE marv_prim marv_types)
 target_link_libraries(marv_gz_lockstep PRIVATE
   marv_gz_adapter marv_plant "${MARV_GZ_SIL}" "${MARV_GZ_PARAMS}_generated"
   gz-sim8::gz-sim8 gz-plugin2::register)

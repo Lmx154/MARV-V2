@@ -39,10 +39,18 @@ HELLO_MAGIC = b"MHHS"
 DSHOT_MAGIC = b"MHDS"
 ARRIVAL_MAGIC = b"MHMA"
 STATUS_MAGIC = b"MHST"
+RECEIVER_BOOT_MAGIC = b"MHRB"  # the receiver records of the MARV_FC3V2_HIL_RECEIVER image (HIL S4, hil_format.hpp)
+RECEIVER_FRAME_MAGIC = b"MHRF"
+RECEIVER_STATUS_MAGIC = b"MHRS"
 SAMPLE = struct.Struct("<QQ6fI")  # tick, t_us, gyro xyz, accel xyz, flags
 MANUAL = struct.Struct("<I4f16ff")  # frames, roll pitch yaw throttle, channels 1..16, link_quality
 DSHOT_ITEM = struct.Struct("<Q4HQ")  # tick, DShot motor 1..4, board_us
 ARRIVAL_ITEM = struct.Struct("<IIQ")  # frames, downlink seq, board t_us
+# frames, t_us, roll pitch yaw throttle, channels 1..16, link_quality, link_t_us, seen_us, missed
+RECEIVER_FRAME = struct.Struct("<IQ4f16ffQQI")
+RECEIVER_BOOT_FIELDS = ("baud_requested", "baud_actual", "irq_priority")
+RECEIVER_STATUS_FIELDS = ("rc_frames", "link_stats_frames", "skipped_frames", "bad_crc", "bad_length", "dropped_bytes",
+                          "uart_errors", "frames_sent", "frames_missed")
 # hil_format.hpp HelloField and StatusField, in order.
 HELLO_FIELDS = ("schema_hash_low", "schema_hash_high", "param_count", "param_values_crc", "tick_period_num_us", "tick_period_den",
                 "rate_loop_divisor", "max_batch", "deadline_us", "clk_sys_hz", "version_bytes")
@@ -86,6 +94,9 @@ class Uplink:
     arrivals: list[tuple[int, int, int]] = field(default_factory=list)  # frames, downlink seq, board t_us
     status: list[dict] = field(default_factory=list)
     status_reports_before: list[int] = field(default_factory=list)
+    receiver_boot: dict | None = None
+    receiver_frames: list[tuple] = field(default_factory=list)  # RECEIVER_FRAME tuples
+    receiver_status: list[dict] = field(default_factory=list)
     crc_failures: int = 0
     bad_headers: int = 0
     seq_gaps: int = 0
@@ -100,7 +111,8 @@ def parse_uplink(buf: bytes) -> Uplink:
     pos = start = 0
     seq_last: int | None = None
     text = bytearray()
-    magics = (HELLO_MAGIC, DSHOT_MAGIC, ARRIVAL_MAGIC, STATUS_MAGIC)
+    magics = (HELLO_MAGIC, DSHOT_MAGIC, ARRIVAL_MAGIC, STATUS_MAGIC, RECEIVER_BOOT_MAGIC, RECEIVER_FRAME_MAGIC,
+              RECEIVER_STATUS_MAGIC)
     while True:
         cand = [i for i in (buf.find(m, pos) for m in magics) if i >= 0]
         if not cand:
@@ -110,12 +122,13 @@ def parse_uplink(buf: bytes) -> Uplink:
             break
         magic, seq, count = HEADER.unpack_from(buf, i)
         legal = {HELLO_MAGIC: count >= len(HELLO_FIELDS), DSHOT_MAGIC: count >= 1, ARRIVAL_MAGIC: count == 1,
-                 STATUS_MAGIC: count == len(STATUS_FIELDS)}[magic]
+                 STATUS_MAGIC: count == len(STATUS_FIELDS), RECEIVER_BOOT_MAGIC: count == len(RECEIVER_BOOT_FIELDS),
+                 RECEIVER_FRAME_MAGIC: count == 1, RECEIVER_STATUS_MAGIC: count == len(RECEIVER_STATUS_FIELDS)}[magic]
         if not legal:
             r.bad_headers += 1
             pos = i + 1
             continue
-        item = {DSHOT_MAGIC: DSHOT_ITEM.size, ARRIVAL_MAGIC: ARRIVAL_ITEM.size}.get(magic, WORD)
+        item = {DSHOT_MAGIC: DSHOT_ITEM.size, ARRIVAL_MAGIC: ARRIVAL_ITEM.size, RECEIVER_FRAME_MAGIC: RECEIVER_FRAME.size}.get(magic, WORD)
         end = i + HEADER.size + count * item + WORD
         if end > n:
             break
@@ -143,6 +156,12 @@ def parse_uplink(buf: bytes) -> Uplink:
                 r.report_board_us.append(board_us)
         elif magic == ARRIVAL_MAGIC:
             r.arrivals.append(ARRIVAL_ITEM.unpack(body))
+        elif magic == RECEIVER_BOOT_MAGIC:
+            r.receiver_boot = dict(zip(RECEIVER_BOOT_FIELDS, struct.unpack(f"<{count}I", body)))
+        elif magic == RECEIVER_FRAME_MAGIC:
+            r.receiver_frames.append(RECEIVER_FRAME.unpack(body))
+        elif magic == RECEIVER_STATUS_MAGIC:
+            r.receiver_status.append(dict(zip(RECEIVER_STATUS_FIELDS, struct.unpack(f"<{count}I", body))))
         else:
             r.status.append(dict(zip(STATUS_FIELDS, struct.unpack(f"<{count}I", body))))
             r.status_reports_before.append(len(r.reports))

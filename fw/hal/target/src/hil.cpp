@@ -17,7 +17,8 @@
 // its deadline alarm (lsm6dsv.cpp, imu_start). It preempts this background loop at once (the pend is followed by a data
 // and an instruction barrier) and hands each queued sample, in order, to the sink, the call the flight IMU interrupt makes
 // (lsm6dsv.cpp deliver: g_sink(s)), then reads the rate counts as that interrupt does after a batch. USB keeps the SDK's
-// default priority (USBCTRL and the stdio worker), as in flight; the receiver interrupt is not started. The tick's
+// default priority (USBCTRL and the stdio worker), as in flight; the receiver interrupt is started only in the receiver
+// image (below), at its flight priority, strictly below the tick and above USB (receiver.cpp). The tick's
 // hal_actuators_write lands in hil_actuators_write (hal_target.cpp): the values go into the report ring with the tick
 // number of the sample being ticked, and this loop sends them once the record's ticks have run. The cycle counts are the
 // DWT CYCCNT at clk_sys (bench_stats.hpp: the register, its enable bits and the NOCYCCNT check).
@@ -29,6 +30,14 @@
 // lsm6dsv.cpp). The composition latches it and disarms (arming.hpp). D_HIL is the flight image's read deadline D = FIFO
 // depth / ODR (imu_read_deadline_us, core EMB-6), computed by main from the table's tick period: the longest the flight
 // image lets the composition go without a fresh sample before counting a miss.
+//
+// Receiver image (HilConfig::receiver, MARV_FC3V2_HIL_RECEIVER; HIL stage S4, decision 0046 item 4): main started the
+// receiver before the tick interrupt, so the receiver's UART interrupt is the one ManualControl writer and the tick the one
+// reader, the arrangement and priorities of the flight image (manual_control.hpp, receiver.cpp); a host manual-control record
+// is counted in ManualRefused and dropped, never published. This loop reads the receiver's counters through their seqlock
+// (receiver_stats(), as the flight console does) on every pass while the port is open and sends a receiver-frame record for
+// each change of the published ManualControl it sees, a receiver-boot record after each hello and a receiver-status record
+// after each status record (hil_format.hpp).
 //
 // Hello: on each port open the record names the image (version), the parameter table (kParamSchemaHash, count, the CRC of
 // its loaded values, the tick period, the rate divisor) and the link (batch limit, D_HIL, clk_sys), so the host can refuse
@@ -65,6 +74,7 @@
 #include "marv/hal/hal.hpp"
 #include "marv/hal_target/hil_format.hpp"
 #include "marv/hal_target/manual_control.hpp"
+#include "marv/hal_target/receiver.hpp"
 #include "marv/prim/constants.hpp"
 #include "marv/types/imu_sample.hpp"
 #include "marv/types/manual_control.hpp"
@@ -109,6 +119,8 @@ struct Counters {
   std::uint32_t reports = 0;
   std::uint32_t max_arrival_gap_us = 0;
   std::uint32_t max_send_us = 0;
+  std::uint32_t rx_frames_sent = 0;
+  std::uint32_t rx_frames_missed = 0;
 };
 
 struct Queued {
@@ -137,6 +149,9 @@ bool g_have_arrival = false;
 TimeUs g_last_arrival = 0;
 bool g_gap_counted = false;
 TimeUs g_status_due = 0;
+// Receiver image, background loop only: the published ManualControl last sent in a receiver-frame record.
+bool g_have_rx = false;
+ManualControl g_last_rx{};
 
 // Background loop to tick: the background loop writes a slot and then advances g_queue_head; the tick reads it and then
 // advances g_queue_tail.
@@ -317,6 +332,80 @@ void send_status() noexcept {
   send(std::span{g_up}.first(w.end()));
 }
 
+void send_receiver_boot() noexcept {
+  std::array<std::uint32_t, fmt::kReceiverBootFields> f{};
+  const auto at = [&f](fmt::ReceiverBootField k) -> std::uint32_t& { return f[static_cast<std::size_t>(k)]; };
+  at(fmt::ReceiverBootField::BaudRequested) = g_cfg.receiver_boot.baud_requested;
+  at(fmt::ReceiverBootField::BaudActual) = g_cfg.receiver_boot.baud_actual;
+  at(fmt::ReceiverBootField::IrqPriority) = g_cfg.receiver_boot.irq_priority;
+  std::array<std::uint8_t, fmt::record_bytes(fmt::kReceiverBootFields, fmt::base::kWordBytes)> buf{};
+  fmt::base::RecordWriter w{buf};
+  w.begin(fmt::kReceiverBootMagic, g_up_seq++, static_cast<std::uint32_t>(f.size()));
+  for (const std::uint32_t v : f) {
+    w.put_u32(v);
+  }
+  send(std::span{buf}.first(w.end()));
+}
+
+void send_receiver_status(const ReceiverStats& s) noexcept {
+  std::array<std::uint32_t, fmt::kReceiverStatusFields> f{};
+  const auto at = [&f](fmt::ReceiverStatusField k) -> std::uint32_t& { return f[static_cast<std::size_t>(k)]; };
+  at(fmt::ReceiverStatusField::RcFrames) = s.counters.rc_frames;
+  at(fmt::ReceiverStatusField::LinkStatsFrames) = s.counters.link_stats_frames;
+  at(fmt::ReceiverStatusField::SkippedFrames) = s.counters.skipped_frames;
+  at(fmt::ReceiverStatusField::BadCrc) = s.counters.bad_crc;
+  at(fmt::ReceiverStatusField::BadLength) = s.counters.bad_length;
+  at(fmt::ReceiverStatusField::DroppedBytes) = s.counters.dropped_bytes;
+  at(fmt::ReceiverStatusField::UartErrors) = s.uart_errors;
+  at(fmt::ReceiverStatusField::FramesSent) = g_c.rx_frames_sent;
+  at(fmt::ReceiverStatusField::FramesMissed) = g_c.rx_frames_missed;
+  std::array<std::uint8_t, fmt::record_bytes(fmt::kReceiverStatusFields, fmt::base::kWordBytes)> buf{};
+  fmt::base::RecordWriter w{buf};
+  w.begin(fmt::kReceiverStatusMagic, g_up_seq++, static_cast<std::uint32_t>(f.size()));
+  for (const std::uint32_t v : f) {
+    w.put_u32(v);
+  }
+  send(std::span{buf}.first(w.end()));
+}
+
+// A receiver-frame record when the published ManualControl differs from the one last sent (a new RC frame moves frames and
+// t_us, a link-statistics frame link_t_us).
+void poll_receiver() noexcept {
+  const ReceiverStats s = receiver_stats();
+  const ManualControl& m = s.last;
+  if (m.frames == 0 && m.link_t_us == 0) {
+    return;
+  }
+  if (g_have_rx && m.frames == g_last_rx.frames && m.t_us == g_last_rx.t_us && m.link_t_us == g_last_rx.link_t_us) {
+    return;
+  }
+  const TimeUs seen_us = hal_time_us();
+  std::uint32_t missed = 0;
+  if (g_have_rx && m.frames != g_last_rx.frames && m.frames - g_last_rx.frames > 1) {
+    missed = m.frames - g_last_rx.frames - 1;
+  }
+  g_have_rx = true;
+  g_last_rx = m;
+  ++g_c.rx_frames_sent;
+  g_c.rx_frames_missed += missed;
+  std::array<std::uint8_t, fmt::record_bytes(1, fmt::kReceiverFrameBytes)> buf{};
+  fmt::base::RecordWriter w{buf};
+  w.begin(fmt::kReceiverFrameMagic, g_up_seq++, 1);
+  w.put_u32(m.frames);
+  w.put_u64(m.t_us);
+  for (const float v : {m.roll, m.pitch, m.yaw, m.throttle}) {
+    w.put_f32(v);
+  }
+  for (const float c : m.channels) {
+    w.put_f32(c);
+  }
+  w.put_f32(m.link_quality);
+  w.put_u64(m.link_t_us);
+  w.put_u64(seen_us);
+  w.put_u32(missed);
+  send(std::span{buf}.first(w.end()));
+}
+
 bool in_range(float v, float lo) noexcept { return std::isfinite(v) && v >= lo && v <= 1.0F; }
 
 bool manual_valid(const ManualControl& m) noexcept {
@@ -342,6 +431,10 @@ void sequence(const std::uint8_t* p) noexcept {
 }
 
 void accept_manual(const std::uint8_t* p, TimeUs rx_us) noexcept {
+  if (g_cfg.receiver) {
+    ++g_c.manual_refused;
+    return;
+  }
   const std::uint8_t* q = p + fmt::base::kHeaderBytes;
   ManualControl m{};
   m.frames = get_u32(q);
@@ -494,7 +587,11 @@ void hil_connect() noexcept {
   g_down_seq = 0;
   g_up_seq = 0;
   g_status_due = hal_time_us() + kStatusPeriodUs;
+  g_have_rx = false;
   send_hello();
+  if (g_cfg.receiver) {
+    send_receiver_boot();
+  }
 }
 
 void hil_service(bool connected) noexcept {
@@ -513,9 +610,15 @@ void hil_service(bool connected) noexcept {
   }
   check_deadline(hal_time_us());
   send_reports();
+  if (connected && g_cfg.receiver) {
+    poll_receiver();
+  }
   if (connected && hal_time_us() >= g_status_due) {
     g_status_due += kStatusPeriodUs;
     send_status();
+    if (g_cfg.receiver) {
+      send_receiver_status(receiver_stats());
+    }
   }
 }
 

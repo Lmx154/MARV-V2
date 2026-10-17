@@ -28,10 +28,14 @@
 // frame's. The law runs on every rate tick, which is its period only when att_loop_ratio is 1 (the product set's value); init panics otherwise. The
 // law's faults and timing faults are counted (attitude_counts).
 //
-// Collective thrust. T = T_min + throttle * (T_max - T_min), linear in collective thrust between the mixer's own limits
-// (lead decision, M2 P4), with T_min = sum over the motors of k omega_idle^2 and T_max = sum of k omega_max^2, k the
-// mixer's rotor thrust coefficient (mixer::f_min and f_max, per motor): derived from the mixer configuration, no new
-// tunable. The throttle is clamped to [0, 1] and the sticks to [-1, 1]; a value that is not finite is 0.
+// Collective thrust. The throttle stick is linear in rotor speed between the mixer's own limits: T = (sqrt(T_min) +
+// throttle * (sqrt(T_max) - sqrt(T_min)))^2, which is 4 k (omega_idle + throttle * (omega_max - omega_idle))^2, with
+// T_min = sum over the motors of k omega_idle^2 and T_max = sum of k omega_max^2, k the mixer's rotor thrust coefficient
+// (mixer::f_min and f_max, per motor): derived from the mixer configuration, no new tunable. This is Betaflight's
+// throttle to motor output map (4.5.1 default thr_mid 50, thr_expo 0: the stick reaches the motor output linearly; the
+// ESC then maps the output linearly to rotor speed, as the plant and the mixer assume; INFERRED reference, decision 0052,
+// Luis 2026-10-17, replacing the thrust-linear map of M2 P4). The two square roots are taken once, at init. The throttle
+// is clamped to [0, 1] and the sticks to [-1, 1]; a value that is not finite is 0.
 //
 // The motor output gate is the only place that decides the values passed to hal_actuators_write. It has three states.
 // Disarmed: it writes DshotValue::stop() to every motor and never the mixer's output (the mixer's floor is the idle
@@ -125,8 +129,8 @@ std::int64_t g_rate_den = 0;
 Tick g_n = 0;
 arming::Arming<float> g_arming;
 stick_rates::RatesConfig<float> g_rates;
-float g_thrust_min = 0.0F;  // T_min, N
-float g_thrust_max = 0.0F;  // T_max, N
+float g_thrust_root_min = 0.0F;  // sqrt(T_min), sqrt(N)
+float g_thrust_root_max = 0.0F;  // sqrt(T_max), sqrt(N)
 std::size_t g_arm_channel = 0;  // index into ManualControl::channels (rc_channel_arm - 1)
 bool g_angle_switch = false;    // rc_channel_angle is not 0
 std::size_t g_angle_channel = 0;  // index into ManualControl::channels (rc_channel_angle - 1), when g_angle_switch
@@ -421,8 +425,8 @@ void init() noexcept {
   g_tilt_xy2.store(0.0F, std::memory_order_relaxed);
   g_tilt_wz2.store(1.0F, std::memory_order_relaxed);
   g_estimator_valid.store(false, std::memory_order_relaxed);
-  g_thrust_min = static_cast<float>(kMotors) * mixer::f_min(mixer_cfg);
-  g_thrust_max = static_cast<float>(kMotors) * mixer::f_max(mixer_cfg);
+  g_thrust_root_min = std::sqrt(static_cast<float>(kMotors) * mixer::f_min(mixer_cfg));
+  g_thrust_root_max = std::sqrt(static_cast<float>(kMotors) * mixer::f_max(mixer_cfg));
   g_imu_invalid = false;
   g_imu_saturated = false;
   g_arming_state.store(static_cast<std::uint8_t>(arming::ArmState::Boot), std::memory_order_relaxed);
@@ -508,7 +512,8 @@ void tick(const ImuSample& raw) noexcept {
       g_airmode_active = true;
     }
     throttle_low = throttle < g_throttle_min && !g_airmode_active;
-    thrust = g_thrust_min + throttle * (g_thrust_max - g_thrust_min);
+    const float thrust_root = g_thrust_root_min + throttle * (g_thrust_root_max - g_thrust_root_min);
+    thrust = thrust_root * thrust_root;
     angle_run = g_angle_switch && mc.channels[g_angle_channel] >= g_angle_threshold;
     if (angle_run) {
       if (!g_angle_running) {
