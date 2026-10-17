@@ -56,16 +56,39 @@ if(MARV_FC3V2_IMU_LOG)
   target_include_directories(marv_hal_target SYSTEM PRIVATE
     $<TARGET_PROPERTY:pico_stdio_headers,INTERFACE_INCLUDE_DIRECTORIES>)
 endif()
-add_executable(marv_fc3v2 src/main.cpp)
+# MARV_FC3V2_HIL_LINK (bench only, default OFF, HIL stage S1): the image is the USB CDC link measurement alone
+# (src/hil_link_main.cpp, hil_link.cpp, hil_link_format.hpp; tools/target/hil_link.py is the host side). It starts no IMU,
+# composition tick, receiver or motor output: the DShot PIO program is never loaded and the motor pads are never driven,
+# not even with stop frames (decision 0046). MARV_FC3V2_HIL_LINK_MAX_BATCH is the largest downlink record the image accepts,
+# in samples: the largest batch size the S1 runs use (a scenario value, not a flight parameter). Mutually exclusive with
+# every other bench variant.
+option(MARV_FC3V2_HIL_LINK "FC3v2 bench image that measures the USB CDC link in both directions; no flight code runs" OFF)
+set(MARV_FC3V2_HIL_LINK_MAX_BATCH 16 CACHE STRING "Largest downlink record of the HIL link image, in samples (scenario value: the largest S1 batch)")
+if(MARV_FC3V2_HIL_LINK AND (MARV_FC3V2_COUNT_ONLY OR MARV_FC3V2_BENCH_STATS OR MARV_FC3V2_IMU_LOG OR MARV_FC3V2_BENCH_ACCEPT_SPACING))
+  message(FATAL_ERROR "MARV_FC3V2_HIL_LINK excludes MARV_FC3V2_COUNT_ONLY, MARV_FC3V2_BENCH_STATS, MARV_FC3V2_IMU_LOG and MARV_FC3V2_BENCH_ACCEPT_SPACING")
+endif()
+if(MARV_FC3V2_HIL_LINK)
+  target_sources(marv_hal_target PRIVATE src/hil_link.cpp)
+  target_compile_definitions(marv_hal_target PRIVATE MARV_FC3V2_HIL_LINK MARV_FC3V2_HIL_LINK_MAX_BATCH=${MARV_FC3V2_HIL_LINK_MAX_BATCH})
+  target_include_directories(marv_hal_target SYSTEM PRIVATE
+    $<TARGET_PROPERTY:pico_stdio_headers,INTERFACE_INCLUDE_DIRECTORIES>)
+  add_executable(marv_fc3v2 src/hil_link_main.cpp)
+else()
+  add_executable(marv_fc3v2 src/main.cpp)
+endif()
 # Programmed to flash; the boot copies the whole image to SRAM and runs it there (core §4.1 EMB-1). Measured with code
 # executing from XIP flash the IMU interrupt failed EMB-3 (M1 P12a, tests/regression/quad/L09/results/p12_bench/).
 pico_set_binary_type(marv_fc3v2 copy_to_ram)
 target_compile_definitions(marv_fc3v2 PRIVATE MARV_FC3V2_VERSION="${MARV_FC3V2_VERSION}"
   $<$<BOOL:${MARV_FC3V2_COUNT_ONLY}>:MARV_FC3V2_COUNT_ONLY>
   $<$<BOOL:${MARV_FC3V2_BENCH_ACCEPT_SPACING}>:MARV_FC3V2_BENCH_ACCEPT_SPACING>)
-target_link_libraries(marv_fc3v2 PRIVATE
-  marv_composition_quad_fc marv_hal_target marv_lsm6dsv_decode marv_console_decode marv_params_fc3v2_generated marv_params_fc3v2_runtime
-  pico_stdlib hardware_spi hardware_pio hardware_uart)
+if(MARV_FC3V2_HIL_LINK)
+  target_link_libraries(marv_fc3v2 PRIVATE marv_hal_target marv_lsm6dsv_decode pico_stdlib hardware_spi hardware_pio hardware_uart)
+else()
+  target_link_libraries(marv_fc3v2 PRIVATE
+    marv_composition_quad_fc marv_hal_target marv_lsm6dsv_decode marv_console_decode marv_params_fc3v2_generated marv_params_fc3v2_runtime
+    pico_stdlib hardware_spi hardware_pio hardware_uart)
+endif()
 pico_enable_stdio_usb(marv_fc3v2 1)
 pico_enable_stdio_uart(marv_fc3v2 0)
 marv_apply_flags(marv_fc3v2 FIRMWARE)
