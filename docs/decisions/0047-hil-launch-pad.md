@@ -9,7 +9,9 @@ force including gravity) for the rotor state the tick's IMU sample sees, so the 
 reaches the weight); afterwards the contact force is exactly 0 and the hold never re-engages. Worlds without the element
 are byte-identical. The run report states "launch pad hold until tick k; not ground contact; no landing" and that the
 pad resists torques and lateral forces. The L10 plumbing test drops its estimator_accel_healthy_min = 0 and accel-bias
-workaround. No frozen test changes.
+workaround. Frozen tests extended, nothing loosened: `tests/regression/quad/L06/adapter/clock_test.cpp` (the held IMU
+reads R^T(0, 0, −g(h)) for any rotor state, release on the stated rule, bitwise pad-free behaviour after release and
+without the option) and `tests/regression/quad/L02/tools/test_run_scenario.py` (the log reader and the run-report line).
 
 ## Why
 
