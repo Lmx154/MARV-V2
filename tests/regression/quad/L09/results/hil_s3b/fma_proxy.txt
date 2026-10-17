@@ -1,0 +1,26 @@
+s3b_ref_sticks.npz (wt-hil-s3b/build/host-debug/sim/quad_fc/libmarv_sil_quad_fc.so) against s3b_fma_sticks.npz (s3b_fma/build/host-release/sim/quad_fc/libmarv_sil_quad_fc.so), scenario sticks
+rate ticks: reference 31860, board reports compared 31860, missing on the board 0, extra 0, duplicate ticks 0
+DShot values equal: 125703 of 127440 (98.6370 %); rate ticks with all four motors equal: 30312 of 31860; max |difference| 1 counts
+rate ticks by their largest |difference|: 0: 30312, 1: 1548
+first mismatch at tick 42002
+  tick  41998   reference (1286, 1338, 1346, 1277)  board (1286, 1338, 1346, 1277)
+  tick  42000   reference (1286, 1338, 1347, 1277)  board (1286, 1338, 1347, 1277)
+  tick  42002 < reference (1286, 1339, 1346, 1277)  board (1286, 1338, 1346, 1277)
+  tick  42004   reference (1286, 1338, 1347, 1277)  board (1286, 1339, 1347, 1277)
+  tick  42006   reference (1285, 1338, 1347, 1277)  board (1285, 1338, 1347, 1277)
+reference transitions: 22560 armed, 60060 stopped
+board transitions:     22560 armed, 60060 stopped
+
+s3b_ref_motion.npz (wt-hil-s3b/build/host-debug/sim/quad_fc/libmarv_sil_quad_fc.so) against s3b_fma_motion.npz (s3b_fma/build/host-release/sim/quad_fc/libmarv_sil_quad_fc.so), scenario motion
+rate ticks: reference 31860, board reports compared 31860, missing on the board 0, extra 0, duplicate ticks 0
+DShot values equal: 125243 of 127440 (98.2761 %); rate ticks with all four motors equal: 29768 of 31860; max |difference| 1 counts
+rate ticks by their largest |difference|: 0: 29768, 1: 2092
+first mismatch at tick 22562
+  tick  22558   reference (0, 0, 0, 0)  board (0, 0, 0, 0)
+  tick  22560   reference (48, 48, 48, 48)  board (48, 48, 48, 48)
+  tick  22562 < reference (48, 57, 66, 62)  board (48, 57, 66, 63)
+  tick  22564   reference (48, 60, 75, 68)  board (48, 60, 75, 68)
+  tick  22566   reference (48, 62, 80, 72)  board (48, 62, 80, 72)
+reference transitions: 22560 armed, 60060 stopped
+board transitions:     22560 armed, 60060 stopped
+
