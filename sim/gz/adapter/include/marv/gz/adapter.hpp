@@ -38,10 +38,24 @@
 // DShot 0 -> commanded rotor speed 0, marv_plant.h; "no command yet"). The source's own command of tick j is TickOutput::dshot
 // (what the SIL issued, the quantity a HIL run records); the command the plant was stepped with is TickOutput::dshot_applied.
 // The source and its sample (the IMU and rotor-speed samples above) are unchanged: only the actuation is late.
+//
+// Opt-in launch pad (AdapterConfig::launch_pad, decision 0047; false, the default, leaves every output as without it). Until
+// its release the body is held: at each tick j the contact force of marv_plant_contact_set is set to -F, F the plant's total
+// force NED including gravity (marv_plant_out::force_ned_n) for the rotor state the tick's IMU sample sees (the state after
+// step j - 1, the initial state at tick 0) and the tick's body, so the IMU's specific force is R^T (0, 0, -g(h)) whatever the
+// rotors do; the held ticks add nothing to W_bar (the pad balances the whole wrench, forces and torques). F is read by a probe:
+// marv_plant_step with all four DShot 0 and dt = the smallest positive normal double, for which the motor update
+// omega <- 0 + (omega - 0) exp(-dt / tau) leaves omega bitwise unchanged (exp gives exactly 1), so the rotor state is the same
+// before and after; only the rotor angle moves, by omega dt, below the resolution of any angle but 0 (and 0 becomes about
+// 1e-305 rad). Release is the first tick on which the contact force's NED-down component -F_z is >= 0 (the pad would pull:
+// the vertical thrust has reached the weight): from that tick on the contact force is exactly 0 (set once), the tick's
+// wrench counts in W_bar, and the hold never re-engages. TickOutput::pad_held is true on a held tick; release_tick() is the
+// first free tick. This is not ground contact: no ground, collision or landing.
 
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -151,6 +165,7 @@ struct TickOutput {
   marv_plant_imu_out imu{};  // the sample of this tick; zero unless the IMU path is enabled
   marv_plant_rotor_speed_out rotor_speed{};  // the rotor-speed sample of this tick; zero unless that path is enabled
   marv_plant_out out{};  // as marv_plant_step returned it, NED
+  bool pad_held = false;  // the launch pad held the body at this tick (decision 0047); its wrench is not in W_bar
   Wrench wrench_enu{};   // W_j
 };
 
@@ -176,6 +191,9 @@ struct AdapterConfig {
   double t_tick_true_s = 0.0;
   // N, the command delay in ticks (above); 0 is none. Above kMaxCommandDelayTicks step() does nothing and returns kBadDelay.
   std::uint32_t command_delay_ticks = 0;
+  // The launch pad above (decision 0047). The IMU path is the pad's purpose (the contact force reaches only the IMU's specific
+  // force) but not a precondition.
+  bool launch_pad = false;
 };
 
 class Adapter {
@@ -195,6 +213,10 @@ class Adapter {
   marv_plant_status rotor_speed_attach_status() const { return rotor_speed_attach_status_; }  // OK when it is off
 
   std::uint32_t command_delay_ticks() const { return delay_; }
+  bool launch_pad() const { return pad_; }
+  // The first tick the pad no longer held (its contact force and the held wrench are gone from that tick on); empty while the
+  // pad holds, and without the pad.
+  std::optional<std::uint64_t> release_tick() const { return release_tick_; }
 
   // m >= 1 else kZeroTicks with nothing done; a command delay above kMaxCommandDelayTicks is kBadDelay, nothing done. A failed IMU or rotor-speed attach is kPlant with that status
   // (the IMU's first), nothing done. On a
@@ -212,6 +234,8 @@ class Adapter {
   std::uint32_t delay_ = 0;
   std::vector<Dshot> delay_line_;  // delay_ commands, oldest at delay_head_; empty when delay_ is 0 or refused
   std::size_t delay_head_ = 0;
+  bool pad_ = false;
+  std::optional<std::uint64_t> release_tick_;
 };
 
 }  // namespace marv::gz

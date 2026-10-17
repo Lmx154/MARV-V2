@@ -57,6 +57,16 @@
       }
     },
     {
+      "name": "host-gz-quadfc",
+      "inherits": "host-gz",
+      "displayName": "Host, Debug, gz-sim 8 plugin on the quad_fc composition (the FC3v2 parameter set)",
+      "binaryDir": "${sourceDir}/build/host-gz-quadfc",
+      "cacheVariables": {
+        "MARV_GZ_SIL": "marv_sil_quad_fc",
+        "MARV_GZ_PARAMS": "marv_params_fc3v2"
+      }
+    },
+    {
       "name": "host-gz-l11",
       "inherits": "host-gz",
       "displayName": "Host, Debug, gz-sim 8 plugin on the l11_vertical_scripted composition",
@@ -106,6 +116,7 @@
     { "name": "host-gz-l4", "configurePreset": "host-gz-l4" },
     { "name": "host-gz-l5", "configurePreset": "host-gz-l5" },
     { "name": "host-gz-l7", "configurePreset": "host-gz-l7" },
+    { "name": "host-gz-quadfc", "configurePreset": "host-gz-quadfc" },
     { "name": "host-gz-l11", "configurePreset": "host-gz-l11" },
     { "name": "host-gz-release", "configurePreset": "host-gz-release" },
     { "name": "m33", "configurePreset": "m33" }

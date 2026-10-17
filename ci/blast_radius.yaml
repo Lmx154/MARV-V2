@@ -23,7 +23,8 @@
 # (including none) and a trailing `**` matches the rest of the path.
 #
 # Identifiers:
-#   ctest_labels   L00 L01 L02 L03 L04 L05 L06 L07 L11 (one per tests/regression/quad/Lnn directory).
+#   ctest_labels   L00 L01 L02 L03 L04 L05 L06 L07 L08 L09 L11 (one per tests/regression/quad/Lnn directory that has a CMakeLists.txt, i.e.
+#                  ctest entries; L10 holds a gz pytest only).
 #   run_ci_steps   the function name passed to `step` in ci/run_ci.sh; host_preset is split by argument
 #                  (host_preset:host-debug, host_preset:host-release). `uv sync --frozen` always runs and is not selectable.
 #                  An entry `@name` expands the named list under step_groups.
@@ -306,8 +307,8 @@ rules:
     ctest_labels: [L08, L09]
     run_ci_steps: ["@host"]
     pytest_paths: []
-    gz_groups: []
-    why: "arming is the pure arming and failsafe machine, tested by the L08 unit_arming host test and linked by the quad_fc composition (the L09 gate test)"
+    gz_groups: [l7]
+    why: "arming is the pure arming and failsafe machine, tested by the L08 unit_arming host test and linked by the quad_fc composition (the L09 gate test, and the L10 plumbing test in gz group l7)"
 
   - paths: [fw/estimator/**]
     ctest_labels: [L07, L09]
@@ -327,8 +328,8 @@ rules:
     ctest_labels: [L08, L09]
     run_ci_steps: ["@host"]
     pytest_paths: []
-    gz_groups: []
-    why: "stick_rates (the QF-1 rates curve) is linked by the L08 unit test and by the quad_fc composition (the L09 gate test)"
+    gz_groups: [l7]
+    why: "stick_rates (the QF-1 rates curve) is linked by the L08 unit test and by the quad_fc composition (the L09 gate test, and the L10 plumbing test in gz group l7)"
 
   - paths: [fw/vertical/**]
     ctest_labels: [L11]
@@ -455,8 +456,8 @@ rules:
     ctest_labels: [L09]
     run_ci_steps: ["@sil_gates"]
     pytest_paths: []
-    gz_groups: []
-    why: "the SIL library marv_sil_quad_fc (the flight composition with the FC3v2 set and the staged ManualControl, HIL S2c) is linked by the L09 SIL test only; no gz group loads it yet"
+    gz_groups: [l7]
+    why: "the SIL library marv_sil_quad_fc (the flight composition with the FC3v2 set and the staged ManualControl, HIL S2c) is linked by the L09 SIL test and is the plugin of host-gz-quadfc (the L10 plumbing test, gz group l7)"
 
   # ---------------------------------------------------------------- tools
   - paths: [tools/card/**]
@@ -644,8 +645,8 @@ rules:
     ctest_labels: [L06]
     run_ci_steps: ["@host", tools_tests]
     pytest_paths: [tests/regression/quad/L05/tools, tests/regression/quad/L06/tools]
-    gz_groups: [l2, l4]
-    why: "the L02 scenarios are read by the L02 gz and tools tests, L04 truth_gyro, L05 and L06 tools tests and the L06 dshot test"
+    gz_groups: [l2, l4, l7]
+    why: "the L02 scenarios are read by the L02 gz and tools tests, L04 truth_gyro, L05 and L06 tools tests, the L06 dshot test and the L10 quad_fc plumbing test (gz group l7, hover world)"
 
   - paths: [scenarios/quad/L04/**]
     ctest_labels: [L04, L05, L06]
@@ -1097,6 +1098,13 @@ rules:
     pytest_paths: []
     gz_groups: [l7]
     why: "the L07 gz tests run in gz group l7 on the host-gz-l7 build; l7_gz.py is also imported by the measurement record under results/hover_kick"
+
+  - paths: [tests/regression/quad/L10/gz/**]
+    ctest_labels: []
+    run_ci_steps: []
+    pytest_paths: []
+    gz_groups: [l7]
+    why: "the L10 quad_fc plumbing test (a stick script staged into marv_sil_quad_fc by the plugin of host-gz-quadfc) runs in gz group l7"
 
   - paths: [tests/regression/quad/L11/gz/**, tests/regression/quad/L11/i1/**]
     ctest_labels: []

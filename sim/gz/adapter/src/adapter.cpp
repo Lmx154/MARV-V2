@@ -1,5 +1,6 @@
 #include "marv/gz/adapter.hpp"
 
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <limits>
@@ -86,7 +87,7 @@ bool ImuSilCommandSource::dshot(std::uint64_t tick, const marv_imu_meas* imu, Ds
 }
 
 Adapter::Adapter(marv_plant* plant, CommandSource& source, double t_tick_s)
-    : Adapter(plant, source, AdapterConfig{t_tick_s, 0, 0.0, nullptr, nullptr, 0.0, 0}) {}
+    : Adapter(plant, source, AdapterConfig{t_tick_s, 0, 0.0, nullptr, nullptr, 0.0, 0, false}) {}
 
 Adapter::Adapter(marv_plant* plant, CommandSource& source, const AdapterConfig& cfg)
     : plant_(plant),
@@ -95,6 +96,7 @@ Adapter::Adapter(marv_plant* plant, CommandSource& source, const AdapterConfig& 
                     ? cfg.t_tick_true_s
                     : true_tick_period_s(cfg.t_tick_nominal_s, clock_error(cfg.clock_corner, cfg.odr_error))) {
   delay_ = cfg.command_delay_ticks;
+  pad_ = cfg.launch_pad;
   if (delay_ > 0 && delay_ <= kMaxCommandDelayTicks) {
     delay_line_.assign(delay_, Dshot{});
   }
@@ -132,10 +134,34 @@ StepResult Adapter::step(const marv_plant_body& body, std::uint64_t first_tick, 
   }
   r.ticks.reserve(m);
   Wrench sum{};
+  bool have_sum = false;
   for (std::uint32_t i = 0; i < m; ++i) {
     TickOutput t;
     t.tick = first_tick + i;
     bool got = false;
+    if (pad_ && !release_tick_) {
+      // The probe of the header comment: the total force for the rotor state this tick's IMU sample sees.
+      marv_plant_cmd stop{};
+      stop.struct_size = sizeof(stop);
+      marv_plant_out probe{};
+      probe.struct_size = sizeof(probe);
+      marv_plant_status ps = marv_plant_step(plant_, &body, &stop, std::numeric_limits<double>::min(), &probe);
+      std::array<double, 3> contact{-probe.force_ned_n[0], -probe.force_ned_n[1], -probe.force_ned_n[2]};
+      if (ps == MARV_PLANT_OK && contact[2] >= 0.0) {
+        contact = {0.0, 0.0, 0.0};
+        release_tick_ = t.tick;
+      } else {
+        t.pad_held = true;
+      }
+      if (ps == MARV_PLANT_OK) {
+        ps = marv_plant_contact_set(plant_, contact.data());
+      }
+      if (ps != MARV_PLANT_OK) {
+        r.status = Status::kPlant;
+        r.plant_status = ps;
+        return r;
+      }
+    }
     if (imu_enabled_) {
       const marv_plant_status is = marv_plant_imu_sample(plant_, &body, t_tick_s_, &t.imu);
       if (is != MARV_PLANT_OK) {
@@ -185,8 +211,11 @@ StepResult Adapter::step(const marv_plant_body& body, std::uint64_t first_tick, 
     }
     t.wrench_enu = wrench_ned_to_enu({t.out.force_ned_n[0], t.out.force_ned_n[1], t.out.force_ned_n[2]},
                                      {t.out.torque_ned_nm[0], t.out.torque_ned_nm[1], t.out.torque_ned_nm[2]});
-    if (i == 0) {
+    if (t.pad_held) {
+      // The pad balances this tick's wrench: nothing reaches the body.
+    } else if (!have_sum) {
       sum = t.wrench_enu;
+      have_sum = true;
     } else {
       for (std::size_t c = 0; c < 3; ++c) {
         sum.force[c] += t.wrench_enu.force[c];

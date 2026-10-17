@@ -107,7 +107,7 @@ def repo_universe(root: Path = ROOT) -> dict:
     """Everything a full selection holds, read from the repository."""
     steps = parse_steps((root / "ci" / "run_ci.sh").read_text())
     quad = root / "tests" / "regression" / "quad"
-    labels = sorted(p.name for p in quad.glob("L[0-9][0-9]") if p.is_dir())
+    labels = sorted(p.name for p in quad.glob("L[0-9][0-9]") if (p / "CMakeLists.txt").is_file())  # a layer with ctest entries
     nightly = re.search(r"^nightly_tools_tests=\(\n(.*?)^\)", (root / "ci" / "run_ci.sh").read_text(), re.M | re.S)
     return {
         "nightly_pytest_files": sorted(re.findall(r"^\s*(tests/\S+\.py)", nightly.group(1), re.M)) if nightly else [],

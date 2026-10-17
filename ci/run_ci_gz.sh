@@ -225,6 +225,19 @@ gz_l7() {
   pytest_gz_dir tests/regression/quad/L07/gz
 }
 
+# The quad_fc plugin (HIL S2d-2a, decision 0046 stage S2): the same plugin source on the flight composition (MARV_GZ_SIL =
+# marv_sil_quad_fc with marv_params_fc3v2). It runs in group l7 (one more build there, no new Actions job).
+gz_build_quadfc() {
+  uv sync --frozen || return 1
+  cmake --preset host-gz-quadfc && cmake --build --preset host-gz-quadfc
+}
+
+# The stick-script plumbing: a <manual_control_script> staged into marv_sil_quad_fc arms the composition on the UZH hover world,
+# and its controls and planted refusals, on the host-gz-quadfc build.
+gz_quadfc() {
+  pytest_gz_dir tests/regression/quad/L10/gz
+}
+
 # The L11 plugin: the same plugin source on the l11_vertical_scripted composition (MARV_GZ_SIL =
 # marv_sil_l11_vertical_scripted, a TRUTH_STATE and TRUTH_VERTICAL library), decision 0020 section 5 "CI cost".
 gz_build_l11() {
@@ -277,6 +290,8 @@ group_l5() {
 group_l7() {
   step gz_build_l7 gz_build_l7
   step gz_l7 gz_l7
+  step gz_build_quadfc gz_build_quadfc
+  step gz_quadfc gz_quadfc
 }
 
 group_l11() {
