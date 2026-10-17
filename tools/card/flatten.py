@@ -311,7 +311,7 @@ def main(argv=None):
                 try:
                     today = attitude.design(card, budget, scenario_doc, args.card, lead["pi_l4"])
                 except gpc.GenError as e:
-                    today = "; ".join(e.lines)  # the report's comparison column only; the flight rule below is unaffected
+                    today = "; ".join(e.lines).replace(str(args.card), where)  # the report's comparison column only; the flight rule below is unaffected
                 att = attitude_lead.design(card, budget, scenario_doc, args.card, attitude_lead.lead_inner(lead),
                                            lead["pi_l4"])
                 lead_attitude_entries = attitude_lead.entries_from(att)
