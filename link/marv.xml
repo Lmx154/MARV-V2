@@ -172,7 +172,8 @@
       <field type="char[64]" name="source_chunk">The first chunk of the source text (UTF-8, no null terminator).</field>
     </message>
     <message id="15202" name="MARV_PARAM_SOURCE">
-      <description>Read or stage the source text of one parameter in chunks (core section 8 IF-5).</description>
+      <description>Read or stage the source text of one parameter in chunks (core section 8 IF-5). Every operation names the parameter schema it refers to; a SET whose hash is not the image's kParamSchemaHash is refused.</description>
+      <field type="uint64_t" name="param_schema_hash">The parameter schema hash (kParamSchemaHash) the sender means: the GCS's in a READ and a SET, the image's in a DATA.</field>
       <field type="uint16_t" name="param_index">Parameter id.</field>
       <field type="uint16_t" name="offset" units="bytes">Offset of the chunk in the source text.</field>
       <field type="uint16_t" name="total_length" units="bytes">Length of the whole source text.</field>
@@ -183,7 +184,8 @@
       <field type="char[64]" name="chunk">The chunk (UTF-8, no null terminator).</field>
     </message>
     <message id="15203" name="MARV_CONFIG_COMMAND">
-      <description>A config command (core section 8 IF-11): activate the staged config, revert to the last good config, or reset to the factory table. Accepted only while disarmed, over USB.</description>
+      <description>A config command (core section 8 IF-11): activate the staged config, revert to the last good config, or reset to the factory table. Accepted only while disarmed, over USB. The command names the parameter schema it was prepared for; a hash that is not the image's kParamSchemaHash is refused.</description>
+      <field type="uint64_t" name="param_schema_hash">The parameter schema hash (kParamSchemaHash) the GCS prepared the staged config for.</field>
       <field type="uint8_t[32]" name="report_id">The validation report id of the staged config (ACTIVATE); all zero otherwise.</field>
       <field type="uint8_t[32]" name="expected_config_sha256">The config hash the GCS expects the staged config to have (ACTIVATE); all zero otherwise.</field>
       <field type="uint8_t" name="target_system">System ID.</field>

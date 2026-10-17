@@ -215,6 +215,7 @@ export interface MarvParamRecord {
 }
 
 export interface MarvParamSource {
+	param_schema_hash: bigint;
 	param_index: number;
 	offset: number;
 	total_length: number;
@@ -226,6 +227,7 @@ export interface MarvParamSource {
 }
 
 export interface MarvConfigCommand {
+	param_schema_hash: bigint;
 	report_id: Uint8Array;
 	expected_config_sha256: Uint8Array;
 	target_system: number;
@@ -447,33 +449,35 @@ export const MESSAGES: MessageInfo[] = [
 		kind: 'MarvParamSource',
 		name: 'MARV_PARAM_SOURCE',
 		id: 15202,
-		crcExtra: 27,
-		minLength: 74,
-		maxLength: 74,
+		crcExtra: 82,
+		minLength: 82,
+		maxLength: 82,
 		fields: [
-			{ name: 'param_index', type: 'u16', length: 0, offset: 0 },
-			{ name: 'offset', type: 'u16', length: 0, offset: 2 },
-			{ name: 'total_length', type: 'u16', length: 0, offset: 4 },
-			{ name: 'target_system', type: 'u8', length: 0, offset: 6 },
-			{ name: 'target_component', type: 'u8', length: 0, offset: 7 },
-			{ name: 'operation', type: 'u8', length: 0, offset: 8 },
-			{ name: 'chunk_length', type: 'u8', length: 0, offset: 9 },
-			{ name: 'chunk', type: 'u8', length: 64, offset: 10 },
+			{ name: 'param_schema_hash', type: 'u64', length: 0, offset: 0 },
+			{ name: 'param_index', type: 'u16', length: 0, offset: 8 },
+			{ name: 'offset', type: 'u16', length: 0, offset: 10 },
+			{ name: 'total_length', type: 'u16', length: 0, offset: 12 },
+			{ name: 'target_system', type: 'u8', length: 0, offset: 14 },
+			{ name: 'target_component', type: 'u8', length: 0, offset: 15 },
+			{ name: 'operation', type: 'u8', length: 0, offset: 16 },
+			{ name: 'chunk_length', type: 'u8', length: 0, offset: 17 },
+			{ name: 'chunk', type: 'u8', length: 64, offset: 18 },
 		]
 	},
 	{
 		kind: 'MarvConfigCommand',
 		name: 'MARV_CONFIG_COMMAND',
 		id: 15203,
-		crcExtra: 103,
-		minLength: 67,
-		maxLength: 67,
+		crcExtra: 246,
+		minLength: 75,
+		maxLength: 75,
 		fields: [
-			{ name: 'report_id', type: 'u8', length: 32, offset: 0 },
-			{ name: 'expected_config_sha256', type: 'u8', length: 32, offset: 32 },
-			{ name: 'target_system', type: 'u8', length: 0, offset: 64 },
-			{ name: 'target_component', type: 'u8', length: 0, offset: 65 },
-			{ name: 'action', type: 'u8', length: 0, offset: 66 },
+			{ name: 'param_schema_hash', type: 'u64', length: 0, offset: 0 },
+			{ name: 'report_id', type: 'u8', length: 32, offset: 8 },
+			{ name: 'expected_config_sha256', type: 'u8', length: 32, offset: 40 },
+			{ name: 'target_system', type: 'u8', length: 0, offset: 72 },
+			{ name: 'target_component', type: 'u8', length: 0, offset: 73 },
+			{ name: 'action', type: 'u8', length: 0, offset: 74 },
 		]
 	},
 	{
@@ -731,7 +735,7 @@ export const DIALECT: Record<number, { crcExtra: number; maxLength: number }> = 
 	12920: { crcExtra: 20, maxLength: 5 },
 	15200: { crcExtra: 5, maxLength: 109 },
 	15201: { crcExtra: 31, maxLength: 87 },
-	15202: { crcExtra: 27, maxLength: 74 },
-	15203: { crcExtra: 103, maxLength: 67 },
+	15202: { crcExtra: 82, maxLength: 82 },
+	15203: { crcExtra: 246, maxLength: 75 },
 	15204: { crcExtra: 182, maxLength: 4 },
 };

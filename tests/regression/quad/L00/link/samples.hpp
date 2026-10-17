@@ -59,10 +59,10 @@ inline std::vector<Sample> samples() {
                                  MarvParamMethod::Datasheet, MarvParamSigmaKind::Known, 1, 20,
                                  text<64>("UZH NeuroBEM Table 3")}});
   out.push_back({"MarvParamSource",
-                 MarvParamSource{17, 64, 200, 1, 2, MarvParamSourceOp::Set, 64,
+                 MarvParamSource{0x2FF36D1DA5FC3596ULL, 17, 64, 200, 1, 2, MarvParamSourceOp::Set, 64,
                                  text<64>("0123456789012345678901234567890123456789012345678901234567890123")}});
   out.push_back({"MarvConfigCommand",
-                 MarvConfigCommand{ramp<32>(3), ramp<32>(70), 1, 2, MarvConfigAction::Activate}});
+                 MarvConfigCommand{0x2FF36D1DA5FC3596ULL, ramp<32>(3), ramp<32>(70), 1, 2, MarvConfigAction::Activate}});
   out.push_back({"MarvConfigAck", MarvConfigAck{255, 190, MarvConfigAction::ResetFactory, MarvConfigResult::DeniedArmed}});
   return out;
 }

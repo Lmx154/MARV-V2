@@ -235,6 +235,7 @@ void take(const mavlink_marv_param_record_t& w, MarvParamRecord& m) noexcept {
 }
 
 void fill(const MarvParamSource& m, mavlink_marv_param_source_t& w) noexcept {
+  w.param_schema_hash = m.param_schema_hash;
   w.param_index = m.param_index;
   w.offset = m.offset;
   w.total_length = m.total_length;
@@ -245,6 +246,7 @@ void fill(const MarvParamSource& m, mavlink_marv_param_source_t& w) noexcept {
   put(w.chunk, m.chunk);
 }
 void take(const mavlink_marv_param_source_t& w, MarvParamSource& m) noexcept {
+  m.param_schema_hash = w.param_schema_hash;
   m.param_index = w.param_index;
   m.offset = w.offset;
   m.total_length = w.total_length;
@@ -256,6 +258,7 @@ void take(const mavlink_marv_param_source_t& w, MarvParamSource& m) noexcept {
 }
 
 void fill(const MarvConfigCommand& m, mavlink_marv_config_command_t& w) noexcept {
+  w.param_schema_hash = m.param_schema_hash;
   put(w.report_id, m.report_id);
   put(w.expected_config_sha256, m.expected_config_sha256);
   w.target_system = m.target_system;
@@ -263,6 +266,7 @@ void fill(const MarvConfigCommand& m, mavlink_marv_config_command_t& w) noexcept
   w.action = raw(m.action);
 }
 void take(const mavlink_marv_config_command_t& w, MarvConfigCommand& m) noexcept {
+  m.param_schema_hash = w.param_schema_hash;
   get(w.report_id, m.report_id);
   get(w.expected_config_sha256, m.expected_config_sha256);
   m.target_system = w.target_system;

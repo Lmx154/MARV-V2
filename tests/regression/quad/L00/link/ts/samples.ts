@@ -123,6 +123,7 @@ export const samples: Sample[] = [
 		name: 'MarvParamSource',
 		message: {
 			kind: 'MarvParamSource',
+			param_schema_hash: 0x2ff36d1da5fc3596n,
 			param_index: 17,
 			offset: 64,
 			total_length: 200,
@@ -137,6 +138,7 @@ export const samples: Sample[] = [
 		name: 'MarvConfigCommand',
 		message: {
 			kind: 'MarvConfigCommand',
+			param_schema_hash: 0x2ff36d1da5fc3596n,
 			report_id: ramp(3, 32),
 			expected_config_sha256: ramp(70, 32),
 			target_system: 1,
