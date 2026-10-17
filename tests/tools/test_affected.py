@@ -106,7 +106,8 @@ AXES = ("ctest_labels", "run_ci_steps", "pytest_paths", "gz_groups")
 QUAD = "tests/regression/quad/"  # the paths below are joined at run time: a literal would make this file a reader of them
 GZ_T4_READERS = [QUAD + p for p in (
     "L02/tools/test_t4_rule.py", "L04/gz/test_t4_acro.py", "L04/gz/test_t4_steps.py", "L05/gz/test_t4_recovery.py",
-    "L05/gz/test_t4_steps.py", "L05/gz/test_t4_yaw.py", "L11/gz/test_t4_vertical.py")]
+    "L05/gz/test_t4_steps.py", "L05/gz/test_t4_yaw.py", "L07/gz/l7_gz.py", "L07/gz/test_t4_hover_estimate.py",
+    "L07/results/hover_kick/hover_kick.py", "L11/gz/test_t4_vertical.py")]
 
 
 def budget_select(monkeypatch, make_base):
@@ -137,9 +138,9 @@ def test_one_budget_value_change_selects_the_readers_of_that_key(monkeypatch):
     assert register["keys"] == {"t4_settle_fraction": "changed"} and register["structural"] is False
     assert register["readers"] == {"t4_settle_fraction": GZ_T4_READERS}
     assert result["full"] is False
-    assert result["gz_groups"] == ["l11", "l2", "l4", "l5"]
+    assert result["gz_groups"] == ["l11", "l2", "l4", "l5", "l7"]
     # the readers are tests of gz groups: no ctest label beyond the register's own, no tools tests of the readers
-    assert result["ctest_labels"] == ["L11"]
+    assert result["ctest_labels"] == ["L07", "L11"]  # L07: the results rule of hover_kick.py, a reader of the key
     assert result["pytest_paths"] == [QUAD + p for p in ("L01/tools/test_card_lint.py", "L01/tools/test_flatten_report.py",
                                                          "L06/tools/test_l6_ff_eval.py")]
     assert {"product_table_host", "product_table_m33", "l1_report", "l1_card_lint"} <= set(result["run_ci_steps"])
@@ -150,9 +151,9 @@ def test_a_new_budget_parameter_also_selects_the_id_manifest_readers(monkeypatch
     result, register, _ = budget_select(monkeypatch, lambda t: t.split("\nt4_settle_fraction:")[0] + "\n")
     assert register["keys"] == {"t4_settle_fraction": "added"} and register["structural"] is True
     assert result["full"] is False
-    assert result["ctest_labels"] == ["L04", "L05", "L11"]
+    assert result["ctest_labels"] == ["L04", "L05", "L07", "L11"]
     assert QUAD + "L04/tools/test_rate_design.py" in result["pytest_paths"]
-    assert result["gz_groups"] == ["l11", "l2", "l4", "l5"]
+    assert result["gz_groups"] == ["l11", "l2", "l4", "l5", "l7"]
 
 
 def test_a_budget_text_change_selects_only_what_reads_the_file(monkeypatch):
@@ -189,7 +190,7 @@ def test_the_card_selects_its_consumers_and_a_new_card_only_the_lint():
     card = real_select(["vehicles/uzh_neurobem_5in.yaml"])
     assert card["full"] is False
     assert card["ctest_labels"] == ["L01", "L02", "L03", "L04", "L05", "L06", "L11"]
-    assert card["gz_groups"] == ["l11", "l2", "l4", "l5"] and "product_table_host" in card["run_ci_steps"]
+    assert card["gz_groups"] == ["l11", "l2", "l4", "l5", "l7"] and "product_table_host" in card["run_ci_steps"]
     assert real_select(["sensors/profiles/marv_v2_board_default.yaml"]) == {**card, "changed": ["sensors/profiles/marv_v2_board_default.yaml"]}
     for new in ("vehicles/new_quad.yaml", "sensors/profiles/new_board.yaml"):
         assert real_select([new])["full"] is False and real_select([new])["gz_groups"] == card["gz_groups"]  # consumption unknown
