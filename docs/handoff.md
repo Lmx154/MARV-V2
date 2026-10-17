@@ -10,8 +10,8 @@ History is in git and `docs/decisions/`; the previous handoff is `git show 55120
 | Item | State |
 | --- | --- |
 | M0-M3 | merged into `master` (M3 at `55120ad`, local_ci on `609d3e9`: six jobs PASS); not tagged (Luis's) |
-| M4 | branch `m4`, pushed at `f116e99`, dev check PASS; flight image `gdd76c01` on the board |
-| HIL | S1 and S2a-c merged into `m4`; S2d-2a (plugin flies quad_fc, scripted sticks) in review on `hil-s2d2a`; S2d-2b (launch pad, decision 0047) being built on `hil-s2d2b` |
+| M4 | branch `m4`, pushed at `ab63781` (last dev check PASS at `f0bb97b`; since then only CI-ignored paths); flight image `gf0bb97b` on the board |
+| HIL | S1, S2 (incl. the launch pad, 0047) and S3 merged into `m4` at `ab63781`: the board's DShot matches the host SIL's within 1 count, arming on identical ticks (`L09/results/hil_s3b`) |
 
 ## M4 so far (decisions 0043-0047)
 - Real airframe card `vehicles/marv_5in_fc3v2.yaml` (Luis's measurements: 732 g with pack, motors at x ±0.112, y ±0.1275 m,
@@ -37,10 +37,12 @@ History is in git and `docs/decisions/`; the previous handoff is `git show 55120
    ConfigField` (L01) to accept 0, or a small positive card minimum. Blocks Gazebo flying the real card.
 5. A short bench: EMB-3 with angle mode flying (needs the switch), and the props-off radio check of angle mode.
 6. Tags M1-M3.
+7. The m33 build has no -ffp-contract=off (GCC default fast; host has it): quad L10's pass bar says "off on both builds",
+   core allows a tolerance. Accept the measured 1-count tolerance (recommended) or add the flag to the flight build.
 
 ## Next (no hardware needed)
-- After S2d-2a/2b review: merge into `m4`, dev check, push; then S2e: the real-card Gazebo hover with quad_fc in angle
-  mode on the launch pad, N = 10 (needs item 4); then HIL S3 (open loop on the board) and S4 (closed loop with Luis).
+- S2e: the real-card Gazebo hover with quad_fc in angle mode on the launch pad, N = 10 (needs item 4); then HIL S4: the
+  board flies Gazebo closed loop with Luis's radio (needs items 1, 4); then S5 (S4's sticks replayed in SIL).
 
 ## Noticed, not changed
 - Boot rate timing fault when the receiver streams at boot (INFERRED: UART traffic). `t3_test.cpp` builds the rate
