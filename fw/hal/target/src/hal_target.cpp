@@ -15,6 +15,9 @@
 #include "marv/hal_target/imu.hpp"
 #include "marv/hal_target/motor_output.hpp"
 #include "marv/types/actuator.hpp"
+#if defined(MARV_FC3V2_HIL)
+#include "marv/hal_target/hil.hpp"
+#endif
 
 namespace marv {
 namespace {
@@ -88,7 +91,12 @@ void hal_actuators_write(std::span<const DshotValue> motor, std::span<const Serv
     hal_panic("hal_actuators_write span size differs from the board's outputs");
   }
   ++hal_target::g_actuator_writes;
+#if defined(MARV_FC3V2_HIL)
+  // The bench HIL image (hil.hpp): the values go to the host over USB; no DShot program is loaded (decision 0046 item 5).
+  hal_target::hil_actuators_write(motor);
+#else
   hal_target::motor_output_write(motor);
+#endif
 }
 
 // What a panic does to the motors (Luis, 2026-10-16, "take option A"): the loop keeps sending DShot motor-stop frames
