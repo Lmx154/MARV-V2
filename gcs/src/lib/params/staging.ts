@@ -49,7 +49,7 @@ export interface StageRequest {
 
 export type StageCheck = { ok: true; request: StageRequest } | { ok: false; error: string };
 
-/** Everything that must hold before a PARAM_SET is sent: the row is editable, the text parses, it changes the value, a source is given. */
+/** Everything that must hold before a parameter write is sent: the row is editable, the text parses, it changes the value, a source is given. */
 export function checkStage(row: ParamRow, ctx: StageContext, valueText: string, sourceText: string, derivedAck: boolean): StageCheck {
 	const readOnly = whyReadOnly(row, ctx);
 	if (readOnly) return { ok: false, error: readOnly };
