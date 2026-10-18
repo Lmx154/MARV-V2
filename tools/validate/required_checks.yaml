@@ -1,0 +1,66 @@
+# The required-check list of the configuration validator (core G7: only validated configurations fly; ground spec §2
+# "Prove"; decision 0053 Q2 "G7" and Q7 unit 9). tools/validate/validate_config.py runs every check below, by id, in this
+# order, and writes a report whose verdict is PASS only if every one passes; a check it cannot run fails. Changing this
+# list changes G7: it needs Luis (decision 0053, Approval).
+signed:
+  by: Luis
+  "on": "2026-10-17"
+  via: "decision 0053, Approval: the G7 check list including the Gazebo run ('Approve (Recommended)')"
+checks:
+  - id: records
+    title: record, provenance and lock checks
+    rule: >-
+      The .mcfg format (tools/config/mcfg.py: header, payload SHA-256, directory, canonical records); a section of the
+      image's schema hash with the image's record count; per record the image's type, a finite f32 value, sigma kind and
+      sigma consistent (invariant I1), a non-empty source; a parameter locked in the image keeps its compiled value and
+      provenance with the lock flag set, an unlocked one has the flag clear. The firmware's own reader (store::decode, run
+      by marv_validate_table) must agree.
+  - id: composition
+    title: the host composition validator
+    rule: >-
+      composition::validate on the config's table (marv_validate_table: store::decode with the quad_fc validator, as the
+      boot step and the staging run it): null reason, so init would not panic (invariant V-1).
+  - id: ctest
+    title: every ctest labelled config-validation, run with the config injected as the parameter set
+    label: config-validation
+    rule: >-
+      ctest -L config-validation in the image's host build with MARV_VALIDATE_CONFIG naming the config. Each test reads
+      the law's parameters from the config and keeps the thresholds of the image (a candidate cannot loosen its own
+      bound). Every test the label selects must pass, and every test listed here must be among them.
+    tests:
+      - name: qf3_table_fc3v2
+        what: >-
+          QF-3 on the table (tools/validate/qf3_table.py): the generator's own rule (rate_lead.py steps 8 and 13, the
+          firmware loop over the configuration set; attitude_lead.py steps 2', 5' and 6' with Stein certificates) on the
+          table's rate gains, D low-pass, gyro chain, divisor, tick and attitude gains; plant from the card; PM_min,
+          Ms_max and the robustness bands from the budget, equal to the image's compiled values. Negative control
+          qf3_table_fc3v2_negative_control (rate gains x 1.1 must fail).
+      - name: l07_replay_config_validation
+        what: >-
+          The T2 bench-log replay (tests/regression/quad/L07/replay, CommittedBenchLogs): the committed real log through
+          the firmware's Mahony filter with the config's estimator gains, health bounds and gyro calibration; checks (a)
+          and (c') must pass and both controls must fail; attitude_tilt_error_max, the tick period and the stamp
+          tolerance stay the image's.
+    not_applicable:
+      - test: unit_arming (L08)
+        reason: known-answer tests of the arming machine at the registered values; the values are their answers, not inputs
+      - test: unit_quad_fc_gate (L09)
+        reason: contract tests of the composition and of validate itself; check composition runs validate on the config
+      - test: unit_sil_quad_fc (L09)
+        reason: contract tests of the SIL entry (tick rational, failsafe times) at the registered values
+      - test: unit_store (L09)
+        reason: contract tests of the config store; the store's reader runs on the config in checks records and composition
+      - test: sil_quad_fc_param_table and its negative control (L09), param_table_planted (L09 controls)
+        reason: post-link checks that the linked table is the set's; nothing of a config's values
+      - test: t3_l4_rate, the L5 and L11 T3 suites
+        reason: fixture inputs against goldens; goldens are never configuration checks (decision 0053, unit 9 packet)
+      - test: every other ctest
+        reason: built against another parameter set (the product, l4, l5, l7 or l11 set), whose schema is not this image's
+  - id: sil
+    title: a quad_fc Gazebo SIL run on the config's card with the behaviour predicates (arm, hover hold, roll/pitch step, disarm)
+    form: >-
+      The existing-predicates form (the lead's decision of 2026-10-18, recorded in decision 0053; Luis may choose the
+      stricter S/B form with a card-derived deadline later): arm and disarm as the L10 plumbing test reads them, B on the
+      true tilt over the hover hold, T on the stepped axis's error over each step and on the tilt over each centre phase,
+      every logged state finite. Rule and loading: tools/validate/sil_check.py.
+    predicates: [finite, arm, disarm, hover, roll, pitch]
