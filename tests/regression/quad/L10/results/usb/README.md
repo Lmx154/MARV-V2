@@ -34,3 +34,18 @@ Debug Probe; every capture waited 12 s after a reboot (ModemManager).
 - The echo image (`MARV_FC3V2_USB_BENCH`) does not reprint the banner when a console host connects to a running board; the flight image,
   the BENCH_STATS-only image and the m4 BENCH_STATS image do. Bench-only effect of the echo step running every loop pass; not
   investigated further. `analyze_echo.py` then takes clk_sys = 150 MHz (the flight banner's).
+
+## Result: picotool vendor-reset refusal, 2026-10-18 (closes the open item)
+
+Luis installed `/etc/udev/rules.d/60-marv-picotool.rules` (`SUBSYSTEM=="usb", ATTRS{idVendor}=="2e8a", MODE="0660",
+GROUP="plugdev"`), soldered the FC3v2 BAR_INT jumper (GPIO 23) and replugged the board; flight image from 3db706c.
+
+| Command (picotool 2.x at ~/pico/picotool-install) | picotool says | Board afterwards | Log |
+| --- | --- | --- | --- |
+| before | | `usb_reset_refused=0`, est_valid=1 | `raw/picotool_before.log` |
+| `picotool reboot` / `reboot -u` (no -f) | rc 249: no BOOTSEL device; suggests -f (no request sent) | unchanged | `raw/picotool_reboot*.txt` |
+| `picotool reboot -f` | rc 0 "asked to reboot into application mode" | still running (same USB address 38, t = 35.06 s continuing), `usb_reset_refused=1` | `raw/picotool_reboot_f.txt`, `raw/picotool_after_f.log` |
+| `picotool reboot -f -u` | rc 0 "asked to reboot into BOOTSEL mode" | still running (2e8a:0009, not BOOTSEL 000f; t = 46.06 s), `usb_reset_refused=2`, timing_faults 0 | `raw/picotool_reboot_fu.txt`, `raw/picotool_after_fu.log` |
+
+picotool reports rc 0 because it only sends the request; the board stalls it without the maintenance grant and counts it.
+The board also booted normally after the jumper was soldered (est_valid=1, timing_faults=0).

@@ -1,0 +1,1 @@
+The device was asked to reboot into BOOTSEL mode.

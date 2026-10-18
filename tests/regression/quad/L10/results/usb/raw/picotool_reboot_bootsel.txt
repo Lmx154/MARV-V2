@@ -1,0 +1,6 @@
+No accessible RP-series devices in BOOTSEL mode were found.
+
+but:
+
+RP2350 device at bus 1, address 38 appears to have a USB serial connection, so
+    consider -f to force the reboot.
