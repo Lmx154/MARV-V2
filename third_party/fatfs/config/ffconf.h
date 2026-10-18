@@ -8,7 +8,7 @@
 /                                         is written as a temp file, synced, the old file removed, the temp renamed).
 /    FF_USE_LFN 1, FF_MAX_LFN 255         long file names in a static buffer (no heap, no stack buffer; FatFs is called from
 /                                         the background loop only, so the one buffer is never shared).
-/    FF_FS_EXFAT 1                        FAT12/16/32 and exFAT (Luis, 2026-10-17: FAT32 + exFAT).
+/    FF_FS_EXFAT 0                        FAT12/16/32 only (Luis, 2026-10-18: "drop exfat"; exFAT is a Microsoft patent).
 /    FF_CODE_PAGE 437                     OEM code page of the short names; names on the card are ASCII.
 /    FF_FS_NORTC 1, FF_NORTC_*            the board has no RTC (the RP2354B timer counts from reset): every object FatFs
 /                                         modifies gets the fixed local time 1 January 2026. PLACEHOLDER: the date is the
@@ -265,7 +265,7 @@
 /  buffer in the filesystem object (FATFS) is used for the file data transfer. */
 
 
-#define FF_FS_EXFAT	1
+#define FF_FS_EXFAT	0
 /* This option switches support for exFAT filesystem. (0:Disable or 1:Enable)
 /  To enable exFAT, also LFN needs to be enabled. (FF_USE_LFN >= 1)
 /  Note that enabling exFAT discards ANSI C (C89) compatibility. */

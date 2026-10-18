@@ -35,7 +35,7 @@ History is in git and `docs/decisions/`; the previous handoff is `git show be6b9
 ## Waiting on Luis
 - S4b: fly the Gazebo sim through the board with the RadioMaster (runbook in `L10/results/s4/README.md`; host idle).
 - Props-off radio check of angle mode (ESC power, Luis present).
-- Decide: exFAT (patent note), check-4 form, ESKF board use. Board: SD 64 GB FAT32; BAR_INT jumper (GPIO 23) soldered
+- Decide: check-4 form, ESKF board use (exFAT dropped, Luis 2026-10-18). Board: SD 64 GB FAT32; BAR_INT jumper (GPIO 23) soldered
   (mem hardware/barometer-timing); udev rule /etc/udev/rules.d/60-marv-picotool.rules (picotool without sudo).
 
 ## Noticed, not changed
