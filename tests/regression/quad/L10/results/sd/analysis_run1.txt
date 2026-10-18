@@ -1,0 +1,28 @@
+clk_sys 150000000 Hz; START t=27200811 us; DONE t=222432648 us
+idle_before: 10 windows, window-max spacing worst 20104 cycles = 134.0 us; min 19920 cycles = 132.8 us
+traffic: 170 windows, window-max spacing worst 20129 cycles = 134.2 us; min 19898 cycles = 132.7 us
+idle_after: 3 windows, window-max spacing worst 20073 cycles = 133.8 us; min 19954 cycles = 133.0 us
+cumulative at t=224485131: n=1682066 mean 133.42 us, min 94.5 us, max 20129 cycles = 134.2 us
+imu counters (first, last): samples/ovr/spi/partial/clamp/order/empty ('134933', '0', '0', '0', '0', '0', '0') ('1682055', '0', '0', '0', '0', '0', '0')
+rate executions/timing_faults (first, last): ('67467', '1') ('841028', '1')
+sd_bench: host connected, idle baseline for 10 s from t=17200763
+sd_bench: START t=27200811
+sd_bench: card_detect gpio25 pull_up=1 pull_down=0 (polarity UNVERIFIED)
+sd_bench: init ok in 244576 us, type SDHC/SDXC, 124735488 sectors of 512 bytes = 63864569856 bytes (CSD)
+sd_bench: mount ok, file system FAT32, cluster 64 sectors, 1948483 clusters, 1948437 free
+sd_bench: cycle 100 of 1000 errors=0 t=48049105
+sd_bench: cycle 200 of 1000 errors=0 t=67375050
+sd_bench: cycle 300 of 1000 errors=0 t=86698132
+sd_bench: cycle 400 of 1000 errors=0 t=106136736
+sd_bench: cycle 500 of 1000 errors=0 t=125462691
+sd_bench: cycle 600 of 1000 errors=0 t=144654528
+sd_bench: cycle 700 of 1000 errors=0 t=164005275
+sd_bench: cycle 800 of 1000 errors=0 t=183207490
+sd_bench: cycle 900 of 1000 errors=0 t=202774300
+sd_bench: DONE t=222432648 cycles=1000 file_bytes=40256 errors=0
+sd_bench: op pending_write max_us=809140 median_us=61995 min_us=55893
+sd_bench: op pending_read max_us=47267 median_us=40325 min_us=36866
+sd_bench: op mount max_us=15181 median_us=6130 min_us=5500
+sd_bench: op raw_write max_us=94300 median_us=37742 min_us=35994
+sd_bench: op raw_sync max_us=73327 median_us=6921 min_us=6562
+sd_bench: op raw_read max_us=29970 median_us=29746 min_us=29618
