@@ -180,6 +180,8 @@ else()
   # The image holds exactly the FC3v2 set's parameter table, or the build fails and the image is removed.
   marv_check_param_table(marv_fc3v2 marv_params_fc3v2)
 endif()
+# Every image ends below the config slots at the top of the flash, or the build fails and the image is removed.
+marv_check_flash_layout(marv_fc3v2)
 pico_enable_stdio_usb(marv_fc3v2 1)
 pico_enable_stdio_uart(marv_fc3v2 0)
 marv_apply_flags(marv_fc3v2 FIRMWARE)

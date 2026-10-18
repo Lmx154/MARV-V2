@@ -59,6 +59,7 @@ full_roots:
   - cmake/flags.cmake
   - cmake/flight_targets.cmake
   - cmake/param_table.cmake
+  - cmake/flash_layout.cmake
   - cmake/googletest.cmake
   - cmake/marv_card_gen.cmake
   - cmake/marv_test_timeout.cmake
@@ -505,10 +506,10 @@ rules:
 
   - paths: [tools/config/**]
     ctest_labels: [L00]
-    run_ci_steps: ["@host", m33_build, tools_tests]
+    run_ci_steps: ["@host", m33_build, tools_tests, flash_layout_control]
     pytest_paths: [tests/regression/quad/L00/tools]
     gz_groups: []
-    why: "tools/config/mcfg.py writes every parameter set's factory .mcfg in the build (fw/params/CMakeLists.txt marv_add_param_set; the host and m33 builds fail if it does), and its L00 tools test"
+    why: "tools/config/mcfg.py writes every parameter set's factory .mcfg in the build (fw/params/CMakeLists.txt marv_add_param_set; the host and m33 builds fail if it does), and its L00 tools test; tools/config/image_hash.py is read by the m33 post-link flash-layout check and its control"
 
   - paths:
       - tools/sim/hover.py
@@ -683,6 +684,13 @@ rules:
     pytest_paths: []
     gz_groups: [l2, l4, l5, l7, l11]
     why: "the post-link parameter-table check runs after every link of the m33 image and of every SIL library (host and gz builds); its planted control is built only by its two control steps"
+
+  - paths: [tools/ci/check_flash_layout.py, tests/regression/quad/L09/flash_layout/**]
+    ctest_labels: []
+    run_ci_steps: [m33_build, flash_layout_control]
+    pytest_paths: []
+    gz_groups: []
+    why: "the post-link flash-layout check runs after every link of the m33 image (cmake/flash_layout.cmake); its planted control (m33 only) is built only by its control step"
 
   - paths: [tools/ci/check_param_ids.py]
     ctest_labels: [L04, L05, L11]
