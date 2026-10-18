@@ -26,6 +26,9 @@ lead summary here). Items marked (Luis) were signed by him on 2026-10-17 (Approv
    of the grant fails both request-while-armed tests, removing the ConfigRefused refusal fails both ConfigRefused tests.
    Frozen tests extended (unit 3, VALIDATE): tests/regression/quad/L09/unit/quad_fc_gate_test.cpp gains the validate cases
    (the default table accepted, one rejecting table per parameter-dependent panic site, init panicking with validate's reason).
+   Unit 6 frozen tests extended: tests/regression/quad/L00/link/samples.hpp (the PARAM_SET/PARAM_VALUE samples written as the
+   same bits via bit_cast now that param_value is carried as raw uint32; wire bytes and vectors unchanged) and
+   codec_conformance_test.cpp (signalling-NaN INT32 patterns round-trip bit-exact).
    Unit 4b frozen tests extended: tests/regression/quad/L09/unit/CMakeLists.txt gains unit_store (store_test.cpp: SHA-256 known answers,
    the factory .mcfg against param_defaults() both ways, one test per boot-policy row (B-1), the apply step and every failure,
    A/B alternation, revert and reset to factory, every staging refusal in order, the commands, P-1). Mutation checks run and
