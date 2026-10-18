@@ -1,1 +1,9 @@
-python3: can't open file '/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-usb/wt-usb/tests/regression/quad/L10/results/usb/analyze_echo.py': [Errno 2] No such file or directory
+clk_sys 150000000 Hz
+idle_before: 15 windows, spacing window max 20123 cycles = 134.15 us, window min 19900 cycles = 132.67 us, USBCTRL chain window max 592 cycles = 3.95 us
+check: 1 windows, spacing window max 20124 cycles = 134.16 us, window min 19900 cycles = 132.67 us, USBCTRL chain window max 11964 cycles = 79.76 us
+sustained: 20 windows, spacing window max 20127 cycles = 134.18 us, window min 19896 cycles = 132.64 us, USBCTRL chain window max 12396 cycles = 82.64 us
+idle_after: 9 windows, spacing window max 20118 cycles = 134.12 us, window min 19904 cycles = 132.69 us, USBCTRL chain window max 593 cycles = 3.95 us
+rate executions/timing_faults first, last: ('783335', '1') ('966987', '1')
+attitude faults/timing_faults last: ('0', '0') est_valid last: 1
+imu counters first, last (samples ovr spi partial clamp order empty): ('1566669', '0', '0', '0', '0', '0', '0') ('1933973', '0', '0', '0', '0', '0', '0')
+usb_reset_refused last: 0
