@@ -3,6 +3,7 @@
 	import { derived, readable } from 'svelte/store';
 	import { app } from '$lib/state/app';
 	import { whyCannotRead } from '$lib/state/gating';
+	import { readSetting, writeSetting } from '$lib/state/storage';
 	import type { SessionState } from '$link/session';
 	import type { VehicleState } from '$link/vehicle';
 	import { matchesFilter, mergeParams, type ParamRow as Row } from '$lib/params/merge';
@@ -32,14 +33,13 @@
 	let collapsed = $state<Record<string, boolean>>({});
 
 	onMount(() => {
-		dense = localStorage.paramDensity === 'compact';
 		void gcs.ensureImages();
+		dense = readSetting('paramDensity') === 'compact';
 	});
 
 	function setDense(next: boolean): void {
 		dense = next;
-		if (next) localStorage.paramDensity = 'compact';
-		else localStorage.removeItem('paramDensity');
+		writeSetting('paramDensity', next ? 'compact' : null);
 	}
 
 	const merged = derived([manifest, vehicle], ([m, v]) =>

@@ -3,6 +3,7 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { app } from '$lib/state/app';
+	import { readSetting, writeSetting } from '$lib/state/storage';
 	import type { SessionState } from '$link/session';
 	import type { Problem } from '$lib/state/problems';
 	import type { VehicleState } from '$link/vehicle';
@@ -24,9 +25,9 @@
 	let headerEl = $state<HTMLElement | null>(null);
 
 	onMount(() => {
-		const saved = localStorage.theme;
-		if (saved === 'light' || saved === 'dark') theme = saved;
 		void gcs?.connect();
+		const saved = readSetting('theme');
+		if (saved === 'light' || saved === 'dark') theme = saved;
 		// Pages with a sticky table header sit below this one: they read its height from --header-h.
 		if (!headerEl) return;
 		const el = headerEl;
@@ -40,10 +41,10 @@
 	function setTheme(next: 'system' | 'light' | 'dark'): void {
 		theme = next;
 		if (next === 'system') {
-			localStorage.removeItem('theme');
+			writeSetting('theme', null);
 			delete document.documentElement.dataset.theme;
 		} else {
-			localStorage.theme = next;
+			writeSetting('theme', next);
 			document.documentElement.dataset.theme = next;
 		}
 	}

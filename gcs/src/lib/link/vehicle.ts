@@ -7,7 +7,8 @@
 //   - answer a PARAM_REQUEST_LIST (and a PARAM_REQUEST_READ by index) with one PARAM_VALUE and one MARV_PARAM_RECORD per
 //     parameter; PARAM_VALUE carries the STAGED value, the record both values;
 //   - answer a PARAM_SET with a PARAM_VALUE (the staged value after the set, the unchanged one when refused) and, when
-//     refused, a STATUSTEXT with the reason;
+//     refused, a STATUSTEXT with the reason; the client does not take that PARAM_VALUE as the verdict (nothing correlates it with
+//     the set): it reads the parameter back by index after the refusal grace and judges by the first reply after that request;
 //   - answer MARV_PARAM_SOURCE READ with MARV_PARAM_SOURCE DATA chunks;
 //   - answer a REQUEST_MESSAGE command for MARV_IDENTITY and AUTOPILOT_VERSION with that message.
 import { get, writable, type Readable } from 'svelte/store';
@@ -389,15 +390,27 @@ export class VehicleClient {
 				kind: 'ParamSet', target_system: target.systemId, target_component: target.componentId,
 				param_id: encodeLinkId(linkId), ...paramValueFields(bits), param_type: type === 'f32' ? PARAM_TYPE_REAL32 : PARAM_TYPE_INT32
 			});
-			// Listen only from here on: a PARAM_VALUE that was already on its way (a listing reply, a read-back) is not the echo.
-			const answer = await this.awaitEcho(linkId, type, bits);
+			// The immediate PARAM_VALUE is only a hint: without a correlation id it may be a reply that was already on its way.
+			// The verdict is an explicit read-back: wait out the refusal grace (collecting the STATUSTEXT reasons), ask for the
+			// parameter, and take the first reply that arrives after that request. The vehicle serves the link in order, so that
+			// reply reflects the write.
+			let hint: Extract<Message, { kind: 'ParamValue' }> | null = null;
+			const watch = this.session.bus.on('ParamValue', (m) => {
+				if (textOf(m.param_id) === linkId) hint = m;
+			});
+			await this.sleep(this.timing.refusalGraceMs);
+			watch();
+			const answer = await this.readBack(target, linkId, row.index);
 			if (!answer) {
-				result = { ...base, accepted: false, echoBits: null, reasons: [], sourceStored: null, sourceState: 'none', note: 'the vehicle did not answer the write' };
+				const hinted = hint as Extract<Message, { kind: 'ParamValue' }> | null;
+				result = {
+					...base, accepted: false, echoBits: hinted ? paramValueBits(hinted) : null, reasons: [...reasons], sourceStored: null, sourceState: 'none',
+					note: 'the vehicle did not answer the read-back after the write'
+				};
 			} else {
 				const echoBits = paramValueBits(answer);
 				const echoType = answer.param_type === PARAM_TYPE_REAL32 ? 'f32' : answer.param_type === PARAM_TYPE_INT32 ? 'i32' : null;
-				const accepted = echoBits === bits && echoType === type;
-				result = { ...base, accepted, echoBits, reasons: [...reasons], sourceStored: null, sourceState: 'none', note: null };
+				result = { ...base, accepted: echoBits === bits && echoType === type, echoBits, reasons: [...reasons], sourceStored: null, sourceState: 'none', note: null };
 			}
 		} finally {
 			this.noticeListeners.delete(heard);
@@ -450,30 +463,13 @@ export class VehicleClient {
 		});
 	}
 
-	/**
-	 * The vehicle's answer to a PARAM_SET already sent: the first PARAM_VALUE for the id carrying the value that was sent; when
-	 * the values that arrive are other ones, the last of them after a grace period (a refusal answers with the unchanged value).
-	 */
-	private awaitEcho(linkId: string, type: ParamType, bits: number): Promise<Extract<Message, { kind: 'ParamValue' }> | null> {
-		type Value = Extract<Message, { kind: 'ParamValue' }>;
-		return new Promise((resolve) => {
-			let last: Value | null = null;
-			let grace: ReturnType<typeof setTimeout> | null = null;
-			const finish = (m: Value | null): void => {
-				off();
-				clearTimeout(overall);
-				if (grace) clearTimeout(grace);
-				resolve(m);
-			};
-			const off = this.session.bus.on('ParamValue', (m) => {
-				if (textOf(m.param_id) !== linkId) return;
-				const matches = paramValueBits(m) === bits && m.param_type === (type === 'f32' ? PARAM_TYPE_REAL32 : PARAM_TYPE_INT32);
-				if (matches) return finish(m);
-				last = m;
-				if (!grace) grace = setTimeout(() => finish(last), this.timing.refusalGraceMs);
-			});
-			const overall = setTimeout(() => finish(last), this.timing.replyMs);
+	/** Asks for one parameter and resolves with the first PARAM_VALUE for it that arrives after the request was sent. */
+	private readBack(target: { systemId: number; componentId: number }, linkId: string, index: number): Promise<Extract<Message, { kind: 'ParamValue' }> | null> {
+		this.session.send({
+			kind: 'ParamRequestRead', target_system: target.systemId, target_component: target.componentId,
+			param_id: new Uint8Array(PARAM_ID_BYTES), param_index: index
 		});
+		return this.waitFor('ParamValue', (m) => textOf(m.param_id) === linkId, this.timing.replyMs).promise;
 	}
 
 	private async writeSource(index: number, bytes: Uint8Array, text: string): Promise<boolean> {

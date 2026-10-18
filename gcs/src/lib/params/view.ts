@@ -107,7 +107,7 @@ export function aboutParam(row: ParamRow): About {
 			: /^.{11}_[0-9a-f]{4}$/.test(row.linkId)
 				? 'the name cut to 11 characters, "_" and the first 4 hex digits of the SHA-256 of the name (or a mav_id override)'
 				: 'a mav_id override of the record',
-		index: row.index === null ? 'not in the manifest' : `#${row.index} (the PARAM_VALUE param_index; valid within one schema)`,
+		index: row.index === null ? 'not in the manifest' : `#${row.index} (the parameter index on the link; valid within one schema)`,
 		derivation: row.method === 'derived' ? row.source : null,
 		sigma: row.sigmaKind === null ? 'not reported' : SIGMA_MEANING[row.sigmaKind] ?? row.sigmaKind,
 		lock: row.locked

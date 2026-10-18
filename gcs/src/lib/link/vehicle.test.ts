@@ -264,6 +264,46 @@ describe('staging', () => {
 		expect(result).toMatchObject({ accepted: true, echoBits: f32ToBits(15), sourceStored: true });
 	});
 
+	it('reports a refusal although a stale reply already carried the requested value', async () => {
+		const { vehicle, client } = await setup();
+		await client.requestAll();
+		vehicle.armed = true; // the GCS has not seen it: the vehicle refuses
+		vehicle.staleBitsBeforeAnswer = f32ToBits(15);
+		const result = await client.stage('rate_kp', 'f32', f32ToBits(15), 'a source');
+		expect(result.accepted).toBe(false);
+		expect(result.echoBits).toBe(f32ToBits(12.5));
+		expect(result.reasons.join(' ')).toContain('armed');
+		expect(vehicle.slots[index('rate_kp')]!.staged).toBe(f32ToBits(12.5));
+		expect(vehicle.received.filter((m) => m.kind === 'MarvParamSource')).toHaveLength(0);
+	});
+
+	it('reports acceptance when a stale old-value reply comes first and the real answer only after the grace', async () => {
+		const { vehicle, client } = await setup();
+		await client.requestAll();
+		vehicle.staleBitsBeforeAnswer = f32ToBits(12.5);
+		vehicle.answerDelayMs = TIMING.refusalGraceMs * 3;
+		const result = await client.stage('rate_kp', 'f32', f32ToBits(15), 'a source');
+		expect(result).toMatchObject({ accepted: true, echoBits: f32ToBits(15), sourceStored: true });
+	});
+
+	it('judges by a read-back sent after the set, whatever the first reply says', async () => {
+		const { vehicle, client } = await setup();
+		await client.requestAll();
+		await client.stage('rate_kp', 'f32', f32ToBits(15), 'a source');
+		const kinds = vehicle.received.map((m) => m.kind);
+		const set = kinds.lastIndexOf('ParamSet');
+		expect(kinds[set + 1]).toBe('ParamRequestRead');
+	});
+
+	it('reports a write the vehicle never answers as not accepted', async () => {
+		const { vehicle, client } = await setup();
+		await client.requestAll();
+		vehicle.neverSendFor.add(index('rate_kp'));
+		const result = await client.stage('rate_kp', 'f32', f32ToBits(15), 'a source');
+		expect(result.accepted).toBe(false);
+		expect(result.note).toContain('read-back');
+	});
+
 	it('does not stage while the parameter list is being read', async () => {
 		const { vehicle, client } = await setup();
 		vehicle.neverSendFor.add(4);

@@ -7,6 +7,7 @@ import { manifestJson, provenanceJson, SCHEMA, SPECS } from '$lib/params/testing
 import { whyCannotRead } from './gating';
 import { ManifestController } from './manifest_state';
 import { Problems } from './problems';
+import { readSetting, writeSetting } from './storage';
 
 describe('problems', () => {
 	it('keeps the error of one source when another source succeeds', async () => {
@@ -142,5 +143,29 @@ describe('which manifest is in use and why', () => {
 		setIdentity(other);
 		await c.identityArrived();
 		expect(explainManifest(use(), other)).toContain('no library entry has');
+	});
+});
+
+describe('settings in a storage that may be blocked', () => {
+	const blocked = {
+		getItem: () => { throw new Error('SecurityError'); },
+		setItem: () => { throw new Error('SecurityError'); },
+		removeItem: () => { throw new Error('SecurityError'); }
+	};
+
+	it('reads nothing and writes nothing instead of throwing', () => {
+		expect(readSetting('theme', blocked)).toBeNull();
+		expect(writeSetting('theme', 'dark', blocked)).toBe(false);
+		expect(writeSetting('theme', null, blocked)).toBe(false);
+		expect(readSetting('theme', null)).toBeNull();
+	});
+
+	it('stores, reads and removes in a working storage', () => {
+		const map = new Map<string, string>();
+		const ok = { getItem: (k: string) => map.get(k) ?? null, setItem: (k: string, v: string) => void map.set(k, v), removeItem: (k: string) => void map.delete(k) };
+		expect(writeSetting('paramDensity', 'compact', ok)).toBe(true);
+		expect(readSetting('paramDensity', ok)).toBe('compact');
+		expect(writeSetting('paramDensity', null, ok)).toBe(true);
+		expect(readSetting('paramDensity', ok)).toBeNull();
 	});
 });
