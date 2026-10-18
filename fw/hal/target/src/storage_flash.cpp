@@ -11,6 +11,8 @@
 // runs from SRAM (copy_to_ram) and what is programmed is copied to an SRAM page first, so nothing reads the flash
 // meanwhile. Every write is read back: the erase must leave the region erased, the programmed bytes must read back equal.
 //
+// Reboot: hal_reboot arms a delayed watchdog reboot and returns true (marv/hal/storage.hpp).
+//
 // Boot request: the config hash (32 bytes) in the eight POWMAN SCRATCH registers (RP2350 datasheet section 6.4). They keep
 // their contents over the watchdog reboot of hal_reboot and every other reset short of power-on, brown-out or the RUN pin,
 // which clear them (datasheet section 7.3.1, table 528, "AON Scratch"); they are not password protected (section 6.4: only
@@ -138,12 +140,11 @@ bool hal_config_request_take(ConfigHashBytes& expected) noexcept {
 }
 
 bool hal_reboot() noexcept {
-  // A watchdog reboot into the normal flash boot (no boot vector, at once): every domain but the oscillators is reset, the
-  // POWMAN SCRATCH registers (the boot request) are kept.
-  watchdog_reboot(0, 0, 0);
-  for (;;) {
-    tight_loop_contents();
-  }
+  // A watchdog reboot into the normal flash boot (no boot vector) after MARV_FC3V2_REBOOT_DELAY_MS: every domain but the
+  // oscillators is reset, the POWMAN SCRATCH registers (the boot request) are kept. Not at once, so the background loop still
+  // sends the link's answers already queued (the command's acknowledgement) before the chip resets.
+  watchdog_reboot(0, 0, MARV_FC3V2_REBOOT_DELAY_MS);
+  return true;
 }
 
 namespace hal_target {

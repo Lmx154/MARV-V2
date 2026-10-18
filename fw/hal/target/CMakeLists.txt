@@ -155,6 +155,14 @@ if(NOT MARV_FC3V2_HIL AND NOT MARV_FC3V2_HIL_LINK)
   target_link_libraries(marv_hal_target PRIVATE marv_link)
   target_compile_definitions(marv_hal_target PRIVATE MARV_FC3V2_LINK_QUEUE_FRAMES=${MARV_FC3V2_LINK_QUEUE_FRAMES})
 endif()
+# MARV_FC3V2_REBOOT_DELAY_MS is a PLACEHOLDER (ground-segment unit 14): how long hal_reboot (src/storage_flash.cpp) lets the
+# background loop run after an accepted reboot before the watchdog resets the chip, so the acknowledgement already queued
+# (MARV_CONFIG_ACK, COMMAND_ACK) reaches the host. Chosen well above the time to drain a full send queue at the measured link
+# rate (16 frames of at most 280 bytes at about 400 kB/s, about 11 ms; L10/results/link_board); replaced by a measured drain
+# time with the link budget of ground-segment unit 11.
+set(MARV_FC3V2_REBOOT_DELAY_MS 100 CACHE STRING
+    "Milliseconds between an accepted reboot and the watchdog reset (PLACEHOLDER until the link budget of ground-segment unit 11)")
+target_compile_definitions(marv_hal_target PRIVATE MARV_FC3V2_REBOOT_DELAY_MS=${MARV_FC3V2_REBOOT_DELAY_MS})
 # MARV_FC3V2_USB_BENCH (bench only, default OFF, ground-segment unit 12a): the background loop echoes every byte received on the
 # link port back on it (usb_bench_echo_step), for the bench check of the transport; that image does not run the link service.
 option(MARV_FC3V2_USB_BENCH "FC3v2 bench image that echoes the USB link port" OFF)

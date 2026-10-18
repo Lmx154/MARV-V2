@@ -66,7 +66,8 @@ using ConfigHashBytes = std::array<std::uint8_t, prim::kSha256DigestBytes>;
 
 // Reboots the board. Call only with the maintenance grant (composition::maintenance_granted). Returns only if the reboot
 // is not immediate: hal_sim records the request (marv/hal_sim/storage.hpp, "reboot requested"; the host relaunches) and
-// returns true; on the board it is a watchdog reboot and does not return.
+// returns true; the board arms a watchdog reboot a short delay later (storage_flash.cpp), so the link's queued answers still
+// go out, and returns true.
 [[nodiscard]] bool hal_reboot() noexcept;
 
 }  // namespace marv

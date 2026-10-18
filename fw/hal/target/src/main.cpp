@@ -546,7 +546,8 @@ int main() {
       }
     }
 #if !defined(MARV_FC3V2_USB_BENCH)
-    // The board's hal_reboot does not return (a watchdog reboot), so step's result is false.
+    // Once the board's hal_reboot has armed its delayed watchdog reboot, step returns true; the loop keeps serving (the link's
+    // queued answers go out) until the watchdog resets the chip.
     static_cast<void>(marv::link::service_step());
     marv::hal_target::link_port_pump();
 #endif
