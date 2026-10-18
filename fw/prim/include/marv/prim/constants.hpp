@@ -380,5 +380,12 @@ inline constexpr std::uint8_t kUsbEpLinkNotifyIn = 0x83;
 inline constexpr std::uint8_t kUsbEpLinkDataOut = 0x04;
 inline constexpr std::uint8_t kUsbEpLinkDataIn = 0x84;
 
+// The ground link's reboot command, MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN, takes the action for the autopilot in param1.
+// Citation: the pinned common.xml message definitions (link/marv.xml includes them), enum REBOOT_SHUTDOWN_ACTION:
+// REBOOT_SHUTDOWN_ACTION_REBOOT = 1, REBOOT_SHUTDOWN_ACTION_REBOOT_TO_BOOTLOADER = 3.
+// Kind: standard.
+inline constexpr std::uint32_t kRebootShutdownActionReboot = 1;
+inline constexpr std::uint32_t kRebootShutdownActionBootloader = 3;
+
 }  // namespace marv::prim
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

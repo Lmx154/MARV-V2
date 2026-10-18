@@ -1,0 +1,92 @@
+# The ground link on the FC3v2 board, ground-segment unit 12b (decision 0053)
+
+Bench evidence, not a frozen test. Board: FC3v2 Rev-C, SD card in, ESC unpowered, never armed, no motor command. Date 2026-10-18.
+Code: branch `gs-link-board`. `bench_link.*` and `flight_final.log`: firmware commit `3184b1f` (the reboot command; banner
+`quad-L2-pass-397-g3184b1f-dirty`, dirty only in this results directory), flight image sha256 `6dbc7ca9...7bb1`. `load_*`:
+firmware `a4f5338`, bench-stats variant (`-DMARV_FC3V2_BENCH_STATS=ON`, `build/m33-bs`) sha256 `0ef4603e...f5aa`; the later
+change touches only the reboot command's handling, not the listing or the transport. Flashed with `tools/target/flash.sh` through the Debug Probe, 12 s wait after each reboot.
+
+## Files
+
+- `link_common.py`: the PC side (dialect from the m33 build's `link/marv.xml` by pymavlink's mavgen; the helper
+  `tools/gs/helper.py --serial <if02>` and its WebSocket, or the serial port directly; console reader from `../usb/usb_common.py`).
+- `bench_link.py`: done-when (a) to (d) through the helper, PASS/FAIL per step. `bench_load.py`: (e), capture and analyze.
+  `armed_runbook.py`: the PC side of the armed step (below).
+- `raw/bench_link.{json,console.log,ground.log}` (flight image; `ground.log` is the helper's ground log of the session),
+  `raw/bench_link.after_reboot.console.log` (the console after the granted picotool reboot),
+  `raw/load_idle_disarmed.{console.log,phases.json,analysis.txt}` (bench-stats image), `raw/flight_final.log` (flight image
+  flashed back, 15 s of console).
+
+## Results (disarmed)
+
+| Done-when | Result |
+| --- | --- |
+| link | Heartbeat 1 Hz, not armed (system_status STANDBY); AUTOPILOT_VERSION capabilities 0x2010 (byte-wise parameter encoding, MAVLink 2); MARV_IDENTITY: factory, OK, refusal none, schema 0x3ae00eb50938acba, config hash `625f509b...003d` = the factory .mcfg's, image hash all zero (unknown until unit 14), staged_differs 0. |
+| (a) list | Through the helper: 137 PARAM_VALUE + 137 MARV_PARAM_RECORD (manifest count 137); every link id, type, value bits, active/staged bits and lock equal to the manifest and `marv_params_fc3v2.mcfg`; 0 sequence gaps; 274 frames in 0.038 s. |
+| (b) stage | `att_kp` one ulp up (0x4011145e -> 0x4011145f): echo and read by index show 0x4011145f staged, record active 0x4011145e (unchanged), origin Manual, method Scenario, sigma kind Choice; identity staged_differs 1. `rotor_speed_max` (locked): status text "the parameter is locked: it keeps its compiled value", echo unchanged. Staging writes RAM only: `store::stage_set` (fw/store/src/staging.cpp) changes the staged copy; the pending file is written only by `store::activate`, so nothing touched the SD card. |
+| (c) activate | Zero report id: DENIED_REPORT ("no validation report id ... (G7)"). A nonzero report id with the staged config's hash: FAILED, "the config is not bound to this image's hash and a validation report" (the board's image hash is all zero until unit 14, so `bound_to` refuses before the SD is written). Revert: DENIED_UNAVAILABLE ("there is no last good stored config"). Factory reset: FAILED ("this board cannot keep a boot request": `hal_config_request_set` is the unit-14 stub). Afterwards 3 heartbeats in 3 s, console `t` advancing, est_valid=1, identity factory and last activation none. None of these asks for the maintenance grant (the store asks only after the boot request is kept). |
+| (d) reset | `picotool reboot -f` without the grant: picotool rc 0 ("asked to reboot into application mode"), board kept running (heartbeats, `t` advancing), `usb_reset_refused` 0 -> 1. |
+| (d) grant | MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN (lead decision) disarmed. param1 1: IN_PROGRESS then FAILED with "reboot failed: this board cannot reboot itself" (hal_reboot is the unit-14 stub; no hang), the grant stays held. param1 3: IN_PROGRESS then ACCEPTED; console `arming=maintenance`. Then `picotool reboot -f` is honoured: usb_reset_refused 1 before, the console port went away and came back with `t` 15.1 s (was 27.1 s), usb_reset_refused 0, est_valid=1. |
+| (e) timing | Bench-stats image, disarmed (no radio: arming `no_link`), `raw/load_idle_disarmed.analysis.txt`. Link load = parameter listings without pause (the service's largest output; no telemetry stream exists, see "Open"): 437.7 kB/s, 6438 frames/s for 60 s, 0 sequence gaps, heartbeats 60. Interrupt-entry spacing window max: port closed 134.12 us, open (heartbeat only) 134.11 us, load 134.19 us, after 134.05 us; window min 132.63..132.77 us. IMU interrupt (`irq`) window max 74.84 / 74.84 / 74.85 / 74.86 us. USBCTRL chain window max 78.6 us idle, 82.15 us under load. EMB-3 over the whole capture: C = 79.69 us, T = 133.41 us, U = 0.597 (PASS, margin 40.3 % of T); RTA R = 80.46 us vs D = T: PASS. Rate and attitude timing_faults 0, IMU ovr/spi/partial/clamp/order/empty 0, est_valid=1. |
+| console | `../usb/fields_diff.py raw/flight_final.log ../usb/raw/flight_final.log`: 46 fields each, none added or removed, same order, no other line template differs: PASS. Flight image left on the board: est_valid=1, rate timing_faults 0, attitude timing_faults 0, usb_reset_refused 0. |
+| (f) GUI | Not rendered in a browser. The GUI's own path was exercised instead: `bench_link.py` is a WebSocket client of the helper on the board's link port, exactly the bytes the GCS would get (`raw/bench_link.ground.log`, `raw/bench_link.json` "list"). |
+
+Rate caps in force (stated, none added): the heartbeat at 1 Hz (`kHeartbeatPeriodUs`, the protocol convention); a parameter
+listing sends one parameter (two frames) per service step, and on the board only while the send queue has room for both
+(`Transport::writable`, new); everything else is an answer to a request. No stream-rate parameter exists.
+
+## Armed step (lead with Luis; props off, ESC unpowered)
+
+`uv run python tests/regression/quad/L10/results/link_board/armed_runbook.py <dir>/armed` on the bench-stats image, then
+`bench_load.py analyze <dir>/armed` for the EMB-3 numbers. The script asks for each precondition, tells Luis when to arm and
+disarm, and prints per step: disarmed baseline; arm; armed refusals (parameter write refused "only while disarmed", activation
+DENIED_ARMED); the bootloader reboot command (param1 3) DENIED with a status text, still armed; `picotool reboot -f` refused
+(usb_reset_refused +1, still armed); the link at its largest output for 60 s armed; disarm; param1 3 IN_PROGRESS then
+ACCEPTED, arming=maintenance; `picotool reboot -f` honoured (the board reboots: a fresh clock, usb_reset_refused 0). Then
+flash the flight image back.
+
+## Lead decisions (2026-10-18)
+
+- The maintenance request is COMMAND_LONG MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN (fw/link/src/service.cpp), the same code in the SIL
+  and on the board; param1 3 is read as "the FC permits, picotool resets". Covered in the SIL by
+  `tests/regression/quad/L10/gz/test_link_sil.py::test_the_bootloader_reboot_is_denied_armed_and_granted_disarmed_without_a_reboot`.
+- No telemetry stream exists yet (unit 11 adds the seqlock snapshot and the streams); EMB-3 "at the cap" for unit 12 is the
+  link's largest output now, the parameter listings above. Unit 11 re-measures with telemetry.
+
+## Notes
+
+- `motor_test refused: unknown command (console)` appears once, right after the console host first opens if00 with
+  `usb_common.open_raw` (both `bench_link.console.log` and `load_idle_disarmed.console.log`), and not with
+  `tools/target/bench_stats.py capture` (`flight_final.log`). INFERRED: the host tty echoes the banner back before raw mode
+  is set. Console code is unchanged by this unit. `open_raw` also clears HUPCL on the port, so a later close does not drop
+  DTR and the board does not reprint its banner on the next open; `stty -F <if00> hupcl` restores it (done before the last
+  `flight_final.log`).
+- Rate `timing_faults=1` in `flight_final.log` and after the granted reboot: the boot-time count after a reboot that the 12a
+  README records for the m4 image as well (attitude timing_faults 0).
+- RAM: linking the service pulls the store's staging into the image: `store::g_sources` 131072 B (kConfigSlotBytes, a
+  PLACEHOLDER) and the service state 65800 B (its source buffer holds the longest text the link carries, 65535 B). Flight
+  image text 218652 B, bss 223364 B; bss ends at 0x2006ac84, 87 KB below the heap limit 0x20080000.
+
+## Result: the armed step with Luis, 2026-10-18 (`armed_runbook.py`, bench-stats image of 3184b1f)
+
+Props off, ESC battery unplugged, RadioMaster on ExpressLRS; Luis armed and disarmed on ch5. The script never armed or
+commanded a motor. Run `raw/armed3.*` (`armed3.analysis.txt` is `bench_load.py analyze raw/armed3`); all nine steps PASS:
+
+| Step | Result |
+| --- | --- |
+| 1 disarmed | arming=switch_off, usb_reset_refused=0, est_valid=1 |
+| 2 arm | arming=armed |
+| 3 armed refusals | PARAM_SET echoed unchanged (0x4011145e) with "att_kp: parameters can be set only while disarmed"; activation DENIED_ARMED "config command refused while armed" |
+| 4 maintenance armed | MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN param1 3: DENIED, "reboot refused while armed", still armed |
+| 5 picotool armed | `picotool reboot -f` refused: usb_reset_refused 0 -> 1, still armed |
+| 6 link at the cap, armed | 60 s parameter listings, 6335 frames/s, 430.7 kB/s, 0 sequence gaps, still armed |
+| 7 disarm | arming=switch_off |
+| 8 maintenance disarmed | IN_PROGRESS then ACCEPTED, arming=maintenance |
+| 9 picotool granted | honoured: console clock 423.1 s -> 15.1 s, usb_reset_refused 0, est_valid=1 |
+
+EMB-3 armed under link load: C = 80.55 us, U = 0.604 (margin +39.6 % of T), RTA R = 81.33 us (margin +52.09 us), T = 133.413 us
+measured; load windows: interrupt-entry spacing window max 134.19 us, min 132.63 us, IMU irq window max 76.48 us, USBCTRL
+chain window max 100.63 us. Earlier attempts, kept as evidence of the arming gates: `raw/armed.*` (receiver not yet
+linked: arming=no_link, then the script lost the heartbeat after 10 s) and `raw/armed2.*` (Luis had raised the throttle
+before arming: arming=throttle_up at 0.146, so the board stayed disarmed; the script's later steps then ran disarmed and
+were correctly granted, and picotool rebooted the board). The flight image was flashed back afterwards.

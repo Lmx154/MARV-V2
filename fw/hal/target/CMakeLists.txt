@@ -142,9 +142,19 @@ if(NOT MARV_FC3V2_HIL AND NOT MARV_FC3V2_HIL_LINK)
     PICO_USB_RESET_INCLUDE_DEFAULT_APP_DRIVER_CB=0
     PICO_ENABLE_USB_RESET_VIA_BAUD_RATE=0
     PICO_USB_RESET_MS_OS_20_DESCRIPTOR_ITF=4)
+  # The ground link's transport (ground-segment unit 12b; src/link_port.cpp, marv/hal_target/link_port.hpp): the link service
+  # (fw/link) runs on the link CDC from main.cpp's background loop. MARV_FC3V2_LINK_QUEUE_FRAMES is a PLACEHOLDER: the frames of
+  # the longest length (marv/link/messages.hpp kFrameBytesMax) its send queue holds, room for one listing step (two frames),
+  # the heartbeat and the answers to the few requests one loop pass reads; ground-segment unit 11 replaces it with the link
+  # budget (decision 0053 Q4: the total rate capped by a design-budget entry from the measured link throughput).
+  set(MARV_FC3V2_LINK_QUEUE_FRAMES 16 CACHE STRING
+      "Frames of the longest length the board's link send queue holds (PLACEHOLDER until the link budget of ground-segment unit 11)")
+  target_sources(marv_hal_target PRIVATE src/link_port.cpp)
+  target_link_libraries(marv_hal_target PRIVATE marv_link)
+  target_compile_definitions(marv_hal_target PRIVATE MARV_FC3V2_LINK_QUEUE_FRAMES=${MARV_FC3V2_LINK_QUEUE_FRAMES})
 endif()
 # MARV_FC3V2_USB_BENCH (bench only, default OFF, ground-segment unit 12a): the background loop echoes every byte received on the
-# link port back on it (usb_bench_echo_step), for the bench check of the transport. Nothing else reads the link port yet.
+# link port back on it (usb_bench_echo_step), for the bench check of the transport; that image does not run the link service.
 option(MARV_FC3V2_USB_BENCH "FC3v2 bench image that echoes the USB link port" OFF)
 if(MARV_FC3V2_USB_BENCH AND (MARV_FC3V2_HIL OR MARV_FC3V2_HIL_LINK))
   message(FATAL_ERROR "MARV_FC3V2_USB_BENCH excludes MARV_FC3V2_HIL and MARV_FC3V2_HIL_LINK (they have no link port)")
@@ -164,6 +174,9 @@ else()
   target_link_libraries(marv_fc3v2 PRIVATE
     marv_composition_quad_fc marv_store marv_hal_target marv_lsm6dsv_decode marv_console_decode marv_params_fc3v2_generated
     marv_params_fc3v2_runtime pico_stdlib hardware_spi hardware_pio hardware_uart)
+  if(NOT MARV_FC3V2_HIL)
+    target_link_libraries(marv_fc3v2 PRIVATE marv_link_service)
+  endif()
   # The image holds exactly the FC3v2 set's parameter table, or the build fails and the image is removed.
   marv_check_param_table(marv_fc3v2 marv_params_fc3v2)
 endif()

@@ -98,7 +98,8 @@ extern "C" {
   }
   if (!g_link_started) {
     marv::link::service_init(marv::link::ServiceConfig{
-        marv::link::Transport{&link_receive, &link_send}, g_image, &armed_now});
+        marv::link::Transport{&link_receive, &link_send}, g_image, &armed_now, &marv::composition::request_maintenance,
+        &marv::composition::maintenance_granted});
     g_link_started = true;
   }
   *reboot_requested = marv::link::service_step() ? 1 : 0;

@@ -1,0 +1,1122 @@
+{
+ "elf_sha256": "6dbc7ca9f04be35b19878ab28d6dfe3731b1303ab43ba6a16c9d8660fffb7bb1",
+ "steps": {
+  "link": {
+   "pass": true,
+   "heartbeat_armed": false,
+   "system_status": 3,
+   "capabilities": "0x2010",
+   "config_source": 0,
+   "config_state": 0,
+   "config_refusal": 0,
+   "schema_hash": "0x3ae00eb50938acba",
+   "config_sha256": "625f509b20a3bf7456ac3aa7d79e8b89349d5f317278b5f98a1bc317a138003d",
+   "image_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+   "staged_differs": 0
+  },
+  "(a) list": {
+   "pass": true,
+   "manifest_count": 137,
+   "values": 137,
+   "records": 137,
+   "mismatched": [],
+   "seq_gaps": 0,
+   "frames": 274,
+   "seconds": 0.037
+  },
+  "(b) stage": {
+   "pass": true,
+   "param": "att_kp",
+   "factory_bits": "0x4011145e",
+   "echo_bits": "0x4011145f",
+   "read_bits": "0x4011145f",
+   "record_staged": "0x4011145f",
+   "record_active": "0x4011145e",
+   "origin": 2,
+   "method": 6,
+   "sigma_kind": 3,
+   "staged_differs": 1,
+   "locked_param": "rotor_speed_max",
+   "locked_echo": "0x450f9000",
+   "locked_texts": [
+    "rotor_speed_max: the parameter is locked: it keeps",
+    " its compiled value"
+   ]
+  },
+  "(c) activate": {
+   "pass": true,
+   "acks": {
+    "activate_no_report": {
+     "result": 2,
+     "texts": [
+      "config command refused: no validation report id, s",
+      "o the config cannot be bound to this image and a r",
+      "eport (G7)"
+     ]
+    },
+    "activate": {
+     "result": 5,
+     "texts": [
+      "config command the config is not bound to this ima",
+      "ge's hash and a validation report"
+     ]
+    },
+    "revert": {
+     "result": 4,
+     "texts": [
+      "config command there is no last good stored config"
+     ]
+    },
+    "factory_reset": {
+     "result": 5,
+     "texts": [
+      "config command this board cannot keep a boot reque",
+      "st"
+     ]
+    }
+   },
+   "expected_config_sha256": "bd9262ce95a400eca0f2d36b65e7839ad985f3d328ce0d33b8ef423011b4819e",
+   "heartbeats_in_window": 3,
+   "console_t_before": 16132289,
+   "console_t_after": 19132430,
+   "est_valid": 1,
+   "arming": "no_link",
+   "staged_differs": 1,
+   "maintenance_requested": "no (every command was refused before the store asks for it)"
+  },
+  "(d) picotool reboot -f, no grant": {
+   "pass": true,
+   "picotool_rc": 0,
+   "picotool_out": "The device was asked to reboot into application mode.",
+   "usb_reset_refused_before": 0,
+   "usb_reset_refused_after": 1,
+   "console_t": 24132663,
+   "arming": "no_link"
+  },
+  "(d) grant": {
+   "pass": true,
+   "reboot_acks": [
+    5,
+    4
+   ],
+   "reboot_texts": [
+    "reboot failed: this board cannot reboot itself"
+   ],
+   "bootloader_acks": [
+    5,
+    0
+   ],
+   "arming": "maintenance",
+   "console_t": 27132804
+  },
+  "(d) picotool reboot -f, granted": {
+   "pass": true,
+   "picotool_rc": 0,
+   "picotool_out": "The device was asked to reboot into application mode.",
+   "usb_reset_refused_before": 1,
+   "console_t_before": 27132804,
+   "usb_reset_refused_after_reboot": 0,
+   "console_t_after_reboot": 15109058,
+   "est_valid": 1,
+   "arming": "no_link"
+  }
+ },
+ "console_before": {
+  "t_us": 14109115,
+  "est_valid": 1,
+  "arming": "no_link",
+  "rate_timing_faults": 1,
+  "attitude_timing_faults": 0,
+  "usb_reset_refused": 0,
+  "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0",
+  "line": "imu dt=1000047us irq/s=7495.6 words/s=14991.3 samples/s=7495.6 ticks/s=7495.6 writes/s=3747.8 motor_drops=0 | total samples=105231 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=14109115 gyro=(-0.0024,+0.0024,-0.0012) accel=(-0.014,+0.297,-9.772) temp=303.71K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.8 executions=52616 timing_faults=1 | rc frames/s=0.0 total=0 link_frames=0 bad_crc=0 bad_length=0 dropped_bytes=0 uart_errors=0 age_us=-1 roll=+0.000 pitch=+0.000 throttle=0.000 yaw=+0.000 tilt=0.0244 est_valid=1 | arming=no_link | attitude faults=0 timing_faults=0 | usb_reset_refused=0\r"
+ },
+ "list": {
+  "mass": {
+   "link_id": "mass",
+   "type": 9,
+   "bits": "0x3f3b645a",
+   "factory_bits": "0x3f3b645a",
+   "lock": 0
+  },
+  "inertia_xx": {
+   "link_id": "inertia_xx",
+   "type": 9,
+   "bits": "0x3b8beb5b",
+   "factory_bits": "0x3b8beb5b",
+   "lock": 0
+  },
+  "inertia_yy": {
+   "link_id": "inertia_yy",
+   "type": 9,
+   "bits": "0x3b59945b",
+   "factory_bits": "0x3b59945b",
+   "lock": 0
+  },
+  "inertia_zz": {
+   "link_id": "inertia_zz",
+   "type": 9,
+   "bits": "0x3bf08462",
+   "factory_bits": "0x3bf08462",
+   "lock": 0
+  },
+  "rotor_thrust_coeff": {
+   "link_id": "rotor_thrus_344c",
+   "type": 9,
+   "bits": "0x363be7a2",
+   "factory_bits": "0x363be7a2",
+   "lock": 0
+  },
+  "rotor_torque_ratio": {
+   "link_id": "rotor_torqu_c8d9",
+   "type": 9,
+   "bits": "0x3c449ba6",
+   "factory_bits": "0x3c449ba6",
+   "lock": 0
+  },
+  "rotor_speed_min": {
+   "link_id": "rotor_speed_min",
+   "type": 9,
+   "bits": "0x00000000",
+   "factory_bits": "0x00000000",
+   "lock": 1
+  },
+  "rotor_speed_max": {
+   "link_id": "rotor_speed_max",
+   "type": 9,
+   "bits": "0x450f9000",
+   "factory_bits": "0x450f9000",
+   "lock": 1
+  },
+  "motor_tau": {
+   "link_id": "motor_tau",
+   "type": 9,
+   "bits": "0x3d4ccccd",
+   "factory_bits": "0x3d4ccccd",
+   "lock": 0
+  },
+  "rotor_position_m1_x": {
+   "link_id": "rotor_posit_b714",
+   "type": 9,
+   "bits": "0x3de56042",
+   "factory_bits": "0x3de56042",
+   "lock": 0
+  },
+  "rotor_position_m1_y": {
+   "link_id": "rotor_posit_e758",
+   "type": 9,
+   "bits": "0x3e028f5c",
+   "factory_bits": "0x3e028f5c",
+   "lock": 0
+  },
+  "rotor_position_m1_z": {
+   "link_id": "rotor_posit_837d",
+   "type": 9,
+   "bits": "0xbcbedfa4",
+   "factory_bits": "0xbcbedfa4",
+   "lock": 0
+  },
+  "rotor_yaw_sign_m1": {
+   "link_id": "rotor_yaw_s_2713",
+   "type": 6,
+   "bits": "0x00000001",
+   "factory_bits": "0x00000001",
+   "lock": 0
+  },
+  "rotor_position_m2_x": {
+   "link_id": "rotor_posit_dc4d",
+   "type": 9,
+   "bits": "0xbde56042",
+   "factory_bits": "0xbde56042",
+   "lock": 0
+  },
+  "rotor_position_m2_y": {
+   "link_id": "rotor_posit_4644",
+   "type": 9,
+   "bits": "0xbe028f5c",
+   "factory_bits": "0xbe028f5c",
+   "lock": 0
+  },
+  "rotor_position_m2_z": {
+   "link_id": "rotor_posit_80c3",
+   "type": 9,
+   "bits": "0xbcbedfa4",
+   "factory_bits": "0xbcbedfa4",
+   "lock": 0
+  },
+  "rotor_yaw_sign_m2": {
+   "link_id": "rotor_yaw_s_a8a3",
+   "type": 6,
+   "bits": "0x00000001",
+   "factory_bits": "0x00000001",
+   "lock": 0
+  },
+  "rotor_position_m3_x": {
+   "link_id": "rotor_posit_3608",
+   "type": 9,
+   "bits": "0x3de56042",
+   "factory_bits": "0x3de56042",
+   "lock": 0
+  },
+  "rotor_position_m3_y": {
+   "link_id": "rotor_posit_c4ca",
+   "type": 9,
+   "bits": "0xbe028f5c",
+   "factory_bits": "0xbe028f5c",
+   "lock": 0
+  },
+  "rotor_position_m3_z": {
+   "link_id": "rotor_posit_15b3",
+   "type": 9,
+   "bits": "0xbcbedfa4",
+   "factory_bits": "0xbcbedfa4",
+   "lock": 0
+  },
+  "rotor_yaw_sign_m3": {
+   "link_id": "rotor_yaw_s_616f",
+   "type": 6,
+   "bits": "0xffffffff",
+   "factory_bits": "0xffffffff",
+   "lock": 0
+  },
+  "rotor_position_m4_x": {
+   "link_id": "rotor_posit_a2a2",
+   "type": 9,
+   "bits": "0xbde56042",
+   "factory_bits": "0xbde56042",
+   "lock": 0
+  },
+  "rotor_position_m4_y": {
+   "link_id": "rotor_posit_eb77",
+   "type": 9,
+   "bits": "0x3e028f5c",
+   "factory_bits": "0x3e028f5c",
+   "lock": 0
+  },
+  "rotor_position_m4_z": {
+   "link_id": "rotor_posit_757b",
+   "type": 9,
+   "bits": "0xbcbedfa4",
+   "factory_bits": "0xbcbedfa4",
+   "lock": 0
+  },
+  "rotor_yaw_sign_m4": {
+   "link_id": "rotor_yaw_s_78fd",
+   "type": 6,
+   "bits": "0xffffffff",
+   "factory_bits": "0xffffffff",
+   "lock": 0
+  },
+  "idle_speed": {
+   "link_id": "idle_speed",
+   "type": 9,
+   "bits": "0x00000000",
+   "factory_bits": "0x00000000",
+   "lock": 0
+  },
+  "mixer_m1_thrust": {
+   "link_id": "mixer_m1_thrust",
+   "type": 9,
+   "bits": "0x3e800000",
+   "factory_bits": "0x3e800000",
+   "lock": 0
+  },
+  "mixer_m1_roll": {
+   "link_id": "mixer_m1_roll",
+   "type": 9,
+   "bits": "0xbffafafb",
+   "factory_bits": "0xbffafafb",
+   "lock": 0
+  },
+  "mixer_m1_pitch": {
+   "link_id": "mixer_m1_pitch",
+   "type": 9,
+   "bits": "0x400edb6e",
+   "factory_bits": "0x400edb6e",
+   "lock": 0
+  },
+  "mixer_m1_yaw": {
+   "link_id": "mixer_m1_yaw",
+   "type": 9,
+   "bits": "0x41a6aaab",
+   "factory_bits": "0x41a6aaab",
+   "lock": 0
+  },
+  "mixer_m2_thrust": {
+   "link_id": "mixer_m2_thrust",
+   "type": 9,
+   "bits": "0x3e800000",
+   "factory_bits": "0x3e800000",
+   "lock": 0
+  },
+  "mixer_m2_roll": {
+   "link_id": "mixer_m2_roll",
+   "type": 9,
+   "bits": "0x3ffafafb",
+   "factory_bits": "0x3ffafafb",
+   "lock": 0
+  },
+  "mixer_m2_pitch": {
+   "link_id": "mixer_m2_pitch",
+   "type": 9,
+   "bits": "0xc00edb6e",
+   "factory_bits": "0xc00edb6e",
+   "lock": 0
+  },
+  "mixer_m2_yaw": {
+   "link_id": "mixer_m2_yaw",
+   "type": 9,
+   "bits": "0x41a6aaab",
+   "factory_bits": "0x41a6aaab",
+   "lock": 0
+  },
+  "mixer_m3_thrust": {
+   "link_id": "mixer_m3_thrust",
+   "type": 9,
+   "bits": "0x3e800000",
+   "factory_bits": "0x3e800000",
+   "lock": 0
+  },
+  "mixer_m3_roll": {
+   "link_id": "mixer_m3_roll",
+   "type": 9,
+   "bits": "0x3ffafafb",
+   "factory_bits": "0x3ffafafb",
+   "lock": 0
+  },
+  "mixer_m3_pitch": {
+   "link_id": "mixer_m3_pitch",
+   "type": 9,
+   "bits": "0x400edb6e",
+   "factory_bits": "0x400edb6e",
+   "lock": 0
+  },
+  "mixer_m3_yaw": {
+   "link_id": "mixer_m3_yaw",
+   "type": 9,
+   "bits": "0xc1a6aaab",
+   "factory_bits": "0xc1a6aaab",
+   "lock": 0
+  },
+  "mixer_m4_thrust": {
+   "link_id": "mixer_m4_thrust",
+   "type": 9,
+   "bits": "0x3e800000",
+   "factory_bits": "0x3e800000",
+   "lock": 0
+  },
+  "mixer_m4_roll": {
+   "link_id": "mixer_m4_roll",
+   "type": 9,
+   "bits": "0xbffafafb",
+   "factory_bits": "0xbffafafb",
+   "lock": 0
+  },
+  "mixer_m4_pitch": {
+   "link_id": "mixer_m4_pitch",
+   "type": 9,
+   "bits": "0xc00edb6e",
+   "factory_bits": "0xc00edb6e",
+   "lock": 0
+  },
+  "mixer_m4_yaw": {
+   "link_id": "mixer_m4_yaw",
+   "type": 9,
+   "bits": "0xc1a6aaab",
+   "factory_bits": "0xc1a6aaab",
+   "lock": 0
+  },
+  "tick_period_num_us": {
+   "link_id": "tick_period_73f6",
+   "type": 6,
+   "bits": "0x001dcd65",
+   "factory_bits": "0x001dcd65",
+   "lock": 0
+  },
+  "tick_period_den": {
+   "link_id": "tick_period_den",
+   "type": 6,
+   "bits": "0x00003939",
+   "factory_bits": "0x00003939",
+   "lock": 0
+  },
+  "rate_loop_divisor": {
+   "link_id": "rate_loop_d_0e79",
+   "type": 6,
+   "bits": "0x00000002",
+   "factory_bits": "0x00000002",
+   "lock": 0
+  },
+  "rate_max_roll": {
+   "link_id": "rate_max_roll",
+   "type": 9,
+   "bits": "0x413b196b",
+   "factory_bits": "0x413b196b",
+   "lock": 0
+  },
+  "rate_max_pitch": {
+   "link_id": "rate_max_pitch",
+   "type": 9,
+   "bits": "0x413b196b",
+   "factory_bits": "0x413b196b",
+   "lock": 0
+  },
+  "rate_max_yaw": {
+   "link_id": "rate_max_yaw",
+   "type": 9,
+   "bits": "0x413b196b",
+   "factory_bits": "0x413b196b",
+   "lock": 0
+  },
+  "angle_tilt_max": {
+   "link_id": "angle_tilt_max",
+   "type": 9,
+   "bits": "0x3f860a92",
+   "factory_bits": "0x3f860a92",
+   "lock": 0
+  },
+  "yaw_deadband": {
+   "link_id": "yaw_deadband",
+   "type": 9,
+   "bits": "0x00000000",
+   "factory_bits": "0x00000000",
+   "lock": 0
+  },
+  "rate_ff_enable": {
+   "link_id": "rate_ff_enable",
+   "type": 6,
+   "bits": "0x00000000",
+   "factory_bits": "0x00000000",
+   "lock": 0
+  },
+  "site_latitude_rad": {
+   "link_id": "site_latitu_a777",
+   "type": 9,
+   "bits": "0x3f51eb85",
+   "factory_bits": "0x3f51eb85",
+   "lock": 0
+  },
+  "site_height_m": {
+   "link_id": "site_height_m",
+   "type": 9,
+   "bits": "0x43fa0000",
+   "factory_bits": "0x43fa0000",
+   "lock": 0
+  },
+  "rate_kp_roll": {
+   "link_id": "rate_kp_roll",
+   "type": 9,
+   "bits": "0x3cfd49c1",
+   "factory_bits": "0x3cfd49c1",
+   "lock": 0
+  },
+  "rate_kp_pitch": {
+   "link_id": "rate_kp_pitch",
+   "type": 9,
+   "bits": "0x3cc4ef9a",
+   "factory_bits": "0x3cc4ef9a",
+   "lock": 0
+  },
+  "rate_kp_yaw": {
+   "link_id": "rate_kp_yaw",
+   "type": 9,
+   "bits": "0x3d59b280",
+   "factory_bits": "0x3d59b280",
+   "lock": 0
+  },
+  "rate_ki_roll": {
+   "link_id": "rate_ki_roll",
+   "type": 9,
+   "bits": "0x3d8e84eb",
+   "factory_bits": "0x3d8e84eb",
+   "lock": 0
+  },
+  "rate_ki_pitch": {
+   "link_id": "rate_ki_pitch",
+   "type": 9,
+   "bits": "0x3d5d9f54",
+   "factory_bits": "0x3d5d9f54",
+   "lock": 0
+  },
+  "rate_ki_yaw": {
+   "link_id": "rate_ki_yaw",
+   "type": 9,
+   "bits": "0x3df4fc77",
+   "factory_bits": "0x3df4fc77",
+   "lock": 0
+  },
+  "rate_kd_roll": {
+   "link_id": "rate_kd_roll",
+   "type": 9,
+   "bits": "0x3b29a4bf",
+   "factory_bits": "0x3b29a4bf",
+   "lock": 0
+  },
+  "rate_kd_pitch": {
+   "link_id": "rate_kd_pitch",
+   "type": 9,
+   "bits": "0x3b03e69d",
+   "factory_bits": "0x3b03e69d",
+   "lock": 0
+  },
+  "rate_kd_yaw": {
+   "link_id": "rate_kd_yaw",
+   "type": 9,
+   "bits": "0x3b91ce58",
+   "factory_bits": "0x3b91ce58",
+   "lock": 0
+  },
+  "rate_d_filter_tau_roll": {
+   "link_id": "rate_d_filt_5230",
+   "type": 9,
+   "bits": "0x3d6544e2",
+   "factory_bits": "0x3d6544e2",
+   "lock": 0
+  },
+  "rate_d_filter_tau_pitch": {
+   "link_id": "rate_d_filt_0b3d",
+   "type": 9,
+   "bits": "0x3d6544e2",
+   "factory_bits": "0x3d6544e2",
+   "lock": 0
+  },
+  "rate_d_filter_tau_yaw": {
+   "link_id": "rate_d_filt_c123",
+   "type": 9,
+   "bits": "0x3d6544e2",
+   "factory_bits": "0x3d6544e2",
+   "lock": 0
+  },
+  "rate_tau_ref_roll": {
+   "link_id": "rate_tau_re_e7b2",
+   "type": 9,
+   "bits": "0x3e57b6e2",
+   "factory_bits": "0x3e57b6e2",
+   "lock": 0
+  },
+  "rate_tau_ref_pitch": {
+   "link_id": "rate_tau_re_b2f5",
+   "type": 9,
+   "bits": "0x3e57b6e2",
+   "factory_bits": "0x3e57b6e2",
+   "lock": 0
+  },
+  "rate_tau_ref_yaw": {
+   "link_id": "rate_tau_ref_yaw",
+   "type": 9,
+   "bits": "0x3eb9eaa7",
+   "factory_bits": "0x3eb9eaa7",
+   "lock": 0
+  },
+  "rate_ff_filter_tau": {
+   "link_id": "rate_ff_fil_ba49",
+   "type": 9,
+   "bits": "0x41182250",
+   "factory_bits": "0x41182250",
+   "lock": 0
+  },
+  "att_kp": {
+   "link_id": "att_kp",
+   "type": 9,
+   "bits": "0x4011145e",
+   "factory_bits": "0x4011145e",
+   "lock": 0
+  },
+  "att_yaw_weight": {
+   "link_id": "att_yaw_weight",
+   "type": 9,
+   "bits": "0x3d604404",
+   "factory_bits": "0x3d604404",
+   "lock": 0
+  },
+  "att_loop_ratio": {
+   "link_id": "att_loop_ratio",
+   "type": 6,
+   "bits": "0x00000001",
+   "factory_bits": "0x00000001",
+   "lock": 0
+  },
+  "att_yaw_alpha_min": {
+   "link_id": "att_yaw_alp_d64e",
+   "type": 9,
+   "bits": "0x4200d073",
+   "factory_bits": "0x4200d073",
+   "lock": 0
+  },
+  "att_yaw_t_cross": {
+   "link_id": "att_yaw_t_cross",
+   "type": 9,
+   "bits": "0x3ece6e34",
+   "factory_bits": "0x3ece6e34",
+   "lock": 0
+  },
+  "gyro_lpf_cutoff_hz": {
+   "link_id": "gyro_lpf_cu_5ce9",
+   "type": 9,
+   "bits": "0x44373c03",
+   "factory_bits": "0x44373c03",
+   "lock": 0
+  },
+  "gyro_notch_q_h1": {
+   "link_id": "gyro_notch_q_h1",
+   "type": 9,
+   "bits": "0x40001df8",
+   "factory_bits": "0x40001df8",
+   "lock": 0
+  },
+  "gyro_notch_q_h2": {
+   "link_id": "gyro_notch_q_h2",
+   "type": 9,
+   "bits": "0x3ff498b3",
+   "factory_bits": "0x3ff498b3",
+   "lock": 0
+  },
+  "gyro_notch_q_h3": {
+   "link_id": "gyro_notch_q_h3",
+   "type": 9,
+   "bits": "0x3fe1e783",
+   "factory_bits": "0x3fe1e783",
+   "lock": 0
+  },
+  "gyro_notch_omega_min": {
+   "link_id": "gyro_notch__034e",
+   "type": 9,
+   "bits": "0x437d2ab8",
+   "factory_bits": "0x437d2ab8",
+   "lock": 0
+  },
+  "vert_kp_v": {
+   "link_id": "vert_kp_v",
+   "type": 9,
+   "bits": "0x404022be",
+   "factory_bits": "0x404022be",
+   "lock": 0
+  },
+  "vert_ki_v": {
+   "link_id": "vert_ki_v",
+   "type": 9,
+   "bits": "0x40ac9903",
+   "factory_bits": "0x40ac9903",
+   "lock": 0
+  },
+  "vert_kp_z": {
+   "link_id": "vert_kp_z",
+   "type": 9,
+   "bits": "0x3dbdb3ec",
+   "factory_bits": "0x3dbdb3ec",
+   "lock": 0
+  },
+  "vert_loop_ratio": {
+   "link_id": "vert_loop_ratio",
+   "type": 6,
+   "bits": "0x00000001",
+   "factory_bits": "0x00000001",
+   "lock": 0
+  },
+  "PM_min": {
+   "link_id": "PM_min",
+   "type": 9,
+   "bits": "0x3f490fdb",
+   "factory_bits": "0x3f490fdb",
+   "lock": 0
+  },
+  "chi2_gate_quantile": {
+   "link_id": "chi2_gate_q_0527",
+   "type": 9,
+   "bits": "0x3f7fbe77",
+   "factory_bits": "0x3f7fbe77",
+   "lock": 0
+  },
+  "tau_robustness_band": {
+   "link_id": "tau_robustn_0710",
+   "type": 9,
+   "bits": "0x3e99999a",
+   "factory_bits": "0x3e99999a",
+   "lock": 0
+  },
+  "inertia_robustness_band": {
+   "link_id": "inertia_rob_a565",
+   "type": 9,
+   "bits": "0x3f000000",
+   "factory_bits": "0x3f000000",
+   "lock": 0
+  },
+  "thrust_gain_robustness_band": {
+   "link_id": "thrust_gain_74c2",
+   "type": 9,
+   "bits": "0x3f000000",
+   "factory_bits": "0x3f000000",
+   "lock": 0
+  },
+  "Ms_max": {
+   "link_id": "Ms_max",
+   "type": 9,
+   "bits": "0x40000000",
+   "factory_bits": "0x40000000",
+   "lock": 0
+  },
+  "d_path_noise_budget": {
+   "link_id": "d_path_nois_7818",
+   "type": 9,
+   "bits": "0x3f000000",
+   "factory_bits": "0x3f000000",
+   "lock": 0
+  },
+  "t4_pass_probability_tracking": {
+   "link_id": "t4_pass_pro_e626",
+   "type": 9,
+   "bits": "0x3f666666",
+   "factory_bits": "0x3f666666",
+   "lock": 0
+  },
+  "t4_confidence_tracking": {
+   "link_id": "t4_confiden_6f9d",
+   "type": 9,
+   "bits": "0x3f666666",
+   "factory_bits": "0x3f666666",
+   "lock": 0
+  },
+  "t4_pass_probability_safety": {
+   "link_id": "t4_pass_pro_42d3",
+   "type": 9,
+   "bits": "0x3f733333",
+   "factory_bits": "0x3f733333",
+   "lock": 0
+  },
+  "t4_confidence_safety": {
+   "link_id": "t4_confiden_1acc",
+   "type": 9,
+   "bits": "0x3f733333",
+   "factory_bits": "0x3f733333",
+   "lock": 0
+  },
+  "allan_check_confidence": {
+   "link_id": "allan_check_49da",
+   "type": 9,
+   "bits": "0x3f7d70a4",
+   "factory_bits": "0x3f7d70a4",
+   "lock": 0
+  },
+  "stream_independence_confidence": {
+   "link_id": "stream_inde_6eba",
+   "type": 9,
+   "bits": "0x3f7d70a4",
+   "factory_bits": "0x3f7d70a4",
+   "lock": 0
+  },
+  "normal_moments_confidence": {
+   "link_id": "normal_mome_a10d",
+   "type": 9,
+   "bits": "0x3f7d70a4",
+   "factory_bits": "0x3f7d70a4",
+   "lock": 0
+  },
+  "per_push_check_time_max": {
+   "link_id": "per_push_ch_d2cd",
+   "type": 9,
+   "bits": "0x42700000",
+   "factory_bits": "0x42700000",
+   "lock": 0
+  },
+  "gyro_chain_attenuation_min": {
+   "link_id": "gyro_chain__d4ac",
+   "type": 9,
+   "bits": "0x3dcccccd",
+   "factory_bits": "0x3dcccccd",
+   "lock": 0
+  },
+  "esc_clock_error_max": {
+   "link_id": "esc_clock_e_8103",
+   "type": 9,
+   "bits": "0x3ca3d70a",
+   "factory_bits": "0x3ca3d70a",
+   "lock": 0
+  },
+  "noise_term_confidence": {
+   "link_id": "noise_term__683a",
+   "type": 9,
+   "bits": "0x3f7d70a4",
+   "factory_bits": "0x3f7d70a4",
+   "lock": 0
+  },
+  "attitude_tilt_error_max": {
+   "link_id": "attitude_ti_fd34",
+   "type": 9,
+   "bits": "0x3cab367a",
+   "factory_bits": "0x3cab367a",
+   "lock": 0
+  },
+  "t4_settle_fraction": {
+   "link_id": "t4_settle_f_e345",
+   "type": 9,
+   "bits": "0x3ca3d70a",
+   "factory_bits": "0x3ca3d70a",
+   "lock": 0
+  },
+  "rate_period_tolerance_us": {
+   "link_id": "rate_period_7129",
+   "type": 6,
+   "bits": "0x00000003",
+   "factory_bits": "0x00000003",
+   "lock": 0
+  },
+  "motor_pad_m1": {
+   "link_id": "motor_pad_m1",
+   "type": 6,
+   "bits": "0x00000003",
+   "factory_bits": "0x00000003",
+   "lock": 1
+  },
+  "motor_pad_m2": {
+   "link_id": "motor_pad_m2",
+   "type": 6,
+   "bits": "0x00000000",
+   "factory_bits": "0x00000000",
+   "lock": 1
+  },
+  "motor_pad_m3": {
+   "link_id": "motor_pad_m3",
+   "type": 6,
+   "bits": "0x00000001",
+   "factory_bits": "0x00000001",
+   "lock": 1
+  },
+  "motor_pad_m4": {
+   "link_id": "motor_pad_m4",
+   "type": 6,
+   "bits": "0x00000002",
+   "factory_bits": "0x00000002",
+   "lock": 1
+  },
+  "motor_test_dshot_max": {
+   "link_id": "motor_test__3b8b",
+   "type": 6,
+   "bits": "0x000001f4",
+   "factory_bits": "0x000001f4",
+   "lock": 1
+  },
+  "motor_test_duration_max_ms": {
+   "link_id": "motor_test__b0ed",
+   "type": 6,
+   "bits": "0x00004e20",
+   "factory_bits": "0x00004e20",
+   "lock": 1
+  },
+  "rates_centre_roll": {
+   "link_id": "rates_centr_cd8c",
+   "type": 9,
+   "bits": "0x3f9c61aa",
+   "factory_bits": "0x3f9c61aa",
+   "lock": 0
+  },
+  "rates_centre_pitch": {
+   "link_id": "rates_centr_390b",
+   "type": 9,
+   "bits": "0x3f9c61aa",
+   "factory_bits": "0x3f9c61aa",
+   "lock": 0
+  },
+  "rates_centre_yaw": {
+   "link_id": "rates_centre_yaw",
+   "type": 9,
+   "bits": "0x3f9c61aa",
+   "factory_bits": "0x3f9c61aa",
+   "lock": 0
+  },
+  "rates_expo_roll": {
+   "link_id": "rates_expo_roll",
+   "type": 9,
+   "bits": "0x00000000",
+   "factory_bits": "0x00000000",
+   "lock": 0
+  },
+  "rates_expo_pitch": {
+   "link_id": "rates_expo_pitch",
+   "type": 9,
+   "bits": "0x00000000",
+   "factory_bits": "0x00000000",
+   "lock": 0
+  },
+  "rates_expo_yaw": {
+   "link_id": "rates_expo_yaw",
+   "type": 9,
+   "bits": "0x00000000",
+   "factory_bits": "0x00000000",
+   "lock": 0
+  },
+  "failsafe_loss_us": {
+   "link_id": "failsafe_loss_us",
+   "type": 6,
+   "bits": "0x000186a0",
+   "factory_bits": "0x000186a0",
+   "lock": 1
+  },
+  "failsafe_hold_us": {
+   "link_id": "failsafe_hold_us",
+   "type": 6,
+   "bits": "0x000493e0",
+   "factory_bits": "0x000493e0",
+   "lock": 1
+  },
+  "failsafe_disarm_us": {
+   "link_id": "failsafe_di_cb08",
+   "type": 6,
+   "bits": "0x0016e360",
+   "factory_bits": "0x0016e360",
+   "lock": 1
+  },
+  "failsafe_recovery_us": {
+   "link_id": "failsafe_re_e47a",
+   "type": 6,
+   "bits": "0x0007a120",
+   "factory_bits": "0x0007a120",
+   "lock": 1
+  },
+  "arm_switch_threshold": {
+   "link_id": "arm_switch__222a",
+   "type": 9,
+   "bits": "0x3ec80000",
+   "factory_bits": "0x3ec80000",
+   "lock": 1
+  },
+  "arm_throttle_min": {
+   "link_id": "arm_throttle_min",
+   "type": 9,
+   "bits": "0x3d780000",
+   "factory_bits": "0x3d780000",
+   "lock": 1
+  },
+  "airmode_activate_throttle": {
+   "link_id": "airmode_act_61cb",
+   "type": 9,
+   "bits": "0x3e960000",
+   "factory_bits": "0x3e960000",
+   "lock": 1
+  },
+  "rc_channel_roll": {
+   "link_id": "rc_channel_roll",
+   "type": 6,
+   "bits": "0x00000001",
+   "factory_bits": "0x00000001",
+   "lock": 0
+  },
+  "rc_channel_pitch": {
+   "link_id": "rc_channel_pitch",
+   "type": 6,
+   "bits": "0x00000002",
+   "factory_bits": "0x00000002",
+   "lock": 0
+  },
+  "rc_channel_throttle": {
+   "link_id": "rc_channel__a393",
+   "type": 6,
+   "bits": "0x00000003",
+   "factory_bits": "0x00000003",
+   "lock": 0
+  },
+  "rc_channel_yaw": {
+   "link_id": "rc_channel_yaw",
+   "type": 6,
+   "bits": "0x00000004",
+   "factory_bits": "0x00000004",
+   "lock": 0
+  },
+  "rc_channel_arm": {
+   "link_id": "rc_channel_arm",
+   "type": 6,
+   "bits": "0x00000005",
+   "factory_bits": "0x00000005",
+   "lock": 1
+  },
+  "rc_channel_angle": {
+   "link_id": "rc_channel_angle",
+   "type": 6,
+   "bits": "0x00000008",
+   "factory_bits": "0x00000008",
+   "lock": 0
+  },
+  "angle_switch_threshold": {
+   "link_id": "angle_switc_922f",
+   "type": 9,
+   "bits": "0x3ec80000",
+   "factory_bits": "0x3ec80000",
+   "lock": 0
+  },
+  "estimator_kp": {
+   "link_id": "estimator_kp",
+   "type": 9,
+   "bits": "0x3e800000",
+   "factory_bits": "0x3e800000",
+   "lock": 0
+  },
+  "estimator_ki": {
+   "link_id": "estimator_ki",
+   "type": 9,
+   "bits": "0x00000000",
+   "factory_bits": "0x00000000",
+   "lock": 0
+  },
+  "estimator_accel_healthy_min": {
+   "link_id": "estimator_a_7120",
+   "type": 9,
+   "bits": "0x3f666666",
+   "factory_bits": "0x3f666666",
+   "lock": 1
+  },
+  "estimator_accel_healthy_max": {
+   "link_id": "estimator_a_48d0",
+   "type": 9,
+   "bits": "0x3f8ccccd",
+   "factory_bits": "0x3f8ccccd",
+   "lock": 1
+  },
+  "gyro_cal_duration_us": {
+   "link_id": "gyro_cal_du_979f",
+   "type": 6,
+   "bits": "0x001312d0",
+   "factory_bits": "0x001312d0",
+   "lock": 1
+  },
+  "gyro_cal_movement_max": {
+   "link_id": "gyro_cal_mo_e408",
+   "type": 9,
+   "bits": "0x3d7033b5",
+   "factory_bits": "0x3d7033b5",
+   "lock": 1
+  },
+  "arm_small_angle": {
+   "link_id": "arm_small_angle",
+   "type": 9,
+   "bits": "0x3edf66f3",
+   "factory_bits": "0x3edf66f3",
+   "lock": 1
+  }
+ },
+ "console_after": {
+  "t_us": 24132663,
+  "est_valid": 1,
+  "arming": "no_link",
+  "rate_timing_faults": 1,
+  "attitude_timing_faults": 0,
+  "usb_reset_refused": 1,
+  "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0",
+  "line": "imu dt=1000045us irq/s=7495.7 words/s=14991.3 samples/s=7495.7 ticks/s=7495.7 writes/s=3747.8 motor_drops=0 | total samples=180364 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=24132663 gyro=(-0.0049,+0.0049,-0.0037) accel=(-0.053,+0.211,-9.791) temp=303.71K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.8 executions=90182 timing_faults=1 | rc frames/s=0.0 total=0 link_frames=0 bad_crc=0 bad_length=0 dropped_bytes=0 uart_errors=0 age_us=-1 roll=+0.000 pitch=+0.000 throttle=0.000 yaw=+0.000 tilt=0.0242 est_valid=1 | arming=no_link | attitude faults=0 timing_faults=0 | usb_reset_refused=1\r"
+ },
+ "seq_gaps_total": 0,
+ "frames_total": 312,
+ "console_after_reboot": {
+  "t_us": 15109058,
+  "est_valid": 1,
+  "arming": "no_link",
+  "rate_timing_faults": 1,
+  "attitude_timing_faults": 0,
+  "usb_reset_refused": 0,
+  "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0",
+  "line": "imu dt=1000047us irq/s=7495.6 words/s=14991.3 samples/s=7495.6 ticks/s=7495.6 writes/s=3747.8 motor_drops=0 | total samples=112727 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=15109058 gyro=(-0.0037,+0.0012,-0.0012) accel=(+0.014,+0.268,-9.830) temp=303.63K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.8 executions=56364 timing_faults=1 | rc frames/s=0.0 total=0 link_frames=0 bad_crc=0 bad_length=0 dropped_bytes=0 uart_errors=0 age_us=-1 roll=+0.000 pitch=+0.000 throttle=0.000 yaw=+0.000 tilt=0.0242 est_valid=1 | arming=no_link | attitude faults=0 timing_faults=0 | usb_reset_refused=0\r"
+ },
+ "helper_output": [
+  "GCS:     http://127.0.0.1:43811/?token=lDTa8m-CfAgBC8x340WxLXCU3J9yysJ0Dixhy4gilCc",
+  "run dir: /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/bench/gs-runs/20261018T180818Z",
+  "device:  serial /dev/serial/by-id/usb-Raspberry_Pi_Pico_B2189353BDF6DD1E-if02 115200"
+ ]
+}
