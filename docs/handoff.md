@@ -12,9 +12,9 @@ History is in git and `docs/decisions/`; the previous handoff is `git show be6b9
 | Item | State |
 | --- | --- |
 | M0-M3 | merged into `master`; tags `quad-M1-pass`..`quad-M3-pass` |
-| `m4` | pushed at `fd2f58b` (dev check PASS; GS units 6, 8b, 9, 12, 13 and the ESKF) |
+| `m4` | pushed at `4495b9c` (dev check PASS; GS units 6, 8b, 9, 12, 13, 14 and the ESKF; 0c307dd was pushed with a failing check and fixed forward at 4495b9c) |
 | Board | flight image `gd46f7f6` (angle on ch8, airmode latch, Betaflight throttle; factory parameter table), est_valid=1 |
-| In flight (2026-10-18) | GS unit 14 FLASH-SLOTS (branch `gs-slots`, engineer, bench on the board); then 15 FLASH-PANEL, 11 PLOTS (telemetry + seqlock), 10 DERIVE |
+| In flight (2026-10-18) | GS unit 15 FLASH-PANEL (branch `gs-flash`, coder, bench on the board); then 11 PLOTS (telemetry + seqlock), 10 DERIVE, 16 |
 
 ## M4 since the last handoff (decisions 0048-0054)
 - 0048 Luis's rulings (plant omega_min 0, angle ch8 at 100, HIL spec text, FMA tolerance 1 count, tags). 0049 plant drag
@@ -28,7 +28,8 @@ History is in git and `docs/decisions/`; the previous handoff is `git show be6b9
   (MARV dialect 15200-15204, GS-3 check), 7 HELPER (tools/gs), 8a GUI (gcs/: connection + parameters pages).
 - Unit 4b STORE, 6 LINK-SIL, 8b GUI polish, 9 REPORT merged. 13 SD (FatFs in third_party/fatfs, `L10/results/sd/`), 12a USB
   (two CDC, resets gated on the maintenance grant, `L10/results/usb/`), 12b link on the board (MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN
-  1/3 for the grant; armed step with Luis 9/9, `L10/results/link_board/`) merged. Next: 14, 15, 11, 10, 16.
+  1/3 for the grant; armed step with Luis 9/9, `L10/results/link_board/`) merged. 14 FLASH-SLOTS (slots at 0x1d0000/0x1e8000, POWMAN boot request, image hash at boot, `L10/results/slots/`)
+  merged. Next: 15, 11, 10, 16.
 - ESKF merged (decision 0055): shadow beside Mahony, T2 passes with controls failing (`L07/results/eskf_shadow/`), host-only
   SIL library `marv_sil_quad_fc_eskf`. Not done: the Gazebo comparison, a board cost measurement; board use is Luis's call.
 
