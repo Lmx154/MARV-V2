@@ -4,6 +4,7 @@ angle mode, from a stick script, off the launch pad, with the N-tick command del
 tuned, nothing is a flight result, and the card values it flies are INFERRED / UNVERIFIED / PLACEHOLDER.
 
   run_quad_fc.py --out-dir <dir> [--plugin-dir <host-gz-quadfc plugin dir>] [--runs flight|control|both] [--max-s <s>]
+                 [--link-udp-port <port>] [--config-dir <dir>] [--interactive]
 
 Needs `cmake --preset host-gz-quadfc && cmake --build --preset host-gz-quadfc` and gz-sim 8. Per run it writes to <dir>:
 the world (<stem>.sdf), the full lockstep log (<stem>.bin, ~80 MB, not committed; its sha256 is in the analysis), the L2 run
@@ -48,6 +49,19 @@ an unmodelled constant trim torque. No plant, plugin or card change: the rotor p
 
 The control run (decision 0042's amended control, tests/regression/quad/L07/gz/test_t4_hover_estimate.py): the same script with
 att_kp = 0, rate_ki_roll = 0 and rate_ki_pitch = 0 through <sil_override>, so no gain returns the tilt to level.
+
+The ground link (decision 0053 Q4, ground-segment unit 6). --link-udp-port <port> writes <link_udp_port> (the SIL's link socket
+on 127.0.0.1:<port>) and --config-dir <dir> writes <config_dir> (the config storage, made absolute and created if missing) into
+the plugin element (sim/gz/plugin/src/lockstep.cpp); without them the world is byte-identical to one without the options. A gz
+exit status of EX_TEMPFAIL is the plugin's "reboot requested" (a config command was accepted): the run stops, nothing is
+analysed, and this script exits with os.EX_TEMPFAIL so that the launcher (tools/gs/sil.py) relaunches it on the same config dir.
+
+The interactive run (--interactive, for the ground station's SIL launcher; --runs, --script, --step-stick, --com-offset-m and
+--max-s do not apply). The same card, tick, site, sensors, N and launch pad, in a world of gen_world mode "pilot", whose
+<real_time_factor> 1 makes gz-sim pace the host steps on the wall clock (the plugin itself reads no wall clock); one script
+segment of INTERACTIVE_S keeps the link on, the sticks centred, the throttle 0 and the arm switch low (the vehicle stays
+disarmed on the pad). No log and no analysis: the run lasts INTERACTIVE_S unless it is stopped (SIGTERM) first. Files:
+<dir>/interactive/<stem>.sdf.
 """
 
 from __future__ import annotations
@@ -56,10 +70,13 @@ import argparse
 import dataclasses
 import hashlib
 import math
+import os
 import re
 import struct
+import subprocess
 import sys
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 import yaml
 
@@ -109,6 +126,8 @@ IHOLD_COM_OFFSET_M = 0.005  # labelled scenario value, PLACEHOLDER: a 5 mm rotor
 DIP_BELOW_STICK = 0.0  # the dip stick that engages the decision 0045 integrator hold (below arm_throttle_min)
 IHOLD_PRE_S = 1.0  # labelled analysis value: the pre-dip window is the last second before the dip
 IHOLD_RETURN_FRACTION = 0.1  # labelled analysis value: the return band is the pre-dip envelope or 10 % of the post-dip excursion, whichever is wider
+INTERACTIVE_S = 24 * 3600.0  # labelled harness value: the longest interactive run (a day; the launcher stops it before that); its
+# host steps must fit gz's --iterations, a C int (gz-sim 8 cmdsim8.rb refuses 4536174183)
 
 
 def register_value(name):
@@ -247,12 +266,22 @@ def com_offset_edit(text, d):
     return pat.sub(lambda m: f"{m[1]}{float(m[2]) + d!r} {float(m[3]) + d!r} {m[4]}{m[5]}", text)
 
 
-def sdf_edit_for(phases, overrides, com_offset_m=0.0):
+def link_xml(link_udp_port=None, config_dir=None):
+    """The plugin's ground-link elements (module docstring); "" without either."""
+    text = ""
+    if config_dir is not None:
+        text += f"<config_dir>{escape(str(config_dir))}</config_dir>\n"
+    if link_udp_port is not None:
+        text += f"<link_udp_port>{int(link_udp_port)}</link_udp_port>\n"
+    return text
+
+
+def sdf_edit_for(phases, overrides, com_offset_m=0.0, link=""):
     def edit(text):
         if com_offset_m:
             text = com_offset_edit(text, com_offset_m)
         text = re.sub(r'\s*<sil_override param="ol_dshot_m\d" type="i32">\d+</sil_override>', "", text)
-        add = "<launch_pad/>\n" + script_xml(phases) + "\n"
+        add = "<launch_pad/>\n" + script_xml(phases) + "\n" + link
         for name, value in overrides:
             add += f'<sil_override param="{name}" type="f32">{value}</sil_override>\n'
         assert text.count("<gyro_source>") == 1
@@ -784,7 +813,17 @@ def tilt_max_param():
     return float(m.group(1))
 
 
-def run_one(label, out_dir, plugin_dir, overrides, max_s, step_stick, ihold_dip_stick=None, com_offset_m=0.0):
+class RebootRequested(Exception):
+    """gz exited with EX_TEMPFAIL: the plugin's "reboot requested" (module docstring)."""
+
+
+def gz_exit_status(error):
+    """The gz exit status a run_scenario.RunError reports (run_scenario.check_exit: "gz exited <status> (..."), else None."""
+    m = re.match(r"gz exited (-?\d+) ", str(error))
+    return int(m.group(1)) if m else None
+
+
+def run_one(label, out_dir, plugin_dir, overrides, max_s, step_stick, ihold_dip_stick=None, com_offset_m=0.0, link=""):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     assert register_value("rc_channel_arm") == ARM_CHANNEL and register_value("rc_channel_angle") == ANGLE_CHANNEL
@@ -794,8 +833,14 @@ def run_one(label, out_dir, plugin_dir, overrides, max_s, step_stick, ihold_dip_
     total_us = phases[-1].end_us if max_s is None else min(phases[-1].end_us, us(max_s))
     iterations = -(-total_us * den // num)  # ticks (= host steps at m = 1) that reach total_us
     sensors = gen_world.SensorSet(gyro="model", bias_signs=(0,) * 6)
-    r = run_scenario.run(CARD, scenario, SEED, M, "test", "lo", out_dir, plugin_dir, sdf_edit_for(phases, overrides, com_offset_m),
-                         iterations=iterations, timeout_s=TIMEOUT_S, sensors=sensors, command_delay_ticks=COMMAND_DELAY_TICKS)
+    try:
+        r = run_scenario.run(CARD, scenario, SEED, M, "test", "lo", out_dir, plugin_dir,
+                             sdf_edit_for(phases, overrides, com_offset_m, link), iterations=iterations, timeout_s=TIMEOUT_S,
+                             sensors=sensors, command_delay_ticks=COMMAND_DELAY_TICKS)
+    except run_scenario.RunError as e:
+        if link and gz_exit_status(e) == os.EX_TEMPFAIL:
+            raise RebootRequested(str(e)) from e
+        raise
     stem = str(Path(r.log_path).with_suffix(""))
     if ihold_dip_stick is None:
         text = analyse(label, r.log, hover, phases, tilt_max_param(), r.log_sha256, stem)
@@ -804,6 +849,26 @@ def run_one(label, out_dir, plugin_dir, overrides, max_s, step_stick, ihold_dip_
     print(text)
     print(f"files: {stem}.{{sdf,bin,report.txt,analysis.txt,traces.csv}}; wall {r.wall_s:.1f} s, RTF {r.rtf:.3f}")
     return r
+
+
+def run_interactive(out_dir, plugin_dir, link):
+    """The interactive run (module docstring): writes the world and runs gz until it ends or is stopped; returns gz's exit
+    status."""
+    out_dir = Path(out_dir) / "interactive"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    assert register_value("rc_channel_arm") == ARM_CHANNEL and register_value("rc_channel_angle") == ANGLE_CHANNEL
+    scenario, num, den = fc3_scenario(out_dir)
+    total_us = us(INTERACTIVE_S)
+    iterations = -(-total_us * den // num)  # ticks (= host steps at m = 1) that reach total_us
+    phases = [Phase("idle", 0, total_us, SWITCH_LOW)]
+    sensors = gen_world.SensorSet(gyro="model", bias_signs=(0,) * 6)
+    name, text = gen_world.generate(CARD, scenario, "pilot", M, "lo", None, ROOT, sensors=sensors,
+                                    command_delay_ticks=COMMAND_DELAY_TICKS)
+    world = out_dir / name
+    world.write_text(sdf_edit_for(phases, (), 0.0, link)(text), encoding="utf-8")
+    cmd = [*run_scenario.GZ_ARGS, "-s", "-r", "--iterations", str(iterations), "--seed", str(SEED), str(world)]
+    print(f"interactive run: {world} (real-time factor 1; until stopped, at most {INTERACTIVE_S:.0f} s)", flush=True)
+    return subprocess.run(cmd, env=run_scenario.gz_env(plugin_dir), check=False).returncode
 
 
 def main(argv=None):
@@ -818,20 +883,43 @@ def main(argv=None):
     ap.add_argument("--com-offset-m", type=float, default=IHOLD_COM_OFFSET_M,
                     help="ihold only: the rotor-position shift on x and y, m, the disturbance torque is thrust x this (a PLACEHOLDER scenario value, default %(default)s)")
     ap.add_argument("--max-s", type=float, default=None, help="end the run early at this SIM time (debugging only)")
+    ap.add_argument("--link-udp-port", type=int, default=None,
+                    help="the SIL's ground-link UDP port on 127.0.0.1 (<link_udp_port>, a scenario value); default: no element")
+    ap.add_argument("--config-dir", default=None,
+                    help="the SIL's config storage directory (<config_dir>; created if missing); default: no element")
+    ap.add_argument("--interactive", action="store_true",
+                    help="one real-time run, arm switch low, no log and no analysis, until stopped (module docstring)")
     a = ap.parse_args(argv)
-    if a.script == "ihold":
+    config_dir = None
+    if a.config_dir is not None:
+        config_dir = Path(a.config_dir).resolve()
+        config_dir.mkdir(parents=True, exist_ok=True)
+    link = link_xml(a.link_udp_port, config_dir)
+    if a.interactive:
+        status = run_interactive(a.out_dir, a.plugin_dir, link)
+        if status == os.EX_TEMPFAIL:
+            print("run_quad_fc: reboot requested (gz exit EX_TEMPFAIL); relaunch on the same config dir", file=sys.stderr)
+            return os.EX_TEMPFAIL
+        return 0 if status == 0 else 1
+    try:
+        if a.script == "ihold":
+            if a.runs in ("flight", "both"):
+                run_one("integrator hold engaged (dip to stick 0)", Path(a.out_dir) / "dip_below_mincheck", a.plugin_dir, (), a.max_s, a.step_stick,
+                        DIP_BELOW_STICK, a.com_offset_m, link)
+            if a.runs in ("control", "both"):
+                run_one("integrator hold not engaged (dip to arm_throttle_min + 2/1024)", Path(a.out_dir) / "dip_above_mincheck", a.plugin_dir, (), a.max_s,
+                        a.step_stick, dip_above_stick(), a.com_offset_m, link)
+            return 0
         if a.runs in ("flight", "both"):
-            run_one("integrator hold engaged (dip to stick 0)", Path(a.out_dir) / "dip_below_mincheck", a.plugin_dir, (), a.max_s, a.step_stick,
-                    DIP_BELOW_STICK, a.com_offset_m)
+            run_one("flight run (angle mode, the loop closed)", Path(a.out_dir) / "flight", a.plugin_dir, (), a.max_s, a.step_stick,
+                    link=link)
         if a.runs in ("control", "both"):
-            run_one("integrator hold not engaged (dip to arm_throttle_min + 2/1024)", Path(a.out_dir) / "dip_above_mincheck", a.plugin_dir, (), a.max_s,
-                    a.step_stick, dip_above_stick(), a.com_offset_m)
-        return 0
-    if a.runs in ("flight", "both"):
-        run_one("flight run (angle mode, the loop closed)", Path(a.out_dir) / "flight", a.plugin_dir, (), a.max_s, a.step_stick)
-    if a.runs in ("control", "both"):
-        run_one("control run (att_kp = 0, rate_ki_roll = rate_ki_pitch = 0: the attitude loop disabled)",
-                Path(a.out_dir) / "control", a.plugin_dir, CONTROL_OVERRIDES, a.max_s, a.step_stick)
+            run_one("control run (att_kp = 0, rate_ki_roll = rate_ki_pitch = 0: the attitude loop disabled)",
+                    Path(a.out_dir) / "control", a.plugin_dir, CONTROL_OVERRIDES, a.max_s, a.step_stick, link=link)
+    except RebootRequested as e:
+        print(f"run_quad_fc: reboot requested (gz exit EX_TEMPFAIL); no analysis; relaunch on the same config dir\n{e}",
+              file=sys.stderr)
+        return os.EX_TEMPFAIL
     return 0
 
 
