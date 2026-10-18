@@ -1,6 +1,5 @@
 // A fake vehicle for the tests: a TypeScript stub that answers the GUI's parameter protocol with frames built by the codec
-// (the behaviour decision 0053 Q1 and Q2 give the real vehicle; unit 6 builds that one, and the SIL replaces this stub in the
-// end-to-end run). It keeps a staged and an active value per parameter, refuses a write that the ruling refuses (wrong type,
+// (the behaviour decision 0053 Q1 and Q2 give the real vehicle; the SIL replaces this stub in the end-to-end run). It keeps a staged and an active value per parameter, refuses a write that the ruling refuses (wrong type,
 // locked, armed, not finite, empty source) with the unchanged value and a STATUSTEXT, and stages a plain write with the
 // default source text until a source SET replaces it.
 import type { Envelope } from '../codec';

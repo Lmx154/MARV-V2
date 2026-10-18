@@ -8,6 +8,7 @@ import type { ImageEntry } from '$lib/params/library';
 import { HelperApi, readHelperInfo, type HelperInfo, type HelperStatus } from './helper_api';
 import { ManifestController, type ManifestState } from './manifest_state';
 import { Problems, type Problem } from './problems';
+import { ValidationController } from './validation_state';
 
 export type { ManifestState } from './manifest_state';
 
@@ -17,6 +18,8 @@ export interface App {
 	helper: HelperConnection | null;
 	session: LinkSession | null;
 	vehicle: VehicleClient | null;
+	/** Validation and activation of the staged config (G7); null without a helper. */
+	validation: ValidationController | null;
 	status: Readable<HelperStatus | null>;
 	/** The device the helper has open, from its events and status. */
 	device: Readable<string | null>;
@@ -67,6 +70,21 @@ function create(): App {
 		vehicle: () => (vehicle ? get(vehicle.state).identity : null)
 	});
 
+	const validation =
+		helper && api && vehicle
+			? new ValidationController({
+					request: (cmd, args) => helper.request(cmd, args),
+					onEvent: (handler) => helper.onEvent(handler),
+					report: (imageHash, configHash) => api.report(imageHash, configHash),
+					vehicle,
+					manifest: () => {
+						const loaded = get(manifest.state).loaded;
+						const identity = get(vehicle.state).identity;
+						return loaded && identity && loaded.manifest.schemaHash === identity.schemaHash ? loaded.manifest : null;
+					}
+				})
+			: null;
+
 	const refreshStatus = async (): Promise<void> => {
 		if (!api) return;
 		const s = await api.status();
@@ -109,6 +127,7 @@ function create(): App {
 		helper,
 		session,
 		vehicle,
+		validation,
 		status: { subscribe: status.subscribe },
 		device: derived(deviceName, (d) => d),
 		manifest: manifest.state,

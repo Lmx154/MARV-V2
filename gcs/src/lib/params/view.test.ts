@@ -14,7 +14,7 @@ function vehicleParam(linkId: string, patch: Partial<VehicleParam> = {}): Vehicl
 	const spec = SPECS.findIndex((s) => s.linkId === linkId);
 	const m = manifest.params[spec]!;
 	return {
-		index: spec, linkId, type: m.type, activeBits: m.defaultBits, stagedBits: m.defaultBits, sigma: m.sigma, origin: m.origin, method: m.method,
+		index: spec, linkId, type: m.type, activeBits: m.defaultBits, stagedBits: m.defaultBits, sigma: m.sigma, sigmaBits: f32ToBits(m.sigma), origin: m.origin, method: m.method,
 		sigmaKind: m.sigmaKind, locked: m.locked, hasRecord: true, sourceLength: m.source.length, source: m.source, sourcePartial: m.source, ...patch
 	};
 }

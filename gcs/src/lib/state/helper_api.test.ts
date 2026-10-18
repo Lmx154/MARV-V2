@@ -36,4 +36,16 @@ describe('the helper\'s HTTP API', () => {
 		const api = new HelperApi({ base: 'http://127.0.0.1:1', token: 'x', wsUrl: '' }, fetcher);
 		await expect(api.status()).rejects.toThrow('401 missing or wrong token');
 	});
+
+	it('returns the exact bytes of a validation report', async () => {
+		const seen: string[] = [];
+		const body = new Uint8Array([123, 10, 0, 255]);
+		const fetcher = (async (url: string) => {
+			seen.push(url);
+			return new Response(body, { status: 200 });
+		}) as unknown as typeof fetch;
+		const api = new HelperApi({ base: 'http://127.0.0.1:1', token: 'tok', wsUrl: '' }, fetcher);
+		expect(await api.report('aa', 'bb')).toEqual(body);
+		expect(seen).toEqual(['http://127.0.0.1:1/api/reports/aa/bb']);
+	});
 });

@@ -24,6 +24,7 @@ export interface HelperStatus {
 	client: boolean;
 	dropped_bytes: number;
 	sil: SilStatus;
+	validation: { running: boolean; image_hash?: string; config_hash?: string; verdict?: string | null; report_id?: string | null } | null;
 	gcs_built: boolean;
 }
 
@@ -80,5 +81,10 @@ export class HelperApi {
 
 	async artifact(hash: string, name: string): Promise<unknown> {
 		return await (await this.get(`/api/images/${hash}/${name}`)).json();
+	}
+
+	/** The validation report of (image hash, config hash): its exact bytes, whose SHA-256 is the report id. */
+	async report(imageHash: string, configHash: string): Promise<Uint8Array> {
+		return new Uint8Array(await (await this.get(`/api/reports/${imageHash}/${configHash}`)).arrayBuffer());
 	}
 }

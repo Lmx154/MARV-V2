@@ -6,6 +6,8 @@
 	import { readSetting, writeSetting } from '$lib/state/storage';
 	import type { SessionState } from '$link/session';
 	import type { VehicleState } from '$link/vehicle';
+	import type { ValidationState } from '$lib/state/validation_state';
+	import { whyCannotBuildView } from '$lib/params/validation';
 	import { matchesFilter, mergeParams, type ParamRow as Row } from '$lib/params/merge';
 	import type { StageContext } from '$lib/params/staging';
 	import { entryKey, entryLabel, explainManifest } from '$lib/params/library';
@@ -21,6 +23,9 @@
 	const session = gcs.session?.state ?? readable<SessionState | null>(null);
 	const helperState = gcs.helper?.state ?? readable('closed');
 	const device = gcs.device;
+	const validation = gcs.validation;
+	const validationState = validation?.state ?? readable<ValidationState | null>(null);
+	const fingerprint = validation?.fingerprint ?? readable('');
 
 	let filter = $state('');
 	let filterInput = $state<HTMLInputElement | null>(null);
@@ -83,6 +88,31 @@
 	const withManifest = $derived($manifest.images?.images.filter((e) => e.artifacts.params_manifest) ?? []);
 	const pickedKey = $derived($manifest.choice.kind === 'picked' ? $manifest.choice.key : '');
 	const pickedMissing = $derived(pickedKey !== '' && !withManifest.some((e) => entryKey(e) === pickedKey));
+
+	const idleValidation: ValidationState = { phase: 'idle', progress: [], record: null, error: null, computed: null, command: null, busy: false };
+	const whyValidate = $derived.by((): string | null => {
+		if (!validation) return 'no helper';
+		if (!ctx.connected) return 'no heartbeat from the vehicle';
+		if (!ctx.identityKnown) return 'the vehicle has not reported its identity';
+		if (!ctx.manifestMatches || !$manifest.loaded) return 'no manifest of the vehicle\'s parameter schema is on screen';
+		if ($vehicle?.listing !== 'complete') return 'read the parameters from the vehicle first';
+		const unreadable = whyCannotBuildView($manifest.loaded.manifest, $vehicle?.params ?? [], false);
+		return unreadable;
+	});
+	const whyActivate = $derived(
+		validation && $vehicle && $validationState ? validation.whyCannotActivate($vehicle, $validationState, $fingerprint) : 'no validation report: validate the staged config first'
+	);
+	const whyCommands = $derived.by((): string | null => {
+		if (!ctx.connected) return 'no heartbeat from the vehicle';
+		if (!ctx.identityKnown) return 'the vehicle has not reported its identity';
+		if (ctx.armed !== false) return ctx.armed ? 'the vehicle is armed: config commands are accepted only while disarmed' : 'the arming state is not known';
+		return null;
+	});
+
+	async function reloadAfter(action: 'revert' | 'reset-factory'): Promise<void> {
+		const result = await validation?.command(action);
+		if (result === 'accepted') await gcs.loadParams();
+	}
 
 	async function stage(row: Row, bits: number, source: string) {
 		if (!gcs.vehicle) throw new Error('no vehicle link');
@@ -282,8 +312,14 @@
 	<aside>
 		<StagedPanel
 			rows={staged}
-			onrevert={() => void gcs.vehicle?.configCommand('revert')}
-			onreset={() => void gcs.vehicle?.configCommand('reset-factory')}
+			validation={$validationState ?? idleValidation}
+			{whyValidate}
+			{whyActivate}
+			{whyCommands}
+			onvalidate={() => void validation?.validate()}
+			onactivate={() => void validation?.activate()}
+			onrevert={() => void reloadAfter('revert')}
+			onreset={() => void reloadAfter('reset-factory')}
 		/>
 		{#if ($vehicle?.notices.length ?? 0) > 0}
 			<div class="notices">

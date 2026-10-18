@@ -6,6 +6,9 @@
 	import Badge from '$lib/components/ui/Badge.svelte';
 	import Panel from '$lib/components/ui/Panel.svelte';
 
+	/** MAVLink's conventional GCS port, shown only when the helper was started without --sil-udp-port. */
+	const FALLBACK_UDP_PORT = 14550;
+
 	const gcs = app();
 	const helperState = gcs.helper?.state ?? readable('closed');
 	const bytes = gcs.helper?.bytes ?? readable({ rxBytes: 0, txBytes: 0 });
@@ -15,7 +18,8 @@
 	let ports = $state<string[]>([]);
 	let serialPath = $state('');
 	let baud = $state(115200);
-	let udpPort = $state(14550);
+	/** The port typed by the operator; until then the form shows the helper's SIL port. */
+	let udpTyped = $state<number | null>(null);
 	let busy = $state(false);
 
 	async function listPorts(): Promise<void> {
@@ -42,6 +46,7 @@
 		return () => clearInterval(timer);
 	});
 
+	const udpPort = $derived(udpTyped ?? $status?.sil.udp_port ?? FALLBACK_UDP_PORT);
 	const isOpen = $derived($helperState === 'open');
 	const hasDevice = $derived(Boolean($status?.device));
 </script>
@@ -64,7 +69,7 @@
 		</form>
 		<form class="row" onsubmit={(e) => { e.preventDefault(); void act(() => gcs.openUdp(udpPort)); }}>
 			<label for="udp-port">SIL UDP port</label>
-			<input id="udp-port" type="number" bind:value={udpPort} min="1" max="65535" class="narrow" />
+			<input id="udp-port" type="number" value={udpPort} oninput={(e) => (udpTyped = e.currentTarget.valueAsNumber)} min="1" max="65535" class="narrow" />
 			<button type="submit" class="primary" disabled={!isOpen || hasDevice || busy}>Open SIL UDP</button>
 		</form>
 		<div class="row">
@@ -85,7 +90,6 @@
 			<dt>exit status</dt><dd>{$status?.sil.exit_status ?? '—'}</dd>
 			<dt>UDP port</dt><dd>{$status?.sil.udp_port ?? 'not set (the helper was started without --sil-udp-port)'}</dd>
 		</dl>
-		<p class="muted note">The SIL speaks the link only from unit 6; until then a run produces no vehicle.</p>
 	</Panel>
 
 	<Panel title="Helper" label="status">
@@ -162,10 +166,5 @@
 
 	.wrap {
 		overflow-wrap: anywhere;
-	}
-
-	.note {
-		font-size: 0.8rem;
-		margin: 0;
 	}
 </style>
