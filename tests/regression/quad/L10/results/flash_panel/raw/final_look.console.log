@@ -1,0 +1,13 @@
+marv_fc3v2 quad-L2-pass-423-g67e1544
+image: sha256 9dc7389e1f6fa2f7dffd503961301d160a602209f1722799c6f0c4adcdf39f12 (214132 bytes, SHA-256 accelerator, 15782 us)
+config: source factory, status ok, boot request none
+params ok: generated defaults, rate_period_tolerance_us 3
+init ok
+motors ok: DShot600 on PIO 0, clk_sys 150000000 Hz, PIO divider 31 + 64/256 (derived, dshot.hpp)
+receiver ok: CRSF on UART0 (GPIO 0/1), 8N1, 420000 Hz requested (ExpressLRS default), 419874 Hz set, RX IRQ priority 64
+imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+boot: IMU start at 21432 us after reset (hal_time_us just before imu_start)
+bench stats: off
+imu dt=1000020us irq/s=7495.9 words/s=14991.7 samples/s=7495.9 ticks/s=7495.9 writes/s=3747.9 motor_drops=0 | total samples=150211 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=20120778 gyro=(-0.0061,+0.0024,-0.0024) accel=(-0.038,+0.234,-9.815) temp=302.84K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.9 executions=75106 timing_faults=0 | rc frames/s=0.0 total=0 link_frames=0 bad_crc=0 bad_length=0 dropped_bytes=0 uart_errors=0 age_us=-1 roll=+0.000 pitch=+0.000 throttle=0.000 yaw=+0.000 tilt=0.0259 est_valid=1 | arming=no_link | attitude faults=0 timing_faults=0 | usb_reset_refused=0
+imu dt=1000021us irq/s=7495.8 words/s=14991.7 samples/s=7495.8 ticks/s=7495.8 writes/s=3747.9 motor_drops=0 | total samples=157707 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=21120797 gyro=(-0.0024,+0.0037,-0.0012) accel=(-0.005,+0.292,-9.734) temp=302.81K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.9 executions=78854 timing_faults=0 | rc frames/s=0.0 total=0 link_frames=0 bad_crc=0 bad_length=0 dropped_bytes=0 uart_errors=0 age_us=-1 roll=+0.000 pitch=+0.000 throttle=0.000 yaw=+0.000 tilt=0.0260 est_valid=1 | arming=no_link | attitude faults=0 timing_faults=0 | usb_reset_refused=0
+imu dt=1000017us irq/s=7495.9 words/s=14991.7 samples/s=7495.9 ticks/s=7495.9 writes/s=3747.9 motor_drops=0 | total samples=165203 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=22120817 gyro=(-0.0061,+0.0049,-0.0012) accel=(+0.005,+0.211,-9.768) temp=302.81K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.9 executions=82602 timing_faults=0 | rc frames/s=0.0 total=0 link_frames=0 bad_crc=0 bad_length=0 dropped_bytes=0 uart_errors=0 age_us=-1 roll=+0.000 pitch=+0.000 throttle=0.000 yaw=+0.000 tilt=0.0260 est_valid=1 | arming=no_link | attitude faults=0 timing_faults=0 | usb_reset_refused=0

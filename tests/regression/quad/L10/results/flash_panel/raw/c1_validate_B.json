@@ -1,0 +1,44 @@
+{
+ "step": "validate",
+ "name": "c1_validate_B",
+ "elf": "build/m33/fw/hal/target/marv_fc3v2.elf",
+ "date": "2026-10-18T17:53:52-0500",
+ "image_hash": "9dc7389e1f6fa2f7dffd503961301d160a602209f1722799c6f0c4adcdf39f12",
+ "validation": {
+  "started": {
+   "ok": true,
+   "id": 1,
+   "config_hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+   "started": true
+  },
+  "done": {
+   "event": "validate_done",
+   "running": false,
+   "image_hash": "9dc7389e1f6fa2f7dffd503961301d160a602209f1722799c6f0c4adcdf39f12",
+   "config_hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+   "verdict": "PASS",
+   "report_id": "a9062dc1a900259292a7504add1ac2443e5d96f962fa9ae64f677055a3ad3711",
+   "exit_status": 0
+  },
+  "progress": [
+   "validate_config: records: record, provenance and lock checks ...",
+   "validate_config: records: PASS",
+   "validate_config: composition: the host composition validator ...",
+   "validate_config: composition: PASS",
+   "validate_config: ctest: every ctest labelled config-validation, run with the config injected as the parameter set ...",
+   "validate_config: ctest: PASS",
+   "validate_config: sil: a quad_fc Gazebo SIL run on the config's card with the behaviour predicates (arm, hover hold, roll/pitch step, disarm) ...",
+   "validate_config: sil: PASS"
+  ]
+ },
+ "checks": {
+  "validated": {
+   "pass": true,
+   "image_hash": "9dc7389e1f6fa2f7dffd503961301d160a602209f1722799c6f0c4adcdf39f12",
+   "config_hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+   "verdict": "PASS",
+   "report_id": "a9062dc1a900259292a7504add1ac2443e5d96f962fa9ae64f677055a3ad3711",
+   "exit_status": 0
+  }
+ }
+}

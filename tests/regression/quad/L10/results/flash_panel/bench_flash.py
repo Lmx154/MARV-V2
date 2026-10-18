@@ -124,8 +124,8 @@ def step_refuse(a, res):
         res["acks_after_direct_flash"] = len(grants)
     finally:
         gcs.close(fc.RAW / f"{a.name}.ground.log")
-    t1 = time.time()
     second = fc.uptime_us(fc.RAW / f"{a.name}.console_after.log")
+    t1 = time.time()  # each look ends with the board's newest stats line, so both clocks are read at the end of a look
     res["usb_after"] = {"devnum": fc.usb_devnum(), "nodes": fc.usb_nodes()}
     res["picotool_invocations"] = INVOCATIONS.read_text().splitlines()[before:] if INVOCATIONS.exists() else []
     dt_host = t1 - t0
