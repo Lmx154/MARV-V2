@@ -1,0 +1,66 @@
+{
+ "step": "corrupt",
+ "elf": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/images/B.elf",
+ "elf_sha256": "09dbce4152e652d02f52d8f018e60f92c950800ab4299fe1b6abd67c0ce6b664",
+ "before": {
+  "stats": {
+   "t_us": 33274033,
+   "est_valid": 1,
+   "arming": "no_link",
+   "rate_timing_faults": 1,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-408-gaa50aa4",
+  "image": {
+   "sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+   "bytes": 219164,
+   "how": "SHA-256 accelerator",
+   "us": 16156
+  },
+  "config": {
+   "source": "slot B",
+   "sequence": 2,
+   "config_sha256": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+   "bound_image": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+   "status": "ok",
+   "fault": null,
+   "request": "activate",
+   "request_result": "done",
+   "line": "config: source slot B sequence 2 config_sha256 7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03 bound_image 1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788, status ok, boot request activate (done)"
+  },
+  "imu_start_us": 1167399
+ },
+ "checks": {
+  "a slot is active": {
+   "pass": true,
+   "line": "config: source slot B sequence 2 config_sha256 7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03 bound_image 1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788, status ok, boot request activate (done)"
+  }
+ },
+ "flipped": {
+  "slot": "slot B",
+  "flash_offset": "0x1e80c8",
+  "before": "0xd9",
+  "after": "0x26"
+ },
+ "boot_after": {
+  "stats": {
+   "t_us": 15167712,
+   "est_valid": 1,
+   "arming": "config_refused",
+   "rate_timing_faults": 0,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-408-gaa50aa4",
+  "image": {
+   "sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+   "bytes": 219164,
+   "how": "SHA-256 accelerator",
+   "us": 16157
+  },
+  "imu_start_us": 68281
+ }
+}

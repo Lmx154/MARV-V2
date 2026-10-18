@@ -38,7 +38,7 @@ VALIDATE_TIMEOUT_S = 3600  # labelled harness value: bounds a hung validation on
 
 IMAGE_RE = re.compile(r"^image: sha256 ([0-9a-f]{64}) \((\d+) bytes, ([^,]+), (\d+) us\)")
 CONFIG_RE = re.compile(r"^config: source (factory|slot A|slot B)(?: sequence (\d+) config_sha256 ([0-9a-f]{64})  ?bound_image "
-                       r"([0-9a-f]{64}))?, status ([^,(]+?)(?: \(([^)]*)\))?, boot request (\w+(?: \w+)?)(?: \(([^)]*)\))?$")
+                       r"([0-9a-f]{64}))?, status (ok|refused: [a-z ]+?)(?: \((.*?)\))?, boot request (\w+(?: \w+)?)(?: \((.*)\))?$")
 BOOT_RE = re.compile(r"^boot: IMU start at (\d+) us")
 
 

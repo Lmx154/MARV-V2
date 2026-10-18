@@ -1,0 +1,167 @@
+{
+ "step": "activate",
+ "elf": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/images/B.elf",
+ "elf_sha256": "09dbce4152e652d02f52d8f018e60f92c950800ab4299fe1b6abd67c0ce6b664",
+ "host_image": {
+  "elf": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/images/B.elf",
+  "elf_file_sha256": "09dbce4152e652d02f52d8f018e60f92c950800ab4299fe1b6abd67c0ce6b664",
+  "sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+  "text": "sha256 1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788\nbytes 219164 flash 0x10000000..0x1003581c (/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/images/B.elf)"
+ },
+ "boot": {
+  "stats": {
+   "t_us": 24833174,
+   "est_valid": 1,
+   "arming": "no_link",
+   "rate_timing_faults": 1,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-408-gaa50aa4",
+  "image": {
+   "sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+   "bytes": 219164,
+   "how": "SHA-256 accelerator",
+   "us": 16157
+  },
+  "config": {
+   "source": "factory",
+   "sequence": null,
+   "config_sha256": null,
+   "bound_image": null,
+   "status": "ok",
+   "fault": null,
+   "request": "factory reset",
+   "request_result": "done",
+   "line": "config: source factory, status ok, boot request factory reset (done)"
+  },
+  "imu_start_us": 1733425
+ },
+ "identity_before": {
+  "image_sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+  "config_sha256": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": 0,
+  "config_state": 0,
+  "config_refusal": 0,
+  "last_activation_result": 0,
+  "report_id": "0000000000000000000000000000000000000000000000000000000000000000",
+  "staged_differs": 0
+ },
+ "checks": {
+  "board runs --elf": {
+   "pass": true,
+   "board": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+   "host": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788"
+  },
+  "staged": {
+   "pass": true,
+   "echo": "0x4011145f",
+   "staged_differs": 1
+  },
+  "validated": {
+   "pass": true,
+   "returncode": 0,
+   "verdict": "PASS",
+   "report_id": "162182ab51b3fc2ff11cc0c2b2a85265d9f71bc4061e2776b9739a9a7d79330f",
+   "report_image_sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+   "report_config_hash": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+   "seconds": 26.2
+  },
+  "activate accepted": {
+   "pass": true,
+   "result": 0,
+   "texts": []
+  },
+  "(a) activated": {
+   "pass": true,
+   "config_line": "config: source slot A sequence 1 config_sha256 7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03 bound_image 1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788, status ok, boot request activate (done)",
+   "identity": {
+    "image_sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+    "config_sha256": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+    "schema_hash": "0x1648260490893e6e",
+    "config_source": 1,
+    "config_state": 0,
+    "config_refusal": 0,
+    "last_activation_result": 1,
+    "report_id": "162182ab51b3fc2ff11cc0c2b2a85265d9f71bc4061e2776b9739a9a7d79330f",
+    "staged_differs": 0
+   },
+   "param": {
+    "value_bits": "0x4011145f",
+    "active_bits": "0x4011145f",
+    "staged_bits": "0x4011145f"
+   },
+   "expected_config_sha256": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+   "arming": "no_link",
+   "est_valid": 1,
+   "before": "config: source factory, status ok, boot request factory reset (done)"
+  }
+ },
+ "stage": {
+  "param": "att_kp",
+  "factory_bits": "0x4011145e",
+  "new_bits": "0x4011145f",
+  "echo_bits": "0x4011145f",
+  "texts": []
+ },
+ "validation": {
+  "returncode": 0,
+  "verdict": "PASS",
+  "report_id": "162182ab51b3fc2ff11cc0c2b2a85265d9f71bc4061e2776b9739a9a7d79330f",
+  "report_image_sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+  "report_config_hash": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+  "seconds": 26.2
+ },
+ "activate_ack": {
+  "result": 0,
+  "texts": []
+ },
+ "boot_after": {
+  "stats": {
+   "t_us": 15299974,
+   "est_valid": 1,
+   "arming": "no_link",
+   "rate_timing_faults": 1,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-408-gaa50aa4",
+  "image": {
+   "sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+   "bytes": 219164,
+   "how": "SHA-256 accelerator",
+   "us": 16157
+  },
+  "config": {
+   "source": "slot A",
+   "sequence": 1,
+   "config_sha256": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+   "bound_image": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+   "status": "ok",
+   "fault": null,
+   "request": "activate",
+   "request_result": "done",
+   "line": "config: source slot A sequence 1 config_sha256 7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03 bound_image 1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788, status ok, boot request activate (done)"
+  },
+  "imu_start_us": 1193853
+ },
+ "identity_after": {
+  "image_sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+  "config_sha256": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": 1,
+  "config_state": 0,
+  "config_refusal": 0,
+  "last_activation_result": 1,
+  "report_id": "162182ab51b3fc2ff11cc0c2b2a85265d9f71bc4061e2776b9739a9a7d79330f",
+  "staged_differs": 0
+ },
+ "param_after": {
+  "value_bits": "0x4011145f",
+  "active_bits": "0x4011145f",
+  "staged_bits": "0x4011145f"
+ }
+}
