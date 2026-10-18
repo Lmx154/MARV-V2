@@ -25,10 +25,12 @@
 namespace marv::link {
 
 // The byte transport: receive copies waiting bytes into `out` and returns how many (0: nothing waits); send writes one frame
-// (it may drop it).
+// (it may drop it); writable, if set, is how many bytes send takes now without dropping a frame (a listing waits for room for
+// one parameter's frames); without it the transport counts as always having room.
 struct Transport {
   std::size_t (*receive)(std::span<std::uint8_t> out) noexcept = nullptr;
   void (*send)(std::span<const std::uint8_t> frame) noexcept = nullptr;
+  std::size_t (*writable)() noexcept = nullptr;
 };
 
 struct ServiceConfig {

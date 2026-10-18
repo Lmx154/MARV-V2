@@ -230,6 +230,11 @@ void send_parameter(std::size_t i) noexcept {
   send_record(i);
 }
 
+// A parameter is two frames (send_parameter), each at most kFrameBytesMax.
+[[nodiscard]] bool room_for_parameter() noexcept {
+  return g.config.transport.writable == nullptr || g.config.transport.writable() >= 2 * kFrameBytesMax;
+}
+
 [[nodiscard]] MarvConfigRefusal refusal_of(const store::BootReport& b) noexcept {
   switch (b.status) {
     case arming::ConfigStatus::Ok:
@@ -566,7 +571,7 @@ bool service_step() noexcept {
     g.heartbeat_sent = true;
     g.last_heartbeat_us = now;
   }
-  if (g.listing_next < kParamCount) {
+  if (g.listing_next < kParamCount && room_for_parameter()) {
     send_parameter(g.listing_next);
     ++g.listing_next;
   }

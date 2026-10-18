@@ -16,10 +16,12 @@
 #include "marv/hal_target/dshot.hpp"
 #include "marv/hal_target/imu.hpp"
 #include "marv/hal_target/imu_log.hpp"
+#include "marv/hal_target/link_port.hpp"
 #include "marv/hal_target/motor_output.hpp"
 #include "marv/hal_target/motor_test.hpp"
 #include "marv/hal_target/receiver.hpp"
 #include "marv/hal_target/usb.hpp"
+#include "marv/link/service.hpp"
 #if defined(MARV_FC3V2_SD_BENCH)
 #include "marv/hal_target/sd_bench.hpp"
 #endif
@@ -425,6 +427,14 @@ int main() {
       {marv::param_value<ParamId::tick_period_num_us>(), marv::param_value<ParamId::tick_period_den>()});
   stage = Stage::kImuOk;
   print_progress();
+#if !defined(MARV_FC3V2_USB_BENCH)
+  // The ground link (ground-segment unit 12b) on the link CDC, served from this loop only; the image hash is unknown (all zero)
+  // until ground-segment unit 14, as in the store's boot step above.
+  marv::link::service_init(marv::link::ServiceConfig{
+      marv::link::Transport{&marv::hal_target::link_port_receive, &marv::hal_target::link_port_send,
+                            &marv::hal_target::link_port_writable},
+      marv::store::Digest{}, &armed_now});
+#endif
 
   bool was_connected = false;
 #if !defined(MARV_FC3V2_IMU_LOG)
@@ -455,6 +465,11 @@ int main() {
         console_byte(static_cast<char>(c));
       }
     }
+#if !defined(MARV_FC3V2_USB_BENCH)
+    // The board's hal_reboot never returns true (it reboots, or fails and the service reports why), so step's result is false.
+    static_cast<void>(marv::link::service_step());
+    marv::hal_target::link_port_pump();
+#endif
 #if defined(MARV_FC3V2_IMU_LOG)
     // The log variant prints no text status line or banner: the port carries binary records (imu_log_format.hpp).
     marv::hal_target::imu_log_service();

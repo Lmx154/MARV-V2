@@ -366,7 +366,7 @@ rules:
     run_ci_steps: ["@flight_gates", gs3_check, tools_tests]
     pytest_paths: [tests/regression/quad/L00/tools]
     gz_groups: [l7]
-    why: "link is the MAVLink codec library (ground segment unit 5) and the link service (unit 6), built on the host and m33 presets from link/marv.xml by tools/link and pymavlink's mavgen, held by the L00 conformance suite (unit_link) and by GS-3 and the mavgen drift guard in the L00 tools tests; the service is linked by marv_sil_quad_fc (STORAGE) and exercised end to end by tests/regression/quad/L10/gz/test_link_sil.py in gz group l7; the board image does not link it"
+    why: "link is the MAVLink codec library (ground segment unit 5) and the link service (unit 6), built on the host and m33 presets from link/marv.xml by tools/link and pymavlink's mavgen, held by the L00 conformance suite (unit_link) and by GS-3 and the mavgen drift guard in the L00 tools tests; the service is linked by marv_sil_quad_fc (STORAGE) and exercised end to end by tests/regression/quad/L10/gz/test_link_sil.py in gz group l7; the board's flight image links it too (m33 build, ground-segment unit 12b)"
 
   # ---------------------------------------------------------------- fw: the compositions
   - paths: [fw/compositions/l0/**]

@@ -24,8 +24,8 @@ marv_apply_flags(marv_link_codec_mavlink FIRMWARE)
 
 # The ground link service (include/marv/link/service.hpp, src/service.cpp; ground-segment unit 6, decision 0053): the codec,
 # the config store and the parameters of the flight composition's set, which it takes compile-only like fw/store (the binary
-# that links it links the set). The SIL library of the flight composition links it (fw/sil, STORAGE); the board image does not
-# until ground-segment unit 12. On the host the two archives are built PIC for that shared library.
+# that links it links the set). The SIL library of the flight composition links it (fw/sil, STORAGE), and so does the board's
+# flight image (fw/hal/target, ground-segment unit 12b). On the host the two archives are built PIC for that shared library.
 add_library(marv_link_service STATIC src/service.cpp)
 target_include_directories(marv_link_service PUBLIC include)
 target_link_libraries(marv_link_service
