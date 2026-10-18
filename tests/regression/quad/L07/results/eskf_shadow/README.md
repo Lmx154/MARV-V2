@@ -17,9 +17,10 @@ is correlated (about -1) with the bias along gravity b.d through -R db dt; each 
 holds no information on heading or on b.d, yet the filter took it. Fix: every scalar update zeroes the heading gain and removes the gain's
 component along the body down direction d (EKF2 clearInhibitedStateKalmanGains generalised to the one unobservable direction); the Joseph
 form still holds. Second cause: EKF2's switch-on gyro-bias sigma (0.1 rad/s) is wrong after the boot calibration; replaced by the
-calibration's residual 5.78e-5 rad/s (derived, PLACEHOLDER as its bias instability). Variants run (r_v* in the diagnostic notes): without
-the projection, without the heading inhibition, without either, sigma 0.1 vs 5.78e-5, window 1 vs 75: only the full set passes (a) and (c')
-with both controls failing in every configuration tried; the window of 75 with sigma 0.1 fails (a) (err2 8.8e-2 rad). T1 pins it
+calibration's residual 5.78e-5 rad/s (derived, PLACEHOLDER as its bias instability). Variants (the diagnostic runs, first 80 lines of variants.txt read: with and without each inhibition, bias sigma 0.1 vs 5.78e-5, window 1 vs
+75): at sigma 0.1 most variants fail (a) or (c') on this log (for example window 75 without the heading inhibition: (a) err2 6.5e-2 rad); at
+sigma 5.78e-5 and window 75 the variants without either inhibition also pass T2 on this 70 s log (their wander is slower than the log), so T2
+alone does not discriminate the inhibitions; the T1 defect case does. T1 pins it
 (`StillAndNoisyTheBiasAlongGravityIsNotLearned`, fails without the projection: 9.9e-6 against 3.0e-6 rad/s).
 
 ## Gravity-measurement model error (this change)
