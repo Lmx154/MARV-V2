@@ -1,6 +1,6 @@
 """The ground-segment helper (tools/gs, ground spec section 3, decision 0053 unit 7): the gate (token, Origin, Host), the byte
 relay both ways over a loopback UDP echo and a pty serial pair, the ground log round trip (GS-8), the image library and the
-SIL launcher's start and stop."""
+SIL launcher's start, stop, link state and relaunch on a reboot request (ground-segment unit 6)."""
 
 import argparse
 import asyncio
@@ -10,9 +10,11 @@ import json
 import os
 import re
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -443,29 +445,94 @@ def test_unbuilt_gcs_is_404_but_the_api_still_answers(tmp_path):
 
 # ---- the SIL launcher ---------------------------------------------------------------------------------------------------
 
-def test_sil_launcher_starts_and_stops_a_run_and_reports_no_link(tmp_path):
-    command = [sys.executable, "-c", f"import os, time; print(os.environ.get('{sil.UDP_PORT_ENV}'), flush=True); time.sleep(600)"]
+def free_udp_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+# A stand-in SIL that prints the port it was given and binds it, as the SIL's link does.
+BIND_PORT = (f"import os, socket, time; port = os.environ.get('{sil.UDP_PORT_ENV}'); print(port, flush=True); "
+             "s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.bind(('127.0.0.1', int(port))); time.sleep(600)")
+
+
+def wait_for(predicate):
+    deadline = time.monotonic() + TIMEOUT_S
+    while not predicate() and time.monotonic() < deadline:
+        time.sleep(0.02)
+    return predicate()
+
+
+def bounded(fn):
+    """fn() in a daemon thread: its result, or a test failure (not a hang) when it has not returned within TIMEOUT_S."""
+    out = {}
+    worker = threading.Thread(target=lambda: out.setdefault("result", fn()), daemon=True)
+    worker.start()
+    worker.join(TIMEOUT_S)
+    assert "result" in out, f"{fn.__qualname__} did not return within {TIMEOUT_S} s"
+    return out["result"]
+
+
+def test_sil_launcher_starts_and_stops_a_run_and_reports_its_link(tmp_path):
+    port = free_udp_port()
+    command = [sys.executable, "-c", BIND_PORT]
 
     async def body(h):
         async with ws_connect(h) as ws:
             started = await control(ws, cmd="sil_start")
             assert started["ok"]
             status = (await control(ws, cmd="status"))["status"]["sil"]
-            assert status["running"] and status["udp_port"] == 4242 and status["link"] == sil.LINK_NOT_AVAILABLE
+            assert status["running"] and status["udp_port"] == port and status["link"] in ("starting", "ready")
+            assert status["relaunches"] == 0 and status["config_dir"] == str(h.run_dir / "store")
             again = await control(ws, cmd="sil_start")
             assert not again["ok"]
             pid = status["pid"]
-            launcher_log = next((h.run_dir / "sil").glob("launcher.log"))
-            deadline = time.monotonic() + TIMEOUT_S
-            while not launcher_log.read_text() and time.monotonic() < deadline:
-                await asyncio.sleep(0.02)
+            assert await asyncio.to_thread(wait_for, lambda: h.sil.link_state() == "ready")
             stopped = await control(ws, cmd="sil_stop")
             assert stopped["ok"] and stopped["exit_status"] == -signal.SIGTERM
-            assert not (await control(ws, cmd="status"))["status"]["sil"]["running"]
+            status = (await control(ws, cmd="status"))["status"]["sil"]
+            assert not status["running"] and status["link"] == "stopped"
             with pytest.raises(ProcessLookupError):
                 os.kill(pid, 0)
-    run_with_helper(tmp_path, body, sil_command=command, sil_udp_port=4242)
-    assert (next((tmp_path / "runs").glob("*/sil/launcher.log"))).read_text().strip() == "4242"
+    run_with_helper(tmp_path, body, sil_command=command, sil_udp_port=port)
+    assert (next((tmp_path / "runs").glob("*/sil/launcher.log"))).read_text().strip() == str(port)
+
+
+def test_sil_default_command_is_the_interactive_run_on_the_run_directory_store(tmp_path):
+    command = sil.default_command(tmp_path / "sil", tmp_path / "store", 4242)
+    assert command[1].endswith("tools/sim/run_quad_fc.py") and "--interactive" in command
+    assert command[command.index("--config-dir") + 1] == str(tmp_path / "store")
+    assert command[command.index("--link-udp-port") + 1] == "4242"
+    assert "--link-udp-port" not in sil.default_command(tmp_path / "sil", tmp_path / "store", None)
+
+
+def test_sil_run_that_exits_with_ex_tempfail_is_relaunched_and_stop_ends_the_relaunching(tmp_path):
+    port = free_udp_port()
+    marker = tmp_path / "first.done"
+    # first launch: exit EX_TEMPFAIL (a reboot request); every later launch: bind the port, and exit EX_TEMPFAIL on SIGTERM
+    stand_in = (f"if [ ! -e {marker} ]; then touch {marker}; exit {os.EX_TEMPFAIL}; fi; "
+                f"trap 'exit {os.EX_TEMPFAIL}' TERM; {sys.executable} -c \"{BIND_PORT}\" & wait")
+    launcher = sil.SilLauncher(tmp_path, port, ["sh", "-c", stand_in])
+    launcher.start()
+    assert wait_for(lambda: launcher.status()["relaunches"] == 1 and launcher.link_state() == "ready")
+    first_pid = launcher.status()["pid"]
+    assert launcher.running() and marker.exists()
+    assert bounded(launcher.stop) == os.EX_TEMPFAIL  # the stand-in's answer to SIGTERM: a stop is never taken for a reboot
+    time.sleep(0.2)
+    status = launcher.status()
+    assert status["relaunches"] == 1 and not status["running"] and status["pid"] == first_pid and status["link"] == "stopped"
+    log = (tmp_path / "sil" / "launcher.log").read_text()
+    assert log.count("relaunch 1") == 1 and "relaunch 2" not in log
+
+
+def test_control_sil_run_that_exits_with_another_status_is_not_relaunched(tmp_path):
+    launcher = sil.SilLauncher(tmp_path, None, ["sh", "-c", f"exit {os.EX_TEMPFAIL + 1}"])
+    launcher.start()
+    assert wait_for(lambda: not launcher.running())
+    time.sleep(0.2)
+    status = launcher.status()
+    assert status["exit_status"] == os.EX_TEMPFAIL + 1 and status["relaunches"] == 0 and status["link"] == "none"
+    assert launcher.stop() == os.EX_TEMPFAIL + 1
 
 
 def test_helper_stop_stops_a_running_sil(tmp_path):
