@@ -115,7 +115,7 @@ struct StageResult {
   [[nodiscard]] bool ok() const noexcept { return refusal == StageRefusal::None; }
 };
 
-// The provenance a set states. A set that states none (a plain PARAM_SET) is staged as origin Manual, method Scenario,
+// The provenance a set states. A set that states none (a plain parameter write on the link) is staged as origin Manual, method Scenario,
 // sigma kind Choice, sigma 0 and source kNoSourceStated.
 struct StageProvenance {
   ParamOrigin origin = ParamOrigin::Manual;
