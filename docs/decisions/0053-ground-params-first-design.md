@@ -44,6 +44,11 @@ lead summary here). Items marked (Luis) were signed by him on 2026-10-17 (Approv
    restored: each of ten planted store defects (SHA check off, wrong slot or sequence, lock check off, no rollback of a refused
    set, source-storage off by one, grant ignored, NotBound status Ok, factory reset erasing one slot, no erase after a failed
    write, staged_differs blind to the source) fails at least one test.
+   Unit 14 frozen tests extended (lead, 2026-10-18): tests/regression/quad/L09/unit/store_test.cpp gains
+   StoreCommands.OnceARebootIsScheduledEveryCommandIsRefusedAndItsBootRequestKept (once hal_reboot accepted a reboot, activate,
+   revert, factory reset and reboot_when_granted are refused and the scheduled boot request is kept), and the P-1 test's factory
+   reset sent after a requested reboot now expects Refused instead of RebootRequested (the new latch; stricter, not looser).
+   Mutation check run and restored: with the latch disabled both tests fail.
    Unit 4b (STORE), the parameter-table link: the modules (attitude, mixer, rate, rate_group, arming, store) take their set's
    header compile-only and link no set's archives, so the m33 image and each SIL library link exactly one set (linking the
    store into the image had made the link resolve the product set's 104-record kParamDefaults under the FC3v2 runtime);
