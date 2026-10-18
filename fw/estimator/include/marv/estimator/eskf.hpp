@@ -30,28 +30,40 @@
 // With P = [[A, B], [B^T, C]] (3 x 3 blocks) and M = -R dt: A <- A + M B^T + B M^T + M C M^T + Theta_i I, B <- B + M C,
 // C <- C + Omega_i I.
 //
-// Measurement, the accelerometer as a gravity direction (EKF2 gravity_fusion.cpp, "a la complementary filter"). y = f / |f|
-// and h(q) = -R^T e_z = -(R20, R21, R22) (body; level, (0, 0, -1)). With R_t = (I + [dtheta]x) R, h(x_t) = h - R^T [e_z]x
-// dtheta, so H = H_x X_dx (278) has the rows H_k = (-R1k, R0k, 0, 0, 0, 0), k = x, y, z (no bias term). Residual r_k = y_k - h_k.
-// Noise: the specific-force direction of one sample has the variance (N_a / g)^2 / (2 dt) per axis (the same per-sample rule on
-// the accelerometer's one-sided density N_a, over standard gravity g), dt the step's; a step with dt = 0 fuses nothing.
+// Measurement, the accelerometer as a gravity direction (EKF2 gravity_fusion.cpp, "a la complementary filter"), once per window
+// of accel_fusion_divisor predicted steps (EKF2 fuses at its filter update period EKF2_PREDICT_US, from the IMU delta velocity
+// summed over it, gravity_fusion.cpp line 52; here every step is still predicted). Each step whose specific force f is finite and
+// healthy (below) adds f dt to the window's sum S, after S is turned into the step's body axes: the body turns by
+// theta = (w - b) dt over the step, so S <- S - theta x S (first order in theta; EKF2's down-sampler likewise rotates each delta
+// velocity into one frame) then S <- S + f dt, and the window's span T <- T + dt. At the window's last step the measurement is the
+// mean specific force S / T, y = S / |S|, and h(q) = -R^T e_z = -(R20, R21, R22) (body; level, (0, 0, -1)). With
+// R_t = (I + [dtheta]x) R, h(x_t) = h - R^T [e_z]x dtheta, so H = H_x X_dx (278) has the rows H_k = (-R1k, R0k, 0, 0, 0, 0),
+// k = x, y, z (no bias term). Residual r_k = y_k - h_k.
+// Noise: white noise of one-sided density N has the variance N^2 / (2 dt) per sample over the Nyquist band (the plant's rule,
+// above), so the time-weighted mean S / T of the window's samples has the variance sum(dt^2 N^2 / (2 dt)) / T^2 = N^2 / (2 T); per
+// axis of the direction, (N_a / g)^2 / (2 T), N_a the accelerometer's density and g standard gravity. Averaging over the window
+// divides the single sample's variance by the window's sample count.
 // Gating, in this order:
-//   1. health: the step fuses only if |f| lies in the open interval (accel_healthy_min g, accel_healthy_max g) (Mahony's
-//      window; EKF2 the same 0.9 g - 1.1 g on its filtered accelerometer, gravity_fusion.cpp lines 55-60) and is finite;
+//   1. health: a step's f enters S only if |f| lies in the open interval (accel_healthy_min g, accel_healthy_max g) (Mahony's
+//      window; EKF2 the same 0.9 g - 1.1 g on its filtered accelerometer, gravity_fusion.cpp lines 55-60) and is finite; the window
+//      fuses only if T > 0 and |S / T| lies in the same interval;
 //   2. innovation: with the prior P, s_k = H_k P H_k^T + var, and every k must pass r_k^2 <= gate^2 s_k, gate in standard
-//      deviations; one failing axis rejects the sample (EKF2 updateAidSourceStatus, ekf.h lines 1153-1229: test ratio
+//      deviations; one failing axis rejects the window (EKF2 updateAidSourceStatus, ekf.h lines 1153-1229: test ratio
 //      r^2 / (gate^2 s) > 1 rejects, any rejected axis rejects the observation);
-//   3. reset on rejection timeout: if the healthy samples rejected by 2 since the last fusion span at least accel_reset_us
-//      (the sum of their dt; an unhealthy sample neither adds nor clears), the tilt is reset to the sample's (yaw kept) and the
-//      angle block of P to its initial value with its cross terms 0 (EKF2's pattern of resetting a state to its measurement
-//      after a fusion timeout, common.h line 512 reset_timeout_max; without it a filter whose P has become overconfident would
-//      reject a true accelerometer forever).
-// A passing sample is fused as three sequential scalar updates, k = x, y, z, each with its residual and row recomputed from
+//   3. reset on rejection timeout: if the spans T of the windows rejected by 2 since the last fusion sum to at least
+//      accel_reset_us (an unhealthy window neither adds nor clears), the tilt is reset to the window's direction (yaw kept) and the
+//      angle block of P to its initial value with its cross terms 0 (EKF2's pattern of resetting a state to its measurement after a
+//      fusion timeout, common.h line 512 reset_timeout_max; without it a filter whose P has become overconfident would reject a
+//      true accelerometer forever).
+// S and T are cleared at the window's last step whatever its outcome.
+// A passing window is fused as three sequential scalar updates, k = x, y, z, each with its residual and row recomputed from
 // the nominal state after the previous one (EKF2 gravity_fusion.cpp lines 84-120).
 //
 // The scalar update, update_scalar(h, r, var) (the primitive a magnetometer, GNSS or barometer update will call):
 //   u = P h^T, s = h u + var (no inverse), K = u / s                                     (274)
-//   P <- (I - K h) P (I - K h)^T + K var K^T, the Joseph form (275-276, footnote 26), evaluated as W = P - K u^T,
+//   K's inhibited components are removed (below)
+//   P <- (I - K h) P (I - K h)^T + K var K^T, the Joseph form (275-276, footnote 26), which holds for any gain K, the inhibited
+//        one included (EKF2 the same, ekf_helper.cpp lines 1040-1085), evaluated as W = P - K u^T,
 //        P <- W - (W h^T) K^T + var K K^T, then written back symmetric (P_ij = P_ji = their mean)
 //   dx = K r                                                                             (275)
 //   injection  q <- Exp(dtheta) (x) q, b <- b + db                                       (314c, 314e)
@@ -62,11 +74,28 @@
 // keeps every correlation coefficient (EKF2 shrinks it by a zero-innovation fusion instead, for the same reason: clipping alone
 // would raise the correlations). They apply after every prediction and every scalar update.
 //
+// Inhibited gains. Nothing here measures heading, so two directions of the error state are unobservable: the heading dtheta_z, and
+// the bias component along gravity, b . d with d = R^T e_z the body's down direction (level, the F term -R db dt maps it onto
+// dtheta_z alone, which no row of H reads). Every scalar update zeroes the heading's gain and removes the gain's bias component
+// along d, K_b <- K_b - d (d . K_b), d from the nominal q at the update: EKF2 clearInhibitedStateKalmanGains (ekf_helper.cpp lines
+// 1237-1252) zeroes the heading gain while heading is not observable and the gain of every inhibited bias axis; its per-axis rule
+// (updateIMUBiasInhibit, lines 999-1027) treats a bias as unobservable or observable by its body axis's alignment with gravity
+// (|R(2, i)| > cos 15 deg, the accelerometer bias); the projection is the same inhibition for the one direction that is unobservable,
+// at any attitude. Why (the T2 bench replay, M4): the predictions and the reset Jacobian correlate the large heading variance with
+// the tilt (G's [dtheta/2]x terms and -R dt's coupling through the board's own small tilt), so every tilt residual moved the heading,
+// and the heading is correlated with b . d through -R db dt (correlation coefficient near -1 after a few seconds); and each update
+// linearises at a slightly different d (the estimate's tilt noise), so the filter takes information on b . d that the data does not
+// hold. Level and still, with the bias prior of EKF2's uncalibrated default, b_z wandered to 5 deg/s in 47 s; with the heading
+// decorrelated instead (EKF2's uncorrelateAndLimitHeadingCovariance) the second path alone took it to 66 deg/s. A heading update
+// (magnetometer, GNSS yaw) will have to lift both inhibitions.
+//
 // Initialisation and validity, as Mahony (decision 0042 item 5): the first healthy sample (|f| in the open health interval, gyro
 // finite) sets q to its tilt with yaw 0, b to 0 and P to diag(angle_sigma_init^2 I, gyro_bias_sigma_init^2 I); until then
-// step() changes nothing. valid() is true iff initialised and q is finite and unit. A non-finite gyro, or a step after which
-// q, b or P is not finite, clears the state (q identity, b 0, P 0, not initialised) until the next healthy sample; a
-// non-finite or zero accelerometer vector only skips the measurement (the gyro-only step).
+// step() changes nothing. b = 0 is the calibrated gyro's: the caller steps the filter on the boot-calibrated gyro (gyro_cal.hpp)
+// from its first sample, and gyro_bias_sigma_init is the calibration's residual (the register's rule). valid() is true iff
+// initialised and q is finite and unit. A non-finite gyro, or a step after which q, b or P is not finite, clears the state
+// (q identity, b 0, P 0, not initialised, the window empty) until the next healthy sample; a non-finite or zero accelerometer
+// vector only stays out of the window (the gyro-only step).
 
 #include <cmath>
 #include <cstddef>
@@ -84,6 +113,7 @@ namespace marv::estimator {
 inline constexpr std::size_t kEskfAngle = 0;
 inline constexpr std::size_t kEskfBias = prim::kSpatialDim;
 inline constexpr std::size_t kEskfStates = 2 * prim::kSpatialDim;
+inline constexpr std::size_t kEskfHeading = kEskfAngle + 2;  // dtheta_z, about NED down
 
 template <class T>
 using EskfRow = prim::Vec<T, kEskfStates>;
@@ -105,15 +135,16 @@ struct EskfConfig {
   T gyro_bias_var_max{};       // (rad/s)^2
   T accel_healthy_min{};       // lower bound of the healthy specific-force norm, in g (open)
   T accel_healthy_max{};       // upper bound of the healthy specific-force norm, in g (open)
+  std::uint32_t accel_fusion_divisor = 1;  // predicted steps per gravity fusion window (0 acts as 1)
 };
 
-// What the latest step did with the accelerometer.
+// What the latest step did with the accelerometer window (NotUsed on every step that does not close a window).
 enum class EskfAccel : std::uint8_t { NotUsed, Fused, Gated, Reset };
 
 // Counts since init().
 struct EskfCounts {
-  std::uint32_t fused = 0;   // samples fused
-  std::uint32_t gated = 0;   // healthy samples rejected by the innovation gate (a reset sample included)
+  std::uint32_t fused = 0;   // windows fused
+  std::uint32_t gated = 0;   // healthy windows rejected by the innovation gate (a reset window included)
   std::uint32_t resets = 0;  // tilt resets after the rejection timeout
 };
 
@@ -132,6 +163,7 @@ class Eskf {
     p_ = EskfCov<T>();
     initialised_ = false;
     gated_us_ = 0;
+    clear_window();
     last_ = EskfAccel::NotUsed;
   }
 
@@ -151,8 +183,15 @@ class Eskf {
     }
     const T dt = static_cast<T>(dt_us) / static_cast<T>(prim::kMicrosecondsPerSecond);
     predict(gyro, dt);
-    if (healthy(n2) && dt > T(0) && state_finite()) {
-      fuse_gravity(accel * (T(1) / std::sqrt(n2)), dt, dt_us);
+    if (healthy(n2) && dt > T(0)) {
+      window_ = window_ + accel * dt;
+      window_us_ += dt_us;
+    }
+    if (++window_steps_ >= cfg_.accel_fusion_divisor) {
+      if (window_us_ > 0 && state_finite()) {
+        fuse_window();
+      }
+      clear_window();
     }
     if (!state_finite()) {
       reset();
@@ -171,7 +210,8 @@ class Eskf {
     if (!(std::isfinite(s) && s > T(0) && std::isfinite(residual))) {
       return false;
     }
-    const EskfRow<T> k = u * (T(1) / s);
+    EskfRow<T> k = u * (T(1) / s);
+    inhibit(k);
     EskfCov<T> w;
     for (std::size_t i = 0; i < kEskfStates; ++i) {
       for (std::size_t j = 0; j < kEskfStates; ++j) {
@@ -238,17 +278,20 @@ class Eskf {
     }
     initialised_ = true;
     gated_us_ = 0;
+    clear_window();
   }
 
   void predict(const prim::Vec3<T>& gyro, T dt) noexcept {
     const prim::Mat3<T> r = q_.to_rotation_matrix();
-    const prim::Quat<T> next = q_ * exp_half((gyro - bias_) * dt);
+    const prim::Vec3<T> theta = (gyro - bias_) * dt;
+    const prim::Quat<T> next = q_ * exp_half(theta);
     const T next_n2 = next.norm2();
     if (!(std::isfinite(next_n2) && next_n2 > T(0))) {
       q_.w = std::numeric_limits<T>::quiet_NaN();  // the step's finiteness check clears the state
       return;
     }
     q_ = next.normalized().canonical();
+    window_ = window_ - theta.cross(window_);  // the window's sum into this step's body axes
 
     const prim::Mat3<T> a = block(kEskfAngle, kEskfAngle);
     const prim::Mat3<T> b = block(kEskfAngle, kEskfBias);
@@ -282,9 +325,17 @@ class Eskf {
     residual = y[k] + r(2, k);
   }
 
-  void fuse_gravity(const prim::Vec3<T>& y, T dt, std::uint32_t dt_us) noexcept {
+  // The window's mean specific force as a gravity direction: health, gate, timeout, three scalar updates.
+  void fuse_window() noexcept {
+    const T span = static_cast<T>(window_us_) / static_cast<T>(prim::kMicrosecondsPerSecond);
+    const prim::Vec3<T> mean = window_ * (T(1) / span);
+    const T n2 = mean.dot(mean);
+    if (!healthy(n2)) {
+      return;
+    }
+    const prim::Vec3<T> y = mean * (T(1) / std::sqrt(n2));
     const T n = cfg_.accel_noise_density / static_cast<T>(prim::kStandardGravity);
-    const T variance = n * n / (T(2) * dt);
+    const T variance = n * n / (T(2) * span);
     const T gate2 = cfg_.accel_gate * cfg_.accel_gate;
     bool pass = true;
     for (std::size_t k = 0; k < prim::kSpatialDim; ++k) {
@@ -298,7 +349,7 @@ class Eskf {
     if (!pass) {
       ++counts_.gated;
       last_ = EskfAccel::Gated;
-      gated_us_ += dt_us;
+      gated_us_ += window_us_;
       if (gated_us_ >= cfg_.accel_reset_us) {
         reset_tilt(y);
       }
@@ -313,6 +364,23 @@ class Eskf {
     ++counts_.fused;
     last_ = EskfAccel::Fused;
     gated_us_ = 0;
+  }
+
+  void clear_window() noexcept {
+    window_ = prim::Vec3<T>();
+    window_us_ = 0;
+    window_steps_ = 0;
+  }
+
+  // The inhibited gains (see above): no heading gain, and no bias gain along the body's down direction d = R^T e_z.
+  void inhibit(EskfRow<T>& k) const noexcept {
+    k[kEskfHeading] = T(0);
+    const prim::Vec3<T> d(T(2) * (q_.x * q_.z - q_.w * q_.y), T(2) * (q_.y * q_.z + q_.w * q_.x),
+                          T(1) - T(2) * (q_.x * q_.x + q_.y * q_.y));
+    const T along = k[kEskfBias] * d[0] + k[kEskfBias + 1] * d[1] + k[kEskfBias + 2] * d[2];
+    for (std::size_t i = 0; i < prim::kSpatialDim; ++i) {
+      k[kEskfBias + i] -= along * d[i];
+    }
   }
 
   // The tilt of the specific-force direction y with the current yaw; the angle block of P back to its initial value.
@@ -445,6 +513,9 @@ class Eskf {
   EskfCov<T> p_{};
   bool initialised_ = false;
   std::uint64_t gated_us_ = 0;
+  prim::Vec3<T> window_{};          // sum of f dt over the window's healthy steps, in the latest step's body axes, m/s
+  std::uint64_t window_us_ = 0;     // the window's span T, the sum of those steps' dt, microseconds
+  std::uint32_t window_steps_ = 0;  // predicted steps in the window
   EskfAccel last_ = EskfAccel::NotUsed;
   EskfCounts counts_{};
 };

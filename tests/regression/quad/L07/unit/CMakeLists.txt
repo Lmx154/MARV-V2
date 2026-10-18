@@ -13,8 +13,9 @@ marv_apply_flags(unit_gyro_cal)
 marv_frozen_suite(unit_gyro_cal)
 
 # The attitude and gyro-bias ESKF in shadow (fw/estimator eskf.hpp, M4, decision 0055): level and tilted at rest, a constant
-# gyro bias, gyro-only dead reckoning against the closed forms, the accelerometer gates and the rejection timeout, the
-# covariance over 10^6 float steps and non-finite input, on the host.
+# gyro bias learned perpendicular to gravity and not along it (noise-free, and still with the register's noise), gyro-only dead
+# reckoning against the closed forms, the accelerometer window's gates and the rejection timeout, the covariance over 10^6 float
+# steps and non-finite input, on the host.
 add_executable(unit_eskf eskf_test.cpp)
 target_link_libraries(unit_eskf PRIVATE marv_estimator GTest::gtest_main)
 marv_apply_flags(unit_eskf)
