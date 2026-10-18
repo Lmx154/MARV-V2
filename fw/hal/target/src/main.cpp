@@ -90,8 +90,16 @@ constexpr const char* kParamMode = "generated defaults";
 const char* validate_table(marv::ParamTable table) noexcept { return marv::composition::validate(table).reason; }
 bool armed_now() noexcept { return marv::arming::is_armed(marv::composition::arming_status()); }
 // The store's working memory (a pending file, a slot copy, the staged config's encoding; ground-segment unit 14), the image
-// hash it binds stored configs to, and how long the hash took at boot.
-std::array<std::uint8_t, marv::kConfigSlotBytes> g_store_scratch{};
+// hash it binds stored configs to, and how long the hash took at boot. A slot's worth, so any file a slot holds can be
+// applied; the bench-statistics image, whose statistics take the RAM a full slot would need, has half a slot, which still
+// holds every config the generator writes (tools/config/mcfg.py --max-bytes, half a slot), and refuses a larger staged config
+// (store::activate: too large).
+#if defined(MARV_FC3V2_BENCH_STATS)
+constexpr std::size_t kStoreScratchBytes = marv::kConfigSlotBytes / 2;
+#else
+constexpr std::size_t kStoreScratchBytes = marv::kConfigSlotBytes;
+#endif
+std::array<std::uint8_t, kStoreScratchBytes> g_store_scratch{};
 marv::hal_target::ImageHash image_hash;
 marv::TimeUs image_hash_us = 0;
 
