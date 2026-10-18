@@ -90,11 +90,14 @@ constexpr const char* kParamMode = "generated defaults";
 const char* validate_table(marv::ParamTable table) noexcept { return marv::composition::validate(table).reason; }
 bool armed_now() noexcept { return marv::arming::is_armed(marv::composition::arming_status()); }
 // The store's working memory (a pending file, a slot copy, the staged config's encoding; ground-segment unit 14), the image
-// hash it binds stored configs to, and how long the hash took at boot. A slot's worth, so any file a slot holds can be
-// applied; the bench-statistics image, whose statistics take the RAM a full slot would need, has half a slot, which still
-// holds every config the generator writes (tools/config/mcfg.py --max-bytes, half a slot), and refuses a larger staged config
-// (store::activate: too large).
-#if defined(MARV_FC3V2_BENCH_STATS)
+// hash it binds stored configs to, and how long the hash took at boot. The flight image has a slot's worth, so any file a
+// slot holds can be applied. Bench images whose own buffers take that RAM have less: the bench-statistics image half a slot,
+// which still holds every config the generator writes (tools/config/mcfg.py --max-bytes, half a slot), and refuses a larger
+// staged config (store::activate: too large); the SD and USB bench images none (they run no link service, so nothing can ask
+// them for an activation), so their boot step applies no pending file.
+#if defined(MARV_FC3V2_SD_BENCH) || defined(MARV_FC3V2_USB_BENCH)
+constexpr std::size_t kStoreScratchBytes = 0;
+#elif defined(MARV_FC3V2_BENCH_STATS)
 constexpr std::size_t kStoreScratchBytes = marv::kConfigSlotBytes / 2;
 #else
 constexpr std::size_t kStoreScratchBytes = marv::kConfigSlotBytes;
@@ -515,9 +518,10 @@ int main() {
       {marv::param_value<ParamId::tick_period_num_us>(), marv::param_value<ParamId::tick_period_den>()});
   stage = Stage::kImuOk;
   print_progress();
-#if !defined(MARV_FC3V2_USB_BENCH)
+#if !defined(MARV_FC3V2_USB_BENCH) && !defined(MARV_FC3V2_SD_BENCH)
   // The ground link (ground-segment unit 12b) on the link CDC, served from this loop only; its identity carries the image hash
-  // the store's boot step above was given.
+  // the store's boot step above was given. Not in the USB bench image (its echo owns the port) nor the SD bench image (the
+  // link's state and the store's staged sources do not fit the SRAM beside the SD bench's buffers and the bench statistics).
   marv::link::service_init(marv::link::ServiceConfig{
       marv::link::Transport{&marv::hal_target::link_port_receive, &marv::hal_target::link_port_send,
                             &marv::hal_target::link_port_writable, &marv::hal_target::link_port_connected},
@@ -553,7 +557,7 @@ int main() {
         console_byte(static_cast<char>(c));
       }
     }
-#if !defined(MARV_FC3V2_USB_BENCH)
+#if !defined(MARV_FC3V2_USB_BENCH) && !defined(MARV_FC3V2_SD_BENCH)
     // Once the board's hal_reboot has armed its delayed watchdog reboot, step returns true; the loop keeps serving (the link's
     // queued answers go out) until the watchdog resets the chip.
     static_cast<void>(marv::link::service_step());

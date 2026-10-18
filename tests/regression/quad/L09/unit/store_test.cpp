@@ -2016,6 +2016,25 @@ TEST_F(StoreCommands, ACommandIssuedWithTheGrantAlreadyGivenRebootsAtOnce) {
   });
 }
 
+TEST_F(StoreCommands, OnceARebootIsScheduledEveryCommandIsRefusedAndItsBootRequestKept) {
+  in_child([&] {
+    start();
+    ASSERT_TRUE(store::stage_set(idx(ParamId::site_height_m), ParamType::F32, f32_bits(900.0F), nullptr).ok());
+    const Digest staged = store::config_hash(store::staged_table());
+    EXPECT_EQ(store::activate(bound()).step, store::CommandStep::WaitingForGrant);
+    g_granted = true;
+    EXPECT_EQ(store::reboot_when_granted().step, store::CommandStep::RebootRequested);
+    for (const store::CommandResult& c :
+         {store::activate(bound()), store::revert_to_last_good(), store::reset_to_factory(), store::reboot_when_granted()}) {
+      EXPECT_EQ(c.step, store::CommandStep::Refused);
+      EXPECT_STREQ(c.reason, "a reboot is already scheduled: no config command until it has happened");
+    }
+    ConfigHashBytes request{};
+    ASSERT_TRUE(hal_config_request_take(request));
+    EXPECT_EQ(request, staged) << "the factory reset after the scheduled reboot must not replace its boot request";
+  });
+}
+
 TEST_F(StoreCommands, WithoutMaintenanceHooksTheRebootNeverHappens) {
   in_child([&] {
     BootOpts o;
@@ -2187,7 +2206,7 @@ TEST_F(StoreInvariants, TheActiveTableIsUnchangedByStagingByActivationAndBySecon
     g_granted = true;
     EXPECT_EQ(store::reboot_when_granted().step, store::CommandStep::RebootRequested);
     EXPECT_EQ(store::revert_to_last_good().step, store::CommandStep::Refused);
-    EXPECT_EQ(store::reset_to_factory().step, store::CommandStep::RebootRequested);
+    EXPECT_EQ(store::reset_to_factory().step, store::CommandStep::Refused);  // a reboot is already scheduled
     EXPECT_TRUE(tables_equal(param_active_table(), active, true));
     EXPECT_EQ(param_value<ParamId::site_height_m>(), 600.0F);
     EXPECT_EQ(param_value<ParamId::rate_loop_divisor>(), divisor);

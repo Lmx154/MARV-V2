@@ -6,7 +6,7 @@
 //                           file, read as erased (0xFF, as flash). Rewritten whole on every slot write.
 //   pending.mcfg            the pending activation file; written through pending.mcfg.tmp and a rename (atomic).
 //   boot_request.bin        the boot request, the 32-byte config hash; removed when taken. It stands for the board's
-//                           watchdog scratch registers, which survive the reboot (the host relaunches the SIL).
+//                           POWMAN scratch registers, which survive the reboot (the host relaunches the SIL).
 #pragma once
 
 #include <cstdint>

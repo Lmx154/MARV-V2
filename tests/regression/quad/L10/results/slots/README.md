@@ -35,7 +35,9 @@ Images (not committed; their hashes are):
 - Store scratch: the flight image gives the store a full slot (98304 B) of working memory; flight image bss ends at
   0x2007c118, 16 KB below the heap limit 0x20080000 (no malloc in the image). The bench-statistics image (12.7 KB more bss)
   overflowed RAM by 1952 B with a full slot, so it gets half a slot (49152 B, every config the generator writes) and refuses
-  a larger staged config at activation; the HIL image does not boot through the store.
+  a larger staged config at activation. The SD and USB bench images give it none and run no link service (the SD bench's
+  buffers leave no room; it failed to link already at fd2f58b, by 25004 B alone and 41004 B with the statistics); the HIL image
+  does not boot through the store.
 
 ## Results
 
@@ -69,6 +71,26 @@ Boot time (`boot: IMU start at ... us after reset`, all after an SWD or USB-init
   `bench_slots.py <step> <name>` writes `raw/<name>.json` (PASS/FAIL per check), console and ground logs.
 - `raw/`: every step's JSON, console logs (`*.console*.log`), helper ground logs, flash/OpenOCD/picotool logs.
 - `validation/<step>/`: the staged `.mcfg`, `report.json`, `validate.log` and the validator's work files of each activation.
+- Not in the tree: the scripts' `images/` (the flash bytes as .bin given to the validator, the UF2 files given to picotool, the
+  slot sectors read and written over SWD) and `raw/gs-runs/` (the helper's run directories; each step's ground log is in
+  `raw/`). Their SHA-256:
+
+```
+5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e  a1_activate.bin
+5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e  a2_activate.bin
+5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e  a3_activate.bin
+5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e  a4_activate.bin
+5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e  a5_activate.bin
+5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e  a6_activate.bin
+5be2c44ec17752bd52593be44404ad3f5382bc59309bdae92593d5ebdf562e59  b2_uf2_A.uf2
+70b40bb34ffec7c0fad7477bc92c23e82cfecdffd4b812b78d7d64076b2809b6  b3_uf2_B.uf2
+1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788  b4_rebind_B.bin
+08bdb5109eec82a8ee5e7da5619078b6d3e40f873743b206de64c54d84d53168  c1_corrupt.sector.bin
+1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788  c3_activate.bin
+659643d86bfbaf735c14d3cfb6f5f36b7b4f1047cb964ed468098f84a4e853be  c4_corrupt.sector.bin
+5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e  e_hash.bin
+5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e  e_hash.objcopy.bin
+```
 
 ## Session notes
 

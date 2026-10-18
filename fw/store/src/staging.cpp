@@ -22,6 +22,9 @@ std::array<ParamRecord, kParamCount> g_staged{};
 bool g_staged_ready = false;
 std::array<char, kConfigSlotBytes> g_sources{};
 std::size_t g_sources_used = 0;
+// Set once hal_reboot accepted a reboot: until the reset every command is refused, so none re-arms the reboot or replaces the
+// boot request the scheduled reboot is to carry out.
+bool g_reboot_scheduled = false;
 
 [[nodiscard]] const BootInputs* staging_inputs() noexcept {
   const BootInputs* in = detail::booted_inputs();
@@ -45,6 +48,7 @@ constexpr const char* kCommandNotBooted = "the config store has not booted";
 constexpr const char* kNoRequest = "this board cannot keep a boot request";
 constexpr const char* kNoPending = "the pending activation file could not be written";
 constexpr const char* kNoReboot = "this board cannot reboot itself";
+constexpr const char* kRebootScheduled = "a reboot is already scheduled: no config command until it has happened";
 
 // Records the boot request and asks for the maintenance grant.
 [[nodiscard]] CommandResult request_boot(const BootInputs& in, const Digest& want) noexcept {
@@ -171,6 +175,9 @@ CommandResult activate(const Binding& binding) noexcept {
   if (in == nullptr) {
     return refused(kCommandNotBooted);
   }
+  if (g_reboot_scheduled) {
+    return refused(kRebootScheduled);
+  }
   if (armed(*in)) {
     return refused(kCommandArmed);
   }
@@ -195,6 +202,9 @@ CommandResult revert_to_last_good() noexcept {
   if (in == nullptr) {
     return refused(kCommandNotBooted);
   }
+  if (g_reboot_scheduled) {
+    return refused(kRebootScheduled);
+  }
   if (armed(*in)) {
     return refused(kCommandArmed);
   }
@@ -215,6 +225,9 @@ CommandResult reset_to_factory() noexcept {
   if (in == nullptr) {
     return refused(kCommandNotBooted);
   }
+  if (g_reboot_scheduled) {
+    return refused(kRebootScheduled);
+  }
   if (armed(*in)) {
     return refused(kCommandArmed);
   }
@@ -226,14 +239,20 @@ CommandResult reboot_when_granted() noexcept {
   if (in == nullptr) {
     return refused(kCommandNotBooted);
   }
+  if (g_reboot_scheduled) {
+    return refused(kRebootScheduled);
+  }
   if (in->hooks.maintenance_granted == nullptr || !in->hooks.maintenance_granted()) {
     if (in->hooks.request_maintenance != nullptr) {
       in->hooks.request_maintenance();
     }
     return CommandResult{CommandStep::WaitingForGrant, nullptr};
   }
-  return hal_reboot() ? CommandResult{CommandStep::RebootRequested, nullptr}
-                      : CommandResult{CommandStep::RebootFailed, kNoReboot};
+  if (!hal_reboot()) {
+    return CommandResult{CommandStep::RebootFailed, kNoReboot};
+  }
+  g_reboot_scheduled = true;
+  return CommandResult{CommandStep::RebootRequested, nullptr};
 }
 
 }  // namespace marv::store

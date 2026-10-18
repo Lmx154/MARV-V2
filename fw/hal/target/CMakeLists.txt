@@ -113,7 +113,8 @@ endif()
 # with MARV_FC3V2_BENCH_STATS on to see the IMU interrupt-entry spacing during the traffic. The values are scenario values,
 # not flight parameters: the cycle count is the unit-13 "done when" (1000); the file size is the size of
 # marv_params_fc3v2.mcfg at unit 4b (40256 bytes, fw/hal/CMakeLists.txt); the idle baseline is the seconds the bench waits
-# after the console host connects, so the spacing before the traffic is on record.
+# after the console host connects, so the spacing before the traffic is on record. The image runs no link service and gives the
+# config store no working memory (src/main.cpp): with them its buffers do not fit the SRAM (ground-segment unit 14).
 option(MARV_FC3V2_SD_BENCH "FC3v2 bench image that runs the SD write/verify bench in the background loop" OFF)
 set(MARV_FC3V2_SD_BENCH_CYCLES 1000 CACHE STRING "SD bench: write/verify cycles (scenario value, unit 13 done-when)")
 set(MARV_FC3V2_SD_BENCH_FILE_BYTES 40256 CACHE STRING "SD bench: bytes per file (scenario value: marv_params_fc3v2.mcfg at unit 4b)")
