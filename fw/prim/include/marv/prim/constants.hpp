@@ -230,5 +230,122 @@ inline constexpr double kWgs84M = 0.00344978650684;
 // (3/a^2) h^2]. Eq. (4-3).
 inline constexpr double kWgs84HeightQuadCoeff = 3.0;
 
+// Bits per byte. Citation: ISO/IEC 80000-13:2008, item 13-9: one byte is eight bits.
+// Kind: standard.
+inline constexpr unsigned kBitsPerByte = 8;
+
+// SD memory in SPI mode (fw/hal/target/src/sd_spi.cpp), clocks and power-up. "SD PLSS 9.10" below is the SD Association's
+// "SD Specifications Part 1 Physical Layer Simplified Specification Version 9.10", December 1, 2023.
+// Citation: SD PLSS 9.10, section 4.2.1 (identification clock rate fOD, the 400 kHz default) and section 4.4 (the
+// application note on polling ACMD41: continuous clock in the range 100 kHz to 400 kHz); section 2 (System Features), Bus
+// Speed Mode (1): Default Speed mode, frequency up to 25 MHz, and table 5-6 (TRAN_SPEED 32h is 25 MHz, "the mandatory
+// maximum operating frequency"); section 6.4.1.1 (power-up: ready for the first command within 1 ms; the host supplies at
+// least 74 clocks with CS held high in SPI mode).
+// Kind: standard.
+inline constexpr std::uint32_t kSdInitClockHz = 400000;
+inline constexpr std::uint32_t kSdDataClockHz = 25000000;
+inline constexpr unsigned kSdPowerUpClocks = 74;
+inline constexpr std::uint32_t kSdPowerUpMs = 1;
+
+// SD memory in SPI mode, timeouts. Citation: SD PLSS 9.10, section 4.2.3 (application note: "The host shall set ACMD41
+// timeout more than 1 second", counted from the first ACMD41); section 4.6.2.1 (read: "The host should use 100 ms timeout
+// (minimum) for single and multiple read operations"); section 4.6.2.2 (write: busy up to 250 ms, up to 500 ms for SDXC and
+// SDUC in the listed cases, and "strongly recommended for hosts to implement more than 500ms timeout value").
+// Kind: standard.
+inline constexpr std::uint32_t kSdAcmd41MinTimeoutMs = 1000;
+inline constexpr std::uint32_t kSdReadTimeoutMs = 100;
+inline constexpr std::uint32_t kSdWriteBusyMaxMs = 500;
+
+// SD memory in SPI mode, command frame. Citation: SD PLSS 9.10, section 7.3.1.1, table 7-1 (a command is 6 bytes: start bit
+// 0, transmission bit 1, a 6-bit index, a 32-bit argument, a 7-bit CRC and the end bit 1); section 4.5 (the CRC7 polynomial
+// is x^7 + x^3 + 1); section 7.2.2 (the CMD0 frame is 0x40, 0x00, 0x00, 0x00, 0x00, 0x95); table 7-3 (command indices).
+// Kind: standard.
+inline constexpr std::size_t kSdCommandBytes = 6;
+inline constexpr std::size_t kSdArgumentBytes = 4;
+inline constexpr std::uint8_t kSdCommandStart = 0x40;
+inline constexpr std::uint8_t kSdCommandEnd = 0x01;
+inline constexpr unsigned kSdCrc7Bits = 7;
+inline constexpr std::uint8_t kSdCrc7Poly = 0x09;
+inline constexpr std::uint8_t kSdCmd0Frame = 0x95;
+inline constexpr std::uint8_t kSdCmdGoIdle = 0;
+inline constexpr std::uint8_t kSdCmdSendIfCond = 8;
+inline constexpr std::uint8_t kSdCmdSendCsd = 9;
+inline constexpr std::uint8_t kSdCmdStopTransmission = 12;
+inline constexpr std::uint8_t kSdCmdSetBlockLen = 16;
+inline constexpr std::uint8_t kSdCmdReadSingle = 17;
+inline constexpr std::uint8_t kSdCmdReadMultiple = 18;
+inline constexpr std::uint8_t kSdCmdWriteSingle = 24;
+inline constexpr std::uint8_t kSdCmdWriteMultiple = 25;
+inline constexpr std::uint8_t kSdCmdAppCmd = 55;
+inline constexpr std::uint8_t kSdCmdReadOcr = 58;
+inline constexpr std::uint8_t kSdAcmdSendOpCond = 41;
+
+// SD memory in SPI mode, command arguments. Citation: SD PLSS 9.10, table 4-18 and table 7-3 (CMD8 argument: voltage
+// supplied VHS in bits 11:8, 0001b is 2.7-3.6 V, and an 8-bit check pattern in bits 7:0 that is "any 8-bit pattern", here
+// 0xAA, alternating bits, a free choice); table 7-4 (ACMD41 argument: HCS is bit 30); section 5.1, table 5-1 (OCR bit 30 is
+// the capacity status CCS, 1 for SDHC and SDXC); section 7.3.2.6 and figure 7-12 (the R7 response is the R1 byte and 4 more
+// bytes: command version and reserved bits, voltage accepted in bits 11:8, the echoed check pattern in bits 7:0); section
+// 7.3.2.4 (the R3 response, to CMD58, is the R1 byte and the 4 OCR bytes).
+// Kind: standard.
+inline constexpr std::uint32_t kSdCmd8Vhs27To36 = 1;
+inline constexpr unsigned kSdCmd8VhsShift = 8;
+inline constexpr std::uint32_t kSdCmd8VhsMask = 0xF;
+inline constexpr std::uint32_t kSdCmd8CheckPattern = 0xAA;
+inline constexpr std::uint32_t kSdCmd8CheckMask = 0xFF;
+inline constexpr unsigned kSdAcmd41HcsBit = 30;
+inline constexpr unsigned kSdOcrCcsBit = 30;
+inline constexpr std::size_t kSdLongResponseTrailBytes = 4;
+
+// SD memory in SPI mode, R1 response and tokens. Citation: SD PLSS 9.10, section 7.3.2.1 and figure 7-9 (R1 is one byte,
+// the MSB is always 0, bit 0 is "in idle state", bit 2 "illegal command", bits 6:1 are the error flags); section 7.3.3.1
+// (data response token "x x x 0 Status 1", status 010b is "data accepted"); section 7.3.3.2 (start block token 11111110b
+// for single block read and write and for multiple block read, 11111100b for each block of a multiple block write, the stop
+// tran token 11111101b); section 7.3.2.2 (the busy signal is a zero value, a non-zero value is ready); section 7.3.3.3 (a
+// data error token replaces a data block). The host holds the data line high (0xFF) while it only clocks (section 7.2).
+// Kind: standard.
+inline constexpr std::uint8_t kSdIdleLine = 0xFF;
+inline constexpr std::uint8_t kSdR1MsbMask = 0x80;
+inline constexpr std::uint8_t kSdR1Idle = 0x01;
+inline constexpr std::uint8_t kSdR1IllegalCommand = 0x04;
+inline constexpr std::uint8_t kSdR1ErrorMask = 0x7E;
+inline constexpr std::uint8_t kSdTokenStartBlock = 0xFE;
+inline constexpr std::uint8_t kSdTokenStartBlockMultiWrite = 0xFC;
+inline constexpr std::uint8_t kSdTokenStopTran = 0xFD;
+inline constexpr std::uint8_t kSdDataResponseMask = 0x1F;
+inline constexpr std::uint8_t kSdDataResponseAccepted = 0x05;
+
+// SD memory in SPI mode, blocks and the register read. Citation: SD PLSS 9.10, section 7.2.3 (SDHC and SDXC block length is
+// fixed at 512 bytes); section 7.3.3.2 (a data block is followed by a 16-bit CRC, 2 bytes); section 7.2.6 (the CSD is read
+// as a block of 16 bytes).
+// Kind: standard.
+inline constexpr std::size_t kSdBlockBytes = 512;
+inline constexpr std::size_t kSdCrc16Bytes = 2;
+inline constexpr std::size_t kSdCsdBytes = 16;
+
+// SD memory in SPI mode, response wait. Citation: the command response time NCR, 0 to 8 bytes for an SD memory, in ChaN,
+// "How to Use MMC/SDC", https://elm-chan.org/docs/mmc/mmc_e.html, section "SPI mode" ("The response is sent back within
+// command response time (NCR), 0 to 8 bytes for SDC"). UNVERIFIED against the SD specification: the timing values (SD
+// PLSS 9.10, section 7.5.4) are removed from the Simplified Specification.
+// Kind: standard.
+inline constexpr unsigned kSdResponseWaitBytes = 8;
+
+// SD memory capacity from the CSD register. Citation: SD PLSS 9.10, section 5.3.1 and table 5-3 (CSD_STRUCTURE is CSD bits 127:126, 0 for
+// version 1.0 and 1 for version 2.0); section 5.3.3 and table 5-16 (version 2.0: C_SIZE is bits 69:48, capacity =
+// (C_SIZE + 1) * 512 KByte); section 5.3.2 and table 5-4 (version 1.0: C_SIZE bits 73:62, C_SIZE_MULT bits 49:47, READ_BL_LEN
+// bits 83:80; capacity = (C_SIZE + 1) * 2^(C_SIZE_MULT + 2) * 2^READ_BL_LEN bytes).
+// Kind: standard.
+inline constexpr unsigned kSdCsdStructureHi = 127;
+inline constexpr unsigned kSdCsdStructureLo = 126;
+inline constexpr unsigned kSdCsdV2CSizeHi = 69;
+inline constexpr unsigned kSdCsdV2CSizeLo = 48;
+inline constexpr std::uint64_t kSdCsdV2UnitBytes = 524288;
+inline constexpr unsigned kSdCsdV1CSizeHi = 73;
+inline constexpr unsigned kSdCsdV1CSizeLo = 62;
+inline constexpr unsigned kSdCsdV1CSizeMultHi = 49;
+inline constexpr unsigned kSdCsdV1CSizeMultLo = 47;
+inline constexpr unsigned kSdCsdV1ReadBlLenHi = 83;
+inline constexpr unsigned kSdCsdV1ReadBlLenLo = 80;
+inline constexpr unsigned kSdCsdV1CSizeMultOffset = 2;
+
 }  // namespace marv::prim
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

@@ -36,6 +36,10 @@ static_assert(pin_exists(MADFLIGHT_FC3V2_SER0_TX_PIN) && pin_exists(MADFLIGHT_FC
 static_assert(pin_exists(MADFLIGHT_FC3V2_OUT0_PIN) && pin_exists(MADFLIGHT_FC3V2_OUT1_PIN) &&
                   pin_exists(MADFLIGHT_FC3V2_OUT2_PIN) && pin_exists(MADFLIGHT_FC3V2_OUT3_PIN),
               "a motor output pin is not a GPIO of this package");
+static_assert(pin_exists(MADFLIGHT_FC3V2_SD_SCK_PIN) && pin_exists(MADFLIGHT_FC3V2_SD_MOSI_PIN) &&
+                  pin_exists(MADFLIGHT_FC3V2_SD_MISO_PIN) && pin_exists(MADFLIGHT_FC3V2_SD_CS_PIN) &&
+                  pin_exists(MADFLIGHT_FC3V2_SD_DETECT_PIN),
+              "an SD pin is not a GPIO of this package");
 static_assert(pin_exists(PICO_DEFAULT_I2C_SDA_PIN) && pin_exists(PICO_DEFAULT_I2C_SCL_PIN) &&
                   pin_exists(PICO_DEFAULT_LED_PIN) && pin_exists(PICO_DEFAULT_WS2812_PIN),
               "an I2C or LED pin is not a GPIO of this package");
