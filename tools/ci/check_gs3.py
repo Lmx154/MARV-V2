@@ -42,6 +42,8 @@ ALLOW = (
     ("tests/regression/quad/L10/gz/test_link_sil.py", "the end-to-end test of the SIL link with pymavlink (ground segment unit 6)"),
     ("tests/regression/quad/L10/results/link_board/*.py", "the bench client of the board's link with pymavlink (ground segment unit 12b)"),
     ("tests/regression/quad/L10/results/link_board/README.md", "the bench record of the board's link names the messages it checked (ground segment unit 12b)"),
+    ("tests/regression/quad/L10/results/slots/*.py", "the bench client of the board's config slots with pymavlink (ground segment unit 14)"),
+    ("tests/regression/quad/L10/results/slots/README.md", "the bench record of the board's config slots names the messages it checked (ground segment unit 14)"),
     ("tools/gen/params_gen.py", "a docstring and a comment name MAVLink as the origin of the 16-character link id rule (decision 0053 item 1); no include, no message"),
     ("ci/run_ci.sh", "the step names of the GS-3 check"),
     ("ci/blast_radius.yaml", "the rules and reasons of the codec paths"),

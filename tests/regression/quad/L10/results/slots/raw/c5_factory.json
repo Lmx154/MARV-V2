@@ -1,0 +1,116 @@
+{
+ "step": "factory",
+ "elf": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-slots/build/m33/fw/hal/target/marv_fc3v2.elf",
+ "elf_sha256": "09dbce4152e652d02f52d8f018e60f92c950800ab4299fe1b6abd67c0ce6b664",
+ "boot": {
+  "stats": {
+   "t_us": 19147084,
+   "est_valid": 1,
+   "arming": "config_refused",
+   "rate_timing_faults": 0,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-408-gaa50aa4",
+  "image": {
+   "sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+   "bytes": 219164,
+   "how": "SHA-256 accelerator",
+   "us": 16157
+  },
+  "config": {
+   "source": "factory",
+   "sequence": null,
+   "config_sha256": null,
+   "bound_image": null,
+   "status": "refused: corrupt",
+   "fault": "the slot's content does not match its commit record (SHA-256): the slot is corrupt",
+   "request": "none",
+   "request_result": null,
+   "line": "config: source factory, status refused: corrupt (the slot's content does not match its commit record (SHA-256): the slot is corrupt), boot request none"
+  },
+  "imu_start_us": 47462
+ },
+ "identity_before": {
+  "image_sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+  "config_sha256": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": 0,
+  "config_state": 1,
+  "config_refusal": 1,
+  "last_activation_result": 0,
+  "report_id": "0000000000000000000000000000000000000000000000000000000000000000",
+  "staged_differs": 0
+ },
+ "ack": {
+  "result": 0,
+  "texts": []
+ },
+ "checks": {
+  "factory reset accepted": {
+   "pass": true,
+   "result": 0,
+   "texts": []
+  },
+  "(a) factory reset": {
+   "pass": true,
+   "before": "config: source factory, status refused: corrupt (the slot's content does not match its commit record (SHA-256): the slot is corrupt), boot request none",
+   "after": "config: source factory, status ok, boot request factory reset (done)",
+   "identity": {
+    "image_sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+    "config_sha256": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+    "schema_hash": "0x1648260490893e6e",
+    "config_source": 0,
+    "config_state": 0,
+    "config_refusal": 0,
+    "last_activation_result": 0,
+    "report_id": "0000000000000000000000000000000000000000000000000000000000000000",
+    "staged_differs": 0
+   },
+   "factory_hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+   "arming": "no_link"
+  }
+ },
+ "boot_after": {
+  "stats": {
+   "t_us": 15028068,
+   "est_valid": 1,
+   "arming": "no_link",
+   "rate_timing_faults": 0,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-408-gaa50aa4",
+  "image": {
+   "sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+   "bytes": 219164,
+   "how": "SHA-256 accelerator",
+   "us": 16157
+  },
+  "config": {
+   "source": "factory",
+   "sequence": null,
+   "config_sha256": null,
+   "bound_image": null,
+   "status": "ok",
+   "fault": null,
+   "request": "factory reset",
+   "request_result": "done",
+   "line": "config: source factory, status ok, boot request factory reset (done)"
+  },
+  "imu_start_us": 928712
+ },
+ "identity_after": {
+  "image_sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+  "config_sha256": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": 0,
+  "config_state": 0,
+  "config_refusal": 0,
+  "last_activation_result": 0,
+  "report_id": "0000000000000000000000000000000000000000000000000000000000000000",
+  "staged_differs": 0
+ }
+}

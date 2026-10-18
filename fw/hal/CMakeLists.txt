@@ -2,13 +2,18 @@ add_library(marv_hal INTERFACE)
 target_include_directories(marv_hal INTERFACE include)
 target_link_libraries(marv_hal INTERFACE marv_types)
 
-# The config storage interface (include/marv/hal/storage.hpp; decision 0053, ground-segment unit 4b): what links it gets
-# the slot size. MARV_CONFIG_SLOT_BYTES is a PLACEHOLDER: the size of one config slot region, chosen to hold twice the
-# largest generated config file (marv_params_fc3v2.mcfg, 40256 bytes at unit 4b) rounded up to a power of two; ground-segment
-# unit 14 replaces it with its design-budget entry (the smallest multiple of the flash erase block >= 2x the largest config
-# generated).
-set(MARV_CONFIG_SLOT_BYTES 131072 CACHE STRING
-    "Bytes of one config slot region (PLACEHOLDER until the slot-size design-budget entry of ground-segment unit 14)")
+# The config storage interface (include/marv/hal/storage.hpp; decision 0053, ground-segment units 4b and 14): what links it gets
+# the slot size, MARV_CONFIG_SLOT_BYTES, the design-budget entry config_slot_bytes of design/budget.yaml (its rationale holds
+# the rule and the computation), read here once at configure time; no other file carries its value. It is kept in the cache
+# (FORCE, so a cached value never outlives the register) for the tools that read the build's slot size.
+set(marv_slot_budget_file "${PROJECT_SOURCE_DIR}/design/budget.yaml")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${marv_slot_budget_file}")
+file(READ "${marv_slot_budget_file}" marv_slot_budget_text)
+if(NOT marv_slot_budget_text MATCHES "\nconfig_slot_bytes:[ \t]*\n[ \t]+value:[ \t]*([0-9]+)[ \t]*\n")
+  message(FATAL_ERROR "config_slot_bytes has no integer value in ${marv_slot_budget_file}")
+endif()
+set(MARV_CONFIG_SLOT_BYTES "${CMAKE_MATCH_1}" CACHE STRING
+    "Bytes of one config slot region (design/budget.yaml, config_slot_bytes; read at configure time)" FORCE)
 add_library(marv_hal_storage INTERFACE)
 target_link_libraries(marv_hal_storage INTERFACE marv_hal marv_prim)
 target_compile_definitions(marv_hal_storage INTERFACE MARV_CONFIG_SLOT_BYTES=${MARV_CONFIG_SLOT_BYTES})

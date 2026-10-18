@@ -137,9 +137,10 @@ inline constexpr const char* kNoSourceStated = "set over the link; no source sta
 // True iff a staged record differs from the active one (value, sigma, provenance, source text).
 [[nodiscard]] bool staged_differs() noexcept;
 
-// The commands. Each is refused while armed. Accepted, it records the boot request (the config hash the next boot is to
-// make active) and asks for the maintenance grant; the reboot happens only once the grant is given (reboot_when_granted;
-// the link calls it again while it returns WaitingForGrant).
+// The commands. Each is refused while armed, and every one (reboot_when_granted too) once a reboot has been requested
+// (RebootRequested) until the reset, so nothing re-arms it or replaces its boot request. Accepted, a command records the boot
+// request (the config hash the next boot is to make active) and asks for the maintenance grant; the reboot happens only once
+// the grant is given (reboot_when_granted; the link calls it again while it returns WaitingForGrant).
 //   activate: writes the staged copy, bound to `binding` (this image and a report), as the pending file.
 //   revert_to_last_good: asks for the intact committed slot that is not the newest (GS-11: an explicit activation).
 //   reset_to_factory: asks for the factory config (the next boot erases both slots).

@@ -1,0 +1,46 @@
+{
+ "step": "look",
+ "elf": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-slots/build/m33/fw/hal/target/marv_fc3v2.elf",
+ "elf_sha256": "50201c7d9b2e638d7b7ce2e799b2ee2eb4ac71efe85ffb40a381335bc6ce4b73",
+ "boot": {
+  "stats": {
+   "t_us": 15126133,
+   "est_valid": 1,
+   "arming": "no_link",
+   "rate_timing_faults": 0,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-412-g0ff4131",
+  "image": {
+   "sha256": "e9e48456a2ba5c68800938e9271bbefd149e4221aeb1a1faae0f659d12e7b105",
+   "bytes": 219164,
+   "how": "SHA-256 accelerator",
+   "us": 16157
+  },
+  "config": {
+   "source": "factory",
+   "sequence": null,
+   "config_sha256": null,
+   "bound_image": null,
+   "status": "ok",
+   "fault": null,
+   "request": "none",
+   "request_result": null,
+   "line": "config: source factory, status ok, boot request none"
+  },
+  "imu_start_us": 26722
+ },
+ "identity": {
+  "image_sha256": "e9e48456a2ba5c68800938e9271bbefd149e4221aeb1a1faae0f659d12e7b105",
+  "config_sha256": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": 0,
+  "config_state": 0,
+  "config_refusal": 0,
+  "last_activation_result": 0,
+  "report_id": "0000000000000000000000000000000000000000000000000000000000000000",
+  "staged_differs": 0
+ }
+}

@@ -1,10 +1,10 @@
 // The config storage of the board (decision 0053; ground segment GS-4, GS-11): the two internal-flash slots, the pending
-// activation file (SD card) and the boot request that survives a reboot (watchdog scratch). Used only by fw/store, at boot
-// (the slots are written only by the boot step, before the IMU, receiver and motor outputs start) and from the background
-// loop (the pending file, the boot request, the reboot); never from the tick.
+// activation file (SD card) and the boot request that survives a reboot (on the board, the POWMAN scratch registers). Used
+// only by fw/store, at boot (the slots are written only by the boot step, before the IMU, receiver and motor outputs start)
+// and from the background loop (the pending file, the boot request, the reboot); never from the tick.
 //   hal_sim: file-backed in the run directory (marv/hal_sim/storage.hpp); nothing is stored without one.
-//   hal_target: a stub until ground-segment units 13 (SD) and 14 (flash slots): no slot storage, no pending file, no boot
-//   request, no reboot, so the board boots its compiled table.
+//   hal_target: the slots in the internal flash, the boot request in the POWMAN scratch registers and a watchdog reboot
+//   (storage_flash.cpp, ground-segment unit 14); the pending file on the SD card (storage_sd.cpp, unit 13).
 #pragma once
 
 #include <array>
@@ -20,8 +20,8 @@
 
 namespace marv {
 
-// The size of one slot region in bytes. PLACEHOLDER (fw/hal/CMakeLists.txt, MARV_CONFIG_SLOT_BYTES): replaced by the
-// slot-size design-budget entry of ground-segment unit 14.
+// The size of one slot region in bytes: the design-budget entry config_slot_bytes (design/budget.yaml; MARV_CONFIG_SLOT_BYTES,
+// fw/hal/CMakeLists.txt).
 inline constexpr std::size_t kConfigSlotBytes = MARV_CONFIG_SLOT_BYTES;
 
 enum class ConfigSlot : std::uint8_t { A, B, Count };
@@ -58,7 +58,7 @@ struct PendingFile {
 [[nodiscard]] bool hal_config_pending_remove() noexcept;
 
 // The boot request: the config hash (core IF-1) the next boot is asked to make active, kept across a reboot but not a
-// power cycle (the watchdog scratch registers on the board). set returns false if the board cannot keep one; take reads
+// power cycle (the POWMAN scratch registers on the board, storage_flash.cpp). set returns false if the board cannot keep one; take reads
 // and clears it, false if there is none.
 using ConfigHashBytes = std::array<std::uint8_t, prim::kSha256DigestBytes>;
 [[nodiscard]] bool hal_config_request_set(const ConfigHashBytes& expected) noexcept;
@@ -66,7 +66,8 @@ using ConfigHashBytes = std::array<std::uint8_t, prim::kSha256DigestBytes>;
 
 // Reboots the board. Call only with the maintenance grant (composition::maintenance_granted). Returns only if the reboot
 // is not immediate: hal_sim records the request (marv/hal_sim/storage.hpp, "reboot requested"; the host relaunches) and
-// returns true; the hal_target stub has no reboot yet and returns false.
+// returns true; the board arms a watchdog reboot a short delay later (storage_flash.cpp), so the link's queued answers still
+// go out, and returns true.
 [[nodiscard]] bool hal_reboot() noexcept;
 
 }  // namespace marv

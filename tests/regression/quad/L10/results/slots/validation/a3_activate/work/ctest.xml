@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="(empty)"
+	tests="2"
+	failures="0"
+	disabled="0"
+	skipped="0"
+	hostname=""
+	time="7"
+	timestamp="2026-10-18T15:05:15"
+	>
+	<testcase name="l07_replay_config_validation" classname="l07_replay_config_validation" time="1.64993" status="run">
+		<properties>
+			<property name="cmake_labels" value="L07;config-validation"/>
+		</properties>
+		<system-out>Running main() from /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-slots/build/host-gz-quadfc/_deps/googletest-src/googletest/src/gtest_main.cc
+Note: Google Test filter = L07Replay.CommittedBenchLogs
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from L07Replay
+[ RUN      ] L07Replay.CommittedBenchLogs
+replay table: /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-slots/tests/regression/quad/L10/results/slots/validation/a3_activate/staged.mcfg, the estimator's law parameters from it, thresholds the image's
+t2_hand_rotation_2026-10-16.bin: calibration completed 1.250 s after the first sample, bias (-0.1757, 0.3086, -0.1109) deg/s
+t2_hand_rotation_2026-10-16.bin: theta_rot 2.407222 rad, T_s required 18.986 s (kp 0.2500, share 0.02090 rad), still1 47.139 s, still2 23.572 s, rotation 7.288 s
+  (a) err1 2.372e-04 err2 4.780e-04 rad (&lt;= 0.02090): pass;  (c') err 1.640e-02 rad (&lt;= theta_rot/2 = 1.20361): pass
+control (a): calibration completed 1.250 s after the first sample, bias (-0.1757, 0.3086, -0.1109) deg/s
+control (a): theta_rot 2.407222 rad, T_s required 18.986 s (kp 0.2500, share 0.02090 rad), still1 47.139 s, still2 23.572 s, rotation 7.288 s
+  (a) err1 2.372e-04 err2 1.721e+00 rad (&lt;= 0.02090): FAIL;  (c') err 1.640e-02 rad (&lt;= theta_rot/2 = 1.20361): pass
+control (c'): calibration completed 1.250 s after the first sample, bias (-0.1757, 0.3086, -0.1109) deg/s
+control (c'): theta_rot 2.407222 rad, T_s required 18.986 s (kp 0.2500, share 0.02090 rad), still1 47.139 s, still2 23.572 s, rotation 7.288 s
+  (a) err1 2.372e-04 err2 4.780e-04 rad (&lt;= 0.02090): pass;  (c') err 1.462e+00 rad (&lt;= theta_rot/2 = 1.20361): FAIL
+[       OK ] L07Replay.CommittedBenchLogs (1646 ms)
+[----------] 1 test from L07Replay (1646 ms total)
+
+[----------] Global test environment tear-down
+[==========] 1 test from 1 test suite ran. (1646 ms total)
+[  PASSED  ] 1 test.
+</system-out>
+	</testcase>
+	<testcase name="qf3_table_fc3v2" classname="qf3_table_fc3v2" time="5.38865" status="run">
+		<properties>
+			<property name="cmake_labels" value="config-validation"/>
+		</properties>
+		<system-out>qf3_table: table /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-slots/tests/regression/quad/L10/results/slots/validation/a3_activate/staged.mcfg
+qf3_table: configuration set level 0 (8 configurations); thresholds from the budget, equal to the image's compiled values: PM_min 0.7853981633974483 rad, Ms_max 2.0
+qf3_table: rate roll worst PM 45.0001 deg (0.7853993406040156 rad) at notches at 253.1669 rad/s, latency 3, J-,tau+, limit 45.0000 deg, margin +6.745e-05 deg; worst Ms 1.991220 at notches at 253.1669 rad/s, latency 3, J-,tau-, limit 2.0, margin +8.780e-03; PASS
+qf3_table: rate pitch worst PM 45.0001 deg (0.7853993510595791 rad) at notches at 253.1669 rad/s, latency 3, J-,tau+, limit 45.0000 deg, margin +6.805e-05 deg; worst Ms 1.991220 at notches at 253.1669 rad/s, latency 3, J-,tau-, limit 2.0, margin +8.780e-03; PASS
+qf3_table: rate yaw worst PM 45.0001 deg (0.7853993514443731 rad) at notches at 253.1669 rad/s, latency 3, J-,tau+, limit 45.0000 deg, margin +6.807e-05 deg; worst Ms 1.991220 at notches at 253.1669 rad/s, latency 3, J-,tau-, limit 2.0, margin +8.780e-03; PASS
+qf3_table: attitude att_kp 2.2668683528900146 1/s (yaw weight 0.05475236475467682) worst PM 45.0000 deg (0.7853981966649664 rad) at pitch notches bypassed, latency 0: J+,tau+, limit 45.0000 deg, margin +1.906e-06 deg; configuration set level 0 (8 configurations); every loop certified stable; PASS
+qf3_table: PASS
+</system-out>
+	</testcase>
+</testsuite>

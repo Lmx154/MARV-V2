@@ -1,0 +1,14 @@
+marv_fc3v2 quad-L2-pass-402-gbd4cf75-dirty
+
+image: sha256 d2bf3af1f246f1eb3b53ed12fbd8c15ddb65821691605edb68dab8315a3aebd6 (219172 bytes, SHA-256 accelerator, 16156 us)
+config: source factory, status ok, boot request none
+params ok: generated defaults, rate_period_tolerance_us 3
+init ok
+motors ok: DShot600 on PIO 0, clk_sys 150000000 Hz, PIO divider 31 + 64/256 (derived, dshot.hpp)
+receiver ok: CRSF on UART0 (GPIO 0/1), 8N1, 420000 Hz requested (ExpressLRS default), 419874 Hz set, RX IRQ priority 64
+imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+boot: IMU start at 26589 us after reset (hal_time_us just before imu_start)
+bench stats: off
+imu dt=1000051us irq/s=7495.6 words/s=14991.2 samples/s=7495.6 ticks/s=7495.6 writes/s=3747.8 motor_drops=0 | total samples=90245 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=12126234 gyro=(-0.0049,+0.0073,-0.0037) accel=(-0.010,+0.301,-9.768) temp=303.72K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.8 exe
+imu dt=1000047us irq/s=7495.6 words/s=14991.3 samples/s=7495.6 ticks/s=7495.6 writes/s=3747.8 motor_drops=0 | total samples=97741 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=13126282 gyro=(-0.0024,+0.0037,-0.0049) accel=(-0.100,+0.258,-9.768) temp=303.70K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.8 exe
+imu dt=1000049us irq/s=7495.6 words/s=14991.3 samples/s=7495.6 ticks/s=7495.6 writes/s=3747.8 motor_drops=0 | total samples=105237 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=14126330 gyro=(-0.0024,-0.0012,-0.0012) accel=(-0.038,+0.215,-9.763) temp=303.72K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.8 ex

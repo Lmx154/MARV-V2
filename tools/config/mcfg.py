@@ -61,7 +61,8 @@ rewrite is carried byte for byte.
 Command line (uv run python tools/config/mcfg.py <command> --help)
     encode   build a file from a params_manifest.json (the factory file: the compiled defaults of one parameter set
              as one section, default kind quad), or from a JSON view; --carry-from copies the sections of another
-             file that this one does not write, byte for byte
+             file that this one does not write, byte for byte; --max-bytes N refuses (exit 1, nothing written) a file
+             longer than N bytes (the build passes half the config slot, design/budget.yaml config_slot_bytes)
     decode   check a file (every rule above) and write its lossless JSON view (bits, no names)
     dump     the JSON view with names, units and link ids from --names <params_manifest.json>; with
              --compare-table <table> compares every record, bit for bit, with the human-readable table
@@ -521,6 +522,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--image-sha256", default="", help="hex; default unbound (zero)")
     p.add_argument("--report-id", default="", help="hex; default none (zero)")
     p.add_argument("--carry-from", type=Path, help="a .mcfg whose other sections are copied byte for byte")
+    p.add_argument("--max-bytes", type=int, help="refuse a file longer than this (nothing is written)")
     p.add_argument("--out", type=Path, required=True)
 
     p = sub.add_parser("decode", help="verify a .mcfg and write its lossless JSON view")
@@ -556,7 +558,11 @@ def main(argv: list[str] | None = None) -> int:
                 cfg = replace(cfg, sequence=args.sequence if args.sequence else cfg.sequence)
             if args.carry_from is not None:
                 cfg = carry_sections(cfg, _read(args.carry_from))
-            _write(args.out, encode(cfg))
+            data = encode(cfg)
+            if args.max_bytes is not None and len(data) > args.max_bytes:
+                raise McfgError(f"{args.out}: the config is {len(data)} bytes, more than --max-bytes {args.max_bytes} (half "
+                                f"the config slot, design/budget.yaml config_slot_bytes): recompute that entry")
+            _write(args.out, data)
         elif args.command == "decode":
             _emit(view(_read(args.file)), args.out)
         elif args.command == "dump":

@@ -1,0 +1,111 @@
+{
+ "step": "flash",
+ "elf": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/images/B.elf",
+ "elf_sha256": "09dbce4152e652d02f52d8f018e60f92c950800ab4299fe1b6abd67c0ce6b664",
+ "before": {
+  "stats": {
+   "t_us": 47297415,
+   "est_valid": 1,
+   "arming": "no_link",
+   "rate_timing_faults": 1,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-404-g1024e27",
+  "image": {
+   "sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "bytes": 219164,
+   "how": "SHA-256 accelerator",
+   "us": 16157
+  },
+  "config": {
+   "source": "slot A",
+   "sequence": 1,
+   "config_sha256": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+   "bound_image": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "status": "ok",
+   "fault": null,
+   "request": "activate",
+   "request_result": "done",
+   "line": "config: source slot A sequence 1 config_sha256 7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03 bound_image 5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e, status ok, boot request activate (done)"
+  },
+  "imu_start_us": 1190431
+ },
+ "flash": {
+  "returncode": 0,
+  "verified": true,
+  "erase_notes": [
+   "Adding extra erase range, 0x10035900 .. 0x10035fff"
+  ]
+ },
+ "checks": {
+  "flash.sh verified": {
+   "pass": true,
+   "returncode": 0,
+   "verified": true,
+   "erase_notes": [
+    "Adding extra erase range, 0x10035900 .. 0x10035fff"
+   ]
+  },
+  "(b) flash.sh keeps the config": {
+   "pass": true,
+   "config_line": "config: source slot A sequence 1 config_sha256 7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03 bound_image 5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e, status refused: not validated (the config is not bound to this image's hash and a validation report), boot request none",
+   "identity": {
+    "image_sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+    "config_sha256": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+    "schema_hash": "0x1648260490893e6e",
+    "config_source": 1,
+    "config_state": 1,
+    "config_refusal": 3,
+    "last_activation_result": 0,
+    "report_id": "dbe3d9444fd0da28f5b95f26a3d9e45259a1fb5138bc4718157cfc5c2d0e6870",
+    "staged_differs": 0
+   },
+   "image": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+   "arming": "config_refused",
+   "est_valid": 1
+  }
+ },
+ "boot_after": {
+  "stats": {
+   "t_us": 15197052,
+   "est_valid": 1,
+   "arming": "config_refused",
+   "rate_timing_faults": 0,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-408-gaa50aa4",
+  "image": {
+   "sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+   "bytes": 219164,
+   "how": "SHA-256 accelerator",
+   "us": 16157
+  },
+  "config": {
+   "source": "slot A",
+   "sequence": 1,
+   "config_sha256": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+   "bound_image": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "status": "refused: not validated",
+   "fault": "the config is not bound to this image's hash and a validation report",
+   "request": "none",
+   "request_result": null,
+   "line": "config: source slot A sequence 1 config_sha256 7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03 bound_image 5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e, status refused: not validated (the config is not bound to this image's hash and a validation report), boot request none"
+  },
+  "imu_start_us": 90893
+ },
+ "identity_after": {
+  "image_sha256": "1a1462d4e1dd8ec37a1a15499d45eae94c5fee46c7f12e8b85efc35f879b1788",
+  "config_sha256": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": 1,
+  "config_state": 1,
+  "config_refusal": 3,
+  "last_activation_result": 0,
+  "report_id": "dbe3d9444fd0da28f5b95f26a3d9e45259a1fb5138bc4718157cfc5c2d0e6870",
+  "staged_differs": 0
+ }
+}

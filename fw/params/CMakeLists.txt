@@ -26,6 +26,9 @@ endif()
 set(MARV_PARAMS_GEN_SCRIPT "${PROJECT_SOURCE_DIR}/tools/gen/params_gen.py")
 set(MARV_MCFG_SCRIPT "${PROJECT_SOURCE_DIR}/tools/config/mcfg.py")
 set(MARV_PARAMS_RUNTIME_SOURCE "${CMAKE_CURRENT_LIST_DIR}/src/param.cpp")
+# The largest factory config file the generator writes: half a config slot (MARV_CONFIG_SLOT_BYTES, fw/hal/CMakeLists.txt, the
+# design-budget entry config_slot_bytes, whose rule is twice the largest config). A larger one fails the build.
+math(EXPR marv_mcfg_max_bytes "${MARV_CONFIG_SLOT_BYTES} / 2")
 
 # marv_add_param_set(<name> CARD <files...> REGISTER <files...> [TABLE <out.txt> TABLE_INPUTS <repository-relative paths...>])
 #
@@ -42,7 +45,8 @@ set(MARV_PARAMS_RUNTIME_SOURCE "${CMAKE_CURRENT_LIST_DIR}/src/param.cpp")
 # the image or the SIL library links its one set. MARV_PARAM_TABLE_CHECK on <name>_generated is the command of the
 # post-link check of a binary that must hold this set's table (cmake/param_table.cmake, marv_check_param_table).
 # Next to the generated files every set also gets its factory config file ${CMAKE_BINARY_DIR}/generated/<name>/<name>.mcfg
-# (tools/config/mcfg.py encode: the compiled defaults of the set as the quad section; docs/decisions/0053 item 3).
+# (tools/config/mcfg.py encode: the compiled defaults of the set as the quad section; docs/decisions/0053 item 3); the
+# encoder refuses a file longer than half a config slot (marv_mcfg_max_bytes, above), so the build fails.
 # With TABLE the generator also writes the human-readable table of every record to <out.txt> (params_gen.py --out-table;
 # its header names TABLE_INPUTS); the table is a source of <name>_generated, so every build produces it.
 # Call it from fw/params (the targets take the calling directory as SOURCE_DIR, which puts them under fw/ for G3).
@@ -85,7 +89,7 @@ function(marv_add_param_set name)
   add_custom_command(
     OUTPUT "${mcfg_file}"
     COMMAND "${MARV_PYTHON}" "${MARV_MCFG_SCRIPT}" encode --manifest "${gen_dir}/params_manifest.json"
-            --section quad --out "${mcfg_file}"
+            --section quad --max-bytes ${marv_mcfg_max_bytes} --out "${mcfg_file}"
     DEPENDS "${gen_dir}/params_manifest.json" "${MARV_MCFG_SCRIPT}"
     COMMENT "Writing the factory config file (${name})"
     VERBATIM)

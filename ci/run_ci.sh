@@ -690,6 +690,38 @@ param_table_m33_control() {
   param_table_control m33
 }
 
+# flash_layout_control: the post-link flash-layout check (cmake/flash_layout.cmake, tools/ci/check_flash_layout.py) on its
+# planted control (tests/regression/quad/L09/flash_layout): an m33 image whose flash bytes reach the config slots must fail the
+# build in the check, with the slot finding and no compile or link error, and leave no image.
+flash_layout_control() {
+  local target=flash_layout_planted log status=0 left
+  cmake --preset m33 >/dev/null || return 1
+  log="$(mktemp)"
+  cmake --build --preset m33 --target "${target}" >"${log}" 2>&1 || status=$?
+  cat "${log}"
+  if [[ ${status} -eq 0 ]]; then
+    echo "control built: an image that reaches the config slots passes the post-link check"
+    rm -f "${log}"
+    return 1
+  fi
+  if ! grep -q "^FLASH-LAYOUT: ${target}[^:]*: the image ends at 0x[0-9a-f]*, [0-9]* bytes into the config slots" "${log}"; then
+    echo "control failed, but not with the flash-layout finding"
+    rm -f "${log}"
+    return 1
+  fi
+  if grep -qE 'error:|undefined reference|multiple definition|will not fit|overflowed' "${log}"; then
+    echo "control failed with a compile or link error besides the flash-layout finding"
+    rm -f "${log}"
+    return 1
+  fi
+  rm -f "${log}"
+  left="$(find build/m33/tests/regression/quad/L09/flash_layout -maxdepth 1 -type f -name "${target}*")"
+  if [[ -n "${left}" ]]; then
+    echo "control failed, but the image that failed the check was left: ${left}"
+    return 1
+  fi
+}
+
 
 # L5 T3: attitude_t3_oracle.py reads attitude_t3_inputs.txt and attitude_t3_q_inputs.txt and writes attitude_t3_golden.txt,
 # attitude_t3_envelope.txt and attitude_t3_q.txt into --dir (decision 0006 F); regenerated and checked as for L4 (decision 0011).
@@ -1069,6 +1101,7 @@ step "GS-3 negative control (a planted file outside the codec that includes a MA
 step "G3 negative control (planted marv_plant_ and marv::plant:: symbols in a flight library must fail the symbol check)" g3_plant_control
 step "parameter-table negative control (a planted image linking the product table under the FC3v2 runtime must fail the post-link check, host)" param_table_host_control
 step "parameter-table negative control (a planted image linking the product table under the FC3v2 runtime must fail the post-link check, m33)" param_table_m33_control
+step "flash-layout negative control (a planted m33 image reaching the config slots must fail the post-link check)" flash_layout_control
 step "L1 negative control (the core 2.1 example card without sigma must fail the card linter)" l1_card_lint_control
 step "L1 negative control (a card with sigma = 0 on a published entry must fail the parameter set build)" l1_flatten_control
 step "L1 negative control (a Python without PyYAML must fail the configure)" l1_pyyaml_control

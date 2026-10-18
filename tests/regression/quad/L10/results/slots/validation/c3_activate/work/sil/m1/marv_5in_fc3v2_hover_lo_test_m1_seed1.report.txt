@@ -1,0 +1,178 @@
+MARV L2 run report
+
+model: perfect-model (truth and firmware from the same card, not dispersed; core §6)
+git commit: d2e21a66decf14f8037033d05da33521c0242ea8 dirty
+card: vehicles/marv_5in_fc3v2.yaml
+card hash: 57c6d5247ad5f6221f0bb11385e66b1d3d02fbd7650cf49ff9c067cd516c5ea2
+scenario: tests/regression/quad/L10/results/slots/validation/c3_activate/work/sil/scenario/hover.yaml
+scenario sha256: 43d482305ce4129f00e50e8ca7c626d463990d23c124cba8842e9a77f92682ff
+seed: 1
+m sequence run: [1]
+
+run: m = 1, hover lo, mode test
+  world: /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-slots/tests/regression/quad/L10/results/slots/validation/c3_activate/work/sil/m1/marv_5in_fc3v2_hover_lo_test_m1_seed1.sdf
+  world sha256: 3180982e929415a07e363daea673feb103fbcb502724437668238fd2fcc5bab2  (sdf_edit changed the generated world)
+  seed: 1 (the plant IMU model draws from its noise stream 0, decision 0019); log header seed 1
+  sensors (decision 0019): gyro model, turn-on bias signs [0, 0, 0, 0, 0, 0], rotor speed off, clock corner none; record 6: host step 133328 ns, plant tick 0.000133328 s
+  m (ticks per host step): 1
+  tick period: 1953125/14649 us = 125/937536 s (133.32821352993378 us)
+  host step H = m * tick = 125/937536 s (133.32821352993378 us)
+  host step rounded (decision 0046 item 1): the plant integrates at 133328 ns, m * tick = 133328.2135299338 ns, error -1.602 ppm (the plugin refuses an error above the profile's odr_error 509.99999999999994 ppm)
+  command delay (decision 0046 item 2): N = 10 ticks; the plant takes the SIL's command of tick j - N at tick j, the stop command [0, 0, 0, 0] before that; the log's dshot is the SIL's command of that tick
+  host steps: 161632; ticks: 161632
+  versions:
+    gz-sim: 8.15.0 (log header)
+    gz-physics: 7.8.0-1~noble (dpkg libgz-physics7)
+    DART: 6.13.2+ds1-1~osrf2~noble (dpkg libdart-core+collisions+odelcpsolver6.13, libdart.so.6.13.2)
+    sdformat: 14.9.0-1~noble (dpkg libsdformat14)
+    physics engine: dartsim (gz-physics-dartsim-plugin), named in the world
+    plugin build type: Debug
+    plugin sha256: 4ed5752ff503909b15df39a42c369ea9bf1163f73c9ca5a5c4dba5d41b9afcf7
+  gz exit code: 0
+  warnings (0):
+    (none)
+  log: /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-slots/tests/regression/quad/L10/results/slots/validation/c3_activate/work/sil/m1/marv_5in_fc3v2_hover_lo_test_m1_seed1.bin
+  log sha256: 9b6c1ca2aa52ff8b9de1f14f1fe6c0b032f7172f5c0048c384c528059307e6b3
+  log records: steps 161632, ticks 161632, applied 161632; trailer {steps: 161632, ticks: 161632, applied: 161632}
+  launch pad (decision 0047): launch pad hold until tick 27528; not ground contact; no landing; the pad resists torques and lateral forces (the body is held and no wrench is applied while it holds); steps excluded from the stale check as held: 27527
+  stale steps: 2199 of 161632 (raw gz read bitwise equal to the previous step's while the applied wrench was nonzero; 0003 item 11); unchanged with a zero wrench: 0
+  last fresh step: index 161631, time 21550071296 ns = 21.550071296 s
+  simulated time: 21.550105809270256 s
+  wall time: 6.304 s (gz process, including its startup)
+  RTF: 3.418 (simulated / wall); child CPU time 4.499 s
+
+halving
+  (not provided: the T4 rule's output goes here)
+
+card and budget report (tools/card/report.py build_report)
+
+MARV L1 run report
+
+card: vehicles/marv_5in_fc3v2.yaml
+profile: sensors/profiles/madflight_fc3v2_revc.yaml
+budget: design/budget.yaml
+card hash: 57c6d5247ad5f6221f0bb11385e66b1d3d02fbd7650cf49ff9c067cd516c5ea2
+budget hash: 0693ca4b12ccbc26e7c7c50294b2f6270111fc7d55d600a8c61a117d397f30c2
+generator commit: d2e21a66decf14f8037033d05da33521c0242ea8 dirty
+
+UNVERIFIED (12)
+  card:mass  source: Luis, 2026-10-16/17: 'the drone is 696 grams', 'add 36 grams i forgot to add the prop weight', 'yes the 732 includes the battery' (696 g + 36 g of props = 732 g all-up: frame, motors, ESC, FC, wiring, pack and props)
+  card:drag  source: Faessler, Franchi, Scaramuzza, 'Differential flatness of quadrotor dynamics subject to rotor drag for accurate tracking of high-speed trajectories', IEEE RA-L 3(2):620-626, 2018 (arXiv 1712.02402): model v_dot = -g z_W + c z_B - R D R^T v, eq. (2), with D = diag(d_x, d_y, d_z) 'formed by the mass-normalized rotor-drag coefficients' (unit 1/s); identified in Section VII-C (platform of Section VII-A: 610 g, six-inch propellers, thrust-to-weight 4): circle trajectory at 4 m/s d_x = 0.544, d_y = 0.386 1/s; Gerono lemniscate (max 4 m/s) d_x = 0.491, d_y = 0.236 1/s; circle at 2.8 m/s d_x = 0.425, d_y = 0.256 1/s. Means 0.4867 and 0.2927 1/s; times 0.732 kg = 0.3562 and 0.2142 kg/s. d_z: the paper sets d_z = 0 because 'a non zero drag coefficient in the z-direction d_z does not improve the trajectory tracking performance', also on vertical trajectories up to 2.5 m/s: that is not a measurement of d_z, so d_z = 0 here is a modelling choice and its sigma is UNKNOWN. The UZH NeuroBEM paper (Bauersfeld et al., RSS 2021, arXiv 2106.08015) gives no D (blade-element model plus a learned residual); no source gives D for a 7-inch, 732 g quad
+  card:rotors.speed_range  source: Luis 2026-10-17: loaded maximum instead of no-load (ruling 'Yes (Recommended)', decision 0052; it replaces the no-load maximum of Luis 2026-10-16, 'set this to max there's no reason to prevent it', 2991 rad/s = KV 1700 rpm/V x 16.8 V x 2 pi / 60). Table: Emax ECO III 2807 1700KV, 16.8 V, Avia 7035-3, static, as posted by the reseller at https://rcdrone.top/hi/products/eamx-ecoiii-series-2807-3-6s-1300kv-1500kv-1700kv-brushless-motor-drone-motor-accessories (analyst's reading, M4 card/throttle packet; thrust g / RPM: 225 / 7890, 380 / 10240, 560 / 12290, 750 / 14280, 980 / 16360, 1230 / 18340, 1480 / 20120, which give k_T = 3.232, 3.241, 3.315, 3.289, 3.274, 3.270, 3.269e-6 N/(rad/s)^2, mean 3.270e-6; the maximum-load row is 1760 g, 33.4 A, 561 W, with no RPM listed): T_max = 1760 g = 17.26 N, omega_max = sqrt(17.26 / 3.270e-6) = 2297 rad/s (2297.4). Luis's motor is the ECO II 2807 1700KV; Emax publishes no ECO II table, so the ECO III table is the closest published one for a 1700KV 4S 7-inch setup, with another prop (Avia 7035-3, not the HQProp 7x3.5x3) and another motor generation (INFERRED transfer, UNVERIFIED)
+  card:rotors.m1.position  source: Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (front-right motor, the M1 measured map and motor_pad); z from vehicles/marv_5in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)
+  card:rotors.m2.position  source: Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (rear-left motor, the M1 measured map and motor_pad); z from vehicles/marv_5in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)
+  card:rotors.m3.position  source: Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (front-left motor, the M1 measured map and motor_pad); z from vehicles/marv_5in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)
+  card:rotors.m4.position  source: Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (rear-right motor, the M1 measured map and motor_pad); z from vehicles/marv_5in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)
+  profile:classes.imu.entries.gyro_noise_density  source: DS13476 Rev 5, §4.1 Table 3 (Rn)
+  profile:classes.imu.entries.gyro_bias_instability  source: labelled scenario value, the rule of marv_v2_board_default.yaml gyro_bias_instability (decision 0012, owner decision A) applied to this part: B = N x 1 sqrt(Hz), N = gyro_noise_density 2.8 mdeg/s/sqrt(Hz) (DS13476 Rev 5, §4.1 Table 3, Rn). Table 3 as recorded in this profile carries no bias-instability or Allan figure
+  profile:classes.imu.entries.accel_bias_instability  source: labelled scenario value, the rule of marv_v2_board_default.yaml accel_bias_instability (decision 0012, owner decision A) applied to this part: B = N x 1 sqrt(Hz), N = accel_noise_density 60 ug/sqrt(Hz) (DS13476 Rev 5, §4.1 Table 3, An). Table 3 as recorded in this profile carries no bias-instability figure
+  profile:classes.imu.entries.latency_samples  source: fw/hal/target/src/lsm6dsv.cpp:9-11, :54, :75 (watermark of one sample); fw/hal/target/decode/include/marv/hal_target/lsm6dsv_decode.hpp:18-23 (stamping rule: the newest sample's stamp is late by the FIFO-write-to-handler time, unmeasured); DS13476 Rev 5 §6.7.2 Table 20 (LPF2 cut-off 537 Hz at the 7.68 kHz ODR, used for the filter delay above) and §9.19 Table 63; the datasheet publishes no group delay, so the first-order shape of the LPF2 is an assumption (INFERRED)
+  profile:classes.rotor_speed.entries.esc_clock_error  source: Artery AT32F421 Series Datasheet V2.02 (Chinese edition, 2023-10-17), §5.3.7 Table 27 (HICK clock characteristics), as read for sensors/profiles/marv_v2_board_default.yaml esc_clock_error_datasheet; the Goku G55M's MCU: retailer listing 'AM32 (AT32DEVF421)', https://www.getfpv.com/electronics/electronic-speed-controllers-esc/flywoo-goku-g55m-55a-3-6s-am32-4-in-1-esc-30x30.html (read through a search summary, 2026-10-17)
+
+INFERRED (17)
+  card:inertia_diag  source: vehicles/marv_5in_fc3v2_inertia_model.py, run without arguments (nominal result: J = 4.2670e-03, 3.3214e-03, 7.3361e-03 kg m^2, CG 16.67 mm above the arm mid-plane); inputs: Luis's masses (this card's mass note) and ruler-measured motor spacing (rotors.m<n>.position); the split of the 217 g frame (50 % arms as point masses at their midpoints, 50 % plates at the centre) and every height above the arm plane are ASSUMED in the script, not measured
+  card:drag  source: Faessler, Franchi, Scaramuzza, 'Differential flatness of quadrotor dynamics subject to rotor drag for accurate tracking of high-speed trajectories', IEEE RA-L 3(2):620-626, 2018 (arXiv 1712.02402): model v_dot = -g z_W + c z_B - R D R^T v, eq. (2), with D = diag(d_x, d_y, d_z) 'formed by the mass-normalized rotor-drag coefficients' (unit 1/s); identified in Section VII-C (platform of Section VII-A: 610 g, six-inch propellers, thrust-to-weight 4): circle trajectory at 4 m/s d_x = 0.544, d_y = 0.386 1/s; Gerono lemniscate (max 4 m/s) d_x = 0.491, d_y = 0.236 1/s; circle at 2.8 m/s d_x = 0.425, d_y = 0.256 1/s. Means 0.4867 and 0.2927 1/s; times 0.732 kg = 0.3562 and 0.2142 kg/s. d_z: the paper sets d_z = 0 because 'a non zero drag coefficient in the z-direction d_z does not improve the trajectory tracking performance', also on vertical trajectories up to 2.5 m/s: that is not a measurement of d_z, so d_z = 0 here is a modelling choice and its sigma is UNKNOWN. The UZH NeuroBEM paper (Bauersfeld et al., RSS 2021, arXiv 2106.08015) gives no D (blade-element model plus a learned residual); no source gives D for a 7-inch, 732 g quad
+  card:rotors.thrust_coeff  source: Emax ECO II 2807 1300KV table with the Avia 7040-3 prop at 25 V as posted at https://rcdrone.top/de/products/avia-7035-7-inch-7035-3-fpv-propeller-1cw-1ccw-copy (analyst's reading, M4 P1 packet; rows thrust g / rpm: 480 / 11942, 1000 / 16835, 1640 / 21080, 1990 / 23008, which give k_T = 3.0, 3.2, 3.3, 3.4e-6 N/(rad/s)^2). The pitch ratio 3.5 / 4 is a rough rule (INFERRED); the scaled rows are 2.6-3.0e-6. No published table exists for the 1700KV motor or for the HQProp 7x3.5x3. CONFLICTING SOURCE (kept, UNVERIFIED, Luis 2026-10-17 packet): the Emax ECO III 2807 1700KV table at 16.8 V with an Avia 7035-3 (reseller page https://rcdrone.top/hi/products/eamx-ecoiii-series-2807-3-6s-1300kv-1500kv-1700kv-brushless-motor-drone-motor-accessories) gives k_T = 3.27e-6 N/(rad/s)^2 (mean of seven rows, 3.232..3.315e-6; see rotors.speed_range), 17 % above this value; it lies inside the stated range 2.5e-6..3.4e-6 and the 0.5 thrust-gain band of the vertical loop, 1.04 sigma above this value
+  card:rotors.torque_ratio  source: the Emax ECO II 2807 1300KV / Avia 7040-3 table at 25 V posted at https://rcdrone.top/de/products/avia-7035-7-inch-7035-3-fpv-propeller-1cw-1ccw-copy (analyst's reading): rows 480 g (96.25 W), 1000 g (252.5 W), 1640 g (517.5 W), 1990 g (707.5 W) give c_q = 0.0131, 0.0117, 0.0117, 0.0120 m at eta = 0.80 (eta ASSUMED, INFERRED); no pitch scaling is applied
+  card:rotors.speed_range  source: Luis 2026-10-17: loaded maximum instead of no-load (ruling 'Yes (Recommended)', decision 0052; it replaces the no-load maximum of Luis 2026-10-16, 'set this to max there's no reason to prevent it', 2991 rad/s = KV 1700 rpm/V x 16.8 V x 2 pi / 60). Table: Emax ECO III 2807 1700KV, 16.8 V, Avia 7035-3, static, as posted by the reseller at https://rcdrone.top/hi/products/eamx-ecoiii-series-2807-3-6s-1300kv-1500kv-1700kv-brushless-motor-drone-motor-accessories (analyst's reading, M4 card/throttle packet; thrust g / RPM: 225 / 7890, 380 / 10240, 560 / 12290, 750 / 14280, 980 / 16360, 1230 / 18340, 1480 / 20120, which give k_T = 3.232, 3.241, 3.315, 3.289, 3.274, 3.270, 3.269e-6 N/(rad/s)^2, mean 3.270e-6; the maximum-load row is 1760 g, 33.4 A, 561 W, with no RPM listed): T_max = 1760 g = 17.26 N, omega_max = sqrt(17.26 / 3.270e-6) = 2297 rad/s (2297.4). Luis's motor is the ECO II 2807 1700KV; Emax publishes no ECO II table, so the ECO III table is the closest published one for a 1700KV 4S 7-inch setup, with another prop (Avia 7035-3, not the HQProp 7x3.5x3) and another motor generation (INFERRED transfer, UNVERIFIED)
+  card:rotors.motor_lag.tau  source: analyst's estimate, M4 P1 packet: no source gives this airframe's motor lag; the UZH NeuroBEM 5-inch value is 33 ms (Bauersfeld et al. 2021 §V-D eq. (20) 'τ_Ω = 33 ms'; blackbird.yaml @ 24f21c4 motor_tau), and a 7-inch prop on a 2807 has more rotor inertia
+  card:rotors.esc_map  source: the UZH card's scenario model (Luis, 2026-09-29): no source gives a DShot→rotor-speed map for this airframe's ESC and motors
+  card:rotors.m1.position  source: Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (front-right motor, the M1 measured map and motor_pad); z from vehicles/marv_5in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)
+  card:rotors.m2.position  source: Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (rear-left motor, the M1 measured map and motor_pad); z from vehicles/marv_5in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)
+  card:rotors.m3.position  source: Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (front-left motor, the M1 measured map and motor_pad); z from vehicles/marv_5in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)
+  card:rotors.m4.position  source: Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (rear-right motor, the M1 measured map and motor_pad); z from vehicles/marv_5in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)
+  profile:classes.imu.entries.gyro_fifo_sensitivity  source: DS13476 Rev 5, §4.1 Table 3 (G_So, FS = ±2000 dps), through gyro_sensitivity; the driver sets that full scale (fw/hal/target/src/lsm6dsv.cpp:73, kCtrl6Fs2000Dps) and reads the 16-bit FIFO word
+  profile:classes.imu.entries.accel_fifo_sensitivity  source: DS13476 Rev 5, §4.1 Table 3 (LA_So, FS = ±16 g), through accel_sensitivity; the driver sets that range (fw/hal/target/src/lsm6dsv.cpp:74, kCtrl8Fs16G)
+  profile:classes.imu.entries.latency_samples  source: fw/hal/target/src/lsm6dsv.cpp:9-11, :54, :75 (watermark of one sample); fw/hal/target/decode/include/marv/hal_target/lsm6dsv_decode.hpp:18-23 (stamping rule: the newest sample's stamp is late by the FIFO-write-to-handler time, unmeasured); DS13476 Rev 5 §6.7.2 Table 20 (LPF2 cut-off 537 Hz at the 7.68 kHz ODR, used for the filter delay above) and §9.19 Table 63; the datasheet publishes no group delay, so the first-order shape of the LPF2 is an assumption (INFERRED)
+  profile:classes.imu.entries.mounting_axis_signs  source: madflight, github.com/qqqlab/madflight @ 1d5efa78332d57db47ed6856359a8005d6e245f0 (MIT): src/brd/madflight_FC3v2.h (imu_align CW180; 'board edge with pins is forward direction' on mag_align), src/imu/ImuGizmoLSM6DSV.h (getMotion6NED; 'LSM6DSV has NWU orientation'), src/imu/imu.cpp (Imu::update, the CW180 case)
+  profile:classes.rotor_speed.entries.esc_clock_error  source: Artery AT32F421 Series Datasheet V2.02 (Chinese edition, 2023-10-17), §5.3.7 Table 27 (HICK clock characteristics), as read for sensors/profiles/marv_v2_board_default.yaml esc_clock_error_datasheet; the Goku G55M's MCU: retailer listing 'AM32 (AT32DEVF421)', https://www.getfpv.com/electronics/electronic-speed-controllers-esc/flywoo-goku-g55m-55a-3-6s-am32-4-in-1-esc-30x30.html (read through a search summary, 2026-10-17)
+  profile:classes.rotor_speed.entries.telemetry_mantissa_bits  source: Betaflight, github.com/betaflight/betaflight, commit 5a09417ee75e91e81003cf7891bc1f4de86f3a83, src/main/drivers/dshot.c lines 206-221 (dshot_decode_eRPM_telemetry_value) and line 395; cited for the format only (Betaflight is GPL-3.0: no code taken); the same citation as marv_v2_board_default.yaml telemetry_mantissa_bits
+
+PLACEHOLDER (11)
+  card:mass  reason: Luis's sum of a weighed 696 g and 36 g of props added by hand; the scale, its resolution and a weighing of the flight-ready quad are not recorded  replaced by: a recorded weighing of the flight-ready quad (scale, resolution, pack and props on) before the first flight
+  card:inertia_diag  reason: a point-mass estimate with assumed heights and frame split; the airframe has not been put on a pendulum  replaced by: the M4 bifilar pendulum measurement of the flight-ready quad (quad spec §4.0 M4)
+  card:drag  reason: mass-normalized coefficients of another airframe (610 g, six-inch) multiplied by this airframe's mass; no drag measurement on this quad; the mass 0.732 kg is itself a placeholder; D is derived with it and must be re-derived when the mass is replaced; the transfer rule 'the mass-normalized coefficient carries over' is INFERRED (an assumption of similar thrust-to-weight and rotor-disc loading); d_z = 0 is a modelling choice  replaced by: a fit of D to logged flight data of this quad after first flight (velocity against the accelerometer-minus-attitude residual, as in Faessler section VII-C), or a wind-tunnel / towing measurement
+  card:rotors.thrust_coeff  reason: scaled from a third-party table of another motor (1300KV) and prop (Avia 7040-3); the table starts at 1250 rad/s, above this airframe's hover speed of about 800 rad/s, and k_T rises with speed in it  replaced by: the M4 thrust stand measurement of this motor, ESC and prop (quad spec §4.0 M4)
+  card:rotors.torque_ratio  reason: from a third-party table's electrical power at an assumed drive efficiency, for another motor and prop  replaced by: the M4 thrust stand's torque and thrust measurement (quad spec §4.0 M4)
+  card:rotors.motor_lag.tau  reason: no published value for this motor, ESC and prop; scaled by judgement from another airframe  replaced by: the M4 thrust stand step response of rotor speed (quad spec §4.0 M4)
+  card:rotors.esc_map  reason: other airframe (UZH NeuroBEM 5in): the UZH card's DShot→rotor-speed model; this airframe's map is unknown (AM32 version and settings UNKNOWN, Luis 2026-10-16)  replaced by: the M4 thrust stand's DShot-to-thrust map at two pack voltages (quad spec §4.0 M4)
+  profile:classes.imu.entries.gyro_bias_instability  reason: no datasheet bias instability for the LSM6DSV among the Table 3 rows this profile records (the PDF was not searched further); the value is the rule B = N x 1 sqrt(Hz) on the datasheet noise density, which M1 P12 measured 1.8x higher on x and y  replaced by: the M4 still-bench Allan run on this part
+  profile:classes.imu.entries.accel_bias_instability  reason: no datasheet accelerometer bias instability for the LSM6DSV among the Table 3 rows this profile records (the PDF was not searched further); the value is the rule B = N x 1 sqrt(Hz) on the datasheet noise density  replaced by: the M4 still-bench Allan run on this part
+  profile:classes.imu.entries.odr_error  reason: One part, one still bench at about 300 K, runs of 200 to 660 s: a ± bound for the trim-corrected period on this part only. DS13476 Rev 5 states an ODR accuracy only for high-accuracy ODR mode (±1 % over temperature and supply, specified by design, §4.1 Table 3 HAODR, footnote 11), none for high-performance mode and no part-to-part figure; the board's rate design is checked at this part's trim period and imu_start refuses another part's trim (decision 0014, Amendment 2026-10-16).  replaced by: the M1 P12b soak (script, inputs and raw log committed) and a temperature sweep of the same measurement, or a published figure for the high-performance mode
+  profile:classes.imu.entries.latency_samples  reason: the chip's LPF2 group delay is not published; a first-order model of the 537 Hz cut-off and one sample of driver batching are assumed (lead's ruling of 2026-10-17)  replaced by: the M4 bench step response of the gyro path / the L6(c) phase-lag measurement
+
+sigma UNKNOWN (27)
+  card:mass  source: Luis, 2026-10-16/17: 'the drone is 696 grams', 'add 36 grams i forgot to add the prop weight', 'yes the 732 includes the battery' (696 g + 36 g of props = 732 g all-up: frame, motors, ESC, FC, wiring, pack and props)
+  card:drag  source: Faessler, Franchi, Scaramuzza, 'Differential flatness of quadrotor dynamics subject to rotor drag for accurate tracking of high-speed trajectories', IEEE RA-L 3(2):620-626, 2018 (arXiv 1712.02402): model v_dot = -g z_W + c z_B - R D R^T v, eq. (2), with D = diag(d_x, d_y, d_z) 'formed by the mass-normalized rotor-drag coefficients' (unit 1/s); identified in Section VII-C (platform of Section VII-A: 610 g, six-inch propellers, thrust-to-weight 4): circle trajectory at 4 m/s d_x = 0.544, d_y = 0.386 1/s; Gerono lemniscate (max 4 m/s) d_x = 0.491, d_y = 0.236 1/s; circle at 2.8 m/s d_x = 0.425, d_y = 0.256 1/s. Means 0.4867 and 0.2927 1/s; times 0.732 kg = 0.3562 and 0.2142 kg/s. d_z: the paper sets d_z = 0 because 'a non zero drag coefficient in the z-direction d_z does not improve the trajectory tracking performance', also on vertical trajectories up to 2.5 m/s: that is not a measurement of d_z, so d_z = 0 here is a modelling choice and its sigma is UNKNOWN. The UZH NeuroBEM paper (Bauersfeld et al., RSS 2021, arXiv 2106.08015) gives no D (blade-element model plus a learned residual); no source gives D for a 7-inch, 732 g quad
+  profile:classes.imu.entries.gyro_fsr  source: DS13476 Rev 5, §4.1 Table 3 (G_FS); §9.19 Table 62 (FS_G_[3:0] = 0100)
+  profile:classes.imu.entries.gyro_sensitivity  source: DS13476 Rev 5, §4.1 Table 3 (G_So, FS = ±2000 dps)
+  profile:classes.imu.entries.gyro_noise_density  source: DS13476 Rev 5, §4.1 Table 3 (Rn)
+  profile:classes.imu.entries.gyro_zero_rate_offset  source: DS13476 Rev 5, §4.1 Table 3 (G_TyOff)
+  profile:classes.imu.entries.gyro_offset_tempco  source: DS13476 Rev 5, §4.1 Table 3 (G_OffDr)
+  profile:classes.imu.entries.accel_fsr  source: DS13476 Rev 5, §4.1 Table 3 (LA_FS); FS_XL_[1:0] in CTRL8 (17h), §9.21
+  profile:classes.imu.entries.accel_sensitivity  source: DS13476 Rev 5, §4.1 Table 3 (LA_So, FS = ±16 g)
+  profile:classes.imu.entries.accel_noise_density  source: DS13476 Rev 5, §4.1 Table 3 (An)
+  profile:classes.imu.entries.accel_offset  source: DS13476 Rev 5, §4.1 Table 3 (LA_TyOff)
+  profile:classes.imu.entries.accel_offset_tempco  source: DS13476 Rev 5, §4.1 Table 3 (LA_OffDr)
+  profile:classes.imu.entries.gyro_fifo_sensitivity  source: DS13476 Rev 5, §4.1 Table 3 (G_So, FS = ±2000 dps), through gyro_sensitivity; the driver sets that full scale (fw/hal/target/src/lsm6dsv.cpp:73, kCtrl6Fs2000Dps) and reads the 16-bit FIFO word
+  profile:classes.imu.entries.accel_fifo_sensitivity  source: DS13476 Rev 5, §4.1 Table 3 (LA_So, FS = ±16 g), through accel_sensitivity; the driver sets that range (fw/hal/target/src/lsm6dsv.cpp:74, kCtrl8Fs16G)
+  profile:classes.imu.entries.odr  source: DS13476 Rev 5, §4.1 Table 3 (G_ODR); §9.15 Table 54 (gyroscope ODR selection)
+  profile:classes.imu.entries.odr_error  source: M1 P12 bench, this part (INTERNAL_FREQ_FINE -18): the IMU interrupt-entry spacing against hal_time_us, mean 133.395 to 133.396 us over 1.5 to 5.0 million samples per run (tests/regression/quad/L09/results/p12_bench/report.txt:21, :44, :67 and :90, from the raw logs beside it, read by tools/target/bench_stats.py), against the trim period 3906250/29298 = 133.328 us (DS13476 Rev 5 §9.49): +501 to +508 ppm, rounded up to 510 ppm. It includes the RP2354's own clock error, which hal_time_us shares.
+  profile:classes.imu.entries.latency_samples  source: fw/hal/target/src/lsm6dsv.cpp:9-11, :54, :75 (watermark of one sample); fw/hal/target/decode/include/marv/hal_target/lsm6dsv_decode.hpp:18-23 (stamping rule: the newest sample's stamp is late by the FIFO-write-to-handler time, unmeasured); DS13476 Rev 5 §6.7.2 Table 20 (LPF2 cut-off 537 Hz at the 7.68 kHz ODR, used for the filter delay above) and §9.19 Table 63; the datasheet publishes no group delay, so the first-order shape of the LPF2 is an assumption (INFERRED)
+  profile:classes.imu.entries.fifo_capacity  source: DS13476 Rev 5, §6.10 ('The LSM6DSV embeds 1.5 KB of data in FIFO (up to 4.5 KB with the compression feature enabled)')
+  profile:classes.imu.entries.temperature_sensitivity  source: DS13476 Rev 5, §4.3 Table 5 (TSen)
+  profile:classes.imu.entries.temperature_zero_point  source: DS13476 Rev 5, §4.3 Table 5 footnote 3 ('The output of the temperature sensor is 0 LSB (typ.) at 25°C')
+  profile:classes.imu.entries.temperature_offset  source: DS13476 Rev 5, §4.3 Table 5 (Toff, min -15, max +15)
+  profile:classes.imu.entries.temperature_odr  source: DS13476 Rev 5, §4.3 Table 5 (TODR)
+  profile:classes.imu.entries.mounting_axis_signs  source: madflight, github.com/qqqlab/madflight @ 1d5efa78332d57db47ed6856359a8005d6e245f0 (MIT): src/brd/madflight_FC3v2.h (imu_align CW180; 'board edge with pins is forward direction' on mag_align), src/imu/ImuGizmoLSM6DSV.h (getMotion6NED; 'LSM6DSV has NWU orientation'), src/imu/imu.cpp (Imu::update, the CW180 case)
+  profile:classes.high_g_accel.entries.range  source: https://madflight.com/Board-FC3/ (fetched 2026-10-16) lists no high-g accelerometer on the FC3 / FC3v2; madflight src/brd/madflight_FC3v2.h @ 1d5efa7 configures none
+  profile:classes.barometer.entries.noise  source: BMP580 datasheet not read in M1 P8; the part is named by https://madflight.com/Board-FC3/ and madflight src/brd/madflight_FC3v2.h @ 1d5efa7 (bar_gizmo BMP580)
+  profile:classes.rotor_speed.entries.pole_count  source: the airframe's motors are not recorded (Luis, 2026-10-15, names the ESC, not the motors)
+  profile:classes.rotor_speed.entries.esc_clock_error  source: Artery AT32F421 Series Datasheet V2.02 (Chinese edition, 2023-10-17), §5.3.7 Table 27 (HICK clock characteristics), as read for sensors/profiles/marv_v2_board_default.yaml esc_clock_error_datasheet; the Goku G55M's MCU: retailer listing 'AM32 (AT32DEVF421)', https://www.getfpv.com/electronics/electronic-speed-controllers-esc/flywoo-goku-g55m-55a-3-6s-am32-4-in-1-esc-30x30.html (read through a search summary, 2026-10-17)
+
+value UNKNOWN (10)
+  profile:classes.high_g_accel.entries.range  source: https://madflight.com/Board-FC3/ (fetched 2026-10-16) lists no high-g accelerometer on the FC3 / FC3v2; madflight src/brd/madflight_FC3v2.h @ 1d5efa7 configures none
+  profile:classes.barometer.entries.noise  source: BMP580 datasheet not read in M1 P8; the part is named by https://madflight.com/Board-FC3/ and madflight src/brd/madflight_FC3v2.h @ 1d5efa7 (bar_gizmo BMP580)
+  profile:classes.rotor_speed.entries.pole_count  source: the airframe's motors are not recorded (Luis, 2026-10-15, names the ESC, not the motors)
+  budget:p  source: (design-budget entry; the rationale is in the register)
+  budget:k  source: (design-budget entry; the rationale is in the register)
+  budget:b  source: (design-budget entry; the rationale is in the register)
+  budget:E  source: (design-budget entry; the rationale is in the register)
+  budget:false_alarm_budgets  source: (design-budget entry; the rationale is in the register)
+  budget:cv_phase_budget  source: (design-budget entry; the rationale is in the register)
+  budget:batch_plan  source: (design-budget entry; the rationale is in the register)
+
+design-budget (28)
+  budget:PM_min  value: 0.7853981633974483  unit: rad
+  budget:chi2_gate_quantile  value: 0.999  unit: 1
+  budget:p  value: UNKNOWN  unit: 1
+  budget:k  value: UNKNOWN  unit: 1
+  budget:b  value: UNKNOWN  unit: 1
+  budget:E  value: UNKNOWN  unit: m
+  budget:false_alarm_budgets  value: UNKNOWN  unit: 1
+  budget:cv_phase_budget  value: UNKNOWN  unit: rad
+  budget:batch_plan  value: UNKNOWN  unit: 1
+  budget:tau_robustness_band  value: 0.3  unit: 1
+  budget:inertia_robustness_band  value: 0.5  unit: 1
+  budget:thrust_gain_robustness_band  value: 0.5  unit: 1
+  budget:Ms_max  value: 2.0  unit: 1
+  budget:d_path_noise_budget  value: 0.5  unit: 1
+  budget:t4_pass_probability_tracking  value: 0.9  unit: 1
+  budget:t4_confidence_tracking  value: 0.9  unit: 1
+  budget:t4_pass_probability_safety  value: 0.95  unit: 1
+  budget:t4_confidence_safety  value: 0.95  unit: 1
+  budget:allan_check_confidence  value: 0.99  unit: 1
+  budget:stream_independence_confidence  value: 0.99  unit: 1
+  budget:normal_moments_confidence  value: 0.99  unit: 1
+  budget:per_push_check_time_max  value: 60  unit: s
+  budget:gyro_chain_attenuation_min  value: 0.1  unit: 1
+  budget:esc_clock_error_max  value: 0.02  unit: 1
+  budget:noise_term_confidence  value: 0.99  unit: 1
+  budget:attitude_tilt_error_max  value: 0.0209  unit: rad
+  budget:t4_settle_fraction  value: 0.02  unit: 1
+  budget:config_slot_bytes  value: 98304  unit: B
+
+locked (1)
+  card:rotors.speed_range  lock by Luis on 2026-10-17 via manual  source: Luis 2026-10-17: loaded maximum instead of no-load (ruling 'Yes (Recommended)', decision 0052; it replaces the no-load maximum of Luis 2026-10-16, 'set this to max there's no reason to prevent it', 2991 rad/s = KV 1700 rpm/V x 16.8 V x 2 pi / 60). Table: Emax ECO III 2807 1700KV, 16.8 V, Avia 7035-3, static, as posted by the reseller at https://rcdrone.top/hi/products/eamx-ecoiii-series-2807-3-6s-1300kv-1500kv-1700kv-brushless-motor-drone-motor-accessories (analyst's reading, M4 card/throttle packet; thrust g / RPM: 225 / 7890, 380 / 10240, 560 / 12290, 750 / 14280, 980 / 16360, 1230 / 18340, 1480 / 20120, which give k_T = 3.232, 3.241, 3.315, 3.289, 3.274, 3.270, 3.269e-6 N/(rad/s)^2, mean 3.270e-6; the maximum-load row is 1760 g, 33.4 A, 561 W, with no RPM listed): T_max = 1760 g = 17.26 N, omega_max = sqrt(17.26 / 3.270e-6) = 2297 rad/s (2297.4). Luis's motor is the ECO II 2807 1700KV; Emax publishes no ECO II table, so the ECO III table is the closest published one for a 1700KV 4S 7-inch setup, with another prop (Avia 7035-3, not the HQProp 7x3.5x3) and another motor generation (INFERRED transfer, UNVERIFIED)
+
+model: perfect-model (truth and firmware from the same card, not dispersed; core §6)

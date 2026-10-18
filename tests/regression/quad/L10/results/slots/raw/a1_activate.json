@@ -1,0 +1,167 @@
+{
+ "step": "activate",
+ "elf": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/images/A.elf",
+ "elf_sha256": "213287349510c2b1263a025a7ff0c8ec0c89382ed53eb01ccf97147921d16429",
+ "host_image": {
+  "elf": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/images/A.elf",
+  "elf_file_sha256": "213287349510c2b1263a025a7ff0c8ec0c89382ed53eb01ccf97147921d16429",
+  "sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+  "text": "sha256 5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e\nbytes 219164 flash 0x10000000..0x1003581c (/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/images/A.elf)"
+ },
+ "boot": {
+  "stats": {
+   "t_us": 89126455,
+   "est_valid": 1,
+   "arming": "no_link",
+   "rate_timing_faults": 0,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-404-g1024e27",
+  "image": {
+   "sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "bytes": 219164,
+   "how": "SHA-256 accelerator",
+   "us": 16157
+  },
+  "config": {
+   "source": "factory",
+   "sequence": null,
+   "config_sha256": null,
+   "bound_image": null,
+   "status": "ok",
+   "fault": null,
+   "request": "none",
+   "request_result": null,
+   "line": "config: source factory, status ok, boot request none"
+  },
+  "imu_start_us": 26611
+ },
+ "identity_before": {
+  "image_sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+  "config_sha256": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": 0,
+  "config_state": 0,
+  "config_refusal": 0,
+  "last_activation_result": 0,
+  "report_id": "0000000000000000000000000000000000000000000000000000000000000000",
+  "staged_differs": 0
+ },
+ "checks": {
+  "board runs --elf": {
+   "pass": true,
+   "board": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "host": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e"
+  },
+  "staged": {
+   "pass": true,
+   "echo": "0x4011145f",
+   "staged_differs": 1
+  },
+  "validated": {
+   "pass": true,
+   "returncode": 0,
+   "verdict": "PASS",
+   "report_id": "a8052242ff3b877b9089d67dcfc60c0c8bc18a1adda6c45991b1b1e67bee9353",
+   "report_image_sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "report_config_hash": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+   "seconds": 26.0
+  },
+  "activate accepted": {
+   "pass": true,
+   "result": 0,
+   "texts": []
+  },
+  "(a) activated": {
+   "pass": true,
+   "config_line": "config: source slot A sequence 1 config_sha256 7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03 bound_image 5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e, status ok, boot request activate (done)",
+   "identity": {
+    "image_sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+    "config_sha256": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+    "schema_hash": "0x1648260490893e6e",
+    "config_source": 1,
+    "config_state": 0,
+    "config_refusal": 0,
+    "last_activation_result": 1,
+    "report_id": "a8052242ff3b877b9089d67dcfc60c0c8bc18a1adda6c45991b1b1e67bee9353",
+    "staged_differs": 0
+   },
+   "param": {
+    "value_bits": "0x4011145f",
+    "active_bits": "0x4011145f",
+    "staged_bits": "0x4011145f"
+   },
+   "expected_config_sha256": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+   "arming": "no_link",
+   "est_valid": 1,
+   "before": "config: source factory, status ok, boot request none"
+  }
+ },
+ "stage": {
+  "param": "att_kp",
+  "factory_bits": "0x4011145e",
+  "new_bits": "0x4011145f",
+  "echo_bits": "0x4011145f",
+  "texts": []
+ },
+ "validation": {
+  "returncode": 0,
+  "verdict": "PASS",
+  "report_id": "a8052242ff3b877b9089d67dcfc60c0c8bc18a1adda6c45991b1b1e67bee9353",
+  "report_image_sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+  "report_config_hash": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+  "seconds": 26.0
+ },
+ "activate_ack": {
+  "result": 0,
+  "texts": []
+ },
+ "boot_after": {
+  "stats": {
+   "t_us": 15230767,
+   "est_valid": 1,
+   "arming": "no_link",
+   "rate_timing_faults": 1,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-404-g1024e27",
+  "image": {
+   "sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "bytes": 219164,
+   "how": "SHA-256 accelerator",
+   "us": 16157
+  },
+  "config": {
+   "source": "slot A",
+   "sequence": 1,
+   "config_sha256": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+   "bound_image": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "status": "ok",
+   "fault": null,
+   "request": "activate",
+   "request_result": "done",
+   "line": "config: source slot A sequence 1 config_sha256 7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03 bound_image 5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e, status ok, boot request activate (done)"
+  },
+  "imu_start_us": 1124857
+ },
+ "identity_after": {
+  "image_sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+  "config_sha256": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": 1,
+  "config_state": 0,
+  "config_refusal": 0,
+  "last_activation_result": 1,
+  "report_id": "a8052242ff3b877b9089d67dcfc60c0c8bc18a1adda6c45991b1b1e67bee9353",
+  "staged_differs": 0
+ },
+ "param_after": {
+  "value_bits": "0x4011145f",
+  "active_bits": "0x4011145f",
+  "staged_bits": "0x4011145f"
+ }
+}
