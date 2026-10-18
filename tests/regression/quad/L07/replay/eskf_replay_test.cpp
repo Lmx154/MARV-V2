@@ -81,6 +81,7 @@ estimator::EskfConfig<float> read_eskf() {
   c.accel_healthy_min = param_value<ParamId::estimator_accel_healthy_min>();
   c.accel_healthy_max = param_value<ParamId::estimator_accel_healthy_max>();
   c.accel_fusion_divisor = static_cast<std::uint32_t>(param_value<ParamId::eskf_accel_fusion_divisor>());
+  c.accel_model_noise = param_value<ParamId::eskf_accel_model_noise>();
   return c;
 }
 

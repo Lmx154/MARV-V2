@@ -236,6 +236,21 @@ TEST(Eskf, AtRestLevelConvergesToTheScalarSteadyState) {
     }
   }
 
+  // (1b) The model-error term (eskf.hpp, Measurement noise): the first window's posterior with accel_model_noise m is the scalar
+  // update with var + (m / g)^2, from the prior sigma0^2 + n q; here m = 1 m/s^2 (EKF2_GRAV_NOISE's default). Bound 1e-4 relative.
+  EskfConfig<float> cm = no_bias_config();
+  cm.accel_model_noise = 1.0F;
+  Filter m = make(cm);
+  m.step(v3(0, 0, 0), specific_force(0.0, 0.0), kTickUs);
+  run(m, v3(0, 0, 0), specific_force(0.0, 0.0), static_cast<int>(kDivisor));
+  ASSERT_EQ(m.accel_status(), EskfAccel::Fused);
+  const double s0 = static_cast<double>(cm.angle_sigma_init);
+  const double prior0 = s0 * s0 + big_q;
+  const double var_m = var + 1.0 / (kG * kG);
+  const double post_m = prior0 * var_m / (prior0 + var_m);
+  EXPECT_NEAR(static_cast<double>(m.covariance()(0, 0)), post_m, 1.0e-4 * post_m);
+  EXPECT_NEAR(static_cast<double>(m.covariance()(1, 1)), post_m, 1.0e-4 * post_m);
+
   Filter g = make(register_config());
   g.step(v3(0, 0, 0), specific_force(0.02, 0.0), kTickUs);
   ASSERT_TRUE(g.valid());

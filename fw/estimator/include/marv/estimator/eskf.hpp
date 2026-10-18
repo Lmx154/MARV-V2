@@ -42,7 +42,15 @@
 // Noise: white noise of one-sided density N has the variance N^2 / (2 dt) per sample over the Nyquist band (the plant's rule,
 // above), so the time-weighted mean S / T of the window's samples has the variance sum(dt^2 N^2 / (2 dt)) / T^2 = N^2 / (2 T); per
 // axis of the direction, (N_a / g)^2 / (2 T), N_a the accelerometer's density and g standard gravity. Averaging over the window
-// divides the single sample's variance by the window's sample count.
+// divides the single sample's variance by the window's sample count. Plus the model error, which no averaging reduces: the
+// specific force is gravity plus the vehicle's linear acceleration and vibration, not gravity alone. EKF2 sets the variance of
+// every gravity-direction component to max(EKF2_GRAV_NOISE^2, 0.01^2), EKF2_GRAV_NOISE the "accelerometer measurement gaussian
+// noise" in m/s^2, default 1.0 (gravity_fusion.cpp line 53, common.h line 483) - it does not divide by g, though the measurement
+// is the unit vector y. Here the stated rule is applied: an error e (m/s^2) in the specific force turns the direction by e / |f|,
+// |f| = g about hover, so the model-error variance per axis is (accel_model_noise / g)^2, accel_model_noise = EKF2_GRAV_NOISE (0
+// switches the term off), added to the sensor term: var = (N_a / g)^2 / (2 T) + (accel_model_noise / g)^2. Without it the gate is
+// set by the sensor noise alone (5 sigma = 0.12 deg for the bench's 75-sample window) and a manoeuvre locks the accelerometer
+// out until the rejection timeout.
 // Gating, in this order:
 //   1. health: a step's f enters S only if |f| lies in the open interval (accel_healthy_min g, accel_healthy_max g) (Mahony's
 //      window; EKF2 the same 0.9 g - 1.1 g on its filtered accelerometer, gravity_fusion.cpp lines 55-60) and is finite; the window
@@ -136,6 +144,7 @@ struct EskfConfig {
   T accel_healthy_min{};       // lower bound of the healthy specific-force norm, in g (open)
   T accel_healthy_max{};       // upper bound of the healthy specific-force norm, in g (open)
   std::uint32_t accel_fusion_divisor = 1;  // predicted steps per gravity fusion window (0 acts as 1)
+  T accel_model_noise{};       // m/s^2, the specific force's model error (linear acceleration, vibration); 0 = none
 };
 
 // What the latest step did with the accelerometer window (NotUsed on every step that does not close a window).
@@ -335,7 +344,8 @@ class Eskf {
     }
     const prim::Vec3<T> y = mean * (T(1) / std::sqrt(n2));
     const T n = cfg_.accel_noise_density / static_cast<T>(prim::kStandardGravity);
-    const T variance = n * n / (T(2) * span);
+    const T m = cfg_.accel_model_noise / static_cast<T>(prim::kStandardGravity);
+    const T variance = n * n / (T(2) * span) + m * m;
     const T gate2 = cfg_.accel_gate * cfg_.accel_gate;
     bool pass = true;
     for (std::size_t k = 0; k < prim::kSpatialDim; ++k) {
