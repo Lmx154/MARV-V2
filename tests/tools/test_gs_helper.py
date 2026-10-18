@@ -949,6 +949,18 @@ def test_uf2_flash_bytes_tile_from_the_xip_base_and_a_gap_or_foreign_block_is_re
         flash_mod.uf2_flash_bytes(bytes(shifted))
 
 
+def test_uf2_may_pad_the_image_with_less_than_a_flash_page_of_zeros_and_nothing_else(tmp_path):
+    image = FLASH_PAYLOAD[:1000]
+    digest = hashlib.sha256(image).hexdigest()
+    padded = tmp_path / "padded.uf2"
+    padded.write_bytes(make_uf2(image + bytes(24)))  # 1024 bytes: whole 256-byte pages
+    assert flash_mod.uf2_matches(padded, digest) is None
+    padded.write_bytes(make_uf2(image + bytes(24) + b"\x01"))
+    assert "holds image" in flash_mod.uf2_matches(padded, digest)
+    padded.write_bytes(make_uf2(image + bytes(flash_mod.FLASH_PAGE)))  # a whole extra page is not padding
+    assert "holds image" in flash_mod.uf2_matches(padded, digest)
+
+
 def test_board_elf_without_a_bin_is_keyed_by_its_flash_bytes_and_a_non_elf_stays_unkeyed(tmp_path):
     image = make_flash_root(tmp_path / "build")
     lib = flash_mod.ImageLibrary(tmp_path / "build").scan()

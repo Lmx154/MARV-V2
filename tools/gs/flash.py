@@ -59,6 +59,9 @@ UF2_MAGIC_END = 0x0AB16F30
 UF2_PAYLOAD_MAX = 476
 UF2_FLAG_NOT_MAIN_FLASH = 0x00000001
 UF2_END_OFFSET = UF2_BLOCK - 4
+# picotool pads the last UF2 block of an image to the flash page (RP2350 datasheet, QSPI flash: 256-byte pages); the board hashes only
+# [__flash_binary_start, __flash_binary_end), so up to one page of trailing zeros is not part of the image.
+FLASH_PAGE = 256
 
 
 class FlashRefused(Exception):
@@ -105,7 +108,13 @@ def uf2_matches(path: Path, image_hash: str) -> str | None:
     except FlashRefused as e:
         return str(e)
     got = hashlib.sha256(flash).hexdigest()
-    return None if got == image_hash else f"the UF2 holds image {got[:12]}, not {image_hash[:12]}"
+    if got == image_hash:
+        return None
+    for pad in range(1, min(FLASH_PAGE, len(flash) + 1)):
+        if flash[len(flash) - pad:].strip(b"\0") or hashlib.sha256(flash[:len(flash) - pad]).hexdigest() != image_hash:
+            continue
+        return None  # the image, then fewer than a flash page of zero padding
+    return f"the UF2 holds image {got[:12]}, not {image_hash[:12]}"
 
 
 # ---- the plan and the gate ---------------------------------------------------------------------------------------------
