@@ -91,3 +91,36 @@
   `uv sync --frozen`. Copyright (c) Aymeric Augustin and contributors.
 - **Licence:** BSD-3-Clause (`License-Expression: BSD-3-Clause` in the package metadata; the licence file ships in its
   distribution). It is used by the helper on the developer's machine only; it is not part of `fw/` and enters no image.
+
+## FatFs R0.16 with patches 1 and 2 (SD card file system, ground-segment unit 13)
+
+- **Where:** `third_party/fatfs/`, the official archive <https://elm-chan.org/fsw/ff/arc/ff16.zip> (SHA-256
+  `99f7dc1f7e095356e4a9e3dbe29959090d8b948afe2bbc5441e52fdf4b85449e`): `ff.h`, `diskio.h`, `ffunicode.c` unmodified, `ff.c`
+  with the two official patches of <https://elm-chan.org/fsw/ff/patches.html> applied (CVE-2026-6682, -6683, -6687).
+  `third_party/fatfs/PROVENANCE.txt` has the hashes of the archive, the patches and every file; `LICENSE.txt` is the
+  archive's. `third_party/fatfs/config/ffconf.h` is MARV's configuration.
+- **Use:** the target build only (`marv_hal_target`, `fw/hal/target/src/storage_sd.cpp`: the pending activation file on the
+  FC3v2 board's SD card). It enters the flight image. Host builds do not compile it.
+- **Licence:** the FatFs licence, "one of the BSD-style licenses" (1-clause: source redistributions keep the notice; binary
+  redistributions need not mention FatFs). The text, from `LICENSE.txt` of the archive:
+
+```
+/*----------------------------------------------------------------------------/
+/  FatFs - Generic FAT Filesystem Module  Rx.xx                               /
+/-----------------------------------------------------------------------------/
+/
+/ Copyright (C) 20xx, ChaN, all right reserved.
+/
+/ FatFs module is an open source software. Redistribution and use of FatFs in
+/ source and binary forms, with or without modification, are permitted provided
+/ that the following condition is met:
+/
+/ 1. Redistributions of source code must retain the above copyright notice,
+/    this condition and the following disclaimer.
+/
+/ This software is provided by the copyright holder and contributors "AS IS"
+/ and any warranties related to this software are DISCLAIMED.
+/ The copyright owner or contributors be NOT LIABLE for any damages caused
+/ by use of this software.
+/----------------------------------------------------------------------------*/
+```

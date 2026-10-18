@@ -65,6 +65,21 @@ pico_board_cmake_set(PICO_PLATFORM, rp2350)
 #define MADFLIGHT_FC3V2_OUT2_PIN 8
 #define MADFLIGHT_FC3V2_OUT3_PIN 9
 
+// --- SD card: SPI0 (ground-segment unit 13, decision 0053) ---
+// Pins: the madflight FC3 page (https://madflight.com/Board-FC3/, "Pinout FC3v2", read 2026-10-18): GPIO 34 SD_SPI0_SLCK (CLK),
+// 35 SD_SPI0_MOSI (CMD), 36 SD_SPI0_MISO (D0), 39 SD_SPI0_CS (D3), 25 "Rev-B+ jumper SD Card Detect"; all UNVERIFIED until
+// the bench. SPI0 is CONFIRMED for GPIO 34-36 by the Pico SDK 2.3.1 RP2350 function-select data
+// (src/rp2350/hardware_regs/include/hardware/regs/io_bank0.h, FUNCSEL 1): IO_BANK0_GPIO34_CTRL_FUNCSEL_VALUE_SPI0_SCLK,
+// IO_BANK0_GPIO35_CTRL_FUNCSEL_VALUE_SPI0_TX, IO_BANK0_GPIO36_CTRL_FUNCSEL_VALUE_SPI0_RX. CS is driven as a plain GPIO.
+// The card-detect polarity is not published (the page says only "card detect"): the driver reads the pin and never gates on it.
+// The IMU is SPI1 (GPIO 26-31); the SD driver never touches SPI1.
+#define MADFLIGHT_FC3V2_SD_SPI 0
+#define MADFLIGHT_FC3V2_SD_SCK_PIN 34
+#define MADFLIGHT_FC3V2_SD_MOSI_PIN 35
+#define MADFLIGHT_FC3V2_SD_MISO_PIN 36
+#define MADFLIGHT_FC3V2_SD_CS_PIN 39
+#define MADFLIGHT_FC3V2_SD_DETECT_PIN 25
+
 // --- I2C0: sensor bus (barometer, battery monitor, magnetometer) ---
 #ifndef PICO_DEFAULT_I2C
 #define PICO_DEFAULT_I2C 0

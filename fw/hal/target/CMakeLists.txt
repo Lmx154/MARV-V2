@@ -3,14 +3,17 @@
 # directory links Pico SDK targets: the library takes the SDK *_headers targets PRIVATE (they add include directories to
 # this library alone), the image links the full SDK libraries it needs.
 add_library(marv_hal_target STATIC src/hal_target.cpp src/lsm6dsv.cpp src/motor_output.cpp src/motor_test.cpp
-  src/manual_control.cpp src/receiver.cpp src/bench_stats.cpp src/storage_stub.cpp)
+  src/manual_control.cpp src/receiver.cpp src/bench_stats.cpp src/storage_stub.cpp src/storage_sd.cpp src/sd_spi.cpp)
 target_include_directories(marv_hal_target PUBLIC include)
 target_link_libraries(marv_hal_target
   PUBLIC marv_hal marv_types marv_dshot marv_crsf_decode
   PRIVATE marv_lsm6dsv_decode marv_hal_storage
           pico_base_headers pico_time_headers pico_sync_headers hardware_timer_headers hardware_sync_headers
           hardware_gpio_headers hardware_irq_headers hardware_structs_headers hardware_spi_headers
-          hardware_pio_headers hardware_clocks_headers hardware_uart_headers)
+          hardware_pio_headers hardware_clocks_headers hardware_uart_headers
+          marv_fatfs)
+# FatFs (third_party/fatfs, ground-segment unit 13): the pending file on the SD card (storage_sd.cpp, sd_spi.cpp).
+add_subdirectory("${PROJECT_SOURCE_DIR}/third_party/fatfs" "${CMAKE_BINARY_DIR}/third_party/fatfs")
 # hal_panic polls the TinyUSB device (the image's pico_stdio_usb brings the TinyUSB sources and the tusb_config.h). Only
 # the include directories and compile definitions of TinyUSB's own target are taken, not its sources: those are compiled
 # once, into the image.
@@ -101,11 +104,33 @@ elseif(MARV_FC3V2_HIL_LINK)
 else()
   add_executable(marv_fc3v2 src/main.cpp)
 endif()
+# MARV_FC3V2_SD_BENCH (bench only, default OFF, ground-segment unit 13): the background loop mounts the SD card, prints its type,
+# size and file system, and runs MARV_FC3V2_SD_BENCH_CYCLES write/verify cycles of a MARV_FC3V2_SD_BENCH_FILE_BYTES buffer
+# through hal_config_pending_write / _read and through FatFs directly, timing every operation (src/sd_bench.cpp). Build it
+# with MARV_FC3V2_BENCH_STATS on to see the IMU interrupt-entry spacing during the traffic. The values are scenario values,
+# not flight parameters: the cycle count is the unit-13 "done when" (1000); the file size is the size of
+# marv_params_fc3v2.mcfg at unit 4b (40256 bytes, fw/hal/CMakeLists.txt); the idle baseline is the seconds the bench waits
+# after the console host connects, so the spacing before the traffic is on record.
+option(MARV_FC3V2_SD_BENCH "FC3v2 bench image that runs the SD write/verify bench in the background loop" OFF)
+set(MARV_FC3V2_SD_BENCH_CYCLES 1000 CACHE STRING "SD bench: write/verify cycles (scenario value, unit 13 done-when)")
+set(MARV_FC3V2_SD_BENCH_FILE_BYTES 40256 CACHE STRING "SD bench: bytes per file (scenario value: marv_params_fc3v2.mcfg at unit 4b)")
+set(MARV_FC3V2_SD_BENCH_IDLE_S 10 CACHE STRING "SD bench: idle seconds after the console host connects (scenario value)")
+if(MARV_FC3V2_SD_BENCH AND (MARV_FC3V2_HIL OR MARV_FC3V2_HIL_LINK OR MARV_FC3V2_IMU_LOG OR MARV_FC3V2_COUNT_ONLY))
+  message(FATAL_ERROR "MARV_FC3V2_SD_BENCH excludes MARV_FC3V2_HIL, MARV_FC3V2_HIL_LINK, MARV_FC3V2_IMU_LOG and MARV_FC3V2_COUNT_ONLY")
+endif()
+if(MARV_FC3V2_SD_BENCH)
+  target_sources(marv_hal_target PRIVATE src/sd_bench.cpp)
+  target_compile_definitions(marv_hal_target PRIVATE MARV_FC3V2_SD_BENCH_CYCLES=${MARV_FC3V2_SD_BENCH_CYCLES}
+    MARV_FC3V2_SD_BENCH_FILE_BYTES=${MARV_FC3V2_SD_BENCH_FILE_BYTES} MARV_FC3V2_SD_BENCH_IDLE_S=${MARV_FC3V2_SD_BENCH_IDLE_S})
+  target_include_directories(marv_hal_target SYSTEM PRIVATE
+    $<TARGET_PROPERTY:pico_stdio_headers,INTERFACE_INCLUDE_DIRECTORIES>)
+endif()
 # Programmed to flash; the boot copies the whole image to SRAM and runs it there (core §4.1 EMB-1). Measured with code
 # executing from XIP flash the IMU interrupt failed EMB-3 (M1 P12a, tests/regression/quad/L09/results/p12_bench/).
 pico_set_binary_type(marv_fc3v2 copy_to_ram)
 target_compile_definitions(marv_fc3v2 PRIVATE MARV_FC3V2_VERSION="${MARV_FC3V2_VERSION}"
   $<$<BOOL:${MARV_FC3V2_COUNT_ONLY}>:MARV_FC3V2_COUNT_ONLY>
+  $<$<BOOL:${MARV_FC3V2_SD_BENCH}>:MARV_FC3V2_SD_BENCH>
   $<$<BOOL:${MARV_FC3V2_HIL_RECEIVER}>:MARV_FC3V2_HIL_RECEIVER>
   $<$<BOOL:${MARV_FC3V2_BENCH_ACCEPT_SPACING}>:MARV_FC3V2_BENCH_ACCEPT_SPACING>)
 if(MARV_FC3V2_HIL_LINK)

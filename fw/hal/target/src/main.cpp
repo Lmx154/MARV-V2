@@ -19,6 +19,9 @@
 #include "marv/hal_target/motor_output.hpp"
 #include "marv/hal_target/motor_test.hpp"
 #include "marv/hal_target/receiver.hpp"
+#if defined(MARV_FC3V2_SD_BENCH)
+#include "marv/hal_target/sd_bench.hpp"
+#endif
 #include "marv/params/param.hpp"
 #include "marv/prim/constants.hpp"
 #include "marv/store/store.hpp"
@@ -93,6 +96,8 @@ Stage stage = Stage::kStart;
 marv::hal_target::MotorOutputBoot motor_boot;
 marv::hal_target::ReceiverBoot receiver_boot;
 marv::hal_target::ImuBoot imu_boot;
+// hal_time_us just before the IMU is started: the boot-to-IMU-start time (the timer counts from the chip reset).
+marv::TimeUs imu_start_us = 0;
 
 void print_progress() {
   std::printf("marv_fc3v2 %s\n", MARV_FC3V2_VERSION);
@@ -118,6 +123,8 @@ void print_progress() {
     std::printf("imu ok: LSM6DSV, SPI %lu Hz, FREQ_FINE %d (ODR %.1f Hz by DS13476 9.49), tick %s\n",
                 static_cast<unsigned long>(imu_boot.spi_hz), static_cast<int>(imu_boot.freq_fine),
                 imu_boot.odr_hz_by_trim, kTickMode);
+    std::printf("boot: IMU start at %llu us after reset (hal_time_us just before imu_start)\n",
+                static_cast<unsigned long long>(imu_start_us));
     std::printf("bench stats: %s\n", marv::hal_target::bench::kEnabled
                                          ? "on (MARV_FC3V2_BENCH_STATS, DWT CYCCNT at clk_sys)"
                                          : "off");
@@ -408,6 +415,7 @@ int main() {
                                                     marv::param_value<ParamId::rc_channel_yaw>()});
   stage = Stage::kReceiverOk;
   std::printf("receiver ok\n");
+  imu_start_us = marv::hal_time_us();
   imu_boot = marv::hal_target::imu_start(
       kSink, &rate_counts,
       {marv::param_value<ParamId::tick_period_num_us>(), marv::param_value<ParamId::tick_period_den>()});
@@ -431,6 +439,9 @@ int main() {
       marv::hal_target::motor_test_post_cancel(marv::MotorTestCancel::Disconnect);
     }
     was_connected = connected;
+#if defined(MARV_FC3V2_SD_BENCH)
+    marv::hal_target::sd_bench_step();
+#endif
     if (connected) {
       print_motor_test_events();
       for (int c = getchar_timeout_us(0); c != PICO_ERROR_TIMEOUT; c = getchar_timeout_us(0)) {

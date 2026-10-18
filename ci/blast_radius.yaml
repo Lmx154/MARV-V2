@@ -262,6 +262,20 @@ rules:
     gz_groups: []
     why: "the Pico SDK pin and the board header are read only when MARV_TARGET is m33 (CMakeLists.txt); the host presets and the gz builds never include them"
 
+  - paths: [third_party/fatfs/**]
+    ctest_labels: []
+    run_ci_steps:
+      - m33_build
+      - product_table_m33
+      - g3_m33_symbols
+      - g3_m33_includes
+      - pb2_negative_control
+      - g3_m33_symbol_control
+      - g3_m33_object_control
+    pytest_paths: []
+    gz_groups: []
+    why: "FatFs (third_party/fatfs, the SD card file system of ground-segment unit 13) is added by fw/hal/target/CMakeLists.txt, so only the m33 build compiles it; the host presets and the gz builds never read it"
+
   - paths: [boards/parts/**]
     ctest_labels: [L09]
     run_ci_steps: ["@flight_gates"]
