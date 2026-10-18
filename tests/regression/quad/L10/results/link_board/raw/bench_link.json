@@ -1,5 +1,5 @@
 {
- "elf_sha256": "2d6cc936ee9c08d5af4870215573f5617dffb4b840717b1d325c166742af835f",
+ "elf_sha256": "6dbc7ca9f04be35b19878ab28d6dfe3731b1303ab43ba6a16c9d8660fffb7bb1",
  "steps": {
   "link": {
    "pass": true,
@@ -22,7 +22,7 @@
    "mismatched": [],
    "seq_gaps": 0,
    "frames": 274,
-   "seconds": 0.038
+   "seconds": 0.037
   },
   "(b) stage": {
    "pass": true,
@@ -77,8 +77,8 @@
    },
    "expected_config_sha256": "bd9262ce95a400eca0f2d36b65e7839ad985f3d328ce0d33b8ef423011b4819e",
    "heartbeats_in_window": 3,
-   "console_t_before": 202145924,
-   "console_t_after": 205146031,
+   "console_t_before": 16132289,
+   "console_t_after": 19132430,
    "est_valid": 1,
    "arming": "no_link",
    "staged_differs": 1,
@@ -90,19 +90,46 @@
    "picotool_out": "The device was asked to reboot into application mode.",
    "usb_reset_refused_before": 0,
    "usb_reset_refused_after": 1,
-   "console_t": 210146209,
+   "console_t": 24132663,
+   "arming": "no_link"
+  },
+  "(d) grant": {
+   "pass": true,
+   "reboot_acks": [
+    5,
+    4
+   ],
+   "reboot_texts": [
+    "reboot failed: this board cannot reboot itself"
+   ],
+   "bootloader_acks": [
+    5,
+    0
+   ],
+   "arming": "maintenance",
+   "console_t": 27132804
+  },
+  "(d) picotool reboot -f, granted": {
+   "pass": true,
+   "picotool_rc": 0,
+   "picotool_out": "The device was asked to reboot into application mode.",
+   "usb_reset_refused_before": 1,
+   "console_t_before": 27132804,
+   "usb_reset_refused_after_reboot": 0,
+   "console_t_after_reboot": 15109058,
+   "est_valid": 1,
    "arming": "no_link"
   }
  },
  "console_before": {
-  "t_us": 200116102,
+  "t_us": 14109115,
   "est_valid": 1,
   "arming": "no_link",
-  "rate_timing_faults": 0,
+  "rate_timing_faults": 1,
   "attitude_timing_faults": 0,
   "usb_reset_refused": 0,
   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0",
-  "line": "imu dt=1000038us irq/s=7495.7 words/s=14991.4 samples/s=7495.7 ticks/s=7495.7 writes/s=3747.9 motor_drops=0 | total samples=1499487 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=200116102 gyro=(-0.0024,+0.0024,-0.0012) accel=(-0.067,+0.254,-9.830) temp=303.35K flags=0x1c0 | motor_test console_refused=1 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.9 executions=749744 timing_faults=0 | rc frames/s=0.0 total=0 link_frames=0 bad_crc=0 bad_length=0 dropped_bytes=0 uart_errors=0 age_us=-1 roll=+0.000 pitch=+0.000 throttle=0.000 yaw=+0.000 tilt=0.0237 est_valid=1 | arming=no_link | attitude faults=0 timing_faults=0 | usb_reset_refused=0\r"
+  "line": "imu dt=1000047us irq/s=7495.6 words/s=14991.3 samples/s=7495.6 ticks/s=7495.6 writes/s=3747.8 motor_drops=0 | total samples=105231 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=14109115 gyro=(-0.0024,+0.0024,-0.0012) accel=(-0.014,+0.297,-9.772) temp=303.71K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.8 executions=52616 timing_faults=1 | rc frames/s=0.0 total=0 link_frames=0 bad_crc=0 bad_length=0 dropped_bytes=0 uart_errors=0 age_us=-1 roll=+0.000 pitch=+0.000 throttle=0.000 yaw=+0.000 tilt=0.0244 est_valid=1 | arming=no_link | attitude faults=0 timing_faults=0 | usb_reset_refused=0\r"
  },
  "list": {
   "mass": {
@@ -1066,20 +1093,30 @@
   }
  },
  "console_after": {
-  "t_us": 210146209,
+  "t_us": 24132663,
   "est_valid": 1,
   "arming": "no_link",
-  "rate_timing_faults": 0,
+  "rate_timing_faults": 1,
   "attitude_timing_faults": 0,
   "usb_reset_refused": 1,
   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0",
-  "line": "imu dt=1000037us irq/s=7495.7 words/s=14991.4 samples/s=7495.7 ticks/s=7495.7 writes/s=3747.9 motor_drops=0 | total samples=1574670 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=210146209 gyro=(-0.0012,+0.0073,-0.0037) accel=(-0.029,+0.230,-9.787) temp=303.37K flags=0x1c0 | motor_test console_refused=1 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.9 executions=787335 timing_faults=0 | rc frames/s=0.0 total=0 link_frames=0 bad_crc=0 bad_length=0 dropped_bytes=0 uart_errors=0 age_us=-1 roll=+0.000 pitch=+0.000 throttle=0.000 yaw=+0.000 tilt=0.0239 est_valid=1 | arming=no_link | attitude faults=0 timing_faults=0 | usb_reset_refused=1\r"
+  "line": "imu dt=1000045us irq/s=7495.7 words/s=14991.3 samples/s=7495.7 ticks/s=7495.7 writes/s=3747.8 motor_drops=0 | total samples=180364 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=24132663 gyro=(-0.0049,+0.0049,-0.0037) accel=(-0.053,+0.211,-9.791) temp=303.71K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.8 executions=90182 timing_faults=1 | rc frames/s=0.0 total=0 link_frames=0 bad_crc=0 bad_length=0 dropped_bytes=0 uart_errors=0 age_us=-1 roll=+0.000 pitch=+0.000 throttle=0.000 yaw=+0.000 tilt=0.0242 est_valid=1 | arming=no_link | attitude faults=0 timing_faults=0 | usb_reset_refused=1\r"
  },
  "seq_gaps_total": 0,
  "frames_total": 312,
+ "console_after_reboot": {
+  "t_us": 15109058,
+  "est_valid": 1,
+  "arming": "no_link",
+  "rate_timing_faults": 1,
+  "attitude_timing_faults": 0,
+  "usb_reset_refused": 0,
+  "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0",
+  "line": "imu dt=1000047us irq/s=7495.6 words/s=14991.3 samples/s=7495.6 ticks/s=7495.6 writes/s=3747.8 motor_drops=0 | total samples=112727 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=15109058 gyro=(-0.0037,+0.0012,-0.0012) accel=(+0.014,+0.268,-9.830) temp=303.63K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.8 executions=56364 timing_faults=1 | rc frames/s=0.0 total=0 link_frames=0 bad_crc=0 bad_length=0 dropped_bytes=0 uart_errors=0 age_us=-1 roll=+0.000 pitch=+0.000 throttle=0.000 yaw=+0.000 tilt=0.0242 est_valid=1 | arming=no_link | attitude faults=0 timing_faults=0 | usb_reset_refused=0\r"
+ },
  "helper_output": [
-  "GCS:     http://127.0.0.1:36367/?token=dFXnp-KCKnqs7xpTxrT8z9UQBEokQQE1gyWXZgV8IAc",
-  "run dir: /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/bench/gs-runs/20261018T174617Z",
+  "GCS:     http://127.0.0.1:43811/?token=lDTa8m-CfAgBC8x340WxLXCU3J9yysJ0Dixhy4gilCc",
+  "run dir: /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/bench/gs-runs/20261018T180818Z",
   "device:  serial /dev/serial/by-id/usb-Raspberry_Pi_Pico_B2189353BDF6DD1E-if02 115200"
  ]
 }
