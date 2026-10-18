@@ -21,3 +21,19 @@ target_include_directories(marv_link_codec_mavlink SYSTEM PRIVATE "${MARV_MAVLIN
 target_link_libraries(marv_link_codec_mavlink PUBLIC marv_link)
 add_dependencies(marv_link_codec_mavlink marv_link_generated)
 marv_apply_flags(marv_link_codec_mavlink FIRMWARE)
+
+# The ground link service (include/marv/link/service.hpp, src/service.cpp; ground-segment unit 6, decision 0053): the codec,
+# the config store and the parameters of the flight composition's set, which it takes compile-only like fw/store (the binary
+# that links it links the set). The SIL library of the flight composition links it (fw/sil, STORAGE); the board image does not
+# until ground-segment unit 12. On the host the two archives are built PIC for that shared library.
+add_library(marv_link_service STATIC src/service.cpp)
+target_include_directories(marv_link_service PUBLIC include)
+target_link_libraries(marv_link_service
+  PUBLIC marv_link marv_store
+  PRIVATE marv_link_codec_mavlink marv_hal marv_params marv_arming marv_prim marv_types
+          $<COMPILE_ONLY:marv_params_fc3v2_generated>)
+add_dependencies(marv_link_service marv_params_fc3v2_generated)
+marv_apply_flags(marv_link_service FIRMWARE)
+if(MARV_TARGET STREQUAL "host")
+  set_target_properties(marv_link_codec_mavlink marv_link_service PROPERTIES POSITION_INDEPENDENT_CODE ON)
+endif()

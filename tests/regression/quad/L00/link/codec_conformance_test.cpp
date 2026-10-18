@@ -213,6 +213,33 @@ TEST(MavlinkFraming, AChannelTheLibraryDoesNotHaveNeverDecodes) {
   EXPECT_EQ(parser.push(kStx), Status::BadCrc);
 }
 
+// Byte-wise parameter encoding (decision 0053 Q1): an INT32 parameter travels as its 4 bytes in the float field. The patterns
+// that are signalling NaNs as binary32 (exponent all ones, quiet bit clear, mantissa not zero), of either sign, and a quiet NaN
+// and an infinity beside them, cross the codec unchanged: on the wire at param_value's payload offset (0 in both messages: the
+// only 4-byte field, sorted first) and in the decoded message.
+TEST(MavlinkFraming, IntegerBitPatternsThatAreSignallingNaNsAsFloatsRoundTripBitExactly) {
+  constexpr std::array<std::uint32_t, 6> kPatterns{0x7F800001U, 0x7FBFFFFFU, 0xFF800001U,
+                                                   0xFFBFFFFFU, 0x7FC00000U, 0x7F800000U};
+  constexpr std::uint8_t kInt32 = 6;
+  for (const std::uint32_t bits : kPatterns) {
+    const std::array<Message, 2> messages{ParamValue{text<16>("rc_channel_arm"), bits, kInt32, 137, 3},
+                                          ParamSet{1, 1, text<16>("rc_channel_arm"), bits, kInt32}};
+    for (const Message& m : messages) {
+      const auto bytes = encoded<MavlinkCodec>({1, 1, 0}, m);
+      ASSERT_GT(bytes.size(), kHeaderBytes + sizeof(bits));
+      std::uint32_t on_wire = 0;
+      for (std::size_t i = 0; i < sizeof(bits); ++i) {
+        on_wire |= static_cast<std::uint32_t>(bytes[kHeaderBytes + i]) << (8 * i);
+      }
+      EXPECT_EQ(on_wire, bits) << std::hex << bits;
+      Frame frame;
+      auto parser = MavlinkParser(0);
+      ASSERT_EQ(decode_frame(parser, bytes, frame), Status::Ok) << std::hex << bits;
+      EXPECT_EQ(frame.message, m) << std::hex << bits;
+    }
+  }
+}
+
 #ifndef MARV_LINK_VECTORS_DIR
 #error "MARV_LINK_VECTORS_DIR names the directory of the vector files"
 #endif

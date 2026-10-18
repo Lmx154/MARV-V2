@@ -96,6 +96,11 @@ Card children come from gen_plant_config.plugin_element() unchanged; scenario ch
                                                           most COMMAND_DELAY_MAX_TICKS, the plugin's bound. N = 0
                                                           writes nothing: the world is byte-identical to one without
                                                           the argument
+  config_dir                    path           (run_quad_fc.py --config-dir) OPTIONAL: the SIL's config store directory
+                                                          (slots, pending file, boot request; ground segment unit 6);
+                                                          only for a SIL library built with STORAGE
+  link_udp_port                 int            (run_quad_fc.py --link-udp-port) OPTIONAL: the SIL link's UDP port on
+                                                          127.0.0.1; absent → MARV_SIL_LINK_UDP_PORT, else no link
   log_path                      text           --log-path OPTIONAL, present iff given; where the plugin writes its
                                                           binary log; no log if absent. Never written into the log.
 

@@ -5,8 +5,11 @@ generates the C++ structs and the TypeScript types).
 
 The output, marv/link/messages.hpp, includes no MAVLink header. It holds, in namespace marv::link: an enum class for each
 enum of the MARV dialect, one struct per message (fields in XML order, array fields as std::array), the message id
-constants and `Message`, the std::variant of the structs in link/scope.txt order. fw/link/src/codec_mavlink.cpp is the
-only code that maps these structs to the MAVLink C headers.
+constants, `Message`, the std::variant of the structs in link/scope.txt order, kFrameBytesMax (the longest unsigned frame of
+a message in scope) and, in namespace marv::link::standard, every entry of the standard enums that a field of a message in
+scope names, as a constant of that field's type (the widest, if several fields name the enum). The fields of RAW_BITS_FIELDS
+are std::uint32_t: the raw bits of the wire's float. fw/link/src/codec_mavlink.cpp is the only code that maps these structs
+to the MAVLink C headers.
 """
 
 import argparse
@@ -30,6 +33,35 @@ CPP_TYPES = {
     "double": "double",
 }
 
+# Float fields carried as their raw 32 bits (decision 0053 Q1, byte-wise parameter encoding): an INT32 parameter's two's
+# complement travels in the float field, and a copy through a float may quiet a signalling-NaN pattern, so the plain struct
+# holds std::uint32_t and the codec copies the bytes.
+RAW_BITS_FIELDS = {("PARAM_SET", "param_value"), ("PARAM_VALUE", "param_value")}
+
+# The unsigned MAVLink 2 frame around a payload (https://mavlink.io/en/guide/serialization.html, "MAVLink 2 Packet Format"):
+# a 10-byte header (magic, length, incompat flags, compat flags, sequence, system id, component id, 3-byte message id) and
+# a 2-byte checksum. The codec checks kFrameBytesMax against the generated C headers' sizes.
+FRAME_HEADER_BYTES = 10
+FRAME_CHECKSUM_BYTES = 2
+
+CPP_WIDTH = {"std::uint8_t": 1, "std::uint16_t": 2, "std::uint32_t": 4, "std::uint64_t": 8}
+
+
+def standard_enums(dialect: mavxml.Dialect, scope: list[str]) -> list[tuple[str, str]]:
+    """(enum name, C++ type) of every enum outside the dialect's own that a field of a message in scope names, in first-use
+    order; the type is the widest unsigned type of the fields that name it."""
+    own = set(dialect.own_enums)
+    types: dict[str, str] = {}
+    for name in scope:
+        for f in dialect.messages[name].fields:
+            if f.enum and f.enum not in own:
+                t = CPP_TYPES[f.ctype]
+                if t not in CPP_WIDTH:
+                    raise ValueError(f"{name}.{f.name} names enum {f.enum} but is {f.ctype}, not an unsigned integer")
+                if f.enum not in types or CPP_WIDTH[t] > CPP_WIDTH[types[f.enum]]:
+                    types[f.enum] = t
+    return list(types.items())
+
 
 def emit(dialect: mavxml.Dialect, scope: list[str]) -> str:
     own = set(dialect.own_enums)
@@ -38,6 +70,7 @@ def emit(dialect: mavxml.Dialect, scope: list[str]) -> str:
         "#pragma once",
         "",
         "#include <array>",
+        "#include <cstddef>",
         "#include <cstdint>",
         "#include <variant>",
         "",
@@ -61,6 +94,10 @@ def emit(dialect: mavxml.Dialect, scope: list[str]) -> str:
             if f.ctype == "uint8_t_mavlink_version":
                 continue
             ctype = mavxml.camel(f.enum) if f.enum in own else CPP_TYPES[f.ctype]
+            if (name, f.name) in RAW_BITS_FIELDS:
+                if f.ctype != "float" or f.is_array:
+                    raise ValueError(f"{name}.{f.name} is in RAW_BITS_FIELDS but is not a float scalar")
+                ctype = "std::uint32_t"
             if f.is_array:
                 out.append(f"  std::array<{ctype}, {f.array_len}> {f.name}{{}};")
             else:
@@ -71,6 +108,20 @@ def emit(dialect: mavxml.Dialect, scope: list[str]) -> str:
     out.append("using Message = std::variant<")
     out.append(",\n".join(f"    {mavxml.camel(n)}" for n in scope))
     out.append(">;")
+    out.append("")
+    longest = max(dialect.messages[n].max_len for n in scope)
+    out.append("// The longest unsigned frame of a message in scope: header, the longest payload, checksum.")
+    out.append(f"inline constexpr std::size_t kFrameBytesMax = {FRAME_HEADER_BYTES + longest + FRAME_CHECKSUM_BYTES};")
+    out.append("")
+    out.append("// The standard enum entries that the fields of the messages in scope name.")
+    out.append("namespace standard {")
+    for enum_name, ctype in standard_enums(dialect, scope):
+        limit = (1 << (8 * CPP_WIDTH[ctype])) - 1
+        for entry, value in dialect.enums[enum_name].entries:
+            if not 0 <= value <= limit:
+                raise ValueError(f"{enum_name}.{entry} = {value} does not fit {ctype}")
+            out.append(f"inline constexpr {ctype} k{mavxml.camel(entry)} = {value};")
+    out.append("}  // namespace standard")
     out.append("")
     out.append("}  // namespace marv::link")
     out.append("")

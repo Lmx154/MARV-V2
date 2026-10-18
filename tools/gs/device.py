@@ -6,6 +6,7 @@ import asyncio
 import errno
 import fcntl
 import os
+import socket
 import termios
 import tty
 from typing import Callable
@@ -14,6 +15,7 @@ LOOPBACK = "127.0.0.1"
 UDP_PAYLOAD_MAX = 65507  # largest IPv4 UDP payload: 65535 - 20 (IPv4 header) - 8 (UDP header), RFC 768 and RFC 791
 READ_SIZE = 65536  # serial read size per wake-up: an implementation constant, the chunk the log and the relay carry
 DEFAULT_BAUD = 115200  # a convenience default; a USB CDC port ignores the baud rate
+KEEPALIVE_S = 1.0  # labelled harness value: the period of the empty datagram that keeps the helper the SIL link's peer
 
 
 class DeviceError(Exception):
@@ -121,13 +123,18 @@ class SerialDevice(Device):
 
 
 class UdpDevice(Device):
-    """A connected UDP socket to 127.0.0.1:<port>: datagrams from any other source are not delivered."""
+    """A connected UDP socket to 127.0.0.1:<port>: datagrams from any other source are not delivered. It sends an empty
+    datagram when it opens and every KEEPALIVE_S after: the SIL's link answers the sender of the latest datagram
+    (fw/hal/sim/include/marv/hal_sim/link_udp.hpp), so it learns this socket before the GCS sends anything, and again after
+    the SIL is relaunched."""
 
-    def __init__(self, transport: asyncio.DatagramTransport, port: int):
+    def __init__(self, transport: asyncio.DatagramTransport, sock: socket.socket, port: int):
         self.description = f"udp {LOOPBACK}:{port}"
         self.port = port
         self._transport = transport
+        self._sock = sock
         self._closed = False
+        self._keepalive: asyncio.TimerHandle | None = None
 
     @classmethod
     async def open(cls, port: int, on_rx: Callable[[bytes], None], on_close: Callable[[str], None]) -> "UdpDevice":
@@ -147,13 +154,29 @@ class UdpDevice(Device):
                     on_close(f"socket error: {exc}")
 
         loop = asyncio.get_running_loop()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
-            transport, _ = await loop.create_datagram_endpoint(Protocol, remote_addr=(LOOPBACK, port))
+            sock.setblocking(False)
+            sock.connect((LOOPBACK, port))
+            transport, _ = await loop.create_datagram_endpoint(Protocol, sock=sock)
         except OSError as e:
+            sock.close()
             raise DeviceError(f"cannot open UDP {LOOPBACK}:{port}: {e.strerror}") from e
-        dev = cls(transport, port)
+        dev = cls(transport, sock, port)
         holder["dev"] = dev
+        dev._send_keepalive()
         return dev
+
+    def _send_keepalive(self) -> None:
+        """The empty datagram (asyncio's transport drops empty data, so it goes out on the socket itself), then the next one
+        in KEEPALIVE_S. A refusal (nothing bound yet, an ICMP error) or a full buffer drops it: the next one follows."""
+        if self._closed:
+            return
+        try:
+            self._sock.send(b"")
+        except OSError:
+            pass
+        self._keepalive = asyncio.get_running_loop().call_later(KEEPALIVE_S, self._send_keepalive)
 
     def write(self, data: bytes) -> None:
         for i in range(0, len(data), UDP_PAYLOAD_MAX):
@@ -162,4 +185,6 @@ class UdpDevice(Device):
     def close(self) -> None:
         if not self._closed:
             self._closed = True
+            if self._keepalive is not None:
+                self._keepalive.cancel()
             self._transport.close()

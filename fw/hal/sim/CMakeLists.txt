@@ -1,4 +1,4 @@
-add_library(marv_hal_sim STATIC src/hal_sim.cpp src/storage.cpp)
+add_library(marv_hal_sim STATIC src/hal_sim.cpp src/storage.cpp src/link_udp.cpp)
 target_include_directories(marv_hal_sim PUBLIC include)
-target_link_libraries(marv_hal_sim PUBLIC marv_hal marv_types PRIVATE marv_hal_storage)
+target_link_libraries(marv_hal_sim PUBLIC marv_hal marv_types PRIVATE marv_hal_storage marv_prim)
 marv_apply_flags(marv_hal_sim FIRMWARE)

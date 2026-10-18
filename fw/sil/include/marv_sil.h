@@ -10,7 +10,8 @@ extern "C" {
 
 typedef int32_t marv_sil_status;
 enum { MARV_SIL_OK = 0, MARV_SIL_E_NULL, MARV_SIL_E_ABI, MARV_SIL_E_STATE, MARV_SIL_E_PERIOD,
-       MARV_SIL_E_SCHEMA, MARV_SIL_E_PARAM, MARV_SIL_E_TICK, MARV_SIL_E_COUNT, MARV_SIL_E_INPUT, MARV_SIL_E_STORAGE };
+       MARV_SIL_E_SCHEMA, MARV_SIL_E_PARAM, MARV_SIL_E_TICK, MARV_SIL_E_COUNT, MARV_SIL_E_INPUT, MARV_SIL_E_STORAGE,
+       MARV_SIL_E_LINK };
 typedef struct marv_vec3f { float x, y, z; } marv_vec3f;
 enum { MARV_IMU_GYRO_SAT_X = 0, MARV_IMU_GYRO_SAT_Y, MARV_IMU_GYRO_SAT_Z,
        MARV_IMU_ACCEL_SAT_X, MARV_IMU_ACCEL_SAT_Y, MARV_IMU_ACCEL_SAT_Z,
@@ -41,11 +42,15 @@ typedef struct marv_manual_control {
 } marv_manual_control;
 enum { MARV_PARAM_F32 = 0, MARV_PARAM_I32 };
 typedef struct marv_sil_param_override { uint32_t id; uint32_t type; float f32; int32_t i32; float sigma; } marv_sil_param_override;
+/* image_sha256 (decision 0053; ground-segment unit 6): the 32-byte SHA-256 of the loaded SIL library, the image identity the
+ * config store binds stored configs to and the link reports; NULL = unknown (no stored config is bound to it). Read during
+ * init only; only a library built with STORAGE uses it. */
 typedef struct marv_sil_config {
   uint32_t struct_size, imu_meas_size, override_size;
   uint32_t tick_period_num_us, tick_period_den;
   uint32_t n_overrides; const marv_sil_param_override* overrides;   /* NULL iff 0; read during init only */
   uint64_t param_schema_hash;
+  const uint8_t* image_sha256;
 } marv_sil_config;
 typedef struct marv_sil_info { uint32_t struct_size, n_motors, n_servos, n_params; uint64_t param_schema_hash; const char* composition; } marv_sil_info;
 typedef struct marv_sil_out { uint32_t struct_size; uint32_t capacity_ticks; uint64_t* t_us; uint16_t* dshot; uint16_t* servo_us; } marv_sil_out;
@@ -74,6 +79,17 @@ marv_sil_status marv_sil_shutdown(void);                          /* READY -> DO
  * of the compiled table. UNINIT only (E_STATE after marv_sil_init); E_NULL for NULL; E_STORAGE if run_dir is not a usable
  * directory or holds a slot file larger than a slot. */
 marv_sil_status marv_sil_storage_open(const char* run_dir);
+/* The ground link (decision 0053 Q4; ground-segment unit 6; only in a library built with STORAGE). marv_sil_link_open binds
+ * the link's non-blocking UDP socket to 127.0.0.1:udp_port (fw/hal/sim/include/marv/hal_sim/link_udp.hpp); the sender of the
+ * latest datagram is the peer the link answers. UNINIT only (E_STATE after marv_sil_init or a second call); E_LINK if the
+ * port is 0 or above 65535 or the socket cannot be bound. Without it marv_sil_link_service does nothing.
+ * marv_sil_link_service serves the link once (fw/link/include/marv/link/service.hpp: the waiting frames, the heartbeat when
+ * due, the next parameter of a listing); call it between tick calls, once per host step, never from inside a tick. READY;
+ * E_NULL for NULL. *reboot_requested is 1 once a config command reboots the vehicle (the store's maintenance grant was given
+ * and the reboot requested): the host stops the run and relaunches it on the same run directory, whose storage the next
+ * boot step reads; else 0. */
+marv_sil_status marv_sil_link_open(uint32_t udp_port);
+marv_sil_status marv_sil_link_service(uint32_t* reboot_requested);
 const char*     marv_sil_status_str(marv_sil_status s);
 uint32_t        marv_sil_error_index(void);
 

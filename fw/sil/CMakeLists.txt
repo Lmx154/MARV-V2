@@ -11,10 +11,12 @@ add_library(marv_sil INTERFACE)
 # <name>; the composition target never sees them. Static libraries linked into the shared library are built PIC. After
 # every link the post-link check (cmake/param_table.cmake) fails the build unless the library holds PARAMS's table.
 #
-# STORAGE (decision 0053, ground-segment unit 4b; the flight composition only, its parameter set must be the one fw/store is
-# built for, marv_params_fc3v2) adds src/storage.cpp: marv_sil_init's table comes from the config store's boot step
-# (marv_store) on hal_sim's run-directory storage, which the exported marv_sil_storage_open opens; without that call the
-# table is the compiled one, as without the option. Without the option marv_sil.cpp returns the compiled table.
+# STORAGE (decision 0053, ground-segment units 4b and 6; the flight composition only, its parameter set must be the one fw/store
+# and fw/link's service are built for, marv_params_fc3v2) adds src/storage.cpp: marv_sil_init's table comes from the config
+# store's boot step (marv_store) on hal_sim's run-directory storage, which the exported marv_sil_storage_open opens; without
+# that call the table is the compiled one, as without the option. It also adds the ground link: marv_sil_link_open and
+# marv_sil_link_service run fw/link's service (marv_link_service) on hal_sim's UDP socket. It sets the target property
+# MARV_SIL_STORAGE to TRUE. Without the option marv_sil.cpp returns the compiled table and the library has no link entries.
 #
 # TRUTH_STATE (test only; decision 0006 section B) adds src/truth_state.cpp, which exports marv_truth_state_set and hands
 # the state to marv::composition::attitude_input (declared by the composition's own marv/composition.hpp; a composition
@@ -62,8 +64,9 @@ function(marv_add_sil_library name)
   if(ARG_STORAGE)
     target_sources(${name} PRIVATE "${sil_dir}/src/storage.cpp")
     target_compile_definitions(${name} PRIVATE MARV_SIL_STORAGE)
-    target_link_libraries(${name} PRIVATE marv_store marv_hal_storage)
+    target_link_libraries(${name} PRIVATE marv_store marv_hal_storage marv_link_service)
     set_target_properties(marv_store PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    set_target_properties(${name} PROPERTIES MARV_SIL_STORAGE TRUE)
   endif()
   if(ARG_TRUTH_STATE)
     set(version_script "${sil_dir}/marv_sil_truth.map")

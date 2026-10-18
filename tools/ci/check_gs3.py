@@ -39,6 +39,7 @@ ALLOW = (
     ("tools/ci/check_gs3.py", "this checker names what it forbids"),
     ("tests/regression/quad/L00/tools/test_check_gs3.py", "the test of this checker"),
     ("tests/regression/quad/L00/tools/test_link_gen.py", "the drift guard of the generators against pymavlink's mavgen"),
+    ("tests/regression/quad/L10/gz/test_link_sil.py", "the end-to-end test of the SIL link with pymavlink (ground segment unit 6)"),
     ("tools/gen/params_gen.py", "a docstring and a comment name MAVLink as the origin of the 16-character link id rule (decision 0053 item 1); no include, no message"),
     ("ci/run_ci.sh", "the step names of the GS-3 check"),
     ("ci/blast_radius.yaml", "the rules and reasons of the codec paths"),
