@@ -241,6 +241,8 @@ adding more complex features gradually" (decision 0026).
   simulated IMU samples, driven by the ELRS radio, built in stages behind a bench-only image; before its closed-loop
   stage (S4), rotor and body drag in the plant, pulled forward from the deferred list (Luis, 2026-10-17: "yes pull drag
   forward"; decision 0049).
+- In shadow (Luis, 2026-10-18, decision 0055): an error-state Kalman filter for attitude and gyro bias from the IMU,
+  computed beside Mahony and compared in SIL, Gazebo and on the committed bench logs; Mahony keeps flying.
 - *Done when:* the T3 QF-3 margins pass on the updated card; tethered hover in angle mode, then free hover, then acro,
   each with its log and card update committed.
 
