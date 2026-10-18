@@ -11,6 +11,7 @@ target_link_libraries(marv_hal_target
           pico_base_headers pico_time_headers pico_sync_headers hardware_timer_headers hardware_sync_headers
           hardware_gpio_headers hardware_irq_headers hardware_structs_headers hardware_spi_headers
           hardware_pio_headers hardware_clocks_headers hardware_uart_headers
+          pico_usb_reset_headers pico_bootrom_headers pico_unique_id_headers
           marv_fatfs)
 # FatFs (third_party/fatfs, ground-segment unit 13): the pending file on the SD card (storage_sd.cpp, sd_spi.cpp).
 add_subdirectory("${PROJECT_SOURCE_DIR}/third_party/fatfs" "${CMAKE_BINARY_DIR}/third_party/fatfs")
@@ -125,6 +126,30 @@ if(MARV_FC3V2_SD_BENCH)
   target_include_directories(marv_hal_target SYSTEM PRIVATE
     $<TARGET_PROPERTY:pico_stdio_headers,INTERFACE_INCLUDE_DIRECTORIES>)
 endif()
+# The composite USB device (ground-segment unit 12a, decision 0053; src/usb.cpp, marv/hal_target/usb.hpp): every image but the
+# two HIL ones keeps the SDK's pico_stdio_usb for the console (CDC 0, interface 0) and supplies its own descriptors (console
+# CDC, link CDC at interface 2, the Raspberry Pi reset interface at interface 4), a tusb_config.h with two CDC instances
+# (usb_config/, ahead of the SDK's in the include path, which it includes), and the reset gate. The SDK's default
+# descriptors, its default registration of the reset interface's driver and its 1200-baud reset are switched off:
+# usb.cpp provides the first, a gated driver around the SDK's reset handler, and a gated line-coding callback.
+# PICO_USB_RESET_MS_OS_20_DESCRIPTOR_ITF is the reset interface's number (kItfReset in usb.cpp, which asserts it). The HIL
+# images keep the SDK's single-CDC device and its descriptors unchanged.
+if(NOT MARV_FC3V2_HIL AND NOT MARV_FC3V2_HIL_LINK)
+  target_sources(marv_hal_target PRIVATE src/usb.cpp)
+  target_include_directories(marv_hal_target BEFORE PUBLIC usb_config)
+  target_compile_definitions(marv_hal_target PUBLIC
+    PICO_STDIO_USB_USE_DEFAULT_DESCRIPTORS=0
+    PICO_USB_RESET_INCLUDE_DEFAULT_APP_DRIVER_CB=0
+    PICO_ENABLE_USB_RESET_VIA_BAUD_RATE=0
+    PICO_USB_RESET_MS_OS_20_DESCRIPTOR_ITF=4)
+endif()
+# MARV_FC3V2_USB_BENCH (bench only, default OFF, ground-segment unit 12a): the background loop echoes every byte received on the
+# link port back on it (usb_bench_echo_step), for the bench check of the transport. Nothing else reads the link port yet.
+option(MARV_FC3V2_USB_BENCH "FC3v2 bench image that echoes the USB link port" OFF)
+if(MARV_FC3V2_USB_BENCH AND (MARV_FC3V2_HIL OR MARV_FC3V2_HIL_LINK))
+  message(FATAL_ERROR "MARV_FC3V2_USB_BENCH excludes MARV_FC3V2_HIL and MARV_FC3V2_HIL_LINK (they have no link port)")
+endif()
+target_compile_definitions(marv_hal_target PUBLIC $<$<BOOL:${MARV_FC3V2_USB_BENCH}>:MARV_FC3V2_USB_BENCH>)
 # Programmed to flash; the boot copies the whole image to SRAM and runs it there (core §4.1 EMB-1). Measured with code
 # executing from XIP flash the IMU interrupt failed EMB-3 (M1 P12a, tests/regression/quad/L09/results/p12_bench/).
 pico_set_binary_type(marv_fc3v2 copy_to_ram)

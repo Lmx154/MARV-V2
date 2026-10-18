@@ -110,7 +110,9 @@ void hal_actuators_write(std::span<const DshotValue> motor, std::span<const Serv
 // instead. dcd_int_handler (tud_int_handler) is the body of
 // the USBCTRL interrupt service routine; it only reads the controller's status registers, so calling it from the loop
 // does what the interrupt would have done. tud_task then runs the queued device events, including the control requests
-// that carry the 1200-baud line coding and the vendor reset request, so the SDK's reset to BOOTSEL keeps working.
+// that carry the 1200-baud line coding and the vendor reset request. In the flight image both are behind the maintenance-grant
+// gate (usb.hpp), so a reset by USB works from here only if the grant was held before the panic; the HIL images keep the
+// SDK's reset to BOOTSEL.
 // TinyUSB is not reentrant: a panic raised from inside a USB call can find its state mid-update; panics raised by the
 // application code (not by TinyUSB or the stdio driver) do not.
 // The message goes out as "PANIC: <reason>" on the CDC port whenever a host has it open, and starts again each time the
