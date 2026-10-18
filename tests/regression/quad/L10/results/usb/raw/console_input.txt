@@ -1,0 +1,25 @@
+[  0.004] > bogus
+[  0.004] > motor_test 1 100 500
+[  2.035] marv_fc3v2 quad-L2-pass-389-g31b73b6-dirty
+[  2.035] params ok: generated defaults, rate_period_tolerance_us 3
+[  2.035] init ok
+[  2.035] motors ok: DShot600 on PIO 0, clk_sys 150000000 Hz, PIO divider 31 + 64/256 (derived, dshot.hpp)
+[  2.035] receiver ok: CRSF on UART0 (GPIO 0/1), 8N1, 420000 Hz requested (ExpressLRS default), 419874 Hz set,
+[  2.035] imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+[  2.035] boot: IMU start at 5149 us after reset (hal_time_us just before imu_start)
+[  2.035] bench stats: off
+[  2.035] motor_test refused: unknown command (console)
+[  2.035] motor_test refused: the unlock token PROPS-OFF is missing (console)
+[  2.035] imu dt=1000048us irq/s=7495.6 words/s=14991.3 samples/s=7495.6 ticks/s=7495.6 writes/s=3747.8 motor_
+[  2.035] imu dt=1000046us irq/s=7495.7 words/s=14991.3 samples/s=7495.7 ticks/s=7495.7 writes/s=3747.8 motor_
+[  2.035] > (close port)
+[  4.386] marv_fc3v2 quad-L2-pass-389-g31b73b6-dirty
+[  4.386] params ok: generated defaults, rate_period_tolerance_us 3
+[  4.386] init ok
+[  4.386] motors ok: DShot600 on PIO 0, clk_sys 150000000 Hz, PIO divider 31 + 64/256 (derived, dshot.hpp)
+[  4.386] receiver ok: CRSF on UART0 (GPIO 0/1), 8N1, 420000 Hz requested (ExpressLRS default), 419874 Hz set,
+[  4.386] imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+[  4.386] boot: IMU start at 5149 us after reset (hal_time_us just before imu_start)
+[  4.386] bench stats: off
+[  4.386] imu dt=1000049us irq/s=7495.6 words/s=14991.3 samples/s=7495.6 ticks/s=7495.6 writes/s=3747.8 motor_
+[  4.386] imu dt=1000048us irq/s=7495.6 words/s=14991.3 samples/s=7495.6 ticks/s=7495.6 writes/s=3747.8 motor_

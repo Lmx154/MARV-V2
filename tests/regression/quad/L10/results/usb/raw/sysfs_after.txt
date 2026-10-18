@@ -1,0 +1,7 @@
+/sys/bus/usb/devices/1-1
+1-1:1.0: MARV console [class 02] driver=cdc_acm
+1-1:1.1:  [class 0a] driver=cdc_acm
+1-1:1.2: MARV link [class 02] driver=cdc_acm
+1-1:1.3:  [class 0a] driver=cdc_acm
+1-1:1.4: Reset [class ff] driver=
+B2189353BDF6DD1E

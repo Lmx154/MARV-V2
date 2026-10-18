@@ -1,0 +1,88 @@
+[
+ [
+  "start",
+  null,
+  {
+   "usb_reset_refused": 2,
+   "imu_t_us": 68073931,
+   "total_samples": 509731,
+   "console_port_present": true,
+   "lines": 4
+  }
+ ],
+ [
+  "picotool info",
+  {
+   "cmd": "picotool info",
+   "rc": 249,
+   "out": "No accessible RP-series devices in BOOTSEL mode were found.\n\nbut:\n\nRP2350 device at bus 1, address 30 appears to have a USB serial connection, but\n    picotool was unable to connect. Maybe try 'sudo' or check your permissions."
+  },
+  {
+   "usb_reset_refused": 2,
+   "imu_t_us": 72074147,
+   "total_samples": 539715,
+   "console_port_present": true,
+   "lines": 8
+  }
+ ],
+ [
+  "picotool reboot",
+  {
+   "cmd": "picotool reboot",
+   "rc": 249,
+   "out": "No accessible RP-series devices in BOOTSEL mode were found.\n\nbut:\n\nRP2350 device at bus 1, address 30 appears to have a USB serial connection, but\n    picotool was unable to connect. Maybe try 'sudo' or check your permissions."
+  },
+  {
+   "usb_reset_refused": 2,
+   "imu_t_us": 76074361,
+   "total_samples": 569699,
+   "console_port_present": true,
+   "lines": 12
+  }
+ ],
+ [
+  "picotool reboot -u",
+  {
+   "cmd": "picotool reboot -u",
+   "rc": 249,
+   "out": "No accessible RP-series devices in BOOTSEL mode were found.\n\nbut:\n\nRP2350 device at bus 1, address 30 appears to have a USB serial connection, but\n    picotool was unable to connect. Maybe try 'sudo' or check your permissions."
+  },
+  {
+   "usb_reset_refused": 2,
+   "imu_t_us": 80074577,
+   "total_samples": 599683,
+   "console_port_present": true,
+   "lines": 16
+  }
+ ],
+ [
+  "1200 baud on if00",
+  {
+   "cmd": "1200 baud open/close if00",
+   "rc": 0,
+   "out": ""
+  },
+  {
+   "usb_reset_refused": 3,
+   "imu_t_us": 86074900,
+   "total_samples": 644659,
+   "console_port_present": true,
+   "lines": 22
+  }
+ ],
+ [
+  "1200 baud on if02",
+  {
+   "cmd": "1200 baud open/close if02",
+   "rc": 0,
+   "out": ""
+  },
+  {
+   "usb_reset_refused": 4,
+   "imu_t_us": 92075224,
+   "total_samples": 689635,
+   "console_port_present": true,
+   "lines": 28
+  }
+ ]
+]

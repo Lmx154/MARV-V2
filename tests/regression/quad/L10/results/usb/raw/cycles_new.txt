@@ -1,0 +1,8 @@
+usb_flight 1: imu_start_us=10047 rate_timing_faults=0 attitude_faults=0 attitude_timing_faults=0 est_valid=1
+usb_flight 2: imu_start_us=10051 rate_timing_faults=1 attitude_faults=0 attitude_timing_faults=0 est_valid=1
+usb_flight 3: imu_start_us=9868 rate_timing_faults=0 attitude_faults=0 attitude_timing_faults=0 est_valid=1
+usb_flight 4: imu_start_us=10120 rate_timing_faults=0 attitude_faults=0 attitude_timing_faults=0 est_valid=1
+usb_flight 5: imu_start_us=9879 rate_timing_faults=1 attitude_faults=0 attitude_timing_faults=0 est_valid=1
+usb_flight 6: imu_start_us=9852 rate_timing_faults=1 attitude_faults=0 attitude_timing_faults=0 est_valid=1
+usb_flight 7: imu_start_us=9973 rate_timing_faults=1 attitude_faults=0 attitude_timing_faults=0 est_valid=1
+usb_flight 8: imu_start_us=10039 rate_timing_faults=1 attitude_faults=0 attitude_timing_faults=0 est_valid=1

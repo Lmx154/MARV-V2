@@ -1,0 +1,1 @@
+python3: can't open file '/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-usb/wt-usb/tests/regression/quad/L10/results/usb/analyze_echo.py': [Errno 2] No such file or directory
