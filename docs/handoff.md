@@ -12,9 +12,9 @@ History is in git and `docs/decisions/`; the previous handoff is `git show be6b9
 | Item | State |
 | --- | --- |
 | M0-M3 | merged into `master`; tags `quad-M1-pass`..`quad-M3-pass` |
-| `m4` | pushed at `7fbb8f6` (dev check PASS at `d46f7f6`); local `m4` is 8 commits ahead (GS units 7 and 8a, reviewed, not yet dev-checked) — run `ci/dev_check.sh` alone, then push |
+| `m4` | pushed at `52b4625` (dev check PASS at `0632319`, incl. GS units 4b, 7, 8a) |
 | Board | flight image `gd46f7f6` (angle on ch8, airmode latch, Betaflight throttle; factory parameter table), est_valid=1 |
-| In flight | GS unit 4b (parameter store): store code at `999c72f` on `gs-store`; two workers were killed by systemd-oomd (2026-10-17 18:17) with UNCOMMITTED work in `wt-gs-store-link` (link-hazard fix + wiring) and `wt-gs-store-tests` (store_test.cpp) under the session scratchpad |
+| In flight (night of 2026-10-18) | GS unit 6 LINK-SIL (branch `gs-link-sil`, engineer) and unit 8b GUI polish (`gs-gui-polish`, coder, npm only); next the ESKF in shadow (decision 0055), then units 9 and 11 |
 
 ## M4 since the last handoff (decisions 0048-0054)
 - 0048 Luis's rulings (plant omega_min 0, angle ch8 at 100, HIL spec text, FMA tolerance 1 count, tags). 0049 plant drag
@@ -26,17 +26,15 @@ History is in git and `docs/decisions/`; the previous handoff is `git show be6b9
 ## Ground segment (decisions 0051, 0053; Luis signed every item 2026-10-17)
 - Done and merged into `m4`: unit 2 GEN (link ids, locks, .mcfg), 3 VALIDATE, 4a ConfigRefused/Maintenance, 5 CODEC
   (MARV dialect 15200-15204, GS-3 check), 7 HELPER (tools/gs), 8a GUI (gcs/: connection + parameters pages).
-- Next, in order: finish 4b (see "In flight"); 6 LINK-SIL (the SIL speaks MAVLink over UDP; carry param_value as raw
+- Unit 4b STORE merged (store, boot policy, 84 tests; one parameter set per link + post-link gate).
+- Next, in order: 6 LINK-SIL (the SIL speaks MAVLink over UDP; carry param_value as raw
   bits in the C++ codec); 8b GUI follow-ups; 9 REPORT; 11 PLOTS; 12 USB, 13 SD, 14 FLASH-SLOTS (bench); 15; 16.
-- **Link hazard (found in 4b):** `marv::generated::kParamDefaults` is defined in several parameter-set archives; the
-  board image gets FC3v2's 137-record table only by archive order. Today's images are correct (0xefc, checked). Fix
-  before wiring anything new into the image (the killed engineer's packet: per-set symbols or one set per image, plus a
-  post-link gate with a negative control).
+- ESKF (decision 0055, Luis 2026-10-18): attitude + gyro bias from the IMU, in shadow beside Mahony; board use is Luis's call.
 
 ## Waiting on Luis
 - S4b: fly the Gazebo sim through the board with the RadioMaster (runbook in `L10/results/s4/README.md`; host idle).
 - Props-off radio check of angle mode (ESC power, Luis present).
-- SD card size and format (FAT32 / exFAT) for unit 13.
+- SD card: 32 GB FAT32 (Luis 2026-10-18). Bench items wait for Luis's morning (2026-10-18).
 
 ## Noticed, not changed
 - CI image has no Node (the TS conformance test registers only when gcs/node_modules exists): a CI-image unit before
