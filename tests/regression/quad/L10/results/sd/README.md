@@ -53,3 +53,21 @@ inserted), i.e. it is not driven: the jumper's effect is not visible, polarity u
 2. After 12 s run `python3 tests/regression/quad/L10/results/sd/capture.py /dev/serial/by-id/usb-Raspberry_Pi_Pico_B2189353BDF6DD1E-if00 flight_boot_nocard.log 8`
    and compare the `boot: IMU start at N us` line with 9940 / 10007 us above (the bench image with the card out also prints
    `sd_bench: card_detect ... pull_up= pull_down=` and `init FAILED`, which gives the card-detect level with no card).
+
+## Result: boot with the card removed, 2026-10-18 (Luis at the bench)
+
+Flight image `bef15d69` (sha256 prefix of the ELF). Luis power-cycled the board over USB; capture 12 s after the port reappeared.
+
+| Boot | Card | `boot: IMU start` | Log |
+| --- | --- | --- | --- |
+| power-on (USB replug) | out | 306 us | `flight_boot_nocard.log` |
+| power-on (USB replug) | in | 306 us | `flight_boot_card_poweron.log` |
+| SWD reset after flashing, bench image | in | 9940 us | `sd_bench_run1.log` (above) |
+| SWD reset after flashing, bench image | out | 9954 us | `bench_boot_nocard.log` |
+
+Start-up timing does not depend on the card: 306 / 306 us at power-on, 9940 / 9954 us after a probe reset (the ~10 ms is
+the reset path, not the SD; a normal boot never touches the card). Both power-on logs: est_valid=1, timing_faults=0.
+
+Card detect with the card out (bench image): `pull_up=1 pull_down=0`, the same as with the card in, so GPIO 25 is not
+connected on this board (the Rev-B+ jumper is not fitted or not present): card detect is unusable. With no card the SD init
+fails in 1949 us (`init FAILED`, mount FR_NOT_READY), so a card-absent call returns quickly without it.
