@@ -6,7 +6,19 @@
 // logs (lockstep_log.hpp). Everything is serial, in PreUpdate; nothing reads the wall clock, except the HIL command source
 // of the optional <hil> element (hil_source.hpp, HIL stage S4), which paces the ticks on it.
 //
+// The ground link (decision 0053 Q4; ground-segment unit 6), with a SIL library built with STORAGE only: the optional
+// <config_dir> opens the config storage in that existing directory (marv_sil_storage_open) and the optional <link_udp_port>
+// (else the environment variable MARV_SIL_LINK_UDP_PORT; neither = no link) opens the link's UDP socket (marv_sil_link_open);
+// with either, marv_sil_config carries the SHA-256 of the loaded SIL library. With the link, PreUpdate calls
+// marv_sil_link_service once per host step, after the step's ticks; when it reports "reboot requested" the plugin closes the
+// log with its trailer, shuts the SIL down, writes a REBOOT REQUESTED line on stderr and exits with EX_TEMPFAIL
+// (sysexits.h), so that a launcher relaunches the run on the same <config_dir>. Without these elements and the variable
+// nothing of this runs.
+//
 // The namespace marv::gz hides ::gz, so gz names are reached through the aliases below.
+#include <dlfcn.h>
+#include <sysexits.h>
+
 #include <gz/math/Inertial.hh>
 #include <gz/math/Pose3.hh>
 #include <gz/math/Quaternion.hh>
@@ -51,6 +63,7 @@
 #include <vector>
 
 #include <marv/params/param_ids.hpp>
+#include <marv/store/sha256.hpp>
 
 #include "constants.hpp"
 #include "hil_source.hpp"
@@ -169,6 +182,8 @@ struct Parsed {
   std::optional<ManualScript> manual_script;
   bool launch_pad = false;
   std::optional<HilConfig> hil;
+  std::optional<std::uint32_t> link_udp_port;
+  std::optional<std::string> config_dir;
 };
 
 std::string text_of(const sdf::ElementPtr& e) { return e->Get<std::string>(); }
@@ -631,6 +646,16 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
         refuse("<vertical_source> is '" + trim(text_of(e)) + "', not 'truth'");
       }
       p.truth_vertical = true;
+    } else if (name == "link_udp_port") {
+      once(name);
+      p.link_udp_port = integer_of<std::uint32_t>(e);
+    } else if (name == "config_dir") {
+      once(name);
+      const std::string t = trim(text_of(e));
+      if (t.empty()) {
+        refuse("<config_dir> is empty");
+      }
+      p.config_dir = t;
     } else if (name == "log_path") {
       once(name);
       const std::string t = trim(text_of(e));
@@ -1007,6 +1032,32 @@ class RecordingSource final : public CommandSource {
 
 std::atomic<bool> g_configured{false};
 
+// The environment variable that names the link's UDP port when the world has no <link_udp_port> (tools/gs/sil.py sets it).
+constexpr const char* kLinkPortEnv = "MARV_SIL_LINK_UDP_PORT";
+
+// The SHA-256 of the file of the loaded SIL library (the library that holds marv_sil_init), the SIL's image identity.
+std::array<std::uint8_t, kSha256DigestBytes> sil_library_sha256() {
+  Dl_info info{};
+  if (dladdr(reinterpret_cast<void*>(&marv_sil_init), &info) == 0 || info.dli_fname == nullptr) {
+    refuse("cannot find the file of the loaded SIL library (dladdr)");
+  }
+  std::FILE* f = std::fopen(info.dli_fname, "rb");
+  if (f == nullptr) {
+    refuse(std::string("cannot read the SIL library ") + info.dli_fname);
+  }
+  marv::store::Sha256 h;
+  std::array<std::uint8_t, marv::prim::kSha256BlockBytes> buf{};
+  for (std::size_t n = std::fread(buf.data(), 1, buf.size(), f); n > 0; n = std::fread(buf.data(), 1, buf.size(), f)) {
+    h.update(std::span<const std::uint8_t>{buf.data(), n});
+  }
+  const bool failed = std::ferror(f) != 0;
+  std::fclose(f);
+  if (failed) {
+    refuse(std::string("cannot read the SIL library ") + info.dli_fname);
+  }
+  return h.finish();
+}
+
 void put3(LogBuffer& b, const Vec3& v) {
   for (const double c : v) {
     b.f64(c);
@@ -1072,6 +1123,9 @@ class Lockstep final : public gzs::System,
       if (p.rotor_speed || p.truth_attitude || p.truth_vertical || p.clock_corner) {
         refuse("<hil> excludes <rotor_speed_model>, <attitude_source>, <vertical_source> and <clock_corner> (the board takes "
                "IMU samples only, at the nominal clock)");
+      }
+      if (p.link_udp_port || p.config_dir) {
+        refuse("<hil> excludes <link_udp_port> and <config_dir> (the board runs the firmware, not the SIL)");
       }
     }
 #ifndef MARV_GZ_TRUTH_VERTICAL
@@ -1148,6 +1202,8 @@ class Lockstep final : public gzs::System,
       r.sigma = 0.0F;
       ov.push_back(r);
     }
+    std::array<std::uint8_t, kSha256DigestBytes> image{};
+    const bool identity = open_link(p, image);
     marv_sil_config sc{};
     sc.struct_size = sizeof(sc);
     sc.imu_meas_size = sizeof(marv_imu_meas);
@@ -1157,6 +1213,7 @@ class Lockstep final : public gzs::System,
     sc.n_overrides = static_cast<std::uint32_t>(ov.size());
     sc.overrides = ov.empty() ? nullptr : ov.data();
     sc.param_schema_hash = info.param_schema_hash;
+    sc.image_sha256 = identity ? image.data() : nullptr;
     const marv_sil_status ss = marv_sil_init(&sc);
     if (ss != MARV_SIL_OK) {
       marv_plant_destroy(plant);
@@ -1384,6 +1441,9 @@ class Lockstep final : public gzs::System,
       }
       vel_cmd_pending_ = true;
     }
+    if (link_on_) {
+      serve_link();
+    }
   }
 
   void Reset(const gzs::UpdateInfo& /*info*/, gzs::EntityComponentManager& /*ecm*/) override {
@@ -1410,6 +1470,81 @@ class Lockstep final : public gzs::System,
       }
       refuse("physics max_step_size is not m*tick");
     }
+  }
+
+  // The ground link's elements (file comment): opens the config storage and the link's socket in the SIL before marv_sil_init
+  // and fills `image` with the SIL library's SHA-256. Returns true when either is present.
+  bool open_link(const Parsed& p, std::array<std::uint8_t, kSha256DigestBytes>& image) {
+    std::optional<std::uint32_t> port = p.link_udp_port;
+    const char* env = std::getenv(kLinkPortEnv);
+#ifdef MARV_GZ_SIL_STORAGE
+    if (!port && env != nullptr && *env != '\0') {
+      std::uint32_t v = 0;
+      if (!parse_number(env, v)) {
+        refuse(std::string(kLinkPortEnv) + " is not a port number: '" + env + "'");
+      }
+      port = v;
+    }
+    if (!port && !p.config_dir) {
+      return false;
+    }
+    image = sil_library_sha256();
+    if (p.config_dir) {
+      const marv_sil_status s = marv_sil_storage_open(p.config_dir->c_str());
+      if (s != MARV_SIL_OK) {
+        refuse("marv_sil_storage_open('" + *p.config_dir + "'): " + marv_sil_status_str(s));
+      }
+    }
+    if (port) {
+      const marv_sil_status s = marv_sil_link_open(*port);
+      if (s != MARV_SIL_OK) {
+        refuse("marv_sil_link_open(" + std::to_string(*port) + "): " + marv_sil_status_str(s));
+      }
+      link_on_ = true;
+    }
+    return true;
+#else
+    static_cast<void>(image);
+    static_cast<void>(env);
+    if (port || p.config_dir) {
+      refuse("<link_udp_port> and <config_dir> need a SIL library with the config store and the link (built with STORAGE, "
+             "target property MARV_SIL_STORAGE); the linked one has neither");
+    }
+    return false;
+#endif
+  }
+
+  // Once per host step, after the step's ticks (the SIL's link service runs between tick calls).
+  void serve_link() {
+#ifdef MARV_GZ_SIL_STORAGE
+    std::uint32_t reboot = 0;
+    const marv_sil_status s = marv_sil_link_service(&reboot);
+    if (s != MARV_SIL_OK) {
+      refuse(std::string("marv_sil_link_service: ") + marv_sil_status_str(s));
+    }
+    if (reboot != 0) {
+      stop_for_reboot();
+    }
+#endif
+  }
+
+  // A clean stop with a stated reason: the log closed with its trailer, the SIL shut down, then exit status EX_TEMPFAIL, the
+  // launcher's cue to relaunch on the same config directory (the next boot step reads it).
+  [[noreturn]] void stop_for_reboot() {
+    if (log_.is_open()) {
+      log_.close_with_trailer(steps_, ticks_, steps_);
+    }
+    if (sil_ready_) {
+      marv_sil_shutdown();
+      sil_ready_ = false;
+    }
+    std::fprintf(stderr,
+                 "marv_gz_lockstep: REBOOT REQUESTED: the config store asked for a reboot (a config command was accepted); "
+                 "the run stops after host step %llu, exit status EX_TEMPFAIL, for a relaunch on the same config directory\n",
+                 static_cast<unsigned long long>(steps_));
+    std::fflush(stderr);
+    std::fflush(stdout);
+    std::_Exit(EX_TEMPFAIL);
   }
 
   static void check_odr_error(double e) {
@@ -1671,6 +1806,7 @@ class Lockstep final : public gzs::System,
   std::optional<Vec3> v_ned_;
   std::optional<Vec3> w_frd_;
   bool zero_first_read_ = false;
+  bool link_on_ = false;
 };
 
 }  // namespace marv::gz

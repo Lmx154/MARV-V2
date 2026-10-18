@@ -26,7 +26,7 @@
 #if !defined(MARV_SIL_STORAGE)
 // A library built without STORAGE (fw/sil/CMakeLists.txt): no config store, the compiled table.
 std::span<const marv::ParamRecord, marv::kParamCount> marv::sil::boot_table(
-    std::span<const marv::ParamRecord, marv::kParamCount> defaults) noexcept {
+    std::span<const marv::ParamRecord, marv::kParamCount> defaults, const marv::sil::ImageDigest& /*image_sha256*/) noexcept {
   return defaults;
 }
 #endif
@@ -243,10 +243,15 @@ extern "C" {
     return fail_at(MARV_SIL_E_PARAM, checked.index);
   }
 
+  ImageDigest image_sha256{};
+  if (cfg->image_sha256 != nullptr) {
+    std::copy_n(cfg->image_sha256, image_sha256.size(), image_sha256.begin());
+  }
+
   g_session.period = period;
   hal_sim::setup(period, std::span<DshotValue>{g_session.motor_latch}, std::span<ServoUs>{g_session.servo_latch});
-  const OverrideStatus applied =
-      apply_overrides(boot_table(param_defaults()), overrides, std::span<ParamRecord, kParamCount>{g_session.merged});
+  const OverrideStatus applied = apply_overrides(boot_table(param_defaults(), image_sha256), overrides,
+                                                 std::span<ParamRecord, kParamCount>{g_session.merged});
   if (!applied.ok) {
     hal_panic("marv_sil_init: validated overrides were rejected");
   }
@@ -392,6 +397,8 @@ extern "C" {
       return "E_INPUT: an IMU or rotor-speed sample, or the manual control, is invalid (see marv_sil_error_index for a sample)";
     case MARV_SIL_E_STORAGE:
       return "E_STORAGE: the run directory cannot be used for the config storage";
+    case MARV_SIL_E_LINK:
+      return "E_LINK: the link's UDP port is 0 or above 65535, or its socket cannot be bound";
     default:
       return "unknown status";
   }

@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <string>
 #include <string_view>
@@ -45,8 +46,8 @@ inline std::vector<Sample> samples() {
   out.push_back({"ParamRequestList", ParamRequestList{1, 2}});
   out.push_back({"ParamRequestListZero", ParamRequestList{0, 0}});
   out.push_back({"ParamRequestRead", ParamRequestRead{1, 2, text<16>("rate_kp_roll"), -1}});
-  out.push_back({"ParamSet", ParamSet{1, 2, text<16>("rotor_posit_ab12"), 0.25F, 9}});
-  out.push_back({"ParamValue", ParamValue{text<16>("mass_kg"), -1.5F, 6, 136, 17}});
+  out.push_back({"ParamSet", ParamSet{1, 2, text<16>("rotor_posit_ab12"), std::bit_cast<std::uint32_t>(0.25F), 9}});
+  out.push_back({"ParamValue", ParamValue{text<16>("mass_kg"), std::bit_cast<std::uint32_t>(-1.5F), 6, 136, 17}});
   out.push_back({"Statustext", Statustext{4, text<50>("config refused: schema"), 5, 1}});
   out.push_back({"CommandLong", CommandLong{1, 2, 512, 1, 148.0F, 2.0F, 3.0F, 4.0F, 5.0F, 6.0F, -1.5F}});
   out.push_back({"CommandAck", CommandAck{512, 3, 255, -7, 255, 190}});

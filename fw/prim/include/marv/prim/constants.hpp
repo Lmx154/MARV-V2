@@ -174,6 +174,12 @@ inline constexpr std::array<std::uint32_t, 64> kSha256K{
 inline constexpr std::array<std::uint32_t, 8> kSha256H0{0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
                                                         0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19};
 
+// The largest UDP payload over IPv4, bytes (hal_sim's ground-link socket, fw/hal/sim/include/marv/hal_sim/link_udp.hpp).
+// Citation: RFC 768 (UDP): the 16-bit length field counts the 8-byte UDP header and the data; RFC 791 (IPv4): the 16-bit total
+// length field counts the datagram with its header, at least 20 bytes. 65535 - 20 - 8 = 65507.
+// Kind: standard.
+inline constexpr std::size_t kUdpIpv4PayloadMaxBytes = 65507;
+
 // Microseconds per second. Citation: SI definition (the prefix micro is exactly 10^-6, so one second is exactly
 // 10^6 microseconds).
 // Kind: standard.

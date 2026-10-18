@@ -59,3 +59,10 @@ target_compile_definitions(marv_gz_lockstep PRIVATE "$<${marv_gz_sil_truth_state
 set(marv_gz_sil_truth_vertical "$<BOOL:$<TARGET_PROPERTY:${MARV_GZ_SIL},MARV_SIL_TRUTH_VERTICAL>>")
 target_link_libraries(marv_gz_lockstep PRIVATE "$<${marv_gz_sil_truth_vertical}:marv_gz_truth_vertical>")
 target_compile_definitions(marv_gz_lockstep PRIVATE "$<${marv_gz_sil_truth_vertical}:MARV_GZ_TRUTH_VERTICAL=1>")
+# The ground link (ground-segment unit 6): <config_dir> and <link_udp_port> are served only when the SIL library has the config
+# store and the link (target property MARV_SIL_STORAGE, marv_add_sil_library STORAGE); the plugin then hashes the library
+# (fw/store's header-only SHA-256) and calls marv_sil_link_service. Without it the plugin refuses both elements.
+set(marv_gz_sil_storage "$<BOOL:$<TARGET_PROPERTY:${MARV_GZ_SIL},MARV_SIL_STORAGE>>")
+target_compile_definitions(marv_gz_lockstep PRIVATE "$<${marv_gz_sil_storage}:MARV_GZ_SIL_STORAGE=1>")
+target_include_directories(marv_gz_lockstep PRIVATE "${PROJECT_SOURCE_DIR}/fw/store/include")
+target_link_libraries(marv_gz_lockstep PRIVATE ${CMAKE_DL_LIBS})

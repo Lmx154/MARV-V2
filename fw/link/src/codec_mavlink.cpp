@@ -6,6 +6,7 @@
 
 #include <marv/mavlink.h>
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <type_traits>
@@ -27,6 +28,17 @@ void get(const T (&wire)[N], std::array<T, N>& plain) noexcept {
 template <class E>
 std::uint8_t raw(E value) noexcept {
   return static_cast<std::uint8_t>(value);
+}
+
+// The raw-bits fields (tools/link/gen_cpp_structs.py RAW_BITS_FIELDS): the bytes are copied, never the value through a float,
+// so an INT32 parameter whose bits are a signalling-NaN pattern arrives unchanged.
+void put_bits(float& wire, std::uint32_t plain) noexcept {
+  static_assert(sizeof(wire) == sizeof(plain));
+  std::memcpy(&wire, &plain, sizeof(wire));
+}
+void get_bits(const float& wire, std::uint32_t& plain) noexcept {
+  static_assert(sizeof(wire) == sizeof(plain));
+  std::memcpy(&plain, &wire, sizeof(plain));
 }
 
 void fill(const Heartbeat& m, mavlink_heartbeat_t& w) noexcept {
@@ -99,27 +111,27 @@ void fill(const ParamSet& m, mavlink_param_set_t& w) noexcept {
   w.target_system = m.target_system;
   w.target_component = m.target_component;
   put(w.param_id, m.param_id);
-  w.param_value = m.param_value;
+  put_bits(w.param_value, m.param_value);
   w.param_type = m.param_type;
 }
 void take(const mavlink_param_set_t& w, ParamSet& m) noexcept {
   m.target_system = w.target_system;
   m.target_component = w.target_component;
   get(w.param_id, m.param_id);
-  m.param_value = w.param_value;
+  get_bits(w.param_value, m.param_value);
   m.param_type = w.param_type;
 }
 
 void fill(const ParamValue& m, mavlink_param_value_t& w) noexcept {
   put(w.param_id, m.param_id);
-  w.param_value = m.param_value;
+  put_bits(w.param_value, m.param_value);
   w.param_type = m.param_type;
   w.param_count = m.param_count;
   w.param_index = m.param_index;
 }
 void take(const mavlink_param_value_t& w, ParamValue& m) noexcept {
   get(w.param_id, m.param_id);
-  m.param_value = w.param_value;
+  get_bits(w.param_value, m.param_value);
   m.param_type = w.param_type;
   m.param_count = w.param_count;
   m.param_index = w.param_index;
@@ -321,6 +333,16 @@ MARV_LINK_WIRE(MarvConfigCommand, marv_config_command, MARV_CONFIG_COMMAND);
 MARV_LINK_WIRE(MarvConfigAck, marv_config_ack, MARV_CONFIG_ACK);
 
 #undef MARV_LINK_WIRE
+
+// kFrameBytesMax (messages.hpp, from the dialect) is the library's unsigned frame of the longest message in scope.
+template <class V>
+struct LongestPayload;
+template <class... T>
+struct LongestPayload<std::variant<T...>> {
+  static constexpr std::uint32_t kValue = std::max({Wire<T>::kMaxLength...});
+};
+static_assert(kFrameBytesMax == MAVLINK_NUM_NON_PAYLOAD_BYTES + LongestPayload<Message>::kValue,
+              "kFrameBytesMax differs from the generated headers' frame of the longest message");
 
 template <class T>
 Status unpack(const mavlink_message_t& in, Message& out) noexcept {

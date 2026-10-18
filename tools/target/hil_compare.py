@@ -191,7 +191,8 @@ class ManualControlC(ctypes.Structure):
 class SilConfig(ctypes.Structure):
     _fields_ = [("struct_size", ctypes.c_uint32), ("imu_meas_size", ctypes.c_uint32), ("override_size", ctypes.c_uint32),
                 ("tick_period_num_us", ctypes.c_uint32), ("tick_period_den", ctypes.c_uint32),
-                ("n_overrides", ctypes.c_uint32), ("overrides", ctypes.c_void_p), ("param_schema_hash", ctypes.c_uint64)]
+                ("n_overrides", ctypes.c_uint32), ("overrides", ctypes.c_void_p), ("param_schema_hash", ctypes.c_uint64),
+                ("image_sha256", ctypes.c_void_p)]
 
 
 class SilInfo(ctypes.Structure):
