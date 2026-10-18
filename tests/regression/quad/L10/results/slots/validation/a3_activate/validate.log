@@ -1,0 +1,13 @@
+report: /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-slots/tests/regression/quad/L10/results/slots/validation/a3_activate/report.json
+report_id: 67dc460599b72599e56cdbdca9a4a0237f35f96ad5bf8942c721670e75f5ad51
+verdict: PASS
+
+--- stderr ---
+validate_config: records: record, provenance and lock checks ...
+validate_config: records: PASS
+validate_config: composition: the host composition validator ...
+validate_config: composition: PASS
+validate_config: ctest: every ctest labelled config-validation, run with the config injected as the parameter set ...
+validate_config: ctest: PASS
+validate_config: sil: a quad_fc Gazebo SIL run on the config's card with the behaviour predicates (arm, hover hold, roll/pitch step, disarm) ...
+validate_config: sil: PASS

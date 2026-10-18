@@ -1,0 +1,167 @@
+{
+ "step": "activate",
+ "elf": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/images/A.elf",
+ "elf_sha256": "213287349510c2b1263a025a7ff0c8ec0c89382ed53eb01ccf97147921d16429",
+ "host_image": {
+  "elf": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/images/A.elf",
+  "elf_file_sha256": "213287349510c2b1263a025a7ff0c8ec0c89382ed53eb01ccf97147921d16429",
+  "sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+  "text": "sha256 5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e\nbytes 219164 flash 0x10000000..0x1003581c (/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/images/A.elf)"
+ },
+ "boot": {
+  "stats": {
+   "t_us": 25230897,
+   "est_valid": 1,
+   "arming": "no_link",
+   "rate_timing_faults": 1,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-404-g1024e27",
+  "image": {
+   "sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "bytes": 219164,
+   "how": "SHA-256 accelerator",
+   "us": 16157
+  },
+  "config": {
+   "source": "slot A",
+   "sequence": 1,
+   "config_sha256": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+   "bound_image": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "status": "ok",
+   "fault": null,
+   "request": "activate",
+   "request_result": "done",
+   "line": "config: source slot A sequence 1 config_sha256 7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03 bound_image 5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e, status ok, boot request activate (done)"
+  },
+  "imu_start_us": 1124857
+ },
+ "identity_before": {
+  "image_sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+  "config_sha256": "7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": 1,
+  "config_state": 0,
+  "config_refusal": 0,
+  "last_activation_result": 1,
+  "report_id": "a8052242ff3b877b9089d67dcfc60c0c8bc18a1adda6c45991b1b1e67bee9353",
+  "staged_differs": 0
+ },
+ "checks": {
+  "board runs --elf": {
+   "pass": true,
+   "board": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "host": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e"
+  },
+  "staged": {
+   "pass": true,
+   "echo": "0x40111460",
+   "staged_differs": 1
+  },
+  "validated": {
+   "pass": false,
+   "returncode": 1,
+   "verdict": "FAIL",
+   "report_id": "ba7434554a7e1f89372d393be6c2d7378e1338d589ec2937e430215de62e449c",
+   "report_image_sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "report_config_hash": "35f63490f9d38b8bb568359e5064f742967be3919a14a00a4f40ed5283aee3bb",
+   "seconds": 26.0
+  },
+  "activate accepted": {
+   "pass": true,
+   "result": 0,
+   "texts": []
+  },
+  "(a) activated": {
+   "pass": true,
+   "config_line": "config: source slot B sequence 2 config_sha256 35f63490f9d38b8bb568359e5064f742967be3919a14a00a4f40ed5283aee3bb bound_image 5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e, status ok, boot request activate (done)",
+   "identity": {
+    "image_sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+    "config_sha256": "35f63490f9d38b8bb568359e5064f742967be3919a14a00a4f40ed5283aee3bb",
+    "schema_hash": "0x1648260490893e6e",
+    "config_source": 1,
+    "config_state": 0,
+    "config_refusal": 0,
+    "last_activation_result": 1,
+    "report_id": "ba7434554a7e1f89372d393be6c2d7378e1338d589ec2937e430215de62e449c",
+    "staged_differs": 0
+   },
+   "param": {
+    "value_bits": "0x40111460",
+    "active_bits": "0x40111460",
+    "staged_bits": "0x40111460"
+   },
+   "expected_config_sha256": "35f63490f9d38b8bb568359e5064f742967be3919a14a00a4f40ed5283aee3bb",
+   "arming": "no_link",
+   "est_valid": 1,
+   "before": "config: source slot A sequence 1 config_sha256 7d7c605cba85c7dfa32b2f832226ae1f775b58fc1b5e80b21dc06b98f52e6c03 bound_image 5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e, status ok, boot request activate (done)"
+  }
+ },
+ "stage": {
+  "param": "att_kp",
+  "factory_bits": "0x4011145e",
+  "new_bits": "0x40111460",
+  "echo_bits": "0x40111460",
+  "texts": []
+ },
+ "validation": {
+  "returncode": 1,
+  "verdict": "FAIL",
+  "report_id": "ba7434554a7e1f89372d393be6c2d7378e1338d589ec2937e430215de62e449c",
+  "report_image_sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+  "report_config_hash": "35f63490f9d38b8bb568359e5064f742967be3919a14a00a4f40ed5283aee3bb",
+  "seconds": 26.0
+ },
+ "activate_ack": {
+  "result": 0,
+  "texts": []
+ },
+ "boot_after": {
+  "stats": {
+   "t_us": 15219245,
+   "est_valid": 1,
+   "arming": "no_link",
+   "rate_timing_faults": 0,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-404-g1024e27",
+  "image": {
+   "sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "bytes": 219164,
+   "how": "SHA-256 accelerator",
+   "us": 16157
+  },
+  "config": {
+   "source": "slot B",
+   "sequence": 2,
+   "config_sha256": "35f63490f9d38b8bb568359e5064f742967be3919a14a00a4f40ed5283aee3bb",
+   "bound_image": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "status": "ok",
+   "fault": null,
+   "request": "activate",
+   "request_result": "done",
+   "line": "config: source slot B sequence 2 config_sha256 35f63490f9d38b8bb568359e5064f742967be3919a14a00a4f40ed5283aee3bb bound_image 5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e, status ok, boot request activate (done)"
+  },
+  "imu_start_us": 1113340
+ },
+ "identity_after": {
+  "image_sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+  "config_sha256": "35f63490f9d38b8bb568359e5064f742967be3919a14a00a4f40ed5283aee3bb",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": 1,
+  "config_state": 0,
+  "config_refusal": 0,
+  "last_activation_result": 1,
+  "report_id": "ba7434554a7e1f89372d393be6c2d7378e1338d589ec2937e430215de62e449c",
+  "staged_differs": 0
+ },
+ "param_after": {
+  "value_bits": "0x40111460",
+  "active_bits": "0x40111460",
+  "staged_bits": "0x40111460"
+ }
+}

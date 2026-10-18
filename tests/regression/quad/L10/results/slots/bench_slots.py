@@ -113,8 +113,8 @@ def step_activate(a, res):
         v = res["validation"]
         sc.check(res, "validated", v["verdict"] == "PASS" and v["report_image_sha256"] == host["sha256"]
                  and v["report_config_hash"] == expected.hex(), **v)
-        if v["report_id"] is None:
-            return
+        if v["verdict"] != "PASS" or v["report_id"] is None:
+            return  # the G7 gate (the GCS's side): no activation without a passing report for this image and config
         schema = mcfg.manifest_schema_hash(man)
         ack, at = link.client.config(d.MARV_CONFIG_ACTION_ACTIVATE, bytes.fromhex(v["report_id"]), expected, schema)
         res["activate_ack"] = {"result": ack.result, "texts": link.client.texts(at)}

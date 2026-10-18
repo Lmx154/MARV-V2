@@ -1,0 +1,116 @@
+{
+ "step": "factory",
+ "elf": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-slots/build/m33/fw/hal/target/marv_fc3v2.elf",
+ "elf_sha256": "213287349510c2b1263a025a7ff0c8ec0c89382ed53eb01ccf97147921d16429",
+ "boot": {
+  "stats": {
+   "t_us": 42219736,
+   "est_valid": 1,
+   "arming": "no_link",
+   "rate_timing_faults": 0,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-404-g1024e27",
+  "image": {
+   "sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "bytes": 219164,
+   "how": "SHA-256 accelerator",
+   "us": 16157
+  },
+  "config": {
+   "source": "slot B",
+   "sequence": 2,
+   "config_sha256": "35f63490f9d38b8bb568359e5064f742967be3919a14a00a4f40ed5283aee3bb",
+   "bound_image": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "status": "ok",
+   "fault": null,
+   "request": "activate",
+   "request_result": "done",
+   "line": "config: source slot B sequence 2 config_sha256 35f63490f9d38b8bb568359e5064f742967be3919a14a00a4f40ed5283aee3bb bound_image 5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e, status ok, boot request activate (done)"
+  },
+  "imu_start_us": 1113340
+ },
+ "identity_before": {
+  "image_sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+  "config_sha256": "35f63490f9d38b8bb568359e5064f742967be3919a14a00a4f40ed5283aee3bb",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": 1,
+  "config_state": 0,
+  "config_refusal": 0,
+  "last_activation_result": 1,
+  "report_id": "ba7434554a7e1f89372d393be6c2d7378e1338d589ec2937e430215de62e449c",
+  "staged_differs": 0
+ },
+ "ack": {
+  "result": 0,
+  "texts": []
+ },
+ "checks": {
+  "factory reset accepted": {
+   "pass": true,
+   "result": 0,
+   "texts": []
+  },
+  "(a) factory reset": {
+   "pass": true,
+   "before": "config: source slot B sequence 2 config_sha256 35f63490f9d38b8bb568359e5064f742967be3919a14a00a4f40ed5283aee3bb bound_image 5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e, status ok, boot request activate (done)",
+   "after": "config: source factory, status ok, boot request factory reset (done)",
+   "identity": {
+    "image_sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+    "config_sha256": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+    "schema_hash": "0x1648260490893e6e",
+    "config_source": 0,
+    "config_state": 0,
+    "config_refusal": 0,
+    "last_activation_result": 0,
+    "report_id": "0000000000000000000000000000000000000000000000000000000000000000",
+    "staged_differs": 0
+   },
+   "factory_hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+   "arming": "no_link"
+  }
+ },
+ "boot_after": {
+  "stats": {
+   "t_us": 14789133,
+   "est_valid": 1,
+   "arming": "no_link",
+   "rate_timing_faults": 1,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-404-g1024e27",
+  "image": {
+   "sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+   "bytes": 219164,
+   "how": "SHA-256 accelerator",
+   "us": 16157
+  },
+  "config": {
+   "source": "factory",
+   "sequence": null,
+   "config_sha256": null,
+   "bound_image": null,
+   "status": "ok",
+   "fault": null,
+   "request": "factory reset",
+   "request_result": "done",
+   "line": "config: source factory, status ok, boot request factory reset (done)"
+  },
+  "imu_start_us": 1689792
+ },
+ "identity_after": {
+  "image_sha256": "5d8a461fd3faa40c4e719f3264fb85ab40be286af8c79e92cef06ca7c89dca9e",
+  "config_sha256": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": 0,
+  "config_state": 0,
+  "config_refusal": 0,
+  "last_activation_result": 0,
+  "report_id": "0000000000000000000000000000000000000000000000000000000000000000",
+  "staged_differs": 0
+ }
+}

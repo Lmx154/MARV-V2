@@ -1,0 +1,43 @@
+flash: Open On-Chip Debugger 0.12.0+dev-gacff23f (2026-09-17-01:21)
+flash: image /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-slots/build/m33/fw/hal/target/marv_fc3v2.elf sha256 a223b662e519f882d5abe1d81ee89ac67285a70cdc936e57c402ba0cd76af4de
+Open On-Chip Debugger 0.12.0+dev-gacff23f (2026-09-17-01:21)
+Licensed under GNU GPL v2
+For bug reports, read
+	http://openocd.org/doc/doxygen/bugs.html
+Info : [rp2350.cm0] Hardware thread awareness created
+Info : [rp2350.cm1] Hardware thread awareness created
+ocd_process_reset_inner
+adapter speed: 5000 kHz
+Info : Using CMSIS-DAPv2 interface with VID:PID=0x2e8a:0x000c, serial=900678EF479C3A0E
+Info : CMSIS-DAP: SWD supported
+Info : CMSIS-DAP: Atomic commands supported
+Info : CMSIS-DAP: Test domain timer supported
+Info : CMSIS-DAP: FW Version = 2.0.0
+Info : CMSIS-DAP: Interface Initialised (SWD)
+Info : SWCLK/TCK = 0 SWDIO/TMS = 0 TDI = 0 TDO = 0 nTRST = 0 nRESET = 0
+Info : CMSIS-DAP: Interface ready
+Info : clock speed 5000 kHz
+Info : SWD DPIDR 0x4c013477 DPv3
+Info : [rp2350.cm0] Cortex-M33 r1p0 processor detected
+Info : [rp2350.cm0] target has 8 breakpoints, 4 watchpoints
+Info : [rp2350.cm0] Examination succeed
+Info : [rp2350.cm1] Cortex-M33 r1p0 processor detected
+Info : [rp2350.cm1] target has 8 breakpoints, 4 watchpoints
+Info : [rp2350.cm1] Examination succeed
+Info : [rp2350.cm0] starting gdb server on 3333
+Info : Listening on port 3333 for gdb connections
+[rp2350.cm0] halted due to debug-request, current mode: Thread 
+xPSR: 0xf9000000 pc: 0x000000a0 msp: 0xf0000000
+[rp2350.cm1] halted due to debug-request, current mode: Thread 
+xPSR: 0xf9000000 pc: 0x000000a0 msp: 0xf0000000
+Info : RP2350 rev 3, QSPI Flash win w25q16jv id = 0x1540ef size = 2048 KiB in 512 sectors
+Info : RP2xxx ROM API function FC @ 3801
+** Programming Started **
+Info : Padding image section 3 at 0x10035824 with 220 bytes (bank write end alignment)
+Warn : Adding extra erase range, 0x10035900 .. 0x10035fff
+** Programming Finished **
+** Verify Started **
+** Verified OK **
+Info : SWD DPIDR 0x4c013477 DPv3
+Error: Failed to write memory at 0x00000000
+failed to write memory
