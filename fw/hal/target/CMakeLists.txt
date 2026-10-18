@@ -157,7 +157,7 @@ if(NOT MARV_FC3V2_HIL AND NOT MARV_FC3V2_HIL_LINK)
 endif()
 # MARV_FC3V2_REBOOT_DELAY_MS is a PLACEHOLDER (ground-segment unit 14): how long hal_reboot (src/storage_flash.cpp) lets the
 # background loop run after an accepted reboot before the watchdog resets the chip, so the acknowledgement already queued
-# (MARV_CONFIG_ACK, COMMAND_ACK) reaches the host. Chosen well above the time to drain a full send queue at the measured link
+# (of the config or reboot command) reaches the host. Chosen well above the time to drain a full send queue at the measured link
 # rate (16 frames of at most 280 bytes at about 400 kB/s, about 11 ms; L10/results/link_board); replaced by a measured drain
 # time with the link budget of ground-segment unit 11.
 set(MARV_FC3V2_REBOOT_DELAY_MS 100 CACHE STRING
