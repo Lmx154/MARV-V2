@@ -3,7 +3,8 @@
 # directory links Pico SDK targets: the library takes the SDK *_headers targets PRIVATE (they add include directories to
 # this library alone), the image links the full SDK libraries it needs.
 add_library(marv_hal_target STATIC src/hal_target.cpp src/lsm6dsv.cpp src/motor_output.cpp src/motor_test.cpp
-  src/manual_control.cpp src/receiver.cpp src/bench_stats.cpp src/storage_stub.cpp src/storage_sd.cpp src/sd_spi.cpp)
+  src/manual_control.cpp src/receiver.cpp src/bench_stats.cpp src/storage_flash.cpp src/flash_image.cpp src/storage_sd.cpp
+  src/sd_spi.cpp)
 target_include_directories(marv_hal_target PUBLIC include)
 target_link_libraries(marv_hal_target
   PUBLIC marv_hal marv_types marv_dshot marv_crsf_decode
@@ -12,6 +13,7 @@ target_link_libraries(marv_hal_target
           hardware_gpio_headers hardware_irq_headers hardware_structs_headers hardware_spi_headers
           hardware_pio_headers hardware_clocks_headers hardware_uart_headers
           pico_usb_reset_headers pico_bootrom_headers pico_unique_id_headers
+          hardware_flash_headers hardware_watchdog_headers pico_sha256_headers
           marv_fatfs)
 # FatFs (third_party/fatfs, ground-segment unit 13): the pending file on the SD card (storage_sd.cpp, sd_spi.cpp).
 add_subdirectory("${PROJECT_SOURCE_DIR}/third_party/fatfs" "${CMAKE_BINARY_DIR}/third_party/fatfs")
@@ -173,7 +175,7 @@ if(MARV_FC3V2_HIL_LINK)
 else()
   target_link_libraries(marv_fc3v2 PRIVATE
     marv_composition_quad_fc marv_store marv_hal_target marv_lsm6dsv_decode marv_console_decode marv_params_fc3v2_generated
-    marv_params_fc3v2_runtime pico_stdlib hardware_spi hardware_pio hardware_uart)
+    marv_params_fc3v2_runtime pico_stdlib hardware_spi hardware_pio hardware_uart hardware_flash hardware_watchdog pico_sha256)
   if(NOT MARV_FC3V2_HIL)
     target_link_libraries(marv_fc3v2 PRIVATE marv_link_service)
   endif()

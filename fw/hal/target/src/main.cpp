@@ -14,6 +14,7 @@
 #include "marv/hal_target/bench_stats.hpp"
 #include "marv/hal_target/console.hpp"
 #include "marv/hal_target/dshot.hpp"
+#include "marv/hal_target/flash.hpp"
 #include "marv/hal_target/imu.hpp"
 #include "marv/hal_target/imu_log.hpp"
 #include "marv/hal_target/link_port.hpp"
@@ -88,6 +89,11 @@ constexpr const char* kParamMode = "generated defaults";
 // The config store's hooks into the composition (marv/store/store.hpp; decision 0053, ground-segment unit 4b).
 const char* validate_table(marv::ParamTable table) noexcept { return marv::composition::validate(table).reason; }
 bool armed_now() noexcept { return marv::arming::is_armed(marv::composition::arming_status()); }
+// The store's working memory (a pending file, a slot copy, the staged config's encoding; ground-segment unit 14), the image
+// hash it binds stored configs to, and how long the hash took at boot.
+std::array<std::uint8_t, marv::kConfigSlotBytes> g_store_scratch{};
+marv::hal_target::ImageHash image_hash;
+marv::TimeUs image_hash_us = 0;
 
 // The console period: one second, so each line's counter differences are per-second figures.
 constexpr auto kPrintPeriodUs = static_cast<marv::TimeUs>(marv::prim::kMicrosecondsPerSecond);
@@ -102,9 +108,78 @@ marv::hal_target::ImuBoot imu_boot;
 // hal_time_us just before the IMU is started: the boot-to-IMU-start time (the timer counts from the chip reset).
 marv::TimeUs imu_start_us = 0;
 
+const char* config_status_text(marv::arming::ConfigStatus s) {
+  using marv::arming::ConfigStatus;
+  switch (s) {
+    case ConfigStatus::Ok:
+      return "ok";
+    case ConfigStatus::Corrupt:
+      return "refused: corrupt";
+    case ConfigStatus::SchemaMismatch:
+      return "refused: schema mismatch";
+    case ConfigStatus::Invalid:
+      return "refused: invalid";
+    case ConfigStatus::NotValidated:
+      return "refused: not validated";
+  }
+  return "";
+}
+
+const char* boot_request_text(marv::store::BootRequest r) {
+  using marv::store::BootRequest;
+  switch (r) {
+    case BootRequest::None:
+      return "none";
+    case BootRequest::Activate:
+      return "activate";
+    case BootRequest::Revert:
+      return "revert";
+    case BootRequest::FactoryReset:
+      return "factory reset";
+    case BootRequest::Unmatched:
+      return "unmatched";
+  }
+  return "";
+}
+
+void print_digest(const char* name, const marv::hal_target::ImageDigest& d) {
+  std::printf("%s ", name);
+  for (const std::uint8_t b : d) {
+    std::printf("%02x", static_cast<unsigned>(b));
+  }
+}
+
+// The image hash and what the config store's boot step did (ground-segment unit 14).
+void print_config() {
+  std::printf("image: ");
+  print_digest("sha256", image_hash.sha256);
+  std::printf(" (%lu bytes, %s, %llu us)\n", static_cast<unsigned long>(image_hash.bytes),
+              image_hash.ok ? "SHA-256 accelerator" : "accelerator busy: unknown",
+              static_cast<unsigned long long>(image_hash_us));
+  const marv::store::BootReport& b = marv::store::boot_report();
+  const bool slot = b.source == marv::store::ConfigSource::Slot;
+  std::printf("config: source %s", slot ? (b.slot == marv::ConfigSlot::A ? "slot A" : "slot B") : "factory");
+  if (slot) {
+    std::printf(" sequence %lu ", static_cast<unsigned long>(b.sequence));
+    print_digest("config_sha256", b.config_hash);
+    print_digest(" bound_image", b.binding.image_sha256);
+  }
+  std::printf(", status %s", config_status_text(b.status));
+  if (b.fault != marv::store::Fault::None) {
+    std::printf(" (%s%s%s)", marv::store::fault_text(b.fault), b.validator_reason != nullptr ? ": " : "",
+                b.validator_reason != nullptr ? b.validator_reason : "");
+  }
+  std::printf(", boot request %s", boot_request_text(b.request));
+  if (b.request != marv::store::BootRequest::None) {
+    std::printf(" (%s)", b.request_fault == marv::store::Fault::None ? "done" : marv::store::fault_text(b.request_fault));
+  }
+  std::printf("\n");
+}
+
 void print_progress() {
   std::printf("marv_fc3v2 %s\n", MARV_FC3V2_VERSION);
   if (stage >= Stage::kParamsOk) {
+    print_config();
     std::printf("params ok: %s, rate_period_tolerance_us %ld\n", kParamMode,
                 static_cast<long>(marv::param_value<marv::ParamId::rate_period_tolerance_us>()));
   }
@@ -386,14 +461,18 @@ int main() {
   stdio_init_all();
   marv::hal_target::bench::start();
   print_progress();
-  // The config store's boot step chooses the table before the IMU, receiver and motor outputs start (store.hpp). The target's
-  // storage is a stub (no slots, no pending file, no boot request) and the scratch is empty, so it returns the compiled
-  // table with status Ok. params_init then runs exactly once on what it returned (invariant P-1).
+  // The image hash, then the config store's boot step: it applies a requested activation (the only flash writes this image
+  // makes) and chooses the table by the boot policy, before the IMU, receiver and motor outputs start (store.hpp); the slot
+  // writes are then sealed. params_init runs exactly once on what it returned (invariant P-1).
+  const marv::TimeUs hash_start_us = marv::hal_time_us();
+  image_hash = marv::hal_target::image_sha256();
+  image_hash_us = marv::hal_time_us() - hash_start_us;
   const marv::ParamTable table = marv::store::boot(marv::store::BootInputs{
-      param_table(), marv::store::Digest{},
+      param_table(), image_hash.sha256,
       marv::store::Hooks{&validate_table, &armed_now, &marv::composition::request_maintenance,
                          &marv::composition::maintenance_granted},
-      {}});
+      g_store_scratch});
+  marv::hal_target::config_slots_seal();
   if (table.size() != marv::kParamCount) {
     marv::hal_panic("the config store returned a table of another parameter set");
   }
@@ -401,6 +480,7 @@ int main() {
     marv::hal_panic("params_init rejected the default table");
   }
   stage = Stage::kParamsOk;
+  print_config();
   std::printf("params ok: %s\n", kParamMode);
   marv::composition::set_config_status(marv::store::boot_report().status);
   marv::composition::init();
@@ -428,12 +508,12 @@ int main() {
   stage = Stage::kImuOk;
   print_progress();
 #if !defined(MARV_FC3V2_USB_BENCH)
-  // The ground link (ground-segment unit 12b) on the link CDC, served from this loop only; the image hash is unknown (all zero)
-  // until ground-segment unit 14, as in the store's boot step above.
+  // The ground link (ground-segment unit 12b) on the link CDC, served from this loop only; its identity carries the image hash
+  // the store's boot step above was given.
   marv::link::service_init(marv::link::ServiceConfig{
       marv::link::Transport{&marv::hal_target::link_port_receive, &marv::hal_target::link_port_send,
                             &marv::hal_target::link_port_writable, &marv::hal_target::link_port_connected},
-      marv::store::Digest{}, &armed_now, &marv::composition::request_maintenance, &marv::composition::maintenance_granted});
+      image_hash.sha256, &armed_now, &marv::composition::request_maintenance, &marv::composition::maintenance_granted});
 #endif
 
   bool was_connected = false;
@@ -466,7 +546,7 @@ int main() {
       }
     }
 #if !defined(MARV_FC3V2_USB_BENCH)
-    // The board's hal_reboot never returns true (it reboots, or fails and the service reports why), so step's result is false.
+    // The board's hal_reboot does not return (a watchdog reboot), so step's result is false.
     static_cast<void>(marv::link::service_step());
     marv::hal_target::link_port_pump();
 #endif
