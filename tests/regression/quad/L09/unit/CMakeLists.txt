@@ -51,3 +51,17 @@ add_test(NAME sil_quad_fc_param_table_negative_control
           -P "${CMAKE_CURRENT_SOURCE_DIR}/check_param_table.cmake")
 set_tests_properties(sil_quad_fc_param_table sil_quad_fc_param_table_negative_control PROPERTIES LABELS frozen)
 set_tests_properties(sil_quad_fc_param_table_negative_control PROPERTIES WILL_FAIL TRUE)
+
+# The config store (fw/store, decision 0053, ground-segment unit 4b) on the host: SHA-256 known answers, the .mcfg reader and writer
+# against the factory file the build writes with tools/config/mcfg.py (the file is passed in MARV_FACTORY_MCFG), the boot policy
+# (invariant B-1, one test per row), the boot's apply step, revert and reset to factory, the staging refusals and commands, and
+# invariant P-1. The store keeps its state in the process, so every test that boots runs in a forked child on its own temporary
+# hal_sim run directory. Link order as unit_quad_fc_gate: the FC3v2 parameter set before the libraries that link the product set.
+add_executable(unit_store store_test.cpp)
+target_link_libraries(unit_store PRIVATE
+  marv_store marv_composition_quad_fc marv_params_fc3v2_runtime marv_params_fc3v2_generated
+  marv_attitude marv_estimator marv_rate_group marv_mixer marv_stick_rates marv_types marv_hal_sim GTest::gtest_main)
+target_compile_definitions(unit_store PRIVATE
+  MARV_FACTORY_MCFG="${CMAKE_BINARY_DIR}/generated/marv_params_fc3v2/marv_params_fc3v2.mcfg")
+marv_apply_flags(unit_store)
+marv_frozen_suite(unit_store)

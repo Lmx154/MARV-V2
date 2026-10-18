@@ -650,6 +650,46 @@ g3_plant_control() {
     symbols --manifest build/host-debug/tests/regression/quad/L01/controls/g3_control_plant.json --nm nm
 }
 
+# param_table_control <preset>: the post-link parameter-table check (cmake/param_table.cmake, tools/ci/check_param_table.py)
+# on its planted control (tests/regression/quad/L09/controls): the FC3v2 runtime linked with the product set's table ahead
+# of FC3v2's must fail the build in the check, with the table-size finding and no compile or link error, and leave no image.
+param_table_control() {
+  local preset="$1" target=param_table_planted log status=0 left
+  cmake --preset "${preset}" >/dev/null || return 1
+  log="$(mktemp)"
+  cmake --build --preset "${preset}" --target "${target}" >"${log}" 2>&1 || status=$?
+  cat "${log}"
+  if [[ ${status} -eq 0 ]]; then
+    echo "control built: an image holding another set's parameter table passes the post-link check (${preset})"
+    rm -f "${log}"
+    return 1
+  fi
+  if ! grep -q "^PARAM-TABLE: .*${target}[^:]*: kParamDefaults is [0-9]* bytes; the set has [0-9]* records" "${log}"; then
+    echo "control failed, but not with the parameter-table finding (${preset})"
+    rm -f "${log}"
+    return 1
+  fi
+  if grep -qE 'error:|undefined reference|multiple definition' "${log}"; then
+    echo "control failed with a compile or link error besides the parameter-table finding (${preset})"
+    rm -f "${log}"
+    return 1
+  fi
+  rm -f "${log}"
+  left="$(find "build/${preset}/tests/regression/quad/L09/controls" -maxdepth 1 -type f -name "${target}*")"
+  if [[ -n "${left}" ]]; then
+    echo "control failed, but the image that failed the check was left: ${left}"
+    return 1
+  fi
+}
+
+param_table_host_control() {
+  param_table_control host-debug
+}
+
+param_table_m33_control() {
+  param_table_control m33
+}
+
 
 # L5 T3: attitude_t3_oracle.py reads attitude_t3_inputs.txt and attitude_t3_q_inputs.txt and writes attitude_t3_golden.txt,
 # attitude_t3_envelope.txt and attitude_t3_q.txt into --dir (decision 0006 F); regenerated and checked as for L4 (decision 0011).
@@ -1027,6 +1067,8 @@ step "G3 negative control (planted extra SIL export must fail the export check)"
 step "G8 negative control (a CLAUDE.md without the UNKNOWN rule must fail)" g8_control
 step "GS-3 negative control (a planted file outside the codec that includes a MAVLink header must fail)" gs3_control
 step "G3 negative control (planted marv_plant_ and marv::plant:: symbols in a flight library must fail the symbol check)" g3_plant_control
+step "parameter-table negative control (a planted image linking the product table under the FC3v2 runtime must fail the post-link check, host)" param_table_host_control
+step "parameter-table negative control (a planted image linking the product table under the FC3v2 runtime must fail the post-link check, m33)" param_table_m33_control
 step "L1 negative control (the core 2.1 example card without sigma must fail the card linter)" l1_card_lint_control
 step "L1 negative control (a card with sigma = 0 on a published entry must fail the parameter set build)" l1_flatten_control
 step "L1 negative control (a Python without PyYAML must fail the configure)" l1_pyyaml_control

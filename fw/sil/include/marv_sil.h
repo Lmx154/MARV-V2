@@ -10,7 +10,7 @@ extern "C" {
 
 typedef int32_t marv_sil_status;
 enum { MARV_SIL_OK = 0, MARV_SIL_E_NULL, MARV_SIL_E_ABI, MARV_SIL_E_STATE, MARV_SIL_E_PERIOD,
-       MARV_SIL_E_SCHEMA, MARV_SIL_E_PARAM, MARV_SIL_E_TICK, MARV_SIL_E_COUNT, MARV_SIL_E_INPUT };
+       MARV_SIL_E_SCHEMA, MARV_SIL_E_PARAM, MARV_SIL_E_TICK, MARV_SIL_E_COUNT, MARV_SIL_E_INPUT, MARV_SIL_E_STORAGE };
 typedef struct marv_vec3f { float x, y, z; } marv_vec3f;
 enum { MARV_IMU_GYRO_SAT_X = 0, MARV_IMU_GYRO_SAT_Y, MARV_IMU_GYRO_SAT_Z,
        MARV_IMU_ACCEL_SAT_X, MARV_IMU_ACCEL_SAT_Y, MARV_IMU_ACCEL_SAT_Z,
@@ -66,6 +66,14 @@ marv_sil_status marv_sil_tick_with_rotor_speed(uint64_t first_tick, uint32_t k, 
  * (marv_sil_tick) or the tick's (marv_sil_tick_with_rotor_speed). */
 marv_sil_status marv_sil_stage_manual_control(const marv_manual_control* mc);
 marv_sil_status marv_sil_shutdown(void);                          /* READY -> DONE (terminal) */
+/* Config storage (decision 0053, ground-segment unit 4b; only in a library built with STORAGE, the flight composition's):
+ * opens the config storage in the existing directory run_dir (fw/hal/sim/include/marv/hal_sim/storage.hpp: the two slot
+ * files, the pending file, the boot request), which marv_sil_init's boot step then reads before params_init: a requested
+ * activation is applied and the table is chosen by the boot policy (fw/store/include/marv/store/store.hpp); a stored
+ * config that cannot be used refuses arming (ConfigRefused). Without this call there is no storage and the run is the run
+ * of the compiled table. UNINIT only (E_STATE after marv_sil_init); E_NULL for NULL; E_STORAGE if run_dir is not a usable
+ * directory or holds a slot file larger than a slot. */
+marv_sil_status marv_sil_storage_open(const char* run_dir);
 const char*     marv_sil_status_str(marv_sil_status s);
 uint32_t        marv_sil_error_index(void);
 

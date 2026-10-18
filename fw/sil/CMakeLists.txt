@@ -1,6 +1,6 @@
 add_library(marv_sil INTERFACE)
 
-# marv_add_sil_library(<name> COMPOSITION <static-lib-target> [PARAMS <param-set>] [TRUTH_STATE] [TRUTH_VERTICAL])
+# marv_add_sil_library(<name> COMPOSITION <static-lib-target> [PARAMS <param-set>] [TRUTH_STATE] [TRUTH_VERTICAL] [STORAGE])
 #
 # Host only. Builds the SIL entry as the shared library <name>: fw/sil sources, the composition, marv_hal_sim and
 # the runtime of the parameter set PARAMS (marv_add_param_set; default marv_params, the product set), which must be the
@@ -8,7 +8,13 @@ add_library(marv_sil INTERFACE)
 # attribute in marv_sil.cpp and the rest of the library is compiled with -fvisibility=hidden
 # -fvisibility-inlines-hidden; the linker version script marv_sil.map additionally makes every other symbol local,
 # which covers the objects taken from the static libraries. The sil and hal_sim include directories are PRIVATE to
-# <name>; the composition target never sees them. Static libraries linked into the shared library are built PIC.
+# <name>; the composition target never sees them. Static libraries linked into the shared library are built PIC. After
+# every link the post-link check (cmake/param_table.cmake) fails the build unless the library holds PARAMS's table.
+#
+# STORAGE (decision 0053, ground-segment unit 4b; the flight composition only, its parameter set must be the one fw/store is
+# built for, marv_params_fc3v2) adds src/storage.cpp: marv_sil_init's table comes from the config store's boot step
+# (marv_store) on hal_sim's run-directory storage, which the exported marv_sil_storage_open opens; without that call the
+# table is the compiled one, as without the option. Without the option marv_sil.cpp returns the compiled table.
 #
 # TRUTH_STATE (test only; decision 0006 section B) adds src/truth_state.cpp, which exports marv_truth_state_set and hands
 # the state to marv::composition::attitude_input (declared by the composition's own marv/composition.hpp; a composition
@@ -22,7 +28,7 @@ add_library(marv_sil INTERFACE)
 # exactly marv_truth_state_set and marv_truth_vertical_set), and sets the target property MARV_SIL_TRUTH_VERTICAL to
 # TRUE. Without the option nothing changes.
 function(marv_add_sil_library name)
-  cmake_parse_arguments(ARG "TRUTH_STATE;TRUTH_VERTICAL" "COMPOSITION;PARAMS" "" ${ARGN})
+  cmake_parse_arguments(ARG "TRUTH_STATE;TRUTH_VERTICAL;STORAGE" "COMPOSITION;PARAMS" "" ${ARGN})
   if(NOT ARG_PARAMS)
     set(ARG_PARAMS marv_params)
   endif()
@@ -46,12 +52,19 @@ function(marv_add_sil_library name)
   add_library(${name} SHARED
     "${sil_dir}/src/marv_sil.cpp"
     "${sil_dir}/src/param_override.cpp"
-    "${sil_dir}/src/param_override.hpp")
+    "${sil_dir}/src/param_override.hpp"
+    "${sil_dir}/src/sil_storage.hpp")
   target_include_directories(${name} PUBLIC "${sil_dir}/include")
   target_include_directories(${name} PRIVATE "${sil_dir}/src")
   target_link_libraries(${name} PRIVATE
     "${ARG_COMPOSITION}" marv_hal_sim ${ARG_PARAMS}_runtime ${ARG_PARAMS}_generated)
   target_compile_options(${name} PRIVATE -fvisibility=hidden -fvisibility-inlines-hidden)
+  if(ARG_STORAGE)
+    target_sources(${name} PRIVATE "${sil_dir}/src/storage.cpp")
+    target_compile_definitions(${name} PRIVATE MARV_SIL_STORAGE)
+    target_link_libraries(${name} PRIVATE marv_store marv_hal_storage)
+    set_target_properties(marv_store PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  endif()
   if(ARG_TRUTH_STATE)
     set(version_script "${sil_dir}/marv_sil_truth.map")
     target_sources(${name} PRIVATE "${sil_dir}/src/truth_state.cpp")
@@ -73,4 +86,5 @@ function(marv_add_sil_library name)
   set_target_properties("${ARG_COMPOSITION}" marv_hal_sim ${ARG_PARAMS}_runtime ${ARG_PARAMS}_generated
     PROPERTIES POSITION_INDEPENDENT_CODE ON)
   marv_apply_flags(${name} FIRMWARE)
+  marv_check_param_table(${name} ${ARG_PARAMS})
 endfunction()

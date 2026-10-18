@@ -3,11 +3,11 @@
 # directory links Pico SDK targets: the library takes the SDK *_headers targets PRIVATE (they add include directories to
 # this library alone), the image links the full SDK libraries it needs.
 add_library(marv_hal_target STATIC src/hal_target.cpp src/lsm6dsv.cpp src/motor_output.cpp src/motor_test.cpp
-  src/manual_control.cpp src/receiver.cpp src/bench_stats.cpp)
+  src/manual_control.cpp src/receiver.cpp src/bench_stats.cpp src/storage_stub.cpp)
 target_include_directories(marv_hal_target PUBLIC include)
 target_link_libraries(marv_hal_target
   PUBLIC marv_hal marv_types marv_dshot marv_crsf_decode
-  PRIVATE marv_lsm6dsv_decode
+  PRIVATE marv_lsm6dsv_decode marv_hal_storage
           pico_base_headers pico_time_headers pico_sync_headers hardware_timer_headers hardware_sync_headers
           hardware_gpio_headers hardware_irq_headers hardware_structs_headers hardware_spi_headers
           hardware_pio_headers hardware_clocks_headers hardware_uart_headers)
@@ -112,8 +112,10 @@ if(MARV_FC3V2_HIL_LINK)
   target_link_libraries(marv_fc3v2 PRIVATE marv_hal_target marv_lsm6dsv_decode pico_stdlib hardware_spi hardware_pio hardware_uart)
 else()
   target_link_libraries(marv_fc3v2 PRIVATE
-    marv_composition_quad_fc marv_hal_target marv_lsm6dsv_decode marv_console_decode marv_params_fc3v2_generated marv_params_fc3v2_runtime
-    pico_stdlib hardware_spi hardware_pio hardware_uart)
+    marv_composition_quad_fc marv_store marv_hal_target marv_lsm6dsv_decode marv_console_decode marv_params_fc3v2_generated
+    marv_params_fc3v2_runtime pico_stdlib hardware_spi hardware_pio hardware_uart)
+  # The image holds exactly the FC3v2 set's parameter table, or the build fails and the image is removed.
+  marv_check_param_table(marv_fc3v2 marv_params_fc3v2)
 endif()
 pico_enable_stdio_usb(marv_fc3v2 1)
 pico_enable_stdio_uart(marv_fc3v2 0)
