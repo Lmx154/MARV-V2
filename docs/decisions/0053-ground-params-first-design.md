@@ -26,6 +26,15 @@ lead summary here). Items marked (Luis) were signed by him on 2026-10-17 (Approv
    of the grant fails both request-while-armed tests, removing the ConfigRefused refusal fails both ConfigRefused tests.
    Frozen tests extended (unit 3, VALIDATE): tests/regression/quad/L09/unit/quad_fc_gate_test.cpp gains the validate cases
    (the default table accepted, one rejecting table per parameter-dependent panic site, init panicking with validate's reason).
+   Unit 9 (lead's decisions, 2026-10-18; Luis may revise): check 3 adds the ctest qf3_table_fc3v2 (the generator's own rate
+   and attitude margin rules on the candidate's table; thresholds always from the image) with a gains-x1.1 control, and
+   labels the L07 replay config-validation with the candidate's estimator values injected (thresholds from the image; its
+   controls must still fail); check 4 is the EXISTING-predicates form (arm, hover B, roll/pitch T, disarm within the
+   plumbing test's SLACK_US; no new threshold) — the stricter S/B form with a card-derived deadline is Luis's choice; the
+   loop-disabled control runs once as a frozen validator test. Frozen tests touched:
+   tests/regression/quad/L07/replay/replay_test.cpp (MARV_VALIDATE_CONFIG injection),
+   tests/regression/quad/L07/replay/CMakeLists.txt (l07_replay_config_validation, marv_store);
+   tests/regression/quad/L10/gz/test_link_sil.py when extended with the real-report activation.
    Unit 6 frozen tests extended: tests/regression/quad/L00/link/samples.hpp (the PARAM_SET/PARAM_VALUE samples written as the
    same bits via bit_cast now that param_value is carried as raw uint32; wire bytes and vectors unchanged) and
    codec_conformance_test.cpp (signalling-NaN INT32 patterns round-trip bit-exact).
