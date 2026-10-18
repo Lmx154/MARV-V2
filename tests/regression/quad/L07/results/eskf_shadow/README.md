@@ -7,7 +7,7 @@ after this comparison. Evidence, not a flight result: the T2 log is a still benc
 Nominal q and gyro bias b; 6-state error [dtheta (NED), db]; Sola 2017 error-state equations; EKF2-style (PX4 ddcaad66, read 2026-10-18,
 INFERRED) sequential scalar fusion, Joseph form with symmetric write-back, per-state variance floors/ceilings, innovation gate, reset on
 rejection timeout. Gravity is fused once per 75-sample window (EKF2_PREDICT_US 10 ms) from the time-weighted mean specific force.
-Parameters: `fw/estimator/params/eskf_register.yaml` (12 entries, provenance in each); set `marv_params_fc3v2_eskf` (= FC3v2 + register).
+Parameters: `fw/estimator/params/eskf_register.yaml` (13 entries, provenance in each); set `marv_params_fc3v2_eskf` (= FC3v2 + register).
 Tests: `unit_eskf` (T1, 8 tests), `unit_l07_eskf_replay` (T2 beside Mahony on the committed log, same bar, controls).
 
 ## The bias leak path and its fix (variants: the engineer's diagnostic runs, same T2 log)
