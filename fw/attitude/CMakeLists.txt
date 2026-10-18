@@ -4,5 +4,6 @@ add_library(marv_attitude STATIC src/attitude.cpp)
 target_include_directories(marv_attitude PUBLIC include)
 target_link_libraries(marv_attitude
   PUBLIC marv_prim marv_types marv_params
-  PRIVATE marv_hal marv_params_runtime)
+  PRIVATE marv_hal $<COMPILE_ONLY:marv_params_generated>)
+add_dependencies(marv_attitude marv_params_generated)
 marv_apply_flags(marv_attitude FIRMWARE)

@@ -8,7 +8,8 @@ add_library(marv_sil INTERFACE)
 # attribute in marv_sil.cpp and the rest of the library is compiled with -fvisibility=hidden
 # -fvisibility-inlines-hidden; the linker version script marv_sil.map additionally makes every other symbol local,
 # which covers the objects taken from the static libraries. The sil and hal_sim include directories are PRIVATE to
-# <name>; the composition target never sees them. Static libraries linked into the shared library are built PIC.
+# <name>; the composition target never sees them. Static libraries linked into the shared library are built PIC. After
+# every link the post-link check (cmake/param_table.cmake) fails the build unless the library holds PARAMS's table.
 #
 # STORAGE (decision 0053, ground-segment unit 4b; the flight composition only, its parameter set must be the one fw/store is
 # built for, marv_params_fc3v2) adds src/storage.cpp: marv_sil_init's table comes from the config store's boot step
@@ -85,4 +86,5 @@ function(marv_add_sil_library name)
   set_target_properties("${ARG_COMPOSITION}" marv_hal_sim ${ARG_PARAMS}_runtime ${ARG_PARAMS}_generated
     PROPERTIES POSITION_INDEPENDENT_CODE ON)
   marv_apply_flags(${name} FIRMWARE)
+  marv_check_param_table(${name} ${ARG_PARAMS})
 endfunction()

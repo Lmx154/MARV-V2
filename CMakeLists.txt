@@ -37,6 +37,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(cmake/flags.cmake)
 include(cmake/flight_targets.cmake)
+include(cmake/param_table.cmake)
 include(cmake/reference_data.cmake)
 
 add_subdirectory(fw/prim)
@@ -65,6 +66,7 @@ add_subdirectory(fw/compositions/l7_attitude_estimated)
 add_subdirectory(fw/compositions/l11_vertical_scripted)
 add_subdirectory(fw/compositions/quad_fc)
 add_subdirectory(tests/regression/quad/L00/controls)
+add_subdirectory(tests/regression/quad/L09/controls)
 
 include(cmake/marv_test_timeout.cmake)
 

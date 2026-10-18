@@ -5,5 +5,6 @@ add_library(marv_rate_group STATIC src/rate_group.cpp)
 target_include_directories(marv_rate_group PUBLIC include)
 target_link_libraries(marv_rate_group
   PUBLIC marv_gyro_chain marv_rate marv_mixer marv_prim marv_types marv_params
-  PRIVATE marv_hal marv_params_runtime)
+  PRIVATE marv_hal $<COMPILE_ONLY:marv_params_generated>)
+add_dependencies(marv_rate_group marv_params_generated)
 marv_apply_flags(marv_rate_group FIRMWARE)

@@ -36,7 +36,11 @@ set(MARV_PARAMS_RUNTIME_SOURCE "${CMAKE_CURRENT_LIST_DIR}/src/param.cpp")
 #   <name>_runtime     src/param.cpp compiled against <name>_generated
 # Its target property MARV_PARAM_MANIFEST on <name>_generated is the path of the set's params_manifest.json, and
 # MARV_PARAM_CARD_FILES / MARV_PARAM_REGISTER_FILES hold the sources. Sets are independent: a binary must link
-# the generated and runtime library of one set only, since every set defines the same marv::generated symbols.
+# the generated and runtime library of one set only, since every set defines the same marv::generated symbols. A library
+# that several sets' binaries link (a module: mixer, rate, arming, the store ...) takes a set's header compile-only,
+# $<COMPILE_ONLY:<name>_generated> with add_dependencies for the generation order, never a set's archives; the composition,
+# the image or the SIL library links its one set. MARV_PARAM_TABLE_CHECK on <name>_generated is the command of the
+# post-link check of a binary that must hold this set's table (cmake/param_table.cmake, marv_check_param_table).
 # Next to the generated files every set also gets its factory config file ${CMAKE_BINARY_DIR}/generated/<name>/<name>.mcfg
 # (tools/config/mcfg.py encode: the compiled defaults of the set as the quad section; docs/decisions/0053 item 3).
 # With TABLE the generator also writes the human-readable table of every record to <out.txt> (params_gen.py --out-table;
@@ -96,7 +100,8 @@ function(marv_add_param_set name)
   set_target_properties(${name}_generated PROPERTIES
     MARV_PARAM_MANIFEST "${gen_dir}/params_manifest.json"
     MARV_PARAM_CARD_FILES "${ARG_CARD}"
-    MARV_PARAM_REGISTER_FILES "${ARG_REGISTER}")
+    MARV_PARAM_REGISTER_FILES "${ARG_REGISTER}"
+    MARV_PARAM_TABLE_CHECK "${MARV_PYTHON};${PROJECT_SOURCE_DIR}/tools/ci/check_param_table.py;--manifest;${gen_dir}/params_manifest.json")
   marv_apply_flags(${name}_generated FIRMWARE)
 
   add_library(${name}_runtime STATIC "${MARV_PARAMS_RUNTIME_SOURCE}")

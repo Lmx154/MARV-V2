@@ -114,6 +114,8 @@ else()
   target_link_libraries(marv_fc3v2 PRIVATE
     marv_composition_quad_fc marv_hal_target marv_lsm6dsv_decode marv_console_decode marv_params_fc3v2_generated marv_params_fc3v2_runtime
     pico_stdlib hardware_spi hardware_pio hardware_uart)
+  # The image holds exactly the FC3v2 set's parameter table, or the build fails and the image is removed.
+  marv_check_param_table(marv_fc3v2 marv_params_fc3v2)
 endif()
 pico_enable_stdio_usb(marv_fc3v2 1)
 pico_enable_stdio_uart(marv_fc3v2 0)
