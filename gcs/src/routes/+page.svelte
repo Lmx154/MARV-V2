@@ -46,6 +46,8 @@
 	const hasDevice = $derived(Boolean($status?.device));
 </script>
 
+<svelte:head><title>Connection · MARV GCS</title></svelte:head>
+
 <h1>Connection</h1>
 <p class="muted lead">The helper owns the serial port and the SIL socket; this page asks it to open one. One device at a time.</p>
 

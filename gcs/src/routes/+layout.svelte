@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { app } from '$lib/state/app';
 	import type { SessionState } from '$link/session';
+	import type { Problem } from '$lib/state/problems';
 	import type { VehicleState } from '$link/vehicle';
 	import { readable } from 'svelte/store';
 	import Badge from '$lib/components/ui/Badge.svelte';
@@ -15,16 +16,25 @@
 	const none = readable<string | null>(null);
 	const helperState = gcs?.helper?.state ?? readable('closed');
 	const device = gcs?.device ?? none;
-	const error = gcs?.error ?? none;
+	const problems = gcs?.problems ?? readable<Problem[]>([]);
 	const sessionState = gcs?.session?.state ?? readable<SessionState | null>(null);
 	const vehicleState = gcs?.vehicle?.state ?? readable<VehicleState | null>(null);
 
 	let theme = $state<'system' | 'light' | 'dark'>('system');
+	let headerEl = $state<HTMLElement | null>(null);
 
 	onMount(() => {
 		const saved = localStorage.theme;
 		if (saved === 'light' || saved === 'dark') theme = saved;
 		void gcs?.connect();
+		// Pages with a sticky table header sit below this one: they read its height from --header-h.
+		if (!headerEl) return;
+		const el = headerEl;
+		const publish = (): void => document.documentElement.style.setProperty('--header-h', `${el.offsetHeight}px`);
+		publish();
+		const observer = new ResizeObserver(publish);
+		observer.observe(el);
+		return () => observer.disconnect();
 	});
 
 	function setTheme(next: 'system' | 'light' | 'dark'): void {
@@ -43,13 +53,9 @@
 	const pathname = $derived(page.url.pathname);
 </script>
 
-<svelte:head>
-	<title>MARV GCS</title>
-</svelte:head>
-
 <a class="skip" href="#main">Skip to the page</a>
 
-<header>
+<header bind:this={headerEl}>
 	<div class="top">
 		<span class="brand mono">MARV GCS</span>
 		<div class="states" role="status" aria-label="Connection state">
@@ -77,7 +83,9 @@
 </header>
 
 <main id="main">
-	{#if $error}<p class="error" role="alert">{$error}</p>{/if}
+	{#each $problems as p (p.source)}
+		<p class="error" role="alert"><span class="src mono">{p.source}</span> {p.message}</p>
+	{/each}
 	{@render children()}
 </main>
 
@@ -188,12 +196,19 @@
 	}
 
 	.error {
-		margin: 0 0 0.75rem;
+		margin: 0 0 0.4rem;
 		padding: 0.4rem 0.6rem;
 		border: 1px solid var(--bad);
 		border-radius: 4px;
 		color: var(--bad);
 		max-width: none;
+	}
+
+	.error .src {
+		text-transform: uppercase;
+		font-size: 0.65rem;
+		letter-spacing: 0.06em;
+		margin-right: 0.4rem;
 	}
 
 	.skip {

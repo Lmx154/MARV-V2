@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { formatValue } from '$link/bits';
+	import { formatSigma, formatValue, valueTitle } from '$link/bits';
 	import type { StageResult } from '$link/vehicle';
 	import type { ParamRow } from '$lib/params/merge';
+	import { aboutParam } from '$lib/params/view';
 	import { checkStage, DERIVED_WARNING, lockTooltip, whyReadOnly, type StageContext } from '$lib/params/staging';
 	import Badge from './ui/Badge.svelte';
 
@@ -9,14 +10,18 @@
 		row,
 		ctx,
 		result,
+		dense = false,
 		onstage,
-		onreadsource
+		onreadsource,
+		onretry
 	}: {
 		row: ParamRow;
 		ctx: StageContext;
 		result: StageResult | undefined;
+		dense?: boolean;
 		onstage: (row: ParamRow, bits: number, source: string) => Promise<StageResult>;
 		onreadsource: (row: ParamRow) => Promise<void>;
+		onretry: (row: ParamRow) => Promise<void>;
 	} = $props();
 
 	const uid = $props.id();
@@ -27,12 +32,19 @@
 	let error = $state<string | null>(null);
 	let sending = $state(false);
 	let reading = $state(false);
+	let retrying = $state(false);
+	let expander = $state<HTMLButtonElement | null>(null);
 
 	const readOnly = $derived(whyReadOnly(row, ctx));
 	const fmt = (bits: number | null): string => (bits === null ? '—' : formatValue(bits, row.type));
+	const title = (bits: number | null): string | undefined => (bits === null ? undefined : valueTitle(bits, row.type));
 	const sigmaText = $derived(
-		row.sigmaKind === null ? '—' : row.sigmaKind === 'Known' ? `± ${row.sigma ?? '?'}` : row.sigmaKind.toLowerCase()
+		row.sigmaKind === null ? '—' : row.sigmaKind === 'Known' ? (row.sigma === null ? '± ?' : `± ${formatSigma(row.sigma)}`) : row.sigmaKind.toLowerCase()
 	);
+	const sigmaTitle = $derived(
+		row.sigmaKind === 'Known' && row.sigma !== null ? `sigma ${row.sigma} (sent as an f32)` : row.sigmaKind ? `sigma kind ${row.sigmaKind}` : undefined
+	);
+	const about = $derived(aboutParam(row));
 	const needsRead = $derived(row.sourceLength !== null && !row.sourceFromVehicle);
 
 	function toggle(): void {
@@ -40,6 +52,28 @@
 		if (open) {
 			valueText = fmt(row.stagedBits ?? row.factoryBits);
 			if (needsRead) void read();
+		}
+	}
+
+	function close(): void {
+		open = false;
+		expander?.focus();
+	}
+
+	function onkeydown(e: KeyboardEvent): void {
+		if (e.key === 'Escape' && open) {
+			e.preventDefault();
+			e.stopPropagation();
+			close();
+		}
+	}
+
+	async function retry(): Promise<void> {
+		retrying = true;
+		try {
+			await onretry(row);
+		} finally {
+			retrying = false;
 		}
 	}
 
@@ -75,30 +109,43 @@
 	}
 </script>
 
-<tr class:differs={row.differs} class:locked={row.locked} class:open>
+<tr class:differs={row.differs} class:locked={row.locked} class:open class:dense {onkeydown}>
 	<th scope="row" class="name">
-		<button type="button" class="expander mono" aria-expanded={open} aria-controls={`${uid}-detail`} onclick={toggle}>
+		<button
+			type="button"
+			class="expander mono"
+			data-param-expander
+			bind:this={expander}
+			aria-expanded={open}
+			aria-controls={`${uid}-detail`}
+			aria-label={`${row.name}: ${open ? 'close' : 'open'} the details`}
+			onclick={toggle}
+		>
 			<span aria-hidden="true">{open ? '▾' : '▸'}</span>
 			<span class="full">{row.name}</span>
 		</button>
 		<span class="linkid mono" title="the id of this parameter on the link">{row.linkId}{row.index !== null ? ` · #${row.index}` : ''}</span>
 	</th>
-	<td class="num mono">{fmt(row.activeBits)}</td>
-	<td class="num mono staged" class:diff={row.differs}>{fmt(row.stagedBits)}{#if row.differs}<span class="sr"> (differs from active)</span>{/if}</td>
+	<td class="num mono factory" title={title(row.factoryBits)}>{fmt(row.factoryBits)}</td>
+	<td class="num mono active" class:chg={row.changed} title={title(row.activeBits)}>{fmt(row.activeBits)}{#if row.changed}<span class="sr"> (differs from the factory value)</span>{/if}</td>
+	<td class="num mono staged" class:diff={row.differs} title={title(row.stagedBits)}>{fmt(row.stagedBits)}{#if row.differs}<span class="sr"> (differs from active)</span>{/if}</td>
 	<td class="mono unit">{row.unit || '—'}</td>
 	<td class="mono">{row.method ?? '—'}</td>
 	<td class="mono">{row.origin ?? '—'}</td>
-	<td class="mono">{sigmaText}</td>
-	<td class="flags">
+	<td class="mono" title={sigmaTitle}>{sigmaText}</td>
+	<td class="flags"><div class="flagbox">
 		{#if row.locked}<span title={lockTooltip(row)}><Badge text="locked" tone="warn" /></span>{/if}
 		{#if row.status !== 'matched'}<Badge text={row.status} tone={row.status === 'mismatch' ? 'bad' : 'neutral'} />{/if}
 		{#if row.method === 'derived'}<span title="derived value: see the warning when editing"><Badge text="derived" /></span>{/if}
-		{#if result && !result.accepted}<Badge text="refused" tone="bad" />{:else if result?.accepted}<Badge text="staged" tone="ok" />{/if}
-	</td>
+		{#if result && !result.accepted}<Badge text="refused" tone="bad" />
+		{:else if result?.accepted && result.sourceState === 'failed'}<span title="the value is staged, the source text was not stored"><Badge text="source failed" tone="bad" /></span>
+		{:else if result?.accepted && result.sourceState === 'writing'}<Badge text="writing source" tone="warn" />
+		{:else if result?.accepted}<Badge text="staged" tone="ok" />{/if}
+	</div></td>
 </tr>
 {#if open}
-	<tr class="detail" id={`${uid}-detail`}>
-		<td colspan="8">
+	<tr class="detail" id={`${uid}-detail`} {onkeydown}>
+		<td colspan="9">
 			<div class="body">
 				<section>
 					<h4>Source</h4>
@@ -112,10 +159,20 @@
 					</p>
 					<dl class="facts mono">
 						<dt>type</dt><dd>{row.type}</dd>
-						<dt>factory value</dt><dd>{fmt(row.factoryBits)}</dd>
+						<dt>factory value</dt><dd title={title(row.factoryBits)}>{fmt(row.factoryBits)}</dd>
 						<dt>group</dt><dd>{row.group}</dd>
 					</dl>
 					{#each row.notes as n (n)}<p class="warn small">{n}</p>{/each}
+					<h4 class="about-h">About this parameter</h4>
+					<dl class="facts mono about" aria-label={`About ${row.name}`}>
+						<dt>link id</dt><dd>{about.linkId} <span class="muted">— {about.linkIdNote}</span></dd>
+						<dt>index</dt><dd>{about.index}</dd>
+						<dt>sigma</dt><dd>{about.sigma}</dd>
+						{#if about.derivation}
+							<dt>derivation</dt><dd class="wrapline">{about.derivation} <span class="muted">(the provenance text: the rule, then “; ” and the source)</span></dd>
+						{/if}
+						{#if about.lock}<dt>lock</dt><dd class="wrapline">{about.lock}</dd>{/if}
+					</dl>
 				</section>
 				<section>
 					<h4>Stage a value</h4>
@@ -147,7 +204,11 @@
 						<p class="result" class:bad={!result.accepted} class:ok={result.accepted} role="status">
 							{#if result.accepted}
 								Vehicle echoed {fmt(result.echoBits)}.
-								{#if result.sourceStored === true}Source stored.{:else if result.sourceStored === false}Source not confirmed by the vehicle.{/if}
+								{#if result.sourceState === 'writing'}Writing the source text{result.sourceAttempts > 1 ? ` (attempt ${result.sourceAttempts})` : ''}…
+								{:else if result.sourceState === 'stored'}Source stored.
+								{:else if result.sourceState === 'failed'}The value is staged but its source text was not stored ({result.sourceAttempts} write{result.sourceAttempts === 1 ? '' : 's'}); the vehicle holds the placeholder source.
+									<button type="button" class="link" disabled={retrying} onclick={() => void retry()}>{retrying ? 'retrying…' : 'retry the source write'}</button>
+								{/if}
 							{:else}
 								Refused: the vehicle kept {fmt(result.echoBits)}.
 								{#if result.note}{result.note}{/if}
@@ -229,10 +290,44 @@
 		font-size: 0.8rem;
 	}
 
-	.flags {
+	.flagbox {
 		white-space: nowrap;
 		display: flex;
 		gap: 0.25rem;
+	}
+
+	td.factory {
+		color: var(--muted);
+	}
+
+	td.active.chg {
+		background: var(--diff-bg);
+		color: var(--accent);
+	}
+
+	tr.dense > * {
+		padding-top: 0;
+		padding-bottom: 0;
+		line-height: 1.2;
+	}
+
+	tr.dense .linkid {
+		display: inline;
+		margin-left: 0.5rem;
+	}
+
+	tr.dense .expander {
+		padding-top: 0;
+		padding-bottom: 0;
+	}
+
+	.about-h {
+		margin-top: 0.75rem;
+	}
+
+	.wrapline {
+		white-space: pre-wrap;
+		overflow-wrap: anywhere;
 	}
 
 	.sr {

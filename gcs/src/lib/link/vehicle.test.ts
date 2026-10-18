@@ -3,13 +3,14 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { get } from 'svelte/store';
 import { bitsToWireNumber, f32ToBits, i32ToBits } from './bits';
+import { MarvParamSourceOp } from './generated/messages';
 import { LinkSession } from './session';
 import { DEFAULT_SOURCE, FakeVehicle } from './testing/fake_vehicle';
 import { NO_SOURCE_ERROR, VehicleClient } from './vehicle';
 import { fakeParams, LONG_SOURCE, SPECS } from '../params/testing/fixture';
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
-const TIMING = { replyMs: 150, listingIdleMs: 60, listingRounds: 2, refusalGraceMs: 20 };
+const TIMING = { replyMs: 150, listingIdleMs: 60, listingRounds: 2, refusalGraceMs: 20, sourceAttempts: 2 };
 
 const open: Array<() => void> = [];
 afterEach(() => {
@@ -216,9 +217,60 @@ describe('staging', () => {
 		await client.requestAll();
 		vehicle.ignoreSourceSet = true;
 		const result = await client.stage('rate_kp', 'f32', f32ToBits(15), 'a source');
-		expect(result).toMatchObject({ accepted: true, sourceStored: false });
+		expect(result).toMatchObject({ accepted: true, sourceStored: false, sourceState: 'failed', sourceAttempts: 2 });
 		expect(result.note).toContain('differs');
 		expect(vehicle.slots[index('rate_kp')]!.text).toBe(DEFAULT_SOURCE);
+		const writes = vehicle.received.filter((m) => m.kind === 'MarvParamSource' && m.operation === MarvParamSourceOp.Set);
+		expect(writes).toHaveLength(2);
+	});
+
+	it('writes the source text again when it did not read back, and shows the writing state in between', async () => {
+		const { vehicle, client } = await setup();
+		await client.requestAll();
+		const states: string[] = [];
+		const off = client.state.subscribe((s) => {
+			const state = s.results.rate_kp?.sourceState;
+			if (state && states.at(-1) !== state) states.push(state);
+		});
+		vehicle.dropSourceSets = 1; // the first write is lost, the second one is stored
+		const staged = client.stage('rate_kp', 'f32', f32ToBits(15), 'a source');
+		const result = await staged;
+		off();
+		expect(result).toMatchObject({ accepted: true, sourceStored: true, sourceState: 'stored', note: null });
+		expect(states).toEqual(['none', 'writing', 'stored']);
+		expect(vehicle.slots[index('rate_kp')]!.text).toBe('a source');
+	});
+
+	it('retries a failed source write on request, from the text that was sent', async () => {
+		const { vehicle, client } = await setup();
+		await client.requestAll();
+		vehicle.ignoreSourceSet = true;
+		const failed = await client.stage('rate_kp', 'f32', f32ToBits(15), 'tuned on the bench');
+		expect(failed).toMatchObject({ accepted: true, sourceState: 'failed', source: 'tuned on the bench' });
+		expect(vehicle.slots[index('rate_kp')]!.staged).toBe(f32ToBits(15));
+		vehicle.ignoreSourceSet = false;
+		const retried = await client.retrySource('rate_kp');
+		expect(retried).toMatchObject({ sourceStored: true, sourceState: 'stored', sourceAttempts: 3 });
+		expect(vehicle.slots[index('rate_kp')]!.text).toBe('tuned on the bench');
+		expect(get(client.state).results.rate_kp).toMatchObject({ sourceState: 'stored' });
+		await expect(client.retrySource('mass')).rejects.toThrow('no accepted write');
+	});
+
+	it('does not take a stale PARAM_VALUE (a listing reply still on its way) as the echo', async () => {
+		const { vehicle, client } = await setup();
+		await client.requestAll();
+		vehicle.staleValueBeforeEcho = true;
+		const result = await client.stage('rate_kp', 'f32', f32ToBits(15), 'a source');
+		expect(result).toMatchObject({ accepted: true, echoBits: f32ToBits(15), sourceStored: true });
+	});
+
+	it('does not stage while the parameter list is being read', async () => {
+		const { vehicle, client } = await setup();
+		vehicle.neverSendFor.add(4);
+		const listing = client.requestAll();
+		await expect(client.stage('rate_kp', 'f32', f32ToBits(15), 'x')).rejects.toThrow('still being read');
+		await listing;
+		expect(setsSent(vehicle)).toHaveLength(0);
 	});
 
 	it('serialises writes', async () => {

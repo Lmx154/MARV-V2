@@ -197,3 +197,10 @@ textarea:focus-visible {
 .warn {
 	color: var(--warn);
 }
+
+button.primary:disabled {
+	background: var(--surface-2);
+	border-color: var(--border-strong);
+	color: var(--muted);
+	font-weight: 400;
+}

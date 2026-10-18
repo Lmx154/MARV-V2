@@ -68,6 +68,10 @@ export class FakeVehicle {
 	neverSendFor = new Set<number>();
 	/** Ignore source SET messages (a vehicle that does not store sources). */
 	ignoreSourceSet = false;
+	/** Ignore the next N source SET messages (a write that is lost once). */
+	dropSourceSets = 0;
+	/** Answer a PARAM_SET first with a PARAM_VALUE of the value it replaces (a listing reply that was still on its way). */
+	staleValueBeforeEcho = false;
 	private handler: ((bytes: Uint8Array) => void) | null = null;
 	private readonly parser = new MavlinkParser();
 	private sequence = 0;
@@ -213,6 +217,7 @@ export class FakeVehicle {
 			this.emit(this.paramValue(s));
 			return;
 		}
+		if (this.staleValueBeforeEcho) this.emit(this.paramValue(s));
 		s.staged = bits;
 		s.text = DEFAULT_SOURCE;
 		s.origin = 2;
@@ -233,7 +238,7 @@ export class FakeVehicle {
 				kind: 'MarvParamSource', param_schema_hash: this.schemaHash, param_index: s.id, offset: m.offset, total_length: bytes.length,
 				target_system: 255, target_component: 190, operation: MarvParamSourceOp.Data, chunk_length: chunk.length, chunk: padBytes(chunk)
 			});
-		} else if (m.operation === MarvParamSourceOp.Set && !this.ignoreSourceSet) {
+		} else if (m.operation === MarvParamSourceOp.Set && !this.ignoreSourceSet && this.dropSourceSets-- <= 0) {
 			if (m.offset === 0) s.pending = new Uint8Array(m.total_length);
 			if (!s.pending || m.offset + m.chunk_length > s.pending.length) return;
 			s.pending.set(m.chunk.subarray(0, m.chunk_length), m.offset);

@@ -34,6 +34,8 @@ export interface ParamRow {
 	stagedBits: number | null;
 	/** Staged differs from active. */
 	differs: boolean;
+	/** The active value is not the factory value (the manifest's default); false while either is unknown. */
+	changed: boolean;
 	status: RowStatus;
 	/** What does not agree between the two sides. */
 	notes: string[];
@@ -131,6 +133,7 @@ function rowOf(m: ManifestParam, v: VehicleParam | undefined, group: string, loc
 		activeBits: active,
 		stagedBits: staged,
 		differs: active !== null && staged !== null && active !== staged,
+		changed: active !== null && active !== m.defaultBits,
 		status,
 		notes
 	};
@@ -158,6 +161,7 @@ function vehicleOnlyRow(v: VehicleParam): ParamRow {
 		activeBits: v.activeBits,
 		stagedBits: v.stagedBits,
 		differs: v.activeBits !== null && v.stagedBits !== null && v.activeBits !== v.stagedBits,
+		changed: false,
 		status: 'vehicle only',
 		notes: ['not in the manifest of this image: read-only']
 	};
