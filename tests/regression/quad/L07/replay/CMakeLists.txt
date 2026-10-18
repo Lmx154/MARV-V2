@@ -38,6 +38,11 @@ target_include_directories(unit_l07_replay PRIVATE "${PROJECT_SOURCE_DIR}/fw/hal
 target_compile_definitions(unit_l07_replay PRIVATE
   MARV_L07_RESULTS_DIR="${L07_RESULTS_DIR}")
 target_link_libraries(unit_l07_replay PRIVATE
-  marv_params_fc3v2_runtime marv_params_fc3v2_generated marv_estimator marv_types marv_prim marv_hal_sim GTest::gtest_main)
+  marv_params_fc3v2_runtime marv_params_fc3v2_generated marv_estimator marv_store marv_types marv_prim marv_hal_sim GTest::gtest_main)
 marv_apply_flags(unit_l07_replay)
 marv_frozen_suite(unit_l07_replay)
+# Ground-segment unit 9 (decision 0053 G7 check 3): the committed-log predicate test and its two controls, labelled
+# config-validation; tools/validate/validate_config.py runs it with MARV_VALIDATE_CONFIG naming the candidate config (replay_test.cpp
+# replay_table), and without the variable it is the frozen test above.
+add_test(NAME l07_replay_config_validation COMMAND unit_l07_replay --gtest_filter=L07Replay.CommittedBenchLogs)
+set_tests_properties(l07_replay_config_validation PROPERTIES LABELS config-validation)
