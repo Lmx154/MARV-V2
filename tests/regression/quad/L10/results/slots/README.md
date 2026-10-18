@@ -32,6 +32,11 @@ Images (not committed; their hashes are):
   host side `tools/config/image_hash.py <elf|bin> [--bin-out <bin>]` (= `objcopy -O binary`); the validator's `--image` is
   that .bin, so its report's image hash is the board's.
 
+- Store scratch: the flight image gives the store a full slot (98304 B) of working memory; flight image bss ends at
+  0x2007c118, 16 KB below the heap limit 0x20080000 (no malloc in the image). The bench-statistics image (12.7 KB more bss)
+  overflowed RAM by 1952 B with a full slot, so it gets half a slot (49152 B, every config the generator writes) and refuses
+  a larger staged config at activation; the HIL image does not boot through the store.
+
 ## Results
 
 | Done-when | Step (raw/) | Result |
@@ -73,3 +78,6 @@ Boot time (`boot: IMU start at ... us after reset`, all after an SWD or USB-init
 - `c1_corrupt`: the board refused the corrupt slot correctly; the script's parser missed the fault text's parentheses and
   stopped; `c1_corrupt_state` records that state, and `c3`-`c5` repeat (c) with the corrected parser.
 - `A_flash.log`, `flash_e.log`, `boot_time_*`: flash.sh logs and console captures of the boot-time comparison.
+- Final: the flight image of `0ff4131` (banner `quad-L2-pass-412-g0ff4131`, image hash `e9e48456...b105` = host) flashed with
+  flash.sh after `c5_factory`: `source factory, status ok`, est_valid=1, rate and attitude timing_faults 0, IMU faults 0,
+  usb_reset_refused 0 (`final_look.*`, `final_flash.log`).
