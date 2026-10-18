@@ -12,9 +12,9 @@ History is in git and `docs/decisions/`; the previous handoff is `git show be6b9
 | Item | State |
 | --- | --- |
 | M0-M3 | merged into `master`; tags `quad-M1-pass`..`quad-M3-pass` |
-| `m4` | pushed at `52b4625` (dev check PASS at `0632319`, incl. GS units 4b, 7, 8a) |
+| `m4` | pushed at `b19b5a3` (dev check PASS at `b19b5a3`, incl. GS units 6, 8b, 9 and the ESKF) |
 | Board | flight image `gd46f7f6` (angle on ch8, airmode latch, Betaflight throttle; factory parameter table), est_valid=1 |
-| In flight (night of 2026-10-18) | GS unit 6 LINK-SIL (branch `gs-link-sil`, engineer) and unit 8b GUI polish (`gs-gui-polish`, coder, npm only); next the ESKF in shadow (decision 0055), then units 9 and 11 |
+| In flight (2026-10-18) | GS unit 13 SD (branch `gs-sd`, coder: FatFs vendored in third_party/, SPI0 diskio, bench on the board); next unit 12 USB (needs Luis arming once), then 10, 11 |
 
 ## M4 since the last handoff (decisions 0048-0054)
 - 0048 Luis's rulings (plant omega_min 0, angle ch8 at 100, HIL spec text, FMA tolerance 1 count, tags). 0049 plant drag
@@ -26,15 +26,16 @@ History is in git and `docs/decisions/`; the previous handoff is `git show be6b9
 ## Ground segment (decisions 0051, 0053; Luis signed every item 2026-10-17)
 - Done and merged into `m4`: unit 2 GEN (link ids, locks, .mcfg), 3 VALIDATE, 4a ConfigRefused/Maintenance, 5 CODEC
   (MARV dialect 15200-15204, GS-3 check), 7 HELPER (tools/gs), 8a GUI (gcs/: connection + parameters pages).
-- Unit 4b STORE merged (store, boot policy, 84 tests; one parameter set per link + post-link gate).
-- Next, in order: 6 LINK-SIL (the SIL speaks MAVLink over UDP; carry param_value as raw
-  bits in the C++ codec); 8b GUI follow-ups; 9 REPORT; 11 PLOTS; 12 USB, 13 SD, 14 FLASH-SLOTS (bench); 15; 16.
-- ESKF (decision 0055, Luis 2026-10-18): attitude + gyro bias from the IMU, in shadow beside Mahony; board use is Luis's call.
+- Unit 4b STORE, 6 LINK-SIL (SIL speaks MAVLink over UDP), 8b GUI polish, 9 REPORT (validate_config.py, four checks, the
+  Validate/Activate gate) merged. Next: 13 SD, 12 USB (bench), 14 FLASH-SLOTS, 15 FLASH-PANEL; 10 DERIVE, 11 PLOTS; 16.
+- ESKF merged (decision 0055): shadow beside Mahony, T2 passes with controls failing (`L07/results/eskf_shadow/`), host-only
+  SIL library `marv_sil_quad_fc_eskf`. Not done: the Gazebo comparison, a board cost measurement; board use is Luis's call.
 
 ## Waiting on Luis
 - S4b: fly the Gazebo sim through the board with the RadioMaster (runbook in `L10/results/s4/README.md`; host idle).
 - Props-off radio check of angle mode (ESC power, Luis present).
-- SD card: 32 GB FAT32 (Luis 2026-10-18). Bench items wait for Luis's morning (2026-10-18).
+- SD card 32 GB FAT32 and USB plugged in (Luis 2026-10-18). Unit 13: one boot with the card removed. Unit 12: arm once
+  (props off, ESC unpowered) for the reboot-refused-while-armed check and EMB-3 streaming. Decide: exFAT (patent note), check-4 form.
 
 ## Noticed, not changed
 - CI image has no Node (the TS conformance test registers only when gcs/node_modules exists): a CI-image unit before
