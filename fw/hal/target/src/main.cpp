@@ -21,6 +21,7 @@
 #include "marv/hal_target/receiver.hpp"
 #include "marv/params/param.hpp"
 #include "marv/prim/constants.hpp"
+#include "marv/store/store.hpp"
 #include "marv/types/imu_sample.hpp"
 #include "marv/types/time.hpp"
 
@@ -77,6 +78,10 @@ constexpr const char* kParamMode = "bench: rate_period_tolerance_us raised (MARV
 std::span<const marv::ParamRecord, marv::kParamCount> param_table() { return marv::param_defaults(); }
 constexpr const char* kParamMode = "generated defaults";
 #endif
+
+// The config store's hooks into the composition (marv/store/store.hpp; decision 0053, ground-segment unit 4b).
+const char* validate_table(marv::ParamTable table) noexcept { return marv::composition::validate(table).reason; }
+bool armed_now() noexcept { return marv::arming::is_armed(marv::composition::arming_status()); }
 
 // The console period: one second, so each line's counter differences are per-second figures.
 constexpr auto kPrintPeriodUs = static_cast<marv::TimeUs>(marv::prim::kMicrosecondsPerSecond);
@@ -368,11 +373,23 @@ int main() {
   stdio_init_all();
   marv::hal_target::bench::start();
   print_progress();
-  if (!marv::params_init(param_table())) {
+  // The config store's boot step chooses the table before the IMU, receiver and motor outputs start (store.hpp). The target's
+  // storage is a stub (no slots, no pending file, no boot request) and the scratch is empty, so it returns the compiled
+  // table with status Ok. params_init then runs exactly once on what it returned (invariant P-1).
+  const marv::ParamTable table = marv::store::boot(marv::store::BootInputs{
+      param_table(), marv::store::Digest{},
+      marv::store::Hooks{&validate_table, &armed_now, &marv::composition::request_maintenance,
+                         &marv::composition::maintenance_granted},
+      {}});
+  if (table.size() != marv::kParamCount) {
+    marv::hal_panic("the config store returned a table of another parameter set");
+  }
+  if (!marv::params_init(std::span<const marv::ParamRecord, marv::kParamCount>{table.data(), marv::kParamCount})) {
     marv::hal_panic("params_init rejected the default table");
   }
   stage = Stage::kParamsOk;
   std::printf("params ok: %s\n", kParamMode);
+  marv::composition::set_config_status(marv::store::boot_report().status);
   marv::composition::init();
   stage = Stage::kInitOk;
   std::printf("init ok\n");
