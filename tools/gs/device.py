@@ -37,6 +37,7 @@ class Device:
 class SerialDevice(Device):
     def __init__(self, path: str, baud: int, on_rx: Callable[[bytes], None], on_close: Callable[[str], None]):
         self.description = f"serial {path} {baud}"
+        self.path, self.baud = path, baud
         self._on_rx, self._on_close = on_rx, on_close
         self._out = bytearray()
         self._closed = False
