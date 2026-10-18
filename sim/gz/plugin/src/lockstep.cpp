@@ -1036,7 +1036,7 @@ std::atomic<bool> g_configured{false};
 constexpr const char* kLinkPortEnv = "MARV_SIL_LINK_UDP_PORT";
 
 // The SHA-256 of the file of the loaded SIL library (the library that holds marv_sil_init), the SIL's image identity.
-std::array<std::uint8_t, kSha256DigestBytes> sil_library_sha256() {
+[[maybe_unused]] std::array<std::uint8_t, kSha256DigestBytes> sil_library_sha256() {  // used only with MARV_GZ_SIL_STORAGE
   Dl_info info{};
   if (dladdr(reinterpret_cast<void*>(&marv_sil_init), &info) == 0 || info.dli_fname == nullptr) {
     refuse("cannot find the file of the loaded SIL library (dladdr)");
