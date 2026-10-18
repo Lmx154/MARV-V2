@@ -25,6 +25,7 @@ from websockets.exceptions import ConnectionClosed, InvalidStatus
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "gs"))
 
+import device  # noqa: E402
 import groundlog  # noqa: E402
 import helper as helper_mod  # noqa: E402
 import sil  # noqa: E402
@@ -249,6 +250,50 @@ def test_udp_relay_both_ways_and_ground_log_round_trip(tmp_path):
     assert b"".join(groundlog.byte_stream(log, groundlog.RX)) == PAYLOAD[:20_000]
     events = [r.data.decode() for r in groundlog.read_records(log) if r.kind == groundlog.EVENT]
     assert any(e.startswith("device opened: udp 127.0.0.1:") for e in events) and any(e.startswith("device closed") for e in events)
+
+
+def test_udp_device_sends_an_empty_datagram_on_open_and_a_keepalive_that_a_restarted_peer_receives(monkeypatch):
+    """The SIL's link answers the sender of its latest datagram: the device must announce itself at once and keep doing so,
+    so that a relaunched SIL (a new socket on the same port) learns it without the GCS sending anything."""
+    class Rx(asyncio.DatagramProtocol):
+        def __init__(self):
+            self.got = []
+
+        def datagram_received(self, data, addr):
+            self.got.append((data, addr))
+
+    async def until(predicate):
+        deadline = time.monotonic() + TIMEOUT_S
+        while not predicate() and time.monotonic() < deadline:
+            await asyncio.sleep(0.01)
+        return predicate()
+
+    async def main():
+        loop = asyncio.get_running_loop()
+        first, rx1 = await loop.create_datagram_endpoint(Rx, local_addr=("127.0.0.1", 0))
+        port = first.get_extra_info("sockname")[1]
+        monkeypatch.setattr(device, "KEEPALIVE_S", TIMEOUT_S * 10)  # no keepalive within the test: only the one sent on open
+        dev = await device.UdpDevice.open(port, lambda data: None, lambda reason: None)
+        try:
+            assert await until(lambda: rx1.got)
+            assert rx1.got == [(b"", dev._sock.getsockname())]
+        finally:
+            dev.close()
+        monkeypatch.setattr(device, "KEEPALIVE_S", 0.05)
+        dev = await device.UdpDevice.open(port, lambda data: None, lambda reason: None)
+        second = None
+        try:
+            assert await until(lambda: len(rx1.got) >= 3)
+            first.close()  # the SIL stops; nothing is bound to the port for a few keepalive periods
+            await asyncio.sleep(0.2)
+            second, rx2 = await loop.create_datagram_endpoint(Rx, local_addr=("127.0.0.1", port))
+            assert await until(lambda: rx2.got)
+            assert set(rx2.got) == {(b"", dev._sock.getsockname())}
+        finally:
+            dev.close()
+            if second is not None:
+                second.close()
+    asyncio.run(main())
 
 
 def test_serial_relay_both_ways_over_a_pty_pair_and_ground_log(tmp_path):
