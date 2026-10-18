@@ -184,7 +184,7 @@ export async function makeRecord(imageHash: string, configHash: string, reportId
 
 export interface ActivationFacts {
 	record: ValidationRecord | null;
-	/** The image hash the vehicle reports (MARV_IDENTITY). */
+	/** The image hash the vehicle reports (its identity message). */
 	vehicleImageSha256: string | null;
 	/** The config hash the helper computed for the staged view as it is now; null when it has not been computed for the current staged config. */
 	stagedConfigHash: string | null;
