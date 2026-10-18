@@ -6,7 +6,7 @@
 	import Badge from '$lib/components/ui/Badge.svelte';
 	import Panel from '$lib/components/ui/Panel.svelte';
 
-	/** MAVLink's conventional GCS port, shown only when the helper was started without --sil-udp-port. */
+	/** The conventional GCS UDP port, shown only when the helper was started without --sil-udp-port. */
 	const FALLBACK_UDP_PORT = 14550;
 
 	const gcs = app();

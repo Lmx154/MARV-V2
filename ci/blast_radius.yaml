@@ -306,14 +306,14 @@ rules:
     why: "mixer is linked by the L03 and L09 tests, rate, rate_group, vertical and the compositions; L06 tools compile with fw/mixer/include"
 
   - paths: [fw/arming/**]
-    ctest_labels: [L08, L09]
+    ctest_labels: [L07, L08, L09]
     run_ci_steps: ["@host"]
     pytest_paths: []
     gz_groups: [l7]
     why: "arming is the pure arming and failsafe machine, tested by the L08 unit_arming host test and linked by the quad_fc composition (the L09 gate test, and the L10 plumbing test in gz group l7)"
 
   - paths: [fw/store/**]
-    ctest_labels: [L09]
+    ctest_labels: [L07, L09]
     run_ci_steps: ["@flight_gates"]
     pytest_paths: []
     gz_groups: [l7]

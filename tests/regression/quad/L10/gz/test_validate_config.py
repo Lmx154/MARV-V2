@@ -41,9 +41,9 @@ BUDGET = ROOT / "design" / "budget.yaml"
 BUILD = ROOT / "build" / "host-gz-quadfc"
 PLUGIN_DIR = BUILD / "sim" / "gz" / "plugin"
 PLUGIN = PLUGIN_DIR / "libmarv_gz_lockstep.so"
-PARAM_SET = BUILD / "generated" / "marv_params_fc3v2"
-FACTORY_MCFG = PARAM_SET / "marv_params_fc3v2.mcfg"
-MANIFEST = PARAM_SET / "marv" / "params" / "params_manifest.json"
+PARAMS_DIR = BUILD / "generated" / "marv_params_fc3v2"
+FACTORY_MCFG = PARAMS_DIR / "marv_params_fc3v2.mcfg"
+MANIFEST = PARAMS_DIR / "marv" / "params" / "params_manifest.json"
 
 VALIDATE_TIMEOUT_S = 3600  # labelled harness value: bounds a hung validator run only (two gz runs and the ctests)
 RATE_GAIN_FACTOR = 1.2  # labelled scenario value: rate_kp_roll x this is past the QF-3 rate margin (the margin is read from the report)

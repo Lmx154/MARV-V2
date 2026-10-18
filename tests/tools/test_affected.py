@@ -107,7 +107,7 @@ QUAD = "tests/regression/quad/"  # the paths below are joined at run time: a lit
 GZ_T4_READERS = [QUAD + p for p in (
     "L02/tools/test_t4_rule.py", "L04/gz/test_t4_acro.py", "L04/gz/test_t4_steps.py", "L05/gz/test_t4_recovery.py",
     "L05/gz/test_t4_steps.py", "L05/gz/test_t4_yaw.py", "L07/gz/l7_" + "gz.py", "L07/gz/test_t4_hover_estimate.py",
-    "L07/results/hover_kick/hover_" + "kick.py", "L11/gz/test_t4_vertical.py")]
+    "L07/results/hover_kick/hover_" + "kick.py", "L11/gz/test_t4_vertical.py")] + ["tools/validate/sil_check.py"]  # G7 check 4 (unit 9)
 
 
 def budget_select(monkeypatch, make_base):
