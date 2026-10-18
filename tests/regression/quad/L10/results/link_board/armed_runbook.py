@@ -6,19 +6,19 @@
 Preconditions (the operator confirms each at the prompt): props off, ESC unpowered, the bench-stats image of the flight image
 flashed (cmake --preset m33 -B build/m33-bs -DMARV_FC3V2_BENCH_STATS=ON; tools/target/flash.sh), the radio on with the arm
 switch low. This script never arms, disarms or commands a motor: Luis arms and disarms on the radio when it asks. It prints
-PASS, FAIL or BLOCKED per step and writes <out_prefix>.json plus the console capture (<out_prefix>.console.log,
+PASS or FAIL per step and writes <out_prefix>.json plus the console capture (<out_prefix>.console.log,
 <out_prefix>.phases.json) that `bench_load.py analyze <out_prefix>` turns into the EMB-3 numbers.
 
 Steps:
   1 disarmed     heartbeat not armed, console arming is not armed; usb_reset_refused r0
   2 arm          [Luis arms on the radio] heartbeat armed and console arming=armed
   3 armed refusals  a parameter write is refused (status text, value unchanged); an activation is DENIED_ARMED
-  4 maintenance armed  BLOCKED: the link has no maintenance request yet (a lead decision, see README); when it exists: refused
+  4 maintenance armed  MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN param1 3 (bootloader) is DENIED with a status text; still armed
   5 picotool armed  `picotool reboot -f` is refused: usb_reset_refused r0 + 1, the board still armed and running
   6 link at the cap  bench_load.load_phase for 60 s while armed (the console records bench_stats for EMB-3)
   7 disarm       [Luis disarms on the radio] heartbeat not armed
-  8 maintenance disarmed  BLOCKED likewise; when it exists: granted, console arming=maintenance, then `picotool reboot -f` is
-                 honoured (the board re-enumerates)
+  8 maintenance disarmed  param1 3 is IN_PROGRESS then ACCEPTED (the grant), console arming=maintenance
+  9 picotool granted  `picotool reboot -f` is honoured: the board reboots (console back with a fresh clock, usb_reset_refused 0)
 """
 from __future__ import annotations
 
@@ -35,6 +35,7 @@ from link_common import mcfg  # noqa: E402
 
 ARM_WAIT_S = 120  # labelled harness value: how long the script waits for Luis to arm or disarm
 SETTLE_S = 3  # labelled harness value: the wait after picotool before the console is read again
+REBOOT_WAIT_S = 15  # labelled harness value: the wait for the console after a reboot (12 s for ModemManager, then a stats line)
 ARMED_STATES = ("armed", "armed_hold", "armed_failsafe_centred")
 PROBE_PARAM = "att_kp"  # an unlocked f32 parameter
 
@@ -96,7 +97,10 @@ def main() -> int:
         step("3 armed refusals", "PASS" if ok else "FAIL", set_echo=f"{lc.value_bits(d, echo):#010x}", set_texts=texts,
              activate_result=ack.result, activate_texts=client.texts(at2))
 
-        step("4 maintenance armed", "BLOCKED", why="no maintenance request on the link yet (lead decision)")
+        acks, at = client.reboot(lc.REBOOT_TO_BOOTLOADER)
+        f = lc.console_fields(console)
+        step("4 maintenance armed", "PASS" if acks == [d.MAV_RESULT_DENIED] and client.texts(at) and f["arming"] in ARMED_STATES
+             else "FAIL", acks=acks, texts=client.texts(at), arming=f["arming"])
 
         p = subprocess.run([str(lc.PICOTOOL), "reboot", "-f"], capture_output=True, text=True, timeout=30, check=False)
         time.sleep(SETTLE_S)
@@ -114,13 +118,34 @@ def main() -> int:
         f = wait_arming(client, console, False)
         step("7 disarm", "PASS" if f["arming"] not in ARMED_STATES else "FAIL", arming=f["arming"])
 
-        step("8 maintenance disarmed", "BLOCKED", why="no maintenance request on the link yet (lead decision)")
+        acks, _ = client.reboot(lc.REBOOT_TO_BOOTLOADER)
+        time.sleep(SETTLE_S)
+        f = lc.console_fields(console)
+        step("8 maintenance disarmed", "PASS" if acks == [d.MAV_RESULT_IN_PROGRESS, d.MAV_RESULT_ACCEPTED]
+             and f["arming"] == "maintenance" else "FAIL", acks=acks, arming=f["arming"])
+
+        t_before = f["t_us"]
+        p = subprocess.run([str(lc.PICOTOOL), "reboot", "-f"], capture_output=True, text=True, timeout=30, check=False)
+        time.sleep(REBOOT_WAIT_S)
+        console2 = lc.ConsoleReader()
+        console2.start()
+        try:
+            g = lc.wait_console(console2, REBOOT_WAIT_S)
+        finally:
+            console2.stop()
+            Path(str(out) + ".after_reboot.console.log").write_bytes(bytes(console2.raw))
+        step("9 picotool granted", "PASS" if p.returncode == 0 and g["t_us"] < t_before and g["usb_reset_refused"] == 0
+             else "FAIL", picotool=(p.stdout + p.stderr).strip(), console_t_before=t_before, console_t_after=g["t_us"],
+             usb_reset_refused_after=g["usb_reset_refused"], est_valid=g["est_valid"])
     finally:
-        pipe.close()
+        try:
+            pipe.close()
+        except OSError:  # the port is gone after the reboot
+            pass
         console.stop()
         bench_load.write_capture(out, console, phases, load)
         Path(str(out) + ".json").write_text(json.dumps(res, indent=1, default=str) + "\n", encoding="utf-8")
-    print("FAIL" if "FAIL" in verdicts else ("BLOCKED" if "BLOCKED" in verdicts else "PASS"), flush=True)
+    print("FAIL" if "FAIL" in verdicts else "PASS", flush=True)
     return 1 if "FAIL" in verdicts else 0
 
 

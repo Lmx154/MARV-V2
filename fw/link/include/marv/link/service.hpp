@@ -12,6 +12,10 @@
 //     complete; a read or set naming another parameter schema is refused;
 //   - the config commands (activate with a report id and the expected config hash, revert to the last good config, factory
 //     reset), answered with an acknowledgement; an accepted command reboots only through store::reboot_when_granted.
+//   - the reboot command (MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN, this autopilot only): refused while armed; disarmed it asks for the
+//     maintenance grant (IN_PROGRESS), then ACCEPTED once granted, or DENIED if the vehicle armed first. param1 1 then
+//     reboots through store::reboot_when_granted (FAILED with the reason if the board cannot); param1 3 (bootloader) only takes
+//     the grant: the host then resets the board into the bootloader through the USB reset interface the grant opens.
 // Frames are handled in arrival order. Background loop only (the SIL's link service call; the board's background loop from
 // ground-segment unit 12); never from the tick. Static state, no allocation.
 #pragma once
@@ -37,6 +41,9 @@ struct ServiceConfig {
   Transport transport;
   store::Digest image_sha256{};        // the running image's SHA-256; all zero = unknown
   bool (*armed)() noexcept = nullptr;  // the arming state; without it the vehicle counts as armed
+  // The maintenance grant (composition::request_maintenance, maintenance_granted); without both a reboot command is unsupported.
+  void (*request_maintenance)() noexcept = nullptr;
+  bool (*maintenance_granted)() noexcept = nullptr;
 };
 
 // Starts the service. Call once, after store::boot and params_init; a second call, or a transport without both functions, is a

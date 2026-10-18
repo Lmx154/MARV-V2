@@ -16,6 +16,10 @@ The helper (tools/gs/helper.py --serial <if02>) owns the link port; this script 
               (the board's image hash is unknown until unit 14, so nothing can be bound); revert: DENIED_UNAVAILABLE; factory
               reset: refused (no boot request store until unit 14); afterwards the board keeps running (heartbeats, console t)
   (d) reset   with --picotool: `picotool reboot -f` without a grant is refused (usb_reset_refused + 1), the board keeps running
+  (d) grant   with --maintenance (last; the board reboots): MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN param1 1 is IN_PROGRESS then FAILED
+              with its status text (no reboot on the board until unit 14) and leaves the grant held (console arming=maintenance);
+              param1 3 is IN_PROGRESS then ACCEPTED; `picotool reboot -f` is then honoured: the console port goes away and the
+              board comes back with a fresh clock, usb_reset_refused 0 and est_valid=1
 Writes <out_prefix>.json (results), <out_prefix>.console.log (console bytes) and <out_prefix>.ground.log (the helper's log).
 """
 from __future__ import annotations
@@ -37,12 +41,14 @@ ACCEPTED_PARAM = "att_kp"  # an unlocked f32 parameter (test_link_sil.py's); one
 LOCKED_PARAM = "rotor_speed_max"  # a locked f32 parameter (Luis-signed lock list, decision 0053 Q2)
 ALIVE_S = 3  # labelled harness value: how long the board is watched after the refusals
 PICOTOOL_SETTLE_S = 3  # labelled harness value: the wait after picotool before the console is read again
+REBOOT_WAIT_S = 15  # labelled harness value: the wait for the console after a reboot (12 s for ModemManager, then a stats line)
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("out_prefix")
     ap.add_argument("--picotool", action="store_true", help="also send `picotool reboot -f` (refused without a grant)")
+    ap.add_argument("--maintenance", action="store_true", help="last, take the maintenance grant and reboot with picotool")
     args = ap.parse_args()
     out = Path(args.out_prefix)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -172,9 +178,39 @@ def main() -> int:
         res["console_after"] = lc.console_fields(console)
         res["seq_gaps_total"] = client.seq_gaps()
         res["frames_total"] = len(client.got)
+
+        # (d) the maintenance grant over the link, then a USB reset honoured
+        if args.maintenance:
+            acks1, at1 = client.reboot(lc.REBOOT_AUTOPILOT)
+            texts1 = client.texts(at1)
+            acks3, _ = client.reboot(lc.REBOOT_TO_BOOTLOADER)
+            time.sleep(PICOTOOL_SETTLE_S)
+            f = lc.console_fields(console)
+            step("(d) grant", acks1 == [d.MAV_RESULT_IN_PROGRESS, d.MAV_RESULT_FAILED] and bool(texts1)
+                 and acks3 == [d.MAV_RESULT_IN_PROGRESS, d.MAV_RESULT_ACCEPTED] and f["arming"] == "maintenance",
+                 reboot_acks=acks1, reboot_texts=texts1, bootloader_acks=acks3, arming=f["arming"], console_t=f["t_us"])
+            r_before, t_before = f["usb_reset_refused"], f["t_us"]
+            p = subprocess.run([str(lc.PICOTOOL), "reboot", "-f"], capture_output=True, text=True, timeout=30, check=False)
+            time.sleep(REBOOT_WAIT_S)
+            console2 = lc.ConsoleReader()
+            console2.start()
+            try:
+                g = lc.wait_console(console2, REBOOT_WAIT_S)
+            finally:
+                console2.stop()
+                Path(str(out) + ".after_reboot.console.log").write_bytes(bytes(console2.raw))
+            step("(d) picotool reboot -f, granted", p.returncode == 0 and g["t_us"] < t_before and g["usb_reset_refused"] == 0
+                 and g["est_valid"] == 1,
+                 picotool_rc=p.returncode, picotool_out=(p.stdout + p.stderr).strip(), usb_reset_refused_before=r_before,
+                 console_t_before=t_before, usb_reset_refused_after_reboot=g["usb_reset_refused"], console_t_after_reboot=g["t_us"],
+                 est_valid=g["est_valid"], arming=g["arming"])
+            res["console_after_reboot"] = g
     finally:
         if pipe is not None:
-            pipe.close()
+            try:
+                pipe.close()
+            except Exception:  # noqa: BLE001 - the port may be gone after a reboot
+                pass
         helper.stop()
         console.stop()
         Path(str(out) + ".console.log").write_bytes(bytes(console.raw))

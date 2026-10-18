@@ -40,6 +40,7 @@ PICOTOOL = Path.home() / "pico" / "picotool-install" / "picotool" / "picotool"
 GCS_SYSTEM, GCS_COMPONENT = 255, 190  # the client's address: the protocol's ground-station convention (MAV_COMP_ID_MISSIONPLANNER)
 VEHICLE = (1, 1)  # the link service's system and component (fw/link/src/service.cpp kSystemId, kComponentId)
 REPLY_S = 10  # labelled harness value: how long the client waits for an answer
+REBOOT_AUTOPILOT, REBOOT_TO_BOOTLOADER = 1, 3  # common.xml REBOOT_SHUTDOWN_ACTION, MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN's param1
 POLL_S = 0.05  # labelled harness value: one receive wait
 HELPER_START_S = 20  # labelled harness value: how long the helper may take to print its URL
 
@@ -239,6 +240,15 @@ class Client:
         at = self.mark()
         self.send(self.d.MAVLink_marv_config_command_message(schema_hash, list(report_id), list(expected), *VEHICLE, action))
         return self.wait(lambda m: m.get_type() == "MARV_CONFIG_ACK", "MARV_CONFIG_ACK", at), at
+
+    def reboot(self, param1, timeout=REPLY_S):
+        """MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN with param1: its COMMAND_ACK results up to the first final one (not IN_PROGRESS)."""
+        d = self.d
+        at = self.mark()
+        self.send(d.MAVLink_command_long_message(*VEHICLE, d.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN, 0, float(param1), 0, 0, 0, 0, 0, 0))
+        self.wait(lambda m: m.get_type() == "COMMAND_ACK" and m.command == d.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN
+                  and m.result != d.MAV_RESULT_IN_PROGRESS, "a final COMMAND_ACK", at, timeout)
+        return [m.result for m in self.since(at, "COMMAND_ACK") if m.command == d.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN], at
 
     def texts(self, after):
         return [m.text for m in self.since(after, "STATUSTEXT")]

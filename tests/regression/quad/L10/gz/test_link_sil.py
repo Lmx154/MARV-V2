@@ -32,6 +32,9 @@ What is checked:
     reported ACTIVE, REFUSED, IMAGE_BINDING and the raised switch never arms; (d) the same slot with one file byte changed (its
     SHA-256 no longer matches the commit record) is reported FACTORY, REFUSED, FORMAT and never arms; control: the factory config
     (an empty config dir) arms on the same raise.
+  - The reboot command (MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN, param1 3, the bootloader; real time): armed it is DENIED with its status
+    text and the vehicle stays armed; disarmed it is IN_PROGRESS then ACCEPTED (the maintenance grant), the raise never arms, and
+    the run ends normally (no reboot requested).
 """
 
 import hashlib
@@ -84,6 +87,8 @@ DSHOT_THROTTLE_MIN = 48  # DShot protocol: 0 is stop, 1..47 are commands, 48..20
 SWITCH_LOW, SWITCH_HIGH = -1.0, 1.0  # normalised channel values, [-1, 1] (fw/types manual_control.hpp)
 MARGIN_US = 1_000_000  # labelled harness value: the margin after calibration + recovery before the raise (the plumbing test's)
 ARMED_US = 1_500_000  # labelled harness value: sim time after the raise: more than one heartbeat period (1 s, service.cpp)
+ARMED_HOLD_US = 3_000_000  # labelled harness value: the reboot-command runs' time after the raise: an armed heartbeat, the command and its answer
+REBOOT_TO_BOOTLOADER = 3  # common.xml REBOOT_SHUTDOWN_ACTION_REBOOT_TO_BOOTLOADER, MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN's param1
 GCS_SYSTEM, GCS_COMPONENT = 255, 190  # the client's address: the protocol's ground-station convention (MAV_COMP_ID_MISSIONPLANNER)
 VEHICLE = (1, 1)  # the link service's system and component (fw/link/src/service.cpp kSystemId, kComponentId)
 ACCEPTED_PARAM = "att_kp"  # an unlocked f32 parameter; the write is one ulp up, which the validator accepts
@@ -490,15 +495,16 @@ def test_session_parameters_writes_sources_and_activation_through_a_reboot(diale
 
 # ---- arming with a stored config the store refuses --------------------------------------------------------------------------
 
-def arming_run(d, tmp, name, config_dir):
-    """The plumbing test's raise (after calibration and recovery) with the link served; (identity, heartbeats, log)."""
+def arming_run(d, tmp, name, config_dir, mode="test", armed_us=ARMED_US, act=None):
+    """The plumbing test's raise (after calibration and recovery) with the link served; (identity, heartbeats, log). `act(client)`,
+    if given, is called on every pump while the run lasts."""
     tmp = tmp / name
     tmp.mkdir(exist_ok=True)
     port = free_udp_port()
-    duration = READY_US + ARMED_US
+    duration = READY_US + armed_us
     log = tmp / "run.bin"
     n = iterations(duration)
-    sdf = world(tmp / "world.sdf", "test", log, script([seg(0, READY_US, SWITCH_LOW), seg(READY_US, ARMED_US, SWITCH_HIGH)]),
+    sdf = world(tmp / "world.sdf", mode, log, script([seg(0, READY_US, SWITCH_LOW), seg(READY_US, armed_us, SWITCH_HIGH)]),
                 config_dir, port)
     client = Client(d, port)
     try:
@@ -508,7 +514,10 @@ def arming_run(d, tmp, name, config_dir):
             deadline = time.monotonic() + TIMEOUT_S
             while gz.proc.poll() is None and time.monotonic() < deadline:
                 client.pump()
+                if act is not None:
+                    act(client)
             assert gz.wait() == 0 and "REFUSED" not in gz.stderr(), run_scenario.stderr_tail(gz.stderr())
+            assert "REBOOT REQUESTED" not in gz.stderr()
             client.pump()
     finally:
         client.close()
@@ -556,4 +565,57 @@ def test_d_a_corrupt_stored_config_is_refused_as_format_and_never_arms(dialect, 
     assert ident.config_source == d.MARV_CONFIG_SOURCE_FACTORY and ident.config_state == d.MARV_CONFIG_STATE_REFUSED
     assert ident.config_refusal == d.MARV_CONFIG_REFUSAL_FORMAT
     assert not armed_ticks(run) and all(all(v == 0 for v in t["dshot"]) for t in run["ticks"])
+    assert heartbeats and not any(h.base_mode & d.MAV_MODE_FLAG_SAFETY_ARMED for h in heartbeats)
+
+
+# ---- the reboot command and the maintenance grant (MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN; decision 0053 GS-4) ---------------------
+
+def reboot_command(d, param1):
+    return d.MAVLink_command_long_message(*VEHICLE, d.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN, 0, float(param1), 0, 0, 0, 0, 0, 0)
+
+
+def reboot_acks(d, client):
+    return [m.result for m in client.got if m.get_type() == "COMMAND_ACK" and m.command == d.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN]
+
+
+def test_the_bootloader_reboot_is_denied_armed_and_granted_disarmed_without_a_reboot(dialect, tmp_path):
+    """Real time (pilot mode), the factory config, the plumbing raise held ARMED_HOLD_US. Armed: the bootloader reboot (param1 3)
+    is DENIED with its status text and the vehicle stays armed. Disarmed (sent at the first heartbeat, before the raise): IN_PROGRESS
+    then ACCEPTED, the raise never arms (maintenance), and the run ends normally: param1 3 does not reboot the SIL by itself."""
+    d = dialect
+    store = tmp_path / "store"
+    store.mkdir()
+    sent = []
+
+    def when_armed(client):
+        if not sent and any(m.get_type() == "HEARTBEAT" and m.base_mode & d.MAV_MODE_FLAG_SAFETY_ARMED for m in client.got):
+            client.send(reboot_command(d, REBOOT_TO_BOOTLOADER))
+            sent.append(client.mark())
+
+    clients = []
+
+    def keep(client):
+        if not clients:
+            clients.append(client)
+        when_armed(client)
+
+    _, heartbeats, run = arming_run(d, tmp_path, "armed", store, mode="pilot", armed_us=ARMED_HOLD_US, act=keep)
+    client = clients[0]
+    assert sent, "no heartbeat reported the vehicle armed"
+    assert reboot_acks(d, client) == [d.MAV_RESULT_DENIED]
+    assert any(m.text == "reboot refused while armed" for m in client.since(sent[0], "STATUSTEXT"))
+    assert armed_ticks(run) and heartbeats[-1].base_mode & d.MAV_MODE_FLAG_SAFETY_ARMED, "the vehicle did not stay armed"
+
+    store = tmp_path / "store2"
+    store.mkdir()
+    clients.clear()
+
+    def at_once(client):
+        if not clients:
+            clients.append(client)
+            client.send(reboot_command(d, REBOOT_TO_BOOTLOADER))
+
+    _, heartbeats, run = arming_run(d, tmp_path, "disarmed", store, mode="pilot", armed_us=ARMED_HOLD_US, act=at_once)
+    assert reboot_acks(d, clients[0]) == [d.MAV_RESULT_IN_PROGRESS, d.MAV_RESULT_ACCEPTED]
+    assert not armed_ticks(run) and all(all(v == 0 for v in t["dshot"]) for t in run["ticks"]), "armed after the grant"
     assert heartbeats and not any(h.base_mode & d.MAV_MODE_FLAG_SAFETY_ARMED for h in heartbeats)

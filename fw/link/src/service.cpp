@@ -35,6 +35,11 @@ constexpr std::uint8_t kSystemId = 1;
 constexpr std::uint8_t kComponentId = 1;
 // One heartbeat per second, the protocol's convention (https://mavlink.io/en/services/heartbeat.html: "at 1 Hz").
 constexpr TimeUs kHeartbeatPeriodUs = static_cast<TimeUs>(prim::kMicrosecondsPerSecond);
+// MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN's param1 values the service takes (prim constants): reboot and reboot to the bootloader.
+// Our reading of the bootloader one: the vehicle gives the maintenance grant and stays running; the host then resets it into
+// the bootloader (picotool, through the USB reset interface the grant opens).
+constexpr std::uint32_t kRebootActionReboot = prim::kRebootShutdownActionReboot;
+constexpr std::uint32_t kRebootActionBootloader = prim::kRebootShutdownActionBootloader;
 
 using Id = decltype(ParamValue::param_id);
 constexpr std::size_t kSourceChunkBytes = std::tuple_size_v<decltype(MarvParamSource::chunk)>;
@@ -76,6 +81,10 @@ struct State {
   std::size_t source_have = 0;
   std::array<char, kSourceBytesMax> source{};
   bool reboot_pending = false;    // a command was accepted; the reboot waits for the maintenance grant
+  // A reboot command waiting for the maintenance grant: whether it reboots once granted, and who asked.
+  bool grant_pending = false;
+  bool grant_reboots = false;
+  Envelope grant_from{};
   bool reboot_requested = false;  // hal_reboot returned: the host stops this run
   std::uint16_t text_id = 0;      // of the latest status text sent in chunks
 };
@@ -312,8 +321,43 @@ void send_heartbeat() noexcept {
   return std::bit_cast<std::uint32_t>(a) == std::bit_cast<std::uint32_t>(static_cast<float>(id));
 }
 
+void send_ack(const Envelope& to, std::uint16_t command, std::uint8_t result) noexcept {
+  CommandAck ack{};
+  ack.command = command;
+  ack.result = result;
+  ack.target_system = to.system_id;
+  ack.target_component = to.component_id;
+  send(ack);
+}
+
+// MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN for this autopilot (param2 = 0): reboot (param1 1) or the bootloader (param1 3). Disarmed, it
+// asks the tick for the maintenance grant and answers IN_PROGRESS; step_grant answers the rest. Armed: DENIED.
+void on_reboot(const Envelope& from, const CommandLong& m) noexcept {
+  const bool reboot = same_bits(m.param1, kRebootActionReboot);
+  const bool bootloader = same_bits(m.param1, kRebootActionBootloader);
+  if ((!reboot && !bootloader) || !same_bits(m.param2, 0) || g.config.request_maintenance == nullptr ||
+      g.config.maintenance_granted == nullptr) {
+    send_ack(from, m.command, standard::kMavResultUnsupported);
+    return;
+  }
+  if (armed()) {
+    send_text({"reboot refused while armed"});
+    send_ack(from, m.command, standard::kMavResultDenied);
+    return;
+  }
+  g.grant_pending = true;
+  g.grant_reboots = reboot;
+  g.grant_from = from;
+  g.config.request_maintenance();
+  send_ack(from, m.command, standard::kMavResultInProgress);
+}
+
 void on_command(const Envelope& from, const CommandLong& m) noexcept {
   if (!for_us(m.target_system, m.target_component)) {
+    return;
+  }
+  if (m.command == standard::kMavCmdPreflightRebootShutdown) {
+    on_reboot(from, m);
     return;
   }
   const bool request = m.command == standard::kMavCmdRequestMessage;
@@ -538,6 +582,35 @@ void step_reboot() noexcept {
   }
 }
 
+// A reboot command waiting for the grant: asked again each step (the tick drops a request it finds armed); DENIED if the vehicle
+// is armed before the grant; once granted ACCEPTED, and a reboot goes through the store (hal_reboot).
+void step_grant() noexcept {
+  const std::uint16_t command = standard::kMavCmdPreflightRebootShutdown;
+  if (!g.config.maintenance_granted()) {
+    if (armed()) {
+      g.grant_pending = false;
+      send_text({"reboot refused: the vehicle armed before the maintenance grant"});
+      send_ack(g.grant_from, command, standard::kMavResultDenied);
+    } else {
+      g.config.request_maintenance();
+    }
+    return;
+  }
+  g.grant_pending = false;
+  if (!g.grant_reboots) {
+    send_ack(g.grant_from, command, standard::kMavResultAccepted);
+    return;
+  }
+  const store::CommandResult r = store::reboot_when_granted();
+  if (r.step == store::CommandStep::RebootRequested) {
+    send_ack(g.grant_from, command, standard::kMavResultAccepted);
+    g.reboot_requested = true;
+  } else {
+    send_text({"reboot failed: ", r.reason != nullptr ? r.reason : "no reason given"});
+    send_ack(g.grant_from, command, standard::kMavResultFailed);
+  }
+}
+
 }  // namespace
 
 void service_init(const ServiceConfig& config) noexcept {
@@ -577,6 +650,9 @@ bool service_step() noexcept {
   }
   if (g.reboot_pending) {
     step_reboot();
+  }
+  if (g.grant_pending) {
+    step_grant();
   }
   return g.reboot_requested;
 }
