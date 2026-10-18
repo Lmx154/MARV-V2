@@ -50,6 +50,19 @@ export function formatValue(bits: number, type: ParamType): string {
 	return type === 'f32' ? formatF32(bits) : String(bitsToI32(bits));
 }
 
+/** A sigma (an f32 on the link, a decimal in the manifest) in the shortest text that is the same f32. */
+export function formatSigma(sigma: number): string {
+	return formatF32(f32ToBits(sigma));
+}
+
+/** The hover text of a value: its type, its raw bits and, for a float, the exact decimal value of those bits. */
+export function valueTitle(bits: number, type: ParamType): string {
+	const hex = bitsHex(bits);
+	if (type === 'i32') return `i32 ${bitsToI32(bits)} · bits ${hex}`;
+	const x = bitsToF32(bits);
+	return Number.isFinite(x) ? `f32 · bits ${hex} · exactly ${x.toPrecision(17).replace(/\.?0+(?=e|$)/, '')}` : `f32 · bits ${hex}`;
+}
+
 export type ParsedValue = { ok: true; bits: number } | { ok: false; error: string };
 
 const INT_TEXT = /^[+-]?\d+$/;

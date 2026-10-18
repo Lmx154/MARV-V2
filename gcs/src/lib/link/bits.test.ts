@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-	bitsHex, bitsToF32, bitsToI32, bitsToWireNumber, f32ToBits, formatF32, formatValue, i32ToBits, paramValueBits, paramValueFields, parseValueText,
+	bitsHex, bitsToF32, bitsToI32, bitsToWireNumber, f32ToBits, formatF32, formatSigma, formatValue, i32ToBits, paramValueBits, paramValueFields, parseValueText, valueTitle,
 	wireNumberToBits
 } from './bits';
 
@@ -83,5 +83,25 @@ describe('value text', () => {
 			if (!r.ok) throw new Error(text);
 			expect(f32ToBits(Number(formatF32(r.bits)))).toBe(r.bits);
 		}
+	});
+});
+
+describe('display formatting', () => {
+	it('prints an f32 as the shortest decimal that is the same f32', () => {
+		expect(formatF32(f32ToBits(0.00107))).toBe('0.00107');
+		expect(formatSigma(0.001069999998435378)).toBe('0.00107');
+		expect(formatF32(f32ToBits(0.1))).toBe('0.1');
+		expect(formatF32(f32ToBits(15))).toBe('15');
+		expect(formatF32(f32ToBits(3.4028234663852886e38))).toBe('3.4028235e+38');
+		expect(formatF32(0x00000001)).toBe('1e-45');
+		for (const x of [0.732, 9.80665, 1e-7, 123456.79, 0.3]) expect(Math.fround(Number(formatF32(f32ToBits(x))))).toBe(Math.fround(x));
+	});
+
+	it('prints integers as integers and keeps the raw bits for the hover', () => {
+		expect(formatValue(0xffffffff, 'i32')).toBe('-1');
+		expect(formatValue(i32ToBits(2713), 'i32')).toBe('2713');
+		expect(valueTitle(0xffffffff, 'i32')).toBe('i32 -1 · bits 0xffffffff');
+		expect(valueTitle(f32ToBits(0.00107), 'f32')).toBe(`f32 · bits ${bitsHex(f32ToBits(0.00107))} · exactly 0.0010699999984353781`);
+		expect(valueTitle(0x7f800001, 'f32')).toBe('f32 · bits 0x7f800001');
 	});
 });

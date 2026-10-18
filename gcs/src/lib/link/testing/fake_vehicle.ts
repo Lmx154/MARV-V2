@@ -68,6 +68,14 @@ export class FakeVehicle {
 	neverSendFor = new Set<number>();
 	/** Ignore source SET messages (a vehicle that does not store sources). */
 	ignoreSourceSet = false;
+	/** Ignore the next N source SET messages (a write that is lost once). */
+	dropSourceSets = 0;
+	/** Answer a PARAM_SET first with a PARAM_VALUE of the value it replaces (a listing reply that was still on its way). */
+	staleValueBeforeEcho = false;
+	/** Answer a PARAM_SET first with a PARAM_VALUE carrying these bits (a stale reply that happens to carry the requested value). */
+	staleBitsBeforeAnswer: number | null = null;
+	/** Delay the PARAM_VALUE answering a PARAM_SET by this long. */
+	answerDelayMs = 0;
 	private handler: ((bytes: Uint8Array) => void) | null = null;
 	private readonly parser = new MavlinkParser();
 	private sequence = 0;
@@ -201,6 +209,7 @@ export class FakeVehicle {
 		const id = new TextDecoder().decode(m.param_id.subarray(0, m.param_id.indexOf(0) < 0 ? 16 : m.param_id.indexOf(0)));
 		const s = this.slots.find((x) => x.linkId === id);
 		if (!s) return this.status(`refused: no parameter ${id}`);
+		if (this.staleBitsBeforeAnswer !== null) this.emit({ ...this.paramValue(s), ...paramValueFields(this.staleBitsBeforeAnswer) });
 		const type = m.param_type === PARAM_TYPE_REAL32 ? 'f32' : m.param_type === PARAM_TYPE_INT32 ? 'i32' : null;
 		const bits = paramValueBits(m);
 		let why: string | null = null;
@@ -210,16 +219,23 @@ export class FakeVehicle {
 		else if (s.type === 'f32' && !Number.isFinite(bitsToF32(bits))) why = `${id}: not finite`;
 		if (why) {
 			this.status('refused: ' + why);
-			this.emit(this.paramValue(s));
+			this.answer(s);
 			return;
 		}
+		if (this.staleValueBeforeEcho) this.emit(this.paramValue(s));
 		s.staged = bits;
 		s.text = DEFAULT_SOURCE;
 		s.origin = 2;
 		s.method = 6;
 		s.sigmaKind = 3;
 		s.sigma = 0;
-		this.emit(this.paramValue(s));
+		this.answer(s);
+	}
+
+	private answer(s: Slot): void {
+		const message = this.paramValue(s);
+		if (this.answerDelayMs > 0) setTimeout(() => this.emit(message), this.answerDelayMs);
+		else this.emit(message);
 	}
 
 	private source(m: Extract<Message, { kind: 'MarvParamSource' }>): void {
@@ -233,7 +249,7 @@ export class FakeVehicle {
 				kind: 'MarvParamSource', param_schema_hash: this.schemaHash, param_index: s.id, offset: m.offset, total_length: bytes.length,
 				target_system: 255, target_component: 190, operation: MarvParamSourceOp.Data, chunk_length: chunk.length, chunk: padBytes(chunk)
 			});
-		} else if (m.operation === MarvParamSourceOp.Set && !this.ignoreSourceSet) {
+		} else if (m.operation === MarvParamSourceOp.Set && !this.ignoreSourceSet && this.dropSourceSets-- <= 0) {
 			if (m.offset === 0) s.pending = new Uint8Array(m.total_length);
 			if (!s.pending || m.offset + m.chunk_length > s.pending.length) return;
 			s.pending.set(m.chunk.subarray(0, m.chunk_length), m.offset);

@@ -7,7 +7,8 @@
 //   - answer a PARAM_REQUEST_LIST (and a PARAM_REQUEST_READ by index) with one PARAM_VALUE and one MARV_PARAM_RECORD per
 //     parameter; PARAM_VALUE carries the STAGED value, the record both values;
 //   - answer a PARAM_SET with a PARAM_VALUE (the staged value after the set, the unchanged one when refused) and, when
-//     refused, a STATUSTEXT with the reason;
+//     refused, a STATUSTEXT with the reason; the client does not take that PARAM_VALUE as the verdict (nothing correlates it with
+//     the set): it reads the parameter back by index after the refusal grace and judges by the first reply after that request;
 //   - answer MARV_PARAM_SOURCE READ with MARV_PARAM_SOURCE DATA chunks;
 //   - answer a REQUEST_MESSAGE command for MARV_IDENTITY and AUTOPILOT_VERSION with that message.
 import { get, writable, type Readable } from 'svelte/store';
@@ -68,6 +69,9 @@ export interface Notice {
 	text: string;
 }
 
+/** 'none': no source was written (the value was refused); 'writing': a write is in flight; 'stored' / 'failed': the read-back result. */
+export type SourceState = 'none' | 'writing' | 'stored' | 'failed';
+
 export interface StageResult {
 	/** The vehicle echoed the value that was sent. */
 	accepted: boolean;
@@ -77,6 +81,11 @@ export interface StageResult {
 	reasons: string[];
 	/** The source text read back from the vehicle equals what was sent (null: not checked, as the value was refused). */
 	sourceStored: boolean | null;
+	sourceState: SourceState;
+	/** How many times the source text was written (an accepted value whose source did not read back is written again). */
+	sourceAttempts: number;
+	/** The source text that was sent, kept so that a failed write can be retried. */
+	source: string;
 	note: string | null;
 	at: number;
 }
@@ -130,10 +139,12 @@ export interface Timing {
 	listingIdleMs: number;
 	/** How many such rounds before the listing is reported incomplete. */
 	listingRounds: number;
-	/** How long a refused write waits for its refusal text. */
+	/** How long a refused write waits for its refusal text (and an echo that is not the sent value waits for a better one). */
 	refusalGraceMs: number;
+	/** How many times the source text is written before the write is reported failed (the first write included). */
+	sourceAttempts: number;
 }
-export const DEFAULT_TIMING: Timing = { replyMs: 1000, listingIdleMs: 1500, listingRounds: 3, refusalGraceMs: 150 };
+export const DEFAULT_TIMING: Timing = { replyMs: 1000, listingIdleMs: 1500, listingRounds: 3, refusalGraceMs: 150, sourceAttempts: 2 };
 /** PLACEHOLDER: how many notices are kept for display. */
 export const NOTICE_LIMIT = 100;
 export const NO_SOURCE_ERROR = 'a source text is required';
@@ -360,45 +371,105 @@ export class VehicleClient {
 	private async doStage(linkId: string, type: ParamType, bits: number, source: string): Promise<StageResult> {
 		if (source.trim().length === 0) throw new Error(NO_SOURCE_ERROR);
 		const target = this.requireTarget();
+		if (this.listing === 'loading') throw new Error('the parameter list is still being read: stage after it is complete');
 		const row = [...this.rows.values()].find((r) => r.linkId === linkId);
 		if (!row) throw new Error(`the vehicle has no parameter ${linkId}`);
 		if (row.type !== type) throw new Error(`${linkId} is ${row.type}, not ${type}`);
 		if (row.locked) throw new Error(`${linkId} is locked`);
 		if (this.identityRaw === null) throw new Error('the vehicle identity is not known yet');
-		const sourceBytes = encoder.encode(source);
 		const armed = get(this.session.state).armed;
 		if (armed) throw new Error('the vehicle is armed: parameters are written only while disarmed');
 		const startedAt = this.now();
 		const reasons: string[] = [];
 		const heard = (text: string): number => reasons.push(text);
 		this.noticeListeners.add(heard);
-		const echo = this.waitFor('ParamValue', (m) => textOf(m.param_id) === linkId, this.timing.replyMs);
-		this.session.send({
-			kind: 'ParamSet', target_system: target.systemId, target_component: target.componentId,
-			param_id: encodeLinkId(linkId), ...paramValueFields(bits), param_type: type === 'f32' ? PARAM_TYPE_REAL32 : PARAM_TYPE_INT32
-		});
-		const answer = await echo.promise;
+		const base = { sentBits: bits, source, sourceAttempts: 0, at: startedAt };
 		let result: StageResult;
 		try {
+			this.session.send({
+				kind: 'ParamSet', target_system: target.systemId, target_component: target.componentId,
+				param_id: encodeLinkId(linkId), ...paramValueFields(bits), param_type: type === 'f32' ? PARAM_TYPE_REAL32 : PARAM_TYPE_INT32
+			});
+			// The immediate PARAM_VALUE is only a hint: without a correlation id it may be a reply that was already on its way.
+			// The verdict is an explicit read-back: wait out the refusal grace (collecting the STATUSTEXT reasons), ask for the
+			// parameter, and take the first reply that arrives after that request. The vehicle serves the link in order, so that
+			// reply reflects the write.
+			let hint: Extract<Message, { kind: 'ParamValue' }> | null = null;
+			const watch = this.session.bus.on('ParamValue', (m) => {
+				if (textOf(m.param_id) === linkId) hint = m;
+			});
+			await this.sleep(this.timing.refusalGraceMs);
+			watch();
+			const answer = await this.readBack(target, linkId, row.index);
 			if (!answer) {
-				result = { accepted: false, sentBits: bits, echoBits: null, reasons: [], sourceStored: null, note: 'the vehicle did not answer the write', at: startedAt };
+				const hinted = hint as Extract<Message, { kind: 'ParamValue' }> | null;
+				result = {
+					...base, accepted: false, echoBits: hinted ? paramValueBits(hinted) : null, reasons: [...reasons], sourceStored: null, sourceState: 'none',
+					note: 'the vehicle did not answer the read-back after the write'
+				};
 			} else {
 				const echoBits = paramValueBits(answer);
 				const echoType = answer.param_type === PARAM_TYPE_REAL32 ? 'f32' : answer.param_type === PARAM_TYPE_INT32 ? 'i32' : null;
-				const accepted = echoBits === bits && echoType === type;
-				if (!accepted) await this.sleep(this.timing.refusalGraceMs);
-				result = { accepted, sentBits: bits, echoBits, reasons: [...reasons], sourceStored: null, note: null, at: startedAt };
-				if (accepted) {
-					result.sourceStored = await this.writeSource(row.index, sourceBytes, source);
-					if (!result.sourceStored) result.note = 'the source text read back from the vehicle differs from the one sent';
-				}
+				result = { ...base, accepted: echoBits === bits && echoType === type, echoBits, reasons: [...reasons], sourceStored: null, sourceState: 'none', note: null };
 			}
 		} finally {
 			this.noticeListeners.delete(heard);
 		}
 		this.results = { ...this.results, [linkId]: result };
 		this.publish();
+		if (result.accepted) result = await this.storeSource(linkId, row.index, result);
 		return result;
+	}
+
+	/**
+	 * Writes the source text of an accepted value (again when it did not read back) and records the outcome with a visible state.
+	 * TODO(unit 6): a source SET has no per-chunk ack, so success is the read-back only; confirm the number of attempts and the
+	 * timing against the SIL's real link (the fake vehicle answers at once).
+	 */
+	private async storeSource(linkId: string, index: number, start: StageResult): Promise<StageResult> {
+		let result = start;
+		const bytes = encoder.encode(start.source);
+		for (let attempt = result.sourceAttempts + 1, made = 0; made < this.timing.sourceAttempts; attempt++, made++) {
+			result = { ...result, sourceState: 'writing', sourceStored: null, sourceAttempts: attempt, note: attempt > 1 ? `writing the source text again (attempt ${attempt})` : null };
+			this.results = { ...this.results, [linkId]: result };
+			this.publish();
+			const stored = await this.writeSource(index, bytes, start.source);
+			result = {
+				...result,
+				sourceStored: stored,
+				sourceState: stored ? 'stored' : 'failed',
+				note: stored ? null : 'the source text read back from the vehicle differs from the one sent'
+			};
+			if (stored) break;
+		}
+		this.results = { ...this.results, [linkId]: result };
+		this.publish();
+		return result;
+	}
+
+	/**
+	 * Writes the source text of a value the vehicle accepted again, after the first write did not read back (the value stays
+	 * staged with the placeholder source until this succeeds).
+	 */
+	retrySource(linkId: string): Promise<StageResult> {
+		return this.enqueue(async () => {
+			const last = this.results[linkId];
+			if (!last || !last.accepted) throw new Error(`${linkId} has no accepted write whose source could be retried`);
+			if (last.sourceState === 'stored') return last;
+			const row = [...this.rows.values()].find((r) => r.linkId === linkId);
+			if (!row) throw new Error(`the vehicle has no parameter ${linkId}`);
+			this.requireTarget();
+			return this.storeSource(linkId, row.index, last);
+		});
+	}
+
+	/** Asks for one parameter and resolves with the first PARAM_VALUE for it that arrives after the request was sent. */
+	private readBack(target: { systemId: number; componentId: number }, linkId: string, index: number): Promise<Extract<Message, { kind: 'ParamValue' }> | null> {
+		this.session.send({
+			kind: 'ParamRequestRead', target_system: target.systemId, target_component: target.componentId,
+			param_id: new Uint8Array(PARAM_ID_BYTES), param_index: index
+		});
+		return this.waitFor('ParamValue', (m) => textOf(m.param_id) === linkId, this.timing.replyMs).promise;
 	}
 
 	private async writeSource(index: number, bytes: Uint8Array, text: string): Promise<boolean> {
