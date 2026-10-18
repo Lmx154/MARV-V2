@@ -61,7 +61,7 @@ DEFAULT_BUILD = ROOT / "build" / "host-gz-quadfc"
 DEFAULT_CARD = ROOT / "vehicles" / "marv_5in_fc3v2.yaml"
 DEFAULT_BUDGET = ROOT / "design" / "budget.yaml"
 DEFAULT_REQUIRED = HERE / "required_checks.yaml"
-PARAM_SET = "marv_params_fc3v2"
+PARAMETER_SET = "marv_params_fc3v2"
 SECTION = "quad"
 SIL_LIBRARY = Path("sim") / "quad_fc" / "libmarv_sil_quad_fc.so"
 PLUGIN_DIR = Path("sim") / "gz" / "plugin"
@@ -280,7 +280,7 @@ def check_sil(check, cfg, manifest, card, build, budget, work_dir):
 def validate(config, image, build, card, budget, required, work_dir):
     """(report bytes, report id hex, report dict)."""
     build = Path(build)
-    manifest_path = build / "generated" / PARAM_SET / "marv" / "params" / "params_manifest.json"
+    manifest_path = build / "generated" / PARAMETER_SET / "marv" / "params" / "params_manifest.json"
     tool = build / TABLE_TOOL
     sil_library = build / SIL_LIBRARY
     for p, what in ((manifest_path, "the parameter set's manifest"), (tool, "marv_validate_table"),

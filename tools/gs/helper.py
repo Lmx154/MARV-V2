@@ -6,10 +6,13 @@
   - records the ground log (tools/gs/groundlog.py): every byte in each direction, timestamped per chunk;
   - serves the image library (tools/gs/artifacts.py) over HTTP GET under /api/images;
   - launches and stops a Gazebo SIL run (tools/gs/sil.py);
+  - validates a staged config for an image of the library (tools/validate/validate_config.py, ground-segment unit 9, G7) and
+    keeps the reports keyed by (image hash, config hash) (tools/gs/artifacts.py ReportLibrary);
   - serves the built GCS (gcs/build) at /.
 
   uv run python tools/gs/helper.py [--serial PATH [--baud N] | --udp PORT] [--port N] [--runs-dir DIR] [--build-root DIR]
-                                   [--gcs-dir DIR] [--sil-udp-port N] [--sil-command CMD] [--extra-origin ORIGIN ...]
+                                   [--gcs-dir DIR] [--sil-udp-port N] [--sil-command CMD] [--reports-dir DIR]
+                                   [--validate-command CMD] [--extra-origin ORIGIN ...]
 
 Security. It binds 127.0.0.1 only. Every request must carry the Host `127.0.0.1:<port>`; an Origin header, when present, must
 be exactly `http://127.0.0.1:<port>` (the WebSocket requires it); and every request needs the per-session token (random, printed
@@ -29,10 +32,20 @@ Endpoints (all need the token):
   GET  /api/images                JSON: the image library (tools/gs/artifacts.py)
   GET  /api/images/<hash>/<name>  an artifact of the image with that SHA-256: image, elf, uf2, params_manifest,
                                   params_provenance, factory_mcfg
+  GET  /api/reports/<image hash>/<config hash>
+                                  the validation report of that pair (the bytes whose SHA-256 is the report id), 404 if none
   WS   /ws                        binary frames are raw device bytes in both directions; text frames are JSON control:
          {"cmd": "status"} {"cmd": "open", "serial": "/dev/...", "baud": N} {"cmd": "open", "udp_port": N} {"cmd": "close"}
-         {"cmd": "sil_start"} {"cmd": "sil_stop"}; each is answered {"ok": true|false, ...} (an "id" field is echoed).
-         Pushed events: {"event": "device_opened"|"device_closed", ...}.
+         {"cmd": "sil_start"} {"cmd": "sil_stop"}
+         {"cmd": "config_report", "image_hash": H, "view": V}: the config hash of V and whether a report of (H, that hash) is
+           stored ({"config_hash", "stored", "verdict"})
+         {"cmd": "validate", "image_hash": H, "view": V}: writes V as a .mcfg (tools/config/mcfg.py, the format's single
+           source) and runs the validator on it for the library's image H, one validation at a time; answered at once
+           ({"config_hash", "started": true}); the run pushes {"event": "validate_progress", "line"} per progress line and
+           {"event": "validate_done", "image_hash", "config_hash", "verdict", "report_id", "exit_status"}.
+         V is the JSON view of tools/config/mcfg.py (decode/dump: sections of records with their bits, enumerations and source
+         texts); the GCS builds it from the vehicle's staged records. Each command is answered {"ok": true|false, ...} (an
+         "id" field is echoed). Pushed events: {"event": "device_opened"|"device_closed", ...} and the validation's.
 """
 
 from __future__ import annotations
@@ -41,6 +54,7 @@ import argparse
 import asyncio
 import fnmatch
 import glob
+import hashlib
 import hmac
 import json
 import mimetypes
@@ -59,8 +73,10 @@ from urllib.parse import parse_qs, unquote, urlsplit
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(ROOT / "tools" / "config"))
 import groundlog  # noqa: E402
-from artifacts import ARTIFACT_KEYS, ImageLibrary  # noqa: E402
+import mcfg  # noqa: E402
+from artifacts import ARTIFACT_KEYS, ImageLibrary, ReportLibrary  # noqa: E402
 from device import DEFAULT_BAUD, LOOPBACK, Device, DeviceError, SerialDevice, UdpDevice  # noqa: E402
 from sil import SilLauncher  # noqa: E402
 
@@ -73,6 +89,11 @@ COOKIE = "marv_gs_token"
 CLIENT_QUEUE_MAX_BYTES = 4 << 20  # labelled harness value: bytes queued for a slow browser before chunks are dropped (counted, logged)
 SERIAL_GLOBS = ("/dev/ttyACM*", "/dev/ttyUSB*", "/dev/serial/by-id/*")
 WS_BUSY = 1013  # RFC 6455 section 7.4.2 "try again later"
+VALIDATOR = ROOT / "tools" / "validate" / "validate_config.py"
+VALIDATION_STOP_S = 10  # labelled harness value: how long the helper waits for a stopped validation to end
+# The validator's command line; {config} {image} {build} {work} {out} are replaced (--validate-command replaces it in tests).
+VALIDATE_COMMAND = (sys.executable, str(VALIDATOR), "--config", "{config}", "--image", "{image}", "--build", "{build}",
+                    "--work-dir", "{work}", "--out", "{out}")
 
 
 def utc_stamp() -> str:
@@ -81,7 +102,8 @@ def utc_stamp() -> str:
 
 class Helper:
     def __init__(self, *, runs_dir: Path, build_root: Path, gcs_dir: Path, sil_udp_port: int | None, token: str | None = None,
-                 sil_command: list[str] | None = None, extra_origins: tuple[str, ...] = ()):
+                 sil_command: list[str] | None = None, extra_origins: tuple[str, ...] = (), reports_dir: Path | None = None,
+                 validate_command: list[str] | None = None):
         self.token = token or secrets.token_urlsafe(32)
         self.extra_origins = frozenset(extra_origins)
         self.build_root, self.gcs_dir = Path(build_root), Path(gcs_dir)
@@ -96,6 +118,11 @@ class Helper:
                 self.run_dir = Path(runs_dir) / f"{utc_stamp()}-{suffix}"
         self.log = groundlog.GroundLog(self.run_dir / "ground.log")
         self.images = ImageLibrary(self.build_root)
+        self.reports = ReportLibrary(reports_dir if reports_dir is not None else self.build_root / "gs-reports")
+        self.validate_command = list(validate_command or VALIDATE_COMMAND)
+        self.validation: dict | None = None
+        self._validation_task: asyncio.Task | None = None
+        self._validation_proc: asyncio.subprocess.Process | None = None
         self.sil = SilLauncher(self.run_dir, sil_udp_port, sil_command)
         self.port = 0
         self.device: Device | None = None
@@ -124,6 +151,7 @@ class Helper:
             self._server.close()
             await self._server.wait_closed()
         self.close_device("helper stopping")
+        await self.stop_validation()
         await asyncio.to_thread(self.sil.stop)
         self.log.event("helper stopped")
         self.log.close()
@@ -194,8 +222,104 @@ class Helper:
             "client": self.client is not None,
             "dropped_bytes": self.dropped_bytes,
             "sil": self.sil.status(),
+            "validation": self.validation,
             "gcs_built": (self.gcs_dir / "index.html").is_file(),
         }
+
+    # ---- validation (G7) ------------------------------------------------------------------------------------------------
+
+    @staticmethod
+    def config_of_view(view) -> tuple[bytes, str]:
+        """(the .mcfg bytes, the config hash hex) of a JSON view; ValueError for a view the format refuses."""
+        if not isinstance(view, dict):
+            raise ValueError("view must be a JSON object (tools/config/mcfg.py's JSON view)")
+        try:
+            cfg = mcfg.config_from_view(view)
+            return mcfg.encode(cfg), mcfg.config_hash(cfg).hex()
+        except (mcfg.McfgError, KeyError, TypeError, ValueError) as e:
+            raise ValueError(f"the view is not a config: {type(e).__name__}: {e}") from None
+
+    def config_report(self, msg: dict) -> dict:
+        image_hash = str(msg.get("image_hash", ""))
+        _, config_hash = self.config_of_view(msg.get("view"))
+        report = self.reports.report(image_hash, config_hash)
+        verdict = None
+        if report is not None:
+            verdict = json.loads(report.read_bytes()).get("verdict")
+        return {"config_hash": config_hash, "stored": report is not None, "verdict": verdict}
+
+    async def start_validation(self, msg: dict) -> dict:
+        if self._validation_task is not None and not self._validation_task.done():
+            raise DeviceError("a validation is running; wait for it to finish")
+        image_hash = str(msg.get("image_hash", ""))
+        data, config_hash = self.config_of_view(msg.get("view"))
+        image = self.images.lookup(image_hash, "image")
+        target = self.reports.directory(image_hash, config_hash)
+        if image is None or target is None:
+            raise DeviceError(f"the image {image_hash!r} is not in the image library")
+        tree = self.build_root / image.relative_to(self.build_root.resolve()).parts[0]
+        target.mkdir(parents=True, exist_ok=True)
+        config = target / "config.mcfg"
+        config.write_bytes(data)
+        work = self.run_dir / "validation" / f"{image_hash[:16]}-{config_hash[:16]}-{utc_stamp()}"
+        fields = {"config": str(config), "image": str(image), "build": str(tree), "work": str(work),
+                  "out": str(target / "report.json")}
+        cmd = []
+        for part in self.validate_command:
+            for key, value in fields.items():
+                part = part.replace("{" + key + "}", value)
+            cmd.append(part)
+        self.validation = {"running": True, "image_hash": image_hash, "config_hash": config_hash}
+        self.log.event(f"validation started: image {image_hash} config {config_hash}")
+        self._validation_task = asyncio.create_task(self._run_validation(cmd, image_hash, config_hash))
+        return {"config_hash": config_hash, "started": True}
+
+    async def _run_validation(self, cmd: list[str], image_hash: str, config_hash: str) -> None:
+        verdict, report_id, status = None, None, None
+        try:
+            proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                                                        start_new_session=True)
+            self._validation_proc = proc
+
+            async def progress():
+                async for raw in proc.stderr:
+                    self._push(json.dumps({"event": "validate_progress", "image_hash": image_hash, "config_hash": config_hash,
+                                           "line": raw.decode("utf-8", "replace").rstrip()}))
+
+            reader = asyncio.create_task(progress())
+            out = (await proc.stdout.read()).decode("utf-8", "replace")
+            await reader
+            status = await proc.wait()
+            for line in out.splitlines():
+                if line.startswith("report_id: "):
+                    report_id = line[len("report_id: "):].strip()
+                elif line.startswith("verdict: "):
+                    verdict = line[len("verdict: "):].strip()
+        except OSError as e:
+            self._push(json.dumps({"event": "validate_progress", "image_hash": image_hash, "config_hash": config_hash,
+                                   "line": f"the validator did not start: {e}"}))
+        finally:
+            self._validation_proc = None
+            stored = self.reports.report(image_hash, config_hash)
+            if stored is None or report_id is None or hashlib.sha256(stored.read_bytes()).hexdigest() != report_id:
+                verdict, report_id = None, None  # no report of this run: the GCS shows the progress lines
+            self.validation = {"running": False, "image_hash": image_hash, "config_hash": config_hash, "verdict": verdict,
+                               "report_id": report_id, "exit_status": status}
+            self.log.event(f"validation done: image {image_hash} config {config_hash} verdict {verdict} report {report_id}")
+            self._push(json.dumps({"event": "validate_done", **self.validation}))
+
+    async def stop_validation(self) -> None:
+        proc = self._validation_proc
+        if proc is not None and proc.returncode is None:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        if self._validation_task is not None:
+            try:
+                await asyncio.wait_for(self._validation_task, VALIDATION_STOP_S)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                self._validation_task.cancel()
 
     # ---- WebSocket ------------------------------------------------------------------------------------------------------
 
@@ -248,6 +372,10 @@ class Helper:
             elif cmd == "sil_stop":
                 reply["exit_status"] = await asyncio.to_thread(self.sil.stop)
                 self.log.event("SIL run stopped")
+            elif cmd == "config_report":
+                reply.update(self.config_report(msg))
+            elif cmd == "validate":
+                reply.update(await self.start_validation(msg))
             else:
                 raise DeviceError(f"unknown command {cmd!r}")
         except (DeviceError, RuntimeError, ValueError, TypeError, OSError) as e:
@@ -334,6 +462,12 @@ class Helper:
                 return self._refuse(HTTPStatus.NOT_FOUND, "no such image or artifact")
             return self._response(HTTPStatus.OK, file.read_bytes(), "application/octet-stream",
                                   [("Content-Disposition", f'attachment; filename="{file.name}"')])
+        if path.startswith("/api/reports/"):
+            parts = path[len("/api/reports/"):].split("/")
+            report = self.reports.report(parts[0], parts[1]) if len(parts) == 2 else None
+            if report is None:
+                return self._refuse(HTTPStatus.NOT_FOUND, "no report of that image and config")
+            return self._response(HTTPStatus.OK, report.read_bytes(), "application/json")
         if path.startswith("/api/"):
             return self._refuse(HTTPStatus.NOT_FOUND, "no such endpoint")
         return self._static(path, set_cookie)
@@ -362,7 +496,9 @@ class Helper:
 
 async def run(args: argparse.Namespace) -> int:
     helper = Helper(runs_dir=args.runs_dir, build_root=args.build_root, gcs_dir=args.gcs_dir, sil_udp_port=args.sil_udp_port,
-                    sil_command=shlex.split(args.sil_command) if args.sil_command else None, extra_origins=tuple(args.extra_origin))
+                    sil_command=shlex.split(args.sil_command) if args.sil_command else None, extra_origins=tuple(args.extra_origin),
+                    reports_dir=args.reports_dir,
+                    validate_command=shlex.split(args.validate_command) if args.validate_command else None)
     await helper.start(args.port)
     try:
         if args.serial:
@@ -405,6 +541,10 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--gcs-dir", type=Path, default=ROOT / "gcs" / "build", help="the built GCS served at /")
     ap.add_argument("--sil-udp-port", type=int, default=None, help="UDP port the launched SIL run is to serve (a scenario value)")
     ap.add_argument("--sil-command", help="the command line `sil_start` runs instead of tools/sim/run_quad_fc.py (shell-style quoting; for tests)")
+    ap.add_argument("--reports-dir", type=Path, default=None,
+                    help="the validation reports, keyed by image and config hash (default <build-root>/gs-reports)")
+    ap.add_argument("--validate-command", help="the validator command line with {config} {image} {build} {work} {out} "
+                                               "(shell-style quoting; for tests; default tools/validate/validate_config.py)")
     ap.add_argument("--extra-origin", action="append", default=[], type=origin_arg, metavar="ORIGIN",
                     help="also accept this exact origin (repeatable), e.g. http://localhost:5173 for a vite dev server: DEVELOPMENT ONLY")
     return ap.parse_args(argv)
