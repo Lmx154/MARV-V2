@@ -108,7 +108,7 @@ def step_activate(a, res):
         res["stage"] = {"param": a.param, "factory_bits": f"{base_bits:#010x}", "new_bits": f"{new_bits:#010x}",
                         "echo_bits": f"{lc.value_bits(d, echo):#010x}", "texts": link.client.texts(at)}
         ident = link.identity()
-        sc.check(res, "staged", lc.value_bits(d, echo) == new_bits and ident["staged_differs"] == 1,
+        sc.check(res, "staged", lc.value_bits(d, echo) == new_bits and ident["staged_differs"] == (0 if a.rebind else 1),
                  echo=res["stage"]["echo_bits"], staged_differs=ident["staged_differs"])
         res["validation"] = sc.validate(staged, image_bin, sc.RAW.parent / "validation" / a.name)
         v = res["validation"]
@@ -269,6 +269,8 @@ def main() -> int:
     ap.add_argument("--param", default="att_kp")
     ap.add_argument("--ulps", type=int, default=1)
     ap.add_argument("--expect-sequence", type=int)
+    ap.add_argument("--rebind", action="store_true", help="activate: the running config already holds the value (re-binding the "
+                    "same config to this image), so the staged copy does not differ from it")
     ap.add_argument("--expect-hash")
     ap.add_argument("--expect-status", default="ok")
     ap.add_argument("--offset", type=int, default=200, help="byte of the slot's file to invert (corrupt)")
