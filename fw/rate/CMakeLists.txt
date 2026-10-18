@@ -4,5 +4,6 @@ add_library(marv_rate STATIC src/rate_loop.cpp)
 target_include_directories(marv_rate PUBLIC include)
 target_link_libraries(marv_rate
   PUBLIC marv_prim marv_types marv_mixer marv_params
-  PRIVATE marv_hal marv_params_runtime)
+  PRIVATE marv_hal $<COMPILE_ONLY:marv_params_generated>)
+add_dependencies(marv_rate marv_params_generated)
 marv_apply_flags(marv_rate FIRMWARE)

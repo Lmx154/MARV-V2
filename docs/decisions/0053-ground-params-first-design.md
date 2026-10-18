@@ -26,6 +26,13 @@ lead summary here). Items marked (Luis) were signed by him on 2026-10-17 (Approv
    of the grant fails both request-while-armed tests, removing the ConfigRefused refusal fails both ConfigRefused tests.
    Frozen tests extended (unit 3, VALIDATE): tests/regression/quad/L09/unit/quad_fc_gate_test.cpp gains the validate cases
    (the default table accepted, one rejecting table per parameter-dependent panic site, init panicking with validate's reason).
+   Unit 4b (STORE), the parameter-table link: the modules (attitude, mixer, rate, rate_group, arming, store) take their set's
+   header compile-only and link no set's archives, so the m33 image and each SIL library link exactly one set (linking the
+   store into the image had made the link resolve the product set's 104-record kParamDefaults under the FC3v2 runtime);
+   a post-link check (cmake/param_table.cmake, tools/ci/check_param_table.py; planted control
+   tests/regression/quad/L09/controls) fails the build unless the linked table is the set's. Frozen-test change, link line
+   only: tests/regression/quad/L05/unit/angle/CMakeLists.txt and tests/regression/quad/L05/unit/attitude/CMakeLists.txt link
+   marv_params_runtime themselves (they had it only through marv_attitude); their tests and the code they link are unchanged.
 3. **Storage format:** binary `.mcfg` on the device, JSON as the host view (GD-3, Luis); FatFs (BSD-style) over SPI0 for
    the SD card; pins from the madflight page, UNVERIFIED until the mount test.
    Unit 2 (GEN) frozen-test changes: `tests/regression/quad/L00/tools/test_params_gen.py` (extended: the manifest

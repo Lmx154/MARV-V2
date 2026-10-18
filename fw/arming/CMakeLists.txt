@@ -5,5 +5,6 @@ add_library(marv_arming STATIC src/arming.cpp)
 target_include_directories(marv_arming PUBLIC include)
 target_link_libraries(marv_arming
   PUBLIC marv_prim marv_params
-  PRIVATE marv_hal marv_params_fc3v2_generated)
+  PRIVATE marv_hal $<COMPILE_ONLY:marv_params_fc3v2_generated>)
+add_dependencies(marv_arming marv_params_fc3v2_generated)
 marv_apply_flags(marv_arming FIRMWARE)

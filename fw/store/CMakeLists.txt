@@ -6,5 +6,6 @@ add_library(marv_store STATIC src/mcfg.cpp src/boot.cpp src/staging.cpp)
 target_include_directories(marv_store PUBLIC include)
 target_link_libraries(marv_store
   PUBLIC marv_prim marv_params marv_arming marv_hal_storage
-  PRIVATE marv_params_fc3v2_runtime)
+  PRIVATE $<COMPILE_ONLY:marv_params_fc3v2_generated>)
+add_dependencies(marv_store marv_params_fc3v2_generated)
 marv_apply_flags(marv_store FIRMWARE)

@@ -138,8 +138,9 @@ inline constexpr double kSecondsPerMinute = 60.0;
 // Kind: standard.
 inline constexpr std::uint32_t kCrc32PolyReflected = 0xEDB88320;
 
-// SHA-256 (the config file's payload and config hashes, fw/store/include/marv/store/sha256.hpp). Citation for every entry
-// below: NIST FIPS 180-4, "Secure Hash Standard (SHS)", August 2015. Section 2.2: the digest is 256 bits (32 bytes) and the
+// SHA-256 (the config file's payload and config hashes, fw/store/include/marv/store/sha256.hpp).
+// Citation for every entry below: NIST FIPS 180-4, "Secure Hash Standard (SHS)", August 2015. Section 2.2: the digest is
+// 256 bits (32 bytes) and the
 // algorithm works on 32-bit words. Section 4.1.2: Sigma0(x) = ROTR^2 ^ ROTR^13 ^ ROTR^22, Sigma1(x) = ROTR^6 ^ ROTR^11 ^
 // ROTR^25, sigma0(x) = ROTR^7 ^ ROTR^18 ^ SHR^3, sigma1(x) = ROTR^17 ^ ROTR^19 ^ SHR^10. Section 4.2.2: the 64 round
 // constants K. Section 5.1.1: padding appends one 1 bit (the byte 0x80 for a message of whole bytes), zeros, and the

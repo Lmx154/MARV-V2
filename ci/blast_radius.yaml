@@ -58,6 +58,7 @@ full_roots:
   # cmake/pico_sdk.cmake has its own rule (the m33 build only); a new cmake/ file is unmapped, so it selects everything.
   - cmake/flags.cmake
   - cmake/flight_targets.cmake
+  - cmake/param_table.cmake
   - cmake/googletest.cmake
   - cmake/marv_card_gen.cmake
   - cmake/marv_test_timeout.cmake
@@ -310,6 +311,13 @@ rules:
     pytest_paths: []
     gz_groups: [l7]
     why: "arming is the pure arming and failsafe machine, tested by the L08 unit_arming host test and linked by the quad_fc composition (the L09 gate test, and the L10 plumbing test in gz group l7)"
+
+  - paths: [fw/store/**]
+    ctest_labels: [L09]
+    run_ci_steps: ["@flight_gates"]
+    pytest_paths: []
+    gz_groups: [l7]
+    why: "store is the config store (ground-segment unit 4b): linked into the m33 image (main.cpp's boot step) and into the SIL library marv_sil_quad_fc (the L09 SIL test; the plugin of host-gz-quadfc, gz group l7)"
 
   - paths: [fw/estimator/**]
     ctest_labels: [L07, L09]
@@ -654,6 +662,13 @@ rules:
       - tests/regression/quad/L11/tools
     gz_groups: []
     why: "the G3 checker, every G3 gate step and control, and the L00/L05/L11 tools tests of its rules"
+
+  - paths: [tools/ci/check_param_table.py, tests/regression/quad/L09/controls/**]
+    ctest_labels: []
+    run_ci_steps: ["@host", m33_build, param_table_host_control, param_table_m33_control]
+    pytest_paths: []
+    gz_groups: [l2, l4, l5, l7, l11]
+    why: "the post-link parameter-table check runs after every link of the m33 image and of every SIL library (host and gz builds); its planted control is built only by its two control steps"
 
   - paths: [tools/ci/check_param_ids.py]
     ctest_labels: [L04, L05, L11]
@@ -1290,6 +1305,7 @@ rules:
       - tools/ci/check_g3.py
       - tools/ci/check_gs3.py
       - tools/ci/check_param_ids.py
+      - tools/ci/check_param_table.py
       - tools/ci/check_regression_changes.py
       - tools/ci/lint_g1.py
     why: "tools/ci/CMakeLists.txt is configured by the host tree and registers nothing today; the host build and the L00 tests configure it, and it selects what the CI checks of its directory select"
