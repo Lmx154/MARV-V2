@@ -1,0 +1,31 @@
+# The attitude and gyro-bias ESKF in shadow (M4, decision 0055; fw/estimator eskf.hpp), in params_gen input form
+# (tools/gen/params_gen.py). Appended after the quad_fc register in the parameter set marv_params_fc3v2_eskf only
+# (fw/params/CMakeLists.txt), which the host replay of the ESKF reads; the board's set marv_params_fc3v2 does not carry these
+# entries, so the board image is unchanged. The health window is the quad_fc register's estimator_accel_healthy_min and _max
+# (Mahony's). None of these is a safety number while the ESKF only shadows (decision 0055).
+# Noise: from the FC3v2 sensor profile, sensors/profiles/madflight_fc3v2_revc.yaml (LSM6DSV, ST DS13476 Rev 5). Structure
+# defaults: PX4 EKF2 (BSD-3), PX4-Autopilot ddcaad6601be20453ec6acd0f08e567af3a7e1bb, read 2026-10-18; INFERRED from a source
+# read that they suit this filter until a committed test shows it.
+
+eskf_gyro_noise_density:
+  {type: f32, value: 4.8869219055841225e-05, unit: "rad/s/sqrt(Hz)", method: "derived(N_g = 2.8 mdeg/s/sqrt(Hz) x 1e-3 x pi/180 (BIPM SI Brochure 9th ed. Table 8: 1 deg = (pi/180) rad; degrees appear only in this text, core 3))", source: "sensors/profiles/madflight_fc3v2_revc.yaml imu gyro_noise_density, DS13476 Rev 5 4.1 Table 3 (Rn, 2.8 mdps/sqrt(Hz), high-performance mode). UNVERIFIED as the profile records it: the M1 P12 still bench measured 5.17 (x) and 4.94 (y) mdps/sqrt(Hz) by sd / sqrt(537 Hz) (tests/regression/quad/L09/results/p12_bench/report.txt:114-118); the datasheet figure is the profile's value", sigma: UNKNOWN, status: [UNVERIFIED]}
+eskf_gyro_bias_random_walk:
+  {type: f32, value: 5.985232540755365e-05, unit: "rad/s/sqrt(s)", method: "derived(K = (sqrt(6) / 2) B^2 / N, the plant's rule for the rate random walk whose Allan minimum is B (sim/plant/src/imu_model.hpp lines 16-22), with B = gyro_bias_instability 2.8e-3 deg/s and N = gyro_noise_density 2.8e-3 deg/s/sqrt(Hz): K = 1.2247448713915890 x 2.8e-3 = 3.4292856398964490e-3 deg/s/sqrt(s), x pi/180 (BIPM SI Brochure 9th ed. Table 8))", source: "sensors/profiles/madflight_fc3v2_revc.yaml imu gyro_bias_instability (labelled scenario value, PLACEHOLDER) and gyro_noise_density (DS13476 Rev 5 4.1 Table 3). PLACEHOLDER: the profile has no bias random walk and its bias instability is itself a PLACEHOLDER (the rule B = N x 1 sqrt(Hz), decision 0012); replaced by the M4 still-bench Allan run on this part (the profile's replaced_by)", sigma: UNKNOWN, status: [UNVERIFIED, PLACEHOLDER]}
+eskf_accel_noise_density:
+  {type: f32, value: 0.000588399, unit: "m/s2/sqrt(Hz)", method: "derived(N_a = 60 ug/sqrt(Hz) x 1e-6 x g_n, g_n = 9.80665 m/s^2 (3rd CGPM 1901, fw/prim constants.hpp kStandardGravity))", source: "sensors/profiles/madflight_fc3v2_revc.yaml imu accel_noise_density, DS13476 Rev 5 4.1 Table 3 (An, 60 ug/sqrt(Hz), high-performance mode, FS +-2 g to +-16 g). Sensor noise only: vibration and linear acceleration are not in it (eskf.hpp: the gates and the rejection timeout)", sigma: UNKNOWN}
+eskf_angle_sigma_init:
+  {type: f32, value: 0.1, unit: "rad", method: scenario, source: "PX4 EKF2 ekf2_angerr_init default 0.1 rad, '1-sigma tilt error after initial alignment using gravity vector' (src/modules/ekf2/EKF/common.h:348; used by resetQuatCov, covariance.cpp:333-335); here every angle-error state at initialisation and after a tilt reset; INFERRED from a source read", sigma: choice}
+eskf_gyro_bias_sigma_init:
+  {type: f32, value: 0.1, unit: "rad/s", method: scenario, source: "PX4 EKF2 ekf2_gbias_init default 0.1 rad/s, '1-sigma gyro bias uncertainty at switch on' (src/modules/ekf2/EKF/common.h:346; covariance.cpp:356); INFERRED from a source read", sigma: choice}
+eskf_accel_gate:
+  {type: f32, value: 5.0, unit: "1", method: scenario, source: "PX4 EKF2 innovation gate in standard deviations, default 5.0 for GNSS position (EKF2_GPS_P_GATE, src/modules/ekf2/params_gnss.yaml) and for barometric height (EKF2_BARO_GATE, params_barometer.yaml); the magnetometer's is 3.0 (EKF2_MAG_GATE). Applied as EKF2's test ratio r^2 / (gate^2 s) > 1 rejects (ekf.h:1168, 1216); INFERRED from a source read", sigma: choice}
+eskf_accel_reset_us:
+  {type: i32, value: 7000000, unit: "us", method: scenario, source: "PX4 EKF2 reset_timeout_max 7'000'000 us, 'maximum time we allow horizontal inertial dead reckoning before attempting to reset the states to the measurement' (src/modules/ekf2/EKF/common.h:512); here the span of consecutive gated healthy accelerometer samples after which the tilt is reset to the accelerometer's; INFERRED from a source read", sigma: choice}
+eskf_angle_var_min:
+  {type: f32, value: 1.0e-9, unit: "rad2", method: scenario, source: "PX4 EKF2 constrainStateVariances: constrainStateVar(State::quat_nominal, 1e-9f, 1.f) (src/modules/ekf2/EKF/covariance.cpp:257), the floor of each angle-error variance; INFERRED from a source read", sigma: choice}
+eskf_angle_var_max:
+  {type: f32, value: 1.0, unit: "rad2", method: scenario, source: "PX4 EKF2 constrainStateVariances: constrainStateVar(State::quat_nominal, 1e-9f, 1.f) (src/modules/ekf2/EKF/covariance.cpp:257), the ceiling of each angle-error variance; INFERRED from a source read", sigma: choice}
+eskf_gyro_bias_var_min:
+  {type: f32, value: 1.0e-9, unit: "rad2/s2", method: scenario, source: "PX4 EKF2 kGyroBiasVarianceMin 1e-9f (src/modules/ekf2/EKF/ekf.h:492), the floor of constrainStateVarLimitRatio(State::gyro_bias, kGyroBiasVarianceMin, 1.f) (covariance.cpp:265); INFERRED from a source read", sigma: choice}
+eskf_gyro_bias_var_max:
+  {type: f32, value: 1.0, unit: "rad2/s2", method: scenario, source: "PX4 EKF2 constrainStateVarLimitRatio(State::gyro_bias, kGyroBiasVarianceMin, 1.f) (src/modules/ekf2/EKF/covariance.cpp:265), the ceiling of each gyro-bias variance; INFERRED from a source read", sigma: choice}
