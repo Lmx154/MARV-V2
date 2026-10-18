@@ -65,6 +65,13 @@
 // stamp that does not advance cannot extend the test; a stamp before the request's ends it. The gate writes its values
 // to the write directly: the mixer's DShot diffuser carry (mixer.hpp) is not reachable from it and is not touched.
 // init panics naming the violated rule on an invalid rate, mixer or chain configuration or an invalid rate divisor.
+//
+// MARV_QUAD_FC_ESKF (host only; the library marv_composition_quad_fc_eskf, fw/compositions/quad_fc/CMakeLists.txt, decision
+// 0055): this source with the attitude and gyro-bias ESKF (marv::estimator::Eskf, parameters eskf_*, validated in validate and
+// read in init) stepped beside Mahony on the calibrated gyro from the sample that completes the boot calibration, and its
+// quaternion and validity, not Mahony's, going to the arming machine's upright check, the attitude law and the published tilt.
+// Mahony is still stepped. Without the definition (the board image, marv_sil_quad_fc) the preprocessed translation unit is
+// the one without these lines.
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -79,6 +86,9 @@
 #include <marv/composition.hpp>
 #include <marv/estimator/gyro_cal.hpp>
 #include <marv/estimator/mahony.hpp>
+#ifdef MARV_QUAD_FC_ESKF
+#include <marv/estimator/eskf.hpp>
+#endif
 #include <marv/hal/hal.hpp>
 #include <marv/hal/tick.hpp>
 #include <marv/hal_target/dshot.hpp>
@@ -151,6 +161,9 @@ std::atomic<bool> g_maintenance_granted{false};  // the arming machine's grant, 
 arming::ConfigStatus g_config_status = arming::ConfigStatus::Ok;  // set before init (set_config_status), read by init
 estimator::Mahony<float> g_estimator;
 estimator::GyroCal<float> g_gyro_cal;
+#ifdef MARV_QUAD_FC_ESKF
+estimator::Eskf<float> g_eskf;
+#endif
 float g_upright_cos = 0.0F;  // cos(arm_small_angle): upright iff the cosine of the estimate's tilt is above it
 TimeUs g_estimator_prev_us = 0;  // the stamp of the previous sample the estimator stepped on
 bool g_estimator_started = false;
@@ -286,6 +299,51 @@ void update_motor_test(TimeUs now) noexcept {
   return x < lo ? lo : (x > 1.0F ? 1.0F : x);
 }
 
+#ifdef MARV_QUAD_FC_ESKF
+[[nodiscard]] estimator::EskfConfig<float> eskf_config(ParamTable t) noexcept {
+  estimator::EskfConfig<float> c;
+  c.gyro_noise_density = param_value<ParamId::eskf_gyro_noise_density>(t);
+  c.gyro_bias_random_walk = param_value<ParamId::eskf_gyro_bias_random_walk>(t);
+  c.accel_noise_density = param_value<ParamId::eskf_accel_noise_density>(t);
+  c.angle_sigma_init = param_value<ParamId::eskf_angle_sigma_init>(t);
+  c.gyro_bias_sigma_init = param_value<ParamId::eskf_gyro_bias_sigma_init>(t);
+  c.accel_gate = param_value<ParamId::eskf_accel_gate>(t);
+  c.accel_reset_us = static_cast<std::uint64_t>(param_value<ParamId::eskf_accel_reset_us>(t));
+  c.angle_var_min = param_value<ParamId::eskf_angle_var_min>(t);
+  c.angle_var_max = param_value<ParamId::eskf_angle_var_max>(t);
+  c.gyro_bias_var_min = param_value<ParamId::eskf_gyro_bias_var_min>(t);
+  c.gyro_bias_var_max = param_value<ParamId::eskf_gyro_bias_var_max>(t);
+  c.accel_healthy_min = param_value<ParamId::estimator_accel_healthy_min>(t);
+  c.accel_healthy_max = param_value<ParamId::estimator_accel_healthy_max>(t);
+  c.accel_fusion_divisor = static_cast<std::uint32_t>(param_value<ParamId::eskf_accel_fusion_divisor>(t));
+  c.accel_model_noise = param_value<ParamId::eskf_accel_model_noise>(t);
+  return c;
+}
+
+// The ESKF configuration's rules: finite, noise densities and the gate positive, the sigmas, the walk and the model error not
+// negative, the variance limits ordered, the window and the timeout at least 1, the health window ordered.
+[[nodiscard]] const char* eskf_reject_reason(ParamTable t) noexcept {
+  const estimator::EskfConfig<float> c = eskf_config(t);
+  if (!(c.gyro_noise_density > 0.0F && c.accel_noise_density > 0.0F && c.accel_gate > 0.0F && c.angle_sigma_init > 0.0F)) {
+    return "quad_fc composition: an eskf_* noise density, eskf_accel_gate or eskf_angle_sigma_init is not positive";
+  }
+  if (!(c.gyro_bias_random_walk >= 0.0F && c.gyro_bias_sigma_init >= 0.0F && c.accel_model_noise >= 0.0F)) {
+    return "quad_fc composition: eskf_gyro_bias_random_walk, eskf_gyro_bias_sigma_init or eskf_accel_model_noise is negative or not a number";
+  }
+  if (!(c.angle_var_min >= 0.0F && c.angle_var_min <= c.angle_var_max && c.gyro_bias_var_min >= 0.0F &&
+        c.gyro_bias_var_min <= c.gyro_bias_var_max)) {
+    return "quad_fc composition: an eskf_* variance limit is negative, not a number or its floor is above its ceiling";
+  }
+  if (param_value<ParamId::eskf_accel_fusion_divisor>(t) < 1 || param_value<ParamId::eskf_accel_reset_us>(t) < 1) {
+    return "quad_fc composition: eskf_accel_fusion_divisor or eskf_accel_reset_us is below 1";
+  }
+  if (!(c.accel_healthy_min > 0.0F && c.accel_healthy_min < c.accel_healthy_max)) {
+    return "quad_fc composition: estimator_accel_healthy_min is not in (0, estimator_accel_healthy_max)";
+  }
+  return nullptr;
+}
+#endif
+
 // The checks init and the target's start-ups make, in their order, on `t`; the first failure's text, else null.
 [[nodiscard]] const char* reject_reason(ParamTable t) noexcept {
   if (t.size() != kParamCount) {
@@ -346,6 +404,11 @@ void update_motor_test(TimeUs now) noexcept {
   if (const char* why = arming::reject_reason(t); why != nullptr) {
     return why;
   }
+#ifdef MARV_QUAD_FC_ESKF
+  if (const char* why = eskf_reject_reason(t); why != nullptr) {
+    return why;
+  }
+#endif
   const std::int32_t cal_us = param_value<ParamId::gyro_cal_duration_us>(t);
   const float cal_movement_max = param_value<ParamId::gyro_cal_movement_max>(t);
   if (cal_us < 1 || !(cal_movement_max >= 0.0F)) {
@@ -420,6 +483,9 @@ void init() noexcept {
   g_estimator.init(estimator::MahonyConfig<float>{
       param_value<ParamId::estimator_kp>(), param_value<ParamId::estimator_ki>(),
       param_value<ParamId::estimator_accel_healthy_min>(), param_value<ParamId::estimator_accel_healthy_max>()});
+#ifdef MARV_QUAD_FC_ESKF
+  g_eskf.init(eskf_config(param_active_table()));
+#endif
   const std::int32_t cal_us = param_value<ParamId::gyro_cal_duration_us>();
   const float cal_movement_max = param_value<ParamId::gyro_cal_movement_max>();
   g_gyro_cal.init(estimator::GyroCalConfig<float>{static_cast<std::uint64_t>(cal_us), cal_movement_max});
@@ -463,6 +529,13 @@ void tick(const ImuSample& raw) noexcept {
     g_estimator.step(s.gyro_rad_s, accel,
                      since > std::numeric_limits<std::uint32_t>::max() ? std::numeric_limits<std::uint32_t>::max()
                                                                        : static_cast<std::uint32_t>(since));
+#ifdef MARV_QUAD_FC_ESKF
+    if (g_gyro_cal.complete()) {
+      g_eskf.step(s.gyro_rad_s, accel,
+                  since > std::numeric_limits<std::uint32_t>::max() ? std::numeric_limits<std::uint32_t>::max()
+                                                                    : static_cast<std::uint32_t>(since));
+    }
+#endif
   }
   g_step.filter(s, rate_due);
   constexpr std::uint32_t kValid = imu_flag(ImuFlag::GyroValid) | imu_flag(ImuFlag::AccelValid);
@@ -486,13 +559,21 @@ void tick(const ImuSample& raw) noexcept {
   in.imu_samples_valid = !g_imu_invalid;
   in.imu_saturated = g_imu_saturated;
   in.gyro_calibrated = g_gyro_cal.complete();
+#ifdef MARV_QUAD_FC_ESKF
+  in.estimator_valid = g_eskf.valid();
+#else
   in.estimator_valid = g_estimator.valid();
+#endif
   in.motor_test_active = g_gate == MotorGate::MotorTest;
   in.maintenance_request = g_maintenance_request.load(std::memory_order_relaxed);
   if (in.maintenance_request) {
     g_maintenance_request.store(false, std::memory_order_relaxed);  // only this tick clears it, so a request is never lost
   }
+#ifdef MARV_QUAD_FC_ESKF
+  const prim::Quat<float>& q = g_eskf.quat();
+#else
   const prim::Quat<float>& q = g_estimator.quat();
+#endif
   in.upright = in.estimator_valid && 1.0F - 2.0F * (q.x * q.x + q.y * q.y) > g_upright_cos;
   g_tilt_xy2.store(q.x * q.x + q.y * q.y, std::memory_order_relaxed);
   g_tilt_wz2.store(q.w * q.w + q.z * q.z, std::memory_order_relaxed);

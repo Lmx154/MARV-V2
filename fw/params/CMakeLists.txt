@@ -327,3 +327,17 @@ marv_add_card_param_set(marv_params_fc3v2 CARD "vehicles/marv_5in_fc3v2.yaml" BU
   SCENARIO "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml"
   EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml"
                  "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml")
+
+# The FC3v2 set with the ESKF register appended (M4, decision 0055: the attitude and gyro-bias ESKF in shadow). Built from the
+# flattened sources of marv_params_fc3v2 above, in its order (no second flatten), then fw/estimator/params/eskf_register.yaml,
+# so every id of marv_params_fc3v2 keeps its id and value and the eskf_* entries follow. Only the host replay of the ESKF
+# (tests/regression/quad/L07/replay, unit_l07_eskf_replay) links it; the board image and marv_sil_quad_fc link marv_params_fc3v2.
+set(marv_fc3v2_flat "${CMAKE_BINARY_DIR}/generated/marv_params_fc3v2/flatten/marv_params_fc3v2")
+marv_add_param_set(marv_params_fc3v2_eskf
+  CARD "${marv_fc3v2_flat}_card.yaml" "${marv_fc3v2_flat}_mixer.yaml" "${marv_fc3v2_flat}_scenario.yaml"
+       "${marv_fc3v2_flat}_rate.yaml" "${marv_fc3v2_flat}_attitude.yaml" "${marv_fc3v2_flat}_gyro_chain.yaml"
+       "${marv_fc3v2_flat}_vertical.yaml"
+  REGISTER "${marv_fc3v2_flat}_register.yaml"
+           "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml"
+           "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml"
+           "${PROJECT_SOURCE_DIR}/fw/estimator/params/eskf_register.yaml")

@@ -11,3 +11,7 @@ set_target_properties(marv_attitude marv_rate_group marv_gyro_chain marv_rate ma
   PROPERTIES POSITION_INDEPENDENT_CODE ON)
 marv_add_sil_library(marv_sil_quad_fc
   COMPOSITION marv_composition_quad_fc PARAMS marv_params_fc3v2 STORAGE)
+# The same composition with the ESKF as the attitude source (decision 0055; marv_composition_quad_fc_eskf, the FC3v2 set with
+# the ESKF register). No STORAGE: the config store is built for marv_params_fc3v2, whose table this set's does not equal.
+marv_add_sil_library(marv_sil_quad_fc_eskf
+  COMPOSITION marv_composition_quad_fc_eskf PARAMS marv_params_fc3v2_eskf)

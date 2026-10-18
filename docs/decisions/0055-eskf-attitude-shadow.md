@@ -10,6 +10,10 @@ the committed bench logs, quad L7 T2 data). A parameter can select the ESKF as t
 Switching the board to the ESKF, and whether the board runs it at all (its CPU cost against EMB-3, measured U = 0.699), are
 Luis's decisions after the comparison. The B2 24-state navigation filter stays PARKED.
 
+Frozen tests extended (no expectation changed): `tests/regression/quad/L07/unit/CMakeLists.txt` gains `unit_eskf`
+(eskf_test.cpp) and `tests/regression/quad/L07/replay/CMakeLists.txt` gains `unit_l07_eskf_replay` (Mahony and the
+ESKF side by side on the committed T2 log against the unchanged T2 pass bar).
+
 ## Why
 
 Luis, 2026-10-18: "use any time to polish the gui and implement other estimators like the ESKF". His answers to the lead's

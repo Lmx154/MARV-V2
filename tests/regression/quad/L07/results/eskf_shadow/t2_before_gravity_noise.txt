@@ -1,0 +1,10 @@
+Running main() from <repo>/build/host-debug/_deps/googletest-src/googletest/src/gtest_main.cc
+t2_hand_rotation_2026-10-16.bin: theta_rot 2.407222 rad, T_s required 18.986 s (kp 0.2500, share 0.02090 rad), still1 47.139 s, still2 23.572 s, rotation 7.288 s
+  Mahony (a) err1 2.372e-04 err2 4.780e-04 rad (<= 0.02090): pass;  (c') err 1.640e-02 rad (<= 1.20361): pass;  settle in still 2 0.347 s
+         bias end of still 1 (0.0000, 0.0000, 0.0000) deg/s, end of still 2 (0.0000, 0.0000, 0.0000) deg/s
+  ESKF   (a) err1 1.268e-04 err2 3.729e-04 rad (<= 0.02090): pass;  (c') err 1.725e-02 rad (<= 1.20361): pass;  settle in still 2 0.374 s
+         bias end of still 1 (0.0028, -0.0023, -0.0001) deg/s, end of still 2 (-0.0029, 0.0101, 0.0130) deg/s
+         ESKF accelerometer: fused 6217, gated 1572, tilt resets 1
+  control (a), ESKF: err2 1.728e+00 rad: FAIL; fused 5629, gated 2159, tilt resets 2
+  control (c'), ESKF: err 1.462e+00 rad: FAIL
+

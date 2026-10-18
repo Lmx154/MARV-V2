@@ -46,3 +46,17 @@ marv_frozen_suite(unit_l07_replay)
 # replay_table), and without the variable it is the frozen test above.
 add_test(NAME l07_replay_config_validation COMMAND unit_l07_replay --gtest_filter=L07Replay.CommittedBenchLogs)
 set_tests_properties(l07_replay_config_validation PROPERTIES LABELS config-validation)
+
+# The same T2 replay of the attitude and gyro-bias ESKF in shadow beside Mahony (M4, decision 0055): eskf_replay_test.cpp runs
+# replay.hpp's checks and controls with the estimator as a parameter on the committed logs, prints both side by side, and holds
+# the ESKF to the same pass bar and controls. It reads the FC3v2 set with the ESKF register (marv_params_fc3v2_eskf: every id of
+# marv_params_fc3v2 with its value, then eskf_*).
+add_executable(unit_l07_eskf_replay eskf_replay_test.cpp)
+target_include_directories(unit_l07_eskf_replay PRIVATE "${PROJECT_SOURCE_DIR}/fw/hal/target/include")
+target_compile_definitions(unit_l07_eskf_replay PRIVATE
+  MARV_L07_RESULTS_DIR="${L07_RESULTS_DIR}")
+target_link_libraries(unit_l07_eskf_replay PRIVATE
+  marv_params_fc3v2_eskf_runtime marv_params_fc3v2_eskf_generated marv_estimator marv_types marv_prim marv_hal_sim
+  GTest::gtest_main)
+marv_apply_flags(unit_l07_eskf_replay)
+marv_frozen_suite(unit_l07_eskf_replay)
