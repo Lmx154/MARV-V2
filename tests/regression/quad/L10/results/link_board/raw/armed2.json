@@ -1,0 +1,40 @@
+{
+ "steps": {
+  "1 disarmed": {
+   "verdict": "PASS",
+   "heartbeat_armed": false,
+   "arming": "switch_off",
+   "usb_reset_refused": 0,
+   "est_valid": 1
+  },
+  "2 arm": {
+   "verdict": "FAIL",
+   "arming": "throttle_up"
+  },
+  "3 armed refusals": {
+   "verdict": "FAIL",
+   "set_echo": "0x4011145f",
+   "set_texts": [],
+   "activate_result": 3,
+   "activate_texts": [
+    "config command refused: the staged config does not",
+    " hash to expected_config_sha256"
+   ]
+  },
+  "4 maintenance armed": {
+   "verdict": "FAIL",
+   "acks": [
+    5,
+    0
+   ],
+   "texts": [],
+   "arming": "throttle_up"
+  },
+  "5 picotool armed": {
+   "verdict": "FAIL",
+   "picotool": "The device was asked to reboot into application mode.",
+   "usb_reset_refused": 0,
+   "arming": "throttle_up"
+  }
+ }
+}

@@ -1,0 +1,11 @@
+marv_fc3v2 quad-L2-pass-395-ga4f5338
+params ok: generated defaults, rate_period_tolerance_us 3
+init ok
+motors ok: DShot600 on PIO 0, clk_sys 150000000 Hz, PIO divider 31 + 64/256 (derived, dshot.hpp)
+receiver ok: CRSF on UART0 (GPIO 0/1), 8N1, 420000 Hz requested (ExpressLRS default), 419874 Hz set, RX IRQ priority 64
+imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+boot: IMU start at 10171 us after reset (hal_time_us just before imu_start)
+bench stats: on (MARV_FC3V2_BENCH_STATS, DWT CYCCNT at clk_sys)
+imu dt=1000068us irq/s=7495.5 words/s=14991.0 samples/s=7495.5 ticks/s=7495.5 writes/s=3747.7 motor_drops=0 | total samples=112763 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=15114340 gyro=(-0.0012,+0.0049,-0.0012) accel=(-0.024,+0.244,-9.782) temp=304.40K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.7 executions=56382 timing_faults=0 | rc frames/s=125.0 total=1885 link_frames=149 bad_crc=0 bad_length=0 dropped_bytes=0 uart_errors=0 age_us=3327 roll=+0.000 pitch=+0.000 throttle=0.004 yaw=-0.153 tilt=0.0251 est_valid=1 | arming=switch_off | attitude faults=0 timing_faults=0 | usb_reset_refused=0
+bench_stages t=15114418 | read n=112772 max=3636 wmax=3636 h=42:111890,43:882 | decode n=112772 max=2335 wmax=2064 h=39:808,40:111964 | filter n=112772 max=2164 wmax=2025 h=37:56386,39:56385,40:1 | rate n=56386 max=819 wmax=819 h=25:1,34:56385 | mixer n=56386 max=1637 wmax=1637 h=37:1,38:56385 | gate n=56386 max=109 wmax=109 h=22:56386 | dshot n=56386 max=390 wmax=390 h=30:56386 | publish n=112772 max=237 wmax=237 h=27:112772 | bench n=112772 max=385 wmax=385 h=30:112772 | irq n=112772 max=11380 wmax=11277 h=47:56386,49:56386 | account n=112771 max=606 wmax=589 h=30:56372,31:14,32:56385 | usb_irq n=85 max=806 wmax=668 h=23:1,27:11,28:9,29:18,30:38,32:5,33:1,34:2 | spacing n=112771 sum=2256776004 min=19915 max=20109 | wspacing n=7499 sum=150070258 min=19962 max=20063 | max_batch=1 usb_preemptions=2
+bench_imu t=15114418 n=112772 gs=(-251834,457440,-156781) gq=(804362,2086462,364443) as=(-942985,5580942,-230695921) aq=(11192831,279341196,471934798091)

@@ -1,0 +1,11 @@
+{
+ "steps": {
+  "1 disarmed": {
+   "verdict": "PASS",
+   "heartbeat_armed": false,
+   "arming": "no_link",
+   "usb_reset_refused": 0,
+   "est_valid": 1
+  }
+ }
+}

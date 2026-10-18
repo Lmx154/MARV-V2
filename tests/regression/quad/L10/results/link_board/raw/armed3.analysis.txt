@@ -1,0 +1,50 @@
+clk_sys 150000000 Hz
+load: 59 windows; interrupt-entry spacing window max 134.19 us, min 132.63 us; IMU interrupt (irq) window max 76.48 us; USBCTRL chain window max 100.63 us
+load: {"seconds": 60.00029945373535, "requests": 2970, "frames": 380107, "bytes": 25844351, "seq_gaps": 0, "param_values": 190023, "records": 190022, "heartbeats": 62, "frames_per_s": 6335.085048918639, "bytes_per_s": 430737.0335697724}
+rate executions, timing_faults first ('1045854', '1') last ('1585571', '1')
+attitude faults, timing_faults last ('0', '0'); est_valid last 1
+imu samples ovr spi partial clamp order empty first ('2091707', '0', '0', '0', '0', '0', '0') last ('3171141', '0', '0', '0', '0', '0', '0')
+arming states seen ['armed', 'maintenance', 'switch_off']; usb_reset_refused last 1
+== tools/target/bench_stats.py report (whole capture)
+
+== armed3.console.log: 145 lines, device time 279.1 s to 423.1 s (144.0 s of lines), clk_sys 150000000 Hz
+   marv_fc3v2 quad-L2-pass-395-ga4f5338
+   params ok: generated defaults, rate_period_tolerance_us 3
+   imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+   bench stats: on (MARV_FC3V2_BENCH_STATS, DWT CYCCNT at clk_sys)
+   stage     count        max cyc   max us   max (after the first line) us   p50 us  p99 us  p99.99 us  mean-bucket us
+   read        3171151         3642    24.28                          24.28    23.89   23.89     27.30        22.21
+   decode      3171151         2335    15.57                          13.79    17.06   17.06     17.06        15.34
+   filter      3171151         2289    15.26                          15.25    13.65   17.06     17.06        11.64
+   rate        1585576          819     5.46                           5.46     5.97    5.97      5.97         5.55
+   mixer       1585576         1661    11.07                          10.94    11.94   11.94     11.94        11.09
+   gate        1585576          115     0.77                           0.77     0.74    0.85      0.85         0.74
+   dshot       1585576          390     2.60                           2.60     2.98    2.98      2.98         2.77
+   publish     3171151          237     1.58                           1.58     1.70    1.70      1.70         1.60
+   bench       3171151          385     2.57                           2.57     2.98    2.98      2.98         2.77
+   irq         3171151        11489    76.59                          76.48    68.26   81.91     81.91        63.15
+   account     3171150          610     4.07                           4.07     3.41    4.26      4.26         3.31
+   usb_irq      552949        15094   100.63                         100.63     3.41    4.26     81.91         3.10
+   IMU interrupt-entry spacing (one sample each): n 3171150, mean 20012.0 cyc = 133.413 us, min 127.85 us, max 134.19 us; largest window (max - mean) 0.78 us, (mean - min) 0.78 us
+   max samples per interrupt 1, IMU interrupts begun inside the USBCTRL chain 16126
+   instrumentation inside the IMU interrupt: the bench stage (still sums) and the marks are inside irq; account follows irq; the default image has none of them
+   last counter line: imu dt=1000063us irq/s=7495.5 words/s=14991.1 samples/s=7495.5 ticks/s=7495.5 writes/s=3747.8 motor_drops=0 | total samples=3171141 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=423142505 gyro=(-0.0012,+0.0024,-0.0012) accel=(-0.024,+0.273,-9.777) temp=304.44K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.8 executions=1585571 timing_faults=1 | rc frames/s=125.0 total=48076 link_frames=3844 bad_crc=0 bad_length=0 dropped_bytes=0 uart_errors=0 age_us=4415 roll=+0.000 pitch=+0.000 throttle=0.006 yaw=-0.154 tilt=0.0247 est_valid=1 | arming=maintenance | attitude faults=0 timing_faults=0 | usb_reset_refused=1
+
+== EMB-3 (core 4.1: per core, utilization within n(2^(1/n) - 1) or exact response-time analysis, on measured worst cases)
+   armed3.console.log: T = 133.413 us (measured mean interrupt-entry spacing)
+     C = irq + account max (including start-up) = 80.66 us; U = C/T = 0.605 vs the n = 1 bound 1.000: PASS (margin +39.5 % of T); RTA R = C + B = 81.44 us with B = 0.78 us vs D = T: PASS (margin +51.97 us)
+     C = irq + account max (after the first line) = 80.55 us; U = C/T = 0.604 vs the n = 1 bound 1.000: PASS (margin +39.6 % of T); RTA R = C + B = 81.33 us with B = 0.78 us vs D = T: PASS (margin +52.09 us)
+     mean (histogram midpoints, not a worst case): 66.45 us per interrupt, 49.8 % of the core
+
+== Still bench IMU (1079434 samples between the first and the last bench_imu line, 144.0 s; FRD, after the board mounting map)
+   profile /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-link/sensors/profiles/madflight_fc3v2_revc.yaml: gyro 2.8 mdps/rtHz x sqrt(537 Hz) = 64.9 mdps; accel 60 ug/rtHz x sqrt(3840 Hz) = 3.72 mg; offsets +-1 dps, +-12 mg; LSB 70 mdps, 0.488 mg (quantisation LSB/sqrt(12) = 20.2 mdps, 0.141 mg)
+   if the gyro LPF2 is first order: noise bandwidth pi/2 x 537 Hz = 844 Hz, sd 81.3 mdps; with the quantisation 83.8 mdps
+   gyro  x: mean   -162.52 mdps (offset  -162.52 vs +-1000: inside), sd  105.81 mdps (within 1 s windows  105.76) vs profile 64.89: ratio 1.63
+   gyro  y: mean   +287.28 mdps (offset  +287.28 vs +-1000: inside), sd  101.72 mdps (within 1 s windows  101.68) vs profile 64.89: ratio 1.57
+   gyro  z: mean    -98.47 mdps (offset   -98.47 vs +-1000: inside), sd   79.46 mdps (within 1 s windows   79.43) vs profile 64.89: ratio 1.22
+   accel x: mean     -4.03 mg (offset    -4.03 vs +-12: inside), sd    2.72 mg (within 1 s windows    2.72) vs profile 3.72: ratio 0.73
+   accel y: mean    +24.12 mg (offset   +24.12 vs +-12: OUTSIDE), sd    2.68 mg (within 1 s windows    2.68) vs profile 3.72: ratio 0.72
+   accel z: mean   -998.29 mg (offset    +1.71 vs +-12: inside), sd    3.28 mg (within 1 s windows    3.28) vs profile 3.72: ratio 0.88
+   temperature (newest sample per line): 31.18 to 31.36 degC over the run
+   gyro  drift (mean of the last tenth - first tenth): (-2.28, -1.52, -0.21) mdps
+   accel drift (mean of the last tenth - first tenth): (-0.02, +0.03, +0.12) mg

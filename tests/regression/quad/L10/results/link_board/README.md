@@ -66,3 +66,27 @@ flash the flight image back.
 - RAM: linking the service pulls the store's staging into the image: `store::g_sources` 131072 B (kConfigSlotBytes, a
   PLACEHOLDER) and the service state 65800 B (its source buffer holds the longest text the link carries, 65535 B). Flight
   image text 218652 B, bss 223364 B; bss ends at 0x2006ac84, 87 KB below the heap limit 0x20080000.
+
+## Result: the armed step with Luis, 2026-10-18 (`armed_runbook.py`, bench-stats image of 3184b1f)
+
+Props off, ESC battery unplugged, RadioMaster on ExpressLRS; Luis armed and disarmed on ch5. The script never armed or
+commanded a motor. Run `raw/armed3.*` (`armed3.analysis.txt` is `bench_load.py analyze raw/armed3`); all nine steps PASS:
+
+| Step | Result |
+| --- | --- |
+| 1 disarmed | arming=switch_off, usb_reset_refused=0, est_valid=1 |
+| 2 arm | arming=armed |
+| 3 armed refusals | PARAM_SET echoed unchanged (0x4011145e) with "att_kp: parameters can be set only while disarmed"; activation DENIED_ARMED "config command refused while armed" |
+| 4 maintenance armed | MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN param1 3: DENIED, "reboot refused while armed", still armed |
+| 5 picotool armed | `picotool reboot -f` refused: usb_reset_refused 0 -> 1, still armed |
+| 6 link at the cap, armed | 60 s parameter listings, 6335 frames/s, 430.7 kB/s, 0 sequence gaps, still armed |
+| 7 disarm | arming=switch_off |
+| 8 maintenance disarmed | IN_PROGRESS then ACCEPTED, arming=maintenance |
+| 9 picotool granted | honoured: console clock 423.1 s -> 15.1 s, usb_reset_refused 0, est_valid=1 |
+
+EMB-3 armed under link load: C = 80.55 us, U = 0.604 (margin +39.6 % of T), RTA R = 81.33 us (margin +52.09 us), T = 133.413 us
+measured; load windows: interrupt-entry spacing window max 134.19 us, min 132.63 us, IMU irq window max 76.48 us, USBCTRL
+chain window max 100.63 us. Earlier attempts, kept as evidence of the arming gates: `raw/armed.*` (receiver not yet
+linked: arming=no_link, then the script lost the heartbeat after 10 s) and `raw/armed2.*` (Luis had raised the throttle
+before arming: arming=throttle_up at 0.146, so the board stayed disarmed; the script's later steps then ran disarmed and
+were correctly granted, and picotool rebooted the board). The flight image was flashed back afterwards.

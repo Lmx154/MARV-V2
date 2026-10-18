@@ -1,0 +1,70 @@
+{
+ "steps": {
+  "1 disarmed": {
+   "verdict": "PASS",
+   "heartbeat_armed": false,
+   "arming": "switch_off",
+   "usb_reset_refused": 0,
+   "est_valid": 1
+  },
+  "2 arm": {
+   "verdict": "PASS",
+   "arming": "armed"
+  },
+  "3 armed refusals": {
+   "verdict": "PASS",
+   "set_echo": "0x4011145e",
+   "set_texts": [
+    "att_kp: parameters can be set only while disarmed"
+   ],
+   "activate_result": 1,
+   "activate_texts": [
+    "config command refused while armed"
+   ]
+  },
+  "4 maintenance armed": {
+   "verdict": "PASS",
+   "acks": [
+    2
+   ],
+   "texts": [
+    "reboot refused while armed"
+   ],
+   "arming": "armed"
+  },
+  "5 picotool armed": {
+   "verdict": "PASS",
+   "picotool": "The device was asked to reboot into application mode.",
+   "usb_reset_refused": 1,
+   "arming": "armed"
+  },
+  "6 link at the cap": {
+   "verdict": "PASS",
+   "arming_after": "armed",
+   "frames_per_s": 6335.085048918639,
+   "bytes_per_s": 430737.0335697724,
+   "seq_gaps": 0,
+   "emb3": "run: bench_load.py analyze tests/regression/quad/L10/results/link_board/raw/armed3"
+  },
+  "7 disarm": {
+   "verdict": "PASS",
+   "arming": "switch_off"
+  },
+  "8 maintenance disarmed": {
+   "verdict": "PASS",
+   "acks": [
+    5,
+    0
+   ],
+   "arming": "maintenance"
+  },
+  "9 picotool granted": {
+   "verdict": "PASS",
+   "picotool": "The device was asked to reboot into application mode.",
+   "console_t_before": 423142505,
+   "console_t_after": 15114340,
+   "usb_reset_refused_after": 0,
+   "est_valid": 1
+  }
+ }
+}
