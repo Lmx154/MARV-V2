@@ -8,3 +8,17 @@ target_link_libraries(marv_composition_quad_fc
   PUBLIC marv_hal marv_types marv_prim marv_arming marv_params
   PRIVATE marv_attitude marv_estimator marv_sched marv_rate_group marv_rate marv_mixer marv_stick_rates marv_dshot marv_crsf_decode marv_params_fc3v2_runtime)
 marv_apply_flags(marv_composition_quad_fc FIRMWARE)
+
+# The same composition with the ESKF stepped beside Mahony and replacing it for the attitude law, the upright check and the
+# published tilt (M4, decision 0055; host only: the board image and marv_sil_quad_fc do not contain it). The one source file,
+# compiled with MARV_QUAD_FC_ESKF and against the FC3v2 set with the ESKF register (marv_params_fc3v2_eskf); the SIL library
+# marv_sil_quad_fc_eskf of sim/quad_fc is built from it.
+if(MARV_TARGET STREQUAL "host")
+  add_library(marv_composition_quad_fc_eskf STATIC src/quad_fc.cpp)
+  target_compile_definitions(marv_composition_quad_fc_eskf PRIVATE MARV_QUAD_FC_ESKF)
+  target_include_directories(marv_composition_quad_fc_eskf PUBLIC include)
+  target_link_libraries(marv_composition_quad_fc_eskf
+    PUBLIC marv_hal marv_types marv_prim marv_arming marv_params
+    PRIVATE marv_attitude marv_estimator marv_sched marv_rate_group marv_rate marv_mixer marv_stick_rates marv_dshot marv_crsf_decode marv_params_fc3v2_eskf_runtime)
+  marv_apply_flags(marv_composition_quad_fc_eskf FIRMWARE)
+endif()
