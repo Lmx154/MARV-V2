@@ -1,6 +1,6 @@
 # SD card bench, ground-segment unit 13 (decision 0053)
 
-Bench evidence, not a frozen test. Board: FC3v2 Rev-C, 32 GB (63.9 GB by CSD: see below) FAT32 card inserted, ESC unpowered,
+Bench evidence, not a frozen test. Board: FC3v2 Rev-C, FAT32 card inserted (the CSD reports 63.9 GB, not the 32 GB of the task note), ESC unpowered,
 no motor command. Date 2026-10-18. Code: branch `gs-sd`, commits `3dc9385` (FatFs) and `df50c16` (driver, bench).
 
 ## Files
