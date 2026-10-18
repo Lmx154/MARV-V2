@@ -19,6 +19,7 @@
 #include "marv/hal_target/motor_output.hpp"
 #include "marv/hal_target/motor_test.hpp"
 #include "marv/hal_target/receiver.hpp"
+#include "marv/hal_target/usb.hpp"
 #if defined(MARV_FC3V2_SD_BENCH)
 #include "marv/hal_target/sd_bench.hpp"
 #endif
@@ -201,7 +202,7 @@ std::uint32_t events_printed = 0;
       "accel=(%+.3f,%+.3f,%+.3f) temp=%.2fK flags=0x%03lx | motor_test console_refused=%lu forwarded=%lu accepted=%lu "
       "refused=%lu stopped=%lu | rate executions/s=%.1f executions=%llu timing_faults=%lu | rc frames/s=%.1f total=%lu "
       "link_frames=%lu bad_crc=%lu bad_length=%lu dropped_bytes=%lu uart_errors=%lu age_us=%lld roll=%+.3f pitch=%+.3f "
-      "throttle=%.3f yaw=%+.3f tilt=%.4f est_valid=%d | arming=%s | attitude faults=%lu timing_faults=%lu\n",
+      "throttle=%.3f yaw=%+.3f tilt=%.4f est_valid=%d | arming=%s | attitude faults=%lu timing_faults=%lu | usb_reset_refused=%lu\n",
       static_cast<unsigned long long>(dt_us), per_s(now.irqs, before.irqs), per_s(now.words, before.words),
       per_s(now.samples, before.samples), per_s(now.ticks, before.ticks),
       per_s(now.actuator_writes, before.actuator_writes), static_cast<unsigned long long>(now.actuator_drops),
@@ -224,7 +225,8 @@ std::uint32_t events_printed = 0;
       static_cast<unsigned long>(rc_now.uart_errors), rc_age_us, static_cast<double>(rc.roll),
       static_cast<double>(rc.pitch), static_cast<double>(rc.throttle), static_cast<double>(rc.yaw),
       static_cast<double>(attitude.tilt_rad), attitude.valid ? 1 : 0, arming_text(marv::composition::arming_status()),
-      static_cast<unsigned long>(attitude_counts.faults), static_cast<unsigned long>(attitude_counts.timing_faults));
+      static_cast<unsigned long>(attitude_counts.faults), static_cast<unsigned long>(attitude_counts.timing_faults),
+      static_cast<unsigned long>(marv::hal_target::usb_reset_refused()));
 }
 
 #if defined(MARV_FC3V2_BENCH_STATS)
@@ -377,6 +379,8 @@ void print_motor_test_events() {
 // on the IMU interrupt ticks the composition once per sample (marv/hal_target/imu.hpp). The idle loop prints the IMU
 // and receiver counters once per second; console output never runs in the tick (decision 0027 item 6).
 int main() {
+  // USB-initiated resets are honoured only with the maintenance grant (usb.hpp); wired before the host can enumerate.
+  marv::hal_target::usb_set_reset_gate(&marv::composition::maintenance_granted);
   stdio_init_all();
   marv::hal_target::bench::start();
   print_progress();
@@ -441,6 +445,9 @@ int main() {
     was_connected = connected;
 #if defined(MARV_FC3V2_SD_BENCH)
     marv::hal_target::sd_bench_step();
+#endif
+#if defined(MARV_FC3V2_USB_BENCH)
+    marv::hal_target::usb_bench_echo_step();
 #endif
     if (connected) {
       print_motor_test_events();

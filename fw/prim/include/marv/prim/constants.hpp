@@ -347,5 +347,38 @@ inline constexpr unsigned kSdCsdV1ReadBlLenHi = 83;
 inline constexpr unsigned kSdCsdV1ReadBlLenLo = 80;
 inline constexpr unsigned kSdCsdV1CSizeMultOffset = 2;
 
+
+// USB device identity and descriptor numbers of the FC3v2 image (fw/hal/target/src/usb.cpp). "USB 2.0" below is the Universal
+// Serial Bus Specification, Revision 2.0, April 27, 2000. Citation: the vendor ID 0x2E8A is Raspberry Pi's, assigned by the
+// USB Implementers Forum (https://www.usb.org/sites/default/files/vendor_ids.pdf); the product ID 0x0009 is the one the Pico SDK
+// 2.3.1 gives its CDC device on RP2350 (src/rp2_common/pico_stdio_usb/stdio_usb_descriptors.c, USBD_PID), kept so the host
+// path /dev/serial/by-id/usb-Raspberry_Pi_Pico_<serial>-if00 does not change; bcdUSB 2.10 (the Binary Object Store the reset
+// interface's Microsoft OS 2.0 descriptor needs, USB 2.0 ECN "Link Power Management and BOS", also in that file) and bcdDevice
+// 1.00 are that file's values; USB 2.0 section 9.6.3 (bMaxPower is in units of 2 mA; 250 mA is that file's USBD_MAX_POWER_MA);
+// section 9.6.7 and table 9-15 (string descriptor language 0x0409 is English, United States, from "Universal Serial Bus
+// Language Identifiers (LANGIDs)", Version 1.0); section 5.8.3 (a full-speed bulk endpoint's maximum packet size is 64 bytes);
+// CDC notification endpoint maximum packet size 8 bytes is that file's USBD_CDC_CMD_MAX_SIZE.
+// Kind: standard.
+inline constexpr std::uint16_t kUsbVendorIdRaspberryPi = 0x2E8A;
+inline constexpr std::uint16_t kUsbProductIdPicoSdkCdc = 0x0009;
+inline constexpr std::uint16_t kUsbBcdUsb210 = 0x0210;
+inline constexpr std::uint16_t kUsbBcdDevice100 = 0x0100;
+inline constexpr unsigned kUsbConfigMaxPowerMa = 250;
+inline constexpr std::uint16_t kUsbLangIdEnglishUs = 0x0409;
+inline constexpr unsigned kUsbFullSpeedBulkPacketBytes = 64;
+inline constexpr unsigned kUsbCdcNotifyPacketBytes = 8;
+
+// USB endpoint addresses of the FC3v2 image. Citation: USB 2.0 section 9.6.6 and table 9-13 (bEndpointAddress: bits 3..0 the
+// endpoint number, bit 7 the direction, 1 = IN to the host). Endpoints 1 and 2 are the console CDC's, the numbers the Pico
+// SDK's own CDC uses (stdio_usb_descriptors.c: notification IN 0x81, data OUT 0x02, data IN 0x82); 3 and 4 are the link CDC's,
+// the next unused numbers.
+// Kind: standard.
+inline constexpr std::uint8_t kUsbEpConsoleNotifyIn = 0x81;
+inline constexpr std::uint8_t kUsbEpConsoleDataOut = 0x02;
+inline constexpr std::uint8_t kUsbEpConsoleDataIn = 0x82;
+inline constexpr std::uint8_t kUsbEpLinkNotifyIn = 0x83;
+inline constexpr std::uint8_t kUsbEpLinkDataOut = 0x04;
+inline constexpr std::uint8_t kUsbEpLinkDataIn = 0x84;
+
 }  // namespace marv::prim
 // NOLINTEND(readability-magic-numbers,cppcoreguidelines-avoid-magic-numbers)

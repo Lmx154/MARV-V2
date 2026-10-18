@@ -1,0 +1,8 @@
+base_m4 1: imu_start_us=9847 rate_timing_faults=0 attitude_faults=0 attitude_timing_faults=0 est_valid=1
+base_m4 2: imu_start_us=10058 rate_timing_faults=0 attitude_faults=0 attitude_timing_faults=0 est_valid=1
+base_m4 3: imu_start_us=9987 rate_timing_faults=1 attitude_faults=0 attitude_timing_faults=0 est_valid=1
+base_m4 4: imu_start_us=9851 rate_timing_faults=0 attitude_faults=0 attitude_timing_faults=0 est_valid=1
+base_m4 5: imu_start_us=9998 rate_timing_faults=1 attitude_faults=0 attitude_timing_faults=0 est_valid=1
+base_m4 6: imu_start_us=10003 rate_timing_faults=1 attitude_faults=0 attitude_timing_faults=0 est_valid=1
+base_m4 7: imu_start_us=9938 rate_timing_faults=1 attitude_faults=0 attitude_timing_faults=0 est_valid=1
+base_m4 8: imu_start_us=9983 rate_timing_faults=1 attitude_faults=0 attitude_timing_faults=0 est_valid=1

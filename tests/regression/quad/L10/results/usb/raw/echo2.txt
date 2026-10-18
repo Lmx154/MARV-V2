@@ -1,0 +1,4 @@
+drained 0 stale bytes from the link port
+check {"bytes_sent": 1048576, "bytes_echoed": 1048576, "seconds": 2.621, "kB_per_s_each_way": 400.1, "sha256_sent": "205caa0722b5eb7d1fd2500b5d171433ccf3f941ad8bf3a4ec8028bc9bbf398a", "sha256_echoed": "205caa0722b5eb7d1fd2500b5d171433ccf3f941ad8bf3a4ec8028bc9bbf398a", "equal": true, "stalled": false}
+sustained {"bytes_sent": 8388608, "bytes_echoed": 8388608, "seconds": 20.996, "kB_per_s_each_way": 399.5, "sha256_sent": "f3df1323eb97d57baaf1a67ba8a3ff02445e6bd42070ab7960e69fafb1f7ee96", "sha256_echoed": "f3df1323eb97d57baaf1a67ba8a3ff02445e6bd42070ab7960e69fafb1f7ee96", "equal": true, "stalled": false}
+console bytes 90094 lines 150
