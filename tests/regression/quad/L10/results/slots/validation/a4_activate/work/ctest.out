@@ -1,0 +1,14 @@
+Internal ctest changing into directory: /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-slots/build/host-gz-quadfc
+Test project /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-slots/build/host-gz-quadfc
+    Start  727: l07_replay_config_validation
+1/2 Test  #727: l07_replay_config_validation .....   Passed    1.64 sec
+    Start 1093: qf3_table_fc3v2
+2/2 Test #1093: qf3_table_fc3v2 ..................   Passed    5.37 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Label Time Summary:
+L07                  =   1.64 sec*proc (1 test)
+config-validation    =   7.00 sec*proc (2 tests)
+
+Total Test time (real) =   7.03 sec

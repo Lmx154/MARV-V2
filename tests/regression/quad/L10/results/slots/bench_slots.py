@@ -13,7 +13,8 @@ Steps:
             board reboots through the maintenance grant; after the reboot the boot line says source slot, request activate
             done, status ok, the staged config hash and the board's image hash as the binding, and --expect-sequence; the
             identity says active, ok, the same hash and report id; the parameter's active value is the staged one.
-  revert    revert to the last good config: after the reboot the other slot holds it (request revert done, sequence + 1,
+  revert    revert to the last good config: the store copies the older intact slot over the newest one (store.hpp,
+            boot.cpp reactivate), so after the reboot the same slot holds it with sequence + 1 (request revert done,
             --expect-hash).
   factory   reset to factory: after the reboot source factory, status ok, the factory config hash.
   flash     (b) flash --elf with tools/target/flash.sh (OpenOCD): afterwards the config hash is --expect-hash and the status is
@@ -168,7 +169,7 @@ def step_revert(a, res):
     d, before, boot = step_command(a, res, "MARV_CONFIG_ACTION_REVERT_LAST_GOOD", "revert")
     c, b0, ident = boot["config"], before["config"], res["identity_after"]
     sc.check(res, "(a) reverted", c["request"] == "revert" and c["request_result"] == "done" and c["status"] == "ok"
-             and c["source"].startswith("slot") and c["source"] != b0["source"] and c["sequence"] == b0["sequence"] + 1
+             and c["source"] == b0["source"] and c["sequence"] == b0["sequence"] + 1
              and c["config_sha256"] == a.expect_hash and ident["config_sha256"] == a.expect_hash
              and ident["config_state"] == d.MARV_CONFIG_STATE_OK,
              before=b0["line"], after=c["line"], identity=ident)
