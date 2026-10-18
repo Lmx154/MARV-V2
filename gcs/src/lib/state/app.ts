@@ -6,6 +6,7 @@ import { LinkSession } from '$link/session';
 import { VehicleClient } from '$link/vehicle';
 import type { ImageEntry } from '$lib/params/library';
 import { HelperApi, readHelperInfo, type HelperInfo, type HelperStatus } from './helper_api';
+import { FlashController } from './flash_state';
 import { ManifestController, type ManifestState } from './manifest_state';
 import { Problems, type Problem } from './problems';
 import { ValidationController } from './validation_state';
@@ -20,6 +21,8 @@ export interface App {
 	vehicle: VehicleClient | null;
 	/** Validation and activation of the staged config (G7); null without a helper. */
 	validation: ValidationController | null;
+	/** Flashing an image of the library through the G7 gate; null without a helper. */
+	flash: FlashController | null;
 	status: Readable<HelperStatus | null>;
 	/** The device the helper has open, from its events and status. */
 	device: Readable<string | null>;
@@ -85,6 +88,18 @@ function create(): App {
 				})
 			: null;
 
+	const flash =
+		helper && session && vehicle
+			? new FlashController({
+					request: (cmd, args) => helper.request(cmd, args),
+					onEvent: (handler) => helper.onEvent(handler),
+					vehicle,
+					session,
+					helperState: helper.state,
+					device: deviceName
+				})
+			: null;
+
 	const refreshStatus = async (): Promise<void> => {
 		if (!api) return;
 		const s = await api.status();
@@ -128,6 +143,7 @@ function create(): App {
 		session,
 		vehicle,
 		validation,
+		flash,
 		status: { subscribe: status.subscribe },
 		device: derived(deviceName, (d) => d),
 		manifest: manifest.state,

@@ -30,6 +30,8 @@ export interface FakeVehicleOptions {
 	/** Answer REQUEST_MESSAGE for the identity and the version (default true). */
 	answersIdentity?: boolean;
 	capabilities?: bigint;
+	/** The answer to the reboot command: 'grant' = in progress then accepted (default); 'silent' = none; a number = that final result. */
+	rebootAnswer?: 'grant' | 'silent' | number;
 }
 
 export const FAKE_SYSTEM_ID = 1;
@@ -38,6 +40,7 @@ export const DEFAULT_SOURCE = 'set over the link; no source stated';
 const PARAM_TYPE_INT32 = 6;
 const PARAM_TYPE_REAL32 = 9;
 const REQUEST_MESSAGE = 512;
+const PREFLIGHT_REBOOT_SHUTDOWN = 246;
 const CHUNK = 64;
 
 interface Slot extends FakeParam {
@@ -163,6 +166,7 @@ export class FakeVehicle {
 	private handle(m: Message): void {
 		switch (m.kind) {
 			case 'CommandLong':
+				if (m.command === PREFLIGHT_REBOOT_SHUTDOWN) return this.reboot(m);
 				if (m.command !== REQUEST_MESSAGE || this.options.answersIdentity === false) return;
 				if (m.param1 === 15200) this.sendIdentity();
 				if (m.param1 === 148) this.sendVersion();
@@ -185,6 +189,20 @@ export class FakeVehicle {
 			default:
 				return;
 		}
+	}
+
+	/** True once the maintenance grant was given (it stays until the vehicle restarts). */
+	maintenance = false;
+
+	private reboot(m: Extract<Message, { kind: 'CommandLong' }>): void {
+		const answer = this.options.rebootAnswer ?? 'grant';
+		const ack = (result: number) => this.emit({ kind: 'CommandAck', command: m.command, result, progress: 0, result_param2: 0, target_system: 255, target_component: 190 });
+		if (answer === 'silent') return;
+		if (typeof answer === 'number') return ack(answer);
+		if (this.armed) return ack(2);
+		this.maintenance = true;
+		ack(5);
+		ack(0);
 	}
 
 	sendIdentity(): void {

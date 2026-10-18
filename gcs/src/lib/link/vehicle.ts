@@ -26,6 +26,8 @@ export type Origin = 'DefaultFromCard' | 'DefaultFromRegister' | 'Manual' | 'Ide
 export type Method = 'published' | 'measured' | 'identified' | 'datasheet' | 'derived' | 'design-budget' | 'scenario';
 export type SigmaKind = 'Known' | 'Exact' | 'Unknown' | 'Choice';
 export type ConfigAction = 'activate' | 'revert' | 'reset-factory';
+/** The answer to a maintenance grant request: 'granted' once the flight tick holds it (arming is refused from then until the vehicle restarts). */
+export type MaintenanceGrant = 'granted' | 'denied: armed' | 'unsupported' | 'failed' | 'no answer';
 export type ConfigCommandResult = 'accepted' | 'denied: armed' | 'denied: report' | 'denied: hash' | 'denied: unavailable' | 'failed' | 'unknown';
 
 export interface VehicleIdentity {
@@ -115,6 +117,13 @@ const PARAM_TYPE_REAL32 = 9;
 const CAPABILITY_PARAM_ENCODE_BYTEWISE = 16n;
 /** MAV_CMD_REQUEST_MESSAGE. */
 const CMD_REQUEST_MESSAGE = 512;
+/** MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN, its param1 value 3 (REBOOT_SHUTDOWN_ACTION: reboot to the bootloader; this autopilot only grants the maintenance and keeps running) and the MAV_RESULT values. */
+const CMD_PREFLIGHT_REBOOT_SHUTDOWN = 246;
+const REBOOT_ACTION_BOOTLOADER = 3;
+const RESULT_ACCEPTED = 0;
+const RESULT_DENIED = 2;
+const RESULT_UNSUPPORTED = 3;
+const RESULT_IN_PROGRESS = 5;
 /** A PARAM_VALUE index meaning "none" (the standard's 65535). */
 const INDEX_NONE = 0xffff;
 
@@ -137,6 +146,8 @@ const STATUS_TEXT_BYTES = 50;
 export interface Timing {
 	/** Wait for one answer (an echo, a source chunk, a record, an acknowledgement). */
 	replyMs: number;
+	/** Wait for the final answer of the maintenance grant (the vehicle asks its flight tick, which answers within a few ticks). */
+	grantMs: number;
 	/** After this long without a value or record during a listing, the missing indices are asked for one by one. */
 	listingIdleMs: number;
 	/** How many such rounds before the listing is reported incomplete. */
@@ -146,7 +157,7 @@ export interface Timing {
 	/** How many times the source text is written before the write is reported failed (the first write included). */
 	sourceAttempts: number;
 }
-export const DEFAULT_TIMING: Timing = { replyMs: 1000, listingIdleMs: 1500, listingRounds: 3, refusalGraceMs: 150, sourceAttempts: 2 };
+export const DEFAULT_TIMING: Timing = { replyMs: 1000, grantMs: 5000, listingIdleMs: 1500, listingRounds: 3, refusalGraceMs: 150, sourceAttempts: 2 };
 /** PLACEHOLDER: how many notices are kept for display. */
 export const NOTICE_LIMIT = 100;
 export const NO_SOURCE_ERROR = 'a source text is required';
@@ -366,6 +377,24 @@ export class VehicleClient {
 		const ack = await wait.promise;
 		if (!ack) throw new Error('the vehicle did not answer the config command');
 		return pick(COMMAND_RESULTS, ack.result, 'unknown');
+	}
+
+	/**
+	 * Asks for the maintenance grant a flash needs (the vehicle's USB reset interface honours picotool only after it): the vehicle
+	 * answers in progress, then accepted, or denied while armed. A grant is permanent until the vehicle restarts.
+	 */
+	async requestMaintenanceGrant(): Promise<MaintenanceGrant> {
+		const target = this.requireTarget();
+		const wait = this.waitFor('CommandAck', (m) => m.command === CMD_PREFLIGHT_REBOOT_SHUTDOWN && m.result !== RESULT_IN_PROGRESS, this.timing.grantMs);
+		this.session.send({
+			kind: 'CommandLong', target_system: target.systemId, target_component: target.componentId, command: CMD_PREFLIGHT_REBOOT_SHUTDOWN,
+			confirmation: 0, param1: REBOOT_ACTION_BOOTLOADER, param2: 0, param3: 0, param4: 0, param5: 0, param6: 0, param7: 0
+		});
+		const ack = await wait.promise;
+		if (!ack) return 'no answer';
+		if (ack.result === RESULT_ACCEPTED) return 'granted';
+		if (ack.result === RESULT_DENIED) return 'denied: armed';
+		return ack.result === RESULT_UNSUPPORTED ? 'unsupported' : 'failed';
 	}
 
 	// ---- internals: stage ----------------------------------------------------------------------------------------------
