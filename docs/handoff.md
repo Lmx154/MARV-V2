@@ -6,15 +6,15 @@ History is in git and `docs/decisions/`; the previous handoff is `git show be6b9
 ## Read first
 - `CLAUDE.md`, quad spec §4.0 (M4), ground spec §5 (now ACTIVE, params-first scope, decision 0051).
 - Serena memories: `ground-segment/params-first-ruling-full` (the signed design), `ground-segment/progress`,
-  `ground-segment/gui-followups`.
+  `ground-segment/gui-followups`, `hardware/barometer-timing`.
 
 ## Where things are
 | Item | State |
 | --- | --- |
 | M0-M3 | merged into `master`; tags `quad-M1-pass`..`quad-M3-pass` |
-| `m4` | pushed at `b19b5a3` (dev check PASS at `b19b5a3`, incl. GS units 6, 8b, 9 and the ESKF) |
+| `m4` | pushed at `fd2f58b` (dev check PASS; GS units 6, 8b, 9, 12, 13 and the ESKF) |
 | Board | flight image `gd46f7f6` (angle on ch8, airmode latch, Betaflight throttle; factory parameter table), est_valid=1 |
-| In flight (2026-10-18) | GS unit 13 SD (branch `gs-sd`, coder: FatFs vendored in third_party/, SPI0 diskio, bench on the board); next unit 12 USB (needs Luis arming once), then 10, 11 |
+| In flight (2026-10-18) | GS unit 14 FLASH-SLOTS (branch `gs-slots`, engineer, bench on the board); then 15 FLASH-PANEL, 11 PLOTS (telemetry + seqlock), 10 DERIVE |
 
 ## M4 since the last handoff (decisions 0048-0054)
 - 0048 Luis's rulings (plant omega_min 0, angle ch8 at 100, HIL spec text, FMA tolerance 1 count, tags). 0049 plant drag
@@ -26,20 +26,21 @@ History is in git and `docs/decisions/`; the previous handoff is `git show be6b9
 ## Ground segment (decisions 0051, 0053; Luis signed every item 2026-10-17)
 - Done and merged into `m4`: unit 2 GEN (link ids, locks, .mcfg), 3 VALIDATE, 4a ConfigRefused/Maintenance, 5 CODEC
   (MARV dialect 15200-15204, GS-3 check), 7 HELPER (tools/gs), 8a GUI (gcs/: connection + parameters pages).
-- Unit 4b STORE, 6 LINK-SIL (SIL speaks MAVLink over UDP), 8b GUI polish, 9 REPORT (validate_config.py, four checks, the
-  Validate/Activate gate) merged. Next: 13 SD, 12 USB (bench), 14 FLASH-SLOTS, 15 FLASH-PANEL; 10 DERIVE, 11 PLOTS; 16.
+- Unit 4b STORE, 6 LINK-SIL, 8b GUI polish, 9 REPORT merged. 13 SD (FatFs in third_party/fatfs, `L10/results/sd/`), 12a USB
+  (two CDC, resets gated on the maintenance grant, `L10/results/usb/`), 12b link on the board (MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN
+  1/3 for the grant; armed step with Luis 9/9, `L10/results/link_board/`) merged. Next: 14, 15, 11, 10, 16.
 - ESKF merged (decision 0055): shadow beside Mahony, T2 passes with controls failing (`L07/results/eskf_shadow/`), host-only
   SIL library `marv_sil_quad_fc_eskf`. Not done: the Gazebo comparison, a board cost measurement; board use is Luis's call.
 
 ## Waiting on Luis
 - S4b: fly the Gazebo sim through the board with the RadioMaster (runbook in `L10/results/s4/README.md`; host idle).
 - Props-off radio check of angle mode (ESC power, Luis present).
-- SD card 32 GB FAT32 and USB plugged in (Luis 2026-10-18). Unit 13: one boot with the card removed. Unit 12: arm once
-  (props off, ESC unpowered) for the reboot-refused-while-armed check and EMB-3 streaming. Decide: exFAT (patent note), check-4 form.
+- Decide: exFAT (patent note), check-4 form, ESKF board use. Board: SD 64 GB FAT32; BAR_INT jumper (GPIO 23) soldered
+  (mem hardware/barometer-timing); udev rule /etc/udev/rules.d/60-marv-picotool.rules (picotool without sudo).
 
 ## Noticed, not changed
 - CI image has no Node (the TS conformance test registers only when gcs/node_modules exists): a CI-image unit before
-  the merge gate. Boot timing fault with the receiver streaming at boot (INFERRED UART). ESC "Motor KV" 820 vs 1700.
+  the merge gate. Boot timing fault with the receiver streaming at boot (INFERRED UART); rate timing_faults=1 after ~60% of probe reboots (L10/results/usb); G1 clang-tidy does not cover target-only files. ESC "Motor KV" 820 vs 1700.
 
 ## Rules the next lead keeps
 - Standing permission (Luis, 2026-10-15): commit and push each unit that passed review and `ci/dev_check.sh`; merge
