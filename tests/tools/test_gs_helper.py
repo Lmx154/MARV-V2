@@ -1,7 +1,9 @@
 """The ground-segment helper (tools/gs, ground spec section 3, decision 0053 unit 7): the gate (token, Origin, Host), the byte
 relay both ways over a loopback UDP echo and a pty serial pair, the ground log round trip (GS-8), the image library, the
 SIL launcher's start, stop, link state and relaunch on a reboot request (ground-segment unit 6), and the validation command and
-the report store keyed by (image hash, config hash) (ground-segment unit 9)."""
+the report store keyed by (image hash, config hash) (ground-segment unit 9), and the flash: the gate on (image hash, config the
+board will run), the UF2 check, picotool (a fake) run only after the gate, the serial port given up and opened again
+(ground-segment unit 15)."""
 
 import argparse
 import asyncio
@@ -27,6 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools" / "gs"))
 
 import device  # noqa: E402
+import flash as flash_mod  # noqa: E402
 import groundlog  # noqa: E402
 import helper as helper_mod  # noqa: E402
 import sil  # noqa: E402
@@ -35,12 +38,13 @@ TIMEOUT_S = 10  # labelled harness value: bounds a hung relay only
 
 
 def run_with_helper(tmp_path, body, *, build_root=None, gcs_dir=None, sil_command=None, sil_udp_port=None, extra_origins=(),
-                    validate_command=None):
+                    validate_command=None, picotool=None, flash_timing=None):
     """Runs `await body(helper)` with a started helper on a free port; always stops the helper."""
     async def main():
         h = helper_mod.Helper(runs_dir=tmp_path / "runs", build_root=build_root or tmp_path / "build",
                               gcs_dir=gcs_dir or tmp_path / "gcs", sil_udp_port=sil_udp_port, sil_command=sil_command, extra_origins=extra_origins,
-                              reports_dir=tmp_path / "reports", validate_command=validate_command)
+                              reports_dir=tmp_path / "reports", validate_command=validate_command, picotool=picotool)
+        h.flash_timing = flash_timing or {}
         await h.start(0)
         try:
             return await asyncio.wait_for(body(h), TIMEOUT_S * 3)
@@ -771,3 +775,397 @@ def test_command_line_signal_stops_the_sil_run_and_closes_the_log(tmp_path, sig)
             proc.kill()
             proc.wait()
         proc.stdout.close()
+
+
+# ---- the flash (ground-segment unit 15) -------------------------------------------------------------------------------------
+
+SCHEMA = 0x1234ABCD5678EF01
+OTHER_SCHEMA = 0x0BADBADBADBADBAD
+FLASH_PAYLOAD = bytes(range(256)) * 5  # 1280 flash bytes: three UF2 blocks of 476 at most
+NEW_PAYLOAD = bytes(reversed(FLASH_PAYLOAD))
+
+
+def make_elf(payload):
+    """A minimal 32-bit little-endian ELF with one loadable segment at the XIP base and the two Pico SDK symbols."""
+    import struct
+    xip = 0x10000000
+    strtab = b"\0__flash_binary_start\0__flash_binary_end\0"
+    syms = struct.pack("<IIIBBH", 0, 0, 0, 0, 0, 0) \
+        + struct.pack("<IIIBBH", 1, xip, 0, 0, 0, 1) + struct.pack("<IIIBBH", 1 + len(b"__flash_binary_start") + 1, xip + len(payload), 0, 0, 0, 1)
+    ehdr_size, phdr_size, shdr_size = 52, 32, 40
+    data_off = ehdr_size + phdr_size
+    sym_off = data_off + len(payload)
+    str_off = sym_off + len(syms)
+    sh_off = str_off + len(strtab)
+    ehdr = struct.pack("<16sHHIIIIIHHHHHH", b"\x7fELF\x01\x01\x01" + bytes(9), 2, 40, 1, xip, ehdr_size, sh_off, 0, ehdr_size,
+                       phdr_size, 1, shdr_size, 3, 0)
+    phdr = struct.pack("<IIIIIIII", 1, data_off, xip, xip, len(payload), len(payload), 5, 4)
+    shdrs = struct.pack("<10I", *([0] * 10)) \
+        + struct.pack("<10I", 0, 2, 0, 0, sym_off, len(syms), 2, 0, 4, 16) \
+        + struct.pack("<10I", 0, 3, 0, 0, str_off, len(strtab), 0, 0, 1, 0)
+    return ehdr + phdr + payload + syms + strtab + shdrs
+
+
+def make_uf2(payload, *, skip_block=None, family=0xE48BFF59):
+    import struct
+    chunk = 256
+    parts = [payload[i:i + chunk] for i in range(0, len(payload), chunk)]
+    blocks = []
+    for n, part in enumerate(parts):
+        if n == skip_block:
+            continue
+        head = struct.pack("<8I", flash_mod.UF2_MAGIC_START0, flash_mod.UF2_MAGIC_START1, 0x2000, 0x10000000 + n * chunk, len(part), n,
+                           len(parts), family)
+        blocks.append(head + part + bytes(476 - len(part)) + struct.pack("<I", flash_mod.UF2_MAGIC_END))
+    return b"".join(blocks)
+
+
+def flash_manifest(schema=SCHEMA):
+    params = {"a_gain": {"id": 0, "type": "f32", "default_bits": "0x3f800000", "sigma_bits": "0x00000000", "sigma_kind": "Choice",
+                         "method": "scenario", "origin": "Manual", "lock": False, "source": "a test value"},
+              "b_count": {"id": 1, "type": "i32", "default_bits": "0x00000007", "sigma_bits": "0x00000000", "sigma_kind": "Exact",
+                          "method": "scenario", "origin": "DefaultFromRegister", "lock": True, "source": "a locked test value"}}
+    return {"schema_hash": f"{schema:#018x}", "count": 2, "params": params}
+
+
+def factory_hash(schema=SCHEMA):
+    sys.path.insert(0, str(ROOT / "tools" / "config"))
+    import mcfg
+    return mcfg.config_hash(mcfg.factory_config(flash_manifest(schema))).hex()
+
+
+def make_flash_root(root, payload=FLASH_PAYLOAD, *, uf2=True, uf2_payload=None, elf=True):
+    """A board tree m33 (ELF [+ UF2] and the parameter set files) and a SIL tree host-gz-quadfc of the same schema."""
+    sys.path.insert(0, str(ROOT / "tools" / "config"))
+    import mcfg
+    manifest = flash_manifest()
+    board = root / "m33" / "fw" / "hal" / "target"
+    board.mkdir(parents=True)
+    if elf:
+        (board / "marv_fc3v2.elf").write_bytes(make_elf(payload))
+    if uf2:
+        (board / "marv_fc3v2.uf2").write_bytes(make_uf2(payload if uf2_payload is None else uf2_payload))
+    for tree in ("m33", "host-gz-quadfc"):
+        d = root / tree / "generated" / "marv_params_fc3v2"
+        (d / "marv" / "params").mkdir(parents=True)
+        (d / "marv" / "params" / "params_manifest.json").write_text(json.dumps(manifest))
+        (d / "marv_params_fc3v2.mcfg").write_bytes(mcfg.encode(mcfg.factory_config(manifest)))
+    sil = root / "host-gz-quadfc" / "sim" / "quad_fc"
+    sil.mkdir(parents=True)
+    (sil / "libmarv_sil_quad_fc.so").write_bytes(b"sil library bytes")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def store_report(h, image, config, *, verdict="PASS", named_image=None, named_config=None):
+    d = h.reports.directory(image, config)
+    d.mkdir(parents=True)
+    body = json.dumps({"format": "marv-validation-report/1", "verdict": verdict, "image": {"sha256": named_image or image},
+                       "config": {"config_hash": named_config or config}}, sort_keys=True).encode() + b"\n"
+    (d / "report.json").write_bytes(body)
+    return hashlib.sha256(body).hexdigest()
+
+
+FAKE_PICOTOOL = """#!{python}
+import json, os, sys, time
+with open(os.environ["FAKE_PICOTOOL_LOG"], "a") as f:
+    f.write(json.dumps(sys.argv[1:]) + "\\n")
+mode = os.environ.get("FAKE_PICOTOOL_MODE", "ok")
+if sys.argv[1:3] == ["uf2", "convert"]:
+    open(sys.argv[4], "wb").write(open(os.environ["FAKE_PICOTOOL_UF2"], "rb").read())
+    sys.exit(0)
+if mode == "fail":
+    print("No accessible RP-series devices in BOOTSEL mode were found.")
+    sys.exit(1)
+if mode == "hang":
+    time.sleep(60)
+print("Loading into Flash: [==============================]  100%\\r", end="")
+print("Verifying Flash: OK")
+"""
+
+
+@pytest.fixture
+def picotool(tmp_path, monkeypatch):
+    script = tmp_path / "picotool"
+    script.write_text(FAKE_PICOTOOL.format(python=sys.executable))
+    script.chmod(0o755)
+    log = tmp_path / "picotool.log"
+    monkeypatch.setenv("FAKE_PICOTOOL_LOG", str(log))
+    monkeypatch.setenv("FAKE_PICOTOOL_MODE", "ok")
+    monkeypatch.setenv("FAKE_PICOTOOL_UF2", str(tmp_path / "convert.uf2"))
+    (tmp_path / "convert.uf2").write_bytes(make_uf2(FLASH_PAYLOAD))
+    return script, log
+
+
+def invocations(log):
+    return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+
+
+def board_facts(**over):
+    return {"schema_hash": f"{SCHEMA:#018x}", "config_hash": factory_hash(), "config_source": "factory", "armed": False, **over}
+
+
+FLASH_FAST = {"load_s": 5, "port_wait_s": 5, "settle_s": 0}
+
+
+async def collect_until(ws, event):
+    seen = []
+    while True:
+        m = await asyncio.wait_for(ws.recv(), TIMEOUT_S)
+        if isinstance(m, str) and "event" in json.loads(m):
+            seen.append(json.loads(m))
+            if seen[-1]["event"] == event:
+                return seen
+
+
+def run_flash_test(tmp_path, picotool, body, *, uf2=True, uf2_payload=None, elf=True, payload=FLASH_PAYLOAD):
+    image = make_flash_root(tmp_path / "build", payload, uf2=uf2, uf2_payload=uf2_payload, elf=elf)
+    master, slave = os.openpty()
+    path = os.ttyname(slave)
+
+    async def wrapped(h):
+        await h.open_serial(path, 115200, from_browser=False)
+        async with ws_connect(h) as ws:
+            return await body(h, ws, image)
+    try:
+        return run_with_helper(tmp_path, wrapped, build_root=tmp_path / "build", picotool=str(picotool[0]), flash_timing=FLASH_FAST)
+    finally:
+        os.close(master)
+        os.close(slave)
+
+
+def test_uf2_flash_bytes_tile_from_the_xip_base_and_a_gap_or_foreign_block_is_refused():
+    assert flash_mod.uf2_flash_bytes(make_uf2(FLASH_PAYLOAD)) == FLASH_PAYLOAD
+    blocks = [make_uf2(FLASH_PAYLOAD)[i:i + 512] for i in range(0, len(make_uf2(FLASH_PAYLOAD)), 512)]
+    assert flash_mod.uf2_flash_bytes(b"".join(reversed(blocks))) == FLASH_PAYLOAD  # block order is free
+    with pytest.raises(flash_mod.FlashRefused, match="gap or an overlap"):
+        flash_mod.uf2_flash_bytes(make_uf2(FLASH_PAYLOAD, skip_block=2))
+    with pytest.raises(flash_mod.FlashRefused, match="whole number"):
+        flash_mod.uf2_flash_bytes(make_uf2(FLASH_PAYLOAD)[:-1])
+    with pytest.raises(flash_mod.FlashRefused, match="magic"):
+        flash_mod.uf2_flash_bytes(b"\0" * 512)
+    shifted = bytearray(make_uf2(FLASH_PAYLOAD))
+    shifted[12:16] = (0x20000000).to_bytes(4, "little")
+    with pytest.raises(flash_mod.FlashRefused, match="gap or an overlap"):
+        flash_mod.uf2_flash_bytes(bytes(shifted))
+
+
+def test_uf2_may_pad_the_image_with_less_than_a_flash_page_of_zeros_and_nothing_else(tmp_path):
+    image = FLASH_PAYLOAD[:1000]
+    digest = hashlib.sha256(image).hexdigest()
+    padded = tmp_path / "padded.uf2"
+    padded.write_bytes(make_uf2(image + bytes(24)))  # 1024 bytes: whole 256-byte pages
+    assert flash_mod.uf2_matches(padded, digest) is None
+    padded.write_bytes(make_uf2(image + bytes(24) + b"\x01"))
+    assert "holds image" in flash_mod.uf2_matches(padded, digest)
+    padded.write_bytes(make_uf2(image + bytes(flash_mod.FLASH_PAGE)))  # a whole extra page is not padding
+    assert "holds image" in flash_mod.uf2_matches(padded, digest)
+
+
+def test_board_elf_without_a_bin_is_keyed_by_its_flash_bytes_and_a_non_elf_stays_unkeyed(tmp_path):
+    image = make_flash_root(tmp_path / "build")
+    lib = flash_mod.ImageLibrary(tmp_path / "build").scan()
+    (board,) = [e for e in lib["images"] if e["kind"] == "board"]
+    assert board["hash"] == image and board["image_file"] == "marv_fc3v2.elf" and "uf2" in board["artifacts"]
+
+
+def test_flash_without_a_passing_report_is_refused_before_picotool_and_leaves_the_port_open(tmp_path, picotool):
+    async def body(h, ws, image):
+        plan = (await control(ws, cmd="flash_plan", image_hash=image, board=board_facts()))["plan"]
+        assert plan["config"]["which"] == "factory" and plan["config"]["hash"] == factory_hash()
+        assert plan["gate"]["passes"] is False and plan["allowed"] is False and plan["can_validate"] is True
+        assert "no validation report" in plan["refusal"]
+        r = await control(ws, cmd="flash", image_hash=image, board=board_facts())
+        assert r["ok"] is False and "picotool was not started" in r["error"] and "no validation report" in r["error"]
+        assert h.device is not None and h.flash_state is None
+        for verdict, named in (("FAIL", {}), ("PASS", {"named_image": "1" * 64}), ("PASS", {"named_config": "2" * 64})):
+            d = h.reports.directory(image, factory_hash())
+            if d.exists():
+                (d / "report.json").unlink()
+                d.rmdir()
+            store_report(h, image, factory_hash(), verdict=verdict, **named)
+            r = await control(ws, cmd="flash", image_hash=image, board=board_facts())
+            assert r["ok"] is False and "picotool was not started" in r["error"], (verdict, named)
+    run_flash_test(tmp_path, picotool, body)
+    assert invocations(picotool[1]) == []  # picotool was never run, not even to convert
+
+
+def test_flash_of_an_armed_or_unknown_vehicle_is_refused_even_with_a_passing_report(tmp_path, picotool):
+    async def body(h, ws, image):
+        store_report(h, image, factory_hash())
+        for armed, word in ((True, "armed"), (None, "unknown")):
+            r = await control(ws, cmd="flash", image_hash=image, board=board_facts(armed=armed))
+            assert r["ok"] is False and "picotool was not started" in r["error"] and word in r["error"]
+        for bad in ({"schema_hash": "nonsense"}, {"config_hash": "short"}, {"config_source": "slot"}):
+            r = await control(ws, cmd="flash", image_hash=image, board=board_facts(**bad))
+            assert r["ok"] is False, bad
+        r = await control(ws, cmd="flash", image_hash="0" * 64, board=board_facts())
+        assert not r["ok"] and "not in the image library" in r["error"]
+        r = await control(ws, cmd="flash", image_hash=image, board=None)
+        assert not r["ok"] and "identity is missing" in r["error"]
+    run_flash_test(tmp_path, picotool, body)
+    assert invocations(picotool[1]) == []
+
+
+def test_flash_with_a_passing_report_checks_the_uf2_runs_picotool_load_and_opens_the_port_again(tmp_path, picotool):
+    async def body(h, ws, image):
+        report_id = store_report(h, image, factory_hash())
+        plan = (await control(ws, cmd="flash_plan", image_hash=image, board=board_facts()))["plan"]
+        assert plan["gate"] == {"passes": True, "reason": None, "report_id": report_id, "verdict": "PASS"} and plan["allowed"]
+        r = await control(ws, cmd="flash", image_hash=image, board=board_facts())
+        assert r["ok"] and r["started"] and r["expected"] == {"image_hash": image, "config_hash": factory_hash(), "config_source": "factory"}
+        events = await collect_until(ws, "flash_done")
+        done = events[-1]
+        assert done["ok"] is True and done["stage"] == "done" and done["picotool_status"] == 0 and done["port_reopened"] is True
+        assert done["expected"] == r["expected"]
+        assert [e["event"] for e in events if e["event"] in ("device_closed", "device_opened")] == ["device_closed", "device_opened"]
+        assert any(e["event"] == "flash_progress" and e["stage"] == "picotool" and "Verifying Flash: OK" in e["line"] for e in events)
+        assert h.device is not None and h.status()["flash"]["ok"] is True
+    run_flash_test(tmp_path, picotool, body)
+    calls = invocations(picotool[1])
+    assert len(calls) == 1 and calls[0][:4] == ["load", "-f", "-v", "-x"] and calls[0][4].endswith("marv_fc3v2.uf2")  # the library's UF2 held the image
+
+
+def test_flash_converts_the_elf_when_the_uf2_is_wrong_and_refuses_a_conversion_that_is_not_the_image(tmp_path, picotool, monkeypatch):
+    async def body(h, ws, image):
+        store_report(h, image, factory_hash())
+        r = await control(ws, cmd="flash", image_hash=image, board=board_facts())
+        assert r["ok"]
+        done = (await collect_until(ws, "flash_done"))[-1]
+        assert done["ok"] is True
+        monkeypatch.setenv("FAKE_PICOTOOL_UF2", str(tmp_path / "wrong.uf2"))
+        r = await control(ws, cmd="flash", image_hash=image, board=board_facts())
+        assert r["ok"]
+        done = (await collect_until(ws, "flash_done"))[-1]
+        assert done["ok"] is False and done["stage"] == "uf2" and done["picotool_started"] is False
+        assert "converted UF2 does not hold the image" in done["error"] and h.device is not None
+    (tmp_path / "wrong.uf2").write_bytes(make_uf2(NEW_PAYLOAD))
+    run_flash_test(tmp_path, picotool, body, uf2_payload=NEW_PAYLOAD)
+    calls = invocations(picotool[1])
+    assert [c[:2] for c in calls] == [["uf2", "convert"], ["load", "-f"], ["uf2", "convert"]]  # the second flash never reached load
+    assert calls[1][4].endswith(".uf2") and "flash" in calls[1][4]  # the converted copy in the run directory, not the library's UF2
+
+
+def test_flash_reports_a_failing_or_hung_picotool_and_still_opens_the_port_again(tmp_path, picotool, monkeypatch):
+    async def body(h, ws, image):
+        store_report(h, image, factory_hash())
+        monkeypatch.setenv("FAKE_PICOTOOL_MODE", "fail")
+        assert (await control(ws, cmd="flash", image_hash=image, board=board_facts()))["ok"]
+        done = (await collect_until(ws, "flash_done"))[-1]
+        assert done["ok"] is False and done["stage"] == "port" and done["picotool_status"] == 1 and done["picotool_started"] is True
+        assert "status 1" in done["error"] and "maintenance grant" in done["error"] and done["port_reopened"] is True and h.device is not None
+        monkeypatch.setenv("FAKE_PICOTOOL_MODE", "hang")
+        h.flash_timing = {**FLASH_FAST, "load_s": 0.5}
+        t0 = time.monotonic()
+        assert (await control(ws, cmd="flash", image_hash=image, board=board_facts()))["ok"]
+        busy = await control(ws, cmd="flash", image_hash=image, board=board_facts())
+        assert busy["ok"] is False and "a flash is running" in busy["error"]  # one at a time
+        done = (await collect_until(ws, "flash_done"))[-1]
+        assert done["ok"] is False and "did not finish in 0.5 s and was killed" in done["error"] and time.monotonic() - t0 < 10
+    run_flash_test(tmp_path, picotool, body)
+
+
+def test_flash_waits_for_the_port_to_come_back_and_reports_one_that_does_not(tmp_path, picotool, monkeypatch):
+    link = tmp_path / "ttyLINK"
+
+    async def body(h, ws, image):
+        store_report(h, image, factory_hash())
+        target = os.readlink(link)
+        monkeypatch.setenv("FAKE_PICOTOOL_MODE", "ok")
+        # the port vanishes while picotool runs and returns a moment later
+        async def toggle():
+            await asyncio.sleep(0.3)
+            link.unlink()
+            await asyncio.sleep(0.6)
+            link.symlink_to(target)
+        task = asyncio.create_task(toggle())
+        assert (await control(ws, cmd="flash", image_hash=image, board=board_facts()))["ok"]
+        done = (await collect_until(ws, "flash_done"))[-1]
+        await task
+        assert done["ok"] is True and done["port_reopened"] is True
+        link.unlink()  # and now it never returns
+        h.flash_timing = {**FLASH_FAST, "port_wait_s": 0.5}
+        assert (await control(ws, cmd="flash", image_hash=image, board=board_facts()))["ok"]
+        done = (await collect_until(ws, "flash_done"))[-1]
+        assert done["ok"] is False and done["port_reopened"] is False and "did not come back" in done["error"] and h.device is None
+    image = make_flash_root(tmp_path / "build")
+    master, slave = os.openpty()
+    link.symlink_to(os.ttyname(slave))
+
+    async def wrapped(h):
+        await h.open_serial(str(link), 115200, from_browser=False)
+        async with ws_connect(h) as ws:
+            return await body(h, ws, image)
+    try:
+        run_with_helper(tmp_path, wrapped, build_root=tmp_path / "build", picotool=str(picotool[0]), flash_timing=FLASH_FAST)
+    finally:
+        os.close(master)
+        os.close(slave)
+
+
+def test_flash_needs_the_serial_port_and_a_board_image(tmp_path, picotool):
+    async def body(h, ws, image):
+        store_report(h, image, factory_hash())
+        h.close_device()
+        r = await control(ws, cmd="flash", image_hash=image, board=board_facts())
+        assert r["ok"] is False and "picotool was not started" in r["error"] and "serial port" in r["error"]
+        sil_hash = hashlib.sha256(b"sil library bytes").hexdigest()
+        r = await control(ws, cmd="flash_plan", image_hash=sil_hash, board=board_facts())
+        assert r["ok"] is False and "not a board image" in r["error"]
+    run_flash_test(tmp_path, picotool, body)
+    assert invocations(picotool[1]) == []
+
+
+def test_flash_config_is_the_boards_stored_config_when_the_schema_matches_else_the_factory_config(tmp_path, picotool):
+    stored = "5" * 64
+
+    async def body(h, ws, image):
+        plan = lambda **board: control(ws, cmd="flash_plan", image_hash=image, board=board_facts(**board))  # noqa: E731
+        p = (await plan(config_source="active", config_hash=stored))["plan"]
+        assert p["config"]["which"] == "active" and p["config"]["hash"] == stored and p["config"]["expected_source"] == "active"
+        assert p["can_validate"] is False and p["gate"]["passes"] is False  # the helper holds no copy of that config
+        store_report(h, image, stored)
+        p = (await plan(config_source="active", config_hash=stored))["plan"]
+        assert p["allowed"] is True
+        p = (await plan(config_source="active", config_hash=stored, schema_hash=f"{OTHER_SCHEMA:#018x}"))["plan"]
+        assert p["config"]["which"] == "factory" and p["config"]["hash"] == factory_hash() and "factory table" in p["config"]["why"]
+        p = (await plan(config_source="factory", config_hash=stored))["plan"]
+        assert p["config"]["which"] == "factory" and p["config"]["hash"] == factory_hash()
+    run_flash_test(tmp_path, picotool, body)
+
+
+def test_validate_of_a_board_image_uses_the_sil_tree_writes_the_bin_and_takes_a_config_reference(tmp_path, picotool):
+    probe = ("import hashlib, json, sys; a = sys.argv; arg = lambda k: a[a.index(k) + 1]; "
+             "img = open(arg('--image'), 'rb').read(); cfg = open(arg('--config'), 'rb').read(); "
+             "sys.path.insert(0, %r); import mcfg; c = mcfg.decode(cfg); "
+             "body = (json.dumps({'verdict': 'PASS', 'image': {'sha256': hashlib.sha256(img).hexdigest()}, "
+             "'config': {'config_hash': mcfg.config_hash(c).hex()}, 'build': arg('--build'), 'image_file': arg('--image')}) + chr(10)).encode(); "
+             "open(arg('--out'), 'wb').write(body); print('report_id: ' + hashlib.sha256(body).hexdigest()); print('verdict: PASS')"
+             % str(ROOT / "tools" / "config"))
+    command = [sys.executable, "-c", probe, "--config", "{config}", "--image", "{image}", "--build", "{build}", "--work-dir", "{work}", "--out", "{out}"]
+
+    async def body(h, ws, image):
+        r = await control(ws, cmd="validate", image_hash=image, config="3" * 64)
+        assert r["ok"] is False and "holds no copy of config" in r["error"]
+        r = await control(ws, cmd="validate", image_hash=image, config="factory")
+        assert r == {"ok": True, "config_hash": factory_hash(), "started": True}
+        done = (await collect_until(ws, "validate_done"))[-1]
+        assert done["verdict"] == "PASS"
+        report = json.loads(h.reports.report(image, factory_hash()).read_bytes())
+        assert report["image"]["sha256"] == image  # the .bin written from the ELF hashes to the board's image hash
+        assert report["build"].endswith("host-gz-quadfc") and report["image_file"].endswith(f"{image}.bin")
+        p = (await control(ws, cmd="flash_plan", image_hash=image, board=board_facts()))["plan"]
+        assert p["gate"]["passes"] is True and p["allowed"] is True  # the stored report is what the gate reads
+        # a config the report store holds a copy of can be validated for another image: here the same one by its hash
+        r = await control(ws, cmd="validate", image_hash=image, config=factory_hash())
+        assert r["ok"] is True
+        await collect_until(ws, "validate_done")
+    run_flash_test_with_validator(tmp_path, picotool, body, command)
+
+
+def run_flash_test_with_validator(tmp_path, picotool, body, command):
+    image = make_flash_root(tmp_path / "build")
+
+    async def wrapped(h):
+        async with ws_connect(h) as ws:
+            return await body(h, ws, image)
+    return run_with_helper(tmp_path, wrapped, build_root=tmp_path / "build", picotool=str(picotool[0]), validate_command=command)

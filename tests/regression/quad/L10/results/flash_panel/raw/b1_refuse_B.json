@@ -1,0 +1,166 @@
+{
+ "step": "refuse",
+ "name": "b1_refuse_B",
+ "elf": "build/m33/fw/hal/target/marv_fc3v2.elf",
+ "date": "2026-10-18T17:53:40-0500",
+ "image_hash": "9dc7389e1f6fa2f7dffd503961301d160a602209f1722799c6f0c4adcdf39f12",
+ "usb_before": {
+  "devnum": 106,
+  "nodes": {
+   "if00": {
+    "node": "/dev/ttyACM1",
+    "ino": 4436,
+    "ctime": 1792363977.0363486
+   },
+   "if02": {
+    "node": "/dev/ttyACM2",
+    "ino": 4437,
+    "ctime": 1792363977.0372818
+   }
+  }
+ },
+ "board_facts": {
+  "schema_hash": "0x1648260490893e6e",
+  "config_hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+  "config_source": "factory",
+  "armed": false
+ },
+ "identity_before": {
+  "image_sha256": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+  "config_sha256": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": "factory",
+  "config_state": "ok",
+  "config_refusal": 0,
+  "report_id": "0000000000000000000000000000000000000000000000000000000000000000"
+ },
+ "plan": {
+  "ok": true,
+  "id": 1,
+  "plan": {
+   "image": {
+    "hash": "9dc7389e1f6fa2f7dffd503961301d160a602209f1722799c6f0c4adcdf39f12",
+    "tree": "m33",
+    "name": "marv_fc3v2",
+    "schema_hash": "0x1648260490893e6e"
+   },
+   "config": {
+    "which": "factory",
+    "hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+    "expected_source": "factory",
+    "why": "the board runs its factory table, which the new image brings"
+   },
+   "gate": {
+    "passes": false,
+    "reason": "no validation report for image 9dc7389e1f6f with config 5961b93350a3",
+    "report_id": null,
+    "verdict": null
+   },
+   "can_validate": true,
+   "allowed": false,
+   "refusal": "no validation report for image 9dc7389e1f6f with config 5961b93350a3"
+  }
+ },
+ "checks": {
+  "the page's gate is closed": {
+   "pass": true,
+   "reason": "no validation report for image 9dc7389e1f6f with config 5961b93350a3",
+   "config": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+   "can_validate": true
+  },
+  "the helper refuses before picotool": {
+   "pass": true,
+   "error": "not flashed, picotool was not started: no validation report for image 9dc7389e1f6f with config 5961b93350a3"
+  },
+  "no flash was started": {
+   "pass": true,
+   "flash": null,
+   "device": "serial /dev/serial/by-id/usb-Raspberry_Pi_Pico_B2189353BDF6DD1E-if02 115200"
+  },
+  "picotool was not invoked": {
+   "pass": true,
+   "new_lines": []
+  },
+  "board uptime continued": {
+   "pass": true,
+   "board_s": 4.0,
+   "host_s": 4.0,
+   "t_before_us": 47121604,
+   "t_after_us": 51121705
+  },
+  "no USB re-enumeration": {
+   "pass": true,
+   "before": {
+    "devnum": 106,
+    "nodes": {
+     "if00": {
+      "node": "/dev/ttyACM1",
+      "ino": 4436,
+      "ctime": 1792363977.0363486
+     },
+     "if02": {
+      "node": "/dev/ttyACM2",
+      "ino": 4437,
+      "ctime": 1792363977.0372818
+     }
+    }
+   },
+   "after": {
+    "devnum": 106,
+    "nodes": {
+     "if00": {
+      "node": "/dev/ttyACM1",
+      "ino": 4436,
+      "ctime": 1792363977.0363486
+     },
+     "if02": {
+      "node": "/dev/ttyACM2",
+      "ino": 4437,
+      "ctime": 1792363977.0372818
+     }
+    }
+   }
+  }
+ },
+ "direct_flash": {
+  "ok": false,
+  "error": "not flashed, picotool was not started: no validation report for image 9dc7389e1f6f with config 5961b93350a3",
+  "id": 2
+ },
+ "helper_status": {
+  "origin": "http://127.0.0.1:40001",
+  "run_dir": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-flash/tests/regression/quad/L10/results/flash_panel/raw/gs-runs/20261018T225344Z",
+  "device": "serial /dev/serial/by-id/usb-Raspberry_Pi_Pico_B2189353BDF6DD1E-if02 115200",
+  "client": true,
+  "dropped_bytes": 0,
+  "sil": {
+   "running": false,
+   "pid": null,
+   "exit_status": null,
+   "udp_port": null,
+   "config_dir": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-flash/tests/regression/quad/L10/results/flash_panel/raw/gs-runs/20261018T225344Z/store",
+   "relaunches": 0,
+   "link": "none"
+  },
+  "validation": null,
+  "flash": null,
+  "gcs_built": false
+ },
+ "acks_after_direct_flash": 0,
+ "usb_after": {
+  "devnum": 106,
+  "nodes": {
+   "if00": {
+    "node": "/dev/ttyACM1",
+    "ino": 4436,
+    "ctime": 1792363977.0363486
+   },
+   "if02": {
+    "node": "/dev/ttyACM2",
+    "ino": 4437,
+    "ctime": 1792363977.0372818
+   }
+  }
+ },
+ "picotool_invocations": []
+}

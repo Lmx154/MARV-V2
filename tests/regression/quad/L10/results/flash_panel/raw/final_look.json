@@ -1,0 +1,74 @@
+{
+ "step": "look",
+ "name": "final_look",
+ "elf": null,
+ "date": "2026-10-18T17:54:43-0500",
+ "boot": {
+  "stats": {
+   "t_us": 22120817,
+   "est_valid": 1,
+   "arming": "no_link",
+   "rate_timing_faults": 0,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-423-g67e1544",
+  "image": {
+   "sha256": "9dc7389e1f6fa2f7dffd503961301d160a602209f1722799c6f0c4adcdf39f12",
+   "bytes": 214132,
+   "how": "SHA-256 accelerator",
+   "us": 15782
+  },
+  "config": {
+   "source": "factory",
+   "sequence": null,
+   "config_sha256": null,
+   "bound_image": null,
+   "status": "ok",
+   "fault": null,
+   "request": "none",
+   "request_result": null,
+   "line": "config: source factory, status ok, boot request none"
+  },
+  "imu_start_us": 21432
+ },
+ "usb": {
+  "devnum": 108,
+  "nodes": {
+   "if00": {
+    "node": "/dev/ttyACM1",
+    "ino": 4454,
+    "ctime": 1792364064.6968496
+   },
+   "if02": {
+    "node": "/dev/ttyACM2",
+    "ino": 4455,
+    "ctime": 1792364064.6968496
+   }
+  }
+ },
+ "identity": {
+  "image_sha256": "9dc7389e1f6fa2f7dffd503961301d160a602209f1722799c6f0c4adcdf39f12",
+  "config_sha256": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": "factory",
+  "config_state": "ok",
+  "config_refusal": 0,
+  "report_id": "0000000000000000000000000000000000000000000000000000000000000000"
+ },
+ "armed": false,
+ "checks": {
+  "looked": {
+   "pass": true,
+   "image": "9dc7389e1f6fa2f7dffd503961301d160a602209f1722799c6f0c4adcdf39f12",
+   "config": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+   "source": "factory",
+   "state": "ok",
+   "armed": false,
+   "arming": "no_link",
+   "est_valid": 1,
+   "devnum": 108
+  }
+ }
+}

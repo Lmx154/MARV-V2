@@ -1,0 +1,915 @@
+{
+ "step": "flash",
+ "name": "a2_flash_A",
+ "elf": "build/imgA/fw/hal/target/marv_fc3v2.elf",
+ "date": "2026-10-18T17:52:50-0500",
+ "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+ "identity_before": {
+  "image_sha256": "e9e48456a2ba5c68800938e9271bbefd149e4221aeb1a1faae0f659d12e7b105",
+  "config_sha256": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": "factory",
+  "config_state": "ok",
+  "config_refusal": 0,
+  "report_id": "0000000000000000000000000000000000000000000000000000000000000000"
+ },
+ "board_facts": {
+  "schema_hash": "0x1648260490893e6e",
+  "config_hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+  "config_source": "factory",
+  "armed": false
+ },
+ "plan": {
+  "ok": true,
+  "id": 1,
+  "plan": {
+   "image": {
+    "hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+    "tree": "imgA",
+    "name": "marv_fc3v2",
+    "schema_hash": "0x1648260490893e6e"
+   },
+   "config": {
+    "which": "factory",
+    "hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+    "expected_source": "factory",
+    "why": "the board runs its factory table, which the new image brings"
+   },
+   "gate": {
+    "passes": true,
+    "reason": null,
+    "report_id": "57212a23c7d011d102387ce16fa7a8da8f594803af3c53e5142e3300b5a749b7",
+    "verdict": "PASS"
+   },
+   "can_validate": true,
+   "allowed": true,
+   "refusal": null
+  }
+ },
+ "grant": {
+  "acks": [
+   5,
+   0
+  ],
+  "texts": []
+ },
+ "flash_start": {
+  "ok": true,
+  "id": 2,
+  "started": true,
+  "expected": {
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "config_hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+   "config_source": "factory"
+  },
+  "plan": {
+   "image": {
+    "hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+    "tree": "imgA",
+    "name": "marv_fc3v2",
+    "schema_hash": "0x1648260490893e6e"
+   },
+   "config": {
+    "which": "factory",
+    "hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+    "expected_source": "factory",
+    "why": "the board runs its factory table, which the new image brings"
+   },
+   "gate": {
+    "passes": true,
+    "reason": null,
+    "report_id": "57212a23c7d011d102387ce16fa7a8da8f594803af3c53e5142e3300b5a749b7",
+    "verdict": "PASS"
+   },
+   "can_validate": true,
+   "allowed": true,
+   "refusal": null
+  }
+ },
+ "flash_done": {
+  "event": "flash_done",
+  "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+  "ok": true,
+  "stage": "done",
+  "error": null,
+  "picotool_started": true,
+  "picotool_status": 0,
+  "port_reopened": true,
+  "expected": {
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "config_hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+   "config_source": "factory"
+  }
+ },
+ "flash_events": [
+  {
+   "event": "device_closed",
+   "reason": "flashing"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Tracking device serial number B2189353BDF6DD1E for reboot"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "The device was asked to reboot into BOOTSEL mode so the command can be executed."
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Family ID 'rp2350-arm-s' can be downloaded in absolute space:"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "  00000000->02000000"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [                              ]  0%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [                              ]  1%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [                              ]  3%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [=                             ]  5%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [==                            ]  7%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [==                            ]  9%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [===                           ]  11%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [===                           ]  13%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [====                          ]  15%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [=====                         ]  17%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [=====                         ]  19%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [======                        ]  21%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [======                        ]  22%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [=======                       ]  24%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [=======                       ]  26%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [========                      ]  28%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [=========                     ]  30%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [=========                     ]  32%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [==========                    ]  34%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [==========                    ]  36%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [===========                   ]  38%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [============                  ]  40%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [============                  ]  42%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [============                  ]  43%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [=============                 ]  45%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [==============                ]  47%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [==============                ]  49%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [===============               ]  51%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [===============               ]  53%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [================              ]  55%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [=================             ]  57%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [=================             ]  59%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [==================            ]  61%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [==================            ]  63%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [===================           ]  64%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [===================           ]  66%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [====================          ]  68%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [=====================         ]  70%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [=====================         ]  72%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [======================        ]  74%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [======================        ]  76%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [=======================       ]  78%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [========================      ]  80%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [========================      ]  82%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [=========================     ]  84%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [=========================     ]  86%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [==========================    ]  87%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [==========================    ]  89%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [===========================   ]  91%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [===========================   ]  93%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [============================  ]  95%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [============================= ]  97%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [============================= ]  99%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Loading into Flash:   [==============================]  100%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [                              ]  0%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [                              ]  1%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [                              ]  3%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [=                             ]  5%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [==                            ]  7%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [==                            ]  9%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [===                           ]  11%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [===                           ]  13%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [====                          ]  15%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [=====                         ]  17%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [=====                         ]  19%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [======                        ]  21%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [======                        ]  22%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [=======                       ]  24%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [=======                       ]  26%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [========                      ]  28%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [=========                     ]  30%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [=========                     ]  32%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [==========                    ]  34%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [==========                    ]  36%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [===========                   ]  38%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [============                  ]  40%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [============                  ]  42%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [============                  ]  43%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [=============                 ]  45%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [==============                ]  47%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [==============                ]  49%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [===============               ]  51%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [===============               ]  53%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [================              ]  55%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [=================             ]  57%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [=================             ]  59%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [==================            ]  61%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [==================            ]  63%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [===================           ]  64%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [===================           ]  66%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [====================          ]  68%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [=====================         ]  70%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [=====================         ]  72%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [======================        ]  74%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [======================        ]  76%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [=======================       ]  78%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [========================      ]  80%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [========================      ]  82%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [=========================     ]  84%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [=========================     ]  86%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [==========================    ]  87%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [==========================    ]  89%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [===========================   ]  91%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [===========================   ]  93%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [============================  ]  95%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [============================= ]  97%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [============================= ]  99%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "Verifying Flash:      [==============================]  100%"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "  OK"
+  },
+  {
+   "event": "flash_progress",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "stage": "picotool",
+   "line": "The device was rebooted to start the application."
+  },
+  {
+   "event": "device_opened",
+   "device": "serial /dev/serial/by-id/usb-Raspberry_Pi_Pico_B2189353BDF6DD1E-if02 115200"
+  },
+  {
+   "event": "flash_done",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "ok": true,
+   "stage": "done",
+   "error": null,
+   "picotool_started": true,
+   "picotool_status": 0,
+   "port_reopened": true,
+   "expected": {
+    "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+    "config_hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+    "config_source": "factory"
+   }
+  }
+ ],
+ "identity_after": {
+  "image_sha256": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+  "config_sha256": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": "factory",
+  "config_state": "ok",
+  "config_refusal": 0,
+  "report_id": "0000000000000000000000000000000000000000000000000000000000000000"
+ },
+ "readback": {
+  "image hash": [
+   "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f"
+  ],
+  "config hash": [
+   "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+   "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd"
+  ],
+  "config source": [
+   "factory",
+   "factory"
+  ]
+ },
+ "picotool_invocations": [
+  "2026-10-18T22:52:51Z picotool uf2 convert /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-flash/build/imgA/fw/hal/target/marv_fc3v2.elf /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-flash/tests/regression/quad/L10/results/flash_panel/raw/gs-runs/20261018T225251Z/flash/be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f.uf2",
+  "2026-10-18T22:52:51Z picotool load -f -v -x /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-flash/tests/regression/quad/L10/results/flash_panel/raw/gs-runs/20261018T225251Z/flash/be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f.uf2"
+ ],
+ "boot_after": {
+  "stats": {
+   "t_us": 12120712,
+   "est_valid": 1,
+   "arming": "no_link",
+   "rate_timing_faults": 1,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-419-g4495b9c",
+  "image": {
+   "sha256": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "bytes": 214132,
+   "how": "SHA-256 accelerator",
+   "us": 15782
+  },
+  "config": {
+   "source": "factory",
+   "sequence": null,
+   "config_sha256": null,
+   "bound_image": null,
+   "status": "ok",
+   "fault": null,
+   "request": "none",
+   "request_result": null,
+   "line": "config: source factory, status ok, boot request none"
+  },
+  "imu_start_us": 21433
+ },
+ "usb_after": {
+  "devnum": 106,
+  "nodes": {
+   "if00": {
+    "node": "/dev/ttyACM1",
+    "ino": 4436,
+    "ctime": 1792363977.0363486
+   },
+   "if02": {
+    "node": "/dev/ttyACM2",
+    "ino": 4437,
+    "ctime": 1792363977.0372818
+   }
+  }
+ },
+ "checks": {
+  "flashed": {
+   "pass": true,
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "readback": {
+    "image hash": [
+     "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+     "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f"
+    ],
+    "config hash": [
+     "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+     "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd"
+    ],
+    "config source": [
+     "factory",
+     "factory"
+    ]
+   },
+   "stopped": null,
+   "picotool_status": 0,
+   "invocations": 2
+  },
+  "boot line image hash equals the host's": {
+   "pass": true,
+   "boot": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "host": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "arming": "no_link",
+   "est_valid": 1
+  }
+ }
+}

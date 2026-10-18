@@ -1,0 +1,187 @@
+{
+ "step": "flash",
+ "name": "a2_flash_A",
+ "elf": "build/imgA/fw/hal/target/marv_fc3v2.elf",
+ "date": "2026-10-18T17:52:13-0500",
+ "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+ "identity_before": {
+  "image_sha256": "e9e48456a2ba5c68800938e9271bbefd149e4221aeb1a1faae0f659d12e7b105",
+  "config_sha256": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+  "schema_hash": "0x1648260490893e6e",
+  "config_source": "factory",
+  "config_state": "ok",
+  "config_refusal": 0,
+  "report_id": "0000000000000000000000000000000000000000000000000000000000000000"
+ },
+ "board_facts": {
+  "schema_hash": "0x1648260490893e6e",
+  "config_hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+  "config_source": "factory",
+  "armed": false
+ },
+ "plan": {
+  "ok": true,
+  "id": 1,
+  "plan": {
+   "image": {
+    "hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+    "tree": "imgA",
+    "name": "marv_fc3v2",
+    "schema_hash": "0x1648260490893e6e"
+   },
+   "config": {
+    "which": "factory",
+    "hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+    "expected_source": "factory",
+    "why": "the board runs its factory table, which the new image brings"
+   },
+   "gate": {
+    "passes": true,
+    "reason": null,
+    "report_id": "57212a23c7d011d102387ce16fa7a8da8f594803af3c53e5142e3300b5a749b7",
+    "verdict": "PASS"
+   },
+   "can_validate": true,
+   "allowed": true,
+   "refusal": null
+  }
+ },
+ "grant": {
+  "acks": [
+   5,
+   0
+  ],
+  "texts": []
+ },
+ "flash_start": {
+  "ok": true,
+  "id": 2,
+  "started": true,
+  "expected": {
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "config_hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+   "config_source": "factory"
+  },
+  "plan": {
+   "image": {
+    "hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+    "tree": "imgA",
+    "name": "marv_fc3v2",
+    "schema_hash": "0x1648260490893e6e"
+   },
+   "config": {
+    "which": "factory",
+    "hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+    "expected_source": "factory",
+    "why": "the board runs its factory table, which the new image brings"
+   },
+   "gate": {
+    "passes": true,
+    "reason": null,
+    "report_id": "57212a23c7d011d102387ce16fa7a8da8f594803af3c53e5142e3300b5a749b7",
+    "verdict": "PASS"
+   },
+   "can_validate": true,
+   "allowed": true,
+   "refusal": null
+  }
+ },
+ "flash_done": {
+  "event": "flash_done",
+  "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+  "ok": false,
+  "stage": "uf2",
+  "error": "the converted UF2 does not hold the image: the UF2 holds image 4f992e028d22, not be23dcd2e5a3",
+  "picotool_started": false,
+  "picotool_status": null,
+  "port_reopened": false,
+  "expected": {
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "config_hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+   "config_source": "factory"
+  }
+ },
+ "flash_events": [
+  {
+   "event": "flash_done",
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "ok": false,
+   "stage": "uf2",
+   "error": "the converted UF2 does not hold the image: the UF2 holds image 4f992e028d22, not be23dcd2e5a3",
+   "picotool_started": false,
+   "picotool_status": null,
+   "port_reopened": false,
+   "expected": {
+    "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+    "config_hash": "5961b93350a3f3e579870a59768836410620f16d2d34f64c0d0ac0dd1f0852dd",
+    "config_source": "factory"
+   }
+  }
+ ],
+ "stopped": "the flash failed at uf2: the converted UF2 does not hold the image: the UF2 holds image 4f992e028d22, not be23dcd2e5a3",
+ "picotool_invocations": [
+  "2026-10-18T22:52:13Z picotool uf2 convert /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-flash/build/imgA/fw/hal/target/marv_fc3v2.elf /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-flash/tests/regression/quad/L10/results/flash_panel/raw/gs-runs/20261018T225213Z/flash/be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f.uf2"
+ ],
+ "boot_after": {
+  "stats": {
+   "t_us": 8849461463,
+   "est_valid": 1,
+   "arming": "maintenance",
+   "rate_timing_faults": 0,
+   "attitude_timing_faults": 0,
+   "usb_reset_refused": 0,
+   "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0"
+  },
+  "version": "quad-L2-pass-412-g0ff4131",
+  "image": {
+   "sha256": "e9e48456a2ba5c68800938e9271bbefd149e4221aeb1a1faae0f659d12e7b105",
+   "bytes": 219164,
+   "how": "SHA-256 accelerator",
+   "us": 16157
+  },
+  "config": {
+   "source": "factory",
+   "sequence": null,
+   "config_sha256": null,
+   "bound_image": null,
+   "status": "ok",
+   "fault": null,
+   "request": "none",
+   "request_result": null,
+   "line": "config: source factory, status ok, boot request none"
+  },
+  "imu_start_us": 26722
+ },
+ "usb_after": {
+  "devnum": 103,
+  "nodes": {
+   "if00": {
+    "node": "/dev/ttyACM1",
+    "ino": 4409,
+    "ctime": 1792355094.0863028
+   },
+   "if02": {
+    "node": "/dev/ttyACM2",
+    "ino": 4410,
+    "ctime": 1792355094.085332
+   }
+  }
+ },
+ "checks": {
+  "flashed": {
+   "pass": false,
+   "image_hash": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "readback": null,
+   "stopped": "the flash failed at uf2: the converted UF2 does not hold the image: the UF2 holds image 4f992e028d22, not be23dcd2e5a3",
+   "picotool_status": null,
+   "invocations": 1
+  },
+  "boot line image hash equals the host's": {
+   "pass": false,
+   "boot": "e9e48456a2ba5c68800938e9271bbefd149e4221aeb1a1faae0f659d12e7b105",
+   "host": "be23dcd2e5a372dce0708a45cee89af7feb4240e90655ad0e7a992246602a87f",
+   "arming": "maintenance",
+   "est_valid": 1
+  }
+ }
+}

@@ -79,7 +79,7 @@
 		<a href="/" aria-current={pathname === '/' ? 'page' : undefined}>Connection</a>
 		<a href="/params" aria-current={pathname === '/params' ? 'page' : undefined}>Parameters</a>
 		<span class="soon" aria-disabled="true" title="coming in a later unit">Plots <small>coming in a later unit</small></span>
-		<span class="soon" aria-disabled="true" title="coming in a later unit">Flash <small>coming in a later unit</small></span>
+		<a href="/flash" aria-current={pathname === '/flash' ? 'page' : undefined}>Flash</a>
 	</nav>
 </header>
 

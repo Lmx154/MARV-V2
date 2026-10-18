@@ -1,8 +1,10 @@
 """The image library: the build trees' images keyed by image hash (ground spec section 3, decision 0053 Q5).
 
 Image hash = SHA-256 of the image file:
-  board  the raw binary `marv_fc3v2.bin` (the hash the board computes of its own image, unit 14). A tree with only an ELF or
-         a UF2 has no image hash here and is listed under `unkeyed`: a UF2 is a different byte string than the binary.
+  board  the raw binary `marv_fc3v2.bin` (the hash the board computes of its own image, unit 14). A tree with an ELF and no
+         .bin (the m33 build writes none) is keyed by the SHA-256 of the ELF's flash bytes, tools/config/image_hash.py (the same
+         bytes; its `image` artifact is then the ELF). A tree with only a UF2, or an ELF that has no flash image, has no image
+         hash here and is listed under `unkeyed`: a UF2 is a different byte string than the binary.
   SIL    the SIL shared library `libmarv_sil_<name>.so` (the file the SIL loads and hashes).
 Beside the image, in the same entry, when present: the ELF and the UF2 of a board image, and the image's parameter set files
 (params_manifest.json, params_provenance.json, the factory <set>.mcfg) from <tree>/generated/<set>/.
@@ -16,7 +18,12 @@ from __future__ import annotations
 
 import hashlib
 import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "config"))
+import image_hash as board_image  # noqa: E402
+import mcfg  # noqa: E402
 
 PARAM_SET_OF = {
     "marv_sil_quad_fc": "marv_params_fc3v2",
@@ -48,6 +55,17 @@ class ImageLibrary:
             self._hash_cache[key] = sha256_file(path)
         return self._hash_cache[key]
 
+    def _elf_hash(self, path: Path) -> str:
+        """SHA-256 of the flash bytes of an ELF (the board's image hash); board_image.ImageError when it has none."""
+        st = path.stat()
+        key = (str(path), st.st_mtime_ns, st.st_size)
+        if key not in self._hash_cache:
+            with open(path, "rb") as f:
+                if f.read(len(board_image.ELF_MAGIC)) != board_image.ELF_MAGIC:
+                    raise board_image.ImageError("it is not an ELF file")
+            self._hash_cache[key] = hashlib.sha256(board_image.flash_image(path).data).hexdigest()
+        return self._hash_cache[key]
+
     def _param_files(self, tree: Path, set_name: str | None) -> dict[str, Path]:
         if set_name is None:
             return {}
@@ -70,23 +88,28 @@ class ImageLibrary:
         images, unkeyed = [], []
         trees = sorted(p for p in self.root.iterdir() if p.is_dir()) if self.root.is_dir() else []
         for tree in trees:
-            candidates = []  # (kind, name, image path, extra artifacts)
+            candidates = []  # (kind, name, image path, extra artifacts, image hash when not the SHA-256 of the file)
             for lib in sorted(tree.glob("sim/**/libmarv_sil_*.so")):
-                candidates.append(("sil", lib.stem[len("lib"):], lib, {}))
+                candidates.append(("sil", lib.stem[len("lib"):], lib, {}, None))
             boards = sorted(tree.glob(f"fw/**/{BOARD_NAME}.elf")) + sorted(tree.glob(f"fw/**/{BOARD_NAME}.uf2")) \
                 + sorted(tree.glob(f"fw/**/{BOARD_NAME}.bin"))
             for d in sorted({p.parent for p in boards}):
                 extra = {k: d / f"{BOARD_NAME}.{k}" for k in ("elf", "uf2") if (d / f"{BOARD_NAME}.{k}").is_file()}
-                binary = d / f"{BOARD_NAME}.bin"
+                binary, elf = d / f"{BOARD_NAME}.bin", d / f"{BOARD_NAME}.elf"
                 if binary.is_file():
-                    candidates.append(("board", BOARD_NAME, binary, extra))
+                    candidates.append(("board", BOARD_NAME, binary, extra, None))
+                elif elf.is_file():
+                    try:
+                        candidates.append(("board", BOARD_NAME, elf, extra, self._elf_hash(elf)))
+                    except (board_image.ImageError, OSError) as e:
+                        unkeyed.append({"tree": tree.name, "name": BOARD_NAME, "reason": f"the ELF has no flash image: {e}"})
                 else:
-                    unkeyed.append({"tree": tree.name, "name": BOARD_NAME, "reason": "no .bin: the board image hash is the SHA-256 of the .bin"})
-            for kind, name, image, extra in candidates:
+                    unkeyed.append({"tree": tree.name, "name": BOARD_NAME, "reason": "no .bin or ELF: the board image hash is the SHA-256 of the .bin"})
+            for kind, name, image, extra, known_hash in candidates:
                 set_name = self._set_name(tree, name)
                 files = {"image": image, **extra, **self._param_files(tree, set_name)}
                 images.append({
-                    "hash": self._hash(image),
+                    "hash": known_hash or self._hash(image),
                     "tree": tree.name,
                     "name": name,
                     "kind": kind,
@@ -126,3 +149,17 @@ class ReportLibrary:
         d = self.directory(image_hash, config_hash)
         path = None if d is None else d / "report.json"
         return path if path is not None and path.is_file() else None
+
+    def find_config(self, config_hash: str) -> Path | None:
+        """A stored config.mcfg whose config hash is `config_hash` (any image's directory), or None. The hash is recomputed from the
+        file, so a file that does not hold what its directory name says is not returned."""
+        if not HASH_RE.match(config_hash) or not self.root.is_dir():
+            return None
+        for path in sorted(self.root.glob(f"*/{config_hash}/config.mcfg")):
+            try:
+                cfg = mcfg.decode(path.read_bytes())
+            except (mcfg.McfgError, OSError):
+                continue
+            if mcfg.config_hash(cfg).hex() == config_hash:
+                return path
+        return None

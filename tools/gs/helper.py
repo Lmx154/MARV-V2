@@ -8,11 +8,14 @@
   - launches and stops a Gazebo SIL run (tools/gs/sil.py);
   - validates a staged config for an image of the library (tools/validate/validate_config.py, ground-segment unit 9, G7) and
     keeps the reports keyed by (image hash, config hash) (tools/gs/artifacts.py ReportLibrary);
+  - flashes a board image through picotool (tools/gs/flash.py, ground-segment unit 15, G7): only with a passing validation report
+    for the pair (image hash, the config the board will run); the helper checks that gate, runs picotool and opens the serial
+    port again; the maintenance grant before it and the image hash read back after it are the GCS's (the link is its codec's);
   - serves the built GCS (gcs/build) at /.
 
   uv run python tools/gs/helper.py [--serial PATH [--baud N] | --udp PORT] [--port N] [--runs-dir DIR] [--build-root DIR]
                                    [--gcs-dir DIR] [--sil-udp-port N] [--sil-command CMD] [--reports-dir DIR]
-                                   [--validate-command CMD] [--extra-origin ORIGIN ...]
+                                   [--validate-command CMD] [--picotool PATH] [--extra-origin ORIGIN ...]
 
 Security. It binds 127.0.0.1 only. Every request must carry the Host `127.0.0.1:<port>`; an Origin header, when present, must
 be exactly `http://127.0.0.1:<port>` (the WebSocket requires it); and every request needs the per-session token (random, printed
@@ -43,6 +46,18 @@ Endpoints (all need the token):
            source) and runs the validator on it for the library's image H, one validation at a time; answered at once
            ({"config_hash", "started": true}); the run pushes {"event": "validate_progress", "line"} per progress line and
            {"event": "validate_done", "image_hash", "config_hash", "verdict", "report_id", "exit_status"}.
+         "view" may be replaced by "config": "factory" (the image's factory .mcfg) or a config hash the report store holds a
+         config.mcfg of (for the flash gate: a config the vehicle does not stage here); a board image is validated with the SIL
+         library of a build tree of the same parameter schema ("--build"), and its ELF is written as the .bin the validator takes.
+         {"cmd": "flash_plan", "image_hash": H, "board": B}: what flashing H onto the board would run and whether the gate passes
+           ({"plan": {"image", "config", "gate", "can_validate", "allowed", "refusal"}}); reads the report store only.
+         {"cmd": "flash", "image_hash": H, "board": B}: plans again and refuses (ok false, "picotool_started": false) unless the
+           plan is allowed; else answers {"started": true, "expected": {...}} at once and runs the flash, one at a time: the UF2
+           is checked to hold exactly the image's flash bytes, the serial port is given up (event device_closed), picotool
+           load -f -v -x runs, the port is opened again (event device_opened). Pushed: {"event": "flash_progress", "stage",
+           "line"} and {"event": "flash_done", "image_hash", "ok", "stage", "error", "picotool_started", "picotool_status",
+           "port_reopened", "expected"}. B = {"schema_hash": "0x..", "config_hash": H, "config_source": "factory"|"active",
+           "armed": bool} from the vehicle's identity and heartbeat.
          V is the JSON view of tools/config/mcfg.py (decode/dump: sections of records with their bits, enumerations and source
          texts); the GCS builds it from the vehicle's staged records. Each command is answered {"ok": true|false, ...} (an
          "id" field is echoed). Pushed events: {"event": "device_opened"|"device_closed", ...} and the validation's.
@@ -74,7 +89,9 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / "tools" / "config"))
+import flash  # noqa: E402
 import groundlog  # noqa: E402
+import image_hash as board_image  # noqa: E402
 import mcfg  # noqa: E402
 from artifacts import ARTIFACT_KEYS, ImageLibrary, ReportLibrary  # noqa: E402
 from device import DEFAULT_BAUD, LOOPBACK, Device, DeviceError, SerialDevice, UdpDevice  # noqa: E402
@@ -103,7 +120,7 @@ def utc_stamp() -> str:
 class Helper:
     def __init__(self, *, runs_dir: Path, build_root: Path, gcs_dir: Path, sil_udp_port: int | None, token: str | None = None,
                  sil_command: list[str] | None = None, extra_origins: tuple[str, ...] = (), reports_dir: Path | None = None,
-                 validate_command: list[str] | None = None):
+                 validate_command: list[str] | None = None, picotool: str | None = None):
         self.token = token or secrets.token_urlsafe(32)
         self.extra_origins = frozenset(extra_origins)
         self.build_root, self.gcs_dir = Path(build_root), Path(gcs_dir)
@@ -123,6 +140,10 @@ class Helper:
         self.validation: dict | None = None
         self._validation_task: asyncio.Task | None = None
         self._validation_proc: asyncio.subprocess.Process | None = None
+        self.picotool = picotool or os.environ.get("MARV_PICOTOOL") or flash.PICOTOOL
+        self.flash_state: dict | None = None
+        self.flash_timing: dict = {}  # tests shorten flash.run_flash's waits (load_s, port_wait_s, settle_s)
+        self._flash_task: asyncio.Task | None = None
         self.sil = SilLauncher(self.run_dir, sil_udp_port, sil_command)
         self.port = 0
         self.device: Device | None = None
@@ -152,6 +173,7 @@ class Helper:
             await self._server.wait_closed()
         self.close_device("helper stopping")
         await self.stop_validation()
+        await self.stop_flash()
         await asyncio.to_thread(self.sil.stop)
         self.log.event("helper stopped")
         self.log.close()
@@ -223,6 +245,7 @@ class Helper:
             "dropped_bytes": self.dropped_bytes,
             "sil": self.sil.status(),
             "validation": self.validation,
+            "flash": self.flash_state,
             "gcs_built": (self.gcs_dir / "index.html").is_file(),
         }
 
@@ -248,16 +271,63 @@ class Helper:
             verdict = json.loads(report.read_bytes()).get("verdict")
         return {"config_hash": config_hash, "stored": report is not None, "verdict": verdict}
 
+    def validation_inputs(self, image_hash: str) -> tuple[Path, Path, dict]:
+        """(the image file the validator takes, the build tree it runs in, the library entry). A SIL image validates in its own tree. A
+        board image is validated as its .bin (written from the ELF when the tree has none: the report's image hash is the board's)
+        in the tree of a SIL image of the same parameter schema, which holds the SIL library and the table tool."""
+        listing = self.images.scan()["images"]
+        entry = next((e for e in listing if e["hash"] == image_hash), None)
+        if entry is None:
+            raise DeviceError(f"the image {image_hash!r} is not in the image library")
+        image = (self.build_root / entry["artifacts"]["image"]).resolve()
+        if entry["kind"] == "sil":
+            return image, self.build_root / entry["tree"], entry
+        schema = mcfg.manifest_schema_hash(mcfg.load_manifest(self.build_root / entry["artifacts"]["params_manifest"])) \
+            if "params_manifest" in entry["artifacts"] else None
+        tree = None
+        for other in listing:
+            if other["kind"] == "sil" and other["params_set"] == entry["params_set"] and "params_manifest" in other["artifacts"] \
+                    and mcfg.manifest_schema_hash(mcfg.load_manifest(self.build_root / other["artifacts"]["params_manifest"])) == schema:
+                tree = self.build_root / other["tree"]
+                break
+        if tree is None:
+            raise DeviceError("no build tree with a SIL image of this board image's parameter schema: build the host-gz-quadfc preset")
+        if image.suffix != ".bin":
+            image_dir = self.run_dir / "images"
+            image_dir.mkdir(exist_ok=True)
+            image = image_dir / f"{image_hash}.bin"
+            image.write_bytes(board_image.flash_image(self.build_root / entry["artifacts"]["image"]).data)
+        return image, tree, entry
+
+    def config_for_validation(self, msg: dict, image_hash: str, entry: dict) -> tuple[bytes, str]:
+        """(the .mcfg bytes, the config hash hex) of the "view" or of the "config" reference of a validate message."""
+        ref = msg.get("config")
+        if ref is None:
+            return self.config_of_view(msg.get("view"))
+        if "params_manifest" not in entry["artifacts"]:
+            raise DeviceError("the image has no parameter manifest")
+        schema = mcfg.manifest_schema_hash(mcfg.load_manifest(self.build_root / entry["artifacts"]["params_manifest"]))
+        if ref == "factory":
+            path = self.build_root / entry["artifacts"]["factory_mcfg"] if "factory_mcfg" in entry["artifacts"] else None
+        else:
+            path = self.reports.find_config(str(ref))
+        if path is None:
+            raise DeviceError(f"the helper holds no copy of config {str(ref)[:16]}: stage and validate it from the Parameters page")
+        try:
+            data = path.read_bytes()
+            return data, flash.config_hash_of(mcfg.decode(data), schema)
+        except (OSError, mcfg.McfgError, flash.FlashRefused) as e:
+            raise DeviceError(f"the config cannot be used: {e}") from None
+
     async def start_validation(self, msg: dict) -> dict:
         if self._validation_task is not None and not self._validation_task.done():
             raise DeviceError("a validation is running; wait for it to finish")
         image_hash = str(msg.get("image_hash", ""))
-        data, config_hash = self.config_of_view(msg.get("view"))
-        image = self.images.lookup(image_hash, "image")
+        image, tree, entry = self.validation_inputs(image_hash)
+        data, config_hash = self.config_for_validation(msg, image_hash, entry)
         target = self.reports.directory(image_hash, config_hash)
-        if image is None or target is None:
+        if target is None:
             raise DeviceError(f"the image {image_hash!r} is not in the image library")
-        tree = self.build_root / image.relative_to(self.build_root.resolve()).parts[0]
         target.mkdir(parents=True, exist_ok=True)
         config = target / "config.mcfg"
         config.write_bytes(data)
@@ -321,6 +391,74 @@ class Helper:
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 self._validation_task.cancel()
 
+    # ---- flashing (G7) --------------------------------------------------------------------------------------------------
+
+    def flash_plan(self, msg: dict) -> dict:
+        try:
+            return flash.make_plan(self.images, self.reports, str(msg.get("image_hash", "")), msg.get("board"))
+        except flash.FlashRefused as e:
+            raise DeviceError(str(e)) from None
+
+    async def start_flash(self, msg: dict) -> dict:
+        """Plans again from the stored reports, refuses unless the plan is allowed (nothing has been touched then), else starts the
+        flash and answers at once."""
+        if self._flash_task is not None and not self._flash_task.done():
+            raise DeviceError("a flash is running; wait for it to finish")
+        if self._validation_task is not None and not self._validation_task.done():
+            raise DeviceError("a validation is running; wait for it to finish")
+        plan = self.flash_plan(msg)
+        image_hash = plan["image"]["hash"]
+        if not plan["allowed"]:
+            self.log.event(f"flash refused before picotool: image {image_hash} config {plan['config']['hash']}: {plan['refusal']}")
+            raise DeviceError(f"not flashed, picotool was not started: {plan['refusal']}")
+        if not isinstance(self.device, SerialDevice):
+            raise DeviceError("not flashed, picotool was not started: the board's serial port is not open here (Connection page)")
+        entry = flash.board_entry(self.images, image_hash)
+        expected = {"image_hash": image_hash, "config_hash": plan["config"]["hash"], "config_source": plan["config"]["expected_source"]}
+        self.flash_state = {"running": True, "image_hash": image_hash, "expected": expected}
+        self.log.event(f"flash started: image {image_hash} config {plan['config']['hash']} ({plan['config']['which']}), "
+                       f"report {plan['gate']['report_id']}")
+        self._flash_task = asyncio.create_task(self._run_flash(plan, entry))
+        return {"started": True, "expected": expected, "plan": plan}
+
+    async def _run_flash(self, plan: dict, entry: dict) -> None:
+        image_hash = plan["image"]["hash"]
+
+        def progress(stage: str, line: str) -> None:
+            self.log.event(f"flash {stage}: {line}")
+            self._push(json.dumps({"event": "flash_progress", "image_hash": image_hash, "stage": stage, "line": line}))
+
+        def release() -> tuple[str, int]:
+            if not isinstance(self.device, SerialDevice):
+                raise flash.FlashRefused("the serial port is no longer open")
+            path, baud = self.device.path, self.device.baud
+            self.close_device("flashing: picotool takes the board over")
+            self._push(json.dumps({"event": "device_closed", "reason": "flashing"}))
+            return path, baud
+
+        async def reopen(path: str, baud: int) -> None:
+            await self.open_serial(path, baud, from_browser=False)
+
+        try:
+            result = await flash.run_flash(plan, entry, self.build_root, self.picotool, self.run_dir / "flash",
+                                           flash.Hooks(progress, release, reopen), **self.flash_timing)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # a failed flash must not take the helper down
+            result = {"ok": False, "stage": "internal", "error": f"{type(e).__name__}: {e}", "picotool_started": False,
+                      "picotool_status": None, "port_reopened": False, "expected": self.flash_state["expected"] if self.flash_state else None}
+        self.flash_state = {"running": False, "image_hash": image_hash, **result}
+        self.log.event(f"flash done: image {image_hash} ok {result['ok']} stage {result['stage']} error {result['error']}")
+        self._push(json.dumps({"event": "flash_done", "image_hash": image_hash, **result}))
+
+    async def stop_flash(self) -> None:
+        if self._flash_task is not None and not self._flash_task.done():
+            self._flash_task.cancel()
+            try:
+                await self._flash_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
     # ---- WebSocket ------------------------------------------------------------------------------------------------------
 
     async def _ws_handler(self, ws: ServerConnection) -> None:
@@ -376,6 +514,10 @@ class Helper:
                 reply.update(self.config_report(msg))
             elif cmd == "validate":
                 reply.update(await self.start_validation(msg))
+            elif cmd == "flash_plan":
+                reply["plan"] = self.flash_plan(msg)
+            elif cmd == "flash":
+                reply.update(await self.start_flash(msg))
             else:
                 raise DeviceError(f"unknown command {cmd!r}")
         except (DeviceError, RuntimeError, ValueError, TypeError, OSError) as e:
@@ -498,7 +640,8 @@ async def run(args: argparse.Namespace) -> int:
     helper = Helper(runs_dir=args.runs_dir, build_root=args.build_root, gcs_dir=args.gcs_dir, sil_udp_port=args.sil_udp_port,
                     sil_command=shlex.split(args.sil_command) if args.sil_command else None, extra_origins=tuple(args.extra_origin),
                     reports_dir=args.reports_dir,
-                    validate_command=shlex.split(args.validate_command) if args.validate_command else None)
+                    validate_command=shlex.split(args.validate_command) if args.validate_command else None,
+                    picotool=args.picotool)
     await helper.start(args.port)
     try:
         if args.serial:
@@ -545,6 +688,7 @@ def parse_args(argv=None) -> argparse.Namespace:
                     help="the validation reports, keyed by image and config hash (default <build-root>/gs-reports)")
     ap.add_argument("--validate-command", help="the validator command line with {config} {image} {build} {work} {out} "
                                                "(shell-style quoting; for tests; default tools/validate/validate_config.py)")
+    ap.add_argument("--picotool", help=f"the picotool executable the flash runs (default $MARV_PICOTOOL, else `{flash.PICOTOOL}` on PATH)")
     ap.add_argument("--extra-origin", action="append", default=[], type=origin_arg, metavar="ORIGIN",
                     help="also accept this exact origin (repeatable), e.g. http://localhost:5173 for a vite dev server: DEVELOPMENT ONLY")
     return ap.parse_args(argv)
