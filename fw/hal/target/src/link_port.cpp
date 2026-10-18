@@ -51,6 +51,8 @@ void link_port_send(std::span<const std::uint8_t> frame) noexcept {
   g_tail += frame.size();
 }
 
+bool link_port_connected() noexcept { return link_usb_connected(); }
+
 std::size_t link_port_writable() noexcept { return link_usb_connected() ? g_queue.size() - (g_tail - g_head) : 0; }
 
 void link_port_pump() noexcept {

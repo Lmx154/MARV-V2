@@ -345,6 +345,7 @@ void on_reboot(const Envelope& from, const CommandLong& m) noexcept {
     send_ack(from, m.command, standard::kMavResultDenied);
     return;
   }
+  // One grant waits at a time: a newer command replaces a waiting one, which gets no further answer (service.hpp).
   g.grant_pending = true;
   g.grant_reboots = reboot;
   g.grant_from = from;
@@ -643,6 +644,9 @@ bool service_step() noexcept {
     send_heartbeat();
     g.heartbeat_sent = true;
     g.last_heartbeat_us = now;
+  }
+  if (g.config.transport.connected != nullptr && !g.config.transport.connected()) {
+    g.listing_next = kParamCount;
   }
   if (g.listing_next < kParamCount && room_for_parameter()) {
     send_parameter(g.listing_next);

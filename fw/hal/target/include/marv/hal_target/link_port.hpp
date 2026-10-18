@@ -2,7 +2,8 @@
 // Transport (marv/link/service.hpp) over the link CDC (usb.hpp), shaped like hal_sim's UDP transport
 // (marv/hal_sim/link_udp.hpp). The CDC takes a few bytes per call, so frames wait whole in a queue that link_port_pump moves
 // to it; a frame that does not fit is dropped whole, never cut. While no host has the link port open the queue is emptied and
-// frames are dropped, so a host that opens it later reads no stale frames. Background loop only, never blocking; never from
+// frames are dropped, so a host that opens it later reads no stale frames (a close and reopen between two pumps is not seen:
+// the new host may then read the rest of a frame the queue had started, which its parser discards). Background loop only, never blocking; never from
 // the tick. Not compiled into the HIL images (they have no link port).
 #pragma once
 
@@ -20,6 +21,9 @@ void link_port_send(std::span<const std::uint8_t> frame) noexcept;
 
 // Bytes link_port_send takes now without dropping a frame; 0 while no host has the port open.
 [[nodiscard]] std::size_t link_port_writable() noexcept;
+
+// True while a host has the link port open (usb.hpp link_usb_connected).
+[[nodiscard]] bool link_port_connected() noexcept;
 
 // Moves queued bytes to the link CDC as far as it takes them; empties the queue while no host has the port open.
 void link_port_pump() noexcept;

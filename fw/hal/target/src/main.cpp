@@ -432,7 +432,7 @@ int main() {
   // until ground-segment unit 14, as in the store's boot step above.
   marv::link::service_init(marv::link::ServiceConfig{
       marv::link::Transport{&marv::hal_target::link_port_receive, &marv::hal_target::link_port_send,
-                            &marv::hal_target::link_port_writable},
+                            &marv::hal_target::link_port_writable, &marv::hal_target::link_port_connected},
       marv::store::Digest{}, &armed_now, &marv::composition::request_maintenance, &marv::composition::maintenance_granted});
 #endif
 
