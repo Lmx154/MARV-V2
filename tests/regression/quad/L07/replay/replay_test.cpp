@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
 #include <span>
@@ -17,6 +18,7 @@
 #include <vector>
 
 #include <marv/params/param.hpp>
+#include <marv/store/mcfg.hpp>
 
 #include "replay.hpp"
 
@@ -67,8 +69,41 @@ constexpr std::array<double, prim::kSpatialDim> kBoardGyroBiasDegPerS = {-0.175,
 // the 15 deg/s still gate and above the calibration's movement limit (3.36 deg/s standard deviation).
 constexpr double kShakeDegPerS = 10.0;
 
+std::vector<std::uint8_t> read_file(const std::string& path);
+
+// The estimator's law parameters a validated config supplies (ground-segment unit 9, decision 0053 G7 check 3).
+constexpr std::array kCandidateIds = {ParamId::estimator_kp,          ParamId::estimator_ki,
+                                      ParamId::estimator_accel_healthy_min, ParamId::estimator_accel_healthy_max,
+                                      ParamId::gyro_cal_duration_us,  ParamId::gyro_cal_movement_max};
+
+// The table the replay reads: the compiled one, or (ctest l07_replay_config_validation, run by tools/validate/validate_config.py)
+// with the environment variable MARV_VALIDATE_CONFIG naming a config file, the compiled table with kCandidateIds taken from that
+// file, read by the config store's reader (store::decode: format, schema, types, finiteness, I1, locks). The threshold
+// attitude_tilt_error_max and the log's inputs (the tick period, the stamp tolerance) stay the image's: a candidate cannot loosen
+// its own bound.
+std::span<const ParamRecord, kParamCount> replay_table() {
+  const char* path = std::getenv("MARV_VALIDATE_CONFIG");
+  if (path == nullptr || *path == '\0') {
+    return param_defaults();
+  }
+  static std::vector<std::uint8_t> file;
+  static std::array<ParamRecord, kParamCount> candidate{};
+  static std::array<ParamRecord, kParamCount> table{};
+  file = read_file(path);
+  const store::Decoded d = store::decode(file, param_defaults(), candidate, nullptr);
+  EXPECT_EQ(d.fault, store::Fault::None) << path << ": " << store::fault_text(d.fault);
+  std::copy(param_defaults().begin(), param_defaults().end(), table.begin());
+  if (d.fault == store::Fault::None) {
+    for (const ParamId id : kCandidateIds) {
+      table[static_cast<std::size_t>(id)] = candidate[static_cast<std::size_t>(id)];
+    }
+  }
+  std::printf("replay table: %s, the estimator's law parameters from it, thresholds the image's\n", path);
+  return table;
+}
+
 Params read_params() {
-  static const bool ok = params_init(param_defaults());
+  static const bool ok = params_init(replay_table());
   EXPECT_TRUE(ok);
   Params p;
   p.mahony = estimator::MahonyConfig<float>{param_value<ParamId::estimator_kp>(), param_value<ParamId::estimator_ki>(),

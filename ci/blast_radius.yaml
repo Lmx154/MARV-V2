@@ -306,14 +306,14 @@ rules:
     why: "mixer is linked by the L03 and L09 tests, rate, rate_group, vertical and the compositions; L06 tools compile with fw/mixer/include"
 
   - paths: [fw/arming/**]
-    ctest_labels: [L08, L09]
+    ctest_labels: [L07, L08, L09]
     run_ci_steps: ["@host"]
     pytest_paths: []
     gz_groups: [l7]
     why: "arming is the pure arming and failsafe machine, tested by the L08 unit_arming host test and linked by the quad_fc composition (the L09 gate test, and the L10 plumbing test in gz group l7)"
 
   - paths: [fw/store/**]
-    ctest_labels: [L09]
+    ctest_labels: [L07, L09]
     run_ci_steps: ["@flight_gates"]
     pytest_paths: []
     gz_groups: [l7]
@@ -765,6 +765,13 @@ rules:
     pytest_paths: [tests/tools]
     gz_groups: []
     why: "the ground-segment helper (unit 7): byte relay, token and Origin gate, ground log, image library, SIL launcher; held by its tests/tools pytest file, and GS-3 holds it clear of MAVLink (it only relays bytes)"
+
+  - paths: [tools/validate/**]
+    ctest_labels: [L07]
+    run_ci_steps: ["@host", gs3_check, tools_tests]
+    pytest_paths: [tests/tools]
+    gz_groups: [l7]
+    why: "the configuration validator (ground-segment unit 9, G7): its host tool marv_validate_table and the ctest qf3_table_fc3v2 with its negative control are built and run by the host preset (no layer label); check 3 runs the config-validation ctests (qf3_table_fc3v2 and the L07 replay); check 4 and the validation end-to-end tests run on host-gz-quadfc in gz group l7; the helper's validation endpoint is held by tests/tools"
 
   # ---------------------------------------------------------------- tests/tools
   - paths: [tests/tools/**]

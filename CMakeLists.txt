@@ -93,6 +93,7 @@ if(MARV_TARGET STREQUAL "host")
   add_subdirectory(tests/regression/quad/L11/controls)
   add_subdirectory(tools/gen)
   add_subdirectory(tools/ci)
+  add_subdirectory(tools/validate)
 endif()
 
 marv_generate_g3_manifest()

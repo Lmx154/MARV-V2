@@ -20,10 +20,13 @@ What is checked:
     accepted write (ACCEPTED_PARAM one ulp up) and a refused one (LOCKED_PARAM, locked: K-1), each followed by a read by index
     (the accepted value iff its bits are the requested ones; the locked one's status text arrives and its value is unchanged);
     MARV_PARAM_SOURCE: a source text set in chunks is read back in chunks and the record carries its length and the staged
-    provenance; activation (a) with a zero report id is DENIED_REPORT and (b) with TEST_ONLY_REPORT_ID and the staged config's
-    hash (computed with mcfg.py) is ACCEPTED, and the run ends with gz exit EX_TEMPFAIL ("REBOOT REQUESTED"); the relaunch of the
-    same world on the same config dir reports config source ACTIVE, OK, the staged config hash, the report id and ACTIVATED, and
-    the accepted value is active.
+    provenance; activation (a) with a zero report id is DENIED_REPORT and (b) with the REAL report id (the id of the PASS report
+    that tools/validate/validate_config.py writes for this image and the staged config, which the test validates beforehand: the
+    staged config is computed with mcfg.py exactly as the store stages it, and the test asserts the report is for the image hash
+    the SIL reports and for the config hash the activation carries) and the staged config's hash is ACCEPTED, and the run ends with
+    gz exit EX_TEMPFAIL ("REBOOT REQUESTED"); the relaunch of the same world on the same config dir reports config source ACTIVE,
+    OK, the staged config hash, that report id and ACTIVATED, and the accepted value is active; a further run on the activated
+    config dir is not refused and arms on the raise (G7-1's allowed half: the stored config bound to this image and a report).
   - Arming (uncapped, the plumbing test's arm raise after calibration and link recovery, read from the DShot values of the log and
     from the heartbeat's armed flag): (c) a stored slot the test writes unbound (mcfg.py factory config, no image, no report) is
     reported ACTIVE, REFUSED, IMAGE_BINDING and the raised switch never arms; (d) the same slot with one file byte changed (its
@@ -87,9 +90,8 @@ ACCEPTED_PARAM = "att_kp"  # an unlocked f32 parameter; the write is one ulp up,
 LOCKED_PARAM = "rotor_speed_max"  # a locked f32 parameter (Luis-signed lock list, decision 0053 Q2)
 SOURCE_TEXT = ("test_link_sil.py: one ulp above the factory value, staged over the link to check the staged echo, the source "
                "round trip in chunks and the activation through a reboot; not a tuning")
-# TEST ONLY: stands in for ground-segment unit 9's validation report (tools/validate/validate_config.py, not built yet). The
-# store binds any nonzero id; the format allows an id zero-padded on the right (tools/config/mcfg.py report_id).
-TEST_ONLY_REPORT_ID = b"TEST_ONLY_REPORT".ljust(mcfg.DIGEST, b"\0")
+VALIDATOR = ROOT / "tools" / "validate" / "validate_config.py"
+VALIDATE_TIMEOUT_S = 3600  # labelled harness value: bounds a hung validator run only (two gz runs and the config-validation ctests)
 COMMIT_MAGIC = b"MARVSLOT"  # fw/store/include/marv/store/store.hpp kCommitMagic; record: magic, sequence u32, length u32, SHA-256
 SLOT_FILE = "slot_a.bin"  # hal_sim's file of slot A (marv/hal_sim/storage.hpp)
 ERASED = 0xFF  # a slot byte past the file reads as erased flash (marv/hal_sim/storage.hpp)
@@ -335,6 +337,24 @@ def sha256_of(path):
     return hashlib.sha256(Path(path).read_bytes()).digest()
 
 
+def validated_report_id(staged, tmp):
+    """Validates `staged` (an mcfg.Config) with tools/validate/validate_config.py for the build's SIL library, as the helper does,
+    and returns the report's id (the SHA-256 of the report's bytes) as 32 bytes. The report must be a PASS for exactly that
+    image and that config."""
+    tmp.mkdir(exist_ok=True)
+    config, out = tmp / "staged.mcfg", tmp / "report.json"
+    config.write_bytes(mcfg.encode(staged))
+    proc = subprocess.run([sys.executable, str(VALIDATOR), "--config", str(config), "--build", str(BUILD), "--work-dir", str(tmp / "work"),
+                           "--out", str(out)], capture_output=True, text=True, timeout=VALIDATE_TIMEOUT_S, check=False)
+    assert proc.returncode == 0, f"the validator did not pass the staged config (exit {proc.returncode}):\n{proc.stdout[-2000:]}\n{proc.stderr[-3000:]}"
+    data = out.read_bytes()
+    report = json.loads(data)
+    assert report["verdict"] == "PASS" and all(c["result"] == "PASS" for c in report["checks"])
+    assert report["config"]["config_hash"] == mcfg.config_hash(staged).hex()
+    assert report["image"]["sha256"] == sha256_of(SIL_LIBRARY).hex()
+    return hashlib.sha256(data).digest()
+
+
 # ---- the session on the factory config, the activation and the relaunch ---------------------------------------------------
 
 def test_session_parameters_writes_sources_and_activation_through_a_reboot(dialect, manifest, factory, tmp_path):
@@ -345,6 +365,10 @@ def test_session_parameters_writes_sources_and_activation_through_a_reboot(diale
     accepted, locked = names.index(ACCEPTED_PARAM), names.index(LOCKED_PARAM)
     assert not manifest["params"][ACCEPTED_PARAM]["lock"] and manifest["params"][LOCKED_PARAM]["lock"]
     assert records[accepted].type == records[locked].type == "f32"
+    new_bits = records[accepted].value_bits + 1
+    staged = staged_config(factory, manifest, {accepted: mcfg.Record("f32", new_bits, 0, "Choice", "scenario", "Manual", False, SOURCE_TEXT)})
+    expected = mcfg.config_hash(staged)
+    report_id = validated_report_id(staged, tmp_path / "validation")
     store = tmp_path / "store"
     store.mkdir()
     port = free_udp_port()
@@ -380,7 +404,6 @@ def test_session_parameters_writes_sources_and_activation_through_a_reboot(diale
                 assert value_bits(d, m) == records[i].value_bits, f"{name}: {value_bits(d, m):#010x} != {records[i].value_bits:#010x}"
 
             # an accepted write, then a read by index: the staged value iff its bits are the requested ones
-            new_bits = records[accepted].value_bits + 1
             link_id = manifest["params"][ACCEPTED_PARAM]["link_id"]
             echo, at = client.set(link_id, new_bits)
             assert value_bits(d, echo) == new_bits and not client.since(at, "STATUSTEXT")
@@ -422,17 +445,15 @@ def test_session_parameters_writes_sources_and_activation_through_a_reboot(diale
             assert record.source_length == len(text) and record.staged_bits == new_bits
             assert text_of(record.source_chunk, record.source_chunk_length).encode() == text[:record.source_chunk_length]
 
-            staged = staged_config(factory, manifest, {accepted: mcfg.Record("f32", new_bits, 0, "Choice", "scenario", "Manual",
-                                                                             False, SOURCE_TEXT)})
-            expected = mcfg.config_hash(staged)
             assert client.identity().staged_differs == 1
 
             # (a) no report id: denied
             ack, _ = client.config(d.MARV_CONFIG_ACTION_ACTIVATE, bytes(mcfg.DIGEST), expected, schema)
             assert (ack.action, ack.result) == (d.MARV_CONFIG_ACTION_ACTIVATE, d.MARV_CONFIG_RESULT_DENIED_REPORT)
             assert gz.proc.poll() is None
-            # (b) the test-only report id and the staged hash: accepted, and the run stops for the reboot
-            ack, _ = client.config(d.MARV_CONFIG_ACTION_ACTIVATE, TEST_ONLY_REPORT_ID, expected, schema)
+            # (b) the real report id and the staged hash (the activation checks the staged config is the one the report is for): accepted,
+            # and the run stops for the reboot
+            ack, _ = client.config(d.MARV_CONFIG_ACTION_ACTIVATE, report_id, expected, schema)
             assert (ack.action, ack.result) == (d.MARV_CONFIG_ACTION_ACTIVATE, d.MARV_CONFIG_RESULT_ACCEPTED)
             assert gz.wait(REPLY_S) == os.EX_TEMPFAIL, run_scenario.stderr_tail(gz.stderr())
             assert "marv_gz_lockstep: REBOOT REQUESTED" in gz.stderr()
@@ -449,7 +470,7 @@ def test_session_parameters_writes_sources_and_activation_through_a_reboot(diale
             assert ident.config_refusal == d.MARV_CONFIG_REFUSAL_NONE
             assert ident.last_activation_result == d.MARV_ACTIVATION_RESULT_ACTIVATED
             assert bytes(ident.config_sha256) == expected, "the reported config hash is not the staged config's"
-            assert bytes(ident.validation_report_id) == TEST_ONLY_REPORT_ID and bytes(ident.image_sha256) == image
+            assert bytes(ident.validation_report_id) == report_id and bytes(ident.image_sha256) == image
             assert ident.staged_differs == 0
             value, record = client.read(accepted)
             assert value_bits(d, value) == new_bits and record.active_bits == record.staged_bits == new_bits
@@ -457,13 +478,22 @@ def test_session_parameters_writes_sources_and_activation_through_a_reboot(diale
     finally:
         client.close()
 
+    # G7-1, the allowed half: the activated config is bound to this image and its report, so a further run on the same config dir is
+    # not refused and arms on the raise (the control of the refused runs below)
+    ident, heartbeats, run = arming_run(d, tmp_path, "activated", store)
+    assert ident.config_source == d.MARV_CONFIG_SOURCE_ACTIVE and ident.config_state == d.MARV_CONFIG_STATE_OK
+    assert bytes(ident.config_sha256) == expected and bytes(ident.validation_report_id) == report_id
+    ticks = armed_ticks(run)
+    assert ticks and ticks[0]["sil_t_us"] >= READY_US, "the validated, activated config did not arm on the raise"
+    assert any(h.base_mode & d.MAV_MODE_FLAG_SAFETY_ARMED for h in heartbeats), "no heartbeat reported the vehicle armed"
+
 
 # ---- arming with a stored config the store refuses --------------------------------------------------------------------------
 
 def arming_run(d, tmp, name, config_dir):
     """The plumbing test's raise (after calibration and recovery) with the link served; (identity, heartbeats, log)."""
     tmp = tmp / name
-    tmp.mkdir()
+    tmp.mkdir(exist_ok=True)
     port = free_udp_port()
     duration = READY_US + ARMED_US
     log = tmp / "run.bin"

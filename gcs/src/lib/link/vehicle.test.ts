@@ -66,6 +66,8 @@ describe('the parameter listing', () => {
 		expect(row(client, 'rotor_yaw_s_2713')).toMatchObject({ type: 'i32', activeBits: 0xffffffff, stagedBits: 0xffffffff, index: 2 });
 		expect(row(client, 'arm_throttle_min').locked).toBe(true);
 		expect(row(client, 'inertia_xx').sigma).toBeCloseTo(0.00107, 6);
+		expect(row(client, 'inertia_xx').sigmaBits).toBe(f32ToBits(0.00107));
+		expect(row(client, 'mass').sigmaBits).toBe(0);
 		expect(row(client, 'estimator_gyro_b').linkId).toBe('estimator_gyro_b'); // 16 bytes, no terminator
 	});
 

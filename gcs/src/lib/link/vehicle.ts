@@ -3,7 +3,7 @@
 // parameter protocol is spelled out (decision 0053 Q1); pages work with the domain types exported here and never see a wire
 // message.
 //
-// What the vehicle must do for this client (unit 6 builds it; the fake vehicle in testing/ is the executable statement):
+// What the vehicle must do for this client (the SIL's link service implements it; the fake vehicle in testing/ is the executable statement):
 //   - answer a PARAM_REQUEST_LIST (and a PARAM_REQUEST_READ by index) with one PARAM_VALUE and one MARV_PARAM_RECORD per
 //     parameter; PARAM_VALUE carries the STAGED value, the record both values;
 //   - answer a PARAM_SET with a PARAM_VALUE (the staged value after the set, the unchanged one when refused) and, when
@@ -12,7 +12,7 @@
 //   - answer MARV_PARAM_SOURCE READ with MARV_PARAM_SOURCE DATA chunks;
 //   - answer a REQUEST_MESSAGE command for MARV_IDENTITY and AUTOPILOT_VERSION with that message.
 import { get, writable, type Readable } from 'svelte/store';
-import { paramValueBits, paramValueFields, type ParamType } from './bits';
+import { f32ToBits, paramValueBits, paramValueFields, type ParamType } from './bits';
 import { MarvConfigAction, MarvParamSourceOp, MESSAGES, type Message } from './generated/messages';
 import { type LinkSession } from './session';
 
@@ -50,6 +50,8 @@ export interface VehicleParam {
 	activeBits: number | null;
 	stagedBits: number | null;
 	sigma: number | null;
+	/** The raw 32 bits of sigma (the config file stores the bits, not the printed number). */
+	sigmaBits: number | null;
 	origin: Origin | null;
 	method: Method | null;
 	sigmaKind: SigmaKind | null;
@@ -188,7 +190,7 @@ const ACTION_CODES: Record<ConfigAction, MarvConfigAction> = {
 
 function emptyParam(index: number): VehicleParam {
 	return {
-		index, linkId: null, type: null, activeBits: null, stagedBits: null, sigma: null, origin: null, method: null, sigmaKind: null,
+		index, linkId: null, type: null, activeBits: null, stagedBits: null, sigma: null, sigmaBits: null, origin: null, method: null, sigmaKind: null,
 		locked: null, hasRecord: false, sourceLength: null, source: null, sourcePartial: ''
 	};
 }
@@ -423,8 +425,7 @@ export class VehicleClient {
 
 	/**
 	 * Writes the source text of an accepted value (again when it did not read back) and records the outcome with a visible state.
-	 * TODO(unit 6): a source SET has no per-chunk ack, so success is the read-back only; confirm the number of attempts and the
-	 * timing against the SIL's real link (the fake vehicle answers at once).
+	 * A source SET has no per-chunk ack, so success is the read-back only.
 	 */
 	private async storeSource(linkId: string, index: number, start: StageResult): Promise<StageResult> {
 		let result = start;
@@ -580,6 +581,7 @@ export class VehicleClient {
 			activeBits: m.active_bits,
 			stagedBits: m.staged_bits,
 			sigma: m.sigma,
+			sigmaBits: m.sigma_bits ?? f32ToBits(m.sigma),
 			origin: pick(ORIGINS, m.origin, 'Manual'),
 			method: pick(METHODS, m.method, 'scenario'),
 			sigmaKind: pick(SIGMA_KINDS, m.sigma_kind, 'Choice'),

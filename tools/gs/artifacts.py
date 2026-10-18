@@ -107,3 +107,22 @@ class ImageLibrary:
                 if path.is_file() and self.root.resolve() in path.parents:
                     return path
         return None
+
+
+class ReportLibrary:
+    """Validation reports keyed by (image hash, config hash) (ground-segment unit 9, G7): <root>/<image hash>/<config hash>/
+    holds config.mcfg (the config validated) and report.json (tools/validate/validate_config.py's report, whose id is the
+    SHA-256 of the file's bytes)."""
+
+    def __init__(self, root: Path):
+        self.root = Path(root)
+
+    def directory(self, image_hash: str, config_hash: str) -> Path | None:
+        if not (HASH_RE.match(image_hash) and HASH_RE.match(config_hash)):
+            return None
+        return self.root / image_hash / config_hash
+
+    def report(self, image_hash: str, config_hash: str) -> Path | None:
+        d = self.directory(image_hash, config_hash)
+        path = None if d is None else d / "report.json"
+        return path if path is not None and path.is_file() else None

@@ -1,6 +1,7 @@
 """The ground-segment helper (tools/gs, ground spec section 3, decision 0053 unit 7): the gate (token, Origin, Host), the byte
-relay both ways over a loopback UDP echo and a pty serial pair, the ground log round trip (GS-8), the image library and the
-SIL launcher's start, stop, link state and relaunch on a reboot request (ground-segment unit 6)."""
+relay both ways over a loopback UDP echo and a pty serial pair, the ground log round trip (GS-8), the image library, the
+SIL launcher's start, stop, link state and relaunch on a reboot request (ground-segment unit 6), and the validation command and
+the report store keyed by (image hash, config hash) (ground-segment unit 9)."""
 
 import argparse
 import asyncio
@@ -33,11 +34,13 @@ import sil  # noqa: E402
 TIMEOUT_S = 10  # labelled harness value: bounds a hung relay only
 
 
-def run_with_helper(tmp_path, body, *, build_root=None, gcs_dir=None, sil_command=None, sil_udp_port=None, extra_origins=()):
+def run_with_helper(tmp_path, body, *, build_root=None, gcs_dir=None, sil_command=None, sil_udp_port=None, extra_origins=(),
+                    validate_command=None):
     """Runs `await body(helper)` with a started helper on a free port; always stops the helper."""
     async def main():
         h = helper_mod.Helper(runs_dir=tmp_path / "runs", build_root=build_root or tmp_path / "build",
-                              gcs_dir=gcs_dir or tmp_path / "gcs", sil_udp_port=sil_udp_port, sil_command=sil_command, extra_origins=extra_origins)
+                              gcs_dir=gcs_dir or tmp_path / "gcs", sil_udp_port=sil_udp_port, sil_command=sil_command, extra_origins=extra_origins,
+                              reports_dir=tmp_path / "reports", validate_command=validate_command)
         await h.start(0)
         try:
             return await asyncio.wait_for(body(h), TIMEOUT_S * 3)
@@ -486,6 +489,83 @@ def test_unbuilt_gcs_is_404_but_the_api_still_answers(tmp_path):
         status, _, raw = await http_get(h, "/api/status")
         assert status == 200 and json.loads(raw)["gcs_built"] is False
     run_with_helper(tmp_path, body)
+
+
+# ---- validation (ground-segment unit 9) ---------------------------------------------------------------------------------
+
+# A stand-in validator: one progress line on stderr, a report at {out}, its id and verdict on stdout (the real one's output
+# contract, tools/validate/validate_config.py).
+FAKE_VALIDATOR = ("import hashlib, sys; out = sys.argv[sys.argv.index('--out') + 1]; "
+                  "print('validate_config: records: PASS', file=sys.stderr, flush=True); "
+                  "body = ('{\"verdict\":\"' + sys.argv[sys.argv.index('--verdict') + 1] + '\"}\\n').encode(); "
+                  "open(out, 'wb').write(body); print('report: ' + out); "
+                  "print('report_id: ' + hashlib.sha256(body).hexdigest()); print('verdict: ' + body.decode()[12:16])")
+
+
+def config_view():
+    sys.path.insert(0, str(ROOT / "tools" / "config"))
+    import mcfg
+    records = [mcfg.Record("f32", 0x3F800000, 0, "Choice", "scenario", "Manual", False, "a test value"),
+               mcfg.Record("i32", 7, 0, "Exact", "scenario", "DefaultFromRegister", True, "a locked test value")]
+    cfg = mcfg.Config(0, bytes(mcfg.DIGEST), bytes(mcfg.DIGEST), (mcfg.build_section("quad", 0x1234, records),))
+    return mcfg.view(cfg), mcfg.config_hash(cfg).hex()
+
+
+def test_validation_runs_the_validator_on_the_view_streams_progress_and_keeps_the_report_by_image_and_config(tmp_path):
+    files = make_build_root(tmp_path / "build")
+    image = hashlib.sha256(files["host-gz-quadfc/sim/quad_fc/libmarv_sil_quad_fc.so"]).hexdigest()
+    view, config_hash = config_view()
+    command = [sys.executable, "-c", FAKE_VALIDATOR, "--config", "{config}", "--image", "{image}", "--build", "{build}",
+               "--work-dir", "{work}", "--out", "{out}", "--verdict", "PASS"]
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            r = await control(ws, cmd="config_report", image_hash=image, view=view)
+            assert r == {"ok": True, "config_hash": config_hash, "stored": False, "verdict": None}
+            assert (await http_get(h, f"/api/reports/{image}/{config_hash}"))[0] == 404
+            r = await control(ws, cmd="validate", image_hash="0" * 64, view=view)
+            assert not r["ok"] and "not in the image library" in r["error"]
+            r = await control(ws, cmd="validate", image_hash=image, view={"sections": "nonsense"})
+            assert not r["ok"] and "not a config" in r["error"]
+            r = await control(ws, cmd="validate", image_hash=image, view=view)
+            assert r == {"ok": True, "config_hash": config_hash, "started": True}
+            events = []
+            while not events or events[-1]["event"] != "validate_done":
+                m = await asyncio.wait_for(ws.recv(), TIMEOUT_S)
+                if isinstance(m, str) and "event" in json.loads(m):
+                    events.append(json.loads(m))
+            assert {"event": "validate_progress", "image_hash": image, "config_hash": config_hash,
+                    "line": "validate_config: records: PASS"} in events
+            done = events[-1]
+            stored = h.reports.report(image, config_hash)
+            report = stored.read_bytes()
+            assert done["verdict"] == "PASS" and done["report_id"] == hashlib.sha256(report).hexdigest()
+            assert (stored.parent / "config.mcfg").read_bytes() == helper_mod.Helper.config_of_view(view)[0]
+            status, headers, data = await http_get(h, f"/api/reports/{image}/{config_hash}")
+            assert status == 200 and data == report and headers["Content-Type"] == "application/json"
+            assert (await http_get(h, f"/api/reports/{image}/{config_hash}", token=None))[0] == 401
+            assert (await http_get(h, f"/api/reports/{image}/../{config_hash}"))[0] == 404
+            r = await control(ws, cmd="config_report", image_hash=image, view=view)
+            assert r == {"ok": True, "config_hash": config_hash, "stored": True, "verdict": "PASS"}
+    run_with_helper(tmp_path, body, build_root=tmp_path / "build", validate_command=command)
+
+
+def test_validation_whose_validator_writes_no_report_is_done_without_a_report_id(tmp_path):
+    files = make_build_root(tmp_path / "build")
+    image = hashlib.sha256(files["host-gz-quadfc/sim/quad_fc/libmarv_sil_quad_fc.so"]).hexdigest()
+    view, config_hash = config_view()
+    command = [sys.executable, "-c", "import sys; print('report_id: ' + 'ab' * 32); print('verdict: PASS'); sys.exit(2)"]
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            assert (await control(ws, cmd="validate", image_hash=image, view=view))["started"]
+            while True:
+                m = json.loads(await asyncio.wait_for(ws.recv(), TIMEOUT_S))
+                if m.get("event") == "validate_done":
+                    break
+            assert (m["verdict"], m["report_id"], m["exit_status"]) == (None, None, 2)
+            assert h.reports.report(image, config_hash) is None
+    run_with_helper(tmp_path, body, build_root=tmp_path / "build", validate_command=command)
 
 
 # ---- the SIL launcher ---------------------------------------------------------------------------------------------------
