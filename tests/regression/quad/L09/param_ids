@@ -1,0 +1,3 @@
+# Product-set parameter ids added by quad L9 (ground-segment unit 14, decision 0053; decision 0004 manifest rule). One id per line.
+# config_slot_bytes is a design-budget entry (flattened by flatten.py like every numeric register entry).
+config_slot_bytes

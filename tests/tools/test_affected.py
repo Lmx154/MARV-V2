@@ -148,7 +148,7 @@ def test_one_budget_value_change_selects_the_readers_of_that_key(monkeypatch):
 
 
 def test_a_new_budget_parameter_also_selects_the_id_manifest_readers(monkeypatch):
-    result, register, _ = budget_select(monkeypatch, lambda t: t.split("\nt4_settle_fraction:")[0] + "\n")
+    result, register, _ = budget_select(monkeypatch, lambda t: t.split("\nt4_settle_fraction:")[0] + "\n\nconfig_slot_bytes:" + t.split("\nconfig_slot_bytes:")[1])
     assert register["keys"] == {"t4_settle_fraction": "added"} and register["structural"] is True
     assert result["full"] is False
     assert result["ctest_labels"] == ["L04", "L05", "L07", "L11"]
