@@ -358,3 +358,18 @@ marv_add_param_set(marv_params_fc3v2_log
            "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml"
            "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml"
            "${PROJECT_SOURCE_DIR}/fw/log/params/log_register.yaml")
+
+# The FC3v2 set with the bench-profile register appended (unit U3 BENCH-PROFILE, architect ruling 2026-10-18 item 8): built from
+# the flattened sources of marv_params_fc3v2, in its order (no second flatten), then
+# fw/compositions/quad_fc/params/bench_profile_register.yaml, so every id of marv_params_fc3v2 keeps its id and value and the
+# bench_profile_* entries follow. Only the bench image marv_fc3v2_bench_profile (fw/hal/target) and the L09 bench-profile tests
+# link it, through the composition variant marv_composition_quad_fc_bench_profile; the flight image links marv_params_fc3v2
+# (invariant L-6).
+marv_add_param_set(marv_params_fc3v2_bench_profile
+  CARD "${marv_fc3v2_flat}_card.yaml" "${marv_fc3v2_flat}_mixer.yaml" "${marv_fc3v2_flat}_scenario.yaml"
+       "${marv_fc3v2_flat}_rate.yaml" "${marv_fc3v2_flat}_attitude.yaml" "${marv_fc3v2_flat}_gyro_chain.yaml"
+       "${marv_fc3v2_flat}_vertical.yaml"
+  REGISTER "${marv_fc3v2_flat}_register.yaml"
+           "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml"
+           "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml"
+           "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/bench_profile_register.yaml")

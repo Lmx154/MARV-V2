@@ -1,0 +1,31 @@
+# The bench motor-step profile (unit U3 BENCH-PROFILE; architect ruling 2026-10-18 item 8, serena memory
+# quad-m4/architect-onboard-logger-2026-10-18), in params_gen input form (tools/gen/params_gen.py). Appended after the FC3v2
+# set in the parameter set marv_params_fc3v2_bench_profile only (fw/params/CMakeLists.txt), which the bench image
+# marv_fc3v2_bench_profile and the L09 bench-profile tests read. The flight image's set marv_params_fc3v2 never carries these
+# entries (invariant L-6). The composition variant MARV_QUAD_FC_BENCH_PROFILE (fw/compositions/quad_fc/src/quad_fc.cpp)
+# validates them and init panics on a value outside its rules.
+#
+# Safety numbers: Luis's rulings of 2026-10-18 (AskUserQuestion), never others. Bench switch "ch6 fully up (Recommended)";
+# motors "One at a time (Recommended)"; profile "Approve as proposed" (a 2 s lead-in after arming; one motor at a time DShot
+# 200 -> 450 -> 200 at 1 s per level, 3 repeats per motor, then the next motor; stop at the end; bench cap DShot 450, the
+# console cap of 500 unchanged); the total-duration cap "40 s cap, all 4 motors (Recommended)", which replaced the 20 s cap of
+# the first proposal once the four-motor sequence was seen to take 38 s. Each value is quoted in its source.
+
+bench_profile_rc_channel:
+  {type: i32, value: 6, unit: "1", method: scenario, source: "Luis 2026-10-18 (AskUserQuestion): bench switch 'ch6 fully up (Recommended)'; the 1-based CRSF channel of the RadioMaster Pocket's 3-position switch (serena memory hardware/vehicle-build: ch6/ch7 3-pos). Init panics outside 1..16 or on the arm, a stick or the angle channel", sigma: choice}
+bench_profile_switch_threshold:
+  {type: f32, value: 0.390625, unit: "1", method: scenario, source: "Luis 2026-10-18 (AskUserQuestion): bench switch 'ch6 fully up (Recommended)'. Fully up is +100, as on the angle switch ch8 (up = angle at +100, decision 0048); the direction is INFERRED for ch6 and accepted by the lead 2026-10-18 with the console readout of ch6 as the first step of the props-off bench (tests/regression/quad/L10/results/bench_profile/README.md). The threshold follows the arm switch's rule (arm_switch_threshold): in position at or above 1700 us, normalized (1700 us - 1500 us) / 512 us = 0.390625 under the receive contract aux x = (us - 1500) / 512 (CRSF 172 -> 988 us, 992 -> 1500 us, 1811 -> 2012 us, TBS CRSF spec, RC channels), so the middle position (0) and down (-1) are out of position", sigma: choice}
+bench_profile_lead_in_us:
+  {type: i32, value: 2000000, unit: "us", method: scenario, source: "Luis 2026-10-18 (AskUserQuestion): profile 'Approve as proposed', '2 s lead-in after arming'; every motor is written stop during it (the lead 2026-10-18)", sigma: choice}
+bench_profile_level_us:
+  {type: i32, value: 1000000, unit: "us", method: scenario, source: "Luis 2026-10-18 (AskUserQuestion): profile 'Approve as proposed', 'DShot 200 -> 450 -> 200, 1 s per level'", sigma: choice}
+bench_profile_dshot_base:
+  {type: i32, value: 200, unit: "1", method: scenario, source: "Luis 2026-10-18 (AskUserQuestion): profile 'Approve as proposed', 'DShot 200 -> 450 -> 200': the first and third level of each repeat", sigma: choice}
+bench_profile_dshot_step:
+  {type: i32, value: 450, unit: "1", method: scenario, source: "Luis 2026-10-18 (AskUserQuestion): profile 'Approve as proposed', 'DShot 200 -> 450 -> 200': the second level of each repeat", sigma: choice}
+bench_profile_repeats:
+  {type: i32, value: 3, unit: "1", method: scenario, source: "Luis 2026-10-18 (AskUserQuestion): profile 'Approve as proposed', '3 repeats per motor, then the next motor', and '40 s cap, all 4 motors (Recommended)': three full repeats of 200 -> 450 -> 200 per motor (9 s), motors 1 to 4 in turn", sigma: choice}
+bench_profile_total_max_us:
+  {type: i32, value: 40000000, unit: "us", method: scenario, source: "Luis 2026-10-18 (AskUserQuestion): '40 s cap, all 4 motors (Recommended)': the profile (2 s lead-in + 4 motors x 3 repeats x 3 levels x 1 s = 38 s) stops for good at 40 s after the arm edge at the latest; init panics on a profile longer than it", sigma: choice}
+bench_profile_dshot_max:
+  {type: i32, value: 450, unit: "1", method: scenario, source: "Luis 2026-10-18 (AskUserQuestion): profile 'Approve as proposed', 'bench cap DShot 450 (console cap 500 unchanged)': init panics on a profile level above it, and on a cap above motor_test_dshot_max", sigma: choice}

@@ -72,6 +72,24 @@
 // quaternion and validity, not Mahony's, going to the arming machine's upright check, the attitude law and the published tilt.
 // Mahony is still stepped. Without the definition (the board image, marv_sil_quad_fc) the preprocessed translation unit is
 // the one without these lines.
+//
+// MARV_QUAD_FC_BENCH_PROFILE (the library marv_composition_quad_fc_bench_profile, linked only by the bench image
+// marv_fc3v2_bench_profile and the L09 bench-profile tests; unit U3, architect ruling 2026-10-18 item 8): this source with the
+// bench motor-step profile in place of the mixer's output while Armed, read from the bench_profile_* parameters
+// (fw/compositions/quad_fc/params/bench_profile_register.yaml, Luis's rulings of 2026-10-18), validated in validate and read in
+// init. The arm edge is the rate tick the gate becomes Armed. The profile of an arm edge is live from that tick until the first
+// rate tick on which any of these holds, and then final until the next arm edge (a kill latches, the lead 2026-10-18): the gate
+// is not Armed or the arming state is not exactly Armed (the arm switch off, a link-loss hold or centring, any disarm); the bench
+// channel's value of the tick's frame is not at or above bench_profile_switch_threshold (a value that is not a number is not;
+// so the switch must be in position on the edge's own tick); the sample stamp is before the edge's; the stamp is
+// bench_profile_total_max_us or more after the edge's, or the rate ticks since the edge (the edge's own being 0) times the
+// nominal rate period reach it; the last level has ended. Its clock is the rate ticks since the edge: the tick k is in the
+// lead-in while k P < bench_profile_lead_in_us, P the nominal rate period, and otherwise in the level j = floor((k P - lead-in)
+// / bench_profile_level_us), so every edge is the first rate tick at or after its nominal time. Level j drives the logical
+// motor 1 + floor(j / (3 bench_profile_repeats)), at bench_profile_dshot_step when j mod 3 is 1 and bench_profile_dshot_base
+// otherwise (DShot 200 -> 450 -> 200 per repeat, the repeats of one motor before the next). While Armed the gate writes that level's value to that motor and stop to the others, and stop to
+// every motor in the lead-in, after the end or a kill; it never writes the mixer's output. Disarmed and MotorTest are as above.
+// Without the definition the preprocessed translation unit is the one without these lines.
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -83,6 +101,9 @@
 #include <marv/attitude/angle_mode.hpp>
 #include <marv/attitude/attitude_law.hpp>
 #include <marv/attitude/config.hpp>
+#ifdef MARV_QUAD_FC_BENCH_PROFILE
+#include <marv/bench_profile.hpp>
+#endif
 #include <marv/composition.hpp>
 #include <marv/estimator/gyro_cal.hpp>
 #include <marv/estimator/mahony.hpp>
@@ -163,6 +184,42 @@ estimator::Mahony<float> g_estimator;
 estimator::GyroCal<float> g_gyro_cal;
 #ifdef MARV_QUAD_FC_ESKF
 estimator::Eskf<float> g_eskf;
+#endif
+#ifdef MARV_QUAD_FC_BENCH_PROFILE
+// The levels of one repeat, in order (Luis 2026-10-18: DShot 200 -> 450 -> 200).
+enum class BenchLevel : std::uint8_t { Base, Step };
+constexpr std::array kBenchLevels{BenchLevel::Base, BenchLevel::Step, BenchLevel::Base};
+
+// The bench_profile_* parameters as init reads them.
+struct BenchProfileConfig {
+  std::size_t channel = 0;  // index into ManualControl::channels (bench_profile_rc_channel - 1)
+  float threshold = 0.0F;   // bench_profile_switch_threshold: in position at or above it
+  std::uint64_t lead_in_us = 0;
+  std::uint64_t level_us = 0;
+  DshotValue base;
+  DshotValue step;
+  std::uint64_t motor_levels = 0;  // the levels of one motor: bench_profile_repeats x kBenchLevels.size()
+  std::uint64_t levels = 0;        // the levels of the profile: kMotors x motor_levels
+  std::uint64_t total_max_us = 0;
+};
+
+// The profile of the latest arm edge.
+struct BenchProfileRun {
+  bool live = false;        // it may still write; cleared for good, until the next arm edge, by a kill or its end
+  std::uint64_t ticks = 0;  // rate ticks since the arm edge, the edge's own tick being 0 (counted while live)
+  TimeUs start_us = 0;      // the arm edge's sample stamp
+  std::uint32_t arms = 0;   // arm edges since init
+};
+
+BenchProfileConfig g_bench_profile_cfg;
+BenchProfileRun g_bench_profile_run;
+// Published after each rate tick for bench_profile_status (BenchProfileStatus).
+std::atomic<std::uint8_t> g_bench_profile_phase{static_cast<std::uint8_t>(BenchProfilePhase::Idle)};
+std::atomic<std::uint8_t> g_bench_profile_kill_state{static_cast<std::uint8_t>(arming::ArmState::Boot)};
+std::atomic<std::uint32_t> g_bench_profile_arms{0};
+std::atomic<std::uint32_t> g_bench_profile_level{0};
+std::atomic<std::uint32_t> g_bench_profile_motor{0};
+std::atomic<std::uint32_t> g_bench_profile_dshot{0};
 #endif
 float g_upright_cos = 0.0F;  // cos(arm_small_angle): upright iff the cosine of the estimate's tilt is above it
 TimeUs g_estimator_prev_us = 0;  // the stamp of the previous sample the estimator stepped on
@@ -344,6 +401,129 @@ void update_motor_test(TimeUs now) noexcept {
 }
 #endif
 
+#ifdef MARV_QUAD_FC_BENCH_PROFILE
+// The bench profile's rules: the channel a CRSF channel other than the arm, the angle and the stick channels; the threshold in
+// (0, 1], so the middle position of a 3-position switch is out of position; the bench cap from the DShot throttle minimum to
+// the console cap motor_test_dshot_max; both levels from the minimum to the bench cap; the lead-in not negative, the level time,
+// the repeats and the cap at least 1; the whole profile (lead-in + kMotors x repeats x levels x level time) not longer than
+// the cap.
+[[nodiscard]] const char* bench_profile_reject_reason(ParamTable t) noexcept {
+  const std::int32_t channel = param_value<ParamId::bench_profile_rc_channel>(t);
+  if (channel < 1 || static_cast<std::size_t>(channel) > prim::kCrsfRcChannels) {
+    return "quad_fc composition: bench_profile_rc_channel is outside 1..16";
+  }
+  if (channel == param_value<ParamId::rc_channel_arm>(t) || channel == param_value<ParamId::rc_channel_angle>(t) ||
+      channel == param_value<ParamId::rc_channel_roll>(t) || channel == param_value<ParamId::rc_channel_pitch>(t) ||
+      channel == param_value<ParamId::rc_channel_throttle>(t) || channel == param_value<ParamId::rc_channel_yaw>(t)) {
+    return "quad_fc composition: bench_profile_rc_channel is the arm, the angle or a stick channel";
+  }
+  const float threshold = param_value<ParamId::bench_profile_switch_threshold>(t);
+  if (!(threshold > 0.0F && threshold <= 1.0F)) {
+    return "quad_fc composition: bench_profile_switch_threshold is outside (0, 1]";
+  }
+  const std::int32_t cap = param_value<ParamId::bench_profile_dshot_max>(t);
+  if (cap < prim::kDshotThrottleMin || cap > param_value<ParamId::motor_test_dshot_max>(t)) {
+    return "quad_fc composition: bench_profile_dshot_max is below the DShot throttle minimum or above motor_test_dshot_max";
+  }
+  const std::int32_t base = param_value<ParamId::bench_profile_dshot_base>(t);
+  const std::int32_t step = param_value<ParamId::bench_profile_dshot_step>(t);
+  if (base < prim::kDshotThrottleMin || base > cap || step < prim::kDshotThrottleMin || step > cap) {
+    return "quad_fc composition: bench_profile_dshot_base or bench_profile_dshot_step is below the DShot throttle minimum or "
+           "above bench_profile_dshot_max";
+  }
+  const std::int32_t lead_in = param_value<ParamId::bench_profile_lead_in_us>(t);
+  const std::int32_t level = param_value<ParamId::bench_profile_level_us>(t);
+  const std::int32_t repeats = param_value<ParamId::bench_profile_repeats>(t);
+  const std::int32_t total_max = param_value<ParamId::bench_profile_total_max_us>(t);
+  if (lead_in < 0 || level < 1 || repeats < 1 || total_max < 1) {
+    return "quad_fc composition: bench_profile_lead_in_us is negative or bench_profile_level_us, bench_profile_repeats or "
+           "bench_profile_total_max_us is below 1";
+  }
+  const std::uint64_t levels = kMotors * static_cast<std::uint64_t>(repeats) * kBenchLevels.size();
+  if (lead_in > total_max ||
+      levels > static_cast<std::uint64_t>(total_max - lead_in) / static_cast<std::uint64_t>(level)) {
+    return "quad_fc composition: the bench profile (lead-in + motors x repeats x levels x level time) is longer than "
+           "bench_profile_total_max_us";
+  }
+  return nullptr;
+}
+
+// The bench_profile_* parameters of the runtime table (accepted by bench_profile_reject_reason).
+[[nodiscard]] BenchProfileConfig bench_profile_config() noexcept {
+  BenchProfileConfig c;
+  c.channel = static_cast<std::size_t>(param_value<ParamId::bench_profile_rc_channel>()) - 1;
+  c.threshold = param_value<ParamId::bench_profile_switch_threshold>();
+  c.lead_in_us = static_cast<std::uint64_t>(param_value<ParamId::bench_profile_lead_in_us>());
+  c.level_us = static_cast<std::uint64_t>(param_value<ParamId::bench_profile_level_us>());
+  c.base = DshotValue::from_raw(static_cast<std::uint16_t>(param_value<ParamId::bench_profile_dshot_base>()))
+               .value_or(DshotValue::stop());
+  c.step = DshotValue::from_raw(static_cast<std::uint16_t>(param_value<ParamId::bench_profile_dshot_step>()))
+               .value_or(DshotValue::stop());
+  c.motor_levels = static_cast<std::uint64_t>(param_value<ParamId::bench_profile_repeats>()) * kBenchLevels.size();
+  c.levels = kMotors * c.motor_levels;
+  c.total_max_us = static_cast<std::uint64_t>(param_value<ParamId::bench_profile_total_max_us>());
+  return c;
+}
+
+// On a rate tick, after the gate's update: advances the profile of the latest arm edge (a new one if `edge`, the gate having
+// become Armed this tick), applies its kills and its end, and returns this tick's profile values: stop on every motor unless
+// the profile is live and in a level, then that level's value on its motor. `state` is the arming state of this tick,
+// `bench_switch` the bench channel's value of this tick's frame, `stamp` this tick's sample stamp.
+[[nodiscard]] std::array<DshotValue, kMotors> bench_profile_step(bool edge, arming::ArmState state, float bench_switch,
+                                                                 TimeUs stamp) noexcept {
+  const BenchProfileConfig& c = g_bench_profile_cfg;
+  BenchProfileRun& r = g_bench_profile_run;
+  std::array<DshotValue, kMotors> o{};
+  o.fill(DshotValue::stop());
+  if (edge) {
+    r.live = true;
+    r.ticks = 0;
+    r.start_us = stamp;
+    ++r.arms;
+  } else if (r.live) {
+    ++r.ticks;
+  }
+  const auto num = static_cast<std::uint64_t>(g_rate_num);
+  const auto den = static_cast<std::uint64_t>(g_rate_den);
+  const std::uint64_t elapsed = r.ticks * num;  // the nominal time since the edge, in units of 1 / den us
+  BenchProfilePhase final_phase = BenchProfilePhase::Idle;  // Idle: the profile is not final this tick
+  if (r.live) {
+    if (g_gate != MotorGate::Armed || state != arming::ArmState::Armed) {
+      final_phase = BenchProfilePhase::NotArmed;
+    } else if (!(bench_switch >= c.threshold)) {
+      final_phase = BenchProfilePhase::SwitchOut;
+    } else if (stamp < r.start_us) {
+      final_phase = BenchProfilePhase::StampBack;
+    } else if (stamp - r.start_us >= c.total_max_us || elapsed >= c.total_max_us * den) {
+      final_phase = BenchProfilePhase::Capped;
+    } else if (elapsed >= c.lead_in_us * den && (elapsed - c.lead_in_us * den) / (c.level_us * den) >= c.levels) {
+      final_phase = BenchProfilePhase::Done;
+    }
+  }
+  std::uint32_t motor = 0;
+  std::uint32_t dshot = 0;
+  if (final_phase != BenchProfilePhase::Idle) {
+    r.live = false;
+    g_bench_profile_phase.store(static_cast<std::uint8_t>(final_phase), std::memory_order_relaxed);
+    g_bench_profile_kill_state.store(static_cast<std::uint8_t>(state), std::memory_order_relaxed);
+  } else if (r.live && elapsed < c.lead_in_us * den) {
+    g_bench_profile_phase.store(static_cast<std::uint8_t>(BenchProfilePhase::LeadIn), std::memory_order_relaxed);
+  } else if (r.live) {
+    const std::uint64_t level = (elapsed - c.lead_in_us * den) / (c.level_us * den);
+    const auto m = static_cast<std::size_t>(level / c.motor_levels);
+    o[m] = kBenchLevels[static_cast<std::size_t>(level % kBenchLevels.size())] == BenchLevel::Step ? c.step : c.base;
+    motor = static_cast<std::uint32_t>(m) + 1;
+    dshot = o[m].raw();
+    g_bench_profile_phase.store(static_cast<std::uint8_t>(BenchProfilePhase::Running), std::memory_order_relaxed);
+    g_bench_profile_level.store(static_cast<std::uint32_t>(level), std::memory_order_relaxed);
+  }
+  g_bench_profile_arms.store(r.arms, std::memory_order_relaxed);
+  g_bench_profile_motor.store(motor, std::memory_order_relaxed);
+  g_bench_profile_dshot.store(dshot, std::memory_order_relaxed);
+  return o;
+}
+#endif
+
 // The checks init and the target's start-ups make, in their order, on `t`; the first failure's text, else null.
 [[nodiscard]] const char* reject_reason(ParamTable t) noexcept {
   if (t.size() != kParamCount) {
@@ -418,6 +598,11 @@ void update_motor_test(TimeUs now) noexcept {
   if (!(small_angle > 0.0F && small_angle <= static_cast<float>(prim::kPi))) {
     return "quad_fc composition: arm_small_angle is outside (0, pi]";
   }
+#ifdef MARV_QUAD_FC_BENCH_PROFILE
+  if (const char* why = bench_profile_reject_reason(t); why != nullptr) {
+    return why;
+  }
+#endif
   // The target's start-ups after init (fw/hal/target/src/main.cpp): motor_output_start, then receiver_start.
   hal_target::PadMap pad{};
   if (!hal_target::make_pad_map({param_value<ParamId::motor_pad_m1>(t), param_value<ParamId::motor_pad_m2>(t),
@@ -510,6 +695,16 @@ void init() noexcept {
   g_gate = MotorGate::Disarmed;
   g_airmode_active = false;
   g_n = 0;
+#ifdef MARV_QUAD_FC_BENCH_PROFILE
+  g_bench_profile_cfg = bench_profile_config();
+  g_bench_profile_run = BenchProfileRun{};
+  g_bench_profile_phase.store(static_cast<std::uint8_t>(BenchProfilePhase::Idle), std::memory_order_relaxed);
+  g_bench_profile_kill_state.store(static_cast<std::uint8_t>(arming::ArmState::Boot), std::memory_order_relaxed);
+  g_bench_profile_arms.store(0, std::memory_order_relaxed);
+  g_bench_profile_level.store(0, std::memory_order_relaxed);
+  g_bench_profile_motor.store(0, std::memory_order_relaxed);
+  g_bench_profile_dshot.store(0, std::memory_order_relaxed);
+#endif
 }
 
 void tick(const ImuSample& raw) noexcept {
@@ -583,6 +778,9 @@ void tick(const ImuSample& raw) noexcept {
   const arming::ArmingOutput<float> out = g_arming.step(in);
   g_arming_state.store(static_cast<std::uint8_t>(out.state), std::memory_order_relaxed);
   g_maintenance_granted.store(g_arming.maintenance(), std::memory_order_relaxed);
+#ifdef MARV_QUAD_FC_BENCH_PROFILE
+  const bool bench_profile_edge = out.armed && g_gate != MotorGate::Armed;
+#endif
   if (out.armed) {
     if (g_gate != MotorGate::Armed) {
       g_step.reset_controller();  // arming never applies controller state accumulated while disarmed
@@ -633,7 +831,17 @@ void tick(const ImuSample& raw) noexcept {
   }
   hal_tick_stage(TickStage::Gate);
   update_motor_test(s.t_us);
+#ifdef MARV_QUAD_FC_BENCH_PROFILE
+  ActuatorOutput<kMotors, kServos> written = gate_output(g_gate, g_run, e.dshot);
+  const std::array<DshotValue, kMotors> profile =
+      bench_profile_step(bench_profile_edge, out.state, mc.channels[g_bench_profile_cfg.channel], s.t_us);
+  if (g_gate == MotorGate::Armed) {
+    written.motor = profile;  // the bench image never writes the mixer's output
+  }
+  hal_actuators_write(written);
+#else
   hal_actuators_write(gate_output(g_gate, g_run, e.dshot));
+#endif
 }
 
 arming::ArmState arming_status() noexcept {
@@ -660,5 +868,18 @@ AttitudeCounts attitude_counts() noexcept {
 }
 
 RateCounts rate_counts() noexcept { return RateCounts{g_step.execution_count(), g_step.timing_fault_count()}; }
+
+#ifdef MARV_QUAD_FC_BENCH_PROFILE
+BenchProfileStatus bench_profile_status() noexcept {
+  BenchProfileStatus s;
+  s.phase = static_cast<BenchProfilePhase>(g_bench_profile_phase.load(std::memory_order_relaxed));
+  s.kill_state = static_cast<arming::ArmState>(g_bench_profile_kill_state.load(std::memory_order_relaxed));
+  s.arms = g_bench_profile_arms.load(std::memory_order_relaxed);
+  s.level = g_bench_profile_level.load(std::memory_order_relaxed);
+  s.motor = g_bench_profile_motor.load(std::memory_order_relaxed);
+  s.dshot = g_bench_profile_dshot.load(std::memory_order_relaxed);
+  return s;
+}
+#endif
 
 }  // namespace marv::composition
