@@ -56,6 +56,11 @@
 // refusal disarm clears it; a failsafe that keeps the machine armed keeps the latch). Once set, the integrator is not zeroed
 // again until a disarm, however low the throttle goes.
 //
+// Telemetry (decision 0053 Q4; ground-segment unit 11). Every rate tick ends, after its actuator write, by publishing one
+// snapshot (marv/types/telemetry.hpp) through a seqlock that never waits: the tick's sample as the estimator received it, the
+// rate loop's input, both estimators, the setpoints and thrust, the values written, the pilot's input, the counters and the
+// arming state. Nothing reads it back into the tick; composition::telemetry reads it from any context.
+//
 // The motor-test request comes from the HAL (hal_motor_test), is read only on a rate tick and is validated here, never
 // by the console: motor 1..4, value in [kDshotThrottleMin, motor_test_dshot_max], duration in [1 ms,
 // motor_test_duration_max_ms]; otherwise it is refused (the gate stays as it was, a refusal is counted and reported). A
@@ -105,6 +110,8 @@
 #include <marv/types/actuator.hpp>
 #include <marv/types/attitude_state.hpp>
 #include <marv/types/imu_sample.hpp>
+#include <marv/types/seqlock.hpp>
+#include <marv/types/telemetry.hpp>
 #include <marv/types/time.hpp>
 
 namespace marv::composition {
@@ -113,6 +120,9 @@ namespace {
 enum Group : std::size_t { kRate, kGroupCount };
 
 enum class MotorGate : std::uint8_t { Disarmed, Armed, MotorTest };
+static_assert(static_cast<std::uint8_t>(MotorGate::Disarmed) == 0 && static_cast<std::uint8_t>(MotorGate::Armed) == 1 &&
+                  static_cast<std::uint8_t>(MotorGate::MotorTest) == 2,
+              "Telemetry::motor_gate's values (marv/types/telemetry.hpp)");
 
 // The motor test in progress (MotorGate::MotorTest only).
 struct TestRun {
@@ -173,6 +183,7 @@ const prim::Vec3<float> kNoAccel{std::numeric_limits<float>::quiet_NaN(), std::n
 std::atomic<float> g_tilt_xy2{0.0F};  // x^2 + y^2 of the estimate's quaternion, published on rate ticks
 std::atomic<float> g_tilt_wz2{1.0F};  // w^2 + z^2
 std::atomic<bool> g_estimator_valid{false};
+Seqlock<Telemetry> g_telemetry;  // written once per rate tick, at its end; read by composition::telemetry
 
 // The saturation bits of ImuSample::flags (gyro and accel, every axis), GyroSatX .. AccelSatZ.
 [[nodiscard]] constexpr std::uint32_t saturation_mask() noexcept {
@@ -501,6 +512,7 @@ void init() noexcept {
   g_imu_invalid = false;
   g_imu_saturated = false;
   g_arming_state.store(static_cast<std::uint8_t>(arming::ArmState::Boot), std::memory_order_relaxed);
+  g_telemetry.reset();
 
   const MotorTestPoll seen = hal_motor_test();
   g_seen_cancel = seen.cancel_count;
@@ -555,7 +567,8 @@ void tick(const ImuSample& raw) noexcept {
   in.yaw = mc.yaw;
   in.throttle = mc.throttle;
   in.arm = mc.channels[g_arm_channel];
-  in.imu_deadline_missed = hal_imu_deadline_misses() > 0;
+  const std::uint32_t deadline_misses = hal_imu_deadline_misses();
+  in.imu_deadline_missed = deadline_misses > 0;
   in.imu_samples_valid = !g_imu_invalid;
   in.imu_saturated = g_imu_saturated;
   in.gyro_calibrated = g_gyro_cal.complete();
@@ -593,6 +606,7 @@ void tick(const ImuSample& raw) noexcept {
   }
 
   prim::Vec3<float> setpoint;
+  prim::Quat<float> q_setpoint;  // the attitude setpoint of angle mode; identity otherwise (telemetry only)
   float thrust = 0.0F;
   bool angle_run = false;
   bool throttle_low = false;
@@ -618,6 +632,7 @@ void tick(const ImuSample& raw) noexcept {
       g_attitude_faults.store(law.fault_count, std::memory_order_relaxed);
       g_attitude_timing_faults.store(law.timing_fault_count, std::memory_order_relaxed);
       setpoint = law.rate_setpoint;
+      q_setpoint = angle.q_sp;
     } else {
       setpoint = stick_rates::rate_setpoint(g_rates, sticks);
     }
@@ -633,7 +648,57 @@ void tick(const ImuSample& raw) noexcept {
   }
   hal_tick_stage(TickStage::Gate);
   update_motor_test(s.t_us);
-  hal_actuators_write(gate_output(g_gate, g_run, e.dshot));
+  const ActuatorOutput<kMotors, kServos> written = gate_output(g_gate, g_run, e.dshot);
+  hal_actuators_write(written);
+
+  Telemetry t;
+  t.time_us = now;
+  t.sample_us = s.t_us;
+  t.rate_executions = g_step.execution_count();
+  t.gyro_rad_s = s.gyro_rad_s;
+  t.accel_m_s2 = s.accel_m_s2;
+  t.temp_k = s.temp_k;
+  t.imu_flags = s.flags;
+  t.rate_gyro_rad_s = g_step.rate_input().gyro_rad_s;
+  t.q_mahony = g_estimator.quat();
+  t.gyro_bias_cal = g_gyro_cal.complete() ? g_gyro_cal.bias() : prim::Vec3<float>();
+  t.gyro_bias_mahony = g_estimator.bias();
+  t.mahony_valid = g_estimator.valid();
+#ifdef MARV_QUAD_FC_ESKF
+  t.q_eskf = g_eskf.quat();
+  t.gyro_bias_eskf = g_eskf.bias();
+  t.eskf_present = true;
+  t.eskf_valid = g_eskf.valid();
+  t.eskf_in_use = true;
+#else
+  t.q_eskf = prim::Quat<float>(0.0F, 0.0F, 0.0F, 0.0F);
+#endif
+  t.rate_setpoint_rad_s = setpoint;
+  t.q_setpoint = q_setpoint;
+  t.thrust_n = thrust;
+  t.thrust_max_n = g_thrust_root_max * g_thrust_root_max;
+  for (std::size_t m = 0; m < kMotors; ++m) {
+    t.motor_dshot[m] = written.motor[m].raw();
+  }
+  t.manual = mc;
+  t.rate_faults = e.rate.fault_count;
+  t.rate_timing_faults = e.rate.timing_fault_count;
+  t.attitude_faults = g_attitude_faults.load(std::memory_order_relaxed);
+  t.attitude_timing_faults = g_attitude_timing_faults.load(std::memory_order_relaxed);
+  t.imu_deadline_misses = deadline_misses;
+  t.arm_state = static_cast<std::uint8_t>(out.state);
+  t.motor_gate = static_cast<std::uint8_t>(g_gate);
+  t.angle_mode = angle_run;
+  t.airmode = g_airmode_active;
+  t.iterm_held = throttle_low;
+  t.gyro_calibrated = in.gyro_calibrated;
+  t.estimator_valid = in.estimator_valid;
+  t.upright = in.upright;
+  t.imu_invalid = !in.imu_samples_valid;
+  t.imu_saturated = in.imu_saturated;
+  t.rate_fault_active = e.rate.fault_active;
+  t.rate_fault_latched = e.rate.fault_latched;
+  g_telemetry.write(t);
 }
 
 arming::ArmState arming_status() noexcept {
@@ -658,6 +723,8 @@ AttitudeCounts attitude_counts() noexcept {
   return AttitudeCounts{g_attitude_faults.load(std::memory_order_relaxed),
                         g_attitude_timing_faults.load(std::memory_order_relaxed)};
 }
+
+bool telemetry(Telemetry& out) noexcept { return g_telemetry.read(out); }
 
 RateCounts rate_counts() noexcept { return RateCounts{g_step.execution_count(), g_step.timing_fault_count()}; }
 

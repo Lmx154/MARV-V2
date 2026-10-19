@@ -7,6 +7,7 @@
 #include "marv/arming/arming.hpp"
 #include "marv/params/param_types.hpp"
 #include "marv/types/actuator.hpp"
+#include "marv/types/telemetry.hpp"
 
 namespace marv::composition {
 
@@ -74,5 +75,12 @@ struct AttitudeStatus {
   bool valid = false;
 };
 [[nodiscard]] AttitudeStatus attitude_status() noexcept;
+
+// The telemetry snapshot of the latest rate tick (marv/types/telemetry.hpp; decision 0053 Q4, ground-segment unit 11): every
+// rate tick ends, after its actuator write, by publishing one snapshot through a seqlock (marv/types/seqlock.hpp), which
+// never waits for a reader. Callable from any context (the target's background loop, the SIL's link service): a read that
+// an overlapping rate tick tears is retried, so `out` is always one tick's whole snapshot. False, `out` unchanged, before
+// the first rate tick after init (init clears the snapshot).
+[[nodiscard]] bool telemetry(Telemetry& out) noexcept;
 
 }  // namespace marv::composition
