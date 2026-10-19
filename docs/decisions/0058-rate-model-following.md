@@ -27,6 +27,11 @@
    `tests/regression/quad/L06/d_term/rate_loop_test.cpp`, `tests/regression/quad/L06/tools/test_rate_lead.py`,
    `tests/regression/quad/L06/product_params/marv_params_product_table.txt`,
    `tests/regression/quad/L06/results/ff_eval/card_worst.txt`, `tests/regression/quad/L06/results/ff_eval/sweep.txt`.
+   The clamp adds `tests/regression/quad/L06/param_ids` and appends clamp tests (the term's clamp set explicitly where a test
+   enables J_ref; no check loosened) to `tests/regression/quad/L06/d_term/rate_loop_test.cpp` and
+   `tests/regression/quad/L05/unit/rate_bypass/rate_bypass_test.cpp`, with `L04/param_ids`, `L06/tools/test_rate_lead.py`, the
+   product table (three derived rows and `rate_ff_clamp_k`, later ids shifted, no value changed) and the two ff_eval outputs
+   (input sha256 lines only) touched again.
 
 ## Why
 
@@ -44,6 +49,12 @@ pitch slam asks for about 0.6 tau_max; a full yaw reversal asks for 1.33 to 2 ta
 on: a per-axis symmetric clamp on u_ff at k tau_max (at hover collective), k set by Luis (a safety number), with a T3 test and
 a clamp-off bit-identity case. Angle mode, hover and props-off work are unaffected; the angle-to-acro switch is continuous.
 Luis, 2026-10-19 (AskUserQuestion, k as a fraction of the authority at hover throttle): "0.5 (Recommended)".
+Built (branch `rate-ff-clamp`): in `execute`, `u_ff,a` is limited to `+-k tau_max_hover,a` before it is added (`fw/rate`;
+`validate` refuses k outside (0, 1], and a missing clamp, when some J_ref > 0). k is the scenario parameter `rate_ff_clamp_k`
+(0.5 in both registers). `tau_max_hover,a` is derived (`rate_tau_max_hover_<axis>`, `tools/card/rate_lead.py` rule step 15):
+the largest symmetric torque on axis a alone that keeps every motor within [k idle^2, k speed_max^2] with the collective at
+m g, rounded down to f32. FC3v2: roll 0.9153, pitch 0.8040, yaw 0.0861 N m (INFERRED card inputs). Angle mode, the feedback
+path and the switch-off law are unchanged.
 
 ## Evidence
 
