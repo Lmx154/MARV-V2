@@ -666,6 +666,13 @@ rules:
     gz_groups: []
     why: "the L-3 static check (fw/log never names hal_panic); run, with its negative control, by tests/tools/test_check_log_no_panic.py"
 
+  - paths: [tools/ci/check_log_ring.py]
+    ctest_labels: []
+    run_ci_steps: [tools_tests]
+    pytest_paths: [tests/tools]
+    gz_groups: []
+    why: "the L-5 post-link check (the bench log image's ring holds the fast stream x sd_log_write_stall_max_s, core EMB-6), run by the bench log image's build (MARV_FC3V2_LOG_BENCH, m33 only) and, with its negative control, by tests/tools/test_check_log_ring.py"
+
   - paths: [tools/ci/check_claude_md.py]
     ctest_labels: []
     run_ci_steps: [g8_check, g8_control, tools_tests]
