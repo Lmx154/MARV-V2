@@ -1,6 +1,6 @@
 # Bench motor-step profile: props-off TB runbook (unit U3 BENCH-PROFILE)
 
-This is a bench runbook and evidence, not a frozen test. It has not been run yet (host evidence: the L09 unit_quad_fc_bench_profile tests, the eight planted defects killed, the L-6 post-link check and its negative controls). Luis runs it with the lead, with the props
+This is a bench runbook and evidence, not a frozen test. It has not been run yet (host evidence: the L09 unit_quad_fc_bench_profile tests, the eleven planted defects killed, the L-6 post-link check and its negative controls). Luis runs it with the lead, with the props
 off. The image is `marv_fc3v2_bench_profile` (fw/hal/target/CMakeLists.txt). It is the flight composition with the bench
 motor-step profile in place of the mixer's output while Armed: the composition variant `MARV_QUAD_FC_BENCH_PROFILE`
 (fw/compositions/quad_fc/src/quad_fc.cpp, header comment).
@@ -19,7 +19,10 @@ The values come from fw/compositions/quad_fc/params/bench_profile_register.yaml:
     runs three repeats of DShot 200, 450, 200 at 1 s per level (9 s per motor). Only one motor spins at a time.
   - At 38 s every motor stops and stays stopped until the next arm. The profile never repeats within one arm.
   - Hard stop at 40 s at the latest (the stamp clock).
-- The bench cap is DShot 450 (init refuses a level above it). The console cap stays 500.
+- The bench cap is DShot 450 and the total-duration cap 40 s, both fixed (Luis 2026-10-19, "Fixed + clamp (Recommended)"):
+  they are the defaults of `bench_profile_dshot_max` and `bench_profile_total_max_us` in the image's generated defaults.
+  validate and init refuse any table value above either (a cap, a level or the total), and the motor write clamps every
+  profile value to 450 independently of the configuration and the table. The console cap stays 500.
 - Kills, each evaluated in the rate tick, stopping every motor on the tick it is seen and latching until the next arm edge
   (the lead, 2026-10-18), even if the cause goes away:
   - ch6 leaves fully up: the middle and down positions are out of position.
@@ -38,16 +41,19 @@ with a new hash. It has no onboard logger yet; the logger joins it with unit U2.
 - The ESC is powered from the 4S pack only with Luis present. The frame is held or strapped.
 - For this props-off rehearsal the USB console is connected: it is the evidence. The no-USB use is the later props-on run.
 - The exact image is identified by both hashes below. Refuse any other image:
-  - Built from the code commit c474f41 (the version string in the image reads `quad-L2-pass-442-gc474f41`; it is part of the
-    hash, so a rebuild at any other commit gives other hashes: flash the archived ELF, do not rebuild).
-  - `sha256sum marv_fc3v2_bench_profile.elf` = `ed2191fa2856487d68938931d4b8401540876c21b7455861f8f9a5f9b7ba6cf4`
-  - `arm-none-eabi-objcopy -O binary marv_fc3v2_bench_profile.elf x.bin; sha256sum x.bin` (143736 bytes) =
-    `90c9e15e5de4504b9a46beab53a5ba91ae0c30ad1206766ad36f6d7e4402c29a`
+  - Built from the code commit c358806 (the version string in the image reads `quad-L2-pass-444-gc358806`; it is part of the
+    hash, so a rebuild at any other commit gives other hashes: **flash the archived ELF, do not rebuild**). The archive is
+    `~/marv-bench-images/u3-c358806/` (`marv_fc3v2_bench_profile.elf`, `marv_fc3v2_bench_profile.bin`, `SHA256SUMS`;
+    check it with `sha256sum -c SHA256SUMS`). The older `~/marv-bench-images/u3-c474f41/` is superseded: it accepts a bench
+    cap up to the console cap and has no write clamp, so do not flash it.
+  - `sha256sum marv_fc3v2_bench_profile.elf` = `8f805ce5dc8d95f312abbe901ca5e77d58aa603da3c43e43d1e8e0ddd30ef506`
+  - `arm-none-eabi-objcopy -O binary marv_fc3v2_bench_profile.elf x.bin; sha256sum x.bin` (144720 bytes) =
+    `0f043a7003a20abfd4c8f5198834e71d21933796b292cb8f4ce4a2e84f7a80b5`
   - The `.bin` hash must equal the console's boot line `image: sha256 <...>`, which is the board's own SHA-256 of the
     flashed image (flash_image.cpp, `__flash_binary_start` .. `__flash_binary_end`).
-- Build: `cmake --preset m33 && cmake --build --preset m33 --target marv_fc3v2_bench_profile`. The build fails if the
+- Build (only to reproduce the check, never to flash): `cmake --preset m33 && cmake --build --preset m33 --target marv_fc3v2_bench_profile`. The build fails if the
   image misses its parameter table, its flash layout, or the L-6 control (the image must hold the profile's symbols).
-- Flash: `MARV_PROBE_SERIAL=900678EF479C3A0E tools/target/flash.sh <the archived marv_fc3v2_bench_profile.elf>` (flash.sh prints the ELF's sha256: compare it with the one above).
+- Flash the archived ELF: `MARV_PROBE_SERIAL=900678EF479C3A0E tools/target/flash.sh ~/marv-bench-images/u3-c358806/marv_fc3v2_bench_profile.elf` (flash.sh prints the ELF's sha256: compare it with the one above).
 - Capture the console for the whole session into `raw/`, for example
   `python3 tools/target/readcon.py /dev/serial/by-id/usb-Raspberry_Pi_Pico_B2189353BDF6DD1E-if00 600 > raw/tb.console.log`.
 - Radio: RadioMaster Pocket on, ch5 down, ch6 middle, throttle low.
@@ -128,16 +134,19 @@ After the TB, commit the console capture under `raw/` and the result table to th
     the archives and the SIL library.
   - `bench_profile_param_ids` checks the bench set: it keeps every FC3v2 record and adds only `bench_profile_*` ids.
 - **L-7 (the gate).** `tests/regression/quad/L09/unit/quad_fc_bench_profile_test.cpp` (unit_quad_fc_bench_profile) holds
-  the gate. Mutation check (2026-10-19, one planted defect in quad_fc.cpp at a time, each run of the 18 tests; the clean
-  tree passes 18 of 18):
+  the gate. Mutation check (2026-10-19, one planted defect in quad_fc.cpp at a time, each run of the 19 tests (18 in
+  unit_quad_fc_bench_profile, 1 in unit_quad_fc_bench_profile_clamp); the clean tree passes 19 of 19):
 
   | Defect | Killed by (failing tests) |
   | --- | --- |
   | ignore_switch (the gate ignores ch6) | 6: the ch6 middle, down, just-below and NaN kill sweeps, the no-ch6 arm test, the ruling's-clock kill test |
-  | cap_off (bench cap and console-cap refusals removed) | 2: the validate rejection test, the init-panic death test |
-  | repeats (the profile wraps within one arm) | 3: the sequence-to-the-tick test, the once-per-arm test, the stamp test |
-  | wrong_order (motors interleaved level by level) | 10: the sequence test, all kill sweeps, once-per-arm, stamp |
+  | cap_off (bench cap, console-cap and fixed-cap refusals removed) | 2: the validate rejection test, the init-panic death test |
+  | repeats (the profile wraps within one arm) | 4: the sequence-to-the-tick test, the once-per-arm test, the stamp test, the write-clamp test |
+  | wrong_order (motors interleaved level by level) | 11: the sequence test, all kill sweeps, once-per-arm, stamp, the write-clamp test |
   | latency_plus_one (ch6 read one rate tick late) | 5: the four ch6 sweeps, the ruling's-clock kill test |
   | no_latch (the profile resumes when Armed returns) | 2: the link-age sweep, the ruling's-clock kill test |
   | armed_hold_allowed (ArmedHold and centred keep writing) | 2: the link-age sweep, the ruling's-clock kill test |
   | stamp_cap_off (only the tick clock ends the profile) | 1: the stamp test |
+  | fixed_cap_off (validate no longer refuses a bench cap above the fixed 450) | 2: the validate rejection test, the init-panic death test |
+  | fixed_total_off (validate no longer refuses a total cap above the fixed 40 s) | 2: the validate rejection test, the init-panic death test |
+  | write_clamp_off (the motor write sends the profile value unclamped; the negative control of the clamp test) | 1: the write-clamp test |
