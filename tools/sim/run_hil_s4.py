@@ -26,7 +26,10 @@ stderr (.stderr.txt) and the report.
 while streaming and exactly one after (D_HIL); every rate tick's command arrived before it was needed; the board never armed
 (states boot / calibrating / no_link) and every DShot value is 0; no receiver frame; the pad held the whole run.
 --expect late: the negative control: the run must stop with the plugin's "HIL late command" fault.
---expect none: no verdict (S4b, Luis flying).
+--expect none: no verdict (S4b, Luis flying). The world also has <ground/> (decision 0047 amendment, Luis 2026-10-18: "please make
+it so we can collide with the ground"): a touchdown at or below the start height while moving down puts the quad at rest there
+(level, yaw kept) and re-engages the pad's hold until the vertical thrust reaches the weight again; the status line counts the
+touchdowns and the report lists them. Not a contact model: no bounce, friction or tip-over.
 
 Choosing N (decision 0046 item 2): N >= F + the measured turnaround (the report's "turnaround" line gives the measured
 maximum in ticks) and N <= N_max = 249 (tests/regression/quad/L09/results/hil_s2/hil_delay_margin.txt, whose nominal rows the
@@ -109,7 +112,7 @@ def hil_xml(port, stem, f, n, values_crc):
             f"<reports_path>{stem}.reports.csv</reports_path></hil>")
 
 
-def world(out_dir, port, f, n, values_crc):
+def world(out_dir, port, f, n, values_crc, ground=False):
     scenario, num, den = run_quad_fc.fc3_scenario(out_dir)
     name, _ = gen_world.generate(run_quad_fc.CARD, scenario, "test", M, "lo", None, ROOT)
     stem = (Path(out_dir) / f"{Path(name).stem}_hil_n{n}").resolve()
@@ -117,7 +120,8 @@ def world(out_dir, port, f, n, values_crc):
     _, text = gen_world.generate(run_quad_fc.CARD, scenario, "test", M, "lo", f"{stem}.bin", ROOT, sensors=sensors)
     text = re.sub(r'\s*<sil_override param="ol_dshot_m\d" type="i32">\d+</sil_override>', "", text)
     assert text.count("<gyro_source>") == 1
-    text = text.replace("<gyro_source>", "<launch_pad/>\n" + hil_xml(port, stem, f, n, values_crc) + "\n<gyro_source>", 1)
+    pad = "<launch_pad/>\n" + ("<ground/>\n" if ground else "")
+    text = text.replace("<gyro_source>", pad + hil_xml(port, stem, f, n, values_crc) + "\n<gyro_source>", 1)
     seed = int(re.search(r"<seed>(\d+)</seed>", text).group(1))
     Path(f"{stem}.sdf").write_text(text, encoding="utf-8")
     return stem, num, den, seed
@@ -129,7 +133,6 @@ def world(out_dir, port, f, n, values_crc):
 # positions (FRD in the plugin block, drawn in the link's FLU frame: y and z negated).
 DISPLAY_PROP_RADIUS_M = 0.0889  # display only: a 7 inch propeller disc (Luis, 2026-10-18: "it's a 7 inch frame")
 DISPLAY_BODY_M = (0.10, 0.05, 0.03)  # display only: the body box
-DISPLAY_GROUND_Z_M = -0.04  # display only: the ground visual just below the body (the world has no ground and no gravity)
 DISPLAY_MARKER_SPACING_M = 2.0  # display only: reference posts every 2 m so motion is visible against the ground
 DISPLAY_MARKER_COUNT = 5  # display only: posts per side of the grid
 DISPLAY_GUI_START_S = 15.0  # harness value: the GUI loads its rendering engine before the real-time run starts
@@ -143,6 +146,10 @@ def display_world(text):
     rotors = re.findall(r'<rotor motor="(\d)">\s*<position_frd_m unit="m">([-\d.e]+) ([-\d.e]+) ([-\d.e]+)</position_frd_m>', text)
     assert len(rotors) == 4, rotors
     bx, by, bz = DISPLAY_BODY_M
+    # The ground visual sits at the ground height (<ground/>: the body's start height, the model pose's z) less half the body box,
+    # so the quad at rest there visibly stands on it (derived display value).
+    start_z = float(re.search(r'<model name="[^"]+">\s*<pose[^>]*>\s*\S+\s+\S+\s+(\S+)', text).group(1))
+    ground_z = start_z - bz / 2
     vis = [f"<visual name='body'><geometry><box><size>{bx} {by} {bz}</size></box></geometry>"
            "<material><ambient>0.15 0.15 0.15 1</ambient><diffuse>0.2 0.2 0.2 1</diffuse></material></visual>",
            f"<visual name='nose'><pose>{bx / 2} 0 0 0 0 0</pose><geometry><box><size>{bz} {bz} {bz}</size></box></geometry>"
@@ -167,7 +174,7 @@ def display_world(text):
             px, py = i * DISPLAY_MARKER_SPACING_M, j * DISPLAY_MARKER_SPACING_M
             posts.append(f"<visual name='post_{i}_{j}'><pose>{px} {py} 0.5 0 0 0</pose><geometry><cylinder><radius>0.03</radius>"
                          "<length>1.0</length></cylinder></geometry><material><diffuse>1 0.6 0 1</diffuse></material></visual>")
-    ground = ("<model name='display_ground'><static>true</static><pose>0 0 " f"{DISPLAY_GROUND_Z_M}" " 0 0 0</pose>"
+    ground = ("<model name='display_ground'><static>true</static><pose>0 0 " f"{ground_z}" " 0 0 0</pose>"
               "<link name='ground_link'><visual name='ground'><geometry><plane><normal>0 0 1</normal><size>40 40</size></plane>"
               "</geometry><material><ambient>0.3 0.45 0.3 1</ambient><diffuse>0.35 0.55 0.35 1</diffuse></material></visual>"
               + "".join(posts) + "</link></model>")
@@ -333,6 +340,12 @@ def analyse(stem, n, f, seconds, iterations, rc, wall_s, expect):
             z = [s["body_pos_ned"][2] for s in log["steps"]]
             L.append(f"body z NED over the run: {min(z):+.6f} .. {max(z):+.6f} m; applied DShot non-zero ticks "
                      f"{sum(1 for t in ticks if any(t['dshot']))}")
+        tds = log["touchdowns"]
+        if tds:
+            L.append(f"ground touchdowns {len(tds)} (tick: down / horizontal m/s, roll / pitch deg, hold released at tick): " +
+                     "; ".join(f"{d['tick']}: {d['down_speed_m_s']:.2f} / {d['horizontal_speed_m_s']:.2f}, "
+                               f"{math.degrees(d['roll_rad']):+.1f} / {math.degrees(d['pitch_rad']):+.1f}, {d['release_tick']}"
+                               for d in tds))
     else:
         L.append(f"gz log unreadable: {log_err}")
     up_faults = {k: getattr(up, k) for k in ("crc_failures", "bad_headers", "seq_gaps", "unframed_bytes") if getattr(up, k)}
@@ -417,7 +430,7 @@ def main(argv=None):
     values_crc = hil_compare.values_crc(hil_compare.load_table(PARAM_DEFAULTS))
     if not a.no_reset:
         reset_board(a.port)
-    stem, num, den, seed = world(out_dir, a.port, a.samples_per_record, a.delay_ticks, values_crc)
+    stem, num, den, seed = world(out_dir, a.port, a.samples_per_record, a.delay_ticks, values_crc, ground=a.expect == "none")
     if a.gui:
         sdf = Path(f"{stem}.sdf")
         sdf.write_text(display_world(sdf.read_text(encoding="utf-8")), encoding="utf-8")
