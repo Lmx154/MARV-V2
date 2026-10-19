@@ -19,7 +19,7 @@
   uv run python tools/gs/helper.py [--serial PATH [--baud N] | --udp PORT] [--port N] [--runs-dir DIR] [--build-root DIR]
                                    [--gcs-dir DIR] [--sil-udp-port N] [--sil-command CMD] [--reports-dir DIR]
                                    [--validate-command CMD] [--picotool PATH] [--extra-origin ORIGIN ...]
-                                   [--hil-command CMD] [--heavy-lock FILE] [--byid-dir DIR] [--no-autoconnect]
+                                   [--hil-command CMD] [--heavy-lock FILE] [--byid-dir DIR] [--no-autoconnect] [--board-serial SERIAL]
 
 Security. It binds 127.0.0.1 only. Every request must carry the Host `127.0.0.1:<port>`; an Origin header, when present, must
 be exactly `http://127.0.0.1:<port>` (the WebSocket requires it); and every request needs the per-session token (random, printed
@@ -127,7 +127,14 @@ CLIENT_QUEUE_MAX_BYTES = 4 << 20  # labelled harness value: bytes queued for a s
 SERIAL_GLOBS = ("/dev/ttyACM*", "/dev/ttyUSB*", "/dev/serial/by-id/*")
 WS_BUSY = 1013  # RFC 6455 section 7.4.2 "try again later"
 BYID_DIR = Path("/dev/serial/by-id")
-BOARD_LINK_GLOB = "usb-*-if02"  # the board's link CDC is USB interface 2 (fw/hal/target/CMakeLists.txt); the HIL image has one CDC and no such entry
+# A board's link interface is opened only when all three hold. The by-id name is the Pico SDK's product string with the link CDC,
+# USB interface 2 (fw/hal/target/CMakeLists.txt); sysfs says the device is 2e8a:0009 (Raspberry Pi's vendor ID and the Pico SDK CDC
+# product ID: fw/prim/include/marv/prim/constants.hpp kUsbVendorIdRaspberryPi, kUsbProductIdPicoSdkCdc) and the interface's string
+# is "MARV link" (tests/regression/quad/L10/results/usb/README.md, sysfs_after.txt). The HIL image has one CDC (not "MARV link").
+BOARD_LINK_GLOB = "usb-Raspberry_Pi_Pico_*-if02"
+BOARD_USB_ID = ("2e8a", "0009")
+BOARD_LINK_INTERFACE = "MARV link"
+SYSFS = Path("/sys")
 POLL_S = 0.5  # labelled harness value: the autoconnect and host-state poll period; SIL UDP is opened within one poll of the bind
 HOST_PUSH_POLLS = 4  # labelled harness value: a host_state event every this many polls (at once when the heavy-lock holder changes)
 VALIDATOR = ROOT / "tools" / "validate" / "validate_config.py"
@@ -153,7 +160,8 @@ class Helper:
     def __init__(self, *, runs_dir: Path, build_root: Path, gcs_dir: Path, sil_udp_port: int | None, token: str | None = None,
                  sil_command: list[str] | None = None, extra_origins: tuple[str, ...] = (), reports_dir: Path | None = None,
                  validate_command: list[str] | None = None, picotool: str | None = None, hil_command: list[str] | None = None,
-                 heavy_lock: Path | None = None, byid_dir: Path | None = None, autoconnect: bool = True, poll_s: float = POLL_S):
+                 heavy_lock: Path | None = None, byid_dir: Path | None = None, autoconnect: bool = True, poll_s: float = POLL_S,
+                 board_serial: str | None = None, sysfs_dir: Path | None = None):
         self.token = token or secrets.token_urlsafe(32)
         self.extra_origins = frozenset(extra_origins)
         self.build_root, self.gcs_dir = Path(build_root), Path(gcs_dir)
@@ -182,6 +190,8 @@ class Helper:
         self.heavy_lock = Path(heavy_lock) if heavy_lock is not None else None  # None: $MARV_HEAVY_LOCK or the default (hoststate.py)
         self.byid_dir = Path(byid_dir) if byid_dir is not None else BYID_DIR
         self.autoconnect_enabled = autoconnect
+        self.board_serial = board_serial  # when set, only the board with this USB serial string is opened
+        self.sysfs_dir = Path(sysfs_dir) if sysfs_dir is not None else SYSFS
         self.poll_s = poll_s
         self._ac_owner: str | None = None  # "sil" or "board" while the open device was opened by autoconnect
         self._ac_key: str | None = None
@@ -374,18 +384,34 @@ class Helper:
         self.log.event("autoconnect " + json.dumps({k: v for k, v in event.items() if k != "event"}))
         self._push(json.dumps(event))
 
+    def _read_sysfs(self, path: Path) -> str | None:
+        try:
+            return path.read_text(encoding="utf-8", errors="replace").strip()
+        except OSError:
+            return None
+
     def board_links(self) -> list[str]:
-        """The by-id entries of a board's link interface (-if02), sorted. An entry without that suffix (the HIL image's single CDC,
-        the console) is never listed, and neither is one whose target is not a device node under /dev."""
+        """The by-id entries of a board's link interface, sorted. An entry is listed only when its name is BOARD_LINK_GLOB (and, with
+        --board-serial, carries that serial), its target is a tty device node under /dev, and sysfs gives that tty's USB device
+        BOARD_USB_ID and its interface the string BOARD_LINK_INTERFACE. Anything else (another vendor's composite device, a Pico
+        running other firmware, the HIL image's single CDC, the console interface) is never listed."""
         try:
             names = sorted(os.listdir(self.byid_dir))
         except OSError:
             return []
         out = []
         for name in names:
+            if not fnmatch.fnmatchcase(name, BOARD_LINK_GLOB):
+                continue
+            if self.board_serial is not None and name != f"usb-Raspberry_Pi_Pico_{self.board_serial}-if02":
+                continue
             path = os.path.join(self.byid_dir, name)
             real = os.path.realpath(path)
-            if fnmatch.fnmatchcase(name, BOARD_LINK_GLOB) and real.startswith("/dev/") and os.path.exists(real):
+            if not (real.startswith("/dev/") and os.path.exists(real)):
+                continue
+            interface = Path(os.path.realpath(self.sysfs_dir / "class" / "tty" / os.path.basename(real) / "device"))
+            usb_id = (self._read_sysfs(interface.parent / "idVendor"), self._read_sysfs(interface.parent / "idProduct"))
+            if usb_id == BOARD_USB_ID and self._read_sysfs(interface / "interface") == BOARD_LINK_INTERFACE:
                 out.append(path)
         return out
 
@@ -889,7 +915,8 @@ async def run(args: argparse.Namespace) -> int:
                     reports_dir=args.reports_dir,
                     validate_command=shlex.split(args.validate_command) if args.validate_command else None,
                     picotool=args.picotool, hil_command=shlex.split(args.hil_command) if args.hil_command else None,
-                    heavy_lock=args.heavy_lock, byid_dir=args.byid_dir, autoconnect=not args.no_autoconnect)
+                    heavy_lock=args.heavy_lock, byid_dir=args.byid_dir, autoconnect=not args.no_autoconnect,
+                    board_serial=args.board_serial)
     await helper.start(args.port)
     try:
         if args.serial:
@@ -942,6 +969,8 @@ def parse_args(argv=None) -> argparse.Namespace:
                     help="the heavy-lock file (default $MARV_HEAVY_LOCK, else %s; ci/heavy.sh takes the same lock)" % hoststate.HEAVY_LOCK_DEFAULT)
     ap.add_argument("--byid-dir", type=Path, default=None,
                     help=f"the directory the board watcher scans for link interfaces (default {BYID_DIR}); also the root of a HIL run's port")
+    ap.add_argument("--board-serial", default=None, metavar="SERIAL",
+                    help="autoconnect opens only the board whose USB serial string is SERIAL (default: any board that passes the checks)")
     ap.add_argument("--no-autoconnect", action="store_true", help="do not open the SIL's UDP link or a board's link interface by itself")
     ap.add_argument("--picotool", help=f"the picotool executable the flash runs (default $MARV_PICOTOOL, else `{flash.PICOTOOL}` on PATH)")
     ap.add_argument("--extra-origin", action="append", default=[], type=origin_arg, metavar="ORIGIN",

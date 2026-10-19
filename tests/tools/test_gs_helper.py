@@ -44,7 +44,8 @@ def run_with_helper(tmp_path, body, *, build_root=None, gcs_dir=None, sil_comman
         h = helper_mod.Helper(runs_dir=tmp_path / "runs", build_root=build_root or tmp_path / "build",
                               gcs_dir=gcs_dir or tmp_path / "gcs", sil_udp_port=sil_udp_port, sil_command=sil_command, extra_origins=extra_origins,
                               reports_dir=tmp_path / "reports", validate_command=validate_command, picotool=picotool,
-                              **{"heavy_lock": tmp_path / "heavy.lock", "byid_dir": tmp_path / "by-id", **helper_kwargs})
+                              **{"heavy_lock": tmp_path / "heavy.lock", "byid_dir": tmp_path / "by-id", "sysfs_dir": tmp_path / "sys",
+                                 **helper_kwargs})
         h.flash_timing = flash_timing or {}
         await h.start(0)
         try:
@@ -1251,13 +1252,26 @@ def alive(pid):
     return True
 
 
-def fake_board(tmp_path, name):
-    """A pty standing in for a board's CDC, linked under tmp/by-id/<name>; returns (path of the link, the fds to keep open)."""
+def fake_board(tmp_path, name, usb_id=("2e8a", "0009"), interface="MARV link", sysfs=True):
+    """A pty standing in for a board's CDC, linked under tmp/by-id/<name>, with a fake sysfs (tmp/sys) giving its USB device the
+    vendor:product `usb_id` and its interface the string `interface`; returns (path of the link, the fds to keep open)."""
     master, slave = os.openpty()
     by_id = tmp_path / "by-id"
     by_id.mkdir(exist_ok=True)
     link = by_id / name
-    link.symlink_to(os.ttyname(slave))
+    tty = os.ttyname(slave)
+    if not sysfs:  # a device the sysfs cannot vouch for
+        link.symlink_to(tty)
+        return str(link), (master, slave)
+    usb = tmp_path / "sys" / "devices" / f"usb-{os.path.basename(tty)}"
+    (usb / "1-1:1.2").mkdir(parents=True)
+    (usb / "idVendor").write_text(usb_id[0] + "\n")
+    (usb / "idProduct").write_text(usb_id[1] + "\n")
+    (usb / "1-1:1.2" / "interface").write_text(interface + "\n")
+    tty_dir = tmp_path / "sys" / "class" / "tty" / os.path.basename(tty)
+    tty_dir.mkdir(parents=True)
+    (tty_dir / "device").symlink_to(usb / "1-1:1.2")
+    link.symlink_to(tty)  # last: the watcher sees the by-id entry only once sysfs is complete
     return str(link), (master, slave)
 
 
@@ -1339,6 +1353,39 @@ def test_dev_check_and_local_ci_take_the_heavy_lock_and_stop_when_it_is_held(tmp
         assert "##### smoke" not in done.stdout
     finally:
         release_heavy(holder)
+
+
+def test_dev_check_and_local_ci_re_exec_from_any_directory_and_a_stale_held_variable_counts_for_nothing(tmp_path):
+    """dev_check.sh run as `cd ci && ./dev_check.sh` finds heavy.sh and itself again (a copy in a scratch tree, with a stub smoke test)."""
+    fake = tmp_path / "fake"
+    (fake / "ci").mkdir(parents=True)
+    for name in ("dev_check.sh", "heavy.sh", "local_ci.sh"):
+        (fake / "ci" / name).write_text((ROOT / "ci" / name).read_text())
+        (fake / "ci" / name).chmod(0o755)
+    (fake / "ci" / "smoke.sh").write_text('echo "SMOKE-RAN held=$MARV_HEAVY_HELD"\nexit 0\n')
+    (fake / "ci" / "smoke.sh").chmod(0o755)
+    lock = tmp_path / "heavy.lock"
+    env = {**os.environ, "MARV_HEAVY_LOCK": str(lock)}
+    env.pop("MARV_HEAVY_HELD", None)
+    for cwd, command in ((fake / "ci", ["./dev_check.sh"]), (tmp_path, ["bash", str(fake / "ci" / "dev_check.sh")]),
+                         (fake / "ci", ["bash", "../ci/dev_check.sh"])):
+        done = subprocess.run(command, cwd=cwd, env=env, capture_output=True, text=True, timeout=TIMEOUT_S)
+        assert f"SMOKE-RAN held={lock}" in done.stdout, (cwd, command, done.stdout, done.stderr)
+    # a variable left over in a shell whose lock is gone is not re-entry: the script takes the lock itself
+    stale = {**env, "MARV_HEAVY_HELD": str(lock)}
+    done = subprocess.run(["./dev_check.sh"], cwd=fake / "ci", env=stale, capture_output=True, text=True, timeout=TIMEOUT_S)
+    assert f"SMOKE-RAN held={lock}" in done.stdout and "cmd=" in lock.read_text()  # heavy.sh wrote its holder line: it took the lock
+    assert heavy_run(tmp_path, "--held", env={"MARV_HEAVY_HELD": str(lock)}).returncode == 1
+    holder = hold_heavy(tmp_path)
+    try:
+        assert heavy_run(tmp_path, "--held", env={"MARV_HEAVY_HELD": str(lock)}).returncode == 0  # really held: re-entry counts
+        assert heavy_run(tmp_path, "--held").returncode == 1  # no variable: not an ancestor's lock
+        done = subprocess.run(["./local_ci.sh", "--bogus"], cwd=fake / "ci", env=env, capture_output=True, text=True, timeout=TIMEOUT_S)
+        assert done.returncode == 75  # the lock is held by someone else: stopped before the usage check
+    finally:
+        release_heavy(holder)
+    done = subprocess.run(["./local_ci.sh", "--bogus"], cwd=fake / "ci", env=env, capture_output=True, text=True, timeout=TIMEOUT_S)
+    assert done.returncode == 2 and "usage:" in done.stderr  # re-exec'd from another directory and reached its own argument check
 
 
 def test_host_state_has_load_memory_and_the_heavy_lock_holder(tmp_path):
@@ -1443,7 +1490,7 @@ def test_a_run_that_ends_by_itself_is_run_exited_and_a_new_run_may_start(tmp_pat
 def test_hil_run_is_a_process_group_that_stop_empties_and_it_owns_the_board_port(tmp_path):
     marker = tmp_path / "child.pid"
     port, keep = fake_board(tmp_path, "usb-Fake_Board_1-if00")
-    link, keep2 = fake_board(tmp_path, "usb-Fake_Board_1-if02")
+    link, keep2 = fake_board(tmp_path, "usb-Raspberry_Pi_Pico_FAKE1-if02")
     pids = {}
 
     async def body(h):
@@ -1496,7 +1543,7 @@ def test_two_sims_are_refused_in_either_order(tmp_path):
 
 def test_hil_is_refused_while_the_helper_has_a_serial_port_open(tmp_path):
     port, keep = fake_board(tmp_path, "usb-Fake_Board_1-if00")
-    link, keep2 = fake_board(tmp_path, "usb-Fake_Board_1-if02")
+    link, keep2 = fake_board(tmp_path, "usb-Raspberry_Pi_Pico_FAKE1-if02")
     ran = tmp_path / "hil.ran"
 
     async def body(h):
@@ -1766,10 +1813,10 @@ def test_board_watcher_opens_only_the_link_interface_and_never_a_board_without_o
             keep.extend(k)
             _, k = fake_board(tmp_path, "usb-Fake_HIL_2-if00")
             keep.extend(k)
-            (tmp_path / "by-id" / "usb-Fake_File_3-if02").symlink_to(tmp_path)
+            (tmp_path / "by-id" / "usb-Raspberry_Pi_Pico_FAKE3-if02").symlink_to(tmp_path)
             await asyncio.sleep(POLL_S * 5)
             assert h.device is None and not s.seen("autoconnect", state="opened")
-            link, k = fake_board(tmp_path, "usb-Fake_Board_1-if02")
+            link, k = fake_board(tmp_path, "usb-Raspberry_Pi_Pico_FAKE1-if02")
             keep.extend(k)
             opened = await s.wait_event("autoconnect", state="opened", source="board")
             assert opened["device"] == f"serial {link} 115200" and h.device.path == link
@@ -1786,6 +1833,57 @@ def test_board_watcher_opens_only_the_link_interface_and_never_a_board_without_o
             os.close(fd)
 
 
+def test_board_watcher_opens_a_device_only_when_name_usb_id_and_interface_string_all_match(tmp_path):
+    keep = []
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            for name, kwargs in [("usb-FTDI_X-if02", {}),  # another vendor's composite device that claims the right sysfs strings
+                                 ("usb-Raspberry_Pi_Pico_NOTLINK-if02", dict(interface="Board CDC")),  # a Pico with other firmware
+                                 ("usb-Raspberry_Pi_Pico_OTHERID-if02", dict(usb_id=("0403", "6001"))),  # right name and string, wrong ID
+                                 ("usb-Raspberry_Pi_Pico_OTHERPID-if02", dict(usb_id=("2e8a", "000c"))),
+                                 ("usb-Raspberry_Pi_Pico_CONSOLE-if00", {})]:  # the console interface
+                _, k = fake_board(tmp_path, name, **kwargs)
+                keep.extend(k)
+            _, k = fake_board(tmp_path, "usb-Raspberry_Pi_Pico_NOSYSFS-if02", sysfs=False)  # unverifiable: not opened
+            keep.extend(k)
+            await asyncio.sleep(POLL_S * 6)
+            assert h.device is None and not s.seen("autoconnect", state="opened") and h.board_links() == []
+            good, k = fake_board(tmp_path, "usb-Raspberry_Pi_Pico_GOOD-if02")  # control: all three hold
+            keep.extend(k)
+            assert h.board_links() == [good]
+            await s.wait_event("autoconnect", state="opened", source="board")
+            assert h.device.path == good
+            s.close()
+    try:
+        run_with_helper(tmp_path, body, poll_s=POLL_S)
+    finally:
+        for fd in keep:
+            os.close(fd)
+
+
+def test_board_serial_filter_opens_only_that_board(tmp_path):
+    keep = []
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            other, k = fake_board(tmp_path, "usb-Raspberry_Pi_Pico_AAAA-if02")
+            keep.extend(k)
+            wanted, k = fake_board(tmp_path, "usb-Raspberry_Pi_Pico_BBBB-if02")
+            keep.extend(k)
+            assert h.board_links() == [wanted]
+            await s.wait_event("autoconnect", state="opened", source="board")
+            assert h.device.path == wanted
+            s.close()
+    try:
+        run_with_helper(tmp_path, body, poll_s=POLL_S, board_serial="BBBB")
+    finally:
+        for fd in keep:
+            os.close(fd)
+
+
 def test_board_watcher_reports_a_board_it_cannot_open_once_and_opens_it_when_it_can(tmp_path):
     import fcntl
     keep = []
@@ -1793,7 +1891,7 @@ def test_board_watcher_reports_a_board_it_cannot_open_once_and_opens_it_when_it_
     async def body(h):
         async with ws_connect(h) as ws:
             s = Session(ws)
-            link, k = fake_board(tmp_path, "usb-Fake_Board_1-if02")
+            link, k = fake_board(tmp_path, "usb-Raspberry_Pi_Pico_FAKE1-if02")
             keep.extend(k)
             other_fd = os.open(os.path.realpath(link), os.O_RDWR | os.O_NOCTTY)
             fcntl.flock(other_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # held elsewhere: the helper's own flock fails
@@ -1820,7 +1918,7 @@ def test_board_autoconnect_is_suspended_during_a_hil_run_and_a_flash(tmp_path):
             port, keep_p = fake_board(tmp_path, "usb-Fake_HIL_2-if00")
             assert (await s.cmd(cmd="run_start", kind="hil", port=port))["ok"]
             await s.wait_event("autoconnect", state="suspended")
-            link, keep_l = fake_board(tmp_path, "usb-Fake_Board_1-if02")
+            link, keep_l = fake_board(tmp_path, "usb-Raspberry_Pi_Pico_FAKE1-if02")
             await asyncio.sleep(POLL_S * 5)
             assert h.device is None and not s.seen("autoconnect", state="opened")  # a link interface appeared; the run owns the bus
             assert (await s.cmd(cmd="run_stop"))["ok"]
@@ -1831,7 +1929,7 @@ def test_board_autoconnect_is_suspended_during_a_hil_run_and_a_flash(tmp_path):
             h._flash_task = asyncio.create_task(asyncio.sleep(600))
             await s.wait_event("autoconnect", state="suspended")
             os.unlink(link)
-            link2, keep_l2 = fake_board(tmp_path, "usb-Fake_Board_9-if02")
+            link2, keep_l2 = fake_board(tmp_path, "usb-Raspberry_Pi_Pico_FAKE9-if02")
             await asyncio.sleep(POLL_S * 5)
             assert h.device is None
             h._flash_task.cancel()
@@ -1924,7 +2022,7 @@ def test_every_close_path_pushes_device_closed(tmp_path):
             assert (await s.wait_event("device_closed"))["reason"] == "closed by request"
             assert (await s.cmd(cmd="close"))["ok"] and not s.seen("device_closed")  # nothing open: nothing closed
             # the device ending by itself (the pty's far end goes away)
-            link, k = fake_board(tmp_path, "usb-Fake_Board_1-if02")
+            link, k = fake_board(tmp_path, "usb-Raspberry_Pi_Pico_FAKE1-if02")
             keep.extend(k)
             await h.open_serial(link, 115200, from_browser=False)
             os.close(k[0])

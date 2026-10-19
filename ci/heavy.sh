@@ -4,15 +4,20 @@
 # (tools/gs, ground-segment unit GX-1) refuses to launch a run while it is held.
 #
 # Usage: ci/heavy.sh [--wait SECONDS] [--] command [args...]   run the command holding the lock
+#        ci/heavy.sh --held                                     exit 0 iff MARV_HEAVY_HELD names this lock and it is really held
 #        ci/heavy.sh --status                                   exit 0 and print "free" if nobody holds it, else exit 75 and print
 #                                                               the holder line
 # The lock is one flock(2) lock on $MARV_HEAVY_LOCK (default /tmp/marv-heavy.lock; tools/gs/hoststate.py has the same default).
+# The default is a fixed path in the world-writable /tmp on purpose: the lock is host-wide and every checkout and shell must agree
+# on it. That assumes ONE user on this machine; on a shared host set MARV_HEAVY_LOCK to a private path (in this script, the
+# helper and every shell that uses either).
 # It is held by this script's own shell, not by the command's descendants: a daemon the command leaves behind does not keep it.
 # --wait SECONDS: wait that long for a holder to finish (default HEAVY_PROBE_WAIT_S: long enough to ride out the helper's probe).
 # While held, the lock file holds one line: "pid=<pid> user=<user> since=<UTC> cmd=<command>". It is stale text when the lock is
 # free; only the lock says whether it is held. Exit 75 (EX_TEMPFAIL) when the lock is not obtained; the command's own status
-# otherwise. Re-entrant: the command (MARV_HEAVY_HELD is the lock path) runs without taking it again, so dev_check.sh may be run
-# under heavy.sh.
+# otherwise. Re-entrant: when MARV_HEAVY_HELD is this lock's path AND the lock is really held (a probe with flock -n -s fails), the
+# command runs without taking it again, so dev_check.sh may be run under heavy.sh; a stale variable in a shell that has outlived
+# its lock counts for nothing.
 set -euo pipefail
 
 lock="${MARV_HEAVY_LOCK:-/tmp/marv-heavy.lock}"
@@ -30,8 +35,17 @@ holder_line() {
   echo "${text:-unknown holder}"
 }
 
+held_by_ancestor() {
+  [[ "${MARV_HEAVY_HELD:-}" == "${lock}" && -e "${lock}" ]] && ! (exec 9<"${lock}" && flock -n -s 9)
+}
+
 while (($# > 0)); do
   case "$1" in
+    --held)
+      (($# == 1)) || usage
+      held_by_ancestor
+      exit $?
+      ;;
     --status)
       (($# == 1)) || usage
       if [[ -e "${lock}" ]] && ! (exec 9<"${lock}" && flock -n -s 9); then
@@ -57,7 +71,7 @@ while (($# > 0)); do
 done
 (($# > 0)) || usage
 
-if [[ "${MARV_HEAVY_HELD:-}" == "${lock}" ]]; then
+if held_by_ancestor; then
   exec "$@"
 fi
 

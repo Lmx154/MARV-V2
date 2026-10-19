@@ -35,9 +35,9 @@ export MARV_CI_MODE="${MARV_CI_MODE:-full}"
 
 # One heavy job at a time on this host (ci/heavy.sh): take the lock, or stop here when someone holds it (before the arguments
 # are consumed, so the command is re-run whole).
-if [[ "${MARV_HEAVY_HELD:-}" != "${MARV_HEAVY_LOCK:-/tmp/marv-heavy.lock}" ]]; then
-  cd "$(dirname "${BASH_SOURCE[0]}")/.."
-  exec bash ci/heavy.sh -- bash ci/local_ci.sh "$@"
+self="$(readlink -f "${BASH_SOURCE[0]}")"
+if ! bash "$(dirname "${self}")/heavy.sh" --held; then
+  exec bash "$(dirname "${self}")/heavy.sh" -- bash "${self}" "$@"
 fi
 
 usage() {

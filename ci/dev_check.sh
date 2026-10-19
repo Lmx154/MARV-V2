@@ -7,7 +7,8 @@
 # The selection comes from ci/affected.py and the map ci/blast_radius.yaml. A path the map does not know selects
 # everything, so the check never silently skips.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+self="$(readlink -f "${BASH_SOURCE[0]}")"
+cd "$(dirname "${self}")/.."
 
 base_args=()
 if (($# > 0)); then
@@ -19,8 +20,8 @@ if (($# > 0)); then
 fi
 
 # One heavy job at a time on this host (ci/heavy.sh): take the lock, or stop here when someone holds it.
-if [[ "${MARV_HEAVY_HELD:-}" != "${MARV_HEAVY_LOCK:-/tmp/marv-heavy.lock}" ]]; then
-  exec bash ci/heavy.sh -- bash "${BASH_SOURCE[0]}" "$@"
+if ! bash ci/heavy.sh --held; then
+  exec bash ci/heavy.sh -- bash "${self}" "$@"
 fi
 
 started="${SECONDS}"
