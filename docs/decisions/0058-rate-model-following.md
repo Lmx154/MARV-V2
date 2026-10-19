@@ -18,7 +18,7 @@
    composite does not follow its model: t63 is 371 ms against a tau_ref of 211 ms. Under model following, the achievable time
    constant is the band's slowest motor lag plus the loop delay. The feed-forward depends on the setpoint path only, so the
    feedback loop and QF-3 are unchanged.
-4. **Proposed spec sentence** for the QF-2 rule (Luis applies it; the spec is not edited here): "With the reference
+4. **Spec sentence** for the QF-2 rule, applied to quad spec §QF-2 (Luis, 2026-10-19, AskUserQuestion: "Apply (Recommended)"): "With the reference
    feed-forward on (model following), the achievable time constant is τ_m(1 + b_τ) plus the loop delay; without it, it is the
    closed-loop t63."
 5. **Frozen files edited.** Tests were added and nothing was loosened. The product table gained one row, with later ids
