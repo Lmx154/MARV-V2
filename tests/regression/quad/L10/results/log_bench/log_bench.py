@@ -3,6 +3,7 @@
 
   log_bench.py run  --seconds N --out FILE.mlog [--console DEV] [--link DEV]   log N seconds, stop, wait for the file to close, pull it
   log_bench.py pull --index I --out FILE.mlog [--console DEV] [--link DEV]     pull file I (the card's /marv/log/0000000I.mlog)
+  both take --dump-timeout S (seconds allowed for the dump, default 300; the soak's 567 MB needs about 1600 s at the measured 0.37 MB/s)
 
 `run` sends `log start` (the vehicle is not armed; the image's bench trigger logs without arming), waits N seconds, sends `log stop`, waits
 for the logger to leave PostRoll (the end record is written and the file truncated to its used bytes), then sends `log dump <index>`:
@@ -80,7 +81,7 @@ class Bench:
         os.close(self.lnk)
 
 
-def pull(b: Bench, index: int, out: Path) -> bool:
+def pull(b: Bench, index: int, out: Path, dump_timeout_s: float = DUMP_TIMEOUT_S) -> bool:
     mark = len(b.text)
     b.pending_link.clear()
     b.send(f"log dump {index}")
@@ -89,7 +90,7 @@ def pull(b: Bench, index: int, out: Path) -> bool:
         print("pull: no START from the image:", m.group(0) if m else "(no answer)", file=sys.stderr)
         return False
     want = int(m.group(2))
-    end = time.time() + DUMP_TIMEOUT_S
+    end = time.time() + dump_timeout_s
     while len(b.pending_link) < want and time.time() < end:
         b.pump(0.5)
     out.write_bytes(bytes(b.pending_link[:want]))
@@ -98,7 +99,7 @@ def pull(b: Bench, index: int, out: Path) -> bool:
     return len(b.pending_link) >= want and done is not None and done.group(1) == "DONE"
 
 
-def run(b: Bench, seconds: float, out: Path) -> bool:
+def run(b: Bench, seconds: float, out: Path, dump_timeout_s: float = DUMP_TIMEOUT_S) -> bool:
     b.pump(1.0)
     mark = len(b.text)
     b.send("log start")
@@ -119,7 +120,7 @@ def run(b: Bench, seconds: float, out: Path) -> bool:
         return False
     print("run:", t.group(0))
     print("run:", h.group(0))
-    return pull(b, int(t.group(2)), out)
+    return pull(b, int(t.group(2)), out, dump_timeout_s)
 
 
 def main() -> int:
@@ -130,17 +131,18 @@ def main() -> int:
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--console", default=CONSOLE)
     ap.add_argument("--link", default=LINK)
+    ap.add_argument("--dump-timeout", type=float, default=DUMP_TIMEOUT_S)
     a = ap.parse_args()
     b = Bench(a.console, a.link, a.out.with_suffix(".console.log"))
     try:
         if a.verb == "run":
             if a.seconds is None:
                 ap.error("run needs --seconds")
-            ok = run(b, a.seconds, a.out)
+            ok = run(b, a.seconds, a.out, a.dump_timeout)
         else:
             if a.index is None:
                 ap.error("pull needs --index")
-            ok = pull(b, a.index, a.out)
+            ok = pull(b, a.index, a.out, a.dump_timeout)
     finally:
         b.close()
     return 0 if ok else 1
