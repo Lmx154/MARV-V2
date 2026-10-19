@@ -50,9 +50,10 @@ bool SectorFramer::append(std::span<const std::uint8_t> record, ChunkSink& sink)
     if (fill_ == kSectorPayloadBytes) {
       finish_sector();
       if (staged_ * kSectorBytes >= staging_.size()) {
-        const bool ok = sink.write_chunk(staging_.first(staged_ * kSectorBytes));
+        const std::size_t sectors = staged_;
         staged_ = 0;
-        if (!ok) {
+        if (!sink.write_chunk(staging_.first(sectors * kSectorBytes))) {
+          seq_ -= static_cast<std::uint32_t>(sectors);  // the refused sectors never reached the card: the file has no hole
           failed_ = true;
           clear_open();
           return false;
@@ -74,6 +75,9 @@ bool SectorFramer::flush(ChunkSink& sink) noexcept {
   bool ok = true;
   if (staged_ > 0) {
     ok = sink.write_chunk(staging_.first(staged_ * kSectorBytes));
+    if (!ok) {
+      seq_ -= static_cast<std::uint32_t>(staged_);
+    }
     staged_ = 0;
   }
   clear_open();

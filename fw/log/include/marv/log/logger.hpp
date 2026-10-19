@@ -59,6 +59,7 @@ class Logger final : private ChunkSink {
  private:
   bool write_chunk(std::span<const std::uint8_t> chunk) noexcept override;
 
+  [[nodiscard]] bool append(std::span<const std::uint8_t> record) noexcept;
   void try_open(TimeUs now) noexcept;
   void start_logging(TimeUs now) noexcept;
   void pump(TimeUs now) noexcept;

@@ -40,7 +40,7 @@ class SectorFramer {
   void discard_staged() noexcept;
 
   [[nodiscard]] bool failed() const noexcept { return failed_; }
-  // Sectors completed since begin (handed over or staged).
+  // Sectors completed since begin that reached the sink or are staged (a refused chunk's sectors are taken back).
   [[nodiscard]] std::uint32_t next_sequence() const noexcept { return seq_; }
   [[nodiscard]] std::size_t staging_bytes() const noexcept { return staging_.size(); }
   // Sectors currently staged and complete (not including the open one).

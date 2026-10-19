@@ -4,9 +4,18 @@
 
 namespace marv::log {
 
+bool Logger::append(std::span<const std::uint8_t> record) noexcept {
+  // Stop at a record boundary while two chunks of the region are still free: one for the chunk being filled, one for the End
+  // record and the padding of the last sector. So a full file ends on whole records and the End record always fits.
+  if (!finalizing_ && bytes_written_ + 2 * framer_.staging_bytes() + record.size() > capacity_) {
+    full_ = true;
+    return false;
+  }
+  return framer_.append(record, *this);
+}
+
 bool Logger::write_chunk(std::span<const std::uint8_t> chunk) noexcept {
-  const std::uint64_t reserve = finalizing_ ? 0 : framer_.staging_bytes();
-  if (bytes_written_ + chunk.size() + reserve > capacity_) {
+  if (bytes_written_ + chunk.size() > capacity_) {
     full_ = true;
     return false;
   }
@@ -80,7 +89,7 @@ void Logger::write_status(TimeUs now) noexcept {
   for (std::size_t i = 0; i < kStatusFields; ++i) {
     put<std::uint32_t>(r, status::kOffCounters + i * sizeof(std::uint32_t), counters_[i]);
   }
-  if (!framer_.append(r, *this)) {
+  if (!append(r)) {
     on_sink_failure();
   }
 }
@@ -100,7 +109,7 @@ void Logger::write_telemetry(TimeUs now) noexcept {
   put<std::uint16_t>(r, kLeadOffLength, static_cast<std::uint16_t>(len));
   put<std::uint32_t>(r, telemetry::kOffTime, low32(now));
   bump(StatusField::TelemetryRecords);
-  if (!framer_.append(std::span<const std::uint8_t>{r}.first(len), *this)) {
+  if (!append(std::span<const std::uint8_t>{r}.first(len))) {
     on_sink_failure();
   }
 }
@@ -112,7 +121,7 @@ void Logger::pump(TimeUs now) noexcept {
     if (n == 0) {
       break;
     }
-    if (!framer_.append(std::span<const std::uint8_t>{rec}.first(n), *this)) {
+    if (!append(std::span<const std::uint8_t>{rec}.first(n))) {
       on_sink_failure();
       return;
     }
@@ -136,7 +145,9 @@ void Logger::on_sink_failure() noexcept {
     return;
   }
   state_ = LoggerState::Full;
-  framer_.discard_staged();
+  if (framer_.failed()) {
+    framer_.discard_staged();  // a chunk was refused for want of room: the sectors it held are gone
+  }
   finalizing_ = true;
   write_end(now_, EndReason::Full);
 }
