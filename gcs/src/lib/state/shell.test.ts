@@ -239,9 +239,9 @@ describe('computeBar: contents', () => {
 });
 
 describe('the pages', () => {
-	it('has the connection, vehicle, simulation, parameters and flash pages and the placeholders, each with a unit when not built', () => {
+	it('has the connection, vehicle, simulation, radio, parameters and flash pages and the placeholders, each with a unit when not built', () => {
 		expect(ROUTES.map((r) => r.path)).toEqual(['/', '/vehicle', '/simulation', '/radio', '/params', '/flash', '/bench', '/logs', '/flight-prep']);
-		expect(ROUTES.filter((r) => r.unit === null).map((r) => r.path)).toEqual(['/', '/vehicle', '/simulation', '/params', '/flash']);
+		expect(ROUTES.filter((r) => r.unit === null).map((r) => r.path)).toEqual(['/', '/vehicle', '/simulation', '/radio', '/params', '/flash']);
 	});
 
 	it('finds a route from a pathname with a trailing slash or a .html suffix', () => {

@@ -93,24 +93,14 @@ if [[ "${mode}" == light ]]; then
     sleep 0.1
   done
   grep -q '^fake vehicle on' "${work}/vehicle.log" || { cat "${work}/vehicle.log"; echo "the fake vehicle did not start" >&2; exit 1; }
-  # A library of one stand-in SIL image (an empty file) with a small parameter manifest in the build tree the helper checks SIL
-  # overrides against (tools/sim/sil_run.py), so that the Simulation page lists parameters and the helper validates its overrides; the
+  # A library of one stand-in SIL image (an empty file) with the fake vehicle's own parameter manifest (its schema hash and parameters,
+  # so that the parameter rows of the Parameters and Radio pages match it) in the build tree the helper checks SIL overrides against (tools/sim/sil_run.py), so that the Simulation page lists parameters and the helper validates its overrides; the
   # run itself is the stand-in command `sleep` (no simulator), and the fake vehicle already holds the run's UDP port, which is what the
   # helper's autoconnect waits for. The run_start / run_stop answers are the helper's own; only the simulator is replaced.
   gz_tree="${work}/build-root/host-gz-quadfc"
   mkdir -p "${gz_tree}/sim/quad_fc" "${gz_tree}/generated/marv_params_fc3v2/marv/params"
   : >"${gz_tree}/sim/quad_fc/libmarv_sil_quad_fc.so"
-  uv run python - "${gz_tree}/generated/marv_params_fc3v2/marv/params/params_manifest.json" <<'PY'
-import json, sys
-names = (("att_kp", "f32", False), ("rate_kp_roll", "f32", False), ("rc_channel_roll", "i32", False), ("rc_channel_arm", "i32", True))
-params = {
-    name: {"id": i, "type": kind, "unit": "1", "link_id": name, "lock": locked, "default_bits": "0x00000001", "method": "scenario",
-           "sigma_kind": "Choice", "sigma": 0.0, "sigma_bits": "0x00000000", "origin": "DefaultFromCard", "source": "stand-in of the GCS e2e",
-           "source_file": "e2e.sh"}
-    for i, (name, kind, locked) in enumerate(names)
-}
-json.dump({"schema_hash": "0x00000000000000e2", "count": len(params), "params": params}, open(sys.argv[1], "w"))
-PY
+  uv run python tools/gs/e2e_fake_vehicle.py --manifest-out "${gz_tree}/generated/marv_params_fc3v2/marv/params/params_manifest.json"
   helper_args+=(--build-root "${work}/build-root" --sil-command "sleep ${STAND_IN_SECONDS}")
 fi
 

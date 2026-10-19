@@ -13,13 +13,21 @@ the source text read in chunks; the telemetry streams of the live view (SET_MESS
 streams at the interval asked, at most one message per receive wait; the values are a slow harness motion, not a model). PARAM_VALUE carries the raw 32 bits of the value (the version advertises bytewise encoding).
 Values are chosen so that no bit pattern is a NaN. Config commands are answered "unavailable".
 
+The radio (GX-7): its parameters are the register's channel map (rc_channel_* = 1 2 3 4 roll to yaw, arm 5, angle 8) and thresholds, a
+write of a channel parameter that would make the stick, arm and angle channels not pairwise distinct (rule R-1) is refused as the
+vehicle's composition validate refuses it, and a parameter's source text can be written (MARV_PARAM_SOURCE set). The RC stream moves
+channel 1 by a small swing (below a switch's travel) and channel 14 as a switch (down, then up, every RC_SWITCH_PERIOD_S): the
+radio that sends its angle switch on a channel the parameters do not name.
+
   uv run python tools/gs/e2e_fake_vehicle.py --udp-port N --defs-dir DIR [--heartbeat-s S]
+  uv run python tools/gs/e2e_fake_vehicle.py --manifest-out FILE      (the parameter manifest of this vehicle, for the image library)
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import math
 import importlib.util
 import signal
@@ -47,11 +55,15 @@ STREAMS = {1: "sys_status", 30: "attitude", 31: "attitude_quaternion", 65: "rc_c
 # Harness values of the fake motion: the angle swing (rad), its period (s), the stick centre and half span (us) and the DShot swing.
 SWING_RAD, SWING_PERIOD_S = 0.3, 6.0
 RC_CENTRE_US, RC_HALF_SPAN_US = 1500, 512
+# The fake radio (GX-7), harness values: channel 1 swings by RC_SWING_US (less than a switch's travel), channel 14 is a switch that goes down
+# and up every RC_SWITCH_PERIOD_S, the throttle (3), the arm switch (5) and the angle switch (8) rest at the low end of the range.
+RC_SWING_US, RC_SWITCH_PERIOD_S, RC_SWITCH_CHANNEL = 100, 8.0, 14
+RC_LOW_US, RC_HIGH_US = 988, 2012
 DSHOT_BASE, DSHOT_SWING = 1000, 200
 MSG_AUTOPILOT_VERSION, MSG_MARV_IDENTITY = 148, 15200
 CAPABILITY_PARAM_ENCODE_BYTEWISE = 16
 TYPE_INT32, TYPE_REAL32 = 6, 9
-SOURCE_OP_READ, SOURCE_OP_DATA = 0, 1
+SOURCE_OP_READ, SOURCE_OP_DATA, SOURCE_OP_SET = 0, 1, 2
 RESULT_DENIED_UNAVAILABLE = 4
 SEVERITY_WARNING = 4
 
@@ -61,11 +73,35 @@ CONFIG_TEXT = "marv-e2e-fake-config"
 SCHEMA_HASH = 0x0123456789ABCDEF
 
 # (link id, type, raw value bits, locked, source text). Each bit pattern is a finite float or a small integer.
+def _f32(value: float) -> int:
+    return struct.unpack("<I", struct.pack("<f", value))[0]
+
+
+FAKE = "fake vehicle of the GCS e2e test"
+# The thresholds are the register's 1700 us: (1700 - 1500) / 512 (fw quad_fc_register.yaml arm_switch_threshold).
+SWITCH_THRESHOLD = (1700 - 1500) / 512
 PARAMS = (
-    ("E2E_ATT_KP", TYPE_REAL32, struct.unpack("<I", struct.pack("<f", 1.5))[0], False, "fake vehicle of the GCS e2e test"),
-    ("E2E_RATE_KP", TYPE_REAL32, struct.unpack("<I", struct.pack("<f", 0.25))[0], False, "fake vehicle of the GCS e2e test"),
-    ("E2E_ARM_CHAN", TYPE_INT32, 5, True, "locked in the fake vehicle, as the arm channel is on the real one"),
+    ("att_kp", TYPE_REAL32, _f32(1.5), False, FAKE),
+    ("rate_kp_roll", TYPE_REAL32, _f32(0.25), False, FAKE),
+    ("rc_channel_roll", TYPE_INT32, 1, False, FAKE),
+    ("rc_channel_pitch", TYPE_INT32, 2, False, FAKE),
+    ("rc_channel_throttle", TYPE_INT32, 3, False, FAKE),
+    ("rc_channel_yaw", TYPE_INT32, 4, False, FAKE),
+    ("rc_channel_arm", TYPE_INT32, 5, True, "locked in the fake vehicle, as the arm channel is on the real one"),
+    ("rc_channel_angle", TYPE_INT32, 8, False, FAKE),
+    ("arm_switch_threshold", TYPE_REAL32, _f32(SWITCH_THRESHOLD), True, "locked in the fake vehicle, as on the real one"),
+    ("angle_switch_threshold", TYPE_REAL32, _f32(SWITCH_THRESHOLD), False, FAKE),
+    ("arm_throttle_min", TYPE_REAL32, _f32((1050 - 988) / 1024), True, "locked in the fake vehicle, as on the real one"),
 )
+
+
+def link_id(name: str) -> str:
+    """The id a parameter has on the link (decision 0053 Q1): the name if at most 16 bytes, else name[:11] + "_" + the first 4 hex digits of SHA-256(name)."""
+    return name if len(name) <= 16 else f"{name[:11]}_{hashlib.sha256(name.encode()).hexdigest()[:4]}"
+
+
+# The channel parameters that rule R-1 compares (the angle channel 0 = none), by name.
+CHANNEL_PARAMS = ("rc_channel_roll", "rc_channel_pitch", "rc_channel_throttle", "rc_channel_yaw", "rc_channel_arm", "rc_channel_angle")
 
 
 def load_dialect(defs_dir: Path):
@@ -142,7 +178,9 @@ class Vehicle:
             self.send_named(name, time_boot_ms=ms, q1=math.cos(h), q2=math.sin(h), q3=0.0, q4=0.0)
         elif name == "rc_channels":
             ch = {f"chan{i + 1}_raw": RC_CENTRE_US for i in range(16)}
-            ch["chan3_raw"] = RC_CENTRE_US - RC_HALF_SPAN_US
+            ch["chan1_raw"] = RC_CENTRE_US + int(RC_SWING_US * math.sin(2 * math.pi * t / SWING_PERIOD_S))
+            ch["chan3_raw"] = ch["chan5_raw"] = ch["chan8_raw"] = RC_LOW_US
+            ch[f"chan{RC_SWITCH_CHANNEL}_raw"] = RC_LOW_US if (t % RC_SWITCH_PERIOD_S) < RC_SWITCH_PERIOD_S / 2 else RC_HIGH_US
             ch["chan17_raw"] = ch["chan18_raw"] = 0xFFFF
             self.send_named(name, time_boot_ms=ms, chancount=16, rssi=190, **ch)
         elif name == "attitude_target":
@@ -157,6 +195,13 @@ class Vehicle:
         elif name == "marv_estimator":
             h = swing / 2
             self.send_named(name, time_usec=us, q_mahony=[math.cos(h), math.sin(h), 0.0, 0.0], q_eskf=[1.0, 0.0, 0.0, 0.0], flags=1)
+
+    def collides(self, name: str, bits: int) -> bool:
+        """Rule R-1 on the staged table with `name` set to `bits`: the stick, arm and angle channels pairwise distinct, angle 0 = none."""
+        channel = {n: self.staged[i] for i, (n, *_rest) in enumerate(PARAMS) if n in CHANNEL_PARAMS}
+        channel[name] = bits
+        used = [v for n, v in channel.items() if not (n == "rc_channel_angle" and v == 0)]
+        return len(set(used)) != len(used)
 
     def set_interval(self, m) -> None:
         msg_id = int(m.param1)
@@ -185,7 +230,7 @@ class Vehicle:
         self.mav.autopilot_version_send(CAPABILITY_PARAM_ENCODE_BYTEWISE, 0, 0, 0, 0, bytes(8), bytes(8), bytes(8), 0, 0, 0, bytes(18))
 
     def value(self, i: int) -> None:
-        self.mav.param_value_send(PARAMS[i][0].encode(), raw_float(self.staged[i]), PARAMS[i][1], len(PARAMS), i)
+        self.mav.param_value_send(link_id(PARAMS[i][0]).encode(), raw_float(self.staged[i]), PARAMS[i][1], len(PARAMS), i)
 
     def record(self, i: int) -> None:
         chunk = self.text[i].encode()[:CHUNK]
@@ -213,7 +258,7 @@ class Vehicle:
             self.param(m.param_index)
         elif kind == "PARAM_SET":
             name = m.param_id.rstrip("\0") if isinstance(m.param_id, str) else m.param_id.decode().rstrip("\0")
-            index = next((i for i, p in enumerate(PARAMS) if p[0] == name), None)
+            index = next((i for i, p in enumerate(PARAMS) if link_id(p[0]) == name), None)
             if index is None:
                 self.status(f"refused: no parameter {name}")
             elif PARAMS[index][3]:
@@ -222,9 +267,16 @@ class Vehicle:
             elif m.param_type != PARAMS[index][1]:
                 self.status(f"refused: {name}: type differs from the record")
                 self.value(index)
+            elif PARAMS[index][0] in CHANNEL_PARAMS and self.collides(PARAMS[index][0], raw_bits(m.param_value)):
+                self.status(f"refused: {PARAMS[index][0]}: channel in use (R-1)")  # at most STATUS_TEXT bytes
+                self.value(index)
             else:
                 self.staged[index] = raw_bits(m.param_value)
                 self.value(index)
+        elif kind == "MARV_PARAM_SOURCE" and m.operation == SOURCE_OP_SET and 0 <= m.param_index < len(PARAMS):
+            chunk = bytes(m.chunk[: m.chunk_length]) if not isinstance(m.chunk, str) else m.chunk.encode()[: m.chunk_length]
+            text = self.text[m.param_index].encode() if m.offset else b""
+            self.text[m.param_index] = (text[: m.offset] + chunk).decode()
         elif kind == "MARV_PARAM_SOURCE" and m.operation == SOURCE_OP_READ and 0 <= m.param_index < len(PARAMS):
             text = self.text[m.param_index].encode()
             chunk = text[m.offset:m.offset + CHUNK]
@@ -243,12 +295,29 @@ class Vehicle:
                 self.handle(m)
 
 
+def manifest() -> dict:
+    """The parameter manifest of this vehicle in the form tools/gen/params_gen.py writes (the part the GCS reads), keyed by the vehicle's schema hash."""
+    params = {
+        name: {"id": i, "type": "f32" if kind == TYPE_REAL32 else "i32", "unit": "1", "link_id": link_id(name), "lock": locked,
+               "default_bits": f"0x{bits:08x}", "method": "scenario", "sigma_kind": "Choice", "sigma": 0.0, "sigma_bits": "0x00000000",
+               "origin": "DefaultFromCard", "source": text, "source_file": "e2e_fake_vehicle.py"}
+        for i, (name, kind, bits, locked, text) in enumerate(PARAMS)
+    }
+    return {"schema_hash": f"0x{SCHEMA_HASH:016x}", "count": len(params), "params": params}
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--udp-port", type=int, required=True, help="UDP port on 127.0.0.1 (the helper's --sil-udp-port)")
-    ap.add_argument("--defs-dir", type=Path, required=True, help="cache of the pinned definitions and the generated dialect")
+    ap.add_argument("--udp-port", type=int, help="UDP port on 127.0.0.1 (the helper's --sil-udp-port)")
+    ap.add_argument("--defs-dir", type=Path, help="cache of the pinned definitions and the generated dialect")
     ap.add_argument("--heartbeat-s", type=float, default=DEFAULT_HEARTBEAT_S)
+    ap.add_argument("--manifest-out", type=Path, help="write the parameter manifest of this vehicle to FILE and exit")
     args = ap.parse_args(argv)
+    if args.manifest_out is not None:
+        args.manifest_out.write_text(json.dumps(manifest()))
+        return 0
+    if args.udp_port is None or args.defs_dir is None:
+        ap.error("--udp-port and --defs-dir are required")
     dialect = load_dialect(args.defs_dir)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("127.0.0.1", args.udp_port))
