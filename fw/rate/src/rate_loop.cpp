@@ -80,7 +80,7 @@ RateConfig<float> from_params(ParamTable t) noexcept {
     c.motor_tau = param_value<ParamId::motor_tau>(t);
     c.ff_filter_tau = param_value<ParamId::rate_ff_filter_tau>(t);
   }
-  // The reference feed-forward only while rate_ref_ff_enable is 1 (decision 0056); otherwise J_ref keeps
+  // The reference feed-forward only while rate_ref_ff_enable is 1 (decision 0058); otherwise J_ref keeps
   // RateConfig's 0.
   if (param_value<ParamId::rate_ref_ff_enable>(t) == 1) {
     c.ref_ff_inertia = load_axes<ParamId::inertia_xx, ParamId::inertia_yy, ParamId::inertia_zz>(t);

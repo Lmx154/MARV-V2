@@ -7,7 +7,7 @@
 //         applied reference (control: the prefilter seeded from the gyro instead).
 //   I-A4  faults and the period check behave as in execute (control: a run without a fault must not satisfy the check);
 //         a spacing off the period is refused and counted, never a halt (decision 0034).
-//   I-A5  the bypass never adds the reference feed-forward (decision 0056, invariant I3): a loop with J_ref > 0 equals
+//   I-A5  the bypass never adds the reference feed-forward (decision 0058, invariant I3): a loop with J_ref > 0 equals
 //         one with J_ref = 0 at every bypassed execution (control: through execute the same pair differs).
 //
 // Numbers in this file are one of: read from the fixture files, derived (the rule is stated), or a "scenario test

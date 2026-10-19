@@ -22,7 +22,7 @@
 // constant. The motor torque follows the request through a first-order lag, tau_m u' + u = u_req, so u_req = u + tau_m u'
 // delivers u (feed-forward by inverting the first-order actuator lag; the identity is derived here, in this line);
 // here u = g and u' = gdot. All J_a = 0 skips the term: u is exactly the PID law.
-// Reference feed-forward (model following, QF-2, decision 0056), when some J_ref,a > 0, in execute only (never in
+// Reference feed-forward (model following, QF-2, decision 0058), when some J_ref,a > 0, in execute only (never in
 // execute_bypass): u_n += J_ref (r_n - r_(n-1)) / dt_n, the torque that gives inertia J_ref the reference model's rate
 // change over the execution. It is a function of the setpoint path alone (r after its seed), so the loop seen from the
 // gyro is unchanged. All J_ref,a = 0 skips the term: u is exactly the law above.

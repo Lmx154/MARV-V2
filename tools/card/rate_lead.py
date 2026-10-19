@@ -136,7 +136,7 @@ below set resolution and termination only)
      The four motors share the speed, as in step 1; motors at different speeds are not swept.
  14. tau_ref per axis (QF-2), by the scenario register's rate_ref_ff_enable. Not 1 (no reference feed-forward):
      decision 0005's rule, rate.py step 9 with step 11's tau_cl, r32_up(max(tau_cl, rate_max_a / alpha_max_a)). 1 (model
-     following, decision 0056: the firmware adds J_a (r_n - r_(n-1)) / dt_n in acro): r32_up(max(rate_max_a / alpha_max_a,
+     following, decision 0058: the firmware adds J_a (r_n - r_(n-1)) / dt_n in acro): r32_up(max(rate_max_a / alpha_max_a,
      tau_m (1 + b_tau) + d)), d the loop delay every configuration of step 13's set carries: the profile's latency
      (latency T_s), the group delay at w_c,nom of the chain with every notch bypassed (its low-pass alone,
      gyro_chain_design.group_delay_s) and one rate-loop period T (the execution's sample and hold). The notches' own group
@@ -1290,7 +1290,7 @@ TAU_REF_SOURCE = ("the gain rule's inputs (decision 0014) and the vehicle card r
                   "c5)")
 TAU_REF_MF_METHOD = (
     "derived(tau_ref = max(rate_max/alpha_max, tau_m (1 + tau_robustness_band) + d) of QF-2 under model following "
-    "(rate_ref_ff_enable 1, decision 0056; rule step 14 of tools/card/rate_lead.py): d the loop delay every chain "
+    "(rate_ref_ff_enable 1, decision 0058; rule step 14 of tools/card/rate_lead.py): d the loop delay every chain "
     "configuration carries, the profile's latency plus the gyro chain's group delay at w_c,nom with every notch bypassed "
     "plus one rate-loop period; alpha_max = tau_max/(J (1 + inertia_robustness_band)), tau_max the air-mode envelope torque "
     "of the mixer M with the collective free; rounded up to f32; asserted: the full-stick reference torque J "
@@ -1298,7 +1298,7 @@ TAU_REF_MF_METHOD = (
 TAU_REF_MF_SOURCE = ("vehicle card rotors.motor_lag.tau, inertia_diag, thrust_coeff and speed_range, the mixer M; design-budget "
                      "tau_robustness_band, inertia_robustness_band; scenario register rate_max_<axis>, rate_ref_ff_enable, "
                      "tick_period_num_us, tick_period_den, rate_loop_divisor; the sensor profile the card names (latency, the "
-                     "gyro chain) and the rate gains' crossover (decision 0014); decision 0056 (Luis, 2026-10-18)")
+                     "gyro chain) and the rate gains' crossover (decision 0014); decision 0058 (Luis, 2026-10-18)")
 T_FF_METHOD = (
     "derived(T_ff = the smallest T_ff >= 0 whose combined RMS of the D path and the lag-compensated omega x J omega "
     "feed-forward path per motor at rate_max (every sign pattern, every notch bypassed) is at most d_path_noise_budget x "

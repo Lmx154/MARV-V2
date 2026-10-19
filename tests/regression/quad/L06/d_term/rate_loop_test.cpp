@@ -198,7 +198,7 @@ TEST(L6DTerm, DefaultsAreOffAndTheLoopIsTodaysLawBitForBit) {
   EXPECT_EQ(cfg.motor_tau, 0.0F);
   EXPECT_EQ(cfg.ff_filter_tau, 0.0F);
   // The reference feed-forward is off in the product set the regression suites read (rate_ref_ff_enable 0, decision
-  // 0056 invariant I2).
+  // 0058 invariant I2).
   for (std::size_t a = 0; a < kA; ++a) {
     EXPECT_EQ(cfg.ref_ff_inertia[a], 0.0F) << a;
   }
@@ -229,7 +229,7 @@ TEST(L6DTerm, ControlFilterOrFeedforwardOnBreaksTheBitIdentity) {
   EXPECT_FALSE(matches_todays_law(fx, ref_ff_on));
 }
 
-// ---- Reference feed-forward (model following, decision 0056) -------------------------------------------------------
+// ---- Reference feed-forward (model following, decision 0058) -------------------------------------------------------
 // u_n = (the law without the term) + J_ref (r_n - r_(n-1)) / dt_n, r the prefilter of execute. Two loops of one
 // configuration, J_ref = 0 (off) and J_ref = kRefJ (on), run one input; nothing feeds the term back into the state (no
 // allocation record here, the omega x J omega term off), so the off loop's torque is the on loop's before the addition.
