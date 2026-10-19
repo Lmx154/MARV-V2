@@ -250,6 +250,8 @@ def test_validator_refuses_a_record_whose_source_is_sil_override_and_accepts_the
     assert len(refused["failures"]) == 1 and "att_kp" in refused["failures"][0] and "O-1" in refused["failures"][0]
     # the label as the plugin writes it (padding and a trailing note do not hide it), and on a locked parameter too
     assert records_result("  sil-override: from the Simulation page ")["result"] == "FAIL"
+    # a hand-edited case change does not hide it either
+    assert records_result("SIL-Override (edited)")["result"] == "FAIL"
     both = records_result("fine", sil_run.LABEL)
     assert both["result"] == "FAIL" and "rc_channel_arm" in " ".join(both["failures"])
     # control: the word inside a longer source text, not at its start, is a source like any other

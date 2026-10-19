@@ -173,7 +173,7 @@ def check_records(check, cfg, cfg_error, manifest, table):
             failures.append(f"{name}: sigma kind {r.sigma_kind} with sigma bits 0x{r.sigma_bits:08x} breaks I1")
         if not r.source.strip():
             failures.append(f"{name}: the source text is empty")
-        elif r.source.strip().startswith(SIL_OVERRIDE_SOURCE):
+        elif r.source.strip().casefold().startswith(SIL_OVERRIDE_SOURCE.casefold()):
             failures.append(f"{name}: the source is {SIL_OVERRIDE_SOURCE!r}: a record made by a SIL override is never validated for a "
                             "vehicle (invariant O-1)")
         if d.locked:
