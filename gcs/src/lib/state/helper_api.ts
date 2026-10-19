@@ -55,6 +55,10 @@ export interface AutoconnectStatus {
 	suspended: string | null;
 	/** 'sil' or 'board' while the open device was opened by autoconnect. */
 	owner: string | null;
+	/** The device autoconnect prefers now: 'sil' while a SIL run lives, else 'board'; null when autoconnect is off or suspended. */
+	prefer: 'sil' | 'board' | null;
+	/** Why autoconnect prefers it. */
+	reason: string | null;
 }
 
 export interface HelperStatus {

@@ -92,13 +92,15 @@
 	</Panel>
 
 	<Panel title="Autoconnect" label="device">
-		<p class="muted note">The helper opens the SIL's UDP link once a SIL run binds its port, and a board's link interface when one is plugged in. It never opens a board that lacks the link interface, and it is suspended during a HIL run or a flash.</p>
+		<p class="muted note">While a SIL run lives the helper opens only its UDP link (once the run binds its port) and releases a board it opened; with no run it opens a board's link interface when one is plugged in. It never opens a board that lacks the link interface, and it is suspended during a HIL run or a flash.</p>
 		<dl class="facts mono">
 			<dt>state</dt>
 			<dd>
 				{#if !$status}<Badge text="unknown" />{:else if !$status.autoconnect.enabled}<Badge text="off" />{:else if $status.autoconnect.suspended}<Badge text="suspended" tone="warn" />{:else}<Badge text="on" tone="ok" />{/if}
 			</dd>
 			<dt>suspended because</dt><dd>{$status?.autoconnect.suspended ?? '—'}</dd>
+			<dt>prefers</dt><dd>{$status?.autoconnect.prefer ?? '—'}</dd>
+			<dt>because</dt><dd>{$status?.autoconnect.reason ?? '—'}</dd>
 			<dt>device opened by</dt><dd>{$status?.autoconnect.owner ?? (hasDevice ? 'the operator' : '—')}</dd>
 			<dt>latest event</dt>
 			<dd>{$autoconnect ? [$autoconnect.state, $autoconnect.source, $autoconnect.device, $autoconnect.reason].filter(Boolean).join(' · ') : '—'}</dd>

@@ -55,7 +55,7 @@ const status = (over: Partial<HelperStatus> = {}): HelperStatus => ({
 		mem_available_bytes: 8 * 1024 ** 3,
 		heavy_lock: { held: false, holder: null, path: '/tmp/marv-heavy.lock' }
 	},
-	autoconnect: { enabled: true, suspended: null, owner: null },
+	autoconnect: { enabled: true, suspended: null, owner: null, prefer: 'board', reason: 'no SIL run is active' },
 	validation: null,
 	gcs_built: true,
 	...over
@@ -226,9 +226,13 @@ describe('computeBar: contents', () => {
 
 	it('the helper: autoconnect on, off and suspended; the link: the device', () => {
 		const ac = (autoconnect: HelperStatus['autoconnect']) => field(pick(computeBar(inputs({ status: status({ autoconnect }) }), T0), 'helper'), 'autoconnect');
-		expect(ac({ enabled: true, suspended: null, owner: null })).toBe('on');
-		expect(ac({ enabled: false, suspended: null, owner: null })).toBe('off');
-		expect(ac({ enabled: true, suspended: 'a HIL run owns the board', owner: null })).toBe('suspended: a HIL run owns the board');
+		expect(ac({ enabled: true, suspended: null, owner: null, prefer: 'board', reason: null })).toBe('on');
+		expect(ac({ enabled: false, suspended: null, owner: null, prefer: null, reason: null })).toBe('off');
+		expect(ac({ enabled: true, suspended: 'a HIL run owns the board', owner: null, prefer: null, reason: null })).toBe('suspended: a HIL run owns the board');
+		const prefers = (autoconnect: HelperStatus['autoconnect']) => field(pick(computeBar(inputs({ status: status({ autoconnect }) }), T0), 'helper'), 'autoconnect prefers');
+		expect(prefers({ enabled: true, suspended: null, owner: 'sil', prefer: 'sil', reason: 'SIL run r1 is active' })).toBe('sil: SIL run r1 is active');
+		expect(prefers({ enabled: true, suspended: null, owner: null, prefer: 'board', reason: 'no SIL run is active' })).toBe('board: no SIL run is active');
+		expect(prefers({ enabled: false, suspended: null, owner: null, prefer: null, reason: null })).toBe('—');
 		expect(field(pick(computeBar(inputs(), T0), 'link'), 'device')).toBe('udp 127.0.0.1:14550');
 		expect(field(pick(computeBar(inputs({ status: status({ device: null }) }), T0), 'link'), 'device')).toBe('none');
 	});
