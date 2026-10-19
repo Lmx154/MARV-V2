@@ -16,7 +16,7 @@ Board evidence: `/home/luis/Documents/kicad/MARV-V2`.
 | --- | --- | --- |
 | `00-core-contracts.md` | **ACTIVE** | Everything two products share: number rules, conventions, the firmware boundary and embedded requirements, sensor classes, physics ownership, testing and freezing, the functional interface |
 | `10-quad-flight-software.md` | **ACTIVE** | Quad firmware, its Gazebo simulation, the spine build order and its branches |
-| `20-ground-segment.md` | **ACTIVE** (params-first scope, Luis 2026-10-17, decision 0051) | GCS, link codec, config-file system, flashing |
+| `20-ground-segment.md` | **ACTIVE** (GCS-first scope, Luis 2026-10-18, decision 0056; widens the params-first scope of 0051) | GCS, link codec, config-file system, flashing |
 | `30-rocket.md` | PARKED | Rocket firmware, RocketPy harness, apogee MPC, CFD, recovery |
 
 **Rules:**
@@ -241,7 +241,7 @@ hardware (tilt the board, spin each motor) before anything depends on it.
     flag. IF-5 carries the same fields.
   - **SIL override.** Only the SIL harness can override a value before a run starts (§2 rule 5). The override
     path is not built into flight compositions.
-  - **Final form:** values come from the active config, which the FC loads at boot from internal flash (`20-ground-segment.md` GS-11). A parameter changes only by activating a config, and the change takes effect at the next boot. A locked parameter keeps the value and provenance compiled into the image; a config that differs from them is refused.
+  - **Final form:** values come from the active config, which the FC loads at boot from internal flash (`20-ground-segment.md` GS-11). A parameter changes only by activating a config, and the change takes effect at the next boot. A locked parameter keeps the value and provenance compiled into the image; a config that differs from them is refused. A lock or a locked value changes only in its source entry with the commit line `lock ruling: ...` (ground spec §3), which CI checks.
   - **Bootstrap, until that system exists:** values come from a struct generated from the card and the budget
     register (from quad L1; at L0 the generator runs on a test fixture). SIL and target build the same generated
     source; SIL may then apply the harness override.
