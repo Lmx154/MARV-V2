@@ -1,0 +1,20 @@
+# The onboard SD flight logger's tunables (fw/log, unit U1 LOG-CORE; architect ruling 2026-10-18, serena memory
+# quad-m4/architect-onboard-logger-2026-10-18), in params_gen input form (tools/gen/params_gen.py). Appended after the
+# FC3v2 set in the parameter set marv_params_fc3v2_log only (fw/params/CMakeLists.txt), which the log tests read; the board's
+# set marv_params_fc3v2 does not carry these entries yet (unit U4 integrates them), so the board image is unchanged.
+# None is a safety number: arming is never gated on the logger (decision 0053), and no entry changes what the vehicle does.
+# The worst SD write stall that sizes the ring is the design-budget entry sd_log_write_stall_max_s, not repeated here.
+# Every entry is a PLACEHOLDER: a labelled choice that makes the logger run until its bench (unit U2) or Luis replaces it.
+
+log_post_roll_s:
+  {type: f32, value: 5.0, unit: "s", method: scenario, source: "PLACEHOLDER: how long the logger keeps logging after the disarm edge (a re-arm inside it continues the same file; architect ruling 2026-10-18 item 7, 'post-roll ... non-safety PLACEHOLDER params'). 5 s is a labelled choice, long enough to hold a prop spin-down and a landing roll-out; no measurement supports it. Replaced by: the value Luis picks after the U2 bench (power-cut and soak runs)", sigma: choice, status: [PLACEHOLDER]}
+log_status_period_s:
+  {type: f32, value: 1.0, unit: "s", method: scenario, source: "PLACEHOLDER: period of the Status record (the ring's drop counts and high-water mark, the logger's counters, the full time stamp that anchors the decoder's unwrapping of the 32-bit stamps; fw/log format.hpp). 1 s is a labelled choice: the 32-bit stamps wrap every 71.6 min, so any period far below that anchors them, and it costs 84 bytes per period. Replaced by: the value the U2 bench shows to be enough to localise a card stall", sigma: choice, status: [PLACEHOLDER]}
+log_slow_period_s:
+  {type: f32, value: 0.004, unit: "s", method: scenario, source: "PLACEHOLDER: period at which the background loop samples the Telemetry seqlock snapshot into the log (the slow stream, 250 Hz; architect ruling 2026-10-18 item 1: 'the background consumer samples it at a period (PLACEHOLDER)', with 88 kB/s at 250 Hz in the bandwidth budget). Replaced by: the rate the U4 integration measures the background loop can sustain; 0 turns the slow stream off", sigma: choice, status: [PLACEHOLDER]}
+log_reprobe_period_s:
+  {type: f32, value: 2.0, unit: "s", method: scenario, source: "PLACEHOLDER: how often a disarmed logger with no card, a full card or a faulted card tries again (prepare is a metadata operation and runs only while disarmed, invariant L-9; the SD init takes 244.6 ms with a card and 1.9 ms without, tests/regression/quad/L10/results/sd/README.md). 2 s is a labelled choice. Replaced by: the value Luis picks after the U2 card-absent and card-full checks", sigma: choice, status: [PLACEHOLDER]}
+log_file_bytes:
+  {type: i32, value: 67108864, unit: "B", method: scenario, source: "PLACEHOLDER: the contiguous region asked of the card for one log file (architect ruling 2026-10-18 item 2: f_expand a contiguous region; item 7: when the preallocated file is full, logging stops for that session). 64 MiB = 67108864 B, about 160 s of the fast stream plus the slow stream at 0.4 MB/s (ruling item 4), a labelled choice against the bench's 20 s profile cap with margin for a flight. Replaced by: Luis's flight-length choice after U2 (the card has 63.9 GB)", sigma: choice, status: [PLACEHOLDER]}
+log_manual_rate_hz:
+  {type: f32, value: 125.0, unit: "Hz", method: scenario, source: "PLACEHOLDER: the rate of ManualControl records, one per new RC frame, used only to size the ring (fw/log budget.hpp fast_rates; invariant L-5). The architect ruling 2026-10-18 item 4 gives 125 frames/s measured and 8 ms per ELRS frame at 125 Hz (item 8); the measurement itself is not committed in the tree, so the figure is UNVERIFIED here. Replaced by: the frame count over a time window from a committed U2 bench log (hal_manual_control().frames)", sigma: choice, status: [UNVERIFIED, PLACEHOLDER]}

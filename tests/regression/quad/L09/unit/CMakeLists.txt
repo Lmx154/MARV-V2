@@ -65,3 +65,35 @@ target_compile_definitions(unit_store PRIVATE
   MARV_FACTORY_MCFG="${CMAKE_BINARY_DIR}/generated/marv_params_fc3v2/marv_params_fc3v2.mcfg")
 marv_apply_flags(unit_store)
 marv_frozen_suite(unit_store)
+
+# The onboard SD flight logger's core (fw/log, unit U1 LOG-CORE, architect ruling 2026-10-18): the formats, the ring (L-1: the
+# writer never waits) and its budget (L-5: ring >= rate x the worst SD stall, with negative controls), the sector framer, the header
+# and the logger state machine against a scriptable card (L-3 faults, L-9 no metadata while armed), and the round trip. The tests
+# read the parameter set marv_params_fc3v2_log (the FC3v2 set plus fw/log/params/log_register.yaml); link order as unit_quad_fc_gate.
+find_package(Threads REQUIRED)
+add_executable(unit_log_ring log_ring_test.cpp)
+target_link_libraries(unit_log_ring PRIVATE
+  marv_log marv_params_fc3v2_log_runtime marv_params_fc3v2_log_generated marv_types marv_hal_sim GTest::gtest_main Threads::Threads)
+marv_apply_flags(unit_log_ring)
+marv_frozen_suite(unit_log_ring)
+
+add_executable(unit_log_logger log_logger_test.cpp)
+target_link_libraries(unit_log_logger PRIVATE
+  marv_log marv_params_fc3v2_log_runtime marv_params_fc3v2_log_generated marv_types marv_hal_sim GTest::gtest_main)
+marv_apply_flags(unit_log_logger)
+marv_frozen_suite(unit_log_logger)
+
+# The C++ writer against the Python decoder (tools/log/mlog.py): the first test writes a log and the stream it was given
+# (unit_log_logger, LogRoundTrip), the second decodes the file and requires equality (tools/log/roundtrip_check.py).
+set(log_roundtrip_dir "${CMAKE_CURRENT_BINARY_DIR}/log_roundtrip")
+add_test(NAME log_roundtrip_write
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${log_roundtrip_dir}")
+add_test(NAME log_roundtrip_encode COMMAND unit_log_logger --gtest_filter=LogRoundTrip.*)
+set_tests_properties(log_roundtrip_encode PROPERTIES
+  ENVIRONMENT "MARV_LOG_ROUNDTRIP_DIR=${log_roundtrip_dir}"
+  FIXTURES_SETUP log_roundtrip_files
+  DEPENDS log_roundtrip_write)
+add_test(NAME log_roundtrip_decode
+  COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/log/roundtrip_check.py" "${log_roundtrip_dir}")
+set_tests_properties(log_roundtrip_decode PROPERTIES FIXTURES_REQUIRED log_roundtrip_files)
+set_tests_properties(log_roundtrip_write log_roundtrip_encode log_roundtrip_decode PROPERTIES LABELS frozen)

@@ -7,7 +7,7 @@
 # it; `value_exact` is the same float as a hexadecimal float, exact to the bit. i32 values are decimal and have no
 # hexadecimal form (`-`). `sigma` is printed like an f32 value. unit and source are JSON strings. Columns are tab
 # separated.
-# schema_hash 0xc78d4ca1b589a919  count 105
+# schema_hash 0xbc391bac0b45e90b  count 106
 id	name	type	value	value_exact	sigma	sigma_kind	unit	method	origin	locked	source
 0	mass	f32	0.772000015	0x1.8b43960000000p-1	0.00999999978	Known	"kg"	published	DefaultFromCard	false	"NeuroBEM dataset readme, https://rpg.ifi.uzh.ch/neuro_bem/Readme.html ('Our drone has a mass of 0.772 kg')"
 1	inertia_xx	f32	0.00249999994	0x1.47ae140000000p-9	0	Unknown	"kg m^2"	published	DefaultFromCard	false	"NeuroBEM dataset readme; uzh-rpg/agile_flight blackbird.yaml @ 24f21c4 (inertia) — agree"
@@ -113,4 +113,5 @@ id	name	type	value	value_exact	sigma	sigma_kind	unit	method	origin	locked	source
 101	attitude_tilt_error_max	f32	0.0208999999	0x1.566cf40000000p-6	0	Choice	"rad"	design-budget	DefaultFromRegister	false	"design-budget register design/budget.yaml, entry attitude_tilt_error_max (rationale there)"
 102	t4_settle_fraction	f32	0.0199999996	0x1.47ae140000000p-6	0	Choice	"1"	design-budget	DefaultFromRegister	false	"design-budget register design/budget.yaml, entry t4_settle_fraction (rationale there)"
 103	config_slot_bytes	f32	98304	0x1.8000000000000p+16	0	Choice	"B"	design-budget	DefaultFromRegister	false	"design-budget register design/budget.yaml, entry config_slot_bytes (rationale there)"
-104	rate_period_tolerance_us	i32	1	-	0	Exact	"us"	derived	DefaultFromRegister	false	"the hal_sim stamp truncation bound; hal_sim stamps tick N at floor(N tick_period_num_us / tick_period_den) us (fw/hal/sim stamp_us), so two stamps rate_loop_divisor ticks apart are within 1 us of the rate period; the bound of decision 0005 (Gains to firmware), formerly kPeriodToleranceUs in fw/rate; decision 0034"
+104	sd_log_write_stall_max_s	f32	0.809000015	0x1.9e35400000000p-1	0	Choice	"s"	design-budget	DefaultFromRegister	false	"design-budget register design/budget.yaml, entry sd_log_write_stall_max_s (rationale there)"
+105	rate_period_tolerance_us	i32	1	-	0	Exact	"us"	derived	DefaultFromRegister	false	"the hal_sim stamp truncation bound; hal_sim stamps tick N at floor(N tick_period_num_us / tick_period_den) us (fw/hal/sim stamp_us), so two stamps rate_loop_divisor ticks apart are within 1 us of the rate period; the bound of decision 0005 (Gains to firmware), formerly kPeriodToleranceUs in fw/rate; decision 0034"

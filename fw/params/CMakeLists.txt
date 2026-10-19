@@ -345,3 +345,16 @@ marv_add_param_set(marv_params_fc3v2_eskf
            "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml"
            "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml"
            "${PROJECT_SOURCE_DIR}/fw/estimator/params/eskf_register.yaml")
+
+# The FC3v2 set with the logger register appended (onboard SD flight logger, unit U1): built from the flattened sources of
+# marv_params_fc3v2, in its order (no second flatten), then fw/log/params/log_register.yaml, so every id of marv_params_fc3v2
+# keeps its id and value and the log_* entries follow. Only the log tests (tests/regression/quad/L09/unit/log_*_test.cpp) link
+# it; the board image and marv_sil_quad_fc link marv_params_fc3v2 (unit U4 integrates the entries).
+marv_add_param_set(marv_params_fc3v2_log
+  CARD "${marv_fc3v2_flat}_card.yaml" "${marv_fc3v2_flat}_mixer.yaml" "${marv_fc3v2_flat}_scenario.yaml"
+       "${marv_fc3v2_flat}_rate.yaml" "${marv_fc3v2_flat}_attitude.yaml" "${marv_fc3v2_flat}_gyro_chain.yaml"
+       "${marv_fc3v2_flat}_vertical.yaml"
+  REGISTER "${marv_fc3v2_flat}_register.yaml"
+           "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml"
+           "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml"
+           "${PROJECT_SOURCE_DIR}/fw/log/params/log_register.yaml")
