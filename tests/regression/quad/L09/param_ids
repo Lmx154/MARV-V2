@@ -3,3 +3,5 @@
 config_slot_bytes
 # sd_log_write_stall_max_s: the onboard SD logger's worst-stall budget entry (core EMB-6; unit U1 LOG-CORE, architect ruling 2026-10-18)
 sd_log_write_stall_max_s
+# telemetry_byte_rate_max: the ground link's telemetry byte budget (ground-segment unit 11, decision 0053 Q4)
+telemetry_byte_rate_max

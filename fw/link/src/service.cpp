@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -22,6 +23,8 @@
 #include <marv/prim/constants.hpp>
 #include <marv/store/mcfg.hpp>
 #include <marv/store/store.hpp>
+#include <marv/types/imu_sample.hpp>
+#include <marv/types/telemetry.hpp>
 #include <marv/types/time.hpp>
 
 #include "marv/link/codec_mavlink.hpp"
@@ -66,6 +69,51 @@ static_assert(static_cast<int>(MarvParamSigmaKind::Exact) == static_cast<int>(Si
 
 constexpr const char* kSchemaRefused = "refused: the message's parameter schema hash is not this image's";
 
+// ---- the telemetry streams (service.hpp) ----
+enum class Stream : std::uint8_t {
+  SysStatus,
+  Attitude,
+  AttitudeQuaternion,
+  RcChannels,
+  AttitudeTarget,
+  HighresImu,
+  ActuatorOutputStatus,
+  MarvFcStatus,
+  MarvEstimator,
+  MarvIdentity,
+};
+constexpr std::size_t kStreams = static_cast<std::size_t>(Stream::MarvIdentity) + 1;
+
+struct StreamInfo {
+  std::uint32_t id;
+  std::size_t frame_bytes;  // the longest frame: what the stream is counted at against the budget
+  ParamId cap;              // its cap, Hz
+  bool snapshot;            // built from the composition's telemetry snapshot
+};
+
+constexpr std::array<StreamInfo, kStreams> kStreamInfo{{
+    {kSysStatusId, kSysStatusFrameBytes, ParamId::tlm_hz_status, true},
+    {kAttitudeId, kAttitudeFrameBytes, ParamId::tlm_hz_attitude, true},
+    {kAttitudeQuaternionId, kAttitudeQuaternionFrameBytes, ParamId::tlm_hz_att_quat, true},
+    {kRcChannelsId, kRcChannelsFrameBytes, ParamId::tlm_hz_rc, true},
+    {kAttitudeTargetId, kAttitudeTargetFrameBytes, ParamId::tlm_hz_att_tgt, true},
+    {kHighresImuId, kHighresImuFrameBytes, ParamId::tlm_hz_imu, true},
+    {kActuatorOutputStatusId, kActuatorOutputStatusFrameBytes, ParamId::tlm_hz_actuators, true},
+    {kMarvFcStatusId, kMarvFcStatusFrameBytes, ParamId::tlm_hz_fc_status, true},
+    {kMarvEstimatorId, kMarvEstimatorFrameBytes, ParamId::tlm_hz_estimator, true},
+    {kMarvIdentityId, kMarvIdentityFrameBytes, ParamId::tlm_hz_identity, false},
+}};
+
+// The arming machine's states and the dialect's are the same list (arming.hpp ArmState, link/marv.xml MARV_ARM_STATE).
+static_assert(static_cast<int>(MarvArmState::Boot) == static_cast<int>(arming::ArmState::Boot));
+static_assert(static_cast<int>(MarvArmState::NoLink) == static_cast<int>(arming::ArmState::NoLink));
+static_assert(static_cast<int>(MarvArmState::Failsafe) == static_cast<int>(arming::ArmState::Failsafe));
+static_assert(static_cast<int>(MarvArmState::Armed) == static_cast<int>(arming::ArmState::Armed));
+static_assert(static_cast<int>(MarvArmState::ArmedFailsafeCentred) == static_cast<int>(arming::ArmState::ArmedFailsafeCentred));
+static_assert(static_cast<int>(MarvArmState::NotUpright) == static_cast<int>(arming::ArmState::NotUpright));
+static_assert(static_cast<int>(MarvArmState::ConfigRefused) == static_cast<int>(arming::ArmState::ConfigRefused));
+static_assert(static_cast<int>(MarvArmState::Maintenance) == static_cast<int>(arming::ArmState::Maintenance));
+
 struct State {
   bool started = false;
   ServiceConfig config{};
@@ -87,6 +135,15 @@ struct State {
   Envelope grant_from{};
   bool reboot_requested = false;  // hal_reboot returned: the host stops this run
   std::uint16_t text_id = 0;      // of the latest status text sent in chunks
+  // The telemetry streams: each one's cap (Hz) and granted interval (us, 0: stopped) and when it is next due; the budget
+  // (bytes per second); the frames the parser accepted and refused (SYS_STATUS); the RC link-loss time (us).
+  std::array<float, kStreams> cap_hz{};
+  std::array<std::uint32_t, kStreams> interval_us{};
+  std::array<TimeUs, kStreams> next_us{};
+  float budget_bytes_s = 0.0F;
+  std::uint64_t rx_frames = 0;
+  std::uint64_t rx_errors = 0;
+  TimeUs rc_loss_us = 0;
 };
 
 State g;
@@ -315,6 +372,240 @@ void send_heartbeat() noexcept {
   send(m);
 }
 
+// ---- telemetry ----------------------------------------------------------------------------------------------------------
+
+[[nodiscard]] std::uint32_t boot_ms(TimeUs t) noexcept {
+  return static_cast<std::uint32_t>(t / prim::kMicrosecondsPerMillisecond);
+}
+
+template <class Flag>
+[[nodiscard]] std::uint8_t bit_if(bool on, Flag flag) noexcept {
+  return on ? static_cast<std::uint8_t>(flag) : 0;
+}
+
+[[nodiscard]] bool has(std::uint32_t flags, ImuFlag f) noexcept { return (flags & imu_flag(f)) != 0; }
+
+[[nodiscard]] bool has(const Telemetry& t, TelemetryFlag f) noexcept { return (t.flags & telemetry_flag(f)) != 0; }
+
+// The estimate in use (w x y z): the ESKF in the image that flies it, else Mahony.
+[[nodiscard]] const std::array<float, kQuatComponents>& attitude_of(const Telemetry& t) noexcept {
+  return has(t, TelemetryFlag::EskfInUse) ? t.q_eskf : t.q_mahony;
+}
+
+// The RC link is up: a valid frame no older than the link-loss time the arming machine uses (failsafe_loss_us).
+[[nodiscard]] bool rc_up(const Telemetry& t) noexcept {
+  return t.rc_frames != 0 && t.time_us >= t.rc_t_us && t.time_us - t.rc_t_us <= g.rc_loss_us;
+}
+
+[[nodiscard]] std::uint16_t saturated_u16(std::uint64_t v) noexcept {
+  return static_cast<std::uint16_t>(std::min<std::uint64_t>(v, std::numeric_limits<std::uint16_t>::max()));
+}
+
+// Sensor health (common.xml MAV_SYS_STATUS_SENSOR): the gyro and the accelerometer of the tick's sample valid and not
+// saturated, the RC link up (rc_up), the attitude estimate in use valid. load is not measured by these images and is 0; no
+// battery is measured. The link's own reception: the frames the parser refused (bad checksum or length) and their share of
+// all it decoded.
+[[nodiscard]] SysStatus sys_status(const Telemetry& t) noexcept {
+  using namespace standard;
+  constexpr std::uint32_t kGyroSat = imu_flag(ImuFlag::GyroSatX) | imu_flag(ImuFlag::GyroSatY) | imu_flag(ImuFlag::GyroSatZ);
+  constexpr std::uint32_t kAccelSat =
+      imu_flag(ImuFlag::AccelSatX) | imu_flag(ImuFlag::AccelSatY) | imu_flag(ImuFlag::AccelSatZ);
+  const std::uint32_t present = kMavSysStatusSensor3dGyro | kMavSysStatusSensor3dAccel | kMavSysStatusSensorRcReceiver |
+                                kMavSysStatusAhrs;
+  std::uint32_t health = 0;
+  if (has(t.imu_flags, ImuFlag::GyroValid) && (t.imu_flags & kGyroSat) == 0) {
+    health |= kMavSysStatusSensor3dGyro;
+  }
+  if (has(t.imu_flags, ImuFlag::AccelValid) && (t.imu_flags & kAccelSat) == 0) {
+    health |= kMavSysStatusSensor3dAccel;
+  }
+  if (rc_up(t)) {
+    health |= kMavSysStatusSensorRcReceiver;
+  }
+  if (has(t, TelemetryFlag::EstimatorValid)) {
+    health |= kMavSysStatusAhrs;
+  }
+  SysStatus m{};
+  m.onboard_control_sensors_present = present;
+  m.onboard_control_sensors_enabled = present;
+  m.onboard_control_sensors_health = health;
+  m.voltage_battery = std::numeric_limits<std::uint16_t>::max();
+  m.current_battery = -1;
+  m.battery_remaining = -1;
+  const std::uint64_t decoded = g.rx_frames + g.rx_errors;
+  m.drop_rate_comm = decoded == 0 ? 0 : saturated_u16(g.rx_errors * prim::kCentiPercentPerUnit / decoded);
+  m.errors_comm = saturated_u16(g.rx_errors);
+  return m;
+}
+
+// The ZYX (yaw, pitch, roll) angles of the body-to-NED attitude in use, and the rate loop's input as the angular rates.
+[[nodiscard]] Attitude attitude_message(const Telemetry& t) noexcept {
+  const auto& [w, x, y, z] = attitude_of(t);
+  Attitude m{};
+  m.time_boot_ms = boot_ms(t.time_us);
+  m.roll = std::atan2(2.0F * (w * x + y * z), 1.0F - 2.0F * (x * x + y * y));
+  m.pitch = std::asin(std::clamp(2.0F * (w * y - z * x), -1.0F, 1.0F));
+  m.yaw = std::atan2(2.0F * (w * z + x * y), 1.0F - 2.0F * (y * y + z * z));
+  m.rollspeed = t.rate_gyro_rad_s[0];
+  m.pitchspeed = t.rate_gyro_rad_s[1];
+  m.yawspeed = t.rate_gyro_rad_s[2];
+  return m;
+}
+
+[[nodiscard]] AttitudeQuaternion attitude_quaternion(const Telemetry& t) noexcept {
+  const auto& [w, x, y, z] = attitude_of(t);
+  AttitudeQuaternion m{};
+  m.time_boot_ms = boot_ms(t.time_us);
+  m.q1 = w;
+  m.q2 = x;
+  m.q3 = y;
+  m.q4 = z;
+  m.rollspeed = t.rate_gyro_rad_s[0];
+  m.pitchspeed = t.rate_gyro_rad_s[1];
+  m.yawspeed = t.rate_gyro_rad_s[2];
+  return m;  // repr_offset_q all zero: not supported (common.xml)
+}
+
+// The channels in microseconds, the inverse of the pilot-input contract's x = (us - 1500) / 512 (manual_control.hpp), and the
+// receiver's link quality on rssi's 0 .. 254 scale (UINT8_MAX before any link-statistics frame). Before any RC frame no
+// channel is received.
+[[nodiscard]] RcChannels rc_channels(const Telemetry& t) noexcept {
+  constexpr std::array<std::uint16_t RcChannels::*, prim::kCrsfRcChannels> kChannels{
+      &RcChannels::chan1_raw,  &RcChannels::chan2_raw,  &RcChannels::chan3_raw,  &RcChannels::chan4_raw,
+      &RcChannels::chan5_raw,  &RcChannels::chan6_raw,  &RcChannels::chan7_raw,  &RcChannels::chan8_raw,
+      &RcChannels::chan9_raw,  &RcChannels::chan10_raw, &RcChannels::chan11_raw, &RcChannels::chan12_raw,
+      &RcChannels::chan13_raw, &RcChannels::chan14_raw, &RcChannels::chan15_raw, &RcChannels::chan16_raw};
+  constexpr std::uint16_t kUnused = std::numeric_limits<std::uint16_t>::max();
+  RcChannels m{};
+  m.time_boot_ms = boot_ms(t.time_us);
+  const bool received = t.rc_frames != 0;
+  m.chancount = received ? narrow<std::uint8_t>(prim::kCrsfRcChannels) : std::uint8_t{0};
+  for (std::size_t i = 0; i < kChannels.size(); ++i) {
+    const float x = std::clamp(t.rc_channels[i], -1.0F, 1.0F);
+    m.*kChannels[i] = received ? static_cast<std::uint16_t>(std::lround(prim::kCrsfUsCentre + prim::kRcUsHalfSpan * x)) : kUnused;
+  }
+  m.chan17_raw = kUnused;
+  m.chan18_raw = kUnused;
+  m.rssi = t.rc_link_t_us == 0
+               ? std::numeric_limits<std::uint8_t>::max()
+               : static_cast<std::uint8_t>(std::lround(std::clamp(t.rc_link_quality, 0.0F, 1.0F) * prim::kRcChannelsRssiMax));
+  return m;
+}
+
+// The rate setpoint, the attitude setpoint in angle mode only (else ATTITUDE_IGNORE) and the collective thrust over the
+// largest the throttle commands.
+[[nodiscard]] AttitudeTarget attitude_target(const Telemetry& t) noexcept {
+  AttitudeTarget m{};
+  m.time_boot_ms = boot_ms(t.time_us);
+  if (has(t, TelemetryFlag::AngleMode)) {
+    m.q = t.q_setpoint;
+  } else {
+    m.type_mask = standard::kAttitudeTargetTypemaskAttitudeIgnore;
+  }
+  m.body_roll_rate = t.rate_setpoint_rad_s[0];
+  m.body_pitch_rate = t.rate_setpoint_rad_s[1];
+  m.body_yaw_rate = t.rate_setpoint_rad_s[2];
+  m.thrust = t.thrust_max_n > 0.0F ? t.thrust_n / t.thrust_max_n : 0.0F;
+  return m;
+}
+
+// The tick's sample as the estimator received it (Telemetry), stamped with the sample's stamp.
+[[nodiscard]] HighresImu highres_imu(const Telemetry& t) noexcept {
+  using namespace standard;
+  HighresImu m{};
+  m.time_usec = t.sample_us;
+  m.xacc = t.accel_m_s2[0];
+  m.yacc = t.accel_m_s2[1];
+  m.zacc = t.accel_m_s2[2];
+  m.xgyro = t.gyro_rad_s[0];
+  m.ygyro = t.gyro_rad_s[1];
+  m.zgyro = t.gyro_rad_s[2];
+  if (has(t.imu_flags, ImuFlag::AccelValid)) {
+    m.fields_updated |= kHighresImuUpdatedXacc | kHighresImuUpdatedYacc | kHighresImuUpdatedZacc;
+  }
+  if (has(t.imu_flags, ImuFlag::GyroValid)) {
+    m.fields_updated |= kHighresImuUpdatedXgyro | kHighresImuUpdatedYgyro | kHighresImuUpdatedZgyro;
+  }
+  if (has(t.imu_flags, ImuFlag::TempValid)) {
+    m.temperature = static_cast<float>(static_cast<double>(t.temp_k) - prim::kKelvinAtZeroCelsius);
+    m.fields_updated |= kHighresImuUpdatedTemperature;
+  }
+  return m;
+}
+
+// The DShot values written, motor i at index i - 1 (0 is stop; every motor output is active).
+[[nodiscard]] ActuatorOutputStatus actuator_output_status(const Telemetry& t) noexcept {
+  ActuatorOutputStatus m{};
+  static_assert(std::tuple_size_v<decltype(m.actuator)> >= kQuadXMotors);
+  m.time_usec = t.time_us;
+  for (std::size_t i = 0; i < kQuadXMotors; ++i) {
+    m.active |= std::uint32_t{1} << i;
+    m.actuator[i] = static_cast<float>(t.motor_dshot[i]);
+  }
+  return m;
+}
+
+[[nodiscard]] MarvFcStatus fc_status(const Telemetry& t) noexcept {
+  MarvFcStatus m{};
+  m.time_usec = t.time_us;
+  m.rate_executions = t.rate_executions;
+  m.rate_faults = t.rate_faults;
+  m.rate_timing_faults = t.rate_timing_faults;
+  m.attitude_faults = t.attitude_faults;
+  m.attitude_timing_faults = t.attitude_timing_faults;
+  m.imu_deadline_misses = t.imu_deadline_misses;
+  m.rc_frames = t.rc_frames;
+  constexpr std::uint32_t kNoFrame = std::numeric_limits<std::uint32_t>::max();
+  const TimeUs age = t.time_us > t.rc_t_us ? t.time_us - t.rc_t_us : 0;
+  m.rc_age_us = t.rc_frames == 0 ? kNoFrame : static_cast<std::uint32_t>(std::min<TimeUs>(age, kNoFrame - 1));
+  m.arm_state = static_cast<MarvArmState>(t.arm_state);
+  m.motor_gate = static_cast<MarvMotorGate>(t.motor_gate);
+  m.flags = static_cast<std::uint8_t>(
+      bit_if(has(t, TelemetryFlag::AngleMode), MarvFcStatusFlag::AngleMode) |
+      bit_if(has(t, TelemetryFlag::Airmode), MarvFcStatusFlag::Airmode) |
+      bit_if(has(t, TelemetryFlag::ItermHeld), MarvFcStatusFlag::ItermHeld) |
+      bit_if(has(t, TelemetryFlag::GyroCalibrated), MarvFcStatusFlag::GyroCalibrated) |
+      bit_if(has(t, TelemetryFlag::EstimatorValid), MarvFcStatusFlag::EstimatorValid) |
+      bit_if(has(t, TelemetryFlag::Upright), MarvFcStatusFlag::Upright) |
+      bit_if(has(t, TelemetryFlag::ImuInvalid), MarvFcStatusFlag::ImuInvalid) |
+      bit_if(has(t, TelemetryFlag::ImuSaturated), MarvFcStatusFlag::ImuSaturated));
+  m.rate_fault = static_cast<std::uint8_t>(bit_if(has(t, TelemetryFlag::RateFaultActive), MarvRateFaultFlag::Active) |
+                                           bit_if(has(t, TelemetryFlag::RateFaultLatched), MarvRateFaultFlag::Latched));
+  return m;
+}
+
+[[nodiscard]] MarvEstimator estimator_message(const Telemetry& t) noexcept {
+  MarvEstimator m{};
+  m.time_usec = t.time_us;
+  m.q_mahony = t.q_mahony;
+  m.q_eskf = t.q_eskf;
+  m.gyro_bias_cal = t.gyro_bias_cal;
+  m.gyro_bias_mahony = t.gyro_bias_mahony;
+  m.gyro_bias_eskf = t.gyro_bias_eskf;
+  m.flags = static_cast<std::uint8_t>(bit_if(has(t, TelemetryFlag::MahonyValid), MarvEstimatorFlag::MahonyValid) |
+                                      bit_if(has(t, TelemetryFlag::EskfPresent), MarvEstimatorFlag::EskfPresent) |
+                                      bit_if(has(t, TelemetryFlag::EskfValid), MarvEstimatorFlag::EskfValid) |
+                                      bit_if(has(t, TelemetryFlag::EskfInUse), MarvEstimatorFlag::EskfInUse));
+  return m;
+}
+
+void send_stream(Stream s, const Telemetry& t) noexcept {
+  switch (s) {
+    case Stream::SysStatus: return send(sys_status(t));
+    case Stream::Attitude: return send(attitude_message(t));
+    case Stream::AttitudeQuaternion: return send(attitude_quaternion(t));
+    case Stream::RcChannels: return send(rc_channels(t));
+    case Stream::AttitudeTarget: return send(attitude_target(t));
+    case Stream::HighresImu: return send(highres_imu(t));
+    case Stream::ActuatorOutputStatus: return send(actuator_output_status(t));
+    case Stream::MarvFcStatus: return send(fc_status(t));
+    case Stream::MarvEstimator: return send(estimator_message(t));
+    case Stream::MarvIdentity: return send_identity();
+  }
+}
+
+[[nodiscard]] float rate_or_zero(float hz) noexcept { return std::isfinite(hz) && hz >= 0.0F ? hz : 0.0F; }
+
 // ---- incoming ----------------------------------------------------------------------------------------------------------
 
 [[nodiscard]] bool same_bits(float a, std::uint32_t id) noexcept {
@@ -353,27 +644,123 @@ void on_reboot(const Envelope& from, const CommandLong& m) noexcept {
   send_ack(from, m.command, standard::kMavResultInProgress);
 }
 
+// The stream whose message id param (a COMMAND_LONG float) names; kStreams if none.
+[[nodiscard]] std::size_t stream_of(float param) noexcept {
+  for (std::size_t k = 0; k < kStreams; ++k) {
+    if (same_bits(param, kStreamInfo[k].id)) {
+      return k;
+    }
+  }
+  return kStreams;
+}
+
+// A stream the vehicle can send: one built from the snapshot needs the composition's telemetry.
+[[nodiscard]] bool can_send(std::size_t k) noexcept {
+  return k < kStreams && (!kStreamInfo[k].snapshot || g.config.telemetry != nullptr);
+}
+
+// The interval (us) granted to stream k asked at `asked_us` (> 0): the longest of the one asked, the one of its cap and the one
+// at which it fits the budget beside the other running streams (each at its longest frame), rounded up to whole
+// microseconds so the rate never exceeds either; 0 when the cap or the budget leaves it no room.
+[[nodiscard]] std::uint32_t grant(std::size_t k, double asked_us) noexcept {
+  double used = 0.0;
+  for (std::size_t j = 0; j < kStreams; ++j) {
+    if (j != k && g.interval_us[j] != 0) {
+      used += prim::kMicrosecondsPerSecond / g.interval_us[j] * static_cast<double>(kStreamInfo[j].frame_bytes);
+    }
+  }
+  const double room_hz = (static_cast<double>(g.budget_bytes_s) - used) / static_cast<double>(kStreamInfo[k].frame_bytes);
+  const double limit_hz = std::min(static_cast<double>(g.cap_hz[k]), room_hz);
+  if (!(limit_hz > 0.0)) {
+    return 0;
+  }
+  const double interval = std::ceil(std::max(asked_us, prim::kMicrosecondsPerSecond / limit_hz));
+  constexpr double kLongest = std::numeric_limits<std::int32_t>::max();  // MESSAGE_INTERVAL.interval_us is an int32
+  return static_cast<std::uint32_t>(std::min(interval, kLongest));
+}
+
+// MAV_CMD_SET_MESSAGE_INTERVAL: param1 the message id, param2 the interval (us; -1 and 0, the default rate, stop the stream).
+void on_set_interval(const Envelope& from, const CommandLong& m) noexcept {
+  const std::size_t k = stream_of(m.param1);
+  if (!can_send(k)) {
+    send_ack(from, m.command, standard::kMavResultUnsupported);
+    return;
+  }
+  if (m.param2 == 0.0F || m.param2 == -1.0F) {
+    g.interval_us[k] = 0;
+    send_ack(from, m.command, standard::kMavResultAccepted);
+    return;
+  }
+  if (!(m.param2 > 0.0F) || !std::isfinite(m.param2)) {
+    send_text({"telemetry: the interval is not a number of microseconds above 0, nor -1 or 0"});
+    send_ack(from, m.command, standard::kMavResultDenied);
+    return;
+  }
+  const std::uint32_t interval = grant(k, static_cast<double>(m.param2));
+  if (interval == 0) {
+    g.interval_us[k] = 0;
+    send_text({"telemetry: no room for this stream (its tlm_hz_* cap is 0 or the telemetry budget is taken)"});
+    send_ack(from, m.command, standard::kMavResultDenied);
+    return;
+  }
+  g.interval_us[k] = interval;
+  g.next_us[k] = hal_time_us();
+  send_ack(from, m.command, standard::kMavResultAccepted);
+}
+
+// MESSAGE_INTERVAL for the message id param names: the interval in force, -1 for a stream that is stopped, 0 for a message the
+// vehicle does not stream (common.xml).
+void send_interval(float param) noexcept {
+  const std::size_t k = stream_of(param);
+  MessageInterval m{};
+  if (k < kStreams) {
+    m.message_id = narrow<std::uint16_t>(kStreamInfo[k].id);
+    m.interval_us = !can_send(k) ? 0 : (g.interval_us[k] == 0 ? -1 : static_cast<std::int32_t>(g.interval_us[k]));
+  } else if (param >= 0.0F && param <= static_cast<float>(std::numeric_limits<std::uint16_t>::max())) {
+    m.message_id = static_cast<std::uint16_t>(param);
+  }
+  send(m);
+}
+
+// MAV_CMD_REQUEST_MESSAGE: AUTOPILOT_VERSION, MESSAGE_INTERVAL (param2 the message id) or one message of a stream, from the
+// latest snapshot (TEMPORARILY_REJECTED before the first rate tick).
+void on_request(const Envelope& from, const CommandLong& m) noexcept {
+  if (same_bits(m.param1, kAutopilotVersionId)) {
+    send_ack(from, m.command, standard::kMavResultAccepted);
+    send_version();
+    return;
+  }
+  if (same_bits(m.param1, kMessageIntervalId)) {
+    send_ack(from, m.command, standard::kMavResultAccepted);
+    send_interval(m.param2);
+    return;
+  }
+  const std::size_t k = stream_of(m.param1);
+  if (!can_send(k)) {
+    send_ack(from, m.command, standard::kMavResultUnsupported);
+    return;
+  }
+  Telemetry t{};
+  if (kStreamInfo[k].snapshot && !g.config.telemetry(t)) {
+    send_ack(from, m.command, standard::kMavResultTemporarilyRejected);
+    return;
+  }
+  send_ack(from, m.command, standard::kMavResultAccepted);
+  send_stream(static_cast<Stream>(k), t);
+}
+
 void on_command(const Envelope& from, const CommandLong& m) noexcept {
   if (!for_us(m.target_system, m.target_component)) {
     return;
   }
   if (m.command == standard::kMavCmdPreflightRebootShutdown) {
     on_reboot(from, m);
-    return;
-  }
-  const bool request = m.command == standard::kMavCmdRequestMessage;
-  const bool identity = request && same_bits(m.param1, kMarvIdentityId);
-  const bool version = request && same_bits(m.param1, kAutopilotVersionId);
-  CommandAck ack{};
-  ack.command = m.command;
-  ack.result = identity || version ? standard::kMavResultAccepted : standard::kMavResultUnsupported;
-  ack.target_system = from.system_id;
-  ack.target_component = from.component_id;
-  send(ack);
-  if (identity) {
-    send_identity();
-  } else if (version) {
-    send_version();
+  } else if (m.command == standard::kMavCmdSetMessageInterval) {
+    on_set_interval(from, m);
+  } else if (m.command == standard::kMavCmdRequestMessage) {
+    on_request(from, m);
+  } else {
+    send_ack(from, m.command, standard::kMavResultUnsupported);
   }
 }
 
@@ -612,6 +999,42 @@ void step_grant() noexcept {
   }
 }
 
+// Room for a stream's frame beside one parameter's frames (room_for_parameter), so a listing and the answers keep their room.
+[[nodiscard]] bool room_for(std::size_t frame_bytes) noexcept {
+  return g.config.transport.writable == nullptr || g.config.transport.writable() >= frame_bytes + 2 * kFrameBytesMax;
+}
+
+// Every running stream that is due and has room sends once; the next is due one interval later, or one interval from now if
+// it fell an interval behind. A stream that waits for room or for the first snapshot stays due.
+void step_streams(TimeUs now) noexcept {
+  Telemetry t{};
+  bool read = false;
+  bool have = false;
+  for (std::size_t k = 0; k < kStreams; ++k) {
+    const std::uint32_t interval = g.interval_us[k];
+    if (interval == 0 || now < g.next_us[k]) {
+      continue;
+    }
+    if (kStreamInfo[k].snapshot) {
+      if (!read) {
+        have = g.config.telemetry(t);
+        read = true;
+      }
+      if (!have) {
+        continue;
+      }
+    }
+    if (!room_for(kStreamInfo[k].frame_bytes)) {
+      continue;
+    }
+    send_stream(static_cast<Stream>(k), t);
+    g.next_us[k] += interval;
+    if (g.next_us[k] <= now) {
+      g.next_us[k] = now + interval;
+    }
+  }
+}
+
 }  // namespace
 
 void service_init(const ServiceConfig& config) noexcept {
@@ -624,6 +1047,12 @@ void service_init(const ServiceConfig& config) noexcept {
   g.config = config;
   g.parser.reset();
   g.running_hash = store::config_hash(param_active_table());
+  for (std::size_t k = 0; k < kStreams; ++k) {
+    const ParamRecord r = param_get(kStreamInfo[k].cap);
+    g.cap_hz[k] = r.value.type == ParamType::F32 ? rate_or_zero(r.value.f32) : 0.0F;
+  }
+  g.budget_bytes_s = rate_or_zero(param_value<ParamId::telemetry_byte_rate_max>());
+  g.rc_loss_us = static_cast<TimeUs>(std::max<std::int32_t>(param_value<ParamId::failsafe_loss_us>(), 0));
   g.started = true;
 }
 
@@ -634,8 +1063,14 @@ bool service_step() noexcept {
   std::array<std::uint8_t, kFrameBytesMax> rx{};
   for (std::size_t n = g.config.transport.receive(rx); n > 0; n = g.config.transport.receive(rx)) {
     for (std::size_t k = 0; k < n; ++k) {
-      if (g.parser.push(rx[k]) == Status::Ok) {
+      const Status status = g.parser.push(rx[k]);
+      if (status == Status::Ok) {
+        ++g.rx_frames;
         dispatch(g.parser.frame());
+      } else if (status == Status::Unsupported) {
+        ++g.rx_frames;
+      } else if (status != Status::Pending) {
+        ++g.rx_errors;
       }
     }
   }
@@ -647,11 +1082,13 @@ bool service_step() noexcept {
   }
   if (g.config.transport.connected != nullptr && !g.config.transport.connected()) {
     g.listing_next = kParamCount;
+    g.interval_us.fill(0);
   }
   if (g.listing_next < kParamCount && room_for_parameter()) {
     send_parameter(g.listing_next);
     ++g.listing_next;
   }
+  step_streams(now);
   if (g.reboot_pending) {
     step_reboot();
   }

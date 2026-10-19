@@ -1,4 +1,5 @@
-# The messages the codecs carry in the params-first scope (ground segment unit 5). One MAVLink message name per line.
+# The messages the codecs carry in the params-first scope (ground segment unit 5; the telemetry streams of unit 11 from
+# SYS_STATUS on). One MAVLink message name per line.
 # tools/link/gen_ts.py and tools/link/gen_cpp_structs.py read this file; fw/link/src/codec_mavlink.cpp and
 # gcs/src/lib/link/ handle exactly these.
 HEARTBEAT
@@ -15,3 +16,13 @@ MARV_PARAM_RECORD
 MARV_PARAM_SOURCE
 MARV_CONFIG_COMMAND
 MARV_CONFIG_ACK
+SYS_STATUS
+ATTITUDE
+ATTITUDE_QUATERNION
+RC_CHANNELS
+ATTITUDE_TARGET
+HIGHRES_IMU
+MESSAGE_INTERVAL
+ACTUATOR_OUTPUT_STATUS
+MARV_FC_STATUS
+MARV_ESTIMATOR

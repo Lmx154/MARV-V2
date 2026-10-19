@@ -8,7 +8,8 @@ CRC_EXTRA/length table of every message of the dialect, so that the parser verif
 carry exactly as the C++ codec does. The MAVLink v2 framing, the CRC and the table-driven encode and decode are in
 gcs/src/lib/link/ (hand written, no runtime dependency); this generator has none either.
 
-Arrays are Uint8Array (char arrays too: the bytes on the wire, no text decoding); 64-bit integers are bigint. A float field
+Byte arrays are Uint8Array (char arrays too: the bytes on the wire, no text decoding), other arrays number[] (bigint[] for
+64-bit elements); 64-bit integers are bigint. A float field
 also has an optional `<name>_bits` (the raw uint32): a JavaScript number view of a float cannot hold a signalling-NaN pattern, and
 the byte-wise parameter encoding carries INT32 values in a float field, so the codec writes `<name>_bits` when it is set and
 sets it on every decoded message.
@@ -38,9 +39,11 @@ BYTE_ARRAY_TYPES = {"char", "uint8_t"}
 
 def field_ts_type(f: mavxml.Field, own_enums: set[str]) -> str:
     if f.is_array:
-        if f.ctype not in BYTE_ARRAY_TYPES:
-            raise ValueError(f"{f.name}: only byte and char arrays are supported, got {f.ctype}[{f.array_len}]")
-        return "Uint8Array"
+        if f.ctype in BYTE_ARRAY_TYPES:
+            return "Uint8Array"
+        if f.ctype not in TS_SCALAR:
+            raise ValueError(f"{f.name}: an array of {f.ctype} is not supported")
+        return f"{TS_SCALAR[f.ctype][1]}[]"
     if f.enum in own_enums:
         return mavxml.camel(f.enum)
     return TS_SCALAR[f.ctype][1]
@@ -64,7 +67,7 @@ def emit(dialect: mavxml.Dialect, scope: list[str]) -> str:
         "export interface FieldInfo {",
         "\tname: string;",
         "\ttype: WireType;",
-        "\t/** 0 for a scalar, else the number of elements (byte arrays only). */",
+        "\t/** 0 for a scalar, else the number of elements (a byte array is a Uint8Array, any other an array of numbers). */",
         "\tlength: number;",
         "\toffset: number;",
         "}",

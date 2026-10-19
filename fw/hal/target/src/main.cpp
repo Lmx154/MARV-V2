@@ -525,7 +525,8 @@ int main() {
   marv::link::service_init(marv::link::ServiceConfig{
       marv::link::Transport{&marv::hal_target::link_port_receive, &marv::hal_target::link_port_send,
                             &marv::hal_target::link_port_writable, &marv::hal_target::link_port_connected},
-      image_hash.sha256, &armed_now, &marv::composition::request_maintenance, &marv::composition::maintenance_granted});
+      image_hash.sha256, &armed_now, &marv::composition::request_maintenance, &marv::composition::maintenance_granted,
+      &marv::composition::telemetry});
 #endif
 
   bool was_connected = false;

@@ -49,6 +49,27 @@ lead summary here). Items marked (Luis) were signed by him on 2026-10-17 (Approv
    revert, factory reset and reboot_when_granted are refused and the scheduled boot request is kept), and the P-1 test's factory
    reset sent after a requested reboot now expects Refused instead of RebootRequested (the new latch; stricter, not looser).
    Mutation check run and restored: with the latch disabled both tests fail.
+   Unit 11a (TELEMETRY), frozen files extended or changed, no expectation loosened:
+   tests/regression/quad/L00/link/samples.hpp and tests/regression/quad/L00/link/ts/samples.ts gain one appended sample
+   per telemetry message (SYS_STATUS, ATTITUDE, ATTITUDE_QUATERNION, RC_CHANNELS, ATTITUDE_TARGET, HIGHRES_IMU,
+   MESSAGE_INTERVAL twice, ACTUATOR_OUTPUT_STATUS, MARV_FC_STATUS, MARV_ESTIMATOR), and
+   tests/regression/quad/L00/link/vectors/cpp_frames.txt and tests/regression/quad/L00/link/vectors/ts_frames.txt gain
+   their frames (existing lines unchanged); tests/regression/quad/L00/link/codec_conformance_test.cpp and
+   tests/regression/quad/L00/link/ts/conformance.test.ts take SYSTEM_TIME (id 2, 12 bytes, CRC_EXTRA 137) as the valid
+   frame of a message the build does not carry, because ATTITUDE is now in scope (same check, another id);
+   tests/regression/quad/L09/unit/quad_fc_gate_test.cpp gains the telemetry snapshot cases (one versioned, numbered
+   snapshot per rate tick of what it read, computed and wrote; none on other ticks; angle-mode setpoints) and the
+   seqlock cases (a write inside a read completes and the read is refused; the writer completes 1000 writes while a
+   reader thread is stopped inside its read; a 200000-write concurrent stress sees no torn value; mutation check run and
+   restored: without the second sequence check the three tests that depend on it fail);
+   tests/regression/quad/L09/param_ids lists the new product-set budget entry telemetry_byte_rate_max;
+   tests/regression/quad/L10/gz/test_link_sil.py gains the telemetry streams run (UNSUPPORTED for a non-stream, the
+   cap's interval above the cap, -1 after interval 0, every stream at its interval within one rate period + one tick +
+   the stamp resolution, values against the SIL log and the plant);
+   tests/regression/quad/L10/results/slots/bench_slots.py reads config_slot_bytes from design/budget.yaml instead of
+   hard-coding 98304 (the entry was recomputed to 102400, 25 sectors, slots at 0x1ce000 and 0x1e7000; lead decision,
+   option A). The product table (tests/regression/quad/L06/product_params/marv_params_product_table.txt) is regenerated
+   under a golden-regenerated commit line.
    Unit 4b (STORE), the parameter-table link: the modules (attitude, mixer, rate, rate_group, arming, store) take their set's
    header compile-only and link no set's archives, so the m33 image and each SIL library link exactly one set (linking the
    store into the image had made the link resolve the product set's 104-record kParamDefaults under the FC3v2 runtime);

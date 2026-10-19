@@ -1,0 +1,37 @@
+# The ground link's telemetry stream caps (decision 0053 Q4; ground-segment unit 11; fw/link/src/service.cpp), in params_gen
+# input form (tools/gen/params_gen.py). Appended after the quad_fc register in the parameter sets marv_params_fc3v2 and
+# marv_params_fc3v2_eskf (fw/params/CMakeLists.txt), the sets the link service is built against. Each entry is the highest
+# rate, in Hz, that MAV_CMD_SET_MESSAGE_INTERVAL can give its stream; the service also keeps the streams together within
+# the design-budget entry telemetry_byte_rate_max. Read once, at link start-up; a value that is not a finite non-negative
+# number stops its stream. One shared rule and source: every stream gets the same cap, so all of them at their caps fill
+# the budget. Not safety numbers: no flight decision reads them.
+
+tlm_hz_status:  # system status
+  {type: f32, value: 198, unit: "Hz", method: scenario, source: "Derived: the largest whole rate at which all ten telemetry streams fit the budget at once, each at its longest frame: floor(telemetry_byte_rate_max / sum of the frames) = floor(150000 B/s / 755 B) = 198 Hz. Frames, header 10 + payload + checksum 2 B (link/marv.xml, the pinned common.xml), in the order of the tlm_hz_* entries: 55, 40, 60, 54, 49, 75, 152, 60, 89, 121 B. Carries the budget's PLACEHOLDER utilisation fraction (design/budget.yaml); recompute when it or a message changes", sigma: choice}
+
+tlm_hz_attitude:  # attitude angles
+  {type: f32, value: 198, unit: "Hz", method: scenario, source: "Derived: the largest whole rate at which all ten telemetry streams fit the budget at once, each at its longest frame: floor(telemetry_byte_rate_max / sum of the frames) = floor(150000 B/s / 755 B) = 198 Hz. Frames, header 10 + payload + checksum 2 B (link/marv.xml, the pinned common.xml), in the order of the tlm_hz_* entries: 55, 40, 60, 54, 49, 75, 152, 60, 89, 121 B. Carries the budget's PLACEHOLDER utilisation fraction (design/budget.yaml); recompute when it or a message changes", sigma: choice}
+
+tlm_hz_att_quat:  # attitude quaternion
+  {type: f32, value: 198, unit: "Hz", method: scenario, source: "Derived: the largest whole rate at which all ten telemetry streams fit the budget at once, each at its longest frame: floor(telemetry_byte_rate_max / sum of the frames) = floor(150000 B/s / 755 B) = 198 Hz. Frames, header 10 + payload + checksum 2 B (link/marv.xml, the pinned common.xml), in the order of the tlm_hz_* entries: 55, 40, 60, 54, 49, 75, 152, 60, 89, 121 B. Carries the budget's PLACEHOLDER utilisation fraction (design/budget.yaml); recompute when it or a message changes", sigma: choice}
+
+tlm_hz_rc:  # RC channels
+  {type: f32, value: 198, unit: "Hz", method: scenario, source: "Derived: the largest whole rate at which all ten telemetry streams fit the budget at once, each at its longest frame: floor(telemetry_byte_rate_max / sum of the frames) = floor(150000 B/s / 755 B) = 198 Hz. Frames, header 10 + payload + checksum 2 B (link/marv.xml, the pinned common.xml), in the order of the tlm_hz_* entries: 55, 40, 60, 54, 49, 75, 152, 60, 89, 121 B. Carries the budget's PLACEHOLDER utilisation fraction (design/budget.yaml); recompute when it or a message changes", sigma: choice}
+
+tlm_hz_att_tgt:  # attitude target
+  {type: f32, value: 198, unit: "Hz", method: scenario, source: "Derived: the largest whole rate at which all ten telemetry streams fit the budget at once, each at its longest frame: floor(telemetry_byte_rate_max / sum of the frames) = floor(150000 B/s / 755 B) = 198 Hz. Frames, header 10 + payload + checksum 2 B (link/marv.xml, the pinned common.xml), in the order of the tlm_hz_* entries: 55, 40, 60, 54, 49, 75, 152, 60, 89, 121 B. Carries the budget's PLACEHOLDER utilisation fraction (design/budget.yaml); recompute when it or a message changes", sigma: choice}
+
+tlm_hz_imu:  # IMU sample
+  {type: f32, value: 198, unit: "Hz", method: scenario, source: "Derived: the largest whole rate at which all ten telemetry streams fit the budget at once, each at its longest frame: floor(telemetry_byte_rate_max / sum of the frames) = floor(150000 B/s / 755 B) = 198 Hz. Frames, header 10 + payload + checksum 2 B (link/marv.xml, the pinned common.xml), in the order of the tlm_hz_* entries: 55, 40, 60, 54, 49, 75, 152, 60, 89, 121 B. Carries the budget's PLACEHOLDER utilisation fraction (design/budget.yaml); recompute when it or a message changes", sigma: choice}
+
+tlm_hz_actuators:  # actuator outputs
+  {type: f32, value: 198, unit: "Hz", method: scenario, source: "Derived: the largest whole rate at which all ten telemetry streams fit the budget at once, each at its longest frame: floor(telemetry_byte_rate_max / sum of the frames) = floor(150000 B/s / 755 B) = 198 Hz. Frames, header 10 + payload + checksum 2 B (link/marv.xml, the pinned common.xml), in the order of the tlm_hz_* entries: 55, 40, 60, 54, 49, 75, 152, 60, 89, 121 B. Carries the budget's PLACEHOLDER utilisation fraction (design/budget.yaml); recompute when it or a message changes", sigma: choice}
+
+tlm_hz_fc_status:  # composition status
+  {type: f32, value: 198, unit: "Hz", method: scenario, source: "Derived: the largest whole rate at which all ten telemetry streams fit the budget at once, each at its longest frame: floor(telemetry_byte_rate_max / sum of the frames) = floor(150000 B/s / 755 B) = 198 Hz. Frames, header 10 + payload + checksum 2 B (link/marv.xml, the pinned common.xml), in the order of the tlm_hz_* entries: 55, 40, 60, 54, 49, 75, 152, 60, 89, 121 B. Carries the budget's PLACEHOLDER utilisation fraction (design/budget.yaml); recompute when it or a message changes", sigma: choice}
+
+tlm_hz_estimator:  # estimators
+  {type: f32, value: 198, unit: "Hz", method: scenario, source: "Derived: the largest whole rate at which all ten telemetry streams fit the budget at once, each at its longest frame: floor(telemetry_byte_rate_max / sum of the frames) = floor(150000 B/s / 755 B) = 198 Hz. Frames, header 10 + payload + checksum 2 B (link/marv.xml, the pinned common.xml), in the order of the tlm_hz_* entries: 55, 40, 60, 54, 49, 75, 152, 60, 89, 121 B. Carries the budget's PLACEHOLDER utilisation fraction (design/budget.yaml); recompute when it or a message changes", sigma: choice}
+
+tlm_hz_identity:  # identity
+  {type: f32, value: 198, unit: "Hz", method: scenario, source: "Derived: the largest whole rate at which all ten telemetry streams fit the budget at once, each at its longest frame: floor(telemetry_byte_rate_max / sum of the frames) = floor(150000 B/s / 755 B) = 198 Hz. Frames, header 10 + payload + checksum 2 B (link/marv.xml, the pinned common.xml), in the order of the tlm_hz_* entries: 55, 40, 60, 54, 49, 75, 152, 60, 89, 121 B. Carries the budget's PLACEHOLDER utilisation fraction (design/budget.yaml); recompute when it or a message changes", sigma: choice}

@@ -309,7 +309,7 @@ t4_settle_fraction:
   used_by: [quad L4, L5 and L11 T4 behaviour predicates]
 
 config_slot_bytes:
-  value: 98304
+  value: 102400
   unit: B
   method: design-budget
   sigma: choice
@@ -318,11 +318,13 @@ config_slot_bytes:
     (decision 0053 Q3, ground-segment unit 14). The rule: the smallest multiple of the flash erase block that is at least
     twice the largest config file any parameter set generates. The erase block is the 4096 B sector, FLASH_SECTOR_SIZE of
     the pinned Pico SDK 2.3.1 (hardware/flash.h), the smallest erase the SDK's flash_range_erase accepts. The largest
-    config when this entry was set: build/<preset>/generated/marv_params_fc3v2_eskf/marv_params_fc3v2_eskf.mcfg, 47224 B
-    (this entry included); 2 x 47224 = 94448 B; ceil(94448 / 4096) = 24 sectors = 98304 B. The factor 2 is the design's
-    headroom for staged source texts and parameter growth. tools/config/mcfg.py encode refuses (and so fails the build)
-    any generated config above half of this value, 49152 B; that refusal is the signal to recompute this entry. The two
-    slots take 2 x 98304 B = 196608 B from the flash end: offsets 0x1d0000 (A) and 0x1e8000 (B) of the 2097152 B flash
+    config when this entry was last set (2026-10-19, ground-segment unit 11a, after the sd_log_write_stall_max_s merge;
+    the telemetry entries after the 7-inch card made the earlier 49152 B limit refuse it): build/<preset>/generated/marv_params_fc3v2_eskf/marv_params_fc3v2_eskf.mcfg,
+    49824 B; 2 x 49824 = 99648 B; ceil(99648 / 4096) = 25 sectors = 102400 B (was 24 sectors, 98304 B, from 47224 B). The
+    factor 2 is the design's headroom for staged source texts and parameter growth. tools/config/mcfg.py encode refuses
+    (and so fails the build) any generated config above half of this value, 51200 B; that refusal is the signal to
+    recompute this entry. The two slots take 2 x 102400 B = 204800 B from the flash end: offsets 0x1ce000 (A) and 0x1e7000
+    (B) of the 2097152 B flash
     (PICO_FLASH_SIZE_BYTES of boards/madflight_fc3v2_revc.h). Read at configure time by fw/hal/CMakeLists.txt; the
     post-link check tools/ci/check_flash_layout.py (cmake/flash_layout.cmake) fails the m33 build if the image reaches the
     slots.
@@ -347,3 +349,22 @@ sd_log_write_stall_max_s:
     Used by test code and by the logger's pre-roll derivation; it blocks the flight that depends on the logger meeting
     EMB-6, not the commit.
   used_by: [onboard SD flight logger (fw/log) ring sizing L-5 and derived pre-roll, core EMB-6]
+
+telemetry_byte_rate_max:
+  value: 150000
+  unit: B/s
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    The most bytes per second the ground link's telemetry streams may take together, every stream counted at its longest
+    frame on the link (decision 0053 Q4: "total capped by a budget entry from measured link throughput ... utilisation fraction
+    PLACEHOLDER"; ground-segment unit 11). The rule: the measured board-to-host throughput of the USB link times a
+    utilisation fraction u. The throughput is 300000 B/s, the board-to-host rate the FC3v2 carried with 0 CRC failures,
+    0 sequence gaps and 0 bytes dropped at every batch size of HIL S1
+    (tests/regression/quad/L09/results/hil_s1/README.md, the board-to-host column; the offered load of those runs, so a
+    rate the link carries, not its capacity). u = 0.5 is a PLACEHOLDER (budget entries carry no placeholder field,
+    tools/card/schema.py: the reason and the replacement are stated here): the share of the link that telemetry may use
+    beside the parameter traffic, the command answers and the heartbeat, which nothing states yet. Replaced by: Luis's
+    ruling on the share, with EMB-3 re-measured with every stream at its cap (tests/regression/quad/L10/results/telemetry).
+    300000 B/s x 0.5 = 150000 B/s. Not a safety number: no flight decision reads it.
+  used_by: [ground-segment unit 11 telemetry streams (fw/link/src/service.cpp), the tlm_hz_* stream caps (fw/link/params/telemetry_register.yaml)]

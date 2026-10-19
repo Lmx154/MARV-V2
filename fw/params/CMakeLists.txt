@@ -323,14 +323,16 @@ marv_add_card_param_set(marv_params_l11_vertical_scripted CARD "${MARV_VEHICLE_C
 # The quad flight composition's parameter set for the FC3v2 target (M1): the product set (card, budget, mixer, rate,
 # attitude, vertical) with the target's own scenario-values register (tick 7.68 kHz, 3125/24 us; the SIL's register
 # design/scenario_values.yaml stays as it is) followed by the target's rate-timing register (a PLACEHOLDER tolerance,
-# decision 0034) and the composition's own register (none yet). The card is
+# decision 0034), the composition's own register and the ground link's telemetry stream caps (fw/link/params, ground-segment
+# unit 11; the link service is built against this set). The card is
 # fixed to vehicles/marv_7in_fc3v2.yaml, the real airframe (M4 P1; not MARV_VEHICLE_CARD, which stays the UZH card of the SIL).
 # marv_rate, marv_mixer and marv_rate_group read the product ids, which this set keeps.
 marv_add_card_param_set(marv_params_fc3v2 CARD "vehicles/marv_7in_fc3v2.yaml" BUDGET "${MARV_DESIGN_BUDGET}"
   RATE_GUARD mean_period PRODUCT_TABLE
   SCENARIO "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml"
   EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml"
-                 "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml")
+                 "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml"
+                 "${PROJECT_SOURCE_DIR}/fw/link/params/telemetry_register.yaml")
 
 # The FC3v2 set with the ESKF register appended (M4, decision 0055: the attitude and gyro-bias ESKF in shadow). Built from the
 # flattened sources of marv_params_fc3v2 above, in its order (no second flatten), then fw/estimator/params/eskf_register.yaml,
@@ -344,6 +346,7 @@ marv_add_param_set(marv_params_fc3v2_eskf
   REGISTER "${marv_fc3v2_flat}_register.yaml"
            "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml"
            "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml"
+           "${PROJECT_SOURCE_DIR}/fw/link/params/telemetry_register.yaml"
            "${PROJECT_SOURCE_DIR}/fw/estimator/params/eskf_register.yaml")
 
 # The FC3v2 set with the logger register appended (onboard SD flight logger, unit U1): built from the flattened sources of

@@ -3,11 +3,13 @@
 import type { Envelope } from '$link/codec';
 import {
 	MarvActivationResult,
+	MarvArmState,
 	MarvConfigAction,
 	MarvConfigRefusal,
 	MarvConfigResult,
 	MarvConfigSource,
 	MarvConfigState,
+	MarvMotorGate,
 	MarvParamMethod,
 	MarvParamOrigin,
 	MarvParamSigmaKind,
@@ -149,6 +151,153 @@ export const samples: Sample[] = [
 	{
 		name: 'MarvConfigAck',
 		message: { kind: 'MarvConfigAck', target_system: 255, target_component: 190, action: MarvConfigAction.ResetFactory, result: MarvConfigResult.DeniedArmed }
+	},
+	// The telemetry streams (ground-segment unit 11).
+	{
+		name: 'SysStatus',
+		message: {
+			kind: 'SysStatus',
+			onboard_control_sensors_present: 0x00210003,
+			onboard_control_sensors_enabled: 0x00210001,
+			onboard_control_sensors_health: 0x00010003,
+			load: 123,
+			voltage_battery: 0xffff,
+			current_battery: -1,
+			battery_remaining: -1,
+			drop_rate_comm: 250,
+			errors_comm: 7,
+			errors_count1: 1,
+			errors_count2: 2,
+			errors_count3: 3,
+			errors_count4: 4,
+			onboard_control_sensors_present_extended: 0x1,
+			onboard_control_sensors_enabled_extended: 0x2,
+			onboard_control_sensors_health_extended: 0x3
+		}
+	},
+	{
+		name: 'Attitude',
+		message: { kind: 'Attitude', time_boot_ms: 123456, roll: 0.25, pitch: -0.5, yaw: 1.5, rollspeed: 0.125, pitchspeed: -2, yawspeed: 3 }
+	},
+	{
+		name: 'AttitudeQuaternion',
+		message: {
+			kind: 'AttitudeQuaternion',
+			time_boot_ms: 123456,
+			q1: 0.5,
+			q2: -0.5,
+			q3: 0.5,
+			q4: -0.5,
+			rollspeed: 0.125,
+			pitchspeed: -0.25,
+			yawspeed: 4,
+			repr_offset_q: [1, 0, -0.75, 0.5]
+		}
+	},
+	{
+		name: 'RcChannels',
+		message: {
+			kind: 'RcChannels',
+			time_boot_ms: 123456,
+			chancount: 16,
+			chan1_raw: 988,
+			chan2_raw: 1000,
+			chan3_raw: 1100,
+			chan4_raw: 1200,
+			chan5_raw: 1300,
+			chan6_raw: 1400,
+			chan7_raw: 1500,
+			chan8_raw: 1600,
+			chan9_raw: 1700,
+			chan10_raw: 1800,
+			chan11_raw: 1900,
+			chan12_raw: 2000,
+			chan13_raw: 2012,
+			chan14_raw: 1501,
+			chan15_raw: 1499,
+			chan16_raw: 1024,
+			chan17_raw: 0xffff,
+			chan18_raw: 0xffff,
+			rssi: 200
+		}
+	},
+	{
+		name: 'AttitudeTarget',
+		message: {
+			kind: 'AttitudeTarget',
+			time_boot_ms: 123456,
+			type_mask: 128,
+			q: [1, -0.25, 0.5, -0.125],
+			body_roll_rate: 1.5,
+			body_pitch_rate: -2.5,
+			body_yaw_rate: 0.75,
+			thrust: 0.375
+		}
+	},
+	{
+		name: 'HighresImu',
+		message: {
+			kind: 'HighresImu',
+			time_usec: 0x0102030405060708n,
+			xacc: 0.5,
+			yacc: -1,
+			zacc: -9.75,
+			xgyro: 0.03125,
+			ygyro: -0.0625,
+			zgyro: 0.125,
+			xmag: 0.25,
+			ymag: -0.5,
+			zmag: 0.375,
+			abs_pressure: 1013.25,
+			diff_pressure: 0.5,
+			pressure_alt: 120,
+			temperature: 31.5,
+			fields_updated: 0x103f,
+			id: 1
+		}
+	},
+	{ name: 'MessageInterval', message: { kind: 'MessageInterval', message_id: 15206, interval_us: 5051 } },
+	{ name: 'MessageIntervalDisabled', message: { kind: 'MessageInterval', message_id: 30, interval_us: -1 } },
+	{
+		name: 'ActuatorOutputStatus',
+		message: {
+			kind: 'ActuatorOutputStatus',
+			time_usec: 0x1122334455667788n,
+			active: 0xf,
+			actuator: [48, 2047, 0, 1000, ...Array<number>(28).fill(0)]
+		}
+	},
+	{
+		name: 'MarvFcStatus',
+		message: {
+			kind: 'MarvFcStatus',
+			time_usec: 0x0a0b0c0d0e0f1011n,
+			rate_executions: 0x123456789n,
+			rate_faults: 1,
+			rate_timing_faults: 2,
+			attitude_faults: 3,
+			attitude_timing_faults: 4,
+			imu_deadline_misses: 5,
+			rc_frames: 6789,
+			rc_age_us: 0xffffffff,
+			arm_state: MarvArmState.ArmedHold,
+			motor_gate: MarvMotorGate.Armed,
+			flags: 0xa5,
+			rate_fault: 3
+		}
+	},
+	{
+		name: 'MarvEstimator',
+		message: {
+			kind: 'MarvEstimator',
+			time_usec: 0x0102030405060708n,
+			q_mahony: [1, 0, 0, 0],
+			q_eskf: [0.5, 0.5, -0.5, 0.5],
+			gyro_bias_cal: [0.001953125, -0.00390625, 0.0078125],
+			gyro_bias_mahony: [0, 0, 0],
+			gyro_bias_eskf: [-0.25, 0.125, 0.0625],
+			flags: 7
+		}
 	}
 ];
 

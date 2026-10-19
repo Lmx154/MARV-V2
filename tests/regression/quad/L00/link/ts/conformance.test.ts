@@ -98,8 +98,9 @@ describe('MAVLink framing', () => {
 	const HEARTBEAT = 0;
 	const HEARTBEAT_BYTES = 9;
 	const HEARTBEAT_CRC_EXTRA = 50;
-	const ATTITUDE = 30;
-	const ATTITUDE_CRC_EXTRA = 39;
+	const SYSTEM_TIME = 2; // a common.xml message outside link/scope.txt
+	const SYSTEM_TIME_BYTES = 12;
+	const SYSTEM_TIME_CRC_EXTRA = 137;
 	const ABSENT = 14999;
 
 	it('carries the envelope and the message id in the header', () => {
@@ -125,7 +126,7 @@ describe('MAVLink framing', () => {
 
 	it('calls an id not in the dialect bad_crc and a valid frame of a message it does not carry unsupported', () => {
 		expect(decodeFrame(new MavlinkParser(), handFrame(ABSENT, 4, 0)).status).toBe('bad_crc');
-		expect(decodeFrame(new MavlinkParser(), handFrame(ATTITUDE, 28, ATTITUDE_CRC_EXTRA)).status).toBe('unsupported');
+		expect(decodeFrame(new MavlinkParser(), handFrame(SYSTEM_TIME, SYSTEM_TIME_BYTES, SYSTEM_TIME_CRC_EXTRA)).status).toBe('unsupported');
 	});
 
 	it('rejects a correct checksum made with the wrong CRC_EXTRA', () => {

@@ -131,8 +131,9 @@ constexpr std::uint8_t kStx = 0xFD;
 constexpr std::size_t kHeaderBytes = 10;
 constexpr std::uint8_t kHeartbeatCrcExtra = 50;
 constexpr std::size_t kHeartbeatBytes = 9;
-constexpr std::uint8_t kAttitudeCrcExtra = 39;
-constexpr std::uint32_t kAttitudeId = 30;
+constexpr std::uint8_t kSystemTimeCrcExtra = 137;  // SYSTEM_TIME, a common.xml message outside link/scope.txt
+constexpr std::uint32_t kSystemTimeId = 2;
+constexpr std::size_t kSystemTimeBytes = 12;
 constexpr std::uint32_t kAbsentId = 14999;
 
 std::uint16_t x25(std::span<const std::uint8_t> bytes, std::uint16_t crc = 0xFFFF) {
@@ -195,7 +196,7 @@ TEST(MavlinkFraming, AnIdNotInTheDialectIsBadCrc) {
 }
 
 TEST(MavlinkFraming, AValidFrameOfAMessageTheBuildDoesNotCarryIsUnsupported) {
-  const auto bytes = hand_frame(kAttitudeId, 28, kAttitudeCrcExtra);
+  const auto bytes = hand_frame(kSystemTimeId, kSystemTimeBytes, kSystemTimeCrcExtra);
   Frame frame;
   auto parser = MavlinkParser(0);
   EXPECT_EQ(decode_frame(parser, bytes, frame), Status::Unsupported);

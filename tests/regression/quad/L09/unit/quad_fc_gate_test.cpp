@@ -24,11 +24,18 @@
 // the tests select channel kAngleChannel, a table override) the sticks go through the attitude law while armed and the switch
 // is at or above angle_switch_threshold, and through the rate curve otherwise. The beside reference (ArmedGateTest::
 // reference_angle) is an estimator, AngleMode, AttitudeLaw and RateGroupStep::execute_bypass built as quad_fc builds them.
+//
+// Telemetry (decision 0053 Q4, ground-segment unit 11): every rate tick ends by publishing one snapshot of what it read, computed
+// and wrote, and no other tick publishes; the seqlock it goes through never makes the writer wait (a write completes while a
+// reader is stopped inside its read, and that read is refused) and never gives a reader a torn value (a concurrent stress);
+// the snapshot carries its layout version and a sequence number with no gap from one rate tick to the next.
 #include <gtest/gtest.h>
 #include <sys/prctl.h>
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -37,6 +44,7 @@
 #include <limits>
 #include <span>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <marv/attitude/angle_mode.hpp>
@@ -57,6 +65,9 @@
 #include <marv/types/actuator.hpp>
 #include <marv/types/attitude_state.hpp>
 #include <marv/types/imu_sample.hpp>
+#include <marv/types/rotor_speed_sample.hpp>
+#include <marv/types/seqlock.hpp>
+#include <marv/types/telemetry.hpp>
 
 namespace marv {
 namespace {
@@ -1938,6 +1949,275 @@ void init_with_case(const RejectCase& c) {
                  motor_latch, servo_latch);
   composition::init();
   std::exit(0);
+}
+
+// ---- Telemetry: the snapshot of every rate tick (decision 0053 Q4, ground-segment unit 11) ----
+
+bool has_flag(const Telemetry& t, TelemetryFlag f) { return (t.flags & telemetry_flag(f)) != 0; }
+
+// The layout is versioned and numbered: version kTelemetryVersion, sequence 1 for the first snapshot after init. The rotor
+// speeds are the HAL's latest sample (here one the test stages).
+TEST_F(MotorTestGateTest, NoSnapshotBeforeTheFirstRateTickAfterInitAndOneOfWhatItWroteAfterIt) {
+  Telemetry t;
+  EXPECT_FALSE(composition::telemetry(t));  // SetUp ran init; no tick yet
+  const std::array<float, kQuadXMotors> omega{100.0F, 200.0F, 0.0F, 400.0F};
+  const std::uint32_t valid = rotor_speed_flag(RotorSpeedFlag::M1Valid) | rotor_speed_flag(RotorSpeedFlag::M2Valid) |
+                              rotor_speed_flag(RotorSpeedFlag::M4Valid);
+  hal_sim::stage_rotor_speed(omega, valid);
+  const Out o = next_rate_tick();          // tick 0 is a rate tick
+  ASSERT_TRUE(o.wrote);
+  ASSERT_TRUE(composition::telemetry(t));
+  EXPECT_EQ(t.version, kTelemetryVersion);
+  EXPECT_EQ(t.sequence, 1U);
+  EXPECT_EQ(t.rotor_flags, valid);
+  EXPECT_EQ(t.rotor_speed_rad_s, omega);
+  EXPECT_EQ(t.rotor_t_us, t.time_us);
+  EXPECT_EQ(t.rate_executions, 1U);
+  EXPECT_EQ(t.rate_executions, composition::rate_counts().executions);
+  EXPECT_EQ(t.arm_state, static_cast<std::uint8_t>(composition::arming_status()));
+  EXPECT_EQ(t.motor_gate, 0U);  // Disarmed
+  for (std::size_t i = 0; i < composition::kMotors; ++i) {
+    EXPECT_EQ(t.motor_dshot[i], o.motor[i].raw()) << i;
+  }
+  EXPECT_EQ(t.rc_frames, 0U);
+  EXPECT_FALSE(has_flag(t, TelemetryFlag::EskfPresent));
+  EXPECT_EQ(t.reserved, 0U);
+  composition::init();
+  EXPECT_FALSE(composition::telemetry(t));  // init clears it
+}
+
+// Armed in acro with moving samples: each rate tick's snapshot holds that tick's sample (the gyro less the calibration's bias),
+// the frame it read, its setpoint and thrust (the beside reference's), the values it wrote and its state; the tick after it,
+// not a rate tick, publishes nothing.
+TEST_F(ArmedGateTest, EveryRateTickPublishesOneSnapshotOfWhatItReadComputedAndWrote) {
+  arm();
+  kind_ = Kind::Moving;
+  const Sticks fly{0.5F, -0.25F, 0.75F, 0.5F};
+  Telemetry t;
+  ASSERT_TRUE(composition::telemetry(t));
+  std::uint64_t executions = t.rate_executions;
+  std::uint64_t sequence = t.sequence;
+  for (std::size_t k = 0; k < 20; ++k) {
+    const RateOut r = hold(fly, kSwitchOn, fly);
+    ASSERT_TRUE(composition::telemetry(t));
+    EXPECT_EQ(t.rate_executions, executions + 1) << k;
+    EXPECT_EQ(t.sequence, sequence + 1) << k;  // one snapshot per rate execution: no gap
+    executions = t.rate_executions;
+    sequence = t.sequence;
+    EXPECT_EQ(t.rate_executions, composition::rate_counts().executions);
+    const Tick rate_tick_n = n_ - 1;
+    EXPECT_EQ(t.time_us, hal_sim::stamp_us(period_, rate_tick_n));
+    EXPECT_EQ(t.sample_us, last_rate_stamp_);
+    const ImuSample s = sample_of(kind_, rate_tick_n);
+    for (std::size_t a = 0; a < prim::kSpatialDim; ++a) {
+      EXPECT_EQ(t.gyro_rad_s[a], (s.gyro_rad_s + bias_)[a] - t.gyro_bias_cal[a]) << k << " axis " << a;
+      EXPECT_EQ(t.accel_m_s2[a], accel_[a]) << k;
+    }
+    EXPECT_EQ(t.temp_k, s.temp_k);
+    EXPECT_EQ(t.imu_flags, s.flags);
+    for (std::size_t i = 0; i < composition::kMotors; ++i) {
+      EXPECT_EQ(t.motor_dshot[i], r.out.motor[i].raw()) << k << " motor " << (i + 1);
+    }
+    EXPECT_EQ(t.rc_frames, frames_);
+    EXPECT_EQ(t.rc_t_us, t.time_us);  // the frame staged before this rate tick, stamped with its time
+    EXPECT_EQ(t.rc_roll, fly.roll);
+    EXPECT_EQ(t.rc_throttle, fly.throttle);
+    EXPECT_EQ(t.rc_channels[kLuisArmChannel - 1], kSwitchOn);
+    const prim::Vec3<float> sp = stick_rates::rate_setpoint(rates_, prim::Vec3<float>(fly.roll, fly.pitch, fly.yaw));
+    for (std::size_t a = 0; a < prim::kSpatialDim; ++a) {
+      EXPECT_EQ(t.rate_setpoint_rad_s[a], sp[a]) << k << " axis " << a;
+    }
+    EXPECT_EQ(t.thrust_n, thrust_of(fly));
+    EXPECT_GT(t.thrust_max_n, t.thrust_n);
+    EXPECT_EQ(t.arm_state, static_cast<std::uint8_t>(arming::ArmState::Armed));
+    EXPECT_EQ(t.motor_gate, 1U);  // Armed
+    EXPECT_FALSE(has_flag(t, TelemetryFlag::AngleMode));
+    EXPECT_TRUE(has_flag(t, TelemetryFlag::GyroCalibrated));
+    EXPECT_TRUE(has_flag(t, TelemetryFlag::EstimatorValid));
+    EXPECT_TRUE(has_flag(t, TelemetryFlag::MahonyValid));
+    EXPECT_FALSE(has_flag(t, TelemetryFlag::EskfPresent));
+    EXPECT_EQ(t.q_mahony[0], est_ref_.quat().w);  // the beside estimator, stepped on the same samples
+    EXPECT_EQ(t.q_mahony[1], est_ref_.quat().x);
+    EXPECT_EQ(t.rotor_flags, 0U);  // no rotor speed staged
+    EXPECT_EQ(t.rate_faults, 0U);
+  }
+  const Telemetry last = t;
+  ASSERT_NE(n_ % divisor_, 0U);
+  const Out o = step_tick();  // not a rate tick
+  EXPECT_FALSE(o.wrote);
+  ASSERT_TRUE(composition::telemetry(t));
+  EXPECT_EQ(t.rate_executions, last.rate_executions);
+  EXPECT_EQ(t.sequence, last.sequence);
+  EXPECT_EQ(t.sample_us, last.sample_us);
+}
+
+// Angle mode: the snapshot carries the attitude law's rate setpoint (the beside reference's) and the attitude setpoint.
+TEST_F(AngleGateTest, TheSnapshotCarriesTheAttitudeSetpointAndTheLawsRateSetpointInAngleMode) {
+  arm();
+  enter_angle();
+  const Sticks roll{0.3F, 0.0F, 0.0F, 0.5F};
+  for (std::size_t k = 0; k < 10; ++k) {
+    const RateOut r = hold(roll, kSwitchOn, roll);
+    ASSERT_EQ(r.out.motor, r.mixed) << k;
+    Telemetry t;
+    ASSERT_TRUE(composition::telemetry(t));
+    EXPECT_TRUE(has_flag(t, TelemetryFlag::AngleMode));
+    for (std::size_t a = 0; a < prim::kSpatialDim; ++a) {
+      EXPECT_EQ(t.rate_setpoint_rad_s[a], angle_sp_[a]) << k << " axis " << a;
+    }
+    EXPECT_GT(std::abs(t.q_setpoint[1]), 0.0F) << k;  // a roll stick tilts the setpoint about x (w x y z)
+  }
+  leave_angle();
+  (void)hold({}, kSwitchOn, {});
+  Telemetry t;
+  ASSERT_TRUE(composition::telemetry(t));
+  EXPECT_FALSE(has_flag(t, TelemetryFlag::AngleMode));
+  EXPECT_EQ(t.q_setpoint[0], 1.0F);  // identity outside angle mode
+  EXPECT_EQ(t.q_setpoint[1], 0.0F);
+}
+
+// The seqlock (marv/types/seqlock.hpp) on the snapshot type itself. A test value: every counter of the snapshot from one number,
+// so a copy that mixes two writes shows as two numbers.
+Telemetry numbered(std::uint32_t k) {
+  Telemetry t;
+  t.sequence = k;
+  t.time_us = k;
+  t.sample_us = k;
+  t.rate_executions = k;
+  t.motor_dshot.fill(static_cast<std::uint16_t>(k));
+  t.rc_frames = k;
+  t.rc_channels.fill(static_cast<float>(k));
+  t.rate_faults = k;
+  t.imu_deadline_misses = k;
+  t.arm_state = static_cast<std::uint8_t>(k);
+  return t;
+}
+
+// The number of a value, or 0 if its fields hold different numbers (a torn value).
+std::uint32_t number_of(const Telemetry& t) {
+  const auto k = static_cast<std::uint32_t>(t.rate_executions);
+  bool same = t.sequence == k && t.time_us == k && t.sample_us == k && t.rc_frames == k && t.rate_faults == k &&
+              t.imu_deadline_misses == k && t.arm_state == static_cast<std::uint8_t>(k);
+  for (const std::uint16_t m : t.motor_dshot) {
+    same = same && m == static_cast<std::uint16_t>(k);
+  }
+  for (const float c : t.rc_channels) {
+    same = same && c == static_cast<float>(k);
+  }
+  return same ? k : 0;
+}
+
+TEST(TelemetrySeqlock, NothingIsReadBeforeTheFirstWriteOrAfterAReset) {
+  Seqlock<Telemetry> lock;
+  Telemetry got = numbered(7);
+  EXPECT_FALSE(lock.read(got));
+  EXPECT_EQ(lock.try_read(got), Seqlock<Telemetry>::Read::Empty);
+  EXPECT_EQ(number_of(got), 7U);  // unchanged
+  lock.write(numbered(1));
+  ASSERT_TRUE(lock.read(got));
+  EXPECT_EQ(number_of(got), 1U);
+  lock.reset();
+  EXPECT_FALSE(lock.read(got));
+}
+
+// The board's case, an interrupt that writes while the background loop is inside a read: the write completes, and that read is
+// refused (Torn, its output untouched); the retry reads the new value.
+TEST(TelemetrySeqlock, AWriteInsideAReadCompletesAndTheReadIsRefusedAndRetried) {
+  Seqlock<Telemetry> lock;
+  lock.write(numbered(1));
+  Telemetry got;
+  bool written = false;
+  const auto result = lock.try_read(got, [&] {
+    lock.write(numbered(2));
+    written = true;
+  });
+  EXPECT_TRUE(written);
+  EXPECT_EQ(result, Seqlock<Telemetry>::Read::Torn);
+  EXPECT_EQ(number_of(got), 0U);  // the default value, untouched
+  ASSERT_TRUE(lock.read(got));
+  EXPECT_EQ(number_of(got), 2U);
+}
+
+// Writer never waits, across threads: a reader thread stops inside its read until the writer has finished a thousand writes;
+// they all complete while the reader is stopped there (the reader has not returned when the last one ends), and that read
+// is refused. kStopLimit only bounds the stop, so a writer that did wait would fail the test instead of hanging it.
+TEST(TelemetrySeqlock, TheWriterCompletesEveryWriteWhileAReaderIsStoppedInsideItsRead) {
+  constexpr std::uint32_t kWrites = 1000;
+  constexpr auto kStopLimit = std::chrono::seconds(10);
+  Seqlock<Telemetry> lock;
+  lock.write(numbered(1));
+  std::atomic<bool> inside{false};
+  std::atomic<bool> writes_done{false};
+  std::atomic<bool> returned{false};
+  Seqlock<Telemetry>::Read result = Seqlock<Telemetry>::Read::Ok;
+  std::thread reader([&] {
+    Telemetry got;
+    result = lock.try_read(got, [&] {
+      inside.store(true);
+      const auto until = std::chrono::steady_clock::now() + kStopLimit;
+      while (!writes_done.load() && std::chrono::steady_clock::now() < until) {
+        std::this_thread::yield();
+      }
+    });
+    returned.store(true);
+  });
+  while (!inside.load()) {
+    std::this_thread::yield();
+  }
+  for (std::uint32_t k = 2; k <= kWrites + 1; ++k) {
+    lock.write(numbered(k));
+  }
+  EXPECT_FALSE(returned.load()) << "the writes completed only after the reader left its read";
+  writes_done.store(true);
+  reader.join();
+  EXPECT_EQ(result, Seqlock<Telemetry>::Read::Torn);
+  Telemetry got;
+  ASSERT_TRUE(lock.read(got));
+  EXPECT_EQ(number_of(got), kWrites + 1);
+}
+
+// A reader never sees a torn value: one thread writes numbered values as fast as it can while another reads them; every value
+// read is whole, and the numbers never go back.
+TEST(TelemetrySeqlock, AConcurrentReaderNeverSeesATornValue) {
+  constexpr std::uint32_t kWrites = 200000;
+  Seqlock<Telemetry> lock;
+  lock.write(numbered(1));
+  std::atomic<bool> done{false};
+  std::uint64_t reads = 0;
+  std::uint64_t torn_reads = 0;
+  std::uint64_t refused = 0;
+  std::uint32_t last = 0;
+  bool backwards = false;
+  std::thread reader([&] {
+    Telemetry got;
+    while (!done.load()) {
+      switch (lock.try_read(got)) {
+        case Seqlock<Telemetry>::Read::Ok: {
+          const std::uint32_t k = number_of(got);
+          ++reads;
+          torn_reads += k == 0 ? 1U : 0U;
+          backwards = backwards || k < last;
+          last = k;
+          break;
+        }
+        case Seqlock<Telemetry>::Read::Torn:
+          ++refused;
+          break;
+        case Seqlock<Telemetry>::Read::Empty:
+          break;
+      }
+    }
+  });
+  for (std::uint32_t k = 2; k <= kWrites; ++k) {
+    lock.write(numbered(k));
+  }
+  done.store(true);
+  reader.join();
+  RecordProperty("reads", std::to_string(reads));
+  RecordProperty("refused", std::to_string(refused));
+  EXPECT_GT(reads, 0U);
+  EXPECT_EQ(torn_reads, 0U);
+  EXPECT_FALSE(backwards);
 }
 
 // `text` as a regular expression that matches exactly it (the death test's pattern language, POSIX extended).

@@ -5,7 +5,7 @@ export type WireType = 'u8' | 'i8' | 'u16' | 'i16' | 'u32' | 'i32' | 'u64' | 'i6
 export interface FieldInfo {
 	name: string;
 	type: WireType;
-	/** 0 for a scalar, else the number of elements (byte arrays only). */
+	/** 0 for a scalar, else the number of elements (a byte array is a Uint8Array, any other an array of numbers). */
 	length: number;
 	offset: number;
 }
@@ -105,6 +105,61 @@ export const MarvConfigResult = {
 	Failed: 5,
 } as const;
 export type MarvConfigResult = (typeof MarvConfigResult)[keyof typeof MarvConfigResult];
+
+export const MarvArmState = {
+	Boot: 0,
+	SwitchOff: 1,
+	SwitchNotCycled: 2,
+	ThrottleUp: 3,
+	ImuStale: 4,
+	ImuInvalid: 5,
+	Saturated: 6,
+	NoLink: 7,
+	Failsafe: 8,
+	MotorTest: 9,
+	Armed: 10,
+	ArmedHold: 11,
+	ArmedFailsafeCentred: 12,
+	EstimatorInvalid: 13,
+	Calibrating: 14,
+	NotUpright: 15,
+	ConfigRefused: 16,
+	Maintenance: 17,
+} as const;
+export type MarvArmState = (typeof MarvArmState)[keyof typeof MarvArmState];
+
+export const MarvMotorGate = {
+	Disarmed: 0,
+	Armed: 1,
+	MotorTest: 2,
+} as const;
+export type MarvMotorGate = (typeof MarvMotorGate)[keyof typeof MarvMotorGate];
+
+export const MarvFcStatusFlag = {
+	AngleMode: 1,
+	Airmode: 2,
+	ItermHeld: 4,
+	GyroCalibrated: 8,
+	EstimatorValid: 16,
+	Upright: 32,
+	ImuInvalid: 64,
+	ImuSaturated: 128,
+} as const;
+export type MarvFcStatusFlag = (typeof MarvFcStatusFlag)[keyof typeof MarvFcStatusFlag];
+
+export const MarvRateFaultFlag = {
+	Active: 1,
+	Latched: 2,
+} as const;
+export type MarvRateFaultFlag = (typeof MarvRateFaultFlag)[keyof typeof MarvRateFaultFlag];
+
+export const MarvEstimatorFlag = {
+	MahonyValid: 1,
+	EskfPresent: 2,
+	EskfValid: 4,
+	EskfInUse: 8,
+} as const;
+export type MarvEstimatorFlag = (typeof MarvEstimatorFlag)[keyof typeof MarvEstimatorFlag];
 
 export interface Heartbeat {
 	type: number;
@@ -262,6 +317,197 @@ export interface MarvConfigAck {
 	result: MarvConfigResult;
 }
 
+export interface SysStatus {
+	onboard_control_sensors_present: number;
+	onboard_control_sensors_enabled: number;
+	onboard_control_sensors_health: number;
+	load: number;
+	voltage_battery: number;
+	current_battery: number;
+	battery_remaining: number;
+	drop_rate_comm: number;
+	errors_comm: number;
+	errors_count1: number;
+	errors_count2: number;
+	errors_count3: number;
+	errors_count4: number;
+	onboard_control_sensors_present_extended: number;
+	onboard_control_sensors_enabled_extended: number;
+	onboard_control_sensors_health_extended: number;
+}
+
+export interface Attitude {
+	time_boot_ms: number;
+	roll: number;
+	/** The raw 32 bits of roll: used instead of it when set (encode), always present on a decoded message. */
+	roll_bits?: number;
+	pitch: number;
+	/** The raw 32 bits of pitch: used instead of it when set (encode), always present on a decoded message. */
+	pitch_bits?: number;
+	yaw: number;
+	/** The raw 32 bits of yaw: used instead of it when set (encode), always present on a decoded message. */
+	yaw_bits?: number;
+	rollspeed: number;
+	/** The raw 32 bits of rollspeed: used instead of it when set (encode), always present on a decoded message. */
+	rollspeed_bits?: number;
+	pitchspeed: number;
+	/** The raw 32 bits of pitchspeed: used instead of it when set (encode), always present on a decoded message. */
+	pitchspeed_bits?: number;
+	yawspeed: number;
+	/** The raw 32 bits of yawspeed: used instead of it when set (encode), always present on a decoded message. */
+	yawspeed_bits?: number;
+}
+
+export interface AttitudeQuaternion {
+	time_boot_ms: number;
+	q1: number;
+	/** The raw 32 bits of q1: used instead of it when set (encode), always present on a decoded message. */
+	q1_bits?: number;
+	q2: number;
+	/** The raw 32 bits of q2: used instead of it when set (encode), always present on a decoded message. */
+	q2_bits?: number;
+	q3: number;
+	/** The raw 32 bits of q3: used instead of it when set (encode), always present on a decoded message. */
+	q3_bits?: number;
+	q4: number;
+	/** The raw 32 bits of q4: used instead of it when set (encode), always present on a decoded message. */
+	q4_bits?: number;
+	rollspeed: number;
+	/** The raw 32 bits of rollspeed: used instead of it when set (encode), always present on a decoded message. */
+	rollspeed_bits?: number;
+	pitchspeed: number;
+	/** The raw 32 bits of pitchspeed: used instead of it when set (encode), always present on a decoded message. */
+	pitchspeed_bits?: number;
+	yawspeed: number;
+	/** The raw 32 bits of yawspeed: used instead of it when set (encode), always present on a decoded message. */
+	yawspeed_bits?: number;
+	repr_offset_q: number[];
+}
+
+export interface RcChannels {
+	time_boot_ms: number;
+	chancount: number;
+	chan1_raw: number;
+	chan2_raw: number;
+	chan3_raw: number;
+	chan4_raw: number;
+	chan5_raw: number;
+	chan6_raw: number;
+	chan7_raw: number;
+	chan8_raw: number;
+	chan9_raw: number;
+	chan10_raw: number;
+	chan11_raw: number;
+	chan12_raw: number;
+	chan13_raw: number;
+	chan14_raw: number;
+	chan15_raw: number;
+	chan16_raw: number;
+	chan17_raw: number;
+	chan18_raw: number;
+	rssi: number;
+}
+
+export interface AttitudeTarget {
+	time_boot_ms: number;
+	type_mask: number;
+	q: number[];
+	body_roll_rate: number;
+	/** The raw 32 bits of body_roll_rate: used instead of it when set (encode), always present on a decoded message. */
+	body_roll_rate_bits?: number;
+	body_pitch_rate: number;
+	/** The raw 32 bits of body_pitch_rate: used instead of it when set (encode), always present on a decoded message. */
+	body_pitch_rate_bits?: number;
+	body_yaw_rate: number;
+	/** The raw 32 bits of body_yaw_rate: used instead of it when set (encode), always present on a decoded message. */
+	body_yaw_rate_bits?: number;
+	thrust: number;
+	/** The raw 32 bits of thrust: used instead of it when set (encode), always present on a decoded message. */
+	thrust_bits?: number;
+}
+
+export interface HighresImu {
+	time_usec: bigint;
+	xacc: number;
+	/** The raw 32 bits of xacc: used instead of it when set (encode), always present on a decoded message. */
+	xacc_bits?: number;
+	yacc: number;
+	/** The raw 32 bits of yacc: used instead of it when set (encode), always present on a decoded message. */
+	yacc_bits?: number;
+	zacc: number;
+	/** The raw 32 bits of zacc: used instead of it when set (encode), always present on a decoded message. */
+	zacc_bits?: number;
+	xgyro: number;
+	/** The raw 32 bits of xgyro: used instead of it when set (encode), always present on a decoded message. */
+	xgyro_bits?: number;
+	ygyro: number;
+	/** The raw 32 bits of ygyro: used instead of it when set (encode), always present on a decoded message. */
+	ygyro_bits?: number;
+	zgyro: number;
+	/** The raw 32 bits of zgyro: used instead of it when set (encode), always present on a decoded message. */
+	zgyro_bits?: number;
+	xmag: number;
+	/** The raw 32 bits of xmag: used instead of it when set (encode), always present on a decoded message. */
+	xmag_bits?: number;
+	ymag: number;
+	/** The raw 32 bits of ymag: used instead of it when set (encode), always present on a decoded message. */
+	ymag_bits?: number;
+	zmag: number;
+	/** The raw 32 bits of zmag: used instead of it when set (encode), always present on a decoded message. */
+	zmag_bits?: number;
+	abs_pressure: number;
+	/** The raw 32 bits of abs_pressure: used instead of it when set (encode), always present on a decoded message. */
+	abs_pressure_bits?: number;
+	diff_pressure: number;
+	/** The raw 32 bits of diff_pressure: used instead of it when set (encode), always present on a decoded message. */
+	diff_pressure_bits?: number;
+	pressure_alt: number;
+	/** The raw 32 bits of pressure_alt: used instead of it when set (encode), always present on a decoded message. */
+	pressure_alt_bits?: number;
+	temperature: number;
+	/** The raw 32 bits of temperature: used instead of it when set (encode), always present on a decoded message. */
+	temperature_bits?: number;
+	fields_updated: number;
+	id: number;
+}
+
+export interface MessageInterval {
+	message_id: number;
+	interval_us: number;
+}
+
+export interface ActuatorOutputStatus {
+	time_usec: bigint;
+	active: number;
+	actuator: number[];
+}
+
+export interface MarvFcStatus {
+	time_usec: bigint;
+	rate_executions: bigint;
+	rate_faults: number;
+	rate_timing_faults: number;
+	attitude_faults: number;
+	attitude_timing_faults: number;
+	imu_deadline_misses: number;
+	rc_frames: number;
+	rc_age_us: number;
+	arm_state: MarvArmState;
+	motor_gate: MarvMotorGate;
+	flags: number;
+	rate_fault: number;
+}
+
+export interface MarvEstimator {
+	time_usec: bigint;
+	q_mahony: number[];
+	q_eskf: number[];
+	gyro_bias_cal: number[];
+	gyro_bias_mahony: number[];
+	gyro_bias_eskf: number[];
+	flags: number;
+}
+
 export type Message =
 	| ({ kind: 'Heartbeat' } & Heartbeat)
 	| ({ kind: 'AutopilotVersion' } & AutopilotVersion)
@@ -276,7 +522,17 @@ export type Message =
 	| ({ kind: 'MarvParamRecord' } & MarvParamRecord)
 	| ({ kind: 'MarvParamSource' } & MarvParamSource)
 	| ({ kind: 'MarvConfigCommand' } & MarvConfigCommand)
-	| ({ kind: 'MarvConfigAck' } & MarvConfigAck);
+	| ({ kind: 'MarvConfigAck' } & MarvConfigAck)
+	| ({ kind: 'SysStatus' } & SysStatus)
+	| ({ kind: 'Attitude' } & Attitude)
+	| ({ kind: 'AttitudeQuaternion' } & AttitudeQuaternion)
+	| ({ kind: 'RcChannels' } & RcChannels)
+	| ({ kind: 'AttitudeTarget' } & AttitudeTarget)
+	| ({ kind: 'HighresImu' } & HighresImu)
+	| ({ kind: 'MessageInterval' } & MessageInterval)
+	| ({ kind: 'ActuatorOutputStatus' } & ActuatorOutputStatus)
+	| ({ kind: 'MarvFcStatus' } & MarvFcStatus)
+	| ({ kind: 'MarvEstimator' } & MarvEstimator);
 
 export const MESSAGES: MessageInfo[] = [
 	{
@@ -512,6 +768,207 @@ export const MESSAGES: MessageInfo[] = [
 			{ name: 'target_component', type: 'u8', length: 0, offset: 1 },
 			{ name: 'action', type: 'u8', length: 0, offset: 2 },
 			{ name: 'result', type: 'u8', length: 0, offset: 3 },
+		]
+	},
+	{
+		kind: 'SysStatus',
+		name: 'SYS_STATUS',
+		id: 1,
+		crcExtra: 124,
+		minLength: 31,
+		maxLength: 43,
+		fields: [
+			{ name: 'onboard_control_sensors_present', type: 'u32', length: 0, offset: 0 },
+			{ name: 'onboard_control_sensors_enabled', type: 'u32', length: 0, offset: 4 },
+			{ name: 'onboard_control_sensors_health', type: 'u32', length: 0, offset: 8 },
+			{ name: 'load', type: 'u16', length: 0, offset: 12 },
+			{ name: 'voltage_battery', type: 'u16', length: 0, offset: 14 },
+			{ name: 'current_battery', type: 'i16', length: 0, offset: 16 },
+			{ name: 'drop_rate_comm', type: 'u16', length: 0, offset: 18 },
+			{ name: 'errors_comm', type: 'u16', length: 0, offset: 20 },
+			{ name: 'errors_count1', type: 'u16', length: 0, offset: 22 },
+			{ name: 'errors_count2', type: 'u16', length: 0, offset: 24 },
+			{ name: 'errors_count3', type: 'u16', length: 0, offset: 26 },
+			{ name: 'errors_count4', type: 'u16', length: 0, offset: 28 },
+			{ name: 'battery_remaining', type: 'i8', length: 0, offset: 30 },
+			{ name: 'onboard_control_sensors_present_extended', type: 'u32', length: 0, offset: 31 },
+			{ name: 'onboard_control_sensors_enabled_extended', type: 'u32', length: 0, offset: 35 },
+			{ name: 'onboard_control_sensors_health_extended', type: 'u32', length: 0, offset: 39 },
+		]
+	},
+	{
+		kind: 'Attitude',
+		name: 'ATTITUDE',
+		id: 30,
+		crcExtra: 39,
+		minLength: 28,
+		maxLength: 28,
+		fields: [
+			{ name: 'time_boot_ms', type: 'u32', length: 0, offset: 0 },
+			{ name: 'roll', type: 'f32', length: 0, offset: 4 },
+			{ name: 'pitch', type: 'f32', length: 0, offset: 8 },
+			{ name: 'yaw', type: 'f32', length: 0, offset: 12 },
+			{ name: 'rollspeed', type: 'f32', length: 0, offset: 16 },
+			{ name: 'pitchspeed', type: 'f32', length: 0, offset: 20 },
+			{ name: 'yawspeed', type: 'f32', length: 0, offset: 24 },
+		]
+	},
+	{
+		kind: 'AttitudeQuaternion',
+		name: 'ATTITUDE_QUATERNION',
+		id: 31,
+		crcExtra: 246,
+		minLength: 32,
+		maxLength: 48,
+		fields: [
+			{ name: 'time_boot_ms', type: 'u32', length: 0, offset: 0 },
+			{ name: 'q1', type: 'f32', length: 0, offset: 4 },
+			{ name: 'q2', type: 'f32', length: 0, offset: 8 },
+			{ name: 'q3', type: 'f32', length: 0, offset: 12 },
+			{ name: 'q4', type: 'f32', length: 0, offset: 16 },
+			{ name: 'rollspeed', type: 'f32', length: 0, offset: 20 },
+			{ name: 'pitchspeed', type: 'f32', length: 0, offset: 24 },
+			{ name: 'yawspeed', type: 'f32', length: 0, offset: 28 },
+			{ name: 'repr_offset_q', type: 'f32', length: 4, offset: 32 },
+		]
+	},
+	{
+		kind: 'RcChannels',
+		name: 'RC_CHANNELS',
+		id: 65,
+		crcExtra: 118,
+		minLength: 42,
+		maxLength: 42,
+		fields: [
+			{ name: 'time_boot_ms', type: 'u32', length: 0, offset: 0 },
+			{ name: 'chan1_raw', type: 'u16', length: 0, offset: 4 },
+			{ name: 'chan2_raw', type: 'u16', length: 0, offset: 6 },
+			{ name: 'chan3_raw', type: 'u16', length: 0, offset: 8 },
+			{ name: 'chan4_raw', type: 'u16', length: 0, offset: 10 },
+			{ name: 'chan5_raw', type: 'u16', length: 0, offset: 12 },
+			{ name: 'chan6_raw', type: 'u16', length: 0, offset: 14 },
+			{ name: 'chan7_raw', type: 'u16', length: 0, offset: 16 },
+			{ name: 'chan8_raw', type: 'u16', length: 0, offset: 18 },
+			{ name: 'chan9_raw', type: 'u16', length: 0, offset: 20 },
+			{ name: 'chan10_raw', type: 'u16', length: 0, offset: 22 },
+			{ name: 'chan11_raw', type: 'u16', length: 0, offset: 24 },
+			{ name: 'chan12_raw', type: 'u16', length: 0, offset: 26 },
+			{ name: 'chan13_raw', type: 'u16', length: 0, offset: 28 },
+			{ name: 'chan14_raw', type: 'u16', length: 0, offset: 30 },
+			{ name: 'chan15_raw', type: 'u16', length: 0, offset: 32 },
+			{ name: 'chan16_raw', type: 'u16', length: 0, offset: 34 },
+			{ name: 'chan17_raw', type: 'u16', length: 0, offset: 36 },
+			{ name: 'chan18_raw', type: 'u16', length: 0, offset: 38 },
+			{ name: 'chancount', type: 'u8', length: 0, offset: 40 },
+			{ name: 'rssi', type: 'u8', length: 0, offset: 41 },
+		]
+	},
+	{
+		kind: 'AttitudeTarget',
+		name: 'ATTITUDE_TARGET',
+		id: 83,
+		crcExtra: 22,
+		minLength: 37,
+		maxLength: 37,
+		fields: [
+			{ name: 'time_boot_ms', type: 'u32', length: 0, offset: 0 },
+			{ name: 'q', type: 'f32', length: 4, offset: 4 },
+			{ name: 'body_roll_rate', type: 'f32', length: 0, offset: 20 },
+			{ name: 'body_pitch_rate', type: 'f32', length: 0, offset: 24 },
+			{ name: 'body_yaw_rate', type: 'f32', length: 0, offset: 28 },
+			{ name: 'thrust', type: 'f32', length: 0, offset: 32 },
+			{ name: 'type_mask', type: 'u8', length: 0, offset: 36 },
+		]
+	},
+	{
+		kind: 'HighresImu',
+		name: 'HIGHRES_IMU',
+		id: 105,
+		crcExtra: 93,
+		minLength: 62,
+		maxLength: 63,
+		fields: [
+			{ name: 'time_usec', type: 'u64', length: 0, offset: 0 },
+			{ name: 'xacc', type: 'f32', length: 0, offset: 8 },
+			{ name: 'yacc', type: 'f32', length: 0, offset: 12 },
+			{ name: 'zacc', type: 'f32', length: 0, offset: 16 },
+			{ name: 'xgyro', type: 'f32', length: 0, offset: 20 },
+			{ name: 'ygyro', type: 'f32', length: 0, offset: 24 },
+			{ name: 'zgyro', type: 'f32', length: 0, offset: 28 },
+			{ name: 'xmag', type: 'f32', length: 0, offset: 32 },
+			{ name: 'ymag', type: 'f32', length: 0, offset: 36 },
+			{ name: 'zmag', type: 'f32', length: 0, offset: 40 },
+			{ name: 'abs_pressure', type: 'f32', length: 0, offset: 44 },
+			{ name: 'diff_pressure', type: 'f32', length: 0, offset: 48 },
+			{ name: 'pressure_alt', type: 'f32', length: 0, offset: 52 },
+			{ name: 'temperature', type: 'f32', length: 0, offset: 56 },
+			{ name: 'fields_updated', type: 'u16', length: 0, offset: 60 },
+			{ name: 'id', type: 'u8', length: 0, offset: 62 },
+		]
+	},
+	{
+		kind: 'MessageInterval',
+		name: 'MESSAGE_INTERVAL',
+		id: 244,
+		crcExtra: 95,
+		minLength: 6,
+		maxLength: 6,
+		fields: [
+			{ name: 'interval_us', type: 'i32', length: 0, offset: 0 },
+			{ name: 'message_id', type: 'u16', length: 0, offset: 4 },
+		]
+	},
+	{
+		kind: 'ActuatorOutputStatus',
+		name: 'ACTUATOR_OUTPUT_STATUS',
+		id: 375,
+		crcExtra: 251,
+		minLength: 140,
+		maxLength: 140,
+		fields: [
+			{ name: 'time_usec', type: 'u64', length: 0, offset: 0 },
+			{ name: 'active', type: 'u32', length: 0, offset: 8 },
+			{ name: 'actuator', type: 'f32', length: 32, offset: 12 },
+		]
+	},
+	{
+		kind: 'MarvFcStatus',
+		name: 'MARV_FC_STATUS',
+		id: 15205,
+		crcExtra: 95,
+		minLength: 48,
+		maxLength: 48,
+		fields: [
+			{ name: 'time_usec', type: 'u64', length: 0, offset: 0 },
+			{ name: 'rate_executions', type: 'u64', length: 0, offset: 8 },
+			{ name: 'rate_faults', type: 'u32', length: 0, offset: 16 },
+			{ name: 'rate_timing_faults', type: 'u32', length: 0, offset: 20 },
+			{ name: 'attitude_faults', type: 'u32', length: 0, offset: 24 },
+			{ name: 'attitude_timing_faults', type: 'u32', length: 0, offset: 28 },
+			{ name: 'imu_deadline_misses', type: 'u32', length: 0, offset: 32 },
+			{ name: 'rc_frames', type: 'u32', length: 0, offset: 36 },
+			{ name: 'rc_age_us', type: 'u32', length: 0, offset: 40 },
+			{ name: 'arm_state', type: 'u8', length: 0, offset: 44 },
+			{ name: 'motor_gate', type: 'u8', length: 0, offset: 45 },
+			{ name: 'flags', type: 'u8', length: 0, offset: 46 },
+			{ name: 'rate_fault', type: 'u8', length: 0, offset: 47 },
+		]
+	},
+	{
+		kind: 'MarvEstimator',
+		name: 'MARV_ESTIMATOR',
+		id: 15206,
+		crcExtra: 208,
+		minLength: 77,
+		maxLength: 77,
+		fields: [
+			{ name: 'time_usec', type: 'u64', length: 0, offset: 0 },
+			{ name: 'q_mahony', type: 'f32', length: 4, offset: 8 },
+			{ name: 'q_eskf', type: 'f32', length: 4, offset: 24 },
+			{ name: 'gyro_bias_cal', type: 'f32', length: 3, offset: 40 },
+			{ name: 'gyro_bias_mahony', type: 'f32', length: 3, offset: 52 },
+			{ name: 'gyro_bias_eskf', type: 'f32', length: 3, offset: 64 },
+			{ name: 'flags', type: 'u8', length: 0, offset: 76 },
 		]
 	},
 ];
@@ -758,4 +1215,6 @@ export const DIALECT: Record<number, { crcExtra: number; maxLength: number }> = 
 	15202: { crcExtra: 82, maxLength: 82 },
 	15203: { crcExtra: 246, maxLength: 75 },
 	15204: { crcExtra: 182, maxLength: 4 },
+	15205: { crcExtra: 95, maxLength: 48 },
+	15206: { crcExtra: 208, maxLength: 77 },
 };
