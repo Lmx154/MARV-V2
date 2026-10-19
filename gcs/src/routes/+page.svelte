@@ -14,6 +14,7 @@
 	const bytes = gcs.helper?.bytes ?? readable({ rxBytes: 0, txBytes: 0 });
 	const status = gcs.status;
 	const sessionState = gcs.session?.state ?? readable<SessionState | null>(null);
+	const autoconnect = gcs.autoconnect;
 
 	let ports = $state<string[]>([]);
 	let serialPath = $state('');
@@ -42,8 +43,6 @@
 
 	onMount(() => {
 		void listPorts();
-		const timer = setInterval(() => void gcs.refreshStatus(), 2000);
-		return () => clearInterval(timer);
 	});
 
 	const udpPort = $derived(udpTyped ?? $status?.sil.udp_port ?? FALLBACK_UDP_PORT);
@@ -90,6 +89,24 @@
 			<dt>exit status</dt><dd>{$status?.sil.exit_status ?? '—'}</dd>
 			<dt>UDP port</dt><dd>{$status?.sil.udp_port ?? 'not set (the helper was started without --sil-udp-port)'}</dd>
 		</dl>
+	</Panel>
+
+	<Panel title="Autoconnect" label="device">
+		<p class="muted note">The helper opens the SIL's UDP link once a SIL run binds its port, and a board's link interface when one is plugged in. It never opens a board that lacks the link interface, and it is suspended during a HIL run or a flash.</p>
+		<dl class="facts mono">
+			<dt>state</dt>
+			<dd>
+				{#if !$status}<Badge text="unknown" />{:else if !$status.autoconnect.enabled}<Badge text="off" />{:else if $status.autoconnect.suspended}<Badge text="suspended" tone="warn" />{:else}<Badge text="on" tone="ok" />{/if}
+			</dd>
+			<dt>suspended because</dt><dd>{$status?.autoconnect.suspended ?? '—'}</dd>
+			<dt>device opened by</dt><dd>{$status?.autoconnect.owner ?? (hasDevice ? 'the operator' : '—')}</dd>
+			<dt>latest event</dt>
+			<dd>{$autoconnect ? [$autoconnect.state, $autoconnect.source, $autoconnect.device, $autoconnect.reason].filter(Boolean).join(' · ') : '—'}</dd>
+		</dl>
+		<div class="row">
+			<button type="button" disabled={!isOpen || busy || !$status || $status.autoconnect.enabled} onclick={() => void act(() => gcs.setAutoconnect(true))}>Enable autoconnect</button>
+			<button type="button" disabled={!isOpen || busy || !$status || !$status.autoconnect.enabled} onclick={() => void act(() => gcs.setAutoconnect(false))}>Disable autoconnect</button>
+		</div>
 	</Panel>
 
 	<Panel title="Helper" label="status">
@@ -142,6 +159,11 @@
 		font-size: 0.75rem;
 		text-transform: uppercase;
 		letter-spacing: 0.06em;
+	}
+
+	.note {
+		margin: 0 0 0.5rem;
+		font-size: 0.8rem;
 	}
 
 	.narrow {
