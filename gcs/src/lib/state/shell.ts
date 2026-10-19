@@ -39,6 +39,8 @@ export const TICK_MS = 500;
 export interface IndicatorField {
 	name: string;
 	value: string;
+	/** The full value (a hover text) when `value` is shortened. */
+	title?: string;
 }
 
 export interface Indicator {
@@ -46,6 +48,8 @@ export interface Indicator {
 	/** The accessible name of the group. */
 	label: string;
 	summary: string;
+	/** The full value (a hover text) when `summary` is shortened. */
+	summaryTitle?: string;
 	tone: Tone;
 	stale: boolean;
 	fields: IndicatorField[];
@@ -126,13 +130,20 @@ export function computeBar(inputs: BarInputs, now: number, timing: ShellTiming =
 				id: 'identity',
 				label: 'Identity',
 				summary: `image ${identity.imageSha256.slice(0, SHORT_HEX)}`,
+				summaryTitle: `image SHA-256 ${identity.imageSha256}`,
 				tone: refused ? 'bad' : 'ok',
 				stale: frameStale,
 				fields: [
-					{ name: 'config', value: identity.configSha256.slice(0, SHORT_HEX) },
+					{ name: 'config', value: identity.configSha256.slice(0, SHORT_HEX), title: `config SHA-256 ${identity.configSha256}` },
+					{ name: 'schema', value: identity.schemaHash, title: 'the parameter schema hash of the image' },
 					{ name: 'source', value: identity.configSource },
 					{ name: 'state', value: refused ? `refused: ${identity.configRefusal}` : 'ok' },
-					{ name: 'report', value: identity.validationReportId ? identity.validationReportId.slice(0, SHORT_HEX) : 'none' },
+					{ name: 'last activation', value: identity.lastActivation, title: 'the last activation reported by the vehicle' },
+					{
+						name: 'report',
+						value: identity.validationReportId ? identity.validationReportId.slice(0, SHORT_HEX) : 'none',
+						title: identity.validationReportId ?? 'no validation report is bound to the running config'
+					},
 					{ name: 'staged', value: identity.stagedDiffers ? 'differs' : 'same' }
 				]
 			}

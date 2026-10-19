@@ -13,10 +13,10 @@
 	{#each $bar as ind (ind.id)}
 		<div class="ind" role="group" aria-label={ind.label} data-indicator={ind.id} data-stale={ind.stale}>
 			<span class="k">{ind.label}</span>
-			<Badge text={ind.summary} tone={ind.stale ? 'neutral' : ind.tone} />
+			<span title={ind.summaryTitle}><Badge text={ind.summary} tone={ind.stale ? 'neutral' : ind.tone} /></span>
 			{#if ind.stale}<span class="stale" title="not heard from recently: the value shown is the last one">stale</span>{/if}
 			{#each ind.fields as f (f.name)}
-				<span class="f mono"><span class="fk">{f.name}</span> {f.value}</span>
+				<span class="f mono" title={f.title}><span class="fk">{f.name}</span> {f.value}</span>
 			{/each}
 		</div>
 	{/each}

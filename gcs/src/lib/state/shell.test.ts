@@ -168,6 +168,19 @@ describe('computeBar: contents', () => {
 		expect(field(i, 'report')).toBe('c'.repeat(12));
 	});
 
+	it('the identity keeps the last activation and the full hashes (hover text), which the bar shortens', () => {
+		const i = pick(
+			computeBar(inputs({ identity: identity({ lastActivation: 'refused at boot', validationReportId: 'c'.repeat(64) }) }), T0),
+			'identity'
+		);
+		expect(field(i, 'last activation')).toBe('refused at boot');
+		expect(field(i, 'schema')).toBe('0x0123456789abcdef');
+		expect(i.summaryTitle).toBe(`image SHA-256 ${'a'.repeat(64)}`);
+		expect(i.fields.find((f) => f.name === 'config')?.title).toBe(`config SHA-256 ${'b'.repeat(64)}`);
+		expect(i.fields.find((f) => f.name === 'report')?.title).toBe('c'.repeat(64));
+		expect(i.fields.find((f) => f.name === 'report')?.title).not.toBe(field(i, 'report'));
+	});
+
 	it('a refused config is bad, says why and is the reason the vehicle does not arm', () => {
 		const bar = computeBar(inputs({ identity: identity({ configState: 'refused', configRefusal: 'image binding' }) }), T0);
 		expect(pick(bar, 'identity').tone).toBe('bad');
