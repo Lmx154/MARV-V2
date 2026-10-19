@@ -5,6 +5,7 @@ import { get, writable } from 'svelte/store';
 import { LinkSession } from '$link/session';
 import { TelemetryClient, STREAM_IDS } from '$link/telemetry';
 import { FakeVehicle } from '$link/testing/fake_vehicle';
+import { buildGroundLog, framesOf, readGroundLog, RecordedLink } from '$link/testing/ground_log';
 import * as m from '$link/testing/telemetry_messages';
 import type { VehicleParam } from '$link/vehicle';
 import { channelMapOf, computeLive, eulerOf, LiveController, LIVE_TICK_MS, PANELS, type ChannelMap, type PanelId, type PanelView } from './live_state';
@@ -329,5 +330,50 @@ describe('the controller', () => {
 		const stopped = computed;
 		await new Promise((r) => setTimeout(r, LIVE_TICK_MS * 2.5));
 		expect(computed).toBe(stopped);
+	});
+});
+
+describe('the same panels from a ground log', () => {
+	// A recorded link has no vehicle to answer: the panels are made of the recorded bytes alone (S-1: the vehicle client is their only source).
+	it('renders every panel from the received chunks of a ground log, cut anywhere, and turns stale as the log\'s clock passes the timeout', async () => {
+		const frames = framesOf([...m.allStreamMessages, ...m.allStreamMessages]);
+		const stream = Uint8Array.from(frames.flatMap((f) => [...f]));
+		const CHUNK = 37; // a read size that cuts frames in the middle (a labelled harness value)
+		const chunks = [];
+		for (let at = 0, i = 0; at < stream.length; at += CHUNK, i++) chunks.push({ atMs: T0 + i * 10, bytes: stream.slice(at, at + CHUNK) });
+		const log = buildGroundLog(chunks);
+
+		const link = new RecordedLink();
+		const clock = { t: 0 };
+		const session = new LinkSession(link, { heartbeatTimeoutMs: 600_000, now: () => clock.t });
+		const telemetry = new TelemetryClient(session, { now: () => clock.t });
+		open.push(() => telemetry.dispose(), () => session.dispose());
+		for (const c of readGroundLog(log)) {
+			clock.t = c.atMs;
+			link.push(c.bytes);
+		}
+		const end = clock.t;
+		const live = computeLive(telemetry.snapshot(), end).panels;
+		expect(live.map((p) => [p.id, p.stale, p.heard])).toEqual(PANELS.map((p) => [p.id, false, true]));
+		expect(shown(panel(live, 'imu'), 'temp')).toBe('31.5 °C');
+		expect(shown(panel(live, 'motors'), 'm.3')).toBe('2047 DShot');
+		expect(shown(panel(live, 'arming'), 'state')).toBe('armed hold');
+		expect(shown(panel(live, 'attitude'), 'eskf.yaw')).toBe('90.0 °');
+		expect(telemetry.snapshot().stamps.attitude.count).toBe(2);
+		// The control: the same log read a timeout later is stale on every panel, with the last values kept.
+		const later = computeLive(telemetry.snapshot(), end + STALE + 1).panels;
+		expect(later.every((p) => p.stale)).toBe(true);
+		expect(shown(panel(later, 'imu'), 'temp')).toBe('31.5 °C');
+		// Nothing was asked of a log: with no vehicle address known the client sends no request.
+		telemetry.start();
+		expect(link.sent).toHaveLength(0);
+	});
+
+	it('reads back what it wrote: header, chunks in order and times, a truncated last record ignored', () => {
+		const chunks = [{ atMs: 5, bytes: Uint8Array.of(1, 2, 3) }, { atMs: 7, bytes: Uint8Array.of(4) }];
+		const log = buildGroundLog(chunks);
+		expect(readGroundLog(log)).toEqual(chunks);
+		expect(readGroundLog(log.slice(0, log.length - 1))).toEqual([chunks[0]]);
+		expect(() => readGroundLog(Uint8Array.of(1, 2, 3))).toThrow('not a ground log');
 	});
 });
