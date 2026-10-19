@@ -11,7 +11,7 @@ the activation carries the report's id, which the FC records in the slot it boot
               <build>/sim/quad_fc/libmarv_sil_quad_fc.so (the hash the SIL reports as its image identity)
   --build     the image's host build tree with the Gazebo plugin (default build/host-gz-quadfc): the parameter set's
               manifest, marv_validate_table, the config-validation ctests and the plugin of check 4
-  --card      the config's card (default vehicles/marv_5in_fc3v2.yaml, the card of the FC3v2 set)
+  --card      the config's card (default vehicles/marv_7in_fc3v2.yaml, the card of the FC3v2 set)
   --required  the required-check list (default tools/validate/required_checks.yaml, signed by Luis)
   --work-dir  where the runs go (default: a new directory under the system temporary directory)
   --out       the report (default <work-dir>/report.json)
@@ -58,7 +58,7 @@ import yaml  # noqa: E402
 FORMAT = "marv-validation-report/1"
 ENV = "MARV_VALIDATE_CONFIG"
 DEFAULT_BUILD = ROOT / "build" / "host-gz-quadfc"
-DEFAULT_CARD = ROOT / "vehicles" / "marv_5in_fc3v2.yaml"
+DEFAULT_CARD = ROOT / "vehicles" / "marv_7in_fc3v2.yaml"
 DEFAULT_BUDGET = ROOT / "design" / "budget.yaml"
 DEFAULT_REQUIRED = HERE / "required_checks.yaml"
 PARAMETER_SET = "marv_params_fc3v2"

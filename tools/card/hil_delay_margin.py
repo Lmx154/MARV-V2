@@ -39,7 +39,7 @@ import gyro_chain_design as gcd  # noqa: E402
 import rate_lead  # noqa: E402
 
 ROOT = HERE.parents[1]
-FLIGHT_CARD = ROOT / "vehicles" / "marv_5in_fc3v2.yaml"
+FLIGHT_CARD = ROOT / "vehicles" / "marv_7in_fc3v2.yaml"
 FLIGHT_SCENARIO = ROOT / "fw" / "compositions" / "quad_fc" / "params" / "fc3v2_scenario_values.yaml"
 BUDGET = ROOT / "design" / "budget.yaml"
 EXTRA_DEFAULT = 20  # labelled: the worst-corner table covers N = 0..20, twice the HIL S1 requirement of 10 (decision 0046 item 2)

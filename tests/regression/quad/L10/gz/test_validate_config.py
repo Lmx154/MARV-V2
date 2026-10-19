@@ -36,7 +36,7 @@ import run_scenario  # noqa: E402
 import sil_check  # noqa: E402
 
 VALIDATOR = ROOT / "tools" / "validate" / "validate_config.py"
-CARD = ROOT / "vehicles" / "marv_5in_fc3v2.yaml"
+CARD = ROOT / "vehicles" / "marv_7in_fc3v2.yaml"
 BUDGET = ROOT / "design" / "budget.yaml"
 BUILD = ROOT / "build" / "host-gz-quadfc"
 PLUGIN_DIR = BUILD / "sim" / "gz" / "plugin"

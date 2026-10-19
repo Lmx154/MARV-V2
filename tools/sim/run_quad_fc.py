@@ -11,7 +11,7 @@ the world (<stem>.sdf), the full lockstep log (<stem>.bin, ~80 MB, not committed
 report (<stem>.report.txt), the analysis (<stem>.analysis.txt) and the decimated traces (<stem>.traces.csv). Two runs of the
 same world give the same log sha256 (the run is deterministic).
 
-The world. The real card (vehicles/marv_5in_fc3v2.yaml) at the FC3v2 tick (fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml,
+The world. The real card (vehicles/marv_7in_fc3v2.yaml) at the FC3v2 tick (fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml,
 tick_period_num_us / tick_period_den, whole ns rounded by the plugin, decision 0046 item 1), the L2 hover scenario's site,
 m = 1, the model gyro (nominal corner, no turn-on bias), <launch_pad/> (decision 0047), <command_delay_ticks>N</command_delay_ticks>
 with N = COMMAND_DELAY_TICKS, no open-loop DShot override, the register's rc_channel_angle (8) and the script below.
@@ -60,8 +60,9 @@ The interactive run (--interactive, for the ground station's SIL launcher; --run
 --max-s do not apply). The same card, tick, site, sensors, N and launch pad, in a world of gen_world mode "pilot", whose
 <real_time_factor> 1 makes gz-sim pace the host steps on the wall clock (the plugin itself reads no wall clock); one script
 segment of INTERACTIVE_S keeps the link on, the sticks centred, the throttle 0 and the arm switch low (the vehicle stays
-disarmed on the pad). No log and no analysis: the run lasts INTERACTIVE_S unless it is stopped (SIGTERM) first. Files:
-<dir>/interactive/<stem>.sdf.
+disarmed on the pad). The world also has <ground/> (decision 0047 amendment, Luis 2026-10-18): a touchdown at or below the start
+height while moving down puts the vehicle at rest there and re-engages the pad's hold. No log and no analysis: the run lasts
+INTERACTIVE_S unless it is stopped (SIGTERM) first. Files: <dir>/interactive/<stem>.sdf.
 """
 
 from __future__ import annotations
@@ -92,7 +93,7 @@ import mixer as card_mixer  # noqa: E402
 import run_scenario  # noqa: E402
 import scenario as scn  # noqa: E402
 
-CARD = ROOT / "vehicles" / "marv_5in_fc3v2.yaml"
+CARD = ROOT / "vehicles" / "marv_7in_fc3v2.yaml"
 BASE_SCENARIO = ROOT / "scenarios" / "quad" / "L02" / "hover.yaml"
 REGISTER = ROOT / "fw" / "compositions" / "quad_fc" / "params" / "quad_fc_register.yaml"
 FC3_SCENARIO_VALUES = ROOT / "fw" / "compositions" / "quad_fc" / "params" / "fc3v2_scenario_values.yaml"
@@ -276,12 +277,12 @@ def link_xml(link_udp_port=None, config_dir=None):
     return text
 
 
-def sdf_edit_for(phases, overrides, com_offset_m=0.0, link=""):
+def sdf_edit_for(phases, overrides, com_offset_m=0.0, link="", ground=False):
     def edit(text):
         if com_offset_m:
             text = com_offset_edit(text, com_offset_m)
         text = re.sub(r'\s*<sil_override param="ol_dshot_m\d" type="i32">\d+</sil_override>', "", text)
-        add = "<launch_pad/>\n" + script_xml(phases) + "\n" + link
+        add = "<launch_pad/>\n" + ("<ground/>\n" if ground else "") + script_xml(phases) + "\n" + link
         for name, value in overrides:
             add += f'<sil_override param="{name}" type="f32">{value}</sil_override>\n'
         assert text.count("<gyro_source>") == 1
@@ -598,7 +599,7 @@ def analyse(label, log, hover, phases, tilt_max, log_sha, out_stem):
     L = []
     P = {p.name: p for p in phases}
     L.append(f"HIL S2e analysis: {label}")
-    L.append("Simulation on INFERRED / UNVERIFIED card values (vehicles/marv_5in_fc3v2.yaml), not a flight result.")
+    L.append("Simulation on INFERRED / UNVERIFIED card values (vehicles/marv_7in_fc3v2.yaml), not a flight result.")
     L.append(f"log sha256 {log_sha}")
     hdr = log["header"]
     L.append(f"tick {hdr['tick_period_num_us']}/{hdr['tick_period_den']} us; host step {log['sensors']['host_step_ns']} ns "
@@ -735,7 +736,7 @@ def analyse_ihold(label, log, hover, phases, tilt_max, log_sha, out_stem, dip_st
     dip, hold2 = P["dip"], P["hold2"]
     rate = [math.sqrt(sum(x * x for x in o)) for o in s.omega]
     L = [f"HIL S2f integrator-hold analysis: {label}",
-         "Simulation on INFERRED / UNVERIFIED / PLACEHOLDER card values (vehicles/marv_5in_fc3v2.yaml), not a flight result.",
+         "Simulation on INFERRED / UNVERIFIED / PLACEHOLDER card values (vehicles/marv_7in_fc3v2.yaml), not a flight result.",
          f"log sha256 {log_sha}",
          f"tick {log['header']['tick_period_num_us']}/{log['header']['tick_period_den']} us; command delay N = {log['delay']['ticks']}; ticks {len(log['ticks'])}",
          f"disturbance: every rotor position shifted by {com_offset_m!r} m on x and y (plant torque tau_x = -T d, tau_y = +T d); at hover T = {hover.weight_n!r} N: "
@@ -865,7 +866,7 @@ def run_interactive(out_dir, plugin_dir, link):
     name, text = gen_world.generate(CARD, scenario, "pilot", M, "lo", None, ROOT, sensors=sensors,
                                     command_delay_ticks=COMMAND_DELAY_TICKS)
     world = out_dir / name
-    world.write_text(sdf_edit_for(phases, (), 0.0, link)(text), encoding="utf-8")
+    world.write_text(sdf_edit_for(phases, (), 0.0, link, ground=True)(text), encoding="utf-8")
     cmd = [*run_scenario.GZ_ARGS, "-s", "-r", "--iterations", str(iterations), "--seed", str(SEED), str(world)]
     print(f"interactive run: {world} (real-time factor 1; until stopped, at most {INTERACTIVE_S:.0f} s)", flush=True)
     return subprocess.run(cmd, env=run_scenario.gz_env(plugin_dir), check=False).returncode

@@ -46,7 +46,14 @@
 //              without the element has no type 12 or 13 record.
 //   13 RELEASE only with <launch_pad>, once, if the pad released within the run: after the TICK record of the first free tick
 //              (and after that tick's TRUTH, VERTICAL, ROTOR and MANUAL records, if any): u64 tick. Ticks before it were
-//              held, ticks from it on were not. The trailer's counts do not include it.
+//              held, ticks from it on were not. The trailer's counts do not include it. With <ground> (below) once more after
+//              each touchdown whose hold released within the run, at that release tick.
+//   14 TOUCHDOWN only with <ground> (decision 0047 amendment, Luis 2026-10-18), once per touchdown (adapter.hpp: after a
+//              release, the first host step whose body is at or below the ground while moving down; the hold re-engages from
+//              its first tick), after that tick's TICK record (and its TRUTH, VERTICAL, ROTOR and MANUAL records, if any) and
+//              before a RELEASE record of the same tick: u64 tick; f64 down_speed_m_s (NED down velocity at impact, > 0); f64
+//              horizontal_speed_m_s; f64 roll_rad; f64 pitch_rad (ZYX, at impact). Ticks from it to the next RELEASE record
+//              were held. The trailer's counts do not include it. A log of a run without the element has no type 14 record.
 //
 //   Per host step, in this order:
 //   1 STEP     u64 iteration (gz UpdateInfo::iterations); u64 sim_time_ns; then doubles: the raw gz reads, pose position
@@ -88,7 +95,7 @@
 
 namespace marv::gz {
 
-enum class LogRecord : std::uint8_t { kStep = 1, kTick, kApplied, kTrailer, kTruth, kSensors, kRotor, kVertical, kRounding, kDelay, kManual, kPad, kRelease };
+enum class LogRecord : std::uint8_t { kStep = 1, kTick, kApplied, kTrailer, kTruth, kSensors, kRotor, kVertical, kRounding, kDelay, kManual, kPad, kRelease, kTouchdown };
 // Record 6's gyro_source byte.
 enum class LogGyroSource : std::uint8_t { kNone = 0, kTruth, kModel };
 

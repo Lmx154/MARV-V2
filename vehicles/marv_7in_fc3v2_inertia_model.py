@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Point-mass inertia and centre-of-gravity model of Luis's 7-inch quad (card vehicles/marv_5in_fc3v2.yaml, M4 P1).
+"""Point-mass inertia and centre-of-gravity model of Luis's 7-inch quad (card vehicles/marv_7in_fc3v2.yaml, M4 P1).
 
 Every mass is Luis's (2026-10-16/17) or the remainder of his 732 g all-up mass; every height above the arm plane and the
 split of the frame between arms and plates is an assumption of this model (labelled ASSUMED below), not a measurement.
 The model is INFERRED until the bifilar pendulum measures the inertia (quad spec 4.0 M4).
 
-Run: python3 vehicles/marv_5in_fc3v2_inertia_model.py   (prints the nominal result and the sensitivity variants)
+Run: python3 vehicles/marv_7in_fc3v2_inertia_model.py   (prints the nominal result and the sensitivity variants)
 
 Frame: body FRD, x forward, y right, z down. Heights are metres above the arm mid-plane (up positive); the output z are
 FRD relative to the centre of gravity (down positive), so a point above the CG has a negative z.

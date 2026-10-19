@@ -1,4 +1,4 @@
-"""The plumbing of the quad_fc flight composition into the gz-sim 8 lockstep plugin (HIL S2d-2a, decision 0046 stage S2, item 4; the launch pad, HIL S2d-2b, decision 0047).
+"""The plumbing of the quad_fc flight composition into the gz-sim 8 lockstep plugin (HIL S2d-2a, decision 0046 stage S2, item 4; the launch pad, HIL S2d-2b, decision 0047; the ground, decision 0047 amendment).
 
 Skipped unless `gz sim --force-version 8` reports 8.x and the host-gz-quadfc build holds libmarv_gz_lockstep.so
 (`cmake --preset host-gz-quadfc && cmake --build --preset host-gz-quadfc`); the gz CI step fails on a skip. Every gz
@@ -30,10 +30,17 @@ What is checked:
     the host step of that tick and rises after it, and the output stays a throttle command throughout. Controls: the same raise
     without the pad does not arm (the free-falling sample is not a valid estimator start) and the log has no pad records; a
     world without the pad has no record 12 or 13.
+  - With <ground/> (decision 0047 amendment, Luis 2026-10-18): a hop at THROTTLE_UP, the throttle stick cut to 0 and raised again.
+    The first host step after the release whose body is at or below the start height while moving down is the touchdown (record
+    14, its down speed the step's body velocity); from it the body is at rest at the start height (gz pose bitwise, zero
+    velocities, level, yaw kept), the pad holds (no applied wrench, the accelerometer reads -g) until the second release (record
+    13), after the raise; then it lifts off again. Control: the same script without <ground/> logs the same steps up to the
+    touchdown step and ticks before it, has no record 14, releases once and falls below the start height.
   - Planted refusals of a malformed <manual_control_script>, and of <launch_pad> with content, without the model gyro or with an
     initial velocity.
 """
 
+import math
 import re
 import struct
 import sys
@@ -72,6 +79,11 @@ THROTTLE_UP = 0.9  # labelled harness value: a throttle stick well above the hov
 LIFT_US = 500_000  # labelled harness value: sim time run after the throttle is raised
 LIFT_LAG_STEPS = 100  # labelled harness value: host steps (15.6 ms) allowed for gz to publish the first pose change (11 measured)
 G_BAND = (9.78, 9.84)  # m/s^2: WGS 84 normal gravity at the surface runs from 9.780 (equator) to 9.832 (poles) (Somigliana)
+HOP_US = 150_000  # labelled harness value: a short hop at THROTTLE_UP (about 1.5 m up on this card, measured)
+DROP_US = 1_500_000  # labelled harness value: throttle stick 0 long enough to come down (touchdown about 1.1 s after the cut, measured)
+RELIFT_US = 500_000  # labelled harness value: throttle stick raised again after the touchdown
+HOLD_SKIP_TICKS = 100  # labelled harness value: ticks after the touchdown left out of the held accelerometer mean (IMU latency 3)
+YAW_TOL_RAD = 1e-9  # labelled harness value: the yaw kept through the pose command, to rounding
 
 pytestmark = pytest.mark.skipif(not (PLUGIN.exists() and run_scenario.gz8_available()),
                                 reason="gz-sim 8 or the host-gz-quadfc build of libmarv_gz_lockstep.so is absent")
@@ -110,29 +122,30 @@ def script(segments, period=FRAME_PERIOD_US):
             f"<angle_channel>{ANGLE_CHANNEL}</angle_channel>{''.join(segments)}</manual_control_script>")
 
 
-def world(log, script_text, pad=True):
+def world(log, script_text, pad=True, ground=False):
     text = gen_world.generate(CARD, HOVER, "test", 1, "lo", str(log),
                               sensors=gen_world.SensorSet(gyro="model", bias_signs=BIAS_SIGNS))[1]
     text = re.sub(r'\s*<sil_override param="ol_dshot_m\d" type="i32">\d+</sil_override>', "", text)
     add = f'<sil_override param="rc_channel_angle" type="i32">{ANGLE_CHANNEL}</sil_override>\n'
     add += "<launch_pad/>\n" if pad else ""
+    add += "<ground/>\n" if ground else ""
     add += (script_text + "\n") if script_text else ""
     assert text.count("<gyro_source>") == 1
     return text.replace("<gyro_source>", add + "<gyro_source>", 1)
 
 
-def run(tmp_path_factory, name, script_text, duration_us, pad=True):
+def run(tmp_path_factory, name, script_text, duration_us, pad=True, ground=False):
     tmp = tmp_path_factory.mktemp(name)
     log = tmp / "run.bin"
     sdf = tmp / "world.sdf"
-    sdf.write_text(world(log, script_text, pad), encoding="utf-8")
+    sdf.write_text(world(log, script_text, pad, ground), encoding="utf-8")
     n = iterations(duration_us)
     r = run_scenario.run_gz_process(sdf, n, SEED, PLUGIN_DIR, None, TIMEOUT_S)
     return r, log, n
 
 
-def read_ok(tmp_path_factory, name, script_text, duration_us, pad=True):
-    r, log, n = run(tmp_path_factory, name, script_text, duration_us, pad)
+def read_ok(tmp_path_factory, name, script_text, duration_us, pad=True, ground=False):
+    r, log, n = run(tmp_path_factory, name, script_text, duration_us, pad, ground)
     assert r.returncode == 0 and "REFUSED" not in r.stderr, run_scenario.stderr_tail(r.stderr)
     d = lockstep_log.read(log)
     assert len(d["ticks"]) == n and d["trailer"] == {"steps": n, "ticks": n, "applied": n}
@@ -297,6 +310,70 @@ def test_control_without_the_pad_the_same_raise_does_not_arm_and_the_log_has_no_
     assert d["pad"] is None and not any("pad_held" in t for t in d["ticks"])
     assert all(stopped(t) for t in d["ticks"]), "free fall is not a valid estimator start; the raise must not arm"
     assert any(m["channels"][ARM_CHANNEL - 1] == SWITCH_HIGH for m in d["manuals"])
+
+
+DROP_START = RAISE_US + HOP_US
+RELIFT_START = DROP_START + DROP_US
+
+
+@pytest.fixture(scope="module")
+def landing_runs(tmp_path_factory):
+    segs = [seg(0, READY_US, SWITCH_LOW), seg(READY_US, SETTLE_US, SWITCH_HIGH),
+            seg(RAISE_US, HOP_US, SWITCH_HIGH, throttle=THROTTLE_UP), seg(DROP_START, DROP_US, SWITCH_HIGH),
+            seg(RELIFT_START, RELIFT_US, SWITCH_HIGH, throttle=THROTTLE_UP)]
+    duration = RELIFT_START + RELIFT_US
+    return (read_ok(tmp_path_factory, "landing", script(segs), duration, ground=True),
+            read_ok(tmp_path_factory, "falling", script(segs), duration))
+
+
+def yaw(q):
+    w, x, y, z = q
+    return math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z))
+
+
+def test_with_the_ground_a_drop_comes_to_rest_at_the_start_height_and_lifts_off_again(landing_runs):
+    d, free = landing_runs
+    ticks, steps, applied = d["ticks"], d["steps"], d["applied"]
+    ground = steps[0]["body_pos_ned"][2]
+    release = d["pad"]["release_tick"]
+    assert release is not None and ticks[release]["sil_t_us"] >= RAISE_US
+    assert len(d["touchdowns"]) == 1, d["touchdowns"]
+    td = d["touchdowns"][0]
+    k, relift = td["tick"], td["release_tick"]
+    # m = 1: host step i is tick i. The touchdown is the first step after the release whose body is at or below the ground while
+    # moving down (read from the control's log, identical up to that step), and its record carries that body's down speed.
+    first = next(i for i in range(release + 1, len(free["steps"]))
+                 if free["steps"][i]["body_pos_ned"][2] >= ground and free["steps"][i]["body_vel_ned"][2] > 0.0)
+    assert k == first and ticks[k]["sil_t_us"] >= DROP_START
+    assert td["down_speed_m_s"] == steps[k]["body_vel_ned"][2] > 0.0
+    assert relift is not None and ticks[relift]["sil_t_us"] >= RELIFT_START, "the raised throttle never lifted it off the ground"
+    assert all(t["pad_held"] == (t["tick"] < release or k <= t["tick"] < relift) for t in ticks)
+    # at rest on the ground from the step after the touchdown through the release step: the start height, the impact's north and
+    # east, zero velocities, level with the yaw kept, no applied wrench, and the accelerometer reads -g
+    rest = (steps[k]["gz_pos_enu"][0], steps[k]["gz_pos_enu"][1], steps[0]["gz_pos_enu"][2])
+    for i in range(k + 1, relift + 1):
+        st = steps[i]
+        assert st["gz_pos_enu"] == rest, i
+        assert st["gz_lin_vel_enu"] == (0.0, 0.0, 0.0) and st["gz_ang_vel_enu"] == (0.0, 0.0, 0.0), i
+        assert st["gz_q_wxyz"][1] == 0.0 and st["gz_q_wxyz"][2] == 0.0, i
+        assert abs(yaw(st["gz_q_wxyz"]) - yaw(steps[k]["gz_q_wxyz"])) <= YAW_TOL_RAD, i
+    assert all(a["force_enu"] == (0.0, 0.0, 0.0) and a["torque_enu"] == (0.0, 0.0, 0.0) for a in applied[k:relift])
+    held = [accel_z(t) for t in ticks[k + HOLD_SKIP_TICKS:relift]]
+    assert held and -G_BAND[1] < sum(held) / len(held) < -G_BAND[0]
+    # off the ground again after the second release
+    assert applied[relift]["force_enu"] != (0.0, 0.0, 0.0)
+    assert steps[-1]["gz_pos_enu"][2] > rest[2]
+
+
+def test_control_without_the_ground_the_same_drop_falls_through_and_logs_the_same_run_up_to_the_touchdown(landing_runs):
+    d, free = landing_runs
+    k = d["touchdowns"][0]["tick"]
+    assert free["touchdowns"] == [] and free["pad"] == d["pad"]
+    assert free["steps"][:k + 1] == d["steps"][:k + 1] and free["ticks"][:k] == d["ticks"][:k]
+    assert free["applied"][:k] == d["applied"][:k]
+    assert not any(t["pad_held"] for t in free["ticks"][free["pad"]["release_tick"]:])
+    deepest = max(s["body_pos_ned"][2] for s in free["steps"])
+    assert deepest > max(s["body_pos_ned"][2] for s in d["steps"]), "it did not fall below where the ground stopped it"
 
 
 def mutate(pattern, repl):

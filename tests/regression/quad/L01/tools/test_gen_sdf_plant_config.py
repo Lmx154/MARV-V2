@@ -27,7 +27,7 @@ SCENARIO_FIELDS = {"site_lat_rad", "site_height_m", "motor_substep_s", "rng_seed
 # A vehicle field the plugin element carries only when the card has the entry (decision 0049: drag); the header always
 # assigns it (0 for a card without it).
 OPTIONAL_VEHICLE_FIELDS = {"drag_coeff_kg_s"}
-FC3V2_CARD = ROOT / "vehicles" / "marv_5in_fc3v2.yaml"
+FC3V2_CARD = ROOT / "vehicles" / "marv_7in_fc3v2.yaml"
 MOTORS = ("m1", "m2", "m3", "m4")
 
 sys.path.insert(0, str(ROOT / "tools" / "card"))
@@ -378,13 +378,13 @@ def test_drag_entry_reaches_the_plugin_and_the_header_and_its_absence_is_zero(tm
         assert r.returncode == 0, r.stderr
     drag = [float(v) for v in load(FC3V2_CARD)["drag"]["value"]]
     assert any(v > 0.0 for v in drag)
-    plugin = plugin_of(tmp_path / "marv_5in_fc3v2.sdf")
+    plugin = plugin_of(tmp_path / "marv_7in_fc3v2.sdf")
     element = plugin.find("drag_coeff_kg_s")
     assert element is not None and element.get("unit") == "kg/s"
     assert [float(t) for t in element.text.split()] == drag
-    standalone = ET.parse(tmp_path / "marv_plant_card_marv_5in_fc3v2.plugin.xml").getroot()
+    standalone = ET.parse(tmp_path / "marv_plant_card_marv_7in_fc3v2.plugin.xml").getroot()
     assert [float(t) for t in standalone.find("drag_coeff_kg_s").text.split()] == drag
-    h = header_assignments((tmp_path / "marv_plant_card_marv_5in_fc3v2.h").read_text(encoding="utf-8"))
+    h = header_assignments((tmp_path / "marv_plant_card_marv_7in_fc3v2.h").read_text(encoding="utf-8"))
     assert [h[f"drag_coeff_kg_s[{k}]"] for k in range(3)] == drag
 
     uzh = tmp_path / "uzh"

@@ -325,9 +325,9 @@ marv_add_card_param_set(marv_params_l11_vertical_scripted CARD "${MARV_VEHICLE_C
 # design/scenario_values.yaml stays as it is) followed by the target's rate-timing register (a PLACEHOLDER tolerance,
 # decision 0034), the composition's own register and the ground link's telemetry stream caps (fw/link/params, ground-segment
 # unit 11; the link service is built against this set). The card is
-# fixed to vehicles/marv_5in_fc3v2.yaml, the real airframe (M4 P1; not MARV_VEHICLE_CARD, which stays the UZH card of the SIL).
+# fixed to vehicles/marv_7in_fc3v2.yaml, the real airframe (M4 P1; not MARV_VEHICLE_CARD, which stays the UZH card of the SIL).
 # marv_rate, marv_mixer and marv_rate_group read the product ids, which this set keeps.
-marv_add_card_param_set(marv_params_fc3v2 CARD "vehicles/marv_5in_fc3v2.yaml" BUDGET "${MARV_DESIGN_BUDGET}"
+marv_add_card_param_set(marv_params_fc3v2 CARD "vehicles/marv_7in_fc3v2.yaml" BUDGET "${MARV_DESIGN_BUDGET}"
   RATE_GUARD mean_period PRODUCT_TABLE
   SCENARIO "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml"
   EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml"

@@ -1,5 +1,6 @@
 #include "marv/gz/adapter.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
@@ -10,6 +11,36 @@
 #include "marv_sil.h"
 
 namespace marv::gz {
+
+namespace {
+
+// The touchdown of the opt-in ground (adapter.hpp): the impact read from the body passed, and the rest body. Roll, pitch and yaw
+// are the ZYX angles of the body -> NED quaternion (w, x, y, z): roll = atan2(2 (w x + y z), 1 - 2 (x^2 + y^2)), pitch =
+// asin(2 (w y - x z)) (the argument clamped to [-1, 1]), yaw = atan2(2 (w z + x y), 1 - 2 (y^2 + z^2)); the rest attitude is
+// (cos(yaw / 2), 0, 0, sin(yaw / 2)), w >= 0 for yaw in [-pi, pi].
+Touchdown touchdown_of(const marv_plant_body& b, std::uint64_t tick, double ground_down_m) {
+  const double w = b.q_wxyz[0];
+  const double x = b.q_wxyz[1];
+  const double y = b.q_wxyz[2];
+  const double z = b.q_wxyz[3];
+  Touchdown td;
+  td.tick = tick;
+  td.down_speed_m_s = b.vel_ned_m_s[2];
+  td.horizontal_speed_m_s = std::hypot(b.vel_ned_m_s[0], b.vel_ned_m_s[1]);
+  td.roll_rad = std::atan2(2.0 * (w * x + y * z), 1.0 - 2.0 * (x * x + y * y));
+  td.pitch_rad = std::asin(std::clamp(2.0 * (w * y - x * z), -1.0, 1.0));
+  const double half_yaw = std::atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)) / 2.0;
+  marv_plant_body& r = td.rest;
+  r.struct_size = sizeof(r);
+  r.pos_ned_m[0] = b.pos_ned_m[0];
+  r.pos_ned_m[1] = b.pos_ned_m[1];
+  r.pos_ned_m[2] = ground_down_m;
+  r.q_wxyz[0] = std::cos(half_yaw);
+  r.q_wxyz[3] = std::sin(half_yaw);
+  return td;
+}
+
+}  // namespace
 
 double tick_period_s(std::uint32_t num_us, std::uint32_t den) {
   return static_cast<double>(num_us) / (static_cast<double>(den) * kMicrosecondsPerSecond);
@@ -87,7 +118,7 @@ bool ImuSilCommandSource::dshot(std::uint64_t tick, const marv_imu_meas* imu, Ds
 }
 
 Adapter::Adapter(marv_plant* plant, CommandSource& source, double t_tick_s)
-    : Adapter(plant, source, AdapterConfig{t_tick_s, 0, 0.0, nullptr, nullptr, 0.0, 0, false}) {}
+    : Adapter(plant, source, AdapterConfig{t_tick_s, 0, 0.0, nullptr, nullptr, 0.0, 0, false, false}) {}
 
 Adapter::Adapter(marv_plant* plant, CommandSource& source, const AdapterConfig& cfg)
     : plant_(plant),
@@ -97,6 +128,8 @@ Adapter::Adapter(marv_plant* plant, CommandSource& source, const AdapterConfig& 
                     : true_tick_period_s(cfg.t_tick_nominal_s, clock_error(cfg.clock_corner, cfg.odr_error))) {
   delay_ = cfg.command_delay_ticks;
   pad_ = cfg.launch_pad;
+  held_ = pad_;
+  ground_ = pad_ && cfg.ground;
   if (delay_ > 0 && delay_ <= kMaxCommandDelayTicks) {
     delay_line_.assign(delay_, Dshot{});
   }
@@ -133,23 +166,38 @@ StepResult Adapter::step(const marv_plant_body& body, std::uint64_t first_tick, 
     return r;
   }
   r.ticks.reserve(m);
+  const marv_plant_body* bp = &body;  // the body of every tick of this step: the one passed, or the rest body of a touchdown
+  if (ground_) {
+    if (!ground_down_m_) {
+      ground_down_m_ = body.pos_ned_m[2];
+    }
+    if (!held_ && body.pos_ned_m[2] >= *ground_down_m_ && body.vel_ned_m_s[2] > 0.0) {
+      r.touchdown = touchdown_of(body, first_tick, *ground_down_m_);
+      bp = &r.touchdown->rest;
+      held_ = true;
+    }
+  }
   Wrench sum{};
   bool have_sum = false;
   for (std::uint32_t i = 0; i < m; ++i) {
     TickOutput t;
     t.tick = first_tick + i;
     bool got = false;
-    if (pad_ && !release_tick_) {
+    if (held_) {
       // The probe of the header comment: the total force for the rotor state this tick's IMU sample sees.
       marv_plant_cmd stop{};
       stop.struct_size = sizeof(stop);
       marv_plant_out probe{};
       probe.struct_size = sizeof(probe);
-      marv_plant_status ps = marv_plant_step(plant_, &body, &stop, std::numeric_limits<double>::min(), &probe);
+      marv_plant_status ps = marv_plant_step(plant_, bp, &stop, std::numeric_limits<double>::min(), &probe);
       std::array<double, 3> contact{-probe.force_ned_n[0], -probe.force_ned_n[1], -probe.force_ned_n[2]};
       if (ps == MARV_PLANT_OK && contact[2] >= 0.0) {
         contact = {0.0, 0.0, 0.0};
-        release_tick_ = t.tick;
+        held_ = false;
+        t.pad_released = true;
+        if (!release_tick_) {
+          release_tick_ = t.tick;
+        }
       } else {
         t.pad_held = true;
       }
@@ -163,7 +211,7 @@ StepResult Adapter::step(const marv_plant_body& body, std::uint64_t first_tick, 
       }
     }
     if (imu_enabled_) {
-      const marv_plant_status is = marv_plant_imu_sample(plant_, &body, t_tick_s_, &t.imu);
+      const marv_plant_status is = marv_plant_imu_sample(plant_, bp, t_tick_s_, &t.imu);
       if (is != MARV_PLANT_OK) {
         r.status = Status::kPlant;
         r.plant_status = is;
@@ -203,7 +251,7 @@ StepResult Adapter::step(const marv_plant_body& body, std::uint64_t first_tick, 
       cmd.dshot[k] = t.dshot_applied[k];
     }
     t.out.struct_size = sizeof(t.out);
-    const marv_plant_status s = marv_plant_step(plant_, &body, &cmd, t_tick_s_, &t.out);
+    const marv_plant_status s = marv_plant_step(plant_, bp, &cmd, t_tick_s_, &t.out);
     if (s != MARV_PLANT_OK) {
       r.status = Status::kPlant;
       r.plant_status = s;

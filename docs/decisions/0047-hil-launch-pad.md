@@ -27,3 +27,5 @@ replaces); docs/decisions/0042 item 3; docs/decisions/0046.
 ## Approval
 
 Within M4's HIL scope (Luis, 2026-10-17, "2. yes"); Luis informed that the launch pad is not the deferred ground contact.
+
+Amendment 2026-10-18: opt-in `<ground/>` re-engages the hold at touchdown (Luis).

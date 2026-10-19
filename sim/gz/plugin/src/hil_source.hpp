@@ -79,6 +79,12 @@ class HilCommandSource final : public CommandSource {
   const std::string& failure() const { return failure_; }
   // The body of the current host step, for the status line only.
   void set_body(const marv_plant_body& body) { body_ = body; }
+  // With the plugin's <ground>: the touchdowns so far and the last one's NED down speed at impact, for the status line only.
+  void set_touchdowns(std::uint64_t count, double last_down_m_s) {
+    show_touchdowns_ = true;
+    touchdowns_ = count;
+    last_touchdown_m_s_ = last_down_m_s;
+  }
   // Keeps reading the uplink for drain_us after the last record (the board's status after the stream ends), prints the
   // summary line and closes the port and the files. Idempotent.
   void finish();
@@ -108,6 +114,9 @@ class HilCommandSource final : public CommandSource {
   bool started_ = false;
   std::uint64_t stamp_us_ = 0;
   marv_plant_body body_{};
+  bool show_touchdowns_ = false;
+  std::uint64_t touchdowns_ = 0;
+  double last_touchdown_m_s_ = 0.0;
 
   // Downlink.
   std::uint32_t down_seq_ = 0;
@@ -141,6 +150,10 @@ class HilCommandSource final : public CommandSource {
   std::uint32_t rx_frames_ = 0;         // and the last one's fields, for the status line
   float rx_throttle_ = 0.0F;
   float rx_lq_ = 0.0F;
+  bool rx_angle_ = false;               // the last frame selects angle mode (status line only)
+  std::size_t angle_channel_ = 0;       // quad_fc's rc_channel_angle (0: none), and its angle_switch_threshold (open())
+  float angle_threshold_ = 0.0F;
+  bool have_angle_threshold_ = false;
 
   // The command the plant is stepped with, and the margin statistics.
   Dshot applied_{};
