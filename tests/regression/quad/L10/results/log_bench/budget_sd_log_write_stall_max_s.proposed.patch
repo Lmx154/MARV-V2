@@ -1,0 +1,40 @@
+diff --git a/design/budget.yaml b/design/budget.yaml
+index 64629b3..94e6ab0 100644
+--- a/design/budget.yaml
++++ b/design/budget.yaml
+@@ -329,21 +329,22 @@ config_slot_bytes:
+   used_by: [ground-segment unit 14 config slots (fw/hal/target/src/storage_flash.cpp, fw/store slot layout), the m33 post-link flash-layout check]
+ 
+ sd_log_write_stall_max_s:
+-  value: 0.809
++  value: 0.491
+   unit: s
+   method: design-budget
+   sigma: choice
+   rationale: >-
+-    PLACEHOLDER (budget entries carry no placeholder field, tools/card/schema.py: the reason and the replacement are
+-    stated here). The card's worst measured SD write stall, which core EMB-6 sizes the RAM log buffer against ("at least the
+-    log rate x the card's worst measured SD write stall", 00-core-contracts.md). Value: the maximum of
+-    hal_config_pending_write (mount, mkdir, temp write, sync, remove, rename, unmount) over 1000 cycles of a 40256 B buffer
+-    on the FC3v2 Rev-C board with a FAT32 card, 809.1 ms, rounded down to 0.809 s
+-    (tests/regression/quad/L10/results/sd/README.md, table row hal_config_pending_write; sd_bench_run1.log). Reason it is
+-    a placeholder: that stall is the config store's operation (with metadata), not the logger's pattern (direct multi-sector
+-    writes into a preallocated region); the largest raw f_write in the same run was 94.3 ms. It is the conservative bound
+-    until the logger-pattern soak (onboard logger unit U2) replaces it with its own worst stall. The ring is at least the
+-    fast stream's rate x this value (invariant L-5; fw/log budget.hpp, tests/regression/quad/L09/unit/log_ring_test.cpp).
+-    Used by test code and by the logger's pre-roll derivation; it blocks the flight that depends on the logger meeting
+-    EMB-6, not the commit.
++    The card's worst measured SD write stall in the logger's own pattern, which core EMB-6 sizes the RAM log buffer against
++    ("at least the log rate x the card's worst measured SD write stall"). Measured on the FC3v2 Rev-C board with its 64 GB FAT32
++    card, bench log image (MARV_FC3V2_LOG_BENCH: 1 GiB preallocated file, 16 KiB direct multi-sector writes, no FAT or directory
++    write while logging; tests/regression/quad/L10/results/log_bench/README.md). Rule: the stall is the most cells the ring held at
++    the end of any data write (log_bench backlog_post_write_max) x 16 B, divided by the fast stream's 314011.5 B/s, rounded up to
++    the millisecond, taken as the maximum over the instrumented runs: 30-minute soak 5358 cells = 0.273 s; 10-minute EMB-3
++    capture 9618 cells = 153888 B = 0.4901 s; so 0.491 s. The two runs differ by a factor 1.8, so the figure is a lower bound on
++    the true worst case: it rests on two runs of one card. The longest single write was 161.6 to 163.3 ms in all three runs
++    (about 17 writes per 30 minutes in the 131-164 ms bucket); the ring's fill beyond that is the logger's own work around it.
++    0 ring drops while logging, 0 write failures, the whole 568 MB soak file decoded clean. A card of another make or wear may
++    stall longer, and the flight image's own background work (link service, telemetry) is not in the measurement; the flight image
++    repeats it (unit U4). Replaces the earlier PLACEHOLDER 0.809 s (unit 13's hal_config_pending_write, a different pattern).
++    Used by test code and by the logger's pre-roll derivation (invariant L-5; fw/log budget.hpp).
+   used_by: [onboard SD flight logger (fw/log) ring sizing L-5 and derived pre-roll, core EMB-6]

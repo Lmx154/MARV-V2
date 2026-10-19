@@ -1,0 +1,4 @@
+marv_fc3v2 quad-L2-pass-532-g4c5470c
+image: sha256 17bb03aa722ebdc49ce895465a57d1c2e995754914bb34b606d56300ca5acfae (204964 bytes, SHA-256 accelerator, 15108 us)
+config: source factory, status ok, boot request none
+bench stats: off
