@@ -21,6 +21,18 @@
    mapping; case added `TheThrottleStickIsLinearInRotorSpeedKnownAnswers` (s = 0 gives T_min, s = 1 gives T_max, s = 1/2 the stated formula, the real
    card's hover stick 0.3485, each checked as the DShot value of the ESC map from the mixer configuration alone, within one count). No threshold changed.
 
+5. Card change of 2026-10-18 (Luis: "yes switch and rename"): `vehicles/marv_5in_fc3v2.yaml` becomes
+   `vehicles/marv_7in_fc3v2.yaml` (its inertia model likewise) and `thrust_coeff` 2.8e-6 becomes 3.274e-6 (least-squares fit on
+   the Emax ECO III 2807 1700KV table, 16.8 V, Avia 7035-3; the 2.8e-6 derivation stays in the card as the conflicting
+   UNVERIFIED source). Frozen files edited only for the new card file name:
+   tests/regression/quad/L01/tools/test_card_lint.py
+   tests/regression/quad/L01/tools/test_flatten_report.py
+   tests/regression/quad/L01/tools/test_gen_sdf_plant_config.py
+   tests/regression/quad/L10/gz/test_link_sil.py
+   tests/regression/quad/L10/gz/test_validate_config.py
+   The known answer of tests/regression/quad/L09/unit/quad_fc_gate_test.cpp is computed from the card and follows the new k_T
+   unchanged (hover stick 0.3223, was 0.3485). No threshold or predicate changed; every margin check passes regenerated.
+
 ## Why
 
 Luis's rulings of 2026-10-17 (the packet's two items). Derived consequence on the real card (m g = 7.178 N, k = 2.8e-6): with the no-load

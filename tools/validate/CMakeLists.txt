@@ -19,7 +19,7 @@ set(fc3v2_dir "${CMAKE_BINARY_DIR}/generated/marv_params_fc3v2")
 set(qf3_args
   --manifest "$<TARGET_PROPERTY:marv_params_fc3v2_generated,MARV_PARAM_MANIFEST>"
   --factory "${fc3v2_dir}/marv_params_fc3v2.mcfg"
-  --card "${PROJECT_SOURCE_DIR}/vehicles/marv_5in_fc3v2.yaml"
+  --card "${PROJECT_SOURCE_DIR}/vehicles/marv_7in_fc3v2.yaml"
   --budget "${PROJECT_SOURCE_DIR}/design/budget.yaml"
   --scenario "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml")
 add_test(NAME qf3_table_fc3v2

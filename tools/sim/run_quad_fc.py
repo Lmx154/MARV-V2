@@ -11,7 +11,7 @@ the world (<stem>.sdf), the full lockstep log (<stem>.bin, ~80 MB, not committed
 report (<stem>.report.txt), the analysis (<stem>.analysis.txt) and the decimated traces (<stem>.traces.csv). Two runs of the
 same world give the same log sha256 (the run is deterministic).
 
-The world. The real card (vehicles/marv_5in_fc3v2.yaml) at the FC3v2 tick (fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml,
+The world. The real card (vehicles/marv_7in_fc3v2.yaml) at the FC3v2 tick (fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml,
 tick_period_num_us / tick_period_den, whole ns rounded by the plugin, decision 0046 item 1), the L2 hover scenario's site,
 m = 1, the model gyro (nominal corner, no turn-on bias), <launch_pad/> (decision 0047), <command_delay_ticks>N</command_delay_ticks>
 with N = COMMAND_DELAY_TICKS, no open-loop DShot override, the register's rc_channel_angle (8) and the script below.
@@ -93,7 +93,7 @@ import mixer as card_mixer  # noqa: E402
 import run_scenario  # noqa: E402
 import scenario as scn  # noqa: E402
 
-CARD = ROOT / "vehicles" / "marv_5in_fc3v2.yaml"
+CARD = ROOT / "vehicles" / "marv_7in_fc3v2.yaml"
 BASE_SCENARIO = ROOT / "scenarios" / "quad" / "L02" / "hover.yaml"
 REGISTER = ROOT / "fw" / "compositions" / "quad_fc" / "params" / "quad_fc_register.yaml"
 FC3_SCENARIO_VALUES = ROOT / "fw" / "compositions" / "quad_fc" / "params" / "fc3v2_scenario_values.yaml"
@@ -599,7 +599,7 @@ def analyse(label, log, hover, phases, tilt_max, log_sha, out_stem):
     L = []
     P = {p.name: p for p in phases}
     L.append(f"HIL S2e analysis: {label}")
-    L.append("Simulation on INFERRED / UNVERIFIED card values (vehicles/marv_5in_fc3v2.yaml), not a flight result.")
+    L.append("Simulation on INFERRED / UNVERIFIED card values (vehicles/marv_7in_fc3v2.yaml), not a flight result.")
     L.append(f"log sha256 {log_sha}")
     hdr = log["header"]
     L.append(f"tick {hdr['tick_period_num_us']}/{hdr['tick_period_den']} us; host step {log['sensors']['host_step_ns']} ns "
@@ -736,7 +736,7 @@ def analyse_ihold(label, log, hover, phases, tilt_max, log_sha, out_stem, dip_st
     dip, hold2 = P["dip"], P["hold2"]
     rate = [math.sqrt(sum(x * x for x in o)) for o in s.omega]
     L = [f"HIL S2f integrator-hold analysis: {label}",
-         "Simulation on INFERRED / UNVERIFIED / PLACEHOLDER card values (vehicles/marv_5in_fc3v2.yaml), not a flight result.",
+         "Simulation on INFERRED / UNVERIFIED / PLACEHOLDER card values (vehicles/marv_7in_fc3v2.yaml), not a flight result.",
          f"log sha256 {log_sha}",
          f"tick {log['header']['tick_period_num_us']}/{log['header']['tick_period_den']} us; command delay N = {log['delay']['ticks']}; ticks {len(log['ticks'])}",
          f"disturbance: every rotor position shifted by {com_offset_m!r} m on x and y (plant torque tau_x = -T d, tau_y = +T d); at hover T = {hover.weight_n!r} N: "

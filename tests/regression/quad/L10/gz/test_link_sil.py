@@ -6,7 +6,7 @@ Skipped unless `gz sim --force-version 8` reports 8.x and the host-gz-quadfc bui
 (`cmake --preset host-gz-quadfc && cmake --build --preset host-gz-quadfc`); the gz CI step fails on a skip. Every gz process gets
 its own GZ_PARTITION and GZ_IP=127.0.0.1.
 
-The world is built as in test_quad_fc_plumbing.py, on the FC3v2 card (vehicles/marv_5in_fc3v2.yaml): the L2 hover world (member lo,
+The world is built as in test_quad_fc_plumbing.py, on the FC3v2 card (vehicles/marv_7in_fc3v2.yaml): the L2 hover world (member lo,
 m = 1) with the model gyro at the nominal corner, without the open-loop DShot overrides, with <launch_pad/>, a
 <manual_control_script> (link on, arm switch low unless a check raises it) and the link elements <config_dir> (a fresh directory
 per check: the SIL's config storage, fw/hal/sim/include/marv/hal_sim/storage.hpp) and <link_udp_port> (a free port). The SIL's
@@ -66,7 +66,7 @@ import lockstep_log  # noqa: E402
 import mcfg  # noqa: E402
 import run_scenario  # noqa: E402
 
-CARD = ROOT / "vehicles" / "marv_5in_fc3v2.yaml"
+CARD = ROOT / "vehicles" / "marv_7in_fc3v2.yaml"
 HOVER = ROOT / "scenarios" / "quad" / "L02" / "hover.yaml"
 REGISTER = ROOT / "fw" / "compositions" / "quad_fc" / "params" / "quad_fc_register.yaml"
 BUILD = ROOT / "build" / "host-gz-quadfc"
