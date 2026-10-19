@@ -69,7 +69,7 @@ class Seqlock {
     if (seq_.load(std::memory_order_relaxed) != s) {
       return Read::Torn;
     }
-    std::memcpy(&out, w.data(), sizeof(T));
+    std::memcpy(static_cast<void*>(&out), w.data(), sizeof(T));  // T is trivially copyable (asserted above)
     return Read::Ok;
   }
 
