@@ -10,7 +10,8 @@
 #
 # Needs `uv sync --frozen`, `cd gcs && npm ci` and `cd gcs && npx playwright install chromium` (the browser lives in the
 # Playwright cache, not in the repository). It builds the GCS (gcs/build, ignored by git) and removes every process it started
-# on exit. The Playwright JSON report and the failure screenshots land in the output directory (default build/gs-e2e/out).
+# on exit. The staleness control of the specs stops the fake vehicle (SIGSTOP of its process group, MARV_E2E_VEHICLE_PID) and
+# continues it. The Playwright JSON report and the failure screenshots land in the output directory (default build/gs-e2e/out).
 #
 #   tools/gs/e2e.sh [--live] [--out-dir DIR] [-- <playwright test arguments>]
 set -euo pipefail
@@ -48,6 +49,8 @@ cleanup() {
   local status=$?
   trap - EXIT INT TERM
   for pid in "${pids[@]-}"; do
+    # A group a spec left stopped (the staleness control) only handles SIGTERM once it is continued.
+    [[ -n "${pid}" ]] && kill -CONT -- "-${pid}" 2>/dev/null || true
     [[ -n "${pid}" ]] && kill -TERM -- "-${pid}" 2>/dev/null || true
   done
   sleep 1
@@ -104,7 +107,9 @@ mkdir -p "${out_dir}"
 status=0
 (
   cd gcs
+  # The staleness control stops and continues the light mode's fake vehicle (its process group); the live mode has no such process.
   MARV_E2E_URL="${url}" MARV_E2E_MODE="$([[ "${mode}" == live ]] && echo live || true)" MARV_E2E_OUT="${out_dir}" \
+    MARV_E2E_VEHICLE_PID="$([[ "${mode}" == light ]] && echo "${pids[0]}" || true)" \
     npx --no-install playwright test "$@"
 ) || status=$?
 echo "report: ${out_dir}/report.json"
