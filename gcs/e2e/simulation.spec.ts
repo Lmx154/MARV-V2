@@ -41,17 +41,29 @@ async function shot(page: Page, name: string): Promise<void> {
 	if (out) await page.screenshot({ path: `${out}/simulation-${name}.png`, fullPage: true });
 }
 
-/** The Simulation page with no device open and no run going. */
+/** The Simulation page with no run going and no device open (an earlier spec may have left either). */
 async function openPage(page: Page): Promise<void> {
 	await page.goto(url as string);
 	await expect(indicator(page, 'Helper')).toContainText(/open/);
+	const nav = page.getByRole('navigation', { name: 'Pages' });
+	await nav.getByRole('link', { name: 'Simulation', exact: true }).click();
+	await expect(page.getByRole('heading', { level: 1, name: 'Simulation', exact: true })).toBeVisible();
+	// The page learns the helper's status a moment after it connects: wait for a state in which one of the two buttons is enabled.
+	const stop = page.getByRole('button', { name: 'Stop' });
+	const launch = page.getByRole('button', { name: 'Launch' });
+	await expect(stop.or(launch).and(page.locator(':enabled'))).toBeVisible();
+	if (await stop.isEnabled()) {
+		await stop.click();
+		await expect(launch).toBeEnabled({ timeout: GONE_MS });
+	}
+	await nav.getByRole('link', { name: 'Connection', exact: true }).click();
 	const close = page.getByRole('button', { name: 'Close device' });
 	await expect(async () => {
 		if (await close.isEnabled()) await close.click();
 		await expect(page.getByRole('button', { name: 'Open SIL UDP' })).toBeEnabled({ timeout: RETRY_MS });
 	}).toPass();
-	await page.getByRole('navigation', { name: 'Pages' }).getByRole('link', { name: 'Simulation', exact: true }).click();
-	await expect(page.getByRole('heading', { level: 1, name: 'Simulation', exact: true })).toBeVisible();
+	await expect(indicator(page, 'Link')).toContainText(/device\s+none/);
+	await nav.getByRole('link', { name: 'Simulation', exact: true }).click();
 	await expect(page.getByRole('combobox', { name: 'Card' })).toBeEnabled();
 }
 
@@ -155,7 +167,7 @@ test('launches a run with one override and the GUI off, the vehicle connects by 
 	await expect(indicator(page, 'Link')).toContainText(/alive/, { timeout });
 	await expect(indicator(page, 'Link')).toHaveAttribute('data-stale', 'false', { timeout });
 	await expect(indicator(page, 'Identity')).not.toContainText('not reported', { timeout });
-	if (!live) expect(processes(`sleep ${standIn}`)).not.toBe('');
+	if (!live) expect(processes(`^sleep ${standIn}`)).not.toBe('');
 	await shot(page, '2-running');
 
 	await page.getByRole('button', { name: 'Stop' }).click();
@@ -166,7 +178,7 @@ test('launches a run with one override and the GUI off, the vehicle connects by 
 	await expect(page.getByRole('button', { name: 'Stop' })).toBeDisabled();
 	await expect(indicator(page, 'Run')).toContainText(/sil stopped/);
 	await expect(async () => {
-		expect(processes(live ? 'gz sim|run_quad_fc' : `sleep ${standIn}`)).toBe('');
+		expect(processes(live ? 'gz sim|run_quad_fc' : `^sleep ${standIn}`)).toBe('');
 	}).toPass({ timeout: GONE_MS });
 	await shot(page, '3-after-stop');
 });
