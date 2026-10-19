@@ -1364,8 +1364,11 @@ TAU_MAX_HOVER_METHOD = (
     "rate_lead.py rule step 15)")
 TAU_MAX_HOVER_SOURCE = "card mass, thrust_coeff, speed_range, mixer M; decision 0058"
 T_FF_METHOD = (
-    "derived(smallest T_ff >= 0 keeping the D path plus omega x J omega feed-forward noise per motor at rate_max within "
-    "d_path_noise_budget x the hover DShot step's thrust, f32 rounded up; rate_lead.py rule step 9; decision 0014)")
+    "derived(T_ff = the smallest T_ff >= 0 whose combined RMS of the D path and the lag-compensated omega x J omega "
+    "feed-forward path per motor at rate_max (every sign pattern, every notch bypassed) is at most d_path_noise_budget x "
+    "the hover DShot step's thrust, on the firmware model at the guarded f32 design (rule step 9 of "
+    "tools/card/rate_lead.py), rounded up to f32; read by the rate loop only while rate_ff_enable is 1; decision 0014, "
+    "owner decision 8)")
 
 
 def tau_ref_lead(result):
