@@ -37,3 +37,12 @@ marv_apply_flags(marv_link_service FIRMWARE)
 if(MARV_TARGET STREQUAL "host")
   set_target_properties(marv_link_codec_mavlink marv_link_service PROPERTIES POSITION_INDEPENDENT_CODE ON)
 endif()
+# On the board both are built for size (-Os, after the build type's -O3 on the command line, so it wins): they run only in the
+# background loop, below every interrupt, and the image runs from SRAM (copy_to_ram), so their code is RAM. Measured at
+# ground-segment unit 11 (the telemetry streams): at -O3 the flight image overflowed RAM by 16340 B; -Os takes the codec from
+# 45628 to 13304 B of text and the service from 12855 to 7821 B (arm-none-eabi-size of the m33 objects). Lead decision,
+# 2026-10-19.
+if(MARV_TARGET STREQUAL "m33")
+  target_compile_options(marv_link_codec_mavlink PRIVATE -Os)
+  target_compile_options(marv_link_service PRIVATE -Os)
+endif()
