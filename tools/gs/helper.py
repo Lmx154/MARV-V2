@@ -58,7 +58,8 @@ Endpoints (all need the token):
            {"manifest"} (the id must name a run under <run dir>/runs).
          {"cmd": "cards"}: {"cards": ["vehicles/<name>.yaml", ...]}: the cards a sil run's "card" accepts, sorted.
          {"cmd": "host_state"}: {"host": {"loadavg", "cpus", "mem_total_bytes", "mem_available_bytes", "heavy_lock": {"held",
-           "holder", "path"}}}. {"cmd": "autoconnect", "enabled": bool}: {"autoconnect": {"enabled", "suspended", "owner"}}.
+           "holder", "path"}}}. {"cmd": "autoconnect", "enabled": bool}: {"autoconnect": {"enabled", "suspended", "owner",
+           "prefer": "sil" while a SIL run lives else "board" (null when off or suspended), "reason"}}.
          {"cmd": "config_report", "image_hash": H, "view": V}: the config hash of V and whether a report of (H, that hash) is
            stored ({"config_hash", "stored", "verdict"})
          {"cmd": "validate", "image_hash": H, "view": V}: writes V as a .mcfg (tools/config/mcfg.py, the format's single
@@ -373,6 +374,8 @@ class Helper:
             manifest = self.runs.start(kind, opts)
         except RunRefused as e:
             raise Refusal(str(e), {"refusals": [str(e)]}) from None
+        if kind == "sil" and self.autoconnect_enabled and not self._ac_suspended:
+            self._ac_release_board()
         return {"run": manifest}
 
     def run_stop(self) -> dict:
@@ -385,8 +388,18 @@ class Helper:
     # ---- autoconnect and host state -------------------------------------------------------------------------------------
 
     def autoconnect_status(self) -> dict:
+        """enabled, suspended, owner (what autoconnect opened), and the rule's answer now: "prefer" ("sil" while a SIL run lives,
+        else "board"; None when autoconnect is off or suspended) with the "reason"."""
+        active = self.runs.active()
+        sil_run = active is not None and active["kind"] == "sil"
+        if not self.autoconnect_enabled or self._ac_suspended:
+            prefer, reason = None, None
+        elif sil_run:
+            prefer, reason = "sil", f"SIL run {active['id']} is active: it takes precedence over any board until it ends"
+        else:
+            prefer, reason = "board", "no SIL run is active: a board's link interface is opened when one is present"
         return {"enabled": self.autoconnect_enabled, "suspended": self._ac_suspended, "owner": self._ac_owner,
-                "byid_dir": str(self.byid_dir)}
+                "prefer": prefer, "reason": reason, "byid_dir": str(self.byid_dir)}
 
     def _ac_event(self, state: str, **fields) -> None:
         event = {"event": "autoconnect", "state": state, **fields}
@@ -441,8 +454,11 @@ class Helper:
             await asyncio.sleep(self.poll_s)
 
     async def poll(self) -> None:
-        """One autoconnect step: the SIL's UDP link once its port is bound, else a board's link interface; both suspended while a
-        HIL run or a flash owns the board."""
+        """One autoconnect step. The one rule: while a SIL run lives its UDP link (once its port is bound) is the only device
+        autoconnect opens, and an autoconnect-opened board is closed when the run starts; with no SIL run a board's link interface
+        is opened. The choice follows the run supervisor's single active-run slot, so it changes only when a run starts or ends
+        (no flapping), and a board appearing mid-run waits for the run to end. Both are suspended while a HIL run or a flash owns
+        the board; a device the operator opened is never touched."""
         active = self.runs.active()
         suspend = None
         if active is not None and active["kind"] == "hil":
@@ -458,20 +474,25 @@ class Helper:
         if self._ac_owner == "sil" and not sil_run:
             self.close_device("the SIL run ended")
             self._ac_event("closed", source="sil", reason="the SIL run ended")
+        if sil_run:
+            self._ac_release_board()
         if self.device is not None:
             return
-        port = self.sil.udp_port
-        if sil_run and port is not None:
+        if sil_run:
+            # While a SIL run lives its link is the only device autoconnect opens: before the port is bound, after the user closed it
+            # or after it failed to open, autoconnect waits and never falls back to a board.
+            port = self.sil.udp_port
             key = f"sil:{active['id']}"
-            if key != self._ac_declined and udp_bound(port):
+            if port is not None and key != self._ac_declined and udp_bound(port):
                 try:
                     await self.open_udp(port)
                 except DeviceError as e:
                     self._ac_failure("sil", str(e))
                 else:
                     self._ac_owner, self._ac_key, self._ac_failed = "sil", key, {}
-                    self._ac_event("opened", source="sil", device=self.device.description)
-                return
+                    self._ac_event("opened", source="sil", device=self.device.description,
+                                   reason=f"SIL run {active['id']} is active: it takes precedence over any board")
+            return
         links = self.board_links()
         if self._ac_declined is not None and self._ac_declined.startswith("board:") and self._ac_declined[len("board:"):] not in links:
             self._ac_declined = None
@@ -485,9 +506,15 @@ class Helper:
                 self._ac_failure("board", str(e), path)
                 continue
             self._ac_owner, self._ac_key, self._ac_failed = "board", key, {}
-            self._ac_event("opened", source="board", device=self.device.description)
+            self._ac_event("opened", source="board", device=self.device.description, reason="no SIL run is active")
             return
         self._ac_failed = {k: v for k, v in self._ac_failed.items() if k in links or k == "sil"}
+
+    def _ac_release_board(self) -> None:
+        """Closes the board autoconnect opened (the operator's own connection is never touched); a SIL run is starting or going."""
+        if self._ac_owner == "board":
+            self.close_device("a SIL run started: it takes precedence over a board")
+            self._ac_event("closed", source="board", reason="a SIL run started: it takes precedence over a board")
 
     def _ac_failure(self, source: str, reason: str, path: str = "") -> None:
         if self._ac_failed.get(path or source) != reason:
