@@ -1,7 +1,8 @@
 // A SIL library built with STORAGE (fw/sil/CMakeLists.txt): the config store's boot step (marv/store/store.hpp) on hal_sim's
 // file storage in the run directory marv_sil_storage_open names (marv/hal_sim/storage.hpp), bound to the image hash of
 // marv_sil_config; and the ground link (ground-segment unit 6): the link service of fw/link (marv/link/service.hpp) on hal_sim's
-// UDP socket (marv/hal_sim/link_udp.hpp), run by marv_sil_link_service between tick calls. Without a run directory the storage
+// UDP socket (marv/hal_sim/link_udp.hpp), run by marv_sil_link_service between tick calls, with the composition's telemetry
+// snapshot for the telemetry streams (ground-segment unit 11). Without a run directory the storage
 // is empty and the boot step returns the compiled table with status Ok, so the run is the run without the store; without
 // marv_sil_link_open the link does nothing.
 #include <array>
@@ -99,7 +100,7 @@ extern "C" {
   if (!g_link_started) {
     marv::link::service_init(marv::link::ServiceConfig{
         marv::link::Transport{&link_receive, &link_send}, g_image, &armed_now, &marv::composition::request_maintenance,
-        &marv::composition::maintenance_granted});
+        &marv::composition::maintenance_granted, &marv::composition::telemetry});
     g_link_started = true;
   }
   *reboot_requested = marv::link::service_step() ? 1 : 0;
