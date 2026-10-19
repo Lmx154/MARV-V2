@@ -1051,7 +1051,7 @@ void service_init(const ServiceConfig& config) noexcept {
     g.cap_hz[k] = r.value.type == ParamType::F32 ? rate_or_zero(r.value.f32) : 0.0F;
   }
   g.budget_bytes_s = rate_or_zero(param_value<ParamId::telemetry_byte_rate_max>());
-  g.rc_loss_us = static_cast<TimeUs>(std::max(param_value<ParamId::failsafe_loss_us>(), 0));
+  g.rc_loss_us = static_cast<TimeUs>(std::max<std::int32_t>(param_value<ParamId::failsafe_loss_us>(), 0));
   g.started = true;
 }
 
