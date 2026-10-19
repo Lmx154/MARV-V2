@@ -38,7 +38,7 @@
 				{#each g.rows as r (r.key)}
 					<dt>{r.name}</dt>
 					<dd data-row={r.key} data-tone={r.tone}>
-						<span class="v tone-{r.tone}">{r.value}</span>{#if r.unit}<span class="u"> {r.unit}</span>{/if}
+						<span class="v tone-{r.tone}">{r.value}</span>{#if r.unit}<span class="u">{r.unit}</span>{/if}
 						{#if r.bar !== null}
 							<span class="bar" class:centred={r.centred} aria-hidden="true">
 								<span class="fill" style={r.centred ? `left:${Math.min(r.bar, 0.5) * 100}%;width:${Math.abs(r.bar - 0.5) * 100}%` : `left:0;width:${r.bar * 100}%`}></span>
@@ -115,6 +115,7 @@
 
 	.u {
 		color: var(--muted);
+		margin-left: 0.25em;
 	}
 
 	.tone-ok {

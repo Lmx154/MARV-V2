@@ -9,7 +9,8 @@ standard definitions (tools/link/fetch_defs.py), cached in --defs-dir; pymavlink
 What it does is what gcs/src/lib/link/vehicle.ts lists for a vehicle, with a few parameters: a heartbeat every
 --heartbeat-s; the identity and the version on a REQUEST_MESSAGE command; one value and one provenance record per parameter on
 a list or index request; a parameter write answered with the staged value (a locked parameter refused with a status text);
-the source text read in chunks. PARAM_VALUE carries the raw 32 bits of the value (the version advertises bytewise encoding).
+the source text read in chunks; the telemetry streams of the live view (SET_MESSAGE_INTERVAL starts and stops each of the nine
+streams at the interval asked, at most one message per receive wait; the values are a slow harness motion, not a model). PARAM_VALUE carries the raw 32 bits of the value (the version advertises bytewise encoding).
 Values are chosen so that no bit pattern is a NaN. Config commands are answered "unavailable".
 
   uv run python tools/gs/e2e_fake_vehicle.py --udp-port N --defs-dir DIR [--heartbeat-s S]
@@ -19,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import math
 import importlib.util
 import signal
 import socket
@@ -36,6 +38,16 @@ DEFAULT_HEARTBEAT_S = 1.0  # labelled harness value: the conventional 1 Hz heart
 POLL_S = 0.05  # labelled harness value: one receive wait
 CHUNK = 64  # MARV_PARAM_SOURCE.chunk
 CMD_REQUEST_MESSAGE = 512
+CMD_SET_MESSAGE_INTERVAL = 511
+RESULT_ACCEPTED, RESULT_UNSUPPORTED = 0, 3
+US_PER_S = 1_000_000
+# The telemetry streams (message id -> pymavlink message name) the fake vehicle can send.
+STREAMS = {1: "sys_status", 30: "attitude", 31: "attitude_quaternion", 65: "rc_channels", 83: "attitude_target", 105: "highres_imu",
+           375: "actuator_output_status", 15205: "marv_fc_status", 15206: "marv_estimator"}
+# Harness values of the fake motion: the angle swing (rad), its period (s), the stick centre and half span (us) and the DShot swing.
+SWING_RAD, SWING_PERIOD_S = 0.3, 6.0
+RC_CENTRE_US, RC_HALF_SPAN_US = 1500, 512
+DSHOT_BASE, DSHOT_SWING = 1000, 200
 MSG_AUTOPILOT_VERSION, MSG_MARV_IDENTITY = 148, 15200
 CAPABILITY_PARAM_ENCODE_BYTEWISE = 16
 TYPE_INT32, TYPE_REAL32 = 6, 9
@@ -98,6 +110,65 @@ class Vehicle:
         self.staged = [p[2] for p in PARAMS]
         self.active = [p[2] for p in PARAMS]
         self.text = [p[4] for p in PARAMS]
+        self.interval_s: dict[int, float] = {}
+        self.due: dict[int, float] = {}
+        self.t0 = time.monotonic()
+
+    def send_named(self, name: str, **values) -> None:
+        """Sends the message `name`; a field not given is zero (an array of zeros)."""
+        cls = getattr(self.d, f"MAVLink_{name}_message")
+        args = [values.get(f, [0] * n if n else 0) for f, n in zip(cls.fieldnames, cls.array_lengths)]
+        self.mav.send(cls(*args))
+
+    def step_streams(self, now: float) -> None:
+        """Sends each running stream that is due, once; the next is due one interval later (or one from now when it fell behind)."""
+        for msg_id, interval in self.interval_s.items():
+            if now < self.due[msg_id]:
+                continue
+            self.stream(msg_id, now - self.t0)
+            self.due[msg_id] = max(self.due[msg_id] + interval, now)
+
+    def stream(self, msg_id: int, t: float) -> None:
+        swing = SWING_RAD * math.sin(2 * math.pi * t / SWING_PERIOD_S)
+        ms, us = int(t * 1000), int(t * US_PER_S)
+        name = STREAMS[msg_id]
+        if name == "sys_status":
+            self.send_named(name, onboard_control_sensors_present=0x210003, onboard_control_sensors_enabled=0x210003,
+                            onboard_control_sensors_health=0x210003, voltage_battery=0xFFFF, current_battery=-1, battery_remaining=-1)
+        elif name == "attitude":
+            self.send_named(name, time_boot_ms=ms, roll=swing, pitch=-swing / 2, yaw=swing * 2, rollspeed=0.1, pitchspeed=-0.2, yawspeed=0.3)
+        elif name == "attitude_quaternion":
+            h = swing / 2
+            self.send_named(name, time_boot_ms=ms, q1=math.cos(h), q2=math.sin(h), q3=0.0, q4=0.0)
+        elif name == "rc_channels":
+            ch = {f"chan{i + 1}_raw": RC_CENTRE_US for i in range(16)}
+            ch["chan3_raw"] = RC_CENTRE_US - RC_HALF_SPAN_US
+            ch["chan17_raw"] = ch["chan18_raw"] = 0xFFFF
+            self.send_named(name, time_boot_ms=ms, chancount=16, rssi=190, **ch)
+        elif name == "attitude_target":
+            self.send_named(name, time_boot_ms=ms, type_mask=128, q=[1.0, 0.0, 0.0, 0.0], body_roll_rate=0.5, thrust=0.25)
+        elif name == "highres_imu":
+            self.send_named(name, time_usec=us, xacc=0.1, yacc=-0.2, zacc=-9.8, xgyro=0.1, ygyro=-0.2, zgyro=0.3, temperature=31.5,
+                            fields_updated=0x103F)
+        elif name == "actuator_output_status":
+            self.send_named(name, time_usec=us, active=0xF, actuator=[float(DSHOT_BASE + DSHOT_SWING * i) for i in range(4)] + [0.0] * 28)
+        elif name == "marv_fc_status":
+            self.send_named(name, time_usec=us, rate_executions=us // 1000, rc_frames=1, rc_age_us=20000, arm_state=1, motor_gate=0, flags=8 | 16 | 32)
+        elif name == "marv_estimator":
+            h = swing / 2
+            self.send_named(name, time_usec=us, q_mahony=[math.cos(h), math.sin(h), 0.0, 0.0], q_eskf=[1.0, 0.0, 0.0, 0.0], flags=1)
+
+    def set_interval(self, m) -> None:
+        msg_id = int(m.param1)
+        result = RESULT_ACCEPTED
+        if msg_id not in STREAMS:
+            result = RESULT_UNSUPPORTED
+        elif m.param2 in (0, -1):
+            self.interval_s.pop(msg_id, None)
+        else:
+            self.interval_s[msg_id] = m.param2 / US_PER_S
+            self.due[msg_id] = time.monotonic()
+        self.mav.command_ack_send(m.command, result, 0, 0, GCS_SYSTEM_ID, GCS_COMPONENT_ID)
 
     def heartbeat(self) -> None:
         self.mav.heartbeat_send(2, 0, 0, 0, 4)  # type quadrotor, no autopilot class, disarmed, system status standby
@@ -128,7 +199,9 @@ class Vehicle:
 
     def handle(self, m) -> None:
         kind = m.get_type()
-        if kind == "COMMAND_LONG" and m.command == CMD_REQUEST_MESSAGE:
+        if kind == "COMMAND_LONG" and m.command == CMD_SET_MESSAGE_INTERVAL:
+            self.set_interval(m)
+        elif kind == "COMMAND_LONG" and m.command == CMD_REQUEST_MESSAGE:
             if int(m.param1) == MSG_MARV_IDENTITY:
                 self.identity()
             elif int(m.param1) == MSG_AUTOPILOT_VERSION:
@@ -193,6 +266,8 @@ def main(argv=None) -> int:
             vehicle.feed(data)
         except socket.timeout:
             pass
+        if vehicle.peer.addr is not None:
+            vehicle.step_streams(time.monotonic())
         if vehicle.peer.addr is not None and time.monotonic() >= next_beat:
             vehicle.heartbeat()
             next_beat = time.monotonic() + args.heartbeat_s

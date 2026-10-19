@@ -11,7 +11,8 @@
 # Needs `uv sync --frozen`, `cd gcs && npm ci` and `cd gcs && npx playwright install chromium` (the browser lives in the
 # Playwright cache, not in the repository). It builds the GCS (gcs/build, ignored by git) and removes every process it started
 # on exit. The staleness control of the specs stops the fake vehicle (SIGSTOP of its process group, MARV_E2E_VEHICLE_PID) and
-# continues it. The Playwright JSON report and the failure screenshots land in the output directory (default build/gs-e2e/out).
+# continues it; in live mode the vehicle page's control stops the processes of the helper's run (those with MARV_E2E_RUNS_DIR, the
+# helper's run directory, in their command line) and continues them. The Playwright JSON report and the failure screenshots land in the output directory (default build/gs-e2e/out).
 #
 #   tools/gs/e2e.sh [--live] [--out-dir DIR] [-- <playwright test arguments>]
 set -euo pipefail
@@ -132,6 +133,7 @@ status=0
   MARV_E2E_URL="${url}" MARV_E2E_MODE="$([[ "${mode}" == live ]] && echo live || true)" MARV_E2E_OUT="${out_dir}" \
     MARV_E2E_VEHICLE_PID="$([[ "${mode}" == light ]] && echo "${pids[0]}" || true)" \
     MARV_E2E_STAND_IN="$([[ "${mode}" == light ]] && echo "${STAND_IN_SECONDS}" || true)" \
+    MARV_E2E_RUNS_DIR="${work}/runs" \
     npx --no-install playwright test "$@"
 ) || status=$?
 echo "report: ${out_dir}/report.json"
