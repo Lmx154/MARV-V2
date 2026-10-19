@@ -43,6 +43,7 @@ import signal
 import statistics
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -176,23 +177,35 @@ def display_world(text):
     return text[:i] + extra + text[i:]
 
 
+def unpause(world_name, env):
+    """Start the paused world (the --gui run): gz-sim's world control service, pause false."""
+    req = ["gz", "service", "--force-version", "13", "-s", f"/world/{world_name}/control", "--reqtype", "gz.msgs.WorldControl",
+           "--reptype", "gz.msgs.Boolean", "--timeout", "5000", "--req", "pause: false"]
+    r = subprocess.run(req, env=env, capture_output=True, text=True)
+    print(f"run_hil_s4: world unpaused ({r.stdout.strip() or r.stderr.strip()})", flush=True)
+
+
 def run_gz(stem, iterations, seed, plugin_dir, seconds, gui=False):
-    cmd = [*run_scenario.GZ_ARGS, "-s", "-r", "--iterations", str(iterations), "--seed", str(seed), f"{stem}.sdf"]
+    # --gui: the server starts PAUSED (no -r) and the GUI client joins it; the world runs only after DISPLAY_GUI_START_S,
+    # once the GUI holds the scene. Tries of 2026-10-18: a GUI joining a running world (either started together, or the GUI
+    # first) stalled the server ~106 ms at t = 1-2 s (the scene broadcaster's first full scene), the board missed its IMU
+    # deadline and latched imu_stale. The plugin opens the board and reads its hello at load (Configure) and starts the
+    # wall-clock pacing at the first unpaused step, so nothing is paced while paused.
+    cmd = [*run_scenario.GZ_ARGS, "-s", *([] if gui else ["-r"]), "--iterations", str(iterations), "--seed", str(seed),
+           f"{stem}.sdf"]
     Path(f"{stem}.bin").unlink(missing_ok=True)
     env = run_scenario.gz_env(plugin_dir)
     t0 = time.monotonic()
     gui_p = None
+    timer = None
     if gui:
-        # The GUI client joins the server's partition; it renders on its own process and only reads the scene. It starts
-        # first, at the lowest CPU priority, and the server only after DISPLAY_GUI_START_S: the first S4b try with both
-        # starting together lagged the wall-clock schedule by 106 ms at t = 2 s, the board missed its IMU deadline and
-        # latched imu_stale (no arming for the rest of the run).
+        world_name = re.search(r'<world name="([^"]+)"', Path(f"{stem}.sdf").read_text(encoding="utf-8")).group(1)
         gui_log = open(f"{stem}.gui.txt", "w", encoding="utf-8")
         gui_p = subprocess.Popen(["nice", "-n", "19", *run_scenario.GZ_ARGS, "-g"], env=env, stdout=gui_log,
                                  stderr=subprocess.STDOUT)
-        print(f"run_hil_s4: gz GUI starting; the simulation starts in {DISPLAY_GUI_START_S:.0f} s", flush=True)
-        time.sleep(DISPLAY_GUI_START_S)
-        t0 = time.monotonic()
+        print(f"run_hil_s4: gz GUI starting; the world is paused and starts in {DISPLAY_GUI_START_S:.0f} s", flush=True)
+        timer = threading.Timer(DISPLAY_GUI_START_S, unpause, args=(world_name, env))
+        timer.start()
     with open(f"{stem}.stderr.txt", "w", encoding="utf-8") as err, open(f"{stem}.stdout.txt", "w", encoding="utf-8") as out:
         p = subprocess.Popen(cmd, env=env, stdout=out, stderr=subprocess.PIPE, text=True, bufsize=1)
         try:
@@ -206,6 +219,8 @@ def run_gz(stem, iterations, seed, plugin_dir, seconds, gui=False):
             p.send_signal(signal.SIGINT)
             rc = p.wait(timeout=TIMEOUT_EXTRA_S)
         finally:
+            if timer is not None:
+                timer.cancel()
             if gui_p is not None:
                 gui_p.terminate()
                 try:
