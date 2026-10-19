@@ -195,6 +195,22 @@ gs3_check() {
   uv run python tools/ci/check_gs3.py
 }
 
+# The GCS unit tests and the type check (GCS-first unit GX-0): vitest (gcs/src and the TypeScript side of the L00 codec
+# conformance suite) and svelte-check. The dependencies are gcs/node_modules (`cd gcs && npm ci`). The merge gate (MARV_CI_MODE=full:
+# Actions, ci/local_ci.sh) installs them itself in its fresh tree; the development check never installs behind the developer's
+# back, it fails loudly instead, so that a missing install is never read as a pass.
+gcs_tests() {
+  if [[ ! -x gcs/node_modules/.bin/vitest ]]; then
+    if [[ "${MARV_CI_MODE:-per-push}" == full ]]; then
+      (cd gcs && npm ci) || return 1
+    else
+      echo "gcs/node_modules is missing (no vitest): run 'cd gcs && npm ci', then ci/dev_check.sh again. The GCS tests did not run." >&2
+      return 1
+    fi
+  fi
+  (cd gcs && npm test && npm run check)
+}
+
 gs3_control() {
   local log status=0
   log="$(mktemp)"
@@ -1059,6 +1075,7 @@ if [[ "${MARV_CI_MODE:-per-push}" != full ]]; then
 fi
 step "G8: CLAUDE.md keeps the ACTIVE-spec, number, UNKNOWN and CI-gate sections" g8_check
 step "GS-3: no tracked file outside the codec includes a MAVLink header or names MAVLink or an in-scope message" gs3_check
+step "GCS: vitest (npm test) and svelte-check (npm run check) in gcs/" gcs_tests
 step "L1: the committed vehicle card, its sensor profile and the design budget lint clean (sigma policy)" l1_card_lint
 step "L1: plant known-answer reference reproduces plant_ref_expected.txt from plant_ref_inputs.txt" plant_ref_reproduces
 step "L5: rate-bypass fixture reproduces from gen_fixture.py" rate_bypass_fixture_reproduces
