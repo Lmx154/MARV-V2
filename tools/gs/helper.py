@@ -5,7 +5,10 @@
     ways to the browser over a localhost WebSocket at /ws. It never parses the bytes in the data path;
   - records the ground log (tools/gs/groundlog.py): every byte in each direction, timestamped per chunk;
   - serves the image library (tools/gs/artifacts.py) over HTTP GET under /api/images;
-  - launches and stops a Gazebo SIL run (tools/gs/sil.py);
+  - supervises one simulation run at a time (tools/gs/runs.py, tools/gs/sil.py): the interactive Gazebo SIL, relaunched on a reboot
+    request, or a HIL run (tools/sim/run_hil_s4.py), each in its own process group with a manifest JSON per run;
+  - opens the SIL's UDP link once its port is bound (and keeps it across relaunches) and the link interface of a board that shows
+    up under /dev/serial/by-id (autoconnect), and reports the host (load, free memory, the heavy-lock holder, ci/heavy.sh);
   - validates a staged config for an image of the library (tools/validate/validate_config.py, ground-segment unit 9, G7) and
     keeps the reports keyed by (image hash, config hash) (tools/gs/artifacts.py ReportLibrary);
   - flashes a board image through picotool (tools/gs/flash.py, ground-segment unit 15, G7): only with a passing validation report
@@ -16,6 +19,7 @@
   uv run python tools/gs/helper.py [--serial PATH [--baud N] | --udp PORT] [--port N] [--runs-dir DIR] [--build-root DIR]
                                    [--gcs-dir DIR] [--sil-udp-port N] [--sil-command CMD] [--reports-dir DIR]
                                    [--validate-command CMD] [--picotool PATH] [--extra-origin ORIGIN ...]
+                                   [--hil-command CMD] [--heavy-lock FILE] [--byid-dir DIR] [--no-autoconnect]
 
 Security. It binds 127.0.0.1 only. Every request must carry the Host `127.0.0.1:<port>`; an Origin header, when present, must
 be exactly `http://127.0.0.1:<port>` (the WebSocket requires it); and every request needs the per-session token (random, printed
@@ -39,7 +43,18 @@ Endpoints (all need the token):
                                   the validation report of that pair (the bytes whose SHA-256 is the report id), 404 if none
   WS   /ws                        binary frames are raw device bytes in both directions; text frames are JSON control:
          {"cmd": "status"} {"cmd": "open", "serial": "/dev/...", "baud": N} {"cmd": "open", "udp_port": N} {"cmd": "close"}
-         {"cmd": "sil_start"} {"cmd": "sil_stop"}
+         {"cmd": "sil_start"} {"cmd": "sil_stop"}: run_start / run_stop of kind sil
+         {"cmd": "run_plan", "kind": "sil"|"hil", ...options}: the argv, run id and directory a start would use, and the reasons it
+           would be refused ({"plan": {"kind", "run_id", "argv", "options", "out_dir", "udp_port", "allowed", "refusals"}}).
+           The options of a hil run: "port" (required, under the by-id directory), "seconds", "expect" (s4a|late|none), "gui";
+           a sil run has none; any other key is refused.
+         {"cmd": "run_start", "kind": ..., ...options}: refused ("refusals": [...], ok false) while a run is going (one simulation
+           at a time), a validation or flash runs, the heavy lock is held, or (hil) the helper has a serial port open or the port is
+           absent; else starts the run and answers {"run": manifest}. {"cmd": "run_stop"}: stops the run's process group,
+           answers {"run": manifest, "exit_status"}. {"cmd": "run_list"}: {"runs": [run id]}. {"cmd": "run_manifest", "run_id"}:
+           {"manifest"} (the id must name a run under <run dir>/runs).
+         {"cmd": "host_state"}: {"host": {"loadavg", "cpus", "mem_total_bytes", "mem_available_bytes", "heavy_lock": {"held",
+           "holder", "path"}}}. {"cmd": "autoconnect", "enabled": bool}: {"autoconnect": {"enabled", "suspended", "owner"}}.
          {"cmd": "config_report", "image_hash": H, "view": V}: the config hash of V and whether a report of (H, that hash) is
            stored ({"config_hash", "stored", "verdict"})
          {"cmd": "validate", "image_hash": H, "view": V}: writes V as a .mcfg (tools/config/mcfg.py, the format's single
@@ -60,7 +75,10 @@ Endpoints (all need the token):
            "armed": bool} from the vehicle's identity and heartbeat.
          V is the JSON view of tools/config/mcfg.py (decode/dump: sections of records with their bits, enumerations and source
          texts); the GCS builds it from the vehicle's staged records. Each command is answered {"ok": true|false, ...} (an
-         "id" field is echoed). Pushed events: {"event": "device_opened"|"device_closed", ...} and the validation's.
+         "id" field is echoed). Pushed events: {"event": "device_opened"|"device_closed", ...}, the validation's and the flash's, and
+         {"event": "run_started"|"run_stopped"|"run_exited", "run_id", "kind", ...}, {"event": "sil_relaunched", "run_id", "relaunches",
+         "pid"}, {"event": "autoconnect", "state": "opened"|"closed"|"failed"|"suspended"|"resumed", "source": "sil"|"board",
+         "device", "reason"} and {"event": "host_state", ...} (every few polls, at once when the heavy-lock holder changes).
 """
 
 from __future__ import annotations
@@ -95,7 +113,9 @@ import image_hash as board_image  # noqa: E402
 import mcfg  # noqa: E402
 from artifacts import ARTIFACT_KEYS, ImageLibrary, ReportLibrary  # noqa: E402
 from device import DEFAULT_BAUD, LOOPBACK, Device, DeviceError, SerialDevice, UdpDevice  # noqa: E402
-from sil import SilLauncher  # noqa: E402
+import hoststate  # noqa: E402
+from runs import KINDS, RunRefused, RunSupervisor, parse_options  # noqa: E402
+from sil import SilLauncher, udp_bound  # noqa: E402
 
 from websockets.asyncio.server import ServerConnection, serve  # noqa: E402
 from websockets.datastructures import Headers  # noqa: E402
@@ -106,6 +126,10 @@ COOKIE = "marv_gs_token"
 CLIENT_QUEUE_MAX_BYTES = 4 << 20  # labelled harness value: bytes queued for a slow browser before chunks are dropped (counted, logged)
 SERIAL_GLOBS = ("/dev/ttyACM*", "/dev/ttyUSB*", "/dev/serial/by-id/*")
 WS_BUSY = 1013  # RFC 6455 section 7.4.2 "try again later"
+BYID_DIR = Path("/dev/serial/by-id")
+BOARD_LINK_GLOB = "usb-*-if02"  # the board's link CDC is USB interface 2 (fw/hal/target/CMakeLists.txt); the HIL image has one CDC and no such entry
+POLL_S = 0.5  # labelled harness value: the autoconnect and host-state poll period; SIL UDP is opened within one poll of the bind
+HOST_PUSH_POLLS = 4  # labelled harness value: a host_state event every this many polls (at once when the heavy-lock holder changes)
 VALIDATOR = ROOT / "tools" / "validate" / "validate_config.py"
 VALIDATION_STOP_S = 10  # labelled harness value: how long the helper waits for a stopped validation to end
 # The validator's command line; {config} {image} {build} {work} {out} are replaced (--validate-command replaces it in tests).
@@ -117,10 +141,19 @@ def utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
+class Refusal(DeviceError):
+    """A command the helper refuses: `extra` is merged into the reply (the list of reasons)."""
+
+    def __init__(self, message: str, extra: dict | None = None):
+        super().__init__(message)
+        self.extra = extra or {}
+
+
 class Helper:
     def __init__(self, *, runs_dir: Path, build_root: Path, gcs_dir: Path, sil_udp_port: int | None, token: str | None = None,
                  sil_command: list[str] | None = None, extra_origins: tuple[str, ...] = (), reports_dir: Path | None = None,
-                 validate_command: list[str] | None = None, picotool: str | None = None):
+                 validate_command: list[str] | None = None, picotool: str | None = None, hil_command: list[str] | None = None,
+                 heavy_lock: Path | None = None, byid_dir: Path | None = None, autoconnect: bool = True, poll_s: float = POLL_S):
         self.token = token or secrets.token_urlsafe(32)
         self.extra_origins = frozenset(extra_origins)
         self.build_root, self.gcs_dir = Path(build_root), Path(gcs_dir)
@@ -145,6 +178,19 @@ class Helper:
         self.flash_timing: dict = {}  # tests shorten flash.run_flash's waits (load_s, port_wait_s, settle_s)
         self._flash_task: asyncio.Task | None = None
         self.sil = SilLauncher(self.run_dir, sil_udp_port, sil_command)
+        self.runs = RunSupervisor(self.run_dir, self.sil, self._emit_threadsafe, hil_command_override=hil_command)
+        self.heavy_lock = Path(heavy_lock) if heavy_lock is not None else None  # None: $MARV_HEAVY_LOCK or the default (hoststate.py)
+        self.byid_dir = Path(byid_dir) if byid_dir is not None else BYID_DIR
+        self.autoconnect_enabled = autoconnect
+        self.poll_s = poll_s
+        self._ac_owner: str | None = None  # "sil" or "board" while the open device was opened by autoconnect
+        self._ac_key: str | None = None
+        self._ac_declined: str | None = None  # the key whose device the user closed: not opened again until the key changes
+        self._ac_suspended: str | None = None
+        self._ac_failed: dict = {}
+        self._host_last: dict | None = None
+        self._monitor_task: asyncio.Task | None = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         self.port = 0
         self.device: Device | None = None
         self.client: ServerConnection | None = None
@@ -156,9 +202,11 @@ class Helper:
     # ---- lifecycle ------------------------------------------------------------------------------------------------------
 
     async def start(self, port: int) -> None:
+        self._loop = asyncio.get_running_loop()
         self._server = await serve(self._ws_handler, LOOPBACK, port, process_request=self._process_request, compression=None)
         self.port = self._server.sockets[0].getsockname()[1]
         self.log.event(f"helper started on {self.origin}")
+        self._monitor_task = asyncio.create_task(self._monitor())
 
     @property
     def origin(self) -> str:
@@ -168,12 +216,17 @@ class Helper:
         return f"{self.origin}/?token={self.token}"
 
     async def stop(self) -> None:
+        if self._monitor_task is not None:
+            self._monitor_task.cancel()
+            await asyncio.gather(self._monitor_task, return_exceptions=True)
+            self._monitor_task = None
         if self._server is not None:
             self._server.close()
             await self._server.wait_closed()
         self.close_device("helper stopping")
         await self.stop_validation()
         await self.stop_flash()
+        await asyncio.to_thread(self.runs.shutdown)
         await asyncio.to_thread(self.sil.stop)
         self.log.event("helper stopped")
         self.log.close()
@@ -188,7 +241,22 @@ class Helper:
     def _device_closed(self, reason: str) -> None:
         self.log.event(f"device closed: {reason}")
         self.device = None
+        self._ac_owner = self._ac_key = None
         self._push(json.dumps({"event": "device_closed", "reason": reason}))
+
+    def _emit_threadsafe(self, event: dict) -> None:
+        """Logs and pushes an event from any thread (the run watcher's)."""
+        loop = self._loop
+        if loop is None or loop.is_closed():
+            return
+
+        def deliver() -> None:
+            self.log.event(f"{event['event']}: " + json.dumps({k: v for k, v in event.items() if k != "event"}))
+            self._push(json.dumps(event))
+        try:
+            loop.call_soon_threadsafe(deliver)
+        except RuntimeError:  # the loop closed between the check and the call
+            pass
 
     def _push(self, item: bytes | str) -> None:
         if self._queue is None:
@@ -201,17 +269,22 @@ class Helper:
             self._queued_bytes += len(item)
         self._queue.put_nowait(item)
 
-    def close_device(self, reason: str = "closed by request") -> None:
+    def close_device(self, reason: str = "closed by request", *, by_user: bool = False) -> None:
         if self.device is not None:
             self.device.close()
             self.log.event(f"device closed: {reason}")
             self.device = None
+        if by_user and self._ac_owner is not None:
+            self._ac_declined = self._ac_key
+        self._ac_owner = self._ac_key = None
 
     async def open_serial(self, path: str, baud: int, *, from_browser: bool) -> None:
         if from_browser and not (os.path.normpath(path) == path and any(fnmatch.fnmatchcase(path, g) for g in SERIAL_GLOBS)
                                  and os.path.realpath(path).startswith("/dev/")):
             raise DeviceError("a serial path from the browser must be a tty device: " + ", ".join(SERIAL_GLOBS))
         self._require_no_device()
+        if self.runs.active() is not None and self.runs.active()["kind"] == "hil":
+            raise DeviceError("a HIL run is going: it owns the board port; stop the run first (H-1)")
         self.device = SerialDevice(path, baud, self._device_rx, self._device_closed)
         self._opened()
 
@@ -234,6 +307,157 @@ class Helper:
         self.log.write(groundlog.TX, data)
         self.device.write(data)
 
+    # ---- runs (H-1 to H-3) ----------------------------------------------------------------------------------------------
+
+    def run_options(self, msg: dict) -> tuple[str, dict]:
+        kind = msg.get("kind", "sil")
+        try:
+            return kind, parse_options(kind, msg, device_globs=(f"{self.byid_dir}/*",))
+        except (ValueError, TypeError) as e:
+            raise DeviceError(str(e)) from None
+
+    def run_refusals(self, kind: str, opts: dict) -> list[str]:
+        """Every reason a run of this kind cannot start now; empty when it can."""
+        reasons = []
+        active = self.runs.active()
+        if active is not None or self.sil.active():
+            reasons.append(f"run {active['id'] if active else '(sil_start)'} is still going: one simulation at a time (H-1)")
+        if self._validation_task is not None and not self._validation_task.done():
+            reasons.append("a validation is running; wait for it to finish")
+        if self._flash_task is not None and not self._flash_task.done():
+            reasons.append("a flash is running; wait for it to finish")
+        lock = hoststate.heavy_lock_state(self.heavy_lock)
+        if lock["held"]:
+            reasons.append(f"the heavy lock is held ({lock['holder'] or 'unknown holder'}): heavy work waits for it (H-3)")
+        if kind == "hil":
+            if isinstance(self.device, SerialDevice):
+                reasons.append(f"the helper has a serial port open ({self.device.path}): close it first, a HIL run owns the board "
+                               "port (H-1)")
+            if not os.path.exists(opts["port"]):
+                reasons.append(f"the board port {opts['port']} is not present")
+        return reasons
+
+    def run_plan(self, msg: dict) -> dict:
+        kind, opts = self.run_options(msg)
+        plan = self.runs.plan(kind, opts)
+        refusals = self.run_refusals(kind, opts)
+        return {**plan, "allowed": not refusals, "refusals": refusals}
+
+    def run_start(self, msg: dict) -> dict:
+        kind, opts = self.run_options(msg)
+        refusals = self.run_refusals(kind, opts)
+        if refusals:
+            self.log.event(f"run refused ({kind}): {'; '.join(refusals)}")
+            raise Refusal(refusals[0], {"refusals": refusals})
+        try:
+            manifest = self.runs.start(kind, opts)
+        except RunRefused as e:
+            raise Refusal(str(e), {"refusals": [str(e)]}) from None
+        return {"run": manifest}
+
+    def run_stop(self) -> dict:
+        try:
+            manifest = self.runs.stop()
+        except RunRefused as e:
+            raise DeviceError(str(e)) from None
+        return {"run": manifest, "exit_status": manifest["exit_status"]}
+
+    # ---- autoconnect and host state -------------------------------------------------------------------------------------
+
+    def autoconnect_status(self) -> dict:
+        return {"enabled": self.autoconnect_enabled, "suspended": self._ac_suspended, "owner": self._ac_owner,
+                "byid_dir": str(self.byid_dir)}
+
+    def _ac_event(self, state: str, **fields) -> None:
+        event = {"event": "autoconnect", "state": state, **fields}
+        self.log.event("autoconnect " + json.dumps({k: v for k, v in event.items() if k != "event"}))
+        self._push(json.dumps(event))
+
+    def board_links(self) -> list[str]:
+        """The by-id entries of a board's link interface (-if02), sorted. An entry without that suffix (the HIL image's single CDC,
+        the console) is never listed, and neither is one whose target is not a device node under /dev."""
+        try:
+            names = sorted(os.listdir(self.byid_dir))
+        except OSError:
+            return []
+        out = []
+        for name in names:
+            path = os.path.join(self.byid_dir, name)
+            real = os.path.realpath(path)
+            if fnmatch.fnmatchcase(name, BOARD_LINK_GLOB) and real.startswith("/dev/") and os.path.exists(real):
+                out.append(path)
+        return out
+
+    async def _monitor(self) -> None:
+        polls = 0
+        while True:
+            try:
+                await self.poll()
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:  # a failed poll must not end the monitor
+                self.log.event(f"monitor poll failed: {type(e).__name__}: {e}")
+            polls += 1
+            host = hoststate.host_state(self.heavy_lock)
+            if self._host_last is None or polls % HOST_PUSH_POLLS == 0 or host["heavy_lock"] != self._host_last["heavy_lock"]:
+                self._push(json.dumps({"event": "host_state", **host}))
+            self._host_last = host
+            await asyncio.sleep(self.poll_s)
+
+    async def poll(self) -> None:
+        """One autoconnect step: the SIL's UDP link once its port is bound, else a board's link interface; both suspended while a
+        HIL run or a flash owns the board."""
+        active = self.runs.active()
+        suspend = None
+        if active is not None and active["kind"] == "hil":
+            suspend = "a HIL run owns the board"
+        elif self._flash_task is not None and not self._flash_task.done():
+            suspend = "a flash is running"
+        if suspend != self._ac_suspended:
+            self._ac_suspended = suspend
+            self._ac_event("suspended" if suspend else "resumed", reason=suspend)
+        if not self.autoconnect_enabled or suspend:
+            return
+        sil_run = active is not None and active["kind"] == "sil"
+        if self._ac_owner == "sil" and not sil_run:
+            self.close_device("the SIL run ended")
+            self._ac_event("closed", source="sil", reason="the SIL run ended")
+        if self.device is not None:
+            return
+        port = self.sil.udp_port
+        if sil_run and port is not None:
+            key = f"sil:{active['id']}"
+            if key != self._ac_declined and udp_bound(port):
+                try:
+                    await self.open_udp(port)
+                except DeviceError as e:
+                    self._ac_failure("sil", str(e))
+                else:
+                    self._ac_owner, self._ac_key, self._ac_failed = "sil", key, {}
+                    self._ac_event("opened", source="sil", device=self.device.description)
+                return
+        links = self.board_links()
+        if self._ac_declined is not None and self._ac_declined.startswith("board:") and self._ac_declined[len("board:"):] not in links:
+            self._ac_declined = None
+        for path in links:
+            key = f"board:{path}"
+            if key == self._ac_declined:
+                continue
+            try:
+                await self.open_serial(path, DEFAULT_BAUD, from_browser=False)
+            except DeviceError as e:
+                self._ac_failure("board", str(e), path)
+                continue
+            self._ac_owner, self._ac_key, self._ac_failed = "board", key, {}
+            self._ac_event("opened", source="board", device=self.device.description)
+            return
+        self._ac_failed = {k: v for k, v in self._ac_failed.items() if k in links}
+
+    def _ac_failure(self, source: str, reason: str, path: str = "") -> None:
+        if self._ac_failed.get(source + path) != reason:
+            self._ac_failed[source + path] = reason
+            self._ac_event("failed", source=source, reason=reason)
+
     # ---- status ---------------------------------------------------------------------------------------------------------
 
     def status(self) -> dict:
@@ -244,6 +468,9 @@ class Helper:
             "client": self.client is not None,
             "dropped_bytes": self.dropped_bytes,
             "sil": self.sil.status(),
+            "runs": self.runs.status(),
+            "host": hoststate.host_state(self.heavy_lock),
+            "autoconnect": self.autoconnect_status(),
             "validation": self.validation,
             "flash": self.flash_state,
             "gcs_built": (self.gcs_dir / "index.html").is_file(),
@@ -503,13 +730,33 @@ class Helper:
             elif cmd == "open" and "udp_port" in msg:
                 await self.open_udp(int(msg["udp_port"]))
             elif cmd == "close":
-                self.close_device()
+                self.close_device(by_user=True)
             elif cmd == "sil_start":
-                self.sil.start()
-                self.log.event("SIL run started")
+                reply.update(self.run_start({"cmd": "run_start", "kind": "sil"}))
             elif cmd == "sil_stop":
-                reply["exit_status"] = await asyncio.to_thread(self.sil.stop)
-                self.log.event("SIL run stopped")
+                active = self.runs.active()
+                if active is not None and active["kind"] == "sil":
+                    reply.update(await asyncio.to_thread(self.run_stop))
+                else:
+                    reply["exit_status"] = await asyncio.to_thread(self.sil.stop)
+            elif cmd == "run_plan":
+                reply["plan"] = self.run_plan(msg)
+            elif cmd == "run_start":
+                reply.update(self.run_start(msg))
+            elif cmd == "run_stop":
+                reply.update(await asyncio.to_thread(self.run_stop))
+            elif cmd == "run_list":
+                reply["runs"] = self.runs.list_runs()
+            elif cmd == "run_manifest":
+                reply["manifest"] = self.runs.manifest(msg.get("run_id"))
+            elif cmd == "host_state":
+                reply["host"] = hoststate.host_state(self.heavy_lock)
+            elif cmd == "autoconnect":
+                if not isinstance(msg.get("enabled"), bool):
+                    raise DeviceError("autoconnect needs enabled: true or false")
+                self.autoconnect_enabled = msg["enabled"]
+                self._ac_declined = None
+                reply["autoconnect"] = self.autoconnect_status()
             elif cmd == "config_report":
                 reply.update(self.config_report(msg))
             elif cmd == "validate":
@@ -521,7 +768,7 @@ class Helper:
             else:
                 raise DeviceError(f"unknown command {cmd!r}")
         except (DeviceError, RuntimeError, ValueError, TypeError, OSError) as e:
-            reply = {"ok": False, "error": str(e), **({"id": msg["id"]} if "id" in msg else {})}
+            reply = {"ok": False, "error": str(e), **getattr(e, "extra", {}), **({"id": msg["id"]} if "id" in msg else {})}
         return reply
 
     # ---- HTTP and the handshake gate ------------------------------------------------------------------------------------
@@ -641,7 +888,8 @@ async def run(args: argparse.Namespace) -> int:
                     sil_command=shlex.split(args.sil_command) if args.sil_command else None, extra_origins=tuple(args.extra_origin),
                     reports_dir=args.reports_dir,
                     validate_command=shlex.split(args.validate_command) if args.validate_command else None,
-                    picotool=args.picotool)
+                    picotool=args.picotool, hil_command=shlex.split(args.hil_command) if args.hil_command else None,
+                    heavy_lock=args.heavy_lock, byid_dir=args.byid_dir, autoconnect=not args.no_autoconnect)
     await helper.start(args.port)
     try:
         if args.serial:
@@ -688,6 +936,13 @@ def parse_args(argv=None) -> argparse.Namespace:
                     help="the validation reports, keyed by image and config hash (default <build-root>/gs-reports)")
     ap.add_argument("--validate-command", help="the validator command line with {config} {image} {build} {work} {out} "
                                                "(shell-style quoting; for tests; default tools/validate/validate_config.py)")
+    ap.add_argument("--hil-command", help="the command line a `run_start` of kind hil runs instead of tools/sim/run_hil_s4.py "
+                                          "(shell-style quoting; for tests)")
+    ap.add_argument("--heavy-lock", type=Path, default=None,
+                    help="the heavy-lock file (default $MARV_HEAVY_LOCK, else %s; ci/heavy.sh takes the same lock)" % hoststate.HEAVY_LOCK_DEFAULT)
+    ap.add_argument("--byid-dir", type=Path, default=None,
+                    help=f"the directory the board watcher scans for link interfaces (default {BYID_DIR}); also the root of a HIL run's port")
+    ap.add_argument("--no-autoconnect", action="store_true", help="do not open the SIL's UDP link or a board's link interface by itself")
     ap.add_argument("--picotool", help=f"the picotool executable the flash runs (default $MARV_PICOTOOL, else `{flash.PICOTOOL}` on PATH)")
     ap.add_argument("--extra-origin", action="append", default=[], type=origin_arg, metavar="ORIGIN",
                     help="also accept this exact origin (repeatable), e.g. http://localhost:5173 for a vite dev server: DEVELOPMENT ONLY")

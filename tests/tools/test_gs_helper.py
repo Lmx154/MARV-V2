@@ -38,12 +38,13 @@ TIMEOUT_S = 10  # labelled harness value: bounds a hung relay only
 
 
 def run_with_helper(tmp_path, body, *, build_root=None, gcs_dir=None, sil_command=None, sil_udp_port=None, extra_origins=(),
-                    validate_command=None, picotool=None, flash_timing=None):
+                    validate_command=None, picotool=None, flash_timing=None, **helper_kwargs):
     """Runs `await body(helper)` with a started helper on a free port; always stops the helper."""
     async def main():
         h = helper_mod.Helper(runs_dir=tmp_path / "runs", build_root=build_root or tmp_path / "build",
                               gcs_dir=gcs_dir or tmp_path / "gcs", sil_udp_port=sil_udp_port, sil_command=sil_command, extra_origins=extra_origins,
-                              reports_dir=tmp_path / "reports", validate_command=validate_command, picotool=picotool)
+                              reports_dir=tmp_path / "reports", validate_command=validate_command, picotool=picotool,
+                              **{"heavy_lock": tmp_path / "heavy.lock", "byid_dir": tmp_path / "by-id", **helper_kwargs})
         h.flash_timing = flash_timing or {}
         await h.start(0)
         try:
@@ -51,6 +52,11 @@ def run_with_helper(tmp_path, body, *, build_root=None, gcs_dir=None, sil_comman
         finally:
             await h.stop()
     return asyncio.run(main())
+
+
+def ISOLATE(tmp_path):
+    """The command-line flags that keep a helper process of a test away from the real by-id directory and the real heavy lock."""
+    return ["--no-autoconnect", "--byid-dir", str(tmp_path / "by-id"), "--heavy-lock", str(tmp_path / "heavy.lock")]
 
 
 def ws_url(h, token=None):
@@ -713,7 +719,7 @@ def test_sil_stop_kills_a_run_that_ignores_sigterm(tmp_path, monkeypatch):
 
 def test_command_line_start_prints_the_url_and_serves(tmp_path):
     proc = subprocess.Popen([sys.executable, str(ROOT / "tools" / "gs" / "helper.py"), "--port", "0", "--runs-dir", str(tmp_path / "runs"),
-                             "--build-root", str(tmp_path / "build"), "--gcs-dir", str(tmp_path / "gcs")],
+                             "--build-root", str(tmp_path / "build"), "--gcs-dir", str(tmp_path / "gcs"), *ISOLATE(tmp_path)],
                             stdout=subprocess.PIPE, text=True)
     try:
         line = proc.stdout.readline()
@@ -739,7 +745,7 @@ def test_command_line_signal_stops_the_sil_run_and_closes_the_log(tmp_path, sig)
     # the stand-in SIL: a leader and a child in one process group, both recorded
     stand_in = f"sh -c 'sleep 600 & echo $! > {marker}; wait'"
     proc = subprocess.Popen([sys.executable, str(ROOT / "tools" / "gs" / "helper.py"), "--port", "0", "--runs-dir", str(tmp_path / "runs"),
-                             "--build-root", str(tmp_path / "build"), "--gcs-dir", str(tmp_path / "gcs"), "--sil-command", stand_in],
+                             "--build-root", str(tmp_path / "build"), "--gcs-dir", str(tmp_path / "gcs"), "--sil-command", stand_in, *ISOLATE(tmp_path)],
                             stdout=subprocess.PIPE, text=True)
     try:
         m = re.match(r"GCS:\s+http://127\.0\.0\.1:(\d+)/\?token=(\S+)$", proc.stdout.readline())

@@ -18,6 +18,11 @@ if (($# > 0)); then
   base_args=(--base "$2")
 fi
 
+# One heavy job at a time on this host (ci/heavy.sh): take the lock, or stop here when someone holds it.
+if [[ "${MARV_HEAVY_HELD:-}" != "${MARV_HEAVY_LOCK:-/tmp/marv-heavy.lock}" ]]; then
+  exec bash ci/heavy.sh -- bash "${BASH_SOURCE[0]}" "$@"
+fi
+
 started="${SECONDS}"
 
 echo "##### smoke"
