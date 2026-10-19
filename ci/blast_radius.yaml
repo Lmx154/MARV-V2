@@ -431,7 +431,7 @@ rules:
     run_ci_steps: ["@flight_gates"]
     pytest_paths: []
     gz_groups: [l7]
-    why: "quad_fc is the flight composition of the m33 image and is linked by the L09 gate test and the SIL library sim/quad_fc (the L09 SIL test); its register and its scenario-values register are read by the marv_params_fc3v2 set built by the same tests"
+    why: "quad_fc is the flight composition of the m33 image and is linked by the L09 gate test and the SIL library sim/quad_fc (the L09 SIL test); its register and its scenario-values register are read by the marv_params_fc3v2 set built by the same tests; the bench-profile variant (marv_composition_quad_fc_bench_profile, params/bench_profile_register.yaml, unit U3) is linked by the L09 bench-profile test and the m33 bench image marv_fc3v2_bench_profile"
 
   # ---------------------------------------------------------------- sim
   - paths: [sim/plant/**]
@@ -728,11 +728,18 @@ rules:
     why: "the post-link flash-layout check runs after every link of the m33 image (cmake/flash_layout.cmake); its planted control (m33 only) is built only by its control step"
 
   - paths: [tools/ci/check_param_ids.py]
-    ctest_labels: [L04, L05, L11]
+    ctest_labels: [L04, L05, L09, L11]
     run_ci_steps: ["@host"]
     pytest_paths: []
     gz_groups: []
-    why: "the composition parameter-id check run by the L04, L05 and L11 composition ctest entries (decision 0024)"
+    why: "the composition parameter-id check run by the L04, L05 and L11 composition ctest entries (decision 0024) and by the L09 ctest bench_profile_param_ids (the bench-profile set extends the FC3v2 set with bench_profile_* ids only)"
+
+  - paths: [tools/ci/check_bench_profile.py]
+    ctest_labels: [L09]
+    run_ci_steps: ["@host", m33_build]
+    pytest_paths: []
+    gz_groups: []
+    why: "invariant L-6 of the bench motor-step profile (unit U3): run after every link of the m33 flight image (FORBID) and of the bench image marv_fc3v2_bench_profile (REQUIRE, the control) by fw/hal/target/CMakeLists.txt, and on the host by the L09 ctest entries bench_profile_symbols and bench_profile_symbols_negative_control"
 
   - paths: [tools/ci/check_regression_changes.py]
     ctest_labels: []

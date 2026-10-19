@@ -196,3 +196,51 @@ marv_check_flash_layout(marv_fc3v2)
 pico_enable_stdio_usb(marv_fc3v2 1)
 pico_enable_stdio_uart(marv_fc3v2 0)
 marv_apply_flags(marv_fc3v2 FIRMWARE)
+
+# Invariant L-6 (unit U3 BENCH-PROFILE): no flight image contains the bench motor-step profile. After every link,
+# tools/ci/check_bench_profile.py lists the image's symbols (nm -C): FORBID fails the build and removes the image if a symbol
+# names bench_profile; REQUIRE fails it unless one does (the negative control: the same check finds the profile in the image
+# that has it). MARV_PYTHON as in cmake/flash_layout.cmake (this directory is configured before fw/params on a first configure).
+function(marv_check_bench_profile target mode)
+  set(python "${MARV_PYTHON}")
+  if(python STREQUAL "")
+    set(python "${PROJECT_SOURCE_DIR}/.venv/bin/python")
+  endif()
+  if(mode STREQUAL "FORBID")
+    set(check_args --forbid "$<TARGET_FILE:${target}>" --delete-on-failure)
+  elseif(mode STREQUAL "REQUIRE")
+    set(check_args --require "$<TARGET_FILE:${target}>")
+  else()
+    message(FATAL_ERROR "marv_check_bench_profile(${target} ${mode}): the mode is FORBID or REQUIRE")
+  endif()
+  add_custom_command(TARGET ${target} POST_BUILD
+    COMMAND "${python}" "${PROJECT_SOURCE_DIR}/tools/ci/check_bench_profile.py" --nm "${CMAKE_NM}" ${check_args}
+    COMMENT "Checking the bench profile's symbols in ${target} (invariant L-6, ${mode})"
+    VERBATIM)
+endfunction()
+marv_check_bench_profile(marv_fc3v2 FORBID)
+
+# The bench motor-step profile image (unit U3 BENCH-PROFILE, architect ruling 2026-10-18 item 8; the props-off runbook is
+# tests/regression/quad/L10/results/bench_profile/README.md): main.cpp built with MARV_FC3V2_BENCH_PROFILE, linking the
+# composition variant marv_composition_quad_fc_bench_profile (the profile in place of the mixer's output while Armed, run
+# and killed from the radio, no USB needed) with the FC3v2 set plus the bench-profile register, and the console. It has no
+# config store and no link service: both are built against marv_params_fc3v2, whose table this set's is not, so the image
+# boots the compiled defaults, and a bench value changes only with a new image (a new hash). The onboard logger joins it
+# with unit U2. Built in the default configuration only: every bench option above changes marv_hal_target, which it shares.
+if(NOT (MARV_FC3V2_COUNT_ONLY OR MARV_FC3V2_BENCH_STATS OR MARV_FC3V2_BENCH_ACCEPT_SPACING OR MARV_FC3V2_IMU_LOG OR
+        MARV_FC3V2_HIL_LINK OR MARV_FC3V2_HIL OR MARV_FC3V2_SD_BENCH OR MARV_FC3V2_USB_BENCH))
+  add_executable(marv_fc3v2_bench_profile src/main.cpp)
+  pico_set_binary_type(marv_fc3v2_bench_profile copy_to_ram)
+  target_compile_definitions(marv_fc3v2_bench_profile PRIVATE MARV_FC3V2_VERSION="${MARV_FC3V2_VERSION}"
+    MARV_FC3V2_BENCH_PROFILE)
+  target_link_libraries(marv_fc3v2_bench_profile PRIVATE
+    marv_composition_quad_fc_bench_profile marv_hal_target marv_lsm6dsv_decode marv_console_decode
+    marv_params_fc3v2_bench_profile_generated marv_params_fc3v2_bench_profile_runtime
+    pico_stdlib hardware_spi hardware_pio hardware_uart hardware_flash hardware_watchdog pico_sha256)
+  marv_check_param_table(marv_fc3v2_bench_profile marv_params_fc3v2_bench_profile)
+  marv_check_flash_layout(marv_fc3v2_bench_profile)
+  marv_check_bench_profile(marv_fc3v2_bench_profile REQUIRE)
+  pico_enable_stdio_usb(marv_fc3v2_bench_profile 1)
+  pico_enable_stdio_uart(marv_fc3v2_bench_profile 0)
+  marv_apply_flags(marv_fc3v2_bench_profile FIRMWARE)
+endif()

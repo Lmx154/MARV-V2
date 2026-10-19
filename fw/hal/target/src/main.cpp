@@ -22,13 +22,19 @@
 #include "marv/hal_target/motor_test.hpp"
 #include "marv/hal_target/receiver.hpp"
 #include "marv/hal_target/usb.hpp"
+#if defined(MARV_FC3V2_BENCH_PROFILE)
+#include "marv/bench_profile.hpp"
+#else
 #include "marv/link/service.hpp"
+#endif
 #if defined(MARV_FC3V2_SD_BENCH)
 #include "marv/hal_target/sd_bench.hpp"
 #endif
 #include "marv/params/param.hpp"
 #include "marv/prim/constants.hpp"
+#if !defined(MARV_FC3V2_BENCH_PROFILE)
 #include "marv/store/store.hpp"
+#endif
 #include "marv/types/imu_sample.hpp"
 #include "marv/types/time.hpp"
 
@@ -81,11 +87,15 @@ std::span<const marv::ParamRecord, marv::kParamCount> param_table() {
   return std::span<const marv::ParamRecord, marv::kParamCount>{g_bench_table};
 }
 constexpr const char* kParamMode = "bench: rate_period_tolerance_us raised (MARV_FC3V2_BENCH_ACCEPT_SPACING)";
+#elif defined(MARV_FC3V2_BENCH_PROFILE)
+std::span<const marv::ParamRecord, marv::kParamCount> param_table() { return marv::param_defaults(); }
+constexpr const char* kParamMode = "generated defaults of the bench-profile set (no config store)";
 #else
 std::span<const marv::ParamRecord, marv::kParamCount> param_table() { return marv::param_defaults(); }
 constexpr const char* kParamMode = "generated defaults";
 #endif
 
+#if !defined(MARV_FC3V2_BENCH_PROFILE)
 // The config store's hooks into the composition (marv/store/store.hpp; decision 0053, ground-segment unit 4b).
 const char* validate_table(marv::ParamTable table) noexcept { return marv::composition::validate(table).reason; }
 bool armed_now() noexcept { return marv::arming::is_armed(marv::composition::arming_status()); }
@@ -103,6 +113,7 @@ constexpr std::size_t kStoreScratchBytes = marv::kConfigSlotBytes / 2;
 constexpr std::size_t kStoreScratchBytes = marv::kConfigSlotBytes;
 #endif
 std::array<std::uint8_t, kStoreScratchBytes> g_store_scratch{};
+#endif
 marv::hal_target::ImageHash image_hash;
 marv::TimeUs image_hash_us = 0;
 
@@ -119,6 +130,7 @@ marv::hal_target::ImuBoot imu_boot;
 // hal_time_us just before the IMU is started: the boot-to-IMU-start time (the timer counts from the chip reset).
 marv::TimeUs imu_start_us = 0;
 
+#if !defined(MARV_FC3V2_BENCH_PROFILE)
 const char* config_status_text(marv::arming::ConfigStatus s) {
   using marv::arming::ConfigStatus;
   switch (s) {
@@ -152,6 +164,7 @@ const char* boot_request_text(marv::store::BootRequest r) {
   }
   return "";
 }
+#endif
 
 void print_digest(const char* name, const marv::hal_target::ImageDigest& d) {
   std::printf("%s ", name);
@@ -167,6 +180,9 @@ void print_config() {
   std::printf(" (%lu bytes, %s, %llu us)\n", static_cast<unsigned long>(image_hash.bytes),
               image_hash.ok ? "SHA-256 accelerator" : "accelerator busy: unknown",
               static_cast<unsigned long long>(image_hash_us));
+#if defined(MARV_FC3V2_BENCH_PROFILE)
+  std::printf("config: factory (bench-profile image: no config store), status ok\n");
+#else
   const marv::store::BootReport& b = marv::store::boot_report();
   const bool slot = b.source == marv::store::ConfigSource::Slot;
   std::printf("config: source %s", slot ? (b.slot == marv::ConfigSlot::A ? "slot A" : "slot B") : "factory");
@@ -185,6 +201,7 @@ void print_config() {
     std::printf(" (%s)", b.request_fault == marv::store::Fault::None ? "done" : marv::store::fault_text(b.request_fault));
   }
   std::printf("\n");
+#endif
 }
 
 void print_progress() {
@@ -461,6 +478,65 @@ void print_motor_test_events() {
   }
 }
 
+#if defined(MARV_FC3V2_BENCH_PROFILE)
+const char* bench_phase_text(marv::composition::BenchProfilePhase p) {
+  using marv::composition::BenchProfilePhase;
+  switch (p) {
+    case BenchProfilePhase::Idle:
+      return "idle (no arm edge yet)";
+    case BenchProfilePhase::LeadIn:
+      return "lead-in (stop)";
+    case BenchProfilePhase::Running:
+      return "running";
+    case BenchProfilePhase::Done:
+      return "done (stop until the next arm)";
+    case BenchProfilePhase::Capped:
+      return "capped: total-duration cap (stop until the next arm)";
+    case BenchProfilePhase::SwitchOut:
+      return "killed: bench switch not in position (stop until the next arm)";
+    case BenchProfilePhase::NotArmed:
+      return "killed: not armed (stop until the next arm)";
+    case BenchProfilePhase::StampBack:
+      return "killed: stamp before the arm edge (stop until the next arm)";
+  }
+  return "";
+}
+
+// The bench profile's line (marv/bench_profile.hpp): its phase, the arm edges, the latest level and the motor and value the
+// latest rate tick wrote (0 0: stop), the arming state on the tick it stopped, and the bench channel's latest value with
+// whether it is in position (the runbook's first step reads it with the switch up, middle and down).
+void print_bench_profile(const char* why, const marv::composition::BenchProfileStatus& b) {
+  const marv::ManualControl rc = marv::hal_target::receiver_stats().last;
+  const auto channel = static_cast<std::size_t>(marv::param_value<marv::ParamId::bench_profile_rc_channel>());
+  const float threshold = marv::param_value<marv::ParamId::bench_profile_switch_threshold>();
+  const float value = rc.channels[channel - 1];
+  std::printf("bench_profile %s: phase=%s arms=%lu level=%lu motor=%lu dshot=%lu stop_state=%s | ch%lu=%+.3f %s (threshold %.6f, "
+              "rc frames %lu) | arming=%s\n",
+              why, bench_phase_text(b.phase), static_cast<unsigned long>(b.arms), static_cast<unsigned long>(b.level),
+              static_cast<unsigned long>(b.motor), static_cast<unsigned long>(b.dshot), arming_text(b.kill_state),
+              static_cast<unsigned long>(channel), static_cast<double>(value),
+              value >= threshold ? "in position" : "out of position", static_cast<double>(threshold),
+              static_cast<unsigned long>(rc.frames), arming_text(marv::composition::arming_status()));
+}
+
+// From the background loop: a line at once when the phase or the arm count changes, else one per console period.
+void bench_profile_service() {
+  static marv::composition::BenchProfileStatus last{};
+  static marv::TimeUs t_last = 0;
+  const marv::composition::BenchProfileStatus b = marv::composition::bench_profile_status();
+  const marv::TimeUs t = marv::hal_time_us();
+  if (b.phase != last.phase || b.arms != last.arms) {
+    print_bench_profile("event", b);
+  } else if (t - t_last >= kPrintPeriodUs) {
+    print_bench_profile("status", b);
+  } else {
+    return;
+  }
+  last = b;
+  t_last = t;
+}
+#endif
+
 }  // namespace
 
 // The M1 image: stdio over USB CDC, a banner, the default parameters, the composition's init, the motor output, the receiver UART (CRSF, M2 P5b), then the IMU: from then
@@ -478,11 +554,16 @@ int main() {
   const marv::TimeUs hash_start_us = marv::hal_time_us();
   image_hash = marv::hal_target::image_sha256();
   image_hash_us = marv::hal_time_us() - hash_start_us;
+#if defined(MARV_FC3V2_BENCH_PROFILE)
+  // The bench-profile image has no config store: it boots the compiled defaults of its set (fw/hal/target/CMakeLists.txt).
+  const marv::ParamTable table = param_table();
+#else
   const marv::ParamTable table = marv::store::boot(marv::store::BootInputs{
       param_table(), image_hash.sha256,
       marv::store::Hooks{&validate_table, &armed_now, &marv::composition::request_maintenance,
                          &marv::composition::maintenance_granted},
       g_store_scratch});
+#endif
   marv::hal_target::config_slots_seal();
   if (table.size() != marv::kParamCount) {
     marv::hal_panic("the config store returned a table of another parameter set");
@@ -493,7 +574,9 @@ int main() {
   stage = Stage::kParamsOk;
   print_config();
   std::printf("params ok: %s\n", kParamMode);
+#if !defined(MARV_FC3V2_BENCH_PROFILE)
   marv::composition::set_config_status(marv::store::boot_report().status);
+#endif
   marv::composition::init();
   stage = Stage::kInitOk;
   std::printf("init ok\n");
@@ -518,7 +601,7 @@ int main() {
       {marv::param_value<ParamId::tick_period_num_us>(), marv::param_value<ParamId::tick_period_den>()});
   stage = Stage::kImuOk;
   print_progress();
-#if !defined(MARV_FC3V2_USB_BENCH) && !defined(MARV_FC3V2_SD_BENCH)
+#if !defined(MARV_FC3V2_USB_BENCH) && !defined(MARV_FC3V2_SD_BENCH) && !defined(MARV_FC3V2_BENCH_PROFILE)
   // The ground link (ground-segment unit 12b) on the link CDC, served from this loop only; its identity carries the image hash
   // the store's boot step above was given. Not in the USB bench image (its echo owns the port) nor the SD bench image (the
   // link's state and the store's staged sources do not fit the SRAM beside the SD bench's buffers and the bench statistics).
@@ -558,7 +641,7 @@ int main() {
         console_byte(static_cast<char>(c));
       }
     }
-#if !defined(MARV_FC3V2_USB_BENCH) && !defined(MARV_FC3V2_SD_BENCH)
+#if !defined(MARV_FC3V2_USB_BENCH) && !defined(MARV_FC3V2_SD_BENCH) && !defined(MARV_FC3V2_BENCH_PROFILE)
     // Once the board's hal_reboot has armed its delayed watchdog reboot, step returns true; the loop keeps serving (the link's
     // queued answers go out) until the watchdog resets the chip.
     static_cast<void>(marv::link::service_step());
@@ -578,6 +661,9 @@ int main() {
       rc_before = rc_now;
       t_before = t;
     }
+#endif
+#if defined(MARV_FC3V2_BENCH_PROFILE)
+    bench_profile_service();
 #endif
     tight_loop_contents();
   }
