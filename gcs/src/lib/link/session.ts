@@ -45,12 +45,20 @@ export const HEARTBEAT_TIMEOUT_MS = 3000;
 
 export type HeartbeatState = 'no heartbeat' | 'alive';
 
+/** MAV_STATE (common.xml) by value: the system status a heartbeat reports. */
+const SYSTEM_STATUS_NAMES = ['uninitialised', 'boot', 'calibrating', 'standby', 'active', 'critical', 'emergency', 'power off', 'flight termination'] as const;
+
 export interface SessionState {
 	heartbeat: HeartbeatState;
 	/** The vehicle's address, learnt from its first heartbeat; null until then. */
 	vehicle: { systemId: number; componentId: number } | null;
 	/** From the heartbeat's base mode; null until a heartbeat arrived. */
 	armed: boolean | null;
+	/** The system status the latest heartbeat reports, by name; null until a heartbeat arrived. */
+	systemStatus: string | null;
+	/** When the latest frame / heartbeat arrived (the session's clock, ms); null until one did. */
+	lastFrameAt: number | null;
+	lastHeartbeatAt: number | null;
 	rxBytes: number;
 	txBytes: number;
 	frames: number;
@@ -60,6 +68,8 @@ export interface SessionState {
 export interface SessionOptions {
 	codec?: Codec;
 	heartbeatTimeoutMs?: number;
+	/** The clock the arrival times are read from (ms); Date.now by default. */
+	now?: () => number;
 }
 
 export class LinkSession {
@@ -67,6 +77,7 @@ export class LinkSession {
 	private readonly codec: Codec;
 	private readonly parser: FrameParser;
 	private readonly timeoutMs: number;
+	private readonly now: () => number;
 	private readonly stateStore = writable<SessionState>(initialState());
 	private timer: ReturnType<typeof setTimeout> | null = null;
 	private sequence = 0;
@@ -78,6 +89,7 @@ export class LinkSession {
 		this.codec = options.codec ?? mavlinkCodec;
 		this.parser = this.codec.createParser();
 		this.timeoutMs = options.heartbeatTimeoutMs ?? HEARTBEAT_TIMEOUT_MS;
+		this.now = options.now ?? (() => Date.now());
 		this.unsubscribe = link.subscribe((bytes) => this.onBytes(bytes));
 	}
 
@@ -121,7 +133,14 @@ export class LinkSession {
 				bad++;
 			}
 		}
-		this.stateStore.update((s) => ({ ...s, rxBytes: s.rxBytes + bytes.length, frames: s.frames + frames, badFrames: s.badFrames + bad }));
+		const at = this.now();
+		this.stateStore.update((s) => ({
+			...s,
+			rxBytes: s.rxBytes + bytes.length,
+			frames: s.frames + frames,
+			badFrames: s.badFrames + bad,
+			lastFrameAt: frames > 0 ? at : s.lastFrameAt
+		}));
 		for (const { message, envelope } of delivered) {
 			if (message.kind === 'Heartbeat') this.onHeartbeat(message, envelope);
 			this.bus.emit(message, envelope);
@@ -135,7 +154,9 @@ export class LinkSession {
 			...s,
 			heartbeat: 'alive',
 			vehicle: { systemId: envelope.systemId, componentId: envelope.componentId },
-			armed: (message.base_mode & MODE_FLAG_SAFETY_ARMED) !== 0
+			armed: (message.base_mode & MODE_FLAG_SAFETY_ARMED) !== 0,
+			systemStatus: SYSTEM_STATUS_NAMES[message.system_status] ?? `state ${message.system_status}`,
+			lastHeartbeatAt: this.now()
 		}));
 		if (this.timer) clearTimeout(this.timer);
 		this.timer = setTimeout(() => {
@@ -146,5 +167,5 @@ export class LinkSession {
 }
 
 function initialState(): SessionState {
-	return { heartbeat: 'no heartbeat', vehicle: null, armed: null, rxBytes: 0, txBytes: 0, frames: 0, badFrames: 0 };
+	return { heartbeat: 'no heartbeat', vehicle: null, armed: null, systemStatus: null, lastFrameAt: null, lastHeartbeatAt: null, rxBytes: 0, txBytes: 0, frames: 0, badFrames: 0 };
 }
