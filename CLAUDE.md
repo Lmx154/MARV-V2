@@ -10,6 +10,10 @@ Luis, 2026-10-15: "we need a hard realignment because obviously this is not fast
 started simpler instead of tryign to implement everything from the get go, by getting the MVP working then adding more
 complex features gradually" (decision 0026).
 
+Luis, 2026-10-18: "i don't need to fly right now. instead i need you to ... make it so this entire suite is accessible
+and usable via the ground control software ui" (decision 0056): GCS-first work comes before flight work; hardware-contact
+units already scheduled keep their build slots, and the GCS exposes only what exists.
+
 - The goal is a quad flying on the MARV V2 board under onboard receiver control (quad §4.0, M0–M4), then a second
   airframe by configuration (M5). Build the least that meets the current milestone's "done when"; everything else
   goes on §4.0's deferred list.
@@ -21,7 +25,7 @@ complex features gradually" (decision 0026).
 ## ACTIVE-spec rule
 
 - Work only from ACTIVE specs in `docs/spec/`: `00-core-contracts.md`, `10-quad-flight-software.md` and
-  `20-ground-segment.md` (its params-first scope only, decision 0051).
+  `20-ground-segment.md` (its GCS-first scope, decisions 0051 and 0056).
   The rest of `20-ground-segment.md` and all of `30-rocket.md` are PARKED: read them for context, never implement from
   them. Only Luis changes a spec's status (core §0).
 - The four specs are the only planning documents; quad §4.0 is the roadmap, and ground §5 for the ground segment. Do not create other roadmap, plan,

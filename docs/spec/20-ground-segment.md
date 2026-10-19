@@ -1,9 +1,13 @@
 # MARV V2 — Ground segment
 
-**Status: ACTIVE, params-first scope** (Luis, 2026-10-17: "go ahead and make the ground station gui with all of its
-parameters. Be sure to use mavlink for the parameters and store them in the SD card"; decision 0051): G0, G1 (USB CDC and
-the SIL socket; the radio UART later), G3, and from G5 the parameter and provenance pages with live plots. The rest of G2
-(mission planner), G4 and the rest of G5 stay PARKED until Luis activates them.
+**Status: ACTIVE, GCS-first scope** (Luis, 2026-10-18: "make it so this entire suite is accessible and usable via the
+ground control software ui ... just like how it would work on a real flight. this ui is supposed to be our ground control
+software"; decision 0056, widening the params-first scope of decision 0051): G0, G1 (USB CDC and the SIL socket; the radio
+UART later), G3; G2 without the mission planner (connection manager, telemetry, recording and replay, the GCS driving
+Gazebo SIL and HIL, and a pilot input for SIL only); G5 without the S0–S2 calibration wizard (hardware, firmware and
+parameter pages, live views, bench tools, the console motor test of decision 0038); IF-7 log download over USB. PARKED
+until Luis activates them: the mission planner (IF-4), G4, manual control (IF-8) and the motor test (IF-6) over a link
+to a real vehicle, the S0–S2 calibration wizard, and the rocket items.
 Depends on `00-core-contracts.md`, which owns the functional interface (core §8) and the parameter interface (core
 §4). Split 1, 2026-09-28.
 
@@ -96,6 +100,9 @@ MARV V2 is that, in C++, with the flight-software side flashed to the RP2354B.
 
    The GCS refuses to flash or activate anything whose (image, config) pair has no passing report. The FC reports both
    hashes at boot and in every log.
+   Bench images (HIL, bench log, bench profile) never fly and carry no config binding: they are flashed over SWD by the
+   debug probe, outside this gate. One that can drive motors is flashed from the GCS only after its props-off bench test
+   passed on that exact image and with Luis's presence acknowledgement.
 6. **Fly, log, replay.** Logs replay through the same plant; the card and requirements update from them.
 
 **The config file is universal.** One schema, generated from the whole registry, covers every vehicle and kind:
@@ -152,11 +159,15 @@ GCS keeps no block list of its own); `CompareTable`, `Diagnosis`; `ViewTriptych`
 - a flash panel: build the UF2 when the structure changes; the image library; validation-report gate; hash read-back;
 - a config manager: library of saved config files, a text editor with schema checking, upload, download, activate;
   the rocket's target apogee set here and checked against RK-2 before upload;
-- configuration pages: hardware, firmware parameters with provenance and locks, the GCS's own settings;
+- configuration pages: hardware, firmware parameters with provenance and locks, the GCS's own settings. A lock changes
+  only in its source entry (the parameter register or the vehicle card), with Luis's verbatim words and the date in its
+  source text, never over the link; the commit carries `lock ruling: <name>: Luis <YYYY-MM-DD>: "<words>"`, which CI
+  checks. Removing a lock or changing a locked safety value also needs a decision record;
 - a calibration wizard (S0–S2, each result with σ and acceptance);
-- controller passthrough: a radio plugged in over USB as a joystick (e.g. a RadioMaster Pocket in USB-joystick mode,
-  through the browser's Gamepad API), forwarded to the vehicle in Freestyle only (IF-8). It replaces the quad spine's
-  joystick bridge behind the same manual-control struct;
+- controller passthrough for SIL: a radio plugged in over USB as a joystick (e.g. a RadioMaster Pocket in USB-joystick
+  mode), read by the helper and sent to the SIL as receiver channel frames, decoded by the same channel-to-stick function
+  and parameters as the board's receiver (the SIL pilot bridge; it replaces the quad spine's L8 joystick bridge). Manual
+  control of a real vehicle from the GCS is IF-8, accepted only in Freestyle, and stays PARKED;
 - log download and replay into SIL;
 - a validation-report viewer.
 
@@ -195,6 +206,7 @@ the operator does not need.
 | G3 Configurator, flash and config files | Configurator rendered from the registry manifest; UF2 build and flash over USB; config-file library, editor, upload, download and activation (IF-11). | An unvalidated pair is refused. A validated UF2 flashes and reports its hash. A config file round-trips through SD and internal flash unchanged and survives a flash. GS-10 passes. **Its last unit ends the core §4 bootstrap exception** (core §4); until the rocket image exists, GS-10 is tested in its extra-section form. |
 | G4 Link robustness | Stream rates per connection; link degradation emulated in SIL (throughput limit, loss, latency, values measured on the real link); link-loss failsafe. | GS-5 to GS-7 and GS-9 pass in SIL, then on the bench over the radio modules. |
 | G5 Configuration and bench calibration | Hardware, firmware and parameter pages; motor tests; S1–S2 self-calibration from the GCS. | Every parameter shows its provenance; locked parameters cannot be overwritten; GS-4 and GS-5 rejections verified on the vehicle. |
+| GX GCS-first (decision 0056) | The GCS as the front end to the whole suite: simulation runs (card, scenario, sensor set, labelled plant-truth overlays and SIL parameter overrides; SIL and HIL launched, watched and stopped from the GCS, which connects by itself), live vehicle and sim-truth views, recording and replay, radio setup, bench tools, logs, builds of allow-listed presets, lock changes recorded with Luis's words. | From a fresh helper start and entirely from the GCS: a SIL run with a labelled plant overlay is launched, the GCS connects by itself, every live panel updates, the radio (USB joystick) arms the SIL vehicle, it lifts off the pad, centres and disarms, the run is stopped, and its ground log replays to the same decoded values. Control: with the arm channel held low it never arms. |
 
 ---
 

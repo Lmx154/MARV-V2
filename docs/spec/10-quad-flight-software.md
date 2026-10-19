@@ -254,7 +254,7 @@ adding more complex features gradually" (decision 0026).
 **M6 — Rocket groundwork:** starts when Luis makes `30-rocket.md` ACTIVE.
 
 **Deferred until after M4** (resumed in the order Luis picks): the rest of L6 (c)–(e) (feed-forward, DShot diffusion,
-noise Monte Carlo, C6a); L7 shadow mode and its Monte Carlo; L8's Gazebo pilot and joystick bridge; the rest of L9
+noise Monte Carlo, C6a); L7 shadow mode and its Monte Carlo; L8's Gazebo pilot (its joystick bridge is the GCS's SIL pilot bridge, ground spec §3, decision 0056); the rest of L9
 (eRPM, core split, SRAM placement if timing holds without them); an in-process `marv_plant` closed loop
 with truth dispersed inside the card's uncertainties, replacing Gazebo for development checks; plant fidelity (rotor
 inertia, battery and duty-mode ESC, IMU lever arm; drag moved into M4, decision 0049); Gazebo ground contact (a ground plane and its
@@ -488,8 +488,8 @@ Built after L5 and beside L6 (it needs nothing from L6); numbered L11 because L0
   per tick and injected into `hal_sim`'s manual-control input); the rates curve (QF-1); arming by a handset switch in
   SIL with the spine's pre-arm checks (sensor alive at profile rate, not saturated or stuck; estimator valid; throttle
   at minimum).
-- **Opening:** the manual-control struct (stick axes, switches). The GCS path (IF-8) replaces the bridge later behind
-  the same struct.
+- **Opening:** the manual-control struct (stick axes, switches). The GCS's SIL pilot bridge (ground spec §3) is this bridge;
+  IF-8 to a real vehicle comes later behind the same struct.
 - **Pass bar:**
   - T5: a pilot flies acro and angle in the Gazebo GUI.
   - T4: a recorded pilot session replayed as a stick script passes QF-2 and QF-6 checks.
