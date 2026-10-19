@@ -299,6 +299,258 @@ void take(const mavlink_marv_config_ack_t& w, MarvConfigAck& m) noexcept {
   m.result = static_cast<MarvConfigResult>(w.result);
 }
 
+void fill(const SysStatus& m, mavlink_sys_status_t& w) noexcept {
+  w.onboard_control_sensors_present = m.onboard_control_sensors_present;
+  w.onboard_control_sensors_enabled = m.onboard_control_sensors_enabled;
+  w.onboard_control_sensors_health = m.onboard_control_sensors_health;
+  w.load = m.load;
+  w.voltage_battery = m.voltage_battery;
+  w.current_battery = m.current_battery;
+  w.battery_remaining = m.battery_remaining;
+  w.drop_rate_comm = m.drop_rate_comm;
+  w.errors_comm = m.errors_comm;
+  w.errors_count1 = m.errors_count1;
+  w.errors_count2 = m.errors_count2;
+  w.errors_count3 = m.errors_count3;
+  w.errors_count4 = m.errors_count4;
+  w.onboard_control_sensors_present_extended = m.onboard_control_sensors_present_extended;
+  w.onboard_control_sensors_enabled_extended = m.onboard_control_sensors_enabled_extended;
+  w.onboard_control_sensors_health_extended = m.onboard_control_sensors_health_extended;
+}
+void take(const mavlink_sys_status_t& w, SysStatus& m) noexcept {
+  m.onboard_control_sensors_present = w.onboard_control_sensors_present;
+  m.onboard_control_sensors_enabled = w.onboard_control_sensors_enabled;
+  m.onboard_control_sensors_health = w.onboard_control_sensors_health;
+  m.load = w.load;
+  m.voltage_battery = w.voltage_battery;
+  m.current_battery = w.current_battery;
+  m.battery_remaining = w.battery_remaining;
+  m.drop_rate_comm = w.drop_rate_comm;
+  m.errors_comm = w.errors_comm;
+  m.errors_count1 = w.errors_count1;
+  m.errors_count2 = w.errors_count2;
+  m.errors_count3 = w.errors_count3;
+  m.errors_count4 = w.errors_count4;
+  m.onboard_control_sensors_present_extended = w.onboard_control_sensors_present_extended;
+  m.onboard_control_sensors_enabled_extended = w.onboard_control_sensors_enabled_extended;
+  m.onboard_control_sensors_health_extended = w.onboard_control_sensors_health_extended;
+}
+
+void fill(const Attitude& m, mavlink_attitude_t& w) noexcept {
+  w.time_boot_ms = m.time_boot_ms;
+  w.roll = m.roll;
+  w.pitch = m.pitch;
+  w.yaw = m.yaw;
+  w.rollspeed = m.rollspeed;
+  w.pitchspeed = m.pitchspeed;
+  w.yawspeed = m.yawspeed;
+}
+void take(const mavlink_attitude_t& w, Attitude& m) noexcept {
+  m.time_boot_ms = w.time_boot_ms;
+  m.roll = w.roll;
+  m.pitch = w.pitch;
+  m.yaw = w.yaw;
+  m.rollspeed = w.rollspeed;
+  m.pitchspeed = w.pitchspeed;
+  m.yawspeed = w.yawspeed;
+}
+
+void fill(const AttitudeQuaternion& m, mavlink_attitude_quaternion_t& w) noexcept {
+  w.time_boot_ms = m.time_boot_ms;
+  w.q1 = m.q1;
+  w.q2 = m.q2;
+  w.q3 = m.q3;
+  w.q4 = m.q4;
+  w.rollspeed = m.rollspeed;
+  w.pitchspeed = m.pitchspeed;
+  w.yawspeed = m.yawspeed;
+  put(w.repr_offset_q, m.repr_offset_q);
+}
+void take(const mavlink_attitude_quaternion_t& w, AttitudeQuaternion& m) noexcept {
+  m.time_boot_ms = w.time_boot_ms;
+  m.q1 = w.q1;
+  m.q2 = w.q2;
+  m.q3 = w.q3;
+  m.q4 = w.q4;
+  m.rollspeed = w.rollspeed;
+  m.pitchspeed = w.pitchspeed;
+  m.yawspeed = w.yawspeed;
+  get(w.repr_offset_q, m.repr_offset_q);
+}
+
+void fill(const RcChannels& m, mavlink_rc_channels_t& w) noexcept {
+  w.time_boot_ms = m.time_boot_ms;
+  w.chancount = m.chancount;
+  w.chan1_raw = m.chan1_raw;
+  w.chan2_raw = m.chan2_raw;
+  w.chan3_raw = m.chan3_raw;
+  w.chan4_raw = m.chan4_raw;
+  w.chan5_raw = m.chan5_raw;
+  w.chan6_raw = m.chan6_raw;
+  w.chan7_raw = m.chan7_raw;
+  w.chan8_raw = m.chan8_raw;
+  w.chan9_raw = m.chan9_raw;
+  w.chan10_raw = m.chan10_raw;
+  w.chan11_raw = m.chan11_raw;
+  w.chan12_raw = m.chan12_raw;
+  w.chan13_raw = m.chan13_raw;
+  w.chan14_raw = m.chan14_raw;
+  w.chan15_raw = m.chan15_raw;
+  w.chan16_raw = m.chan16_raw;
+  w.chan17_raw = m.chan17_raw;
+  w.chan18_raw = m.chan18_raw;
+  w.rssi = m.rssi;
+}
+void take(const mavlink_rc_channels_t& w, RcChannels& m) noexcept {
+  m.time_boot_ms = w.time_boot_ms;
+  m.chancount = w.chancount;
+  m.chan1_raw = w.chan1_raw;
+  m.chan2_raw = w.chan2_raw;
+  m.chan3_raw = w.chan3_raw;
+  m.chan4_raw = w.chan4_raw;
+  m.chan5_raw = w.chan5_raw;
+  m.chan6_raw = w.chan6_raw;
+  m.chan7_raw = w.chan7_raw;
+  m.chan8_raw = w.chan8_raw;
+  m.chan9_raw = w.chan9_raw;
+  m.chan10_raw = w.chan10_raw;
+  m.chan11_raw = w.chan11_raw;
+  m.chan12_raw = w.chan12_raw;
+  m.chan13_raw = w.chan13_raw;
+  m.chan14_raw = w.chan14_raw;
+  m.chan15_raw = w.chan15_raw;
+  m.chan16_raw = w.chan16_raw;
+  m.chan17_raw = w.chan17_raw;
+  m.chan18_raw = w.chan18_raw;
+  m.rssi = w.rssi;
+}
+
+void fill(const AttitudeTarget& m, mavlink_attitude_target_t& w) noexcept {
+  w.time_boot_ms = m.time_boot_ms;
+  w.type_mask = m.type_mask;
+  put(w.q, m.q);
+  w.body_roll_rate = m.body_roll_rate;
+  w.body_pitch_rate = m.body_pitch_rate;
+  w.body_yaw_rate = m.body_yaw_rate;
+  w.thrust = m.thrust;
+}
+void take(const mavlink_attitude_target_t& w, AttitudeTarget& m) noexcept {
+  m.time_boot_ms = w.time_boot_ms;
+  m.type_mask = w.type_mask;
+  get(w.q, m.q);
+  m.body_roll_rate = w.body_roll_rate;
+  m.body_pitch_rate = w.body_pitch_rate;
+  m.body_yaw_rate = w.body_yaw_rate;
+  m.thrust = w.thrust;
+}
+
+void fill(const HighresImu& m, mavlink_highres_imu_t& w) noexcept {
+  w.time_usec = m.time_usec;
+  w.xacc = m.xacc;
+  w.yacc = m.yacc;
+  w.zacc = m.zacc;
+  w.xgyro = m.xgyro;
+  w.ygyro = m.ygyro;
+  w.zgyro = m.zgyro;
+  w.xmag = m.xmag;
+  w.ymag = m.ymag;
+  w.zmag = m.zmag;
+  w.abs_pressure = m.abs_pressure;
+  w.diff_pressure = m.diff_pressure;
+  w.pressure_alt = m.pressure_alt;
+  w.temperature = m.temperature;
+  w.fields_updated = m.fields_updated;
+  w.id = m.id;
+}
+void take(const mavlink_highres_imu_t& w, HighresImu& m) noexcept {
+  m.time_usec = w.time_usec;
+  m.xacc = w.xacc;
+  m.yacc = w.yacc;
+  m.zacc = w.zacc;
+  m.xgyro = w.xgyro;
+  m.ygyro = w.ygyro;
+  m.zgyro = w.zgyro;
+  m.xmag = w.xmag;
+  m.ymag = w.ymag;
+  m.zmag = w.zmag;
+  m.abs_pressure = w.abs_pressure;
+  m.diff_pressure = w.diff_pressure;
+  m.pressure_alt = w.pressure_alt;
+  m.temperature = w.temperature;
+  m.fields_updated = w.fields_updated;
+  m.id = w.id;
+}
+
+void fill(const MessageInterval& m, mavlink_message_interval_t& w) noexcept {
+  w.message_id = m.message_id;
+  w.interval_us = m.interval_us;
+}
+void take(const mavlink_message_interval_t& w, MessageInterval& m) noexcept {
+  m.message_id = w.message_id;
+  m.interval_us = w.interval_us;
+}
+
+void fill(const ActuatorOutputStatus& m, mavlink_actuator_output_status_t& w) noexcept {
+  w.time_usec = m.time_usec;
+  w.active = m.active;
+  put(w.actuator, m.actuator);
+}
+void take(const mavlink_actuator_output_status_t& w, ActuatorOutputStatus& m) noexcept {
+  m.time_usec = w.time_usec;
+  m.active = w.active;
+  get(w.actuator, m.actuator);
+}
+
+void fill(const MarvFcStatus& m, mavlink_marv_fc_status_t& w) noexcept {
+  w.time_usec = m.time_usec;
+  w.rate_executions = m.rate_executions;
+  w.rate_faults = m.rate_faults;
+  w.rate_timing_faults = m.rate_timing_faults;
+  w.attitude_faults = m.attitude_faults;
+  w.attitude_timing_faults = m.attitude_timing_faults;
+  w.imu_deadline_misses = m.imu_deadline_misses;
+  w.rc_frames = m.rc_frames;
+  w.rc_age_us = m.rc_age_us;
+  w.arm_state = raw(m.arm_state);
+  w.motor_gate = raw(m.motor_gate);
+  w.flags = m.flags;
+  w.rate_fault = m.rate_fault;
+}
+void take(const mavlink_marv_fc_status_t& w, MarvFcStatus& m) noexcept {
+  m.time_usec = w.time_usec;
+  m.rate_executions = w.rate_executions;
+  m.rate_faults = w.rate_faults;
+  m.rate_timing_faults = w.rate_timing_faults;
+  m.attitude_faults = w.attitude_faults;
+  m.attitude_timing_faults = w.attitude_timing_faults;
+  m.imu_deadline_misses = w.imu_deadline_misses;
+  m.rc_frames = w.rc_frames;
+  m.rc_age_us = w.rc_age_us;
+  m.arm_state = static_cast<MarvArmState>(w.arm_state);
+  m.motor_gate = static_cast<MarvMotorGate>(w.motor_gate);
+  m.flags = w.flags;
+  m.rate_fault = w.rate_fault;
+}
+
+void fill(const MarvEstimator& m, mavlink_marv_estimator_t& w) noexcept {
+  w.time_usec = m.time_usec;
+  put(w.q_mahony, m.q_mahony);
+  put(w.q_eskf, m.q_eskf);
+  put(w.gyro_bias_cal, m.gyro_bias_cal);
+  put(w.gyro_bias_mahony, m.gyro_bias_mahony);
+  put(w.gyro_bias_eskf, m.gyro_bias_eskf);
+  w.flags = m.flags;
+}
+void take(const mavlink_marv_estimator_t& w, MarvEstimator& m) noexcept {
+  m.time_usec = w.time_usec;
+  get(w.q_mahony, m.q_mahony);
+  get(w.q_eskf, m.q_eskf);
+  get(w.gyro_bias_cal, m.gyro_bias_cal);
+  get(w.gyro_bias_mahony, m.gyro_bias_mahony);
+  get(w.gyro_bias_eskf, m.gyro_bias_eskf);
+  m.flags = w.flags;
+}
+
 // Wire<T> binds a plain struct to its generated C message: the id, the longest payload, the encoder and the decoder.
 template <class T>
 struct Wire;
@@ -315,7 +567,9 @@ struct Wire;
     }                                                                                                               \
     static void unpack(const mavlink_message_t& in, W& wire) noexcept { mavlink_msg_##lower##_decode(&in, &wire); } \
   };                                                                                                                \
-  static_assert(Wire<Type>::kId == k##Type##Id, "plain struct id and dialect id differ")
+  static_assert(Wire<Type>::kId == k##Type##Id, "plain struct id and dialect id differ");                           \
+  static_assert(k##Type##FrameBytes == MAVLINK_NUM_NON_PAYLOAD_BYTES + MAVLINK_MSG_ID_##UPPER##_LEN,                \
+                "plain struct frame length and dialect length differ")
 
 MARV_LINK_WIRE(Heartbeat, heartbeat, HEARTBEAT);
 MARV_LINK_WIRE(AutopilotVersion, autopilot_version, AUTOPILOT_VERSION);
@@ -331,6 +585,16 @@ MARV_LINK_WIRE(MarvParamRecord, marv_param_record, MARV_PARAM_RECORD);
 MARV_LINK_WIRE(MarvParamSource, marv_param_source, MARV_PARAM_SOURCE);
 MARV_LINK_WIRE(MarvConfigCommand, marv_config_command, MARV_CONFIG_COMMAND);
 MARV_LINK_WIRE(MarvConfigAck, marv_config_ack, MARV_CONFIG_ACK);
+MARV_LINK_WIRE(SysStatus, sys_status, SYS_STATUS);
+MARV_LINK_WIRE(Attitude, attitude, ATTITUDE);
+MARV_LINK_WIRE(AttitudeQuaternion, attitude_quaternion, ATTITUDE_QUATERNION);
+MARV_LINK_WIRE(RcChannels, rc_channels, RC_CHANNELS);
+MARV_LINK_WIRE(AttitudeTarget, attitude_target, ATTITUDE_TARGET);
+MARV_LINK_WIRE(HighresImu, highres_imu, HIGHRES_IMU);
+MARV_LINK_WIRE(MessageInterval, message_interval, MESSAGE_INTERVAL);
+MARV_LINK_WIRE(ActuatorOutputStatus, actuator_output_status, ACTUATOR_OUTPUT_STATUS);
+MARV_LINK_WIRE(MarvFcStatus, marv_fc_status, MARV_FC_STATUS);
+MARV_LINK_WIRE(MarvEstimator, marv_estimator, MARV_ESTIMATOR);
 
 #undef MARV_LINK_WIRE
 
@@ -374,6 +638,16 @@ Status unpack_message(const mavlink_message_t& in, Message& out) noexcept {
     case kMarvParamSourceId: return unpack<MarvParamSource>(in, out);
     case kMarvConfigCommandId: return unpack<MarvConfigCommand>(in, out);
     case kMarvConfigAckId: return unpack<MarvConfigAck>(in, out);
+    case kSysStatusId: return unpack<SysStatus>(in, out);
+    case kAttitudeId: return unpack<Attitude>(in, out);
+    case kAttitudeQuaternionId: return unpack<AttitudeQuaternion>(in, out);
+    case kRcChannelsId: return unpack<RcChannels>(in, out);
+    case kAttitudeTargetId: return unpack<AttitudeTarget>(in, out);
+    case kHighresImuId: return unpack<HighresImu>(in, out);
+    case kMessageIntervalId: return unpack<MessageInterval>(in, out);
+    case kActuatorOutputStatusId: return unpack<ActuatorOutputStatus>(in, out);
+    case kMarvFcStatusId: return unpack<MarvFcStatus>(in, out);
+    case kMarvEstimatorId: return unpack<MarvEstimator>(in, out);
     default: return Status::Unsupported;
   }
 }

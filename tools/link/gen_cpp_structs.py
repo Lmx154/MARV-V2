@@ -3,13 +3,13 @@
 """Write the plain C++ structs of the messages in link/scope.txt (core section 8: one schema defines the interface and
 generates the C++ structs and the TypeScript types).
 
-The output, marv/link/messages.hpp, includes no MAVLink header. It holds, in namespace marv::link: an enum class for each
-enum of the MARV dialect, one struct per message (fields in XML order, array fields as std::array), the message id
-constants, `Message`, the std::variant of the structs in link/scope.txt order, kFrameBytesMax (the longest unsigned frame of
-a message in scope) and, in namespace marv::link::standard, every entry of the standard enums that a field of a message in
-scope names, as a constant of that field's type (the widest, if several fields name the enum). The fields of RAW_BITS_FIELDS
-are std::uint32_t: the raw bits of the wire's float. fw/link/src/codec_mavlink.cpp is the only code that maps these structs
-to the MAVLink C headers.
+The output, marv/link/messages.hpp, includes no MAVLink header. It holds, in namespace marv::link: an enum class for
+each enum of the MARV dialect, one struct per message (fields in XML order, array fields as std::array), the message id
+constants, `Message`, the std::variant of the structs in link/scope.txt order, k<Message>FrameBytes (the longest
+unsigned frame of each message in scope), kFrameBytesMax (the longest of them) and, in namespace marv::link::standard,
+every entry of the standard enums that a field of a message in scope names, as a constant of that field's type (the
+widest, if several fields name the enum). The fields of RAW_BITS_FIELDS are std::uint32_t: the raw bits of the wire's
+float. fw/link/src/codec_mavlink.cpp is the only code that maps these structs to the MAVLink C headers.
 """
 
 import argparse
@@ -86,6 +86,12 @@ def emit(dialect: mavxml.Dialect, scope: list[str]) -> str:
     for name in scope:
         msg = dialect.messages[name]
         out.append(f"inline constexpr std::uint32_t k{mavxml.camel(name)}Id = {msg.id};")
+    out.append("")
+    out.append("// The longest unsigned frame of each message in scope: header, its longest payload, checksum.")
+    for name in scope:
+        msg = dialect.messages[name]
+        out.append(f"inline constexpr std::size_t k{mavxml.camel(name)}FrameBytes = "
+                   f"{FRAME_HEADER_BYTES + msg.max_len + FRAME_CHECKSUM_BYTES};")
     out.append("")
     for name in scope:
         msg = dialect.messages[name]

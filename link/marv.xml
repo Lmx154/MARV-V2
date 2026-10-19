@@ -142,6 +142,56 @@
       <entry value="4" name="MARV_CONFIG_RESULT_DENIED_UNAVAILABLE"><description>Denied: there is no last good config to revert to.</description></entry>
       <entry value="5" name="MARV_CONFIG_RESULT_FAILED"><description>The action started and failed.</description></entry>
     </enum>
+    <enum name="MARV_ARM_STATE">
+      <description>The arming machine's state after a rate tick (fw/arming arming.hpp ArmState, same values): armed in ARMED, ARMED_HOLD and ARMED_FAILSAFE_CENTRED, else the cause of the latest disarm or the first refusing condition.</description>
+      <entry value="0" name="MARV_ARM_STATE_BOOT"><description>Before the first rate tick.</description></entry>
+      <entry value="1" name="MARV_ARM_STATE_SWITCH_OFF"><description>The arm switch is off.</description></entry>
+      <entry value="2" name="MARV_ARM_STATE_SWITCH_NOT_CYCLED"><description>The arm switch was on when arming became possible; it must go off and on.</description></entry>
+      <entry value="3" name="MARV_ARM_STATE_THROTTLE_UP"><description>The throttle is not at its minimum.</description></entry>
+      <entry value="4" name="MARV_ARM_STATE_IMU_STALE"><description>The IMU missed its read deadline.</description></entry>
+      <entry value="5" name="MARV_ARM_STATE_IMU_INVALID"><description>An IMU sample lacked a valid gyro or accelerometer.</description></entry>
+      <entry value="6" name="MARV_ARM_STATE_SATURATED"><description>An IMU sample was saturated.</description></entry>
+      <entry value="7" name="MARV_ARM_STATE_NO_LINK"><description>No valid RC link.</description></entry>
+      <entry value="8" name="MARV_ARM_STATE_FAILSAFE"><description>Disarmed by the link-loss failsafe.</description></entry>
+      <entry value="9" name="MARV_ARM_STATE_MOTOR_TEST"><description>A motor test runs.</description></entry>
+      <entry value="10" name="MARV_ARM_STATE_ARMED"><description>Armed.</description></entry>
+      <entry value="11" name="MARV_ARM_STATE_ARMED_HOLD"><description>Armed, the link lost: the last sticks are held.</description></entry>
+      <entry value="12" name="MARV_ARM_STATE_ARMED_FAILSAFE_CENTRED"><description>Armed, the link lost: sticks centred and minimum throttle.</description></entry>
+      <entry value="13" name="MARV_ARM_STATE_ESTIMATOR_INVALID"><description>The attitude estimate is not valid.</description></entry>
+      <entry value="14" name="MARV_ARM_STATE_CALIBRATING"><description>The boot gyro calibration has not completed.</description></entry>
+      <entry value="15" name="MARV_ARM_STATE_NOT_UPRIGHT"><description>The vehicle is tilted beyond the arming angle.</description></entry>
+      <entry value="16" name="MARV_ARM_STATE_CONFIG_REFUSED"><description>The config this boot uses cannot be used (MARV_IDENTITY says why).</description></entry>
+      <entry value="17" name="MARV_ARM_STATE_MAINTENANCE"><description>The maintenance grant was given: arming is refused until the next boot.</description></entry>
+    </enum>
+    <enum name="MARV_MOTOR_GATE">
+      <description>What the motor output gate passed to the motors on the rate tick.</description>
+      <entry value="0" name="MARV_MOTOR_GATE_DISARMED"><description>Stop on every motor.</description></entry>
+      <entry value="1" name="MARV_MOTOR_GATE_ARMED"><description>The mixer's output.</description></entry>
+      <entry value="2" name="MARV_MOTOR_GATE_MOTOR_TEST"><description>The console motor test: one motor at the requested value, the others stop.</description></entry>
+    </enum>
+    <enum name="MARV_FC_STATUS_FLAG" bitmask="true">
+      <description>Bits of MARV_FC_STATUS.flags.</description>
+      <entry value="1" name="MARV_FC_STATUS_FLAG_ANGLE_MODE"><description>The rate tick ran the attitude law (armed, angle mode selected).</description></entry>
+      <entry value="2" name="MARV_FC_STATUS_FLAG_AIRMODE"><description>The airmode latch is set.</description></entry>
+      <entry value="4" name="MARV_FC_STATUS_FLAG_ITERM_HELD"><description>Armed below the minimum throttle before the airmode latch: the rate integrator was zeroed.</description></entry>
+      <entry value="8" name="MARV_FC_STATUS_FLAG_GYRO_CALIBRATED"><description>The boot gyro calibration has completed.</description></entry>
+      <entry value="16" name="MARV_FC_STATUS_FLAG_ESTIMATOR_VALID"><description>The attitude estimate in use is valid.</description></entry>
+      <entry value="32" name="MARV_FC_STATUS_FLAG_UPRIGHT"><description>The arming machine's upright check holds.</description></entry>
+      <entry value="64" name="MARV_FC_STATUS_FLAG_IMU_INVALID"><description>A sample since the previous rate tick lacked a valid gyro or accelerometer.</description></entry>
+      <entry value="128" name="MARV_FC_STATUS_FLAG_IMU_SATURATED"><description>A sample since the previous rate tick was saturated.</description></entry>
+    </enum>
+    <enum name="MARV_RATE_FAULT_FLAG" bitmask="true">
+      <description>Bits of MARV_FC_STATUS.rate_fault: the rate loop's fault state after the rate execution.</description>
+      <entry value="1" name="MARV_RATE_FAULT_FLAG_ACTIVE"><description>The execution was a fault (zero torque).</description></entry>
+      <entry value="2" name="MARV_RATE_FAULT_FLAG_LATCHED"><description>The fault latch is set.</description></entry>
+    </enum>
+    <enum name="MARV_ESTIMATOR_FLAG" bitmask="true">
+      <description>Bits of MARV_ESTIMATOR.flags.</description>
+      <entry value="1" name="MARV_ESTIMATOR_FLAG_MAHONY_VALID"><description>The Mahony filter's estimate is valid.</description></entry>
+      <entry value="2" name="MARV_ESTIMATOR_FLAG_ESKF_PRESENT"><description>The image runs the ESKF beside Mahony; without it the ESKF fields are zero.</description></entry>
+      <entry value="4" name="MARV_ESTIMATOR_FLAG_ESKF_VALID"><description>The ESKF's estimate is valid.</description></entry>
+      <entry value="8" name="MARV_ESTIMATOR_FLAG_ESKF_IN_USE"><description>The ESKF, not Mahony, is the estimate in use (ATTITUDE, the attitude law, the upright check).</description></entry>
+    </enum>
   </enums>
   <messages>
     <message id="15200" name="MARV_IDENTITY">
@@ -198,6 +248,32 @@
       <field type="uint8_t" name="target_component">Component ID of the commander.</field>
       <field type="uint8_t" name="action" enum="MARV_CONFIG_ACTION">The action answered.</field>
       <field type="uint8_t" name="result" enum="MARV_CONFIG_RESULT">The result.</field>
+    </message>
+    <message id="15205" name="MARV_FC_STATUS">
+      <description>The flight composition's state after a rate tick that HEARTBEAT and SYS_STATUS have no field for: the arming state with its reason, the motor gate, the rate group's and the attitude law's counters, the IMU deadline misses and the RC frame age. A telemetry stream: its rate is set with MAV_CMD_SET_MESSAGE_INTERVAL.</description>
+      <field type="uint64_t" name="time_usec" units="us">The rate tick's clock (time since boot).</field>
+      <field type="uint64_t" name="rate_executions">Rate executions since boot.</field>
+      <field type="uint32_t" name="rate_faults">The rate loop's faults since boot.</field>
+      <field type="uint32_t" name="rate_timing_faults">The rate loop's spacing faults since boot (of rate_faults).</field>
+      <field type="uint32_t" name="attitude_faults">The attitude law's faults since boot.</field>
+      <field type="uint32_t" name="attitude_timing_faults">The attitude law's spacing faults since boot (of attitude_faults).</field>
+      <field type="uint32_t" name="imu_deadline_misses">IMU read deadline misses since boot.</field>
+      <field type="uint32_t" name="rc_frames">Valid RC frames since boot (wraps, skips 0); 0: none yet.</field>
+      <field type="uint32_t" name="rc_age_us" units="us" invalid="UINT32_MAX">The age of the newest valid RC frame at the rate tick; UINT32_MAX: no frame yet.</field>
+      <field type="uint8_t" name="arm_state" enum="MARV_ARM_STATE">The arming machine's state.</field>
+      <field type="uint8_t" name="motor_gate" enum="MARV_MOTOR_GATE">What the motor gate wrote.</field>
+      <field type="uint8_t" name="flags">MARV_FC_STATUS_FLAG bits.</field>
+      <field type="uint8_t" name="rate_fault">MARV_RATE_FAULT_FLAG bits.</field>
+    </message>
+    <message id="15206" name="MARV_ESTIMATOR">
+      <description>The attitude estimators side by side after a rate tick (decision 0055, the ESKF in shadow): Mahony's and the ESKF's quaternions (Hamilton, body FRD to NED, w x y z) and gyro-bias estimates, and the boot gyro calibration's bias, which the gyro of HIGHRES_IMU has had subtracted. A telemetry stream: its rate is set with MAV_CMD_SET_MESSAGE_INTERVAL.</description>
+      <field type="uint64_t" name="time_usec" units="us">The rate tick's clock (time since boot).</field>
+      <field type="float[4]" name="q_mahony">Mahony's attitude, w x y z.</field>
+      <field type="float[4]" name="q_eskf">The ESKF's attitude, w x y z; zero when the image has no ESKF.</field>
+      <field type="float[3]" name="gyro_bias_cal" units="rad/s">The boot gyro calibration's bias, FRD; zero until it completes.</field>
+      <field type="float[3]" name="gyro_bias_mahony" units="rad/s">Mahony's gyro-bias estimate, FRD.</field>
+      <field type="float[3]" name="gyro_bias_eskf" units="rad/s">The ESKF's gyro-bias estimate, FRD; zero when the image has no ESKF.</field>
+      <field type="uint8_t" name="flags">MARV_ESTIMATOR_FLAG bits.</field>
     </message>
   </messages>
 </mavlink>
