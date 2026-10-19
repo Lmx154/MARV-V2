@@ -11,7 +11,8 @@
 # Needs `uv sync --frozen`, `cd gcs && npm ci` and `cd gcs && npx playwright install chromium` (the browser lives in the
 # Playwright cache, not in the repository). It builds the GCS (gcs/build, ignored by git) and removes every process it started
 # on exit. The staleness control of the specs stops the fake vehicle (SIGSTOP of its process group, MARV_E2E_VEHICLE_PID) and
-# continues it. The Playwright JSON report and the failure screenshots land in the output directory (default build/gs-e2e/out).
+# continues it; in live mode the vehicle page's control stops the processes of the helper's run (those with MARV_E2E_RUNS_DIR, the
+# helper's run directory, in their command line) and continues them. The Playwright JSON report and the failure screenshots land in the output directory (default build/gs-e2e/out).
 #
 #   tools/gs/e2e.sh [--live] [--out-dir DIR] [-- <playwright test arguments>]
 set -euo pipefail
@@ -76,7 +77,10 @@ print(s.getsockname()[1])')"
 
 # The helper refuses a run while the host's heavy lock is held (H-3). This script is often run under that lock (ci/heavy.sh), so the
 # helper watches a lock file of its own: the run is this script's own heavy work, which the outer lock already covers.
-helper_args=(--port 0 --runs-dir "${work}/runs" --sil-udp-port "${udp_port}" --heavy-lock "${work}/heavy.lock")
+# The helper's board autoconnect looks in an empty directory: a board plugged into this host must not take the link from the simulator
+# (or be opened by a test).
+mkdir -p "${work}/byid"
+helper_args=(--port 0 --runs-dir "${work}/runs" --sil-udp-port "${udp_port}" --heavy-lock "${work}/heavy.lock" --byid-dir "${work}/byid")
 if [[ "${mode}" == light ]]; then
   echo "##### fake vehicle on udp ${udp_port}"
   mkdir -p build/gs-e2e/defs
@@ -132,6 +136,7 @@ status=0
   MARV_E2E_URL="${url}" MARV_E2E_MODE="$([[ "${mode}" == live ]] && echo live || true)" MARV_E2E_OUT="${out_dir}" \
     MARV_E2E_VEHICLE_PID="$([[ "${mode}" == light ]] && echo "${pids[0]}" || true)" \
     MARV_E2E_STAND_IN="$([[ "${mode}" == light ]] && echo "${STAND_IN_SECONDS}" || true)" \
+    MARV_E2E_RUNS_DIR="${work}/runs" \
     npx --no-install playwright test "$@"
 ) || status=$?
 echo "report: ${out_dir}/report.json"

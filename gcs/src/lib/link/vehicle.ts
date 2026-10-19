@@ -15,6 +15,7 @@ import { get, writable, type Readable } from 'svelte/store';
 import { f32ToBits, paramValueBits, paramValueFields, type ParamType } from './bits';
 import { MarvConfigAction, MarvParamSourceOp, MESSAGES, type Message } from './generated/messages';
 import { type LinkSession } from './session';
+import { TelemetryClient, type TelemetryOptions } from './telemetry';
 
 // ---- domain types -------------------------------------------------------------------------------------------------------
 
@@ -238,10 +239,13 @@ export class VehicleClient {
 	private readonly now: () => number;
 	private requestedAtHeartbeat = false;
 	private readonly noticeListeners = new Set<(text: string) => void>();
+	/** The telemetry streams (the live view, GCS-first unit GX-5): a stream is asked for by the view that shows it. */
+	readonly telemetry: TelemetryClient;
 
-	constructor(private readonly session: LinkSession, options: { timing?: Partial<Timing>; now?: () => number } = {}) {
+	constructor(private readonly session: LinkSession, options: { timing?: Partial<Timing>; now?: () => number; telemetry?: TelemetryOptions } = {}) {
 		this.timing = { ...DEFAULT_TIMING, ...options.timing };
 		this.now = options.now ?? (() => Date.now());
+		this.telemetry = new TelemetryClient(session, { now: this.now, ...options.telemetry });
 		const bus = session.bus;
 		this.unsubscribers.push(
 			bus.on('Heartbeat', () => {
@@ -284,6 +288,7 @@ export class VehicleClient {
 	dispose(): void {
 		for (const u of this.unsubscribers) u();
 		this.unsubscribers.length = 0;
+		this.telemetry.dispose();
 	}
 
 	/** Forget everything learnt from the vehicle (the connection changed). */
@@ -300,6 +305,7 @@ export class VehicleClient {
 		this.results = {};
 		this.configAck = null;
 		this.requestedAtHeartbeat = false;
+		this.telemetry.reset();
 		this.publish();
 	}
 
