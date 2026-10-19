@@ -369,6 +369,13 @@ rules:
     gz_groups: [l7]
     why: "link is the MAVLink codec library (ground segment unit 5) and the link service (unit 6), built on the host and m33 presets from link/marv.xml by tools/link and pymavlink's mavgen, held by the L00 conformance suite (unit_link) and by GS-3 and the mavgen drift guard in the L00 tools tests; the service is linked by marv_sil_quad_fc (STORAGE) and exercised end to end by tests/regression/quad/L10/gz/test_link_sil.py in gz group l7; the board's flight image links it too (m33 build, ground-segment unit 12b)"
 
+  - paths: [fw/link/params/**]
+    ctest_labels: [L00, L07, L09]
+    run_ci_steps: ["@flight_gates", tools_tests]
+    pytest_paths: [tests/regression/quad/L00/tools]
+    gz_groups: [l7]
+    why: "the telemetry stream caps (ground-segment unit 11) are entries of the parameter sets marv_params_fc3v2 and marv_params_fc3v2_eskf: the link service reads them (L00 link suite, the gz l7 link test), the factory .mcfg and the store read the set (L09), and the ESKF replay links the ESKF set (L07)"
+
   # ---------------------------------------------------------------- fw: the compositions
   - paths: [fw/compositions/l0/**]
     ctest_labels: [L00]
