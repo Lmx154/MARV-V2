@@ -1904,6 +1904,8 @@ const RejectCase kRejectCases[] = {
     {"quad_fc rc_channel_arm", ParamId::rc_channel_arm, 0.0, "rc_channel_arm is outside 1..16"},
     {"quad_fc rc_channel_angle range", ParamId::rc_channel_angle, 17.0, "rc_channel_angle is outside 0..16"},
     {"quad_fc rc_channel_angle collision", ParamId::rc_channel_angle, 5.0, "rc_channel_angle is the arm channel or a stick channel"},
+    {"quad_fc rc channels distinct, roll on the arm channel (R-1)", ParamId::rc_channel_roll, 5.0, "are not pairwise distinct"},
+    {"quad_fc rc channels distinct, pitch on the roll channel (R-1)", ParamId::rc_channel_pitch, 1.0, "are not pairwise distinct"},
     {"quad_fc att_loop_ratio", ParamId::att_loop_ratio, 2.0, "att_loop_ratio is not 1"},
     {"attitude::require_valid (attitude.cpp)", ParamId::att_kp, -1.0, "attitude: the gain att_kp is negative"},
     {"arming::load_config, failsafe time (arming.cpp)", ParamId::failsafe_loss_us, 0.0, "arming: a failsafe time is below 1 us"},
@@ -1927,6 +1929,66 @@ TEST(QuadFcValidateTest, EachParameterDependentPanicSiteRejectsItsTableWithItsRe
     ASSERT_FALSE(v.ok()) << c.site;
     EXPECT_NE(std::string(v.reason).find(c.reason), std::string::npos) << c.site << ": " << v.reason;
   }
+}
+
+// Rule R-1 (GX-6): the four stick channels, the arm channel and the angle channel are pairwise distinct; an angle channel of 0
+// (no switch) takes no channel. The shipped map is AETR sticks 1 to 4, arm 5, angle 8.
+constexpr std::size_t kRadioSlots = 6;
+constexpr std::array<ParamId, kRadioSlots> kRadioIds{ParamId::rc_channel_roll,  ParamId::rc_channel_pitch,
+                                                     ParamId::rc_channel_throttle, ParamId::rc_channel_yaw,
+                                                     ParamId::rc_channel_arm,   ParamId::rc_channel_angle};
+constexpr std::size_t kAngleSlot = kRadioSlots - 1;
+constexpr std::array<std::int32_t, kRadioSlots> kShippedRadio{1, 2, 3, 4, 5, 8};
+
+std::span<const ParamRecord, kParamCount> table_with_radio(const std::array<std::int32_t, kRadioSlots>& c) {
+  const std::span<const ParamRecord, kParamCount> d = param_defaults();
+  std::copy(d.begin(), d.end(), g_table.begin());
+  for (std::size_t i = 0; i < kRadioSlots; ++i) {
+    g_table[static_cast<std::size_t>(kRadioIds[i])].value = ParamValue{ParamType::I32, 0.0F, c[i]};
+  }
+  return std::span<const ParamRecord, kParamCount>(g_table);
+}
+
+TEST(QuadFcValidateTest, TheShippedRadioMapAndAnAngleChannelOfAnyFreeNumberAreAccepted) {
+  const std::array<std::int32_t, kRadioSlots> shipped = kShippedRadio;
+  EXPECT_EQ(shipped[0], param_defaults()[static_cast<std::size_t>(ParamId::rc_channel_roll)].value.i32);
+  EXPECT_TRUE(composition::validate(table_with_radio(shipped)).ok());
+  constexpr std::int32_t kLuisCurrentAngleChannel = 14;  // Luis, the angle switch channel in his current setup
+  for (const std::int32_t angle : {0, 6, 8, kLuisCurrentAngleChannel, 16}) {
+    std::array<std::int32_t, kRadioSlots> c = shipped;
+    c[kAngleSlot] = angle;
+    const composition::Verdict v = composition::validate(table_with_radio(c));
+    EXPECT_TRUE(v.ok()) << angle << ": " << (v.ok() ? "" : v.reason);
+  }
+  // A permutation of the sticks and a different arm channel are accepted too.
+  EXPECT_TRUE(composition::validate(table_with_radio({4, 3, 2, 1, 6, 0})).ok());
+}
+
+TEST(QuadFcValidateTest, EveryPairOfRadioChannelsOnOneNumberIsRefused) {
+  const std::array<std::int32_t, kRadioSlots> shipped = kShippedRadio;
+  for (std::size_t i = 0; i < kRadioSlots; ++i) {
+    for (std::size_t j = i + 1; j < kRadioSlots; ++j) {
+      std::array<std::int32_t, kRadioSlots> c = shipped;
+      c[j] = c[i];  // slot j takes slot i's number
+      const composition::Verdict v = composition::validate(table_with_radio(c));
+      ASSERT_FALSE(v.ok()) << i << " and " << j;
+      EXPECT_NE(std::string(v.reason).find(j == kAngleSlot ? "rc_channel_angle is the arm channel or a stick channel"
+                                                           : "are not pairwise distinct"),
+                std::string::npos)
+          << i << " and " << j << ": " << v.reason;
+      c = shipped;
+      c[i] = c[j];  // and the other way round
+      ASSERT_FALSE(composition::validate(table_with_radio(c)).ok()) << j << " and " << i;
+    }
+  }
+  // The found defect (GX-6): roll on the arm channel 5 passed validate before R-1.
+  std::array<std::int32_t, kRadioSlots> found = shipped;
+  found[0] = found[4];
+  EXPECT_EQ(found[0], 5);
+  EXPECT_FALSE(composition::validate(table_with_radio(found)).ok());
+  // With no angle switch the sticks and the arm channel are still pairwise distinct.
+  EXPECT_FALSE(composition::validate(table_with_radio({1, 2, 3, 4, 4, 0})).ok());
+  EXPECT_FALSE(composition::validate(table_with_radio({1, 1, 3, 4, 5, 0})).ok());
 }
 
 TEST(QuadFcValidateTest, ATableOfTheWrongSizeIsRejected) {

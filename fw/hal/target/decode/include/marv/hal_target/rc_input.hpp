@@ -34,6 +34,10 @@ struct RcChannelMap {
 // True if every channel number is in 1 .. kCrsfRcChannels.
 [[nodiscard]] bool rc_channel_map_valid(const RcChannelMap& map) noexcept;
 
+// Rule R-1: the four stick channels, the arm channel and the angle channel (0 = no angle switch, skipped) are pairwise
+// distinct. Compares only; the ranges are rc_channel_map_valid's and the composition's.
+[[nodiscard]] bool rc_channels_distinct(const RcChannelMap& map, std::int32_t arm, std::int32_t angle) noexcept;
+
 // Pulse width in microseconds of an 11-bit channel value (not clamped).
 [[nodiscard]] float crsf_ticks_to_us(std::uint16_t ticks) noexcept;
 

@@ -661,6 +661,12 @@ void update_motor_test(TimeUs now) noexcept {
                                          param_value<ParamId::rc_channel_yaw>(t)})) {
     return "the rc_channel_* parameters are not channel numbers 1 .. 16";
   }
+  if (!hal_target::rc_channels_distinct(
+          {param_value<ParamId::rc_channel_roll>(t), param_value<ParamId::rc_channel_pitch>(t),
+           param_value<ParamId::rc_channel_throttle>(t), param_value<ParamId::rc_channel_yaw>(t)},
+          channel, angle_channel)) {
+    return "the stick, arm and angle channels (rc_channel_*) are not pairwise distinct";
+  }
   return nullptr;
 }
 
