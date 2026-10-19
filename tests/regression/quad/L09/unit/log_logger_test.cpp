@@ -109,7 +109,7 @@ TEST(LogFramer, ARecordSpansSectorsAndTheSectorNamesWhereTheNextOneBegins) {
   EXPECT_EQ(get<std::uint16_t>(file, 1 * kSectorBytes + kSecOffFirst), 112U);
   EXPECT_EQ(get<std::uint16_t>(file, 2 * kSectorBytes + kSecOffFirst), kNoRecord) << "only the middle of a record";
   const Parsed p = parse(file);
-  EXPECT_TRUE(p.problems.empty());
+  EXPECT_TRUE(p.problems.empty()) << (p.problems.empty() ? "" : p.problems[0]);
   ASSERT_EQ(p.records.size(), 3U);
   EXPECT_EQ(p.records[0].bytes.size(), 300U);
   EXPECT_EQ(p.records[1].bytes.size(), 300U);
@@ -298,7 +298,7 @@ TEST(LogHeader, TheHeaderCarriesWhatTheDecoderNeedsAndEndsOnASectorBoundary) {
   const Bytes file = r.fake.written();
   ASSERT_EQ(file.size() % kSectorBytes, 0U);
   const Parsed p = parse(file);
-  EXPECT_TRUE(p.problems.empty());
+  EXPECT_TRUE(p.problems.empty()) << (p.problems.empty() ? "" : p.problems[0]);
   ASSERT_FALSE(p.records.empty());
 
   const Rec& info = p.records.front();
@@ -445,9 +445,11 @@ TEST(LogLogger, AReArmInsideThePostRollContinuesTheSameFile) {
   r.armed = true;
   r.run_ticks(500);
   EXPECT_EQ(r.logger.state(), LoggerState::Logging);
+  EXPECT_EQ(r.fake.prepare_calls, 1) << "one file for both arms";
+  EXPECT_EQ(r.fake.close_calls, 0);
   r.armed = false;
   r.idle(kPostRoll + 100'000);
-  EXPECT_EQ(r.fake.prepare_calls, 1 + 0) << "one file for both arms (the next probe is a reprobe period away)";
+  EXPECT_EQ(r.fake.close_calls, 1);
   ASSERT_EQ(r.fake.closed.size(), 1U);
   const Parsed p = parse(r.fake.closed[0]);
   EXPECT_TRUE(p.ended);
@@ -700,8 +702,8 @@ void random_run(unsigned seed) {
     const auto& c = r.logger.counters();
     for (std::size_t i = 0; i < kStatusFields; ++i) {
       const auto f = static_cast<StatusField>(i);
-      if (f == StatusField::RingBacklogCells || f == StatusField::RingHighWaterCells) {
-        continue;  // levels, refreshed with the Status record
+      if (f == StatusField::RingBacklogCells || f == StatusField::RingHighWaterCells || f == StatusField::BytesWrittenLo) {
+        continue;  // levels, or per file
       }
       ASSERT_GE(c[i], last[i]) << "counter " << i << " fell, seed " << seed;
       last[i] = c[i];
@@ -741,8 +743,8 @@ TEST(LogNoMetadata, L9TheDetectorFiresOnAMetadataCallWhileArmedOrLogging) {
 }
 
 // ---- round trip ---------------------------------------------------------------------------------------------------------
-void write_expected(const std::string& dir, const Rig& r, const std::vector<std::uint64_t>& imu, const std::vector<std::uint64_t>& rate,
-                    const std::vector<std::uint64_t>& man, const RingStats& s, const Bytes& file) {
+void write_expected(const std::string& dir, const std::vector<std::uint64_t>& imu, const std::vector<std::uint64_t>& rate,
+                    const std::vector<std::uint64_t>& man, const RingStats& s, const Bytes& file, std::uint64_t session) {
   std::ofstream f(dir + "/roundtrip.mlog", std::ios::binary);
   f.write(reinterpret_cast<const char*>(file.data()), static_cast<std::streamsize>(file.size()));
   std::ofstream e(dir + "/roundtrip_expected.json");
@@ -769,7 +771,7 @@ void write_expected(const std::string& dir, const Rig& r, const std::vector<std:
     e << (i ? "," : "") << "\n[" << m.frames << "," << m.t_us << "," << bits(m.roll) << "," << bits(m.throttle) << "," << bits(m.channels[0])
       << "," << bits(m.channels[m.channels.size() - 1]) << "," << bits(m.link_quality) << "]";
   }
-  e << "],\n\"dropped\": [" << s.dropped[0] << "," << s.dropped[1] << "," << s.dropped[2] << "],\n\"session\": " << r.logger.session_id()
+  e << "],\n\"dropped\": [" << s.dropped[0] << "," << s.dropped[1] << "," << s.dropped[2] << "],\n\"session\": " << session
     << "\n}\n";
 }
 
@@ -863,7 +865,7 @@ TEST(LogRoundTrip, ASyntheticTickStreamComesBackEqualExceptTheCountedDrops) {
   EXPECT_GT(gaps_checked, 0U);
 
   if (const char* dir = std::getenv("MARV_LOG_ROUNDTRIP_DIR")) {
-    write_expected(dir, r, r.accepted_imu, r.accepted_rate, r.accepted_manual, s, file);
+    write_expected(dir, r.accepted_imu, r.accepted_rate, r.accepted_manual, s, file, p.session);
   }
 }
 

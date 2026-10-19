@@ -185,7 +185,7 @@ inline Parsed parse(std::span<const std::uint8_t> file) {
   Parsed p;
   Bytes pending;
   std::uint32_t expected = 0;
-  for (std::size_t i = 0; i + kSectorBytes <= file.size() && !p.ended; ++i) {
+  for (std::size_t i = 0; (i + 1) * kSectorBytes <= file.size() && !p.ended; ++i) {
     const auto s = file.subspan(i * kSectorBytes, kSectorBytes);
     if (!std::equal(kSectorMagic.begin(), kSectorMagic.end(), s.begin())) {
       p.problems.push_back("magic@" + std::to_string(i));

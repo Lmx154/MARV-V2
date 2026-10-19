@@ -188,11 +188,12 @@ void Logger::service(TimeUs now, bool armed) noexcept {
       }
       break;
     case LoggerState::Ready:
-      counters_[static_cast<std::size_t>(StatusField::DiscardedCells)] +=
-          static_cast<std::uint32_t>(ring_.discard_oldest(config_.pre_roll_cells));
       if (armed) {
-        start_logging(now);
+        start_logging(now);  // the ring holds the pre-roll and what arrived since the last pass: all of it is logged
         pump(now);
+      } else {
+        counters_[static_cast<std::size_t>(StatusField::DiscardedCells)] +=
+            static_cast<std::uint32_t>(ring_.discard_oldest(config_.pre_roll_cells));
       }
       break;
     case LoggerState::Logging:

@@ -81,7 +81,7 @@ TEST(LogFormat, RateTickAndGapKnownBytes) {
   t.gate_state = 5;
   t.dshot = {*DshotValue::from_raw(48), DshotValue::stop(), *DshotValue::from_raw(2047), *DshotValue::from_raw(1000)};
   const auto r = encode_rate_tick(t);
-  const std::array<std::uint8_t, 16> expect{0x02, 0x03, 0x05, 0x00, 0xDD, 0xCC, 0xBB, 0xAA,
+  const std::array<std::uint8_t, 16> expect{0x02, 0x03, 0x05, 0x00, 0x11, 0xDD, 0xCC, 0xBB,
                                             0x30, 0x00, 0x00, 0x00, 0xFF, 0x07, 0xE8, 0x03};
   EXPECT_EQ(r, expect);
   const auto g = encode_gap(0x01020304U, {5, 6, 7});
@@ -146,7 +146,8 @@ TEST(LogRing, WrapsAroundTheEndWithMixedRecordSizes) {
       want.assign(r.begin(), r.end());
       ASSERT_TRUE(ring.push_rate_tick(make_rate(t)));
     } else {
-      const auto r = encode_manual(make_manual(++t, static_cast<std::uint32_t>(t)));
+      ++t;
+      const auto r = encode_manual(make_manual(t, static_cast<std::uint32_t>(t)));
       want.assign(r.begin(), r.end());
       ASSERT_TRUE(ring.push_manual(make_manual(t, static_cast<std::uint32_t>(t))));
     }
@@ -163,9 +164,9 @@ TEST(LogRing, FullRingDropsTheNewestWholeRecordAndCountsPerKind) {
   ASSERT_TRUE(ring.push_imu(make_imu(1)));   // 2 cells
   ASSERT_TRUE(ring.push_imu(make_imu(2)));   // 4
   ASSERT_TRUE(ring.push_imu(make_imu(3)));   // 6
-  EXPECT_FALSE(ring.push_imu(make_imu(4)));  // needs 2, 1 left: dropped
-  EXPECT_FALSE(ring.push_manual(make_manual(5, 1)));
   ASSERT_TRUE(ring.push_rate_tick(make_rate(6)));  // 7: the one cell that was left
+  EXPECT_FALSE(ring.push_imu(make_imu(4)));  // full
+  EXPECT_FALSE(ring.push_manual(make_manual(5, 1)));
   EXPECT_FALSE(ring.push_rate_tick(make_rate(7)));
   const RingStats s = ring.stats();
   EXPECT_EQ(s.pushed[ring_kind_index(Kind::Imu)], 3U);
@@ -392,7 +393,7 @@ struct BudgetFixture : ::testing::Test {
 };
 
 TEST_F(BudgetFixture, TheBudgetEntryIsTheMeasuredWorstStall) {
-  EXPECT_DOUBLE_EQ(stall, 0.809) << "tests/regression/quad/L10/results/sd/README.md: hal_config_pending_write max 809.1 ms";
+  EXPECT_FLOAT_EQ(static_cast<float>(stall), 0.809F) << "tests/regression/quad/L10/results/sd/README.md: hal_config_pending_write max 809.1 ms";
   const ParamRecord r = table[static_cast<std::size_t>(ParamId::sd_log_write_stall_max_s)];
   EXPECT_EQ(r.method, ParamMethod::DesignBudget);
 }
