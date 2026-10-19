@@ -504,7 +504,7 @@ def test_report_shows_a_locked_entry_with_by_on_via(copy_root):
 
 
 def test_report_lists_every_placeholder_with_its_reason_and_replacement():
-    fc3v2 = ROOT / "vehicles" / "marv_5in_fc3v2.yaml"
+    fc3v2 = ROOT / "vehicles" / "marv_7in_fc3v2.yaml"
     docs = {"card": yaml.safe_load(fc3v2.read_text(encoding="utf-8")),
             "profile": yaml.safe_load((ROOT / "sensors" / "profiles" / "madflight_fc3v2_revc.yaml").read_text(
                 encoding="utf-8"))}

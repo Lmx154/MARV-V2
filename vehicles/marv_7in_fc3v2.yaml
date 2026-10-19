@@ -1,7 +1,7 @@
 # Vehicle card: Luis's 7-inch quad on the madflight FC3v2 Rev-C (quad spec §4.0 M1, M4; core contracts 2.1). Schema and
 # sigma policy: tools/card/schema.py. Frames: FRD body, CM origin. Spin: ccw = counter-clockwise viewed from above.
-# The file name says 5in for history (the first card of this board carried a 5-inch placeholder physics); the airframe is
-# the 7-inch below. Noticed, not renamed (M4 P1 packet).
+# Renamed from marv_5in_fc3v2 on 2026-10-18 (Luis: 'yes switch and rename'): the first card of this board carried a 5-inch
+# placeholder physics; the airframe is the 7-inch below.
 # Hardware (Luis, 2026-10-15/16/17): madflight FC3v2 Rev-C, Flywoo Goku G55M 55A AM32 4-in-1 ESC, motors Emax ECO II Series
 # 2807-1700KV, props HQProp 7x3.5x3 polycarbonate (36 g for four), frame HGLRC MY7 7-inch (335 mm wheelbase, 217 g +- 5 g
 # frame only, plates 2/3/3 mm, arms 6 mm), flight pack Ovonic 4S1P 1600 mAh 120C LiPo (172 g, "battery is mounted on top";
@@ -10,7 +10,7 @@
 # Physics (M4 P1): mass and motor x, y are Luis's measurements. Thrust coefficient, torque ratio, motor lag, inertia and
 # the motors' z are sourced estimates (INFERRED, PLACEHOLDER) until the thrust stand and the bifilar pendulum (quad spec
 # §4.0 M4) replace them. rotors.esc_map is unchanged from M1 (Luis's ruling of 2026-10-16); rotors.speed_range max is the loaded maximum (Luis 2026-10-17, decision 0052).
-vehicle: marv_5in_fc3v2
+vehicle: marv_7in_fc3v2
 
 mass:
   value: 0.732
@@ -29,8 +29,8 @@ inertia_diag:
   value: [0.00427, 0.00332, 0.00734]
   shape: diag3
   unit: kg m^2
-  method: "derived(point-mass model vehicles/marv_5in_fc3v2_inertia_model.py: Ixx = sum m (y^2 + (h - h_cg)^2), Iyy = sum m (x^2 + (h - h_cg)^2), Izz = sum m (x^2 + y^2) about the model's own CG; masses and motor x, y as in the model, heights ASSUMED there)"
-  source: "vehicles/marv_5in_fc3v2_inertia_model.py, run without arguments (nominal result: J = 4.2670e-03, 3.3214e-03, 7.3361e-03 kg m^2, CG 16.67 mm above the arm mid-plane); inputs: Luis's masses (this card's mass note) and ruler-measured motor spacing (rotors.m<n>.position); the split of the 217 g frame (50 % arms as point masses at their midpoints, 50 % plates at the centre) and every height above the arm plane are ASSUMED in the script, not measured"
+  method: "derived(point-mass model vehicles/marv_7in_fc3v2_inertia_model.py: Ixx = sum m (y^2 + (h - h_cg)^2), Iyy = sum m (x^2 + (h - h_cg)^2), Izz = sum m (x^2 + y^2) about the model's own CG; masses and motor x, y as in the model, heights ASSUMED there)"
+  source: "vehicles/marv_7in_fc3v2_inertia_model.py, run without arguments (nominal result: J = 4.2670e-03, 3.3214e-03, 7.3361e-03 kg m^2, CG 16.67 mm above the arm mid-plane); inputs: Luis's masses (this card's mass note) and ruler-measured motor spacing (rotors.m<n>.position); the split of the 217 g frame (50 % arms as point masses at their midpoints, 50 % plates at the centre) and every height above the arm plane are ASSUMED in the script, not measured"
   sigma: [0.00107, 0.00083, 0.00184]
   sigma_rule: "25 % of the value: the upper end of the 20-25 % bound set for a point-mass model of an unweighed airframe (lead, M4 P1 packet). The script's modelled variants account for 4.3-4.7 % (assumed split and heights, root-sum-square of one-at-a-time half-spreads) and a +-5 mm error of each motor coordinate for up to 9 % of Ixx, Iyy and Izz; the rest allows for the unmodelled parts (camera, VTX, antennas, wiring, the pack's exact place, the arms' and rotors' own inertias)"
   status: [INFERRED, PLACEHOLDER]
@@ -121,7 +121,7 @@ rotors:
       shape: frd3
       unit: m
       method: measured
-      source: "Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (front-right motor, the M1 measured map and motor_pad); z from vehicles/marv_5in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)"
+      source: "Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (front-right motor, the M1 measured map and motor_pad); z from vehicles/marv_7in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)"
       sigma: [0.005, 0.005, 0.010]
       sigma_rule: "the '~' of Luis's ruler readings taken as +-5 mm on each coordinate (1 sigma, conservative: the half-span would be +-2.5 mm); z: the +-10 mm spread of the model's assumed prop-plane height"
       status: [UNVERIFIED, INFERRED]
@@ -139,7 +139,7 @@ rotors:
       shape: frd3
       unit: m
       method: measured
-      source: "Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (rear-left motor, the M1 measured map and motor_pad); z from vehicles/marv_5in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)"
+      source: "Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (rear-left motor, the M1 measured map and motor_pad); z from vehicles/marv_7in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)"
       sigma: [0.005, 0.005, 0.010]
       sigma_rule: "the '~' of Luis's ruler readings taken as +-5 mm on each coordinate (1 sigma, conservative: the half-span would be +-2.5 mm); z: the +-10 mm spread of the model's assumed prop-plane height"
       status: [UNVERIFIED, INFERRED]
@@ -157,7 +157,7 @@ rotors:
       shape: frd3
       unit: m
       method: measured
-      source: "Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (front-left motor, the M1 measured map and motor_pad); z from vehicles/marv_5in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)"
+      source: "Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (front-left motor, the M1 measured map and motor_pad); z from vehicles/marv_7in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)"
       sigma: [0.005, 0.005, 0.010]
       sigma_rule: "the '~' of Luis's ruler readings taken as +-5 mm on each coordinate (1 sigma, conservative: the half-span would be +-2.5 mm); z: the +-10 mm spread of the model's assumed prop-plane height"
       status: [UNVERIFIED, INFERRED]
@@ -175,7 +175,7 @@ rotors:
       shape: frd3
       unit: m
       method: measured
-      source: "Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (rear-right motor, the M1 measured map and motor_pad); z from vehicles/marv_5in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)"
+      source: "Luis, 2026-10-16/17, ruler: 'front left to front right distance - ~25.5cm', 'front left to rear left distance - ~22.4cm', 'rear left to front right distance - ~33cm'; x = +-224 / 2 mm and y = +-255 / 2 mm about the frame centre (rear-right motor, the M1 measured map and motor_pad); z from vehicles/marv_7in_fc3v2_inertia_model.py (thrust plane 23.3 mm above the model's CG; z is not read by the mixer, the rate loop or the plant torque, which use x and y only)"
       sigma: [0.005, 0.005, 0.010]
       sigma_rule: "the '~' of Luis's ruler readings taken as +-5 mm on each coordinate (1 sigma, conservative: the half-span would be +-2.5 mm); z: the +-10 mm spread of the model's assumed prop-plane height"
       status: [UNVERIFIED, INFERRED]

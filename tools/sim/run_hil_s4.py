@@ -12,7 +12,7 @@ CRSF receiver (decision 0046 item 4); the host sends IMU samples only.
 
 What it does. Reboots the board through the debug probe (tools/target/flash.sh --probe-only; --no-reset skips it), so the
 composition starts fresh (the plugin refuses a board that has already run ticks). Generates the S2e world of
-tools/sim/run_quad_fc.py (the real card vehicles/marv_5in_fc3v2.yaml with drag, the fc3v2 tick, m = 1, the model IMU at the
+tools/sim/run_quad_fc.py (the real card vehicles/marv_7in_fc3v2.yaml with drag, the fc3v2 tick, m = 1, the model IMU at the
 nominal corner, <launch_pad/>) with the <hil> element in place of the stick script and of <command_delay_ticks>: the lockstep
 plugin's HIL source (sim/gz/plugin/src/hil_source.hpp) paces the ticks on the wall clock, sends the IMU samples to the board F
 per record when their stamps are due, and steps the plant at tick j with the board's command of tick j - N; a command not
