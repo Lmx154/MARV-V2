@@ -1,0 +1,4 @@
+run: logging for 1800 s (hold the board still, then rotate it as asked)
+run: log: PostRoll -> Absent t=1845448119 file=4 start_sector=8815808 capacity=1073741824 written=568007168 session=0897dc2d20db798b prepare_us=1046114 close_us=496053 fatfs_error=0
+run: log hist n=34668 fail=0 bytes=568000000 max_us=162460 mean_us=12620.0 us: 10240-12288:422 12288-14336:33734 14336-16384:287 16384-20480:36 20480-24576:4 24576-28672:44 28672-32768:93
+pull: 568007168 of 568007168 bytes -> /home/luis/marv-bench-logs/u2b/soak.mlog; image says: log dump: DONE index=4 sent=568007168 us=1495380848

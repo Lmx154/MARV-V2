@@ -1,0 +1,16 @@
+file: /home/luis/marv-bench-logs/u2b/soak.mlog (568007168 B)
+sectors: 1109389 valid of 1109389; session: 0x0897dc2d20db798b
+records: end 1, imu 13530588, rate_tick 6765294, status 1801
+end record: yes
+imu: 13530588 records over 1805.115 s = 7495.69 Hz (nominal 7500.3 Hz); backwards/zero spacings 0
+imu spacing: median 133 us, min 132 us, max 135 us, > 1.5 x median: 0 spacings, 0 samples missing by time
+imu spacing histogram (us:count) 132:69 133:7983115 134:5547390 135:13
+imu largest spacings (us:count) 132:69 133:7983115 134:5547390 135:13
+rate-tick spacing: median 267 us, min 266 us, max 268 us
+gap records: 0
+status records: 1801
+last status: state=PostRoll t_us=1844939952 drops_imu=1373 drops_rate_tick=686 drops_manual_control=0 pushed_imu=13827101 pushed_rate_tick=6913551 pushed_manual_control=0 ring_high_water_cells=16383 ring_backlog_cells=0 chunks_written=34668 bytes_written_lo=567991296 write_failures=0 prepare_absent=0 prepare_full=0 prepare_error=0 close_failures=0 discarded_cells=741285 telemetry_records=0 sessions=1
+counters last minus first status (this session; the first is written at the start of logging, so the drops the boot-time prepare caused before it are excluded): drops_imu=0 drops_rate_tick=0 drops_manual_control=0 pushed_imu=13530365 pushed_rate_tick=6765182 pushed_manual_control=0 write_failures=0 close_failures=0 chunks_written=34667
+largest ring high water in any status: 16383 cells; largest ring backlog in any status: 558 cells
+end: {'sector': 1109388, 'reason': 'disarm', 't_us': 1844939952, 'sectors': 1109389}
+status csv: /home/luis/marv-bench-logs/u2b/soak_status.csv (1801 rows)
