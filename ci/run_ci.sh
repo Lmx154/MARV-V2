@@ -200,6 +200,9 @@ gs3_check() {
 # Actions, ci/local_ci.sh) installs them itself in its fresh tree; the development check never installs behind the developer's
 # back, it fails loudly instead, so that a missing install is never read as a pass.
 gcs_tests() {
+  if [[ -n "${MARV_CACHE_DIR:-}" ]]; then
+    export npm_config_cache="${MARV_CACHE_DIR}/npm"
+  fi
   if [[ ! -x gcs/node_modules/.bin/vitest ]]; then
     if [[ "${MARV_CI_MODE:-per-push}" == full ]]; then
       (cd gcs && npm ci) || return 1
