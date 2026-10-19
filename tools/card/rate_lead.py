@@ -146,6 +146,15 @@ below set resolution and termination only)
      dt_n from rest, whatever dt_n) times J_a at each inertia corner (1 - b_J, 1, 1 + b_J) J_a, the nominal one being the
      feed-forward torque itself, is at most tau_max,a. The gains and every margin row are computed before this step and
      do not read the switch.
+ 15. tau_max_hover,a (the clamp of the reference feed-forward, decision 0058 "Open"): the largest symmetric torque on axis a
+     alone that keeps every motor within [f_min, f_max] while the collective stays at hover. Hover collective c = m g (the
+     card's mass, standard gravity gic.G, as the DShot step of step 6), f_min = k idle^2 and f_max = k speed_max^2 (rate.py
+     step 9), motor i's thrust f_i = c M[i,thrust] + tau M[i,a]. For each sign s in {+1, -1} the largest tau >= 0 with
+     f_min <= f_i(s tau) <= f_max for every i is min_i (bound_i - c M[i,thrust]) / (s M[i,a]) over the motors with
+     s M[i,a] != 0, bound_i = f_max if s M[i,a] > 0 else f_min; tau_max_hover,a is the smaller of the two signs (symmetric),
+     stored as the largest f32 <= that value (rounding down is the conservative direction for a clamp). Refused if hover
+     itself is outside [f_min, f_max] on a motor, or the axis is unbounded. The collective-free tau_max of rate.py step 9
+     (a different quantity: the collective may move) is not used. The firmware clamps u_ff,a to +-k tau_max_hover,a.
 
     uv run python tools/card/rate_lead.py --report
 """
@@ -1086,6 +1095,8 @@ def design(card, budget, scenario, profile, card_path, profile_path, procs=None,
         "pi_with_chain": grid[0], "pi_l4": pi,
         "j_corners": physical_corners(inp["inertia"], inp["b_J"]),
     }
+    # Rule step 15.
+    result["tau_max_hover"] = tau_max_hover_rule(m_matrix, mass * gic.G, f_min, f_max, card_path)
     # Rule step 14.
     ref_ff = rate._value(scenario, "rate_ref_ff_enable", "scenario entry", card_path) == 1
     result["tau_ref_rule"] = tau_ref_rule(result, ref_ff)
@@ -1143,6 +1154,53 @@ def check_model_following(rule, card_path):
         if not worst <= row["tau_max"]:
             refuse(card_path, f"the full-stick reference torque {worst!r} N m of axis {row['axis']} at tau_ref "
                               f"{row['tau_ref']!r} s exceeds tau_max {row['tau_max']!r} N m (rule step 14)")
+
+
+# ---- tau_max_hover (rule step 15) -------------------------------------------------------------------------------------
+
+
+def r32_down(x):
+    """The largest float32 <= x (as a double), x > 0: the mirror of rate.r32_up."""
+    y = rate.r32(x)
+    if y <= x:
+        return y
+    bits = struct.unpack("<I", struct.pack("<f", y))[0]
+    return struct.unpack("<f", struct.pack("<I", bits - 1))[0]
+
+
+def tau_max_hover(m, axis, collective, f_min, f_max):
+    """Rule step 15 for one axis: (the smaller of the two signs' largest torques, the +torque one, the -torque one), or
+    None for a sign whose torque is unbounded or whose hover thrust is outside [f_min, f_max] on some motor. m is the mixer
+    matrix (rows motors, columns thrust, roll, pitch, yaw), axis in rate.AXES, collective in N."""
+    column = rate.MIXER_COLUMN[axis]
+    best = []
+    for sign in (1.0, -1.0):
+        limit = None
+        for row in m:
+            hover = collective * row[0]
+            if not f_min <= hover <= f_max:
+                return None, None, None
+            d = sign * row[column]
+            if d == 0.0:
+                continue
+            t = ((f_max if d > 0 else f_min) - hover) / d
+            limit = t if limit is None else min(limit, t)
+        best.append(limit)
+    if best[0] is None or best[1] is None:
+        return None, best[0], best[1]
+    return min(best), best[0], best[1]
+
+
+def tau_max_hover_rule(m, collective, f_min, f_max, card_path):
+    """Rule step 15 on all axes: the exact values, the stored f32 values (rounded down) and the hover collective (N)."""
+    exact = []
+    for ax in AXES:
+        t, _, _ = tau_max_hover(m, ax, collective, f_min, f_max)
+        if t is None or not t > 0.0:
+            refuse(card_path, f"tau_max_hover of axis {ax} is unbounded or empty: the hover collective {collective!r} N is "
+                              f"outside the motors' thrust range [{f_min!r}, {f_max!r}] N or leaves no torque (rule step 15)")
+        exact.append(t)
+    return {"collective": collective, "exact": exact, "f32": [r32_down(t) for t in exact]}
 
 
 # ---- the report ------------------------------------------------------------------------------------------------------
@@ -1242,6 +1300,10 @@ def report_lines(r):
     for v in r["j_corners"]:
         lines.append(f"  J {v['J'][0]:.6g} {v['J'][1]:.6g} {v['J'][2]:.6g}  "
                      + ("box" if v["box"] else "cut") + (" common-scale" if v["common_scale"] else ""))
+    th = r["tau_max_hover"]
+    lines.append(f"tau_max_hover (rule step 15, the clamp of the reference feed-forward): hover collective m g {th['collective']!r} N, "
+                 f"f_range [{r['f_range'][0]!r}, {r['f_range'][1]!r}] N; per axis N m (f32 down): "
+                 + "  ".join(f"{ax} {v!r}" for ax, v in zip(AXES, th["f32"])))
     rule = r["tau_ref_rule"]
     if rule["model_following"]:
         dl = rule["delay"]
@@ -1296,6 +1358,12 @@ TAU_REF_MF_METHOD = (
     "tau_max/(J (1 + inertia_robustness_band)); rounded up to f32; asserted: J rate_max/tau_ref <= tau_max at J (1 -+ "
     "inertia_robustness_band))")
 TAU_REF_MF_SOURCE = "the gain rule's inputs (decision 0014) and the scenario register rate_ref_ff_enable; decision 0058"
+TAU_MAX_HOVER_METHOD = (
+    "derived(tau_max_hover,a = the largest symmetric torque on axis a alone that keeps every motor's thrust within [k idle^2, k "
+    "speed_max^2] while the collective stays at hover m g: min over both signs and the motors of (bound - m g M[i,thrust]) / "
+    "(+-M[i,a]), bound the limit the torque pushes toward; rounded down to f32; rule step 15 of tools/card/rate_lead.py)")
+TAU_MAX_HOVER_SOURCE = ("vehicle card mass, rotors thrust_coeff and speed_range, the mixer M, standard gravity (gen_imu_config.G); "
+                        "decision 0058 (the u_ff clamp); read by the rate loop only while rate_ref_ff_enable is 1")
 T_FF_METHOD = (
     "derived(T_ff = the smallest T_ff >= 0 whose combined RMS of the D path and the lag-compensated omega x J omega "
     "feed-forward path per motor at rate_max (every sign pattern, every notch bypassed) is at most d_path_noise_budget x "
@@ -1311,8 +1379,8 @@ def tau_ref_lead(result):
 
 
 def entries_from(result):
-    """The 16 rate-loop parameters (ordered (name, params_gen entry) pairs) of a design() result, in rate.entries_from's
-    order with rate_d_filter_tau_<axis> after rate_kd_<axis>, then rate_ff_filter_tau (T_ff)."""
+    """The 19 rate-loop parameters (ordered (name, params_gen entry) pairs) of a design() result, in rate.entries_from's
+    order with rate_d_filter_tau_<axis> after rate_kd_<axis>, then rate_ff_filter_tau (T_ff), then rate_tau_max_hover_<axis>."""
     ax32, tau_ref = result["axes32"], tau_ref_lead(result)
     out = []
     for column, name, unit in ((0, "kp", "N m s/rad"), (1, "ki", "N m/rad"), (2, "kd", "N m s^2/rad"), (3, "d_filter_tau", "s")):
@@ -1327,6 +1395,10 @@ def entries_from(result):
                                               "source": source, "sigma": schema.UNKNOWN}))
     out.append(("rate_ff_filter_tau", {"type": "f32", "value": result["t_ff"], "unit": "s", "method": T_FF_METHOD,
                                        "source": GAIN_SOURCE, "sigma": schema.UNKNOWN}))
+    for i, axis in enumerate(AXES):
+        out.append((f"rate_tau_max_hover_{axis}", {"type": "f32", "value": result["tau_max_hover"]["f32"][i], "unit": "N m",
+                                                    "method": TAU_MAX_HOVER_METHOD, "source": TAU_MAX_HOVER_SOURCE,
+                                                    "sigma": schema.UNKNOWN}))
     return out
 
 

@@ -150,6 +150,20 @@ rate_ref_ff_enable:
     regression sets, keeps 0.
   used_by: [rate loop reference feed-forward, rate-loop tau_ref rule]
 
+rate_ff_clamp_k:
+  value: 0.5
+  unit: "1"
+  method: scenario
+  sigma: choice
+  rationale: >-
+    The clamp of the rate loop's reference feed-forward (decision 0058, "Open: gates the first props-on acro flight"): in
+    acro the loop limits u_ff,a = J_ref,a (r_n - r_(n-1)) / dt_n to +-k tau_max_hover,a on each axis, tau_max_hover,a the
+    derived rate_tau_max_hover_<axis> (tools/card/rate_lead.py rule step 15: the torque authority at the hover
+    collective). k is a fraction of that authority, a safety number set by Luis: 2026-10-19, AskUserQuestion, k as a
+    fraction of the authority at hover throttle, "0.5 (Recommended)". The rate loop's validate refuses a k outside
+    (0, 1]. Read only while rate_ref_ff_enable is 1 (never in angle mode); written 0.5 so that it is an f32 parameter.
+  used_by: [rate loop reference feed-forward clamp]
+
 site_latitude_rad:
   value: 0.82
   unit: rad

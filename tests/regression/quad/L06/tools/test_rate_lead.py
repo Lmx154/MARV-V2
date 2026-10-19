@@ -3,7 +3,9 @@ cross-check that the rule extends rate.py (N = 1, H = 1, latency 0), N* on the f
 linearity and the T_ff control, the physical J corners, the f32 guard with its control, the floors over the
 configuration set (rule step 13) with its two controls, the closed-loop stability of every loop of that set (decision 0014
 fifth round item 4) with the gain-margin bracket as its control, and rule step 14's model-following tau_ref (decision 0058:
-invariant I4 with its two controls; the switch moves tau_ref only, the I1 side of the generator).
+invariant I4 with its two controls; the switch moves tau_ref only, the I1 side of the generator), and rule step 15's
+tau_max_hover (the clamp of the reference feed-forward: a hand-computed value on the FC3v2 card, a brute-force feasibility
+check with its control, the parameters it emits).
 
 Every acceptance test has a control that breaks it (core 7.2). Tolerances are derived on their lines. The committed-card
 design runs once (module fixture, about 45 s of plain Python).
@@ -25,6 +27,7 @@ import attitude_lead as al  # noqa: E402
 import gen_imu_config as gic  # noqa: E402
 import gen_plant_config as gpc  # noqa: E402
 import gyro_chain_design as gcd  # noqa: E402
+import mixer  # noqa: E402
 import rate  # noqa: E402
 import rate_lead as rl  # noqa: E402
 import schema  # noqa: E402
@@ -34,6 +37,7 @@ CARD = ROOT / "vehicles" / "uzh_neurobem_5in.yaml"
 BUDGET = ROOT / "design" / "budget.yaml"
 SCENARIO = ROOT / "design" / "scenario_values.yaml"
 PROFILE = ROOT / "sensors" / "profiles" / "marv_v2_board_default.yaml"
+FC3V2_CARD = ROOT / "vehicles" / "marv_7in_fc3v2.yaml"
 
 # Cross-check tolerance: test_rate_design.py's TOL (2^-30 rad), also test_gyro_chain_design.py's cross-check 1. Both
 # evaluators are exact to double rounding (observed 3e-14 rad and 2e-14 relative on the gains); 2^-30 leaves four decades.
@@ -477,3 +481,90 @@ def struct_prev_f32(x):
     """The largest float32 below the positive float32 x."""
     bits = struct.unpack("<I", struct.pack("<f", x))[0]
     return struct.unpack("<f", struct.pack("<I", bits - 1))[0]
+
+
+# ---- rule step 15: tau_max_hover, the clamp of the reference feed-forward (decision 0058) --------------------------------
+# Hand computation on the FC3v2 card (vehicles/marv_7in_fc3v2.yaml), a symmetric quad-X. Card values: mass m = 0.732 kg,
+# thrust_coeff k = 3.274e-6, speed_range [0, 2297] rad/s, torque_ratio c_q = 0.012 m, |x| = 0.112 m, |y| = 0.1275 m.
+#   hover thrust per motor f_h = m g / 4 = 0.732 x 9.80665 / 4 = 1.79461695 N (the collective stays at m g);
+#   f_min = k 0^2 = 0, f_max = k 2297^2 = 17.274308 N, so the nearer limit is f_min on every axis: f_h.
+#   M[i,roll] = +-1/(4 |y|), M[i,pitch] = +-1/(4 |x|), M[i,yaw] = +-1/(4 c_q) (B = [1, -y, x, s c_q] of a symmetric X), and
+#   tau = (limit distance) x 4 x lever:
+#     roll  = 1.79461695 x 4 x 0.1275 = 0.9152546445 N m
+#     pitch = 1.79461695 x 4 x 0.112  = 0.8039883936 N m
+#     yaw   = 1.79461695 x 4 x 0.012  = 0.0861416136 N m
+FC3V2_TAU_MAX_HOVER = {"roll": 0.9152546445, "pitch": 0.8039883936, "yaw": 0.0861416136}
+# The hand values carry the card's decimals (10 digits); the generator's M inverse and products are exact to double rounding.
+HAND_TOL = 1e-9
+
+
+def _hover_inputs(card_path):
+    card = schema.load_yaml(card_path)
+    m, _, idle = mixer.mixer_matrix(card, card_path)
+    rotors = card["rotors"]
+    k = float(rotors["thrust_coeff"]["value"])
+    top = float(rotors["speed_range"]["value"][1])
+    mass = float(card["mass"]["value"])
+    return m, mass * gic.G, k * idle * idle, k * top * top
+
+
+def _motors_in_range(m, axis, torque, collective, f_min, f_max):
+    """Brute force: whether every motor's f_i = c M[i,thrust] + tau M[i,a] is in [f_min, f_max] (the definition of the rule)."""
+    col = rate.MIXER_COLUMN[axis]
+    return all(f_min <= collective * row[0] + torque * row[col] <= f_max for row in m)
+
+
+def test_tau_max_hover_on_the_fc3v2_card_is_the_hand_computed_value():
+    m, collective, f_min, f_max = _hover_inputs(FC3V2_CARD)
+    assert abs(collective / (0.732 * 9.80665) - 1) <= TOL and f_min == 0.0
+    rule = rl.tau_max_hover_rule(m, collective, f_min, f_max, FC3V2_CARD)
+    for ax, exact, stored in zip(rl.AXES, rule["exact"], rule["f32"]):
+        assert abs(exact / FC3V2_TAU_MAX_HOVER[ax] - 1) <= HAND_TOL, (ax, exact)
+        # Stored: an f32, never above the exact value, within one f32 step of it.
+        assert stored == rate.r32(stored) and stored <= exact and exact - stored <= exact * 2.0 ** -23, (ax, stored, exact)
+    # Control: the collective-free tau_max of rate.py step 9 is another, larger quantity (the collective may move there).
+    for ax in rl.AXES:
+        free, _, _ = rate.tau_max(m, ax, f_min, f_max)
+        assert free > 1.2 * FC3V2_TAU_MAX_HOVER[ax], (ax, free)
+
+
+def test_tau_max_hover_is_the_largest_torque_with_every_motor_in_range_and_one_step_more_leaves_it():
+    cards = [(FC3V2_CARD, "fc3v2"), (CARD, "uzh")]
+    for path, label in cards:
+        m, collective, f_min, f_max = _hover_inputs(path)
+        rule = rl.tau_max_hover_rule(m, collective, f_min, f_max, path)
+        for ax, exact in zip(rl.AXES, rule["exact"]):
+            # Both signs, just inside the value: every motor in range (symmetric clamp); just outside: some motor out, on at
+            # least one sign (the control that the value is the largest).
+            inside, outside = exact * (1 - 1e-9), exact * (1 + 1e-9)
+            assert _motors_in_range(m, ax, inside, collective, f_min, f_max), (label, ax)
+            assert _motors_in_range(m, ax, -inside, collective, f_min, f_max), (label, ax)
+            assert not (_motors_in_range(m, ax, outside, collective, f_min, f_max)
+                        and _motors_in_range(m, ax, -outside, collective, f_min, f_max)), (label, ax)
+
+
+def test_tau_max_hover_takes_the_smaller_sign_and_refuses_a_hover_outside_the_thrust_range():
+    m, collective, f_min, f_max = _hover_inputs(FC3V2_CARD)
+    # Control for the symmetric rule: lift one motor's roll lever so that the two signs differ; the result is the smaller.
+    skewed = [list(row) for row in m]
+    skewed[0][rate.MIXER_COLUMN["roll"]] *= 2.0
+    both, pos, neg = rl.tau_max_hover(skewed, "roll", collective, f_min, f_max)
+    sym, pos0, neg0 = rl.tau_max_hover(m, "roll", collective, f_min, f_max)
+    assert abs(pos0 / neg0 - 1) <= TOL and abs(sym / pos0 - 1) <= TOL
+    assert pos != neg and both == min(pos, neg) and both < sym
+    # Hover outside the thrust range on a motor (a collective above 4 f_max): no value, and the rule refuses.
+    assert rl.tau_max_hover(m, "roll", 4.0 * f_max + 1.0, f_min, f_max) == (None, None, None)
+    with pytest.raises(gpc.GenError, match="tau_max_hover of axis roll"):
+        rl.tau_max_hover_rule(m, 4.0 * f_max + 1.0, f_min, f_max, FC3V2_CARD)
+
+
+def test_the_design_emits_tau_max_hover_per_axis_and_the_report_names_it(lead):
+    entries = dict(rl.entries_from(lead))
+    th = lead["tau_max_hover"]
+    for ax, stored in zip(rl.AXES, th["f32"]):
+        e = entries[f"rate_tau_max_hover_{ax}"]
+        assert e["type"] == "f32" and e["value"] == stored and e["unit"] == "N m" and e["sigma"] == schema.UNKNOWN
+        assert "rounded down to f32" in e["method"] and "hover m g" in e["method"]
+    assert any(line.startswith("tau_max_hover (rule step 15") for line in rl.report_lines(lead))
+    m, collective, f_min, f_max = _hover_inputs(CARD)
+    assert abs(th["collective"] / collective - 1) <= TOL

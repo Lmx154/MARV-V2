@@ -6,6 +6,7 @@
 // value" named with its reason. Nothing is a product value.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -44,6 +45,11 @@ constexpr std::uint64_t kT0Us = 5000;
 // dt as the loop forms it: float(dt_us) / float(1e6), one rounding.
 constexpr float kDt = static_cast<float>(kPeriodUs) / static_cast<float>(prim::kMicrosecondsPerSecond);
 constexpr double kDtD = static_cast<double>(kDt);
+
+// The clamp of the term (decision 0058, "Open"), set so that it never binds in the known-answer and sensitivity runs
+// below: k = 1 and a scenario test value tau_max_hover far above the term (J_ref up to 0.03 kg m^2, the scripted
+// setpoint moving r by up to about 0.5 rad/s per 1 ms tick: at most about 15 N m).
+constexpr float kClampFar = 1000.0F;  // scenario test value, N m
 
 // Product-independent geometry and mixer: the product parameter set, as the L4 suite does.
 struct Fixture {
@@ -226,6 +232,8 @@ TEST(L6DTerm, ControlFilterOrFeedforwardOnBreaksTheBitIdentity) {
   EXPECT_FALSE(matches_todays_law(fx, ff_on));
   RateConfig<float> ref_ff_on = pid_config(fx);
   ref_ff_on.ref_ff_inertia = V3(0.01F, 0.02F, 0.03F);
+  ref_ff_on.ref_ff_clamp_k = 1.0F;
+  ref_ff_on.tau_max_hover = V3(kClampFar, kClampFar, kClampFar);
   EXPECT_FALSE(matches_todays_law(fx, ref_ff_on));
 }
 
@@ -241,6 +249,8 @@ const V3 kRefJ(0.01F, 0.02F, 0.03F);
 RateConfig<float> ref_ff_config(const Fixture& fx, const V3& j_ref) {
   RateConfig<float> c = pid_config(fx);
   c.ref_ff_inertia = j_ref;
+  c.ref_ff_clamp_k = 1.0F;
+  c.tau_max_hover = V3(kClampFar, kClampFar, kClampFar);
   return c;
 }
 
@@ -358,6 +368,122 @@ TEST(L6RefFeedforward, ControlATermThatReadsTheGyroBreaksTheSensitivityCheck) {
   gyro_term.inertia = V3(0.01F, 0.02F, 0.03F);
   EXPECT_GT(sensitivity_ratio(fx, gyro_term, &term_max), 1.0);
 }
+
+// ---- The clamp of the reference feed-forward (decision 0058, "Open") ------------------------------------------------
+// In execute the term is limited per axis, symmetrically, to k tau_max_hover,a. Three loops run one setpoint script on a
+// constant gyro (the term depends on the setpoint path only): the clamped loop (k, tau_max_hover), the far loop (k = 1
+// and kClampFar: the unclamped law, which these demands stay far below) and the off loop (J_ref = 0, the PID part). The
+// PID part is the same float in all three (nothing feeds the term back), so the clamped loop's torque is the off
+// loop's plus the term, and a bound is checked as u_on == fl(u_off + (+-bound)), bit for bit.
+//
+// Scenario test values: k = 0.5 (Luis's product value, 2026-10-19, used here as a test input), tau_max_hover per axis
+// (N m), distinct per axis; the slam is +-kSlamRp rad/s on roll and pitch and +-yaw_amp rad/s on yaw, held for
+// kHoldTicks ticks, so r settles (kHoldTicks ticks are 1 s, 33 and more times the largest tau_ref) before the reversal.
+// With J_ref (0.01, 0.02, 0.03) kg m^2 and tau_ref (0.01, 0.02, 0.03) s the reversal asks about 7.6 (roll), 7.8 (pitch)
+// and 19.7 (yaw, amplitude 10) N m: below k tau_max_hover on roll and pitch (10), 1.97 tau_max_hover on yaw (5 bound).
+constexpr float kClampK = 0.5F;
+const V3 kTauMaxHover(20.0F, 20.0F, 10.0F);
+constexpr float kSlamRp = 4.0F;
+constexpr float kYawAmpBig = 10.0F;
+constexpr float kYawAmpSmall = 3.0F;  // the reversal asks about 5.9 N m: below tau_max_hover,yaw, above k tau_max_hover,yaw
+constexpr std::size_t kHoldTicks = 1000;
+// The requirement's figure: the yaw reversal asked at least 1.33 tau_max (decision 0058, "Open").
+constexpr float kYawDemandRatio = 1.33F;
+
+V3 slam_sp(std::size_t n, float yaw_amp) {
+  const float sign = n <= kHoldTicks ? 1.0F : -1.0F;
+  return V3(sign * kSlamRp, sign * kSlamRp, sign * yaw_amp);
+}
+
+struct ClampRun {
+  std::vector<V3> clamped;
+  std::vector<V3> far;
+  std::vector<V3> off;
+};
+
+RateConfig<float> clamp_config(const Fixture& fx, float k, const V3& tau_max_hover) {
+  RateConfig<float> c = ref_ff_config(fx, kRefJ);
+  c.ref_ff_clamp_k = k;
+  c.tau_max_hover = tau_max_hover;
+  return c;
+}
+
+ClampRun clamp_run(const Fixture& fx, float k, float yaw_amp) {
+  Rig clamped;
+  Rig far;
+  Rig off;
+  clamped.init(fx, clamp_config(fx, k, kTauMaxHover));
+  far.init(fx, ref_ff_config(fx, kRefJ));
+  off.init(fx, pid_config(fx));
+  ClampRun run;
+  for (std::size_t n = 0; n <= 2 * kHoldTicks; ++n) {
+    const V3 sp = slam_sp(n, yaw_amp);
+    run.clamped.push_back(clamped.step(V3(), sp));
+    run.far.push_back(far.step(V3(), sp));
+    run.off.push_back(off.step(V3(), sp));
+  }
+  return run;
+}
+
+// The term as the far loop adds it: u_far - u_off (one rounding more than the term; used for magnitudes only).
+float demand(const ClampRun& run, std::size_t n, std::size_t a) { return run.far[n][a] - run.off[n][a]; }
+
+// The step the yaw stick reverses at, and the first step of the slam: the two ticks where the term is largest.
+constexpr std::size_t kReversalTick = kHoldTicks + 1;
+
+// Requirement 1: a yaw reversal that asked at least 1.33 tau_max_hover now has |u_ff,yaw| == k tau_max_hover exactly.
+TEST(L6RefFeedforwardClamp, AYawReversalAboveTheBoundIsHeldExactlyAtKTauMaxHover) {
+  REQUIRE_FIXTURE();
+  const ClampRun run = clamp_run(fx, kClampK, kYawAmpBig);
+  const float bound = kClampK * kTauMaxHover[rate::kYawAxis];
+  EXPECT_GE(std::fabs(demand(run, kReversalTick, rate::kYawAxis)), kYawDemandRatio * kTauMaxHover[rate::kYawAxis]);
+  // The reversal drives u_ff negative: the bound's negative end; the first slam (from rest, about 9.8 N m) the positive end.
+  EXPECT_TRUE(run.clamped[kReversalTick][rate::kYawAxis] == run.off[kReversalTick][rate::kYawAxis] + (-bound));
+  EXPECT_GT(demand(run, 1, rate::kYawAxis), bound);
+  EXPECT_TRUE(run.clamped[1][rate::kYawAxis] == run.off[1][rate::kYawAxis] + bound);
+  // Control: the check is not vacuous. The far loop (k = 1, kClampFar) does not sit at the bound, so the same
+  // equality fails there.
+  EXPECT_FALSE(run.far[kReversalTick][rate::kYawAxis] == run.off[kReversalTick][rate::kYawAxis] + (-bound));
+}
+
+// Requirement 2: roll and pitch slams below the bound are bit-identical to the unclamped law, and so is every tick of the
+// run on those axes; the term is live there (not a comparison of zero terms).
+TEST(L6RefFeedforwardClamp, RollAndPitchSlamsBelowTheBoundAreBitIdenticalToTheUnclampedLaw) {
+  REQUIRE_FIXTURE();
+  const ClampRun run = clamp_run(fx, kClampK, kYawAmpBig);
+  for (const std::size_t a : {rate::kRollAxis, rate::kPitchAxis}) {
+    const float bound = kClampK * kTauMaxHover[a];
+    float largest = 0.0F;
+    for (std::size_t n = 0; n < run.clamped.size(); ++n) {
+      const float got = run.clamped[n][a];
+      const float want = run.far[n][a];
+      EXPECT_EQ(std::memcmp(&got, &want, sizeof(float)), 0) << a << " " << n;
+      largest = std::max(largest, std::fabs(demand(run, n, a)));
+    }
+    EXPECT_LT(largest, bound) << a;
+    EXPECT_GT(largest, 0.1F * bound) << a;  // scenario test value: the term is a sizable part of the bound
+  }
+}
+
+// Requirement 3, the control with the clamp disabled at the threshold: with k = 1 and every demand below
+// tau_max_hover, the output is the unclamped law bit for bit on all three axes; with k = 0.5 the same run is clamped on yaw
+// (this demand is above k tau_max_hover,yaw), so the comparison can fail.
+TEST(L6RefFeedforwardClamp, KOneWithTheDemandBelowTauMaxHoverIsTheUnclampedLawBitForBit) {
+  REQUIRE_FIXTURE();
+  const ClampRun one = clamp_run(fx, 1.0F, kYawAmpSmall);
+  float largest = 0.0F;
+  for (std::size_t n = 0; n < one.clamped.size(); ++n) {
+    EXPECT_TRUE(bits_equal(one.clamped[n], one.far[n])) << n;
+    largest = std::max(largest, std::fabs(demand(one, n, rate::kYawAxis)));
+  }
+  EXPECT_LT(largest, kTauMaxHover[rate::kYawAxis]);
+  EXPECT_GT(largest, kClampK * kTauMaxHover[rate::kYawAxis]);
+  const ClampRun half = clamp_run(fx, kClampK, kYawAmpSmall);
+  EXPECT_FALSE(bits_equal(half.clamped[kReversalTick], half.far[kReversalTick]));
+}
+
+// The clamp does not touch the bypass (angle mode, decision 0058 invariant I3): the same configuration run through
+// execute_bypass with and without the reference feed-forward is covered by L5RateBypassNoReferenceFeedforward.
 
 // ---- D low-pass: the step response of the discrete first-order filter ---------------------------------------------
 // Input y_n = n q on every axis, q = 2^-10 rad/s per tick (a scenario test value; a power of two, so every y_n and every
@@ -716,6 +842,31 @@ TEST(L6DTerm, ValidateAcceptsZeroAndRejectsNegativeAndNonFinite) {
     EXPECT_EQ(with([&](auto& c) { c.ref_ff_inertia[a] = nan; }), rate::ConfigError::NonFinite) << a;
     EXPECT_EQ(with([&](auto& c) { c.ref_ff_inertia[a] = inf; }), rate::ConfigError::NonFinite) << a;
   }
+  // The reference feed-forward is clamped: with some J_ref > 0 the validate needs k in (0, 1] and a positive
+  // tau_max_hover on each axis with J_ref > 0 (a missing clamp refuses, never passes unclamped).
+  RateConfig<float> clamped = ok;
+  clamped.ref_ff_inertia = V3(0.0F, 0.02F, 0.04F);
+  clamped.ref_ff_clamp_k = kClampK;
+  clamped.tau_max_hover = V3(0.0F, kTauMaxHover[1], kTauMaxHover[2]);
+  ASSERT_EQ(rate::validate(clamped), rate::ConfigError::None);
+  const auto with_clamp = [&](auto mutate) {
+    RateConfig<float> c = clamped;
+    mutate(c);
+    return rate::validate(c);
+  };
+  EXPECT_EQ(with_clamp([&](auto& c) { c.ref_ff_clamp_k = 1.0F; }), rate::ConfigError::None);
+  for (const float k : {0.0F, -0.5F, 1.0F + 0x1p-23F, 2.0F}) {
+    EXPECT_EQ(with_clamp([&](auto& c) { c.ref_ff_clamp_k = k; }), rate::ConfigError::FeedforwardClamp) << k;
+  }
+  EXPECT_EQ(with_clamp([&](auto& c) { c.ref_ff_clamp_k = nan; }), rate::ConfigError::NonFinite);
+  EXPECT_EQ(with_clamp([&](auto& c) { c.tau_max_hover[2] = inf; }), rate::ConfigError::NonFinite);
+  for (std::size_t a = 1; a < kA; ++a) {
+    EXPECT_EQ(with_clamp([&](auto& c) { c.tau_max_hover[a] = 0.0F; }), rate::ConfigError::FeedforwardClamp) << a;
+    EXPECT_EQ(with_clamp([&](auto& c) { c.tau_max_hover[a] = -1.0F; }), rate::ConfigError::FeedforwardClamp) << a;
+  }
+  // Without a reference feed-forward the clamp is not read: k = 0 and tau_max_hover = 0 validate.
+  EXPECT_EQ(with_clamp([&](auto& c) { c.ref_ff_inertia = V3(); c.ref_ff_clamp_k = 0.0F; c.tau_max_hover = V3(); }),
+            rate::ConfigError::None);
   // The inert configuration is RateConfig's default; from the product parameter set J stays 0 (the feed-forward is
   // inert until stage (e), decision 0014), while T_f is a product parameter.
   EXPECT_EQ(RateConfig<float>{}.d_filter_tau[0], 0.0F);

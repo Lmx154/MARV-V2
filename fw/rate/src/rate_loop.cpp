@@ -44,6 +44,8 @@ const char* message(ConfigError e) noexcept {
              "filter time constant is negative";
     case ConfigError::Timing:
       return "rate: the tick period or divisor is below 1, or rate_period_tolerance_us is not in [0, half a tick)";
+    case ConfigError::FeedforwardClamp:
+      return "rate: with a reference feed-forward, rate_ff_clamp_k is not in (0, 1] or a tau_max_hover is not positive";
   }
   return "rate: unknown configuration error";
 }
@@ -80,10 +82,13 @@ RateConfig<float> from_params(ParamTable t) noexcept {
     c.motor_tau = param_value<ParamId::motor_tau>(t);
     c.ff_filter_tau = param_value<ParamId::rate_ff_filter_tau>(t);
   }
-  // The reference feed-forward only while rate_ref_ff_enable is 1 (decision 0058); otherwise J_ref keeps
-  // RateConfig's 0.
+  // The reference feed-forward only while rate_ref_ff_enable is 1 (decision 0058); otherwise J_ref, k and tau_max_hover
+  // keep RateConfig's 0.
   if (param_value<ParamId::rate_ref_ff_enable>(t) == 1) {
     c.ref_ff_inertia = load_axes<ParamId::inertia_xx, ParamId::inertia_yy, ParamId::inertia_zz>(t);
+    c.ref_ff_clamp_k = param_value<ParamId::rate_ff_clamp_k>(t);
+    c.tau_max_hover = load_axes<ParamId::rate_tau_max_hover_roll, ParamId::rate_tau_max_hover_pitch,
+                                ParamId::rate_tau_max_hover_yaw>(t);
   }
   return c;
 }

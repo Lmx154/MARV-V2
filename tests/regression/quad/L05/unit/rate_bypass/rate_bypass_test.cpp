@@ -347,6 +347,9 @@ TEST(L5RateBypassSwitchBack, NegativeControlAPrefilterSeededFromTheGyroDiffers) 
 // Scenario test values: J_ref per axis (kg m^2), distinct so an axis mix-up shows; with the stream's references of
 // +-1 rad/s and alpha about 0.1, J_ref (r_n - r_(n-1)) / dt is of the order of the PID torque, so the term is visible.
 constexpr std::array<float, kA> kRefInertia{0.01F, 0.02F, 0.03F};
+// The term is clamped (decision 0058, "Open"): k = 1 and a scenario test value tau_max_hover far above the term (a few
+// N m at most), so the clamp never binds here and the pair compares the term itself.
+constexpr float kClampFar = 1000.0F;  // N m
 
 // Loop F (J_ref = kRefInertia) and loop Z (J_ref = 0) on one input stream, both bypassed or both through execute, with
 // the same scripted allocations. Returns the first execution at which any output or state differs, or kNone.
@@ -354,7 +357,9 @@ std::size_t ref_ff_pair(bool bypass) {
   RateConfig<float> with_ff = test_config();
   for (std::size_t a = 0; a < kA; ++a) {
     with_ff.ref_ff_inertia[a] = kRefInertia[a];
+    with_ff.tau_max_hover[a] = kClampFar;
   }
+  with_ff.ref_ff_clamp_k = 1.0F;
   Rig f(with_ff);
   Rig z(test_config());
   Rng in{kSeed};

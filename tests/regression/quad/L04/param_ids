@@ -24,3 +24,6 @@ rate_period_tolerance_us
 # rate_ref_ff_enable: the switch of the rate loop's reference feed-forward (model following, QF-2, decision 0058), a
 # scenario-register entry (design/scenario_values.yaml 0, fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml 1).
 rate_ref_ff_enable
+# rate_ff_clamp_k: the clamp of that reference feed-forward as a fraction of the hover torque authority (decision 0058), a
+# scenario-register entry (0.5 in design/scenario_values.yaml and fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml).
+rate_ff_clamp_k

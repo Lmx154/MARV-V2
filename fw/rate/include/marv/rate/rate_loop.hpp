@@ -25,7 +25,10 @@
 // Reference feed-forward (model following, QF-2, decision 0058), when some J_ref,a > 0, in execute only (never in
 // execute_bypass): u_n += J_ref (r_n - r_(n-1)) / dt_n, the torque that gives inertia J_ref the reference model's rate
 // change over the execution. It is a function of the setpoint path alone (r after its seed), so the loop seen from the
-// gyro is unchanged. All J_ref,a = 0 skips the term: u is exactly the law above.
+// gyro is unchanged. All J_ref,a = 0 skips the term: u is exactly the law above. The term is clamped per axis and
+// symmetrically before it is added (decision 0058, "Open"): |J_ref (r_n - r_(n-1)) / dt_n| <= k tau_max_hover,a, k =
+// ref_ff_clamp_k in (0, 1] and tau_max_hover,a the torque authority of axis a at the hover collective (rule step 15 of
+// tools/card/rate_lead.py). A term inside the bound is added unchanged, bit for bit.
 // freeze_n is recorded by record_allocation from execution n's allocation and gates the increment applied at
 // execution n + 1, so the update has no lag.
 
@@ -65,6 +68,8 @@ struct RateConfig {
   T motor_tau{};                 // motor time constant tau_m, s
   T ff_filter_tau{};             // T_ff, the filter of the feed-forward derivative, s; 0 = unfiltered
   prim::Vec3<T> ref_ff_inertia{};  // J_ref, kg*m^2, [roll, pitch, yaw]; all 0 = no reference feed-forward
+  T ref_ff_clamp_k{};             // k in (0, 1]: the reference feed-forward is clamped at k tau_max_hover
+  prim::Vec3<T> tau_max_hover{};  // N*m, [roll, pitch, yaw]: the axis torque authority at the hover collective
   // Effectiveness B of decision 0004 item 2: column i = [1, -y_i, x_i, s_i c_q], index = logical motor - 1.
   std::array<T, kMotors> rotor_x{};   // m, FRD
   std::array<T, kMotors> rotor_y{};   // m, FRD
@@ -78,16 +83,28 @@ struct RateConfig {
   std::int32_t period_tolerance_us{};
 };
 
-enum class ConfigError : std::uint8_t { None, NonFinite, NegativeGain, TauRef, Period, DFilter, Feedforward, Timing };
+enum class ConfigError : std::uint8_t {
+  None,
+  NonFinite,
+  NegativeGain,
+  TauRef,
+  Period,
+  DFilter,
+  Feedforward,
+  Timing,
+  FeedforwardClamp
+};
 
 // The first violated rule, else None. Written with negated comparisons, so a NaN is rejected.
 template <class T>
 [[nodiscard]] ConfigError validate(const RateConfig<T>& c) noexcept {
   using std::isfinite;
-  bool finite = isfinite(c.period) && isfinite(c.torque_ratio) && isfinite(c.motor_tau) && isfinite(c.ff_filter_tau);
+  bool finite = isfinite(c.period) && isfinite(c.torque_ratio) && isfinite(c.motor_tau) && isfinite(c.ff_filter_tau) &&
+                isfinite(c.ref_ff_clamp_k);
   for (std::size_t a = 0; a < kTorqueAxes; ++a) {
     finite = finite && isfinite(c.kp[a]) && isfinite(c.ki[a]) && isfinite(c.kd[a]) && isfinite(c.tau_ref[a]) &&
-             isfinite(c.d_filter_tau[a]) && isfinite(c.inertia[a]) && isfinite(c.ref_ff_inertia[a]);
+             isfinite(c.d_filter_tau[a]) && isfinite(c.inertia[a]) && isfinite(c.ref_ff_inertia[a]) &&
+             isfinite(c.tau_max_hover[a]);
   }
   for (std::size_t i = 0; i < kMotors; ++i) {
     finite = finite && isfinite(c.rotor_x[i]) && isfinite(c.rotor_y[i]) && isfinite(c.yaw_sign[i]);
@@ -119,6 +136,19 @@ template <class T>
   }
   if (!ff_ok) {
     return ConfigError::Feedforward;
+  }
+  // The reference feed-forward is clamped: a configuration with some J_ref,a > 0 needs k in (0, 1] and, on each such
+  // axis, a positive tau_max_hover,a.
+  bool ref_ff = false;
+  bool clamp_ok = true;
+  for (std::size_t a = 0; a < kTorqueAxes; ++a) {
+    if (c.ref_ff_inertia[a] > T(0)) {
+      ref_ff = true;
+      clamp_ok = clamp_ok && c.tau_max_hover[a] > T(0);
+    }
+  }
+  if (ref_ff && !(clamp_ok && c.ref_ff_clamp_k > T(0) && c.ref_ff_clamp_k <= T(1))) {
+    return ConfigError::FeedforwardClamp;
   }
   return ConfigError::None;
 }
@@ -187,6 +217,9 @@ class RateLoop {
     ff_on_ = cfg.inertia[kRollAxis] > T(0) || cfg.inertia[kPitchAxis] > T(0) || cfg.inertia[kYawAxis] > T(0);
     ref_ff_on_ = cfg.ref_ff_inertia[kRollAxis] > T(0) || cfg.ref_ff_inertia[kPitchAxis] > T(0) ||
                  cfg.ref_ff_inertia[kYawAxis] > T(0);
+    for (std::size_t a = 0; a < kTorqueAxes; ++a) {
+      ref_ff_limit_[a] = cfg.ref_ff_clamp_k * cfg.tau_max_hover[a];
+    }
     reset_state();
     have_t_ = false;
     latched_ = false;
@@ -324,7 +357,8 @@ class RateLoop {
         u[a] = cfg_.kp[a] * e + integral_[a] + d;
         if constexpr (kPrefilter) {
           if (ref_ff_on_) {
-            u[a] = u[a] + cfg_.ref_ff_inertia[a] * (r_[a] - r_prev) / dt;
+            const T u_ff = cfg_.ref_ff_inertia[a] * (r_[a] - r_prev) / dt;
+            u[a] = u[a] + std::min(std::max(u_ff, -ref_ff_limit_[a]), ref_ff_limit_[a]);
           }
         }
         e_[a] = e;
@@ -396,6 +430,7 @@ class RateLoop {
   prim::Vec3<T> gdot_f_{};   // the filtered derivative of w x (J w)
   bool ff_on_ = false;
   bool ref_ff_on_ = false;
+  prim::Vec3<T> ref_ff_limit_{};  // k tau_max_hover, the bound of |u_ff| per axis
   std::array<bool, kTorqueAxes> freeze_{};
   TimeUs t_us_ = 0;
   bool have_t_ = false;
@@ -410,7 +445,8 @@ class RateLoop {
 // tick_period_num_us, tick_period_den, rate_loop_divisor and rate_period_tolerance_us, rotor_position_m<i>_{x,y},
 // rotor_yaw_sign_m<i> and rotor_torque_ratio. With rate_ff_enable == 1 also inertia_{xx,yy,zz}, motor_tau and
 // rate_ff_filter_tau (the feed-forward); any other value leaves them 0. With rate_ref_ff_enable == 1 also
-// ref_ff_inertia = inertia_{xx,yy,zz} (the reference feed-forward); any other value leaves it 0. Not validated.
+// ref_ff_inertia = inertia_{xx,yy,zz} (the reference feed-forward), ref_ff_clamp_k = rate_ff_clamp_k and tau_max_hover =
+// rate_tau_max_hover_{roll,pitch,yaw}; any other value leaves them 0. Not validated.
 // pre: params_init succeeded.
 [[nodiscard]] RateConfig<float> from_params() noexcept;
 

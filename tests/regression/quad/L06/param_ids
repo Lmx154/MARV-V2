@@ -29,3 +29,8 @@ rate_d_filter_tau_yaw
 # rule step 9, flatten.py --out-rate-lead). J and tau_m are the card's inertia_xx/yy/zz and motor_tau (L01).
 rate_ff_enable
 rate_ff_filter_tau
+# The torque authority of each axis at the hover collective, the base of the reference feed-forward's clamp (decision 0058;
+# derived by rule, tools/card/rate_lead.py rule step 15, flatten.py --out-rate-lead).
+rate_tau_max_hover_roll
+rate_tau_max_hover_pitch
+rate_tau_max_hover_yaw
