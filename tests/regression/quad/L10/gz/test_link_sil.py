@@ -843,7 +843,8 @@ def test_telemetry_streams_at_their_rates_capped_and_consistent_with_the_log(dia
             continue
         frame = max((x for x in run["manuals"] if x["t_us"] <= t_us), key=lambda x: x["t_us"])
         assert m.chancount == 16
-        want = [math.floor(RC_US_CENTRE + RC_US_HALF_SPAN * f32(c) + 0.5) for c in frame["channels"]]  # lround, half away from 0
+        # the firmware's binary32 sum, then lround (half away from zero; every value here is positive)
+        want = [math.floor(f32(RC_US_CENTRE + f32(RC_US_HALF_SPAN * f32(c))) + 0.5) for c in frame["channels"]]
         assert [getattr(m, f"chan{k}_raw") for k in range(1, 17)] == want, t_us
     for m in got["ATTITUDE_TARGET"]:
         t_us = m.time_boot_ms * 1000
