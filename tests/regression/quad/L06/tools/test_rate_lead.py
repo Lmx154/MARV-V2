@@ -564,7 +564,7 @@ def test_the_design_emits_tau_max_hover_per_axis_and_the_report_names_it(lead):
     for ax, stored in zip(rl.AXES, th["f32"]):
         e = entries[f"rate_tau_max_hover_{ax}"]
         assert e["type"] == "f32" and e["value"] == stored and e["unit"] == "N m" and e["sigma"] == schema.UNKNOWN
-        assert "rounded down to f32" in e["method"] and "hover m g" in e["method"]
+        assert "f32 rounded down" in e["method"] and "rule step 15" in e["method"]
     assert any(line.startswith("tau_max_hover (rule step 15") for line in rl.report_lines(lead))
     m, collective, f_min, f_max = _hover_inputs(CARD)
     assert abs(th["collective"] / collective - 1) <= TOL

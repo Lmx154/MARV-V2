@@ -1358,18 +1358,14 @@ TAU_REF_MF_METHOD = (
     "tau_max/(J (1 + inertia_robustness_band)); rounded up to f32; asserted: J rate_max/tau_ref <= tau_max at J (1 -+ "
     "inertia_robustness_band))")
 TAU_REF_MF_SOURCE = "the gain rule's inputs (decision 0014) and the scenario register rate_ref_ff_enable; decision 0058"
+# Kept short: the FC3v2 ESKF set's config file sits near half a config slot (tools/config/mcfg.py stores this text once).
 TAU_MAX_HOVER_METHOD = (
-    "derived(tau_max_hover,a = the largest symmetric torque on axis a alone that keeps every motor's thrust within [k idle^2, k "
-    "speed_max^2] while the collective stays at hover m g: min over both signs and the motors of (bound - m g M[i,thrust]) / "
-    "(+-M[i,a]), bound the limit the torque pushes toward; rounded down to f32; rule step 15 of tools/card/rate_lead.py)")
-TAU_MAX_HOVER_SOURCE = ("vehicle card mass, rotors thrust_coeff and speed_range, the mixer M, standard gravity (gen_imu_config.G); "
-                        "decision 0058 (the u_ff clamp); read by the rate loop only while rate_ref_ff_enable is 1")
+    "derived(largest symmetric torque on the axis with every motor in [f_min, f_max] at collective m g, f32 rounded down; "
+    "rate_lead.py rule step 15)")
+TAU_MAX_HOVER_SOURCE = "card mass, thrust_coeff, speed_range, mixer M; decision 0058"
 T_FF_METHOD = (
-    "derived(T_ff = the smallest T_ff >= 0 whose combined RMS of the D path and the lag-compensated omega x J omega "
-    "feed-forward path per motor at rate_max (every sign pattern, every notch bypassed) is at most d_path_noise_budget x "
-    "the hover DShot step's thrust, on the firmware model at the guarded f32 design (rule step 9 of "
-    "tools/card/rate_lead.py), rounded up to f32; read by the rate loop only while rate_ff_enable is 1; decision 0014, "
-    "owner decision 8)")
+    "derived(smallest T_ff >= 0 keeping the D path plus omega x J omega feed-forward noise per motor at rate_max within "
+    "d_path_noise_budget x the hover DShot step's thrust, f32 rounded up; rate_lead.py rule step 9; decision 0014)")
 
 
 def tau_ref_lead(result):
