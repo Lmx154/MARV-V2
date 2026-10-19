@@ -74,7 +74,9 @@ s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.bind(("127.0.0.1", 0))
 print(s.getsockname()[1])')"
 
-helper_args=(--port 0 --runs-dir "${work}/runs" --sil-udp-port "${udp_port}")
+# The helper refuses a run while the host's heavy lock is held (H-3). This script is often run under that lock (ci/heavy.sh), so the
+# helper watches a lock file of its own: the run is this script's own heavy work, which the outer lock already covers.
+helper_args=(--port 0 --runs-dir "${work}/runs" --sil-udp-port "${udp_port}" --heavy-lock "${work}/heavy.lock")
 if [[ "${mode}" == light ]]; then
   echo "##### fake vehicle on udp ${udp_port}"
   mkdir -p build/gs-e2e/defs
