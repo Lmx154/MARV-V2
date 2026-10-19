@@ -115,6 +115,10 @@ That is outside logging; for the flight image it means a re-arm within about a s
 **Second instrumented run, the EMB-3 capture (600 s of logging, ring 249856 B, same logger code): `backlog_post_write_max` 9618 cells = 153888 B =
 0.4901 s**, longest write 163.3 ms, `pass_max_us` 553273, 0 drops while logging. So the ring occupancy in the worst moment of two runs is 0.273 s
 and 0.490 s: one run is not enough to call the worst case.
+Both figures are the maximum while the logger was Logging. The counter is not reset at `log stop`, so the final status lines read higher
+(16382 in soak 2, 15615 in the EMB-3 capture): that is one 7168 B write counted after Absent -> Ready, the next file's header written during
+its prepare, while the ring has been full for about a second (the Ready-state drops above). It is outside logging and does not size EMB-6.
+Budget: sd_log_write_stall_max_s stays 0.809 s (Luis, 2026-10-19: "the sd stall is fine."); the proposed patch is kept for unit U4.
 
 **Proposed replacement of the placeholder** `sd_log_write_stall_max_s` (0.809 s, unit 13): **0.491 s** (the maximum of the instrumented runs,
 rounded up). Not applied to `design/budget.yaml`: see `budget_sd_log_write_stall_max_s.proposed.patch` (it applies with `git apply`) and the
