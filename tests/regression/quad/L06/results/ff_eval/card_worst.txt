@@ -4,7 +4,7 @@ label: design model (T3), not a validation run; reported, not asserted (decision
 inputs:
   vehicles/uzh_neurobem_5in.yaml sha256 62d5d522f19cf7022c87d5e9a0a9ab4e4d3a31d7759a5166c43cda959e23f11f
   design/budget.yaml sha256 b77f03f047279ec5a7f2dae0b3ab900427be4fdadf133124c6bea33694f5739b
-  design/scenario_values.yaml sha256 ddb8c560770c1a19c16b0823c2f3e719b139db8e01fa25c5cf18409550082249
+  design/scenario_values.yaml sha256 74b8de5777ef34a024fa4e9a30fbc60cd20a5e95b369e712a709326a68899847
   sensors/profiles/marv_v2_board_default.yaml sha256 ce28e3d7ec2f3baffa4a84c325d385fa695d271ad5f949417e226b06657855cd
   scenarios/quad/L04/acro.yaml sha256 5ef270f614862dfb42e9a86d0158f8e553c3bdc8de4ee8ef20c25abe5075f3d5
   tests/regression/quad/L04/t3/reference/rate_t3_inputs.txt sha256 d0bcac90260c0d8a4cf90e43e1240d13514e5bf2f445c05a42f21e0498163e0c

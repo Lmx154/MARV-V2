@@ -62,9 +62,9 @@ include the sensor profile the card names (imu odr_error, rotor_speed esc_clock_
 
 --out-rate-lead <file> and --out-attitude-lead <file> (optional, need --scenario; each refuses to be given with its L4/L5
 twin --out-rate / --out-attitude, which write the same parameter names) are the stage (c) switch of decision 0014: the same
-parameter files and reports from the stage (c) rules instead of rate.py and attitude.py. --out-rate-lead writes the 16
-rate-loop parameters rate_{kp,ki,kd,d_filter_tau,tau_ref}_{roll,pitch,yaw} and rate_ff_filter_tau (rate_lead.py: PI x lead
-with the gyro chain; tau_ref by rate.py rule step 9 with rate_lead's tau_cl; T_ff by rule step 9) and the report <file stem>_report.txt. --out-attitude-lead writes the
+parameter files and reports from the stage (c) rules instead of rate.py and attitude.py. --out-rate-lead writes the 19
+rate-loop parameters rate_{kp,ki,kd,d_filter_tau,tau_ref}_{roll,pitch,yaw}, rate_ff_filter_tau and rate_tau_max_hover_{roll,pitch,yaw} (rate_lead.py: PI x lead
+with the gyro chain; tau_ref by rate.py rule step 9 with rate_lead's tau_cl; T_ff by rule step 9; tau_max_hover by rule step 15) and the report <file stem>_report.txt. --out-attitude-lead writes the
 same five parameters as --out-attitude (att_kp, att_yaw_weight, att_loop_ratio, att_yaw_alpha_min, att_yaw_t_cross) from
 attitude_lead.py on the stage (c) rate loop, and its report (which sets the new design against today's attitude.py one); the
 rate loop is designed in memory for it, once for both flags. The sensor profile the card names feeds the gyro chain.
