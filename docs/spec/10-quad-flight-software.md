@@ -184,7 +184,9 @@ adding more complex features gradually" (decision 0026).
   a later board file.
 - One driver for the board's IMU (LSM6DSV over SPI, FIFO read), producing the existing IMU sample struct, with an
   LSM6DSV sensor profile sourced from its datasheet.
-- PIO DShot600 output. eRPM decode and the RPM notches wait for the L6 resume; the gyro chain runs its low-pass stages.
+- PIO DShot600 output with bidirectional DShot eRPM decode on the FC3v2 target (pulled forward, decision 0057; checked
+  by L9's pass bar: the decode matches an independent speed reference). The RPM notches wait for the L6 resume; the gyro
+  chain runs its low-pass stages.
 - Single core unless EMB-3 fails with measured stage times; the core split (§5.2) and SRAM placement follow the
   measurement, not the plan.
 - Flight timing never halts the firmware after arming: a sample spacing outside the IMU profile's clock bound, or a
@@ -255,7 +257,7 @@ adding more complex features gradually" (decision 0026).
 
 **Deferred until after M4** (resumed in the order Luis picks): the rest of L6 (c)–(e) (feed-forward, DShot diffusion,
 noise Monte Carlo, C6a); L7 shadow mode and its Monte Carlo; L8's Gazebo pilot (its joystick bridge is the GCS's SIL pilot bridge, ground spec §3, decision 0056); the rest of L9
-(eRPM, core split, SRAM placement if timing holds without them); an in-process `marv_plant` closed loop
+(core split, SRAM placement if timing holds without them; eRPM moved into M1, decision 0057); an in-process `marv_plant` closed loop
 with truth dispersed inside the card's uncertainties, replacing Gazebo for development checks; plant fidelity (rotor
 inertia, battery and duty-mode ESC, IMU lever arm; drag moved into M4, decision 0049); Gazebo ground contact (a ground plane and its
 contact force into `marv_plant`'s specific force, decision 0042); vertical-loop tilt compensation; the
