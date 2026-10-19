@@ -109,6 +109,16 @@ target_link_libraries(unit_quad_fc_bench_profile PRIVATE
 marv_apply_flags(unit_quad_fc_bench_profile)
 marv_frozen_suite(unit_quad_fc_bench_profile)
 
+# The write clamp of the bench profile (L-7: the DShot written never exceeds the fixed bench cap, whatever the configuration
+# holds): the same test source against the library with the seam that overwrites the configured levels past validate
+# (MARV_QUAD_FC_BENCH_PROFILE_FAULT_INJECT). Only the clamp tests run here; the others run in unit_quad_fc_bench_profile.
+add_executable(unit_quad_fc_bench_profile_clamp quad_fc_bench_profile_test.cpp)
+target_link_libraries(unit_quad_fc_bench_profile_clamp PRIVATE
+  marv_composition_quad_fc_bench_profile_inject marv_params_fc3v2_bench_profile_runtime marv_params_fc3v2_bench_profile_generated
+  marv_types marv_hal_sim GTest::gtest_main)
+marv_apply_flags(unit_quad_fc_bench_profile_clamp)
+marv_frozen_suite(unit_quad_fc_bench_profile_clamp TEST_FILTER BenchProfileClampTest.*)
+
 # Invariant L-6 on the host (the m33 images run the same check after every link, fw/hal/target/CMakeLists.txt): no flight
 # composition holds a symbol of the bench profile (the flight composition's archive and the SIL library of the flight
 # composition), and the bench variant's archive does (the control inside the check). The negative control runs the check on

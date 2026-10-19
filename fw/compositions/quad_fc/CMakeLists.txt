@@ -35,3 +35,16 @@ target_link_libraries(marv_composition_quad_fc_bench_profile
   PUBLIC marv_hal marv_types marv_prim marv_arming marv_params
   PRIVATE marv_attitude marv_estimator marv_sched marv_rate_group marv_rate marv_mixer marv_stick_rates marv_dshot marv_crsf_decode marv_params_fc3v2_bench_profile_runtime)
 marv_apply_flags(marv_composition_quad_fc_bench_profile FIRMWARE)
+
+# The bench variant with the write-clamp test seam (bench_profile_inject_levels, MARV_QUAD_FC_BENCH_PROFILE_FAULT_INJECT, unit U3):
+# host only, linked by the L09 unit_quad_fc_bench_profile_clamp test alone. The m33 images and the other tests never link it, so
+# no image holds a way to overwrite the configured levels.
+if(MARV_TARGET STREQUAL "host")
+  add_library(marv_composition_quad_fc_bench_profile_inject STATIC src/quad_fc.cpp)
+  target_compile_definitions(marv_composition_quad_fc_bench_profile_inject PUBLIC MARV_QUAD_FC_BENCH_PROFILE_FAULT_INJECT PRIVATE MARV_QUAD_FC_BENCH_PROFILE)
+  target_include_directories(marv_composition_quad_fc_bench_profile_inject PUBLIC include)
+  target_link_libraries(marv_composition_quad_fc_bench_profile_inject
+    PUBLIC marv_hal marv_types marv_prim marv_arming marv_params
+    PRIVATE marv_attitude marv_estimator marv_sched marv_rate_group marv_rate marv_mixer marv_stick_rates marv_dshot marv_crsf_decode marv_params_fc3v2_bench_profile_runtime)
+  marv_apply_flags(marv_composition_quad_fc_bench_profile_inject FIRMWARE)
+endif()

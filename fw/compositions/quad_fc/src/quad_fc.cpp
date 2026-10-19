@@ -89,6 +89,12 @@
 // motor 1 + floor(j / (3 bench_profile_repeats)), at bench_profile_dshot_step when j mod 3 is 1 and bench_profile_dshot_base
 // otherwise (DShot 200 -> 450 -> 200 per repeat, the repeats of one motor before the next). While Armed the gate writes that level's value to that motor and stop to the others, and stop to
 // every motor in the lead-in, after the end or a kill; it never writes the mixer's output. Disarmed and MotorTest are as above.
+// The bench cap (DShot 450) and the total-duration cap (40 s) are fixed (Luis 2026-10-19, "Fixed + clamp"): the defaults of
+// bench_profile_dshot_max and bench_profile_total_max_us in the generated defaults (rodata, never the runtime table or
+// g_bench_profile_cfg) are the ceilings. validate and init refuse a table above either, and the motor write clamps every
+// profile value to the DShot ceiling whatever the configuration holds (stop stays stop).
+// With MARV_QUAD_FC_BENCH_PROFILE_FAULT_INJECT also (the host library marv_composition_quad_fc_bench_profile_inject, linked only
+// by the L09 clamp test), bench_profile_inject_levels overwrites the configured levels past validate; no image defines it.
 // Without the definition the preprocessed translation unit is the one without these lines.
 #include <array>
 #include <atomic>
@@ -402,11 +408,27 @@ void update_motor_test(TimeUs now) noexcept {
 #endif
 
 #ifdef MARV_QUAD_FC_BENCH_PROFILE
+// The fixed ceilings of the bench run (Luis 2026-10-19, "Fixed + clamp (Recommended)"): the defaults of the two cap parameters
+// as the generated defaults hold them, which no runtime table, config record or g_bench_profile_cfg can change.
+[[nodiscard]] std::int32_t bench_profile_dshot_ceiling() noexcept {
+  return param_value<ParamId::bench_profile_dshot_max>(param_defaults());
+}
+[[nodiscard]] std::int32_t bench_profile_total_ceiling() noexcept {
+  return param_value<ParamId::bench_profile_total_max_us>(param_defaults());
+}
+
+// The value the motor write sends for a profile value: at most the DShot ceiling, whatever the configuration holds. Stop and
+// values at or below the ceiling pass unchanged.
+[[nodiscard]] DshotValue bench_profile_clamped(DshotValue v) noexcept {
+  const auto ceiling = static_cast<std::uint16_t>(bench_profile_dshot_ceiling());
+  return v.raw() > ceiling ? DshotValue::from_raw(ceiling).value_or(DshotValue::stop()) : v;
+}
+
 // The bench profile's rules: the channel a CRSF channel other than the arm, the angle and the stick channels; the threshold in
 // (0, 1], so the middle position of a 3-position switch is out of position; the bench cap from the DShot throttle minimum to
-// the console cap motor_test_dshot_max; both levels from the minimum to the bench cap; the lead-in not negative, the level time,
-// the repeats and the cap at least 1; the whole profile (lead-in + kMotors x repeats x levels x level time) not longer than
-// the cap.
+// the console cap motor_test_dshot_max and not above the fixed DShot ceiling; both levels from the minimum to the bench cap;
+// the lead-in not negative, the level time, the repeats and the cap at least 1; the cap not above the fixed total-duration
+// ceiling; the whole profile (lead-in + kMotors x repeats x levels x level time) not longer than the cap.
 [[nodiscard]] const char* bench_profile_reject_reason(ParamTable t) noexcept {
   const std::int32_t channel = param_value<ParamId::bench_profile_rc_channel>(t);
   if (channel < 1 || static_cast<std::size_t>(channel) > prim::kCrsfRcChannels) {
@@ -422,8 +444,10 @@ void update_motor_test(TimeUs now) noexcept {
     return "quad_fc composition: bench_profile_switch_threshold is outside (0, 1]";
   }
   const std::int32_t cap = param_value<ParamId::bench_profile_dshot_max>(t);
-  if (cap < prim::kDshotThrottleMin || cap > param_value<ParamId::motor_test_dshot_max>(t)) {
-    return "quad_fc composition: bench_profile_dshot_max is below the DShot throttle minimum or above motor_test_dshot_max";
+  if (cap < prim::kDshotThrottleMin || cap > param_value<ParamId::motor_test_dshot_max>(t) ||
+      cap > bench_profile_dshot_ceiling()) {
+    return "quad_fc composition: bench_profile_dshot_max is below the DShot throttle minimum or above motor_test_dshot_max or "
+           "the fixed bench cap";
   }
   const std::int32_t base = param_value<ParamId::bench_profile_dshot_base>(t);
   const std::int32_t step = param_value<ParamId::bench_profile_dshot_step>(t);
@@ -438,6 +462,9 @@ void update_motor_test(TimeUs now) noexcept {
   if (lead_in < 0 || level < 1 || repeats < 1 || total_max < 1) {
     return "quad_fc composition: bench_profile_lead_in_us is negative or bench_profile_level_us, bench_profile_repeats or "
            "bench_profile_total_max_us is below 1";
+  }
+  if (total_max > bench_profile_total_ceiling()) {
+    return "quad_fc composition: bench_profile_total_max_us is above the fixed bench total-time cap";
   }
   const std::uint64_t levels = kMotors * static_cast<std::uint64_t>(repeats) * kBenchLevels.size();
   if (lead_in > total_max ||
@@ -836,7 +863,9 @@ void tick(const ImuSample& raw) noexcept {
   const std::array<DshotValue, kMotors> profile =
       bench_profile_step(bench_profile_edge, out.state, mc.channels[g_bench_profile_cfg.channel], s.t_us);
   if (g_gate == MotorGate::Armed) {
-    written.motor = profile;  // the bench image never writes the mixer's output
+    for (std::size_t m = 0; m < kMotors; ++m) {
+      written.motor[m] = bench_profile_clamped(profile[m]);  // the bench image never writes the mixer's output
+    }
   }
   hal_actuators_write(written);
 #else
@@ -870,6 +899,12 @@ AttitudeCounts attitude_counts() noexcept {
 RateCounts rate_counts() noexcept { return RateCounts{g_step.execution_count(), g_step.timing_fault_count()}; }
 
 #ifdef MARV_QUAD_FC_BENCH_PROFILE
+#ifdef MARV_QUAD_FC_BENCH_PROFILE_FAULT_INJECT
+void bench_profile_inject_levels(std::uint16_t raw) noexcept {
+  g_bench_profile_cfg.base = DshotValue::from_raw(raw).value_or(DshotValue::stop());
+  g_bench_profile_cfg.step = DshotValue::from_raw(raw).value_or(DshotValue::stop());
+}
+#endif
 BenchProfileStatus bench_profile_status() noexcept {
   BenchProfileStatus s;
   s.phase = static_cast<BenchProfilePhase>(g_bench_profile_phase.load(std::memory_order_relaxed));

@@ -30,4 +30,11 @@ struct BenchProfileStatus {
 };
 [[nodiscard]] BenchProfileStatus bench_profile_status() noexcept;
 
+#ifdef MARV_QUAD_FC_BENCH_PROFILE_FAULT_INJECT
+// Test seam of the L09 write-clamp test, in the host library marv_composition_quad_fc_bench_profile_inject only: sets the base
+// and the step level of the live configuration to the raw DShot value, past validate (a DshotValue holds up to the DShot
+// maximum). No image and no other library defines it.
+void bench_profile_inject_levels(std::uint16_t raw) noexcept;
+#endif
+
 }  // namespace marv::composition

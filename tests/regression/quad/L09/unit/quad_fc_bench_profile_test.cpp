@@ -934,6 +934,46 @@ TEST(BenchProfileStampTest, TheStampCapEndsALaggingProfileAndAStampBeforeTheEdge
   });
 }
 
+#ifdef MARV_QUAD_FC_BENCH_PROFILE_FAULT_INJECT
+// L-7, the write clamp: the DShot written never exceeds the fixed bench cap whatever the configuration holds. The levels of the
+// live configuration are overwritten past validate (bench_profile_inject_levels: base and step both `raw`, as a corrupted
+// g_bench_profile_cfg would hold them). The profile then runs on the compressed clock; every rate tick writes the ruling's
+// segment with 450 for every level (the clamp), stop in the lead-in and after the end, and the status shows the profile's own
+// value (`raw`), so the seam did exceed the cap. Run in the library with the seam only (unit_quad_fc_bench_profile_clamp).
+TEST(BenchProfileClampTest, AConfiguredLevelAboveTheFixedCapIsWrittenAsTheCapAndStopStaysStop) {
+  for (const std::uint16_t raw : {static_cast<std::uint16_t>(kLuisBenchCap + 1), static_cast<std::uint16_t>(kLuisConsoleCap),
+                                  prim::kDshotThrottleMax}) {
+    in_child([raw] {
+      Rig rig(table_with(overrides_of(kFast)));
+      composition::bench_profile_inject_levels(raw);
+      rig.warm_up();
+      rig.link_up(kBenchUp);
+      Profile capped = kFast;
+      capped.base = capped.step = kLuisBenchCap;
+      const std::vector<Segment> s = segments_of(capped);
+      const Out edge = rig.arm(kBenchUp);
+      EXPECT_TRUE(edge.all_stop());
+      std::size_t written_levels = 0;
+      for (std::uint64_t k = 1;; ++k) {
+        const Out o = rig.rate(Frame{kSwitchOn, kBenchUp});
+        const std::size_t seg = segment_at(s, k * rig.rate_num(), rig.den());
+        ASSERT_EQ(o.values(), values_of(s, seg)) << "raw " << raw << " k " << k << " segment " << seg;
+        if (seg > 0 && seg < s.size()) {
+          ++written_levels;
+          EXPECT_EQ(o.status.dshot, raw) << "k " << k;
+        } else {
+          EXPECT_EQ(o.status.dshot, 0U) << "k " << k;
+        }
+        if (o.stamp - edge.stamp > kFast.total_max_us) {
+          break;
+        }
+      }
+      EXPECT_GT(written_levels, 0U);
+    });
+  }
+}
+#endif
+
 // ---- validate and init (V-1) ----
 
 struct RejectCase {
@@ -947,6 +987,8 @@ const char* const kChannel = "bench_profile_rc_channel is outside 1..16";
 const char* const kCollision = "bench_profile_rc_channel is the arm, the angle or a stick channel";
 const char* const kThreshold = "bench_profile_switch_threshold is outside (0, 1]";
 const char* const kCap = "bench_profile_dshot_max is below the DShot throttle minimum or above motor_test_dshot_max";
+const char* const kFixedCap = "or the fixed bench cap";
+const char* const kFixedTotal = "bench_profile_total_max_us is above the fixed bench total-time cap";
 const char* const kLevel = "is below the DShot throttle minimum or above bench_profile_dshot_max";
 const char* const kPositive = "bench_profile_level_us, bench_profile_repeats or bench_profile_total_max_us is below 1";
 const char* const kTooLong = "is longer than bench_profile_total_max_us";
@@ -970,6 +1012,11 @@ std::vector<RejectCase> reject_cases() {
       {"threshold NaN", {{ParamId::bench_profile_switch_threshold, nan}}, kThreshold},
       {"bench cap 47", {{ParamId::bench_profile_dshot_max, 47}, {ParamId::bench_profile_dshot_base, 47}}, kCap},
       {"bench cap 501 (above the console cap)", {{ParamId::bench_profile_dshot_max, 501}}, kCap, true},
+      {"bench cap 451 (above the fixed bench cap, below the console cap)", {{ParamId::bench_profile_dshot_max, 451}}, kFixedCap},
+      {"bench cap 500 and step 500 (the console cap)",
+       {{ParamId::bench_profile_dshot_max, 500}, {ParamId::bench_profile_dshot_step, 500}}, kFixedCap},
+      {"bench cap 451 and step 451", {{ParamId::bench_profile_dshot_max, 451}, {ParamId::bench_profile_dshot_step, 451}}, kFixedCap},
+      {"bench cap 451 and base 451", {{ParamId::bench_profile_dshot_max, 451}, {ParamId::bench_profile_dshot_base, 451}}, kFixedCap},
       {"step 451 (above the bench cap)", {{ParamId::bench_profile_dshot_step, 451}}, kLevel, true},
       {"base 451", {{ParamId::bench_profile_dshot_base, 451}}, kLevel},
       {"step 47", {{ParamId::bench_profile_dshot_step, 47}}, kLevel},
@@ -979,6 +1026,8 @@ std::vector<RejectCase> reject_cases() {
       {"level 0", {{ParamId::bench_profile_level_us, 0}}, kPositive},
       {"repeats 0", {{ParamId::bench_profile_repeats, 0}}, kPositive},
       {"cap 0", {{ParamId::bench_profile_total_max_us, 0}}, kPositive},
+      {"total cap 40 s + 1 us (above the fixed total-time cap)", {{ParamId::bench_profile_total_max_us, 40000001}}, kFixedTotal, true},
+      {"total cap at the i32 maximum", {{ParamId::bench_profile_total_max_us, max32}}, kFixedTotal},
       {"cap 38 s - 1 us (the ruled profile is 38 s)", {{ParamId::bench_profile_total_max_us, 37999999}}, kTooLong},
       {"cap 20 s (the first proposal)", {{ParamId::bench_profile_total_max_us, 20000000}}, kTooLong},
       {"repeats 4 (2 + 48 s)", {{ParamId::bench_profile_repeats, 4}}, kTooLong, true},
@@ -992,7 +1041,8 @@ TEST(BenchProfileValidateTest, TheDefaultTableAndTheRulesEdgesAreAccepted) {
   EXPECT_TRUE(composition::validate(param_defaults()).ok()) << composition::validate(param_defaults()).reason;
   const std::vector<Overrides> accepted{
       {{ParamId::bench_profile_total_max_us, 38000000}},  // exactly the profile's length
-      {{ParamId::bench_profile_dshot_max, 500}, {ParamId::bench_profile_dshot_step, 500}},  // the console cap
+      {{ParamId::bench_profile_dshot_max, 449}, {ParamId::bench_profile_dshot_step, 449}},  // below the fixed bench cap
+      {{ParamId::bench_profile_total_max_us, 40000000}},  // exactly the fixed total-time cap
       {{ParamId::bench_profile_dshot_base, 48}, {ParamId::bench_profile_dshot_step, 48}},   // the DShot throttle minimum
       {{ParamId::bench_profile_switch_threshold, 1.0}},
       {{ParamId::bench_profile_rc_channel, 16}},
