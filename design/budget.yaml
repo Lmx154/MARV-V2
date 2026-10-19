@@ -335,7 +335,7 @@ telemetry_byte_rate_max:
   sigma: choice
   rationale: >-
     The most bytes per second the ground link's telemetry streams may take together, every stream counted at its longest
-    MAVLink frame (decision 0053 Q4: "total capped by a budget entry from measured link throughput ... utilisation fraction
+    frame on the link (decision 0053 Q4: "total capped by a budget entry from measured link throughput ... utilisation fraction
     PLACEHOLDER"; ground-segment unit 11). The rule: the measured board-to-host throughput of the USB link times a
     utilisation fraction u. The throughput is 300000 B/s, the board-to-host rate the FC3v2 carried with 0 CRC failures,
     0 sequence gaps and 0 bytes dropped at every batch size of HIL S1

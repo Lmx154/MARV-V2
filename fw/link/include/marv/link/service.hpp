@@ -18,15 +18,17 @@
 //     the grant: the host then resets the board into the bootloader through the USB reset interface the grant opens. One grant
 //     waits at a time: a reboot command that arrives while one waits is answered IN_PROGRESS and replaces it (its requester and
 //     its param1); the final answer goes to that latest requester only, and the earlier one gets nothing more.
-//   - the telemetry streams (decision 0053 Q4; ground-segment unit 11): SYS_STATUS, ATTITUDE, ATTITUDE_QUATERNION, RC_CHANNELS,
-//     ATTITUDE_TARGET, HIGHRES_IMU, ACTUATOR_OUTPUT_STATUS, MARV_FC_STATUS and MARV_ESTIMATOR, built from the flight composition's
-//     telemetry snapshot (marv/types/telemetry.hpp), and MARV_IDENTITY. None is sent until the ground station sets its interval
-//     with MAV_CMD_SET_MESSAGE_INTERVAL (param1 the message id, param2 the interval in us; -1 and 0, the default rate, stop it).
+//   - the telemetry streams (decision 0053 Q4; ground-segment unit 11): the system status, the attitude as angles and as a
+//     quaternion, the RC channels, the attitude target, the IMU sample, the actuator outputs, the composition's status and the
+//     estimators side by side, built from the flight composition's telemetry snapshot (marv/types/telemetry.hpp), and the
+//     identity. None is sent until the ground station sets its interval with the set-message-interval command (param1 the
+//     message id, param2 the interval in us; -1 and 0, the default rate, stop it).
 //     The granted interval is the longest of the one asked, the stream's cap (its tlm_hz_* parameter, a rate in Hz) and the
 //     one at which the stream fits the telemetry budget (the design-budget entry telemetry_byte_rate_max, bytes per second)
 //     beside the streams already running, each counted at its longest frame; a stream the budget or a cap of 0 leaves no room
-//     for is DENIED with a status text. MAV_CMD_REQUEST_MESSAGE with param1 MESSAGE_INTERVAL and param2 a message id answers
-//     the interval in force (-1: stopped, 0: not a stream); with param1 a stream's id it sends that message once. A stream is
+//     for is DENIED with a status text. The request-message command with param1 the message-interval message and param2 a
+//     message id answers the interval in force (-1: stopped, 0: not a stream); with param1 a stream's id it sends that message
+//     once. A stream is
 //     sent at most once per step, only while the transport has room for its frame beside one parameter's frames, and every
 //     stream stops while the transport reports no ground station (a station that connects later sets its streams again).
 // Frames are handled in arrival order. Background loop only (the SIL's link service call; the board's background loop from
@@ -65,7 +67,7 @@ struct ServiceConfig {
   void (*request_maintenance)() noexcept = nullptr;
   bool (*maintenance_granted)() noexcept = nullptr;
   // The flight composition's telemetry snapshot (composition::telemetry: false before the first rate tick); without it only
-  // MARV_IDENTITY can be streamed.
+  // the identity can be streamed.
   bool (*telemetry)(Telemetry& out) noexcept = nullptr;
 };
 

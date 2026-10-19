@@ -388,8 +388,8 @@ inline constexpr std::uint32_t kRebootShutdownActionReboot = 1;
 inline constexpr std::uint32_t kRebootShutdownActionBootloader = 3;
 
 // The ground link's telemetry messages (ground-segment unit 11). Citation: the pinned common.xml message definitions
-// (link/marv.xml includes them): SYS_STATUS.drop_rate_comm is in c% (centi-percent), so a whole is 100 % x 100 c%/% =
-// 10000 c%; RC_CHANNELS.rssi takes 0 to 254, and 255 (UINT8_MAX) means unknown.
+// (link/marv.xml includes them): the system-status message's drop_rate_comm is in c% (centi-percent), so a whole is
+// 100 % x 100 c%/% = 10000 c%; the RC-channels message's rssi takes 0 to 254, and 255 (UINT8_MAX) means unknown.
 // Kind: standard.
 inline constexpr std::uint32_t kCentiPercentPerUnit = 10000;
 inline constexpr std::uint8_t kRcChannelsRssiMax = 254;
