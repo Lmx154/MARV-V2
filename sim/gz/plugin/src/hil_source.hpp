@@ -150,6 +150,10 @@ class HilCommandSource final : public CommandSource {
   std::uint32_t rx_frames_ = 0;         // and the last one's fields, for the status line
   float rx_throttle_ = 0.0F;
   float rx_lq_ = 0.0F;
+  bool rx_angle_ = false;               // the last frame selects angle mode (status line only)
+  std::size_t angle_channel_ = 0;       // quad_fc's rc_channel_angle (0: none), and its angle_switch_threshold (open())
+  float angle_threshold_ = 0.0F;
+  bool have_angle_threshold_ = false;
 
   // The command the plant is stepped with, and the margin statistics.
   Dshot applied_{};
