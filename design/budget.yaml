@@ -330,6 +330,26 @@ config_slot_bytes:
     slots.
   used_by: [ground-segment unit 14 config slots (fw/hal/target/src/storage_flash.cpp, fw/store slot layout), the m33 post-link flash-layout check]
 
+sd_log_write_stall_max_s:
+  value: 0.809
+  unit: s
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    PLACEHOLDER (budget entries carry no placeholder field, tools/card/schema.py: the reason and the replacement are
+    stated here). The card's worst measured SD write stall, which core EMB-6 sizes the RAM log buffer against ("at least the
+    log rate x the card's worst measured SD write stall", 00-core-contracts.md). Value: the maximum of
+    hal_config_pending_write (mount, mkdir, temp write, sync, remove, rename, unmount) over 1000 cycles of a 40256 B buffer
+    on the FC3v2 Rev-C board with a FAT32 card, 809.1 ms, rounded down to 0.809 s
+    (tests/regression/quad/L10/results/sd/README.md, table row hal_config_pending_write; sd_bench_run1.log). Reason it is
+    a placeholder: that stall is the config store's operation (with metadata), not the logger's pattern (direct multi-sector
+    writes into a preallocated region); the largest raw f_write in the same run was 94.3 ms. It is the conservative bound
+    until the logger-pattern soak (onboard logger unit U2) replaces it with its own worst stall. The ring is at least the
+    fast stream's rate x this value (invariant L-5; fw/log budget.hpp, tests/regression/quad/L09/unit/log_ring_test.cpp).
+    Used by test code and by the logger's pre-roll derivation; it blocks the flight that depends on the logger meeting
+    EMB-6, not the commit.
+  used_by: [onboard SD flight logger (fw/log) ring sizing L-5 and derived pre-roll, core EMB-6]
+
 telemetry_byte_rate_max:
   value: 150000
   unit: B/s

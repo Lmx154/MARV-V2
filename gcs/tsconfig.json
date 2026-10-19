@@ -25,6 +25,8 @@
 		"src/**/*.ts",
 		"src/**/*.svelte",
 		"../tests/regression/quad/L00/link/ts/**/*.ts",
-		"vite.config.ts"
+		"vite.config.ts",
+		"playwright.config.ts",
+		"e2e/**/*.ts"
 	]
 }

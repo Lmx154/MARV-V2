@@ -12,9 +12,9 @@ History is in git and `docs/decisions/`; the previous handoff is `git show be6b9
 | Item | State |
 | --- | --- |
 | M0-M3 | merged into `master`; tags `quad-M1-pass`..`quad-M3-pass` |
-| `m4` | pushed at `4495b9c` (dev check PASS; GS units 6, 8b, 9, 12, 13, 14 and the ESKF; 0c307dd was pushed with a failing check and fixed forward at 4495b9c) |
+| `m4` | pushed at `e5003d4` (dev check PASS: GS 12-14, 7-inch card k_T 3.274e-6, sim <ground/>); local adds 0056/0057 docs and GX-0 (not yet dev-checked) |
 | Board | flight image `gd46f7f6` (angle on ch8, airmode latch, Betaflight throttle; factory parameter table), est_valid=1 |
-| In flight (2026-10-18) | GS unit 15 FLASH-PANEL (branch `gs-flash`, coder, bench on the board); then 11 PLOTS (telemetry + seqlock), 10 DERIVE, 16 |
+| In flight (2026-10-18 night) | Branches (worktrees in the session scratchpad): gs-telemetry (11a), log-core (logger U1, decision 0059, in review), log-target (U2, owns the board), log-bench-profile (U3), rate-ff (feed-forward, record 0058), gx1-helper (GX-1, review fixes in). Builds serialize on `pgrep -x ninja`; ci/heavy.sh lock lands with GX-1. Designs: Serena quad-m4/architect-onboard-logger-2026-10-18, quad-m4/architect-rate-response-2026-10-18, ground-segment/architect-gcs-first-class-2026-10-18 (all with Luis's rulings). |
 
 ## M4 since the last handoff (decisions 0048-0054)
 - 0048 Luis's rulings (plant omega_min 0, angle ch8 at 100, HIL spec text, FMA tolerance 1 count, tags). 0049 plant drag
@@ -34,9 +34,11 @@ History is in git and `docs/decisions/`; the previous handoff is `git show be6b9
   SIL library `marv_sil_quad_fc_eskf`. Not done: the Gazebo comparison, a board cost measurement; board use is Luis's call.
 
 ## Waiting on Luis
-- S4b: fly the Gazebo sim through the board with the RadioMaster (runbook in `L10/results/s4/README.md`; host idle).
+- S4b flown 2026-10-18 (ACRO only: his angle switch drives ch14, not ch8; flip diagnosed as pilot input; handling
+  sluggish by design: QF-2 prefilter + 1.4 Hz crossover). Next: S4b in ANGLE (radio mix to ch8) = gate 1 of the rate memo.
+- Tomorrow (2026-10-19): bifilar pendulum (inertia), props-off bench-profile TB (U3 runbook), ESC KV 1700/poles 14, CG check.
 - Props-off radio check of angle mode (ESC power, Luis present).
-- Decide: check-4 form, ESKF board use (exFAT dropped, Luis 2026-10-18). Board: SD 64 GB FAT32; BAR_INT jumper (GPIO 23) soldered
+- Decide: check-4 form, ESKF board use (exFAT dropped, Luis 2026-10-18). GCS-first scope signed (0056); eRPM pulled forward (0057). Board: SD 64 GB FAT32; BAR_INT jumper (GPIO 23) soldered
   (mem hardware/barometer-timing); udev rule /etc/udev/rules.d/60-marv-picotool.rules (picotool without sudo).
 
 ## Noticed, not changed

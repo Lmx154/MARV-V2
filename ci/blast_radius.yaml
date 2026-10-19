@@ -334,6 +334,13 @@ rules:
     gz_groups: [l7]
     why: "store is the config store (ground-segment unit 4b): linked into the m33 image (main.cpp's boot step) and into the SIL library marv_sil_quad_fc (the L09 SIL test; the plugin of host-gz-quadfc, gz group l7)"
 
+  - paths: [fw/log/**]
+    ctest_labels: [L09]
+    run_ci_steps: ["@flight_gates", tools_tests]
+    pytest_paths: [tests/tools]
+    gz_groups: []
+    why: "log is the onboard SD flight logger's core (unit U1 LOG-CORE): built by the host and m33 trees (not yet linked into an image), tested by the L09 unit_log_ring and unit_log_logger host tests and the log_roundtrip_* tests that decode its file with tools/log; fw/log/params/log_register.yaml is the source of the test-only parameter set marv_params_fc3v2_log; L-3 (no hal_panic under fw/log) is held by tests/tools/test_check_log_no_panic.py"
+
   - paths: [fw/estimator/**]
     ctest_labels: [L07, L09]
     run_ci_steps: ["@host"]
@@ -652,6 +659,20 @@ rules:
     gz_groups: []
     why: "the dialect reader, definitions fetcher and C++ and TypeScript generators run in the fw/link build (host and m33), produce gcs/src/lib/link/generated/messages.ts, and are held to pymavlink's mavgen by the L00 tools test_link_gen"
 
+  - paths: [tools/log/**]
+    ctest_labels: [L09]
+    run_ci_steps: ["@host", tools_tests]
+    pytest_paths: [tests/tools]
+    gz_groups: []
+    why: "the flight-log decoder (mlog.py), read by tests/tools/test_mlog.py (L-4) and, with roundtrip_check.py, by the ctest log_roundtrip_decode that decodes what the C++ logger wrote"
+
+  - paths: [tools/ci/check_log_no_panic.py]
+    ctest_labels: []
+    run_ci_steps: [tools_tests]
+    pytest_paths: [tests/tools]
+    gz_groups: []
+    why: "the L-3 static check (fw/log never names hal_panic); run, with its negative control, by tests/tools/test_check_log_no_panic.py"
+
   - paths: [tools/ci/check_claude_md.py]
     ctest_labels: []
     run_ci_steps: [g8_check, g8_control, tools_tests]
@@ -769,10 +790,10 @@ rules:
 
   - paths: [gcs/**]
     ctest_labels: [L00]
-    run_ci_steps: [gs3_check, tools_tests]
+    run_ci_steps: [gs3_check, tools_tests, gcs_tests]
     pytest_paths: [tests/regression/quad/L00/tools]
     gz_groups: []
-    why: "the ground-station package: its TypeScript codec is held by the L00 link suite (ctest link_ts_conformance where Node is present; the CI images carry none yet), its generated messages.ts by the L00 tools test_link_gen, and GS-3 holds the rest of gcs/ clear of MAVLink"
+    why: "the ground-station package: gcs_tests runs its vitest and svelte-check (the CI image carries Node 22 since GX-0; ci/dev_check.sh fails when gcs/node_modules is missing), its TypeScript codec is also held by the L00 link suite (ctest link_ts_conformance where gcs/node_modules exists), its generated messages.ts by the L00 tools test_link_gen, and GS-3 holds the rest of gcs/ clear of MAVLink; the Playwright run (tools/gs/e2e.sh) is not part of the selection"
 
   - paths: [CLAUDE.md]
     ctest_labels: []

@@ -48,6 +48,7 @@ ALLOW = (
     ("tests/regression/quad/L10/results/flash_panel/README.md", "the bench record of the flash panel names the messages it checked (ground segment unit 15)"),
     ("tests/regression/quad/L10/results/telemetry/*.py", "the bench client of the board's telemetry streams with pymavlink (ground segment unit 11)"),
     ("tests/regression/quad/L10/results/telemetry/README.md", "the bench record of the board's telemetry streams names the messages it measured (ground segment unit 11)"),
+    ("tools/gs/e2e_fake_vehicle.py", "the fake vehicle of the GCS end-to-end test speaks the dialect with pymavlink (GCS-first unit GX-0); a test tool, never flown"),
     ("tools/gen/params_gen.py", "a docstring and a comment name MAVLink as the origin of the 16-character link id rule (decision 0053 item 1); no include, no message"),
     ("ci/run_ci.sh", "the step names of the GS-3 check"),
     ("ci/blast_radius.yaml", "the rules and reasons of the codec paths"),
