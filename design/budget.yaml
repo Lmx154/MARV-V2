@@ -327,3 +327,22 @@ config_slot_bytes:
     post-link check tools/ci/check_flash_layout.py (cmake/flash_layout.cmake) fails the m33 build if the image reaches the
     slots.
   used_by: [ground-segment unit 14 config slots (fw/hal/target/src/storage_flash.cpp, fw/store slot layout), the m33 post-link flash-layout check]
+
+telemetry_byte_rate_max:
+  value: 150000
+  unit: B/s
+  method: design-budget
+  sigma: choice
+  rationale: >-
+    The most bytes per second the ground link's telemetry streams may take together, every stream counted at its longest
+    MAVLink frame (decision 0053 Q4: "total capped by a budget entry from measured link throughput ... utilisation fraction
+    PLACEHOLDER"; ground-segment unit 11). The rule: the measured board-to-host throughput of the USB link times a
+    utilisation fraction u. The throughput is 300000 B/s, the board-to-host rate the FC3v2 carried with 0 CRC failures,
+    0 sequence gaps and 0 bytes dropped at every batch size of HIL S1
+    (tests/regression/quad/L09/results/hil_s1/README.md, the board-to-host column; the offered load of those runs, so a
+    rate the link carries, not its capacity). u = 0.5 is a PLACEHOLDER (budget entries carry no placeholder field,
+    tools/card/schema.py: the reason and the replacement are stated here): the share of the link that telemetry may use
+    beside the parameter traffic, the command answers and the heartbeat, which nothing states yet. Replaced by: Luis's
+    ruling on the share, with EMB-3 re-measured with every stream at its cap (tests/regression/quad/L10/results/telemetry).
+    300000 B/s x 0.5 = 150000 B/s. Not a safety number: no flight decision reads it.
+  used_by: [ground-segment unit 11 telemetry streams (fw/link/src/service.cpp), the tlm_hz_* stream caps (fw/link/params/telemetry_register.yaml)]
