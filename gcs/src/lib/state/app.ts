@@ -7,6 +7,7 @@ import { VehicleClient } from '$link/vehicle';
 import type { ImageEntry } from '$lib/params/library';
 import { HelperApi, readHelperInfo, type HelperInfo, type HelperStatus } from './helper_api';
 import { FlashController } from './flash_state';
+import { channelMapOf, LiveController } from './live_state';
 import { ManifestController, type ManifestState } from './manifest_state';
 import { Problems, type Problem } from './problems';
 import { SimController } from './sim_state';
@@ -25,6 +26,8 @@ export interface App {
 	validation: ValidationController | null;
 	/** Flashing an image of the library through the G7 gate; null without a helper. */
 	flash: FlashController | null;
+	/** The Vehicle page: the live panels of the vehicle's telemetry; null without a helper. */
+	live: LiveController | null;
 	/** The Simulation page: the SIL run definition, its plan, launch and stop; null without a helper. */
 	sim: SimController | null;
 	status: Readable<HelperStatus | null>;
@@ -135,6 +138,10 @@ function create(): App {
 				})
 			: null;
 
+	const live = vehicle
+		? new LiveController({ telemetry: vehicle.telemetry, channelMap: derived(vehicle.state, (v) => channelMapOf(v.params)) })
+		: null;
+
 	const sim =
 		helper && api
 			? new SimController({
@@ -167,6 +174,7 @@ function create(): App {
 		vehicle,
 		validation,
 		flash,
+		live,
 		sim,
 		status: shell.status,
 		device: shell.device,
