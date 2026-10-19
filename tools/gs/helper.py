@@ -274,6 +274,7 @@ class Helper:
             self.device.close()
             self.log.event(f"device closed: {reason}")
             self.device = None
+            self._push(json.dumps({"event": "device_closed", "reason": reason}))
         if by_user and self._ac_owner is not None:
             self._ac_declined = self._ac_key
         self._ac_owner = self._ac_key = None
@@ -319,9 +320,9 @@ class Helper:
     def run_refusals(self, kind: str, opts: dict) -> list[str]:
         """Every reason a run of this kind cannot start now; empty when it can."""
         reasons = []
-        active = self.runs.active()
-        if active is not None or self.sil.active():
-            reasons.append(f"run {active['id'] if active else '(sil_start)'} is still going: one simulation at a time (H-1)")
+        busy = self.runs.busy()
+        if busy is not None:
+            reasons.append(f"run {busy} is still going: one simulation at a time (H-1)")
         if self._validation_task is not None and not self._validation_task.done():
             reasons.append("a validation is running; wait for it to finish")
         if self._flash_task is not None and not self._flash_task.done():
@@ -451,11 +452,11 @@ class Helper:
             self._ac_owner, self._ac_key, self._ac_failed = "board", key, {}
             self._ac_event("opened", source="board", device=self.device.description)
             return
-        self._ac_failed = {k: v for k, v in self._ac_failed.items() if k in links}
+        self._ac_failed = {k: v for k, v in self._ac_failed.items() if k in links or k == "sil"}
 
     def _ac_failure(self, source: str, reason: str, path: str = "") -> None:
-        if self._ac_failed.get(source + path) != reason:
-            self._ac_failed[source + path] = reason
+        if self._ac_failed.get(path or source) != reason:
+            self._ac_failed[path or source] = reason
             self._ac_event("failed", source=source, reason=reason)
 
     # ---- status ---------------------------------------------------------------------------------------------------------
@@ -659,8 +660,7 @@ class Helper:
             if not isinstance(self.device, SerialDevice):
                 raise flash.FlashRefused("the serial port is no longer open")
             path, baud = self.device.path, self.device.baud
-            self.close_device("flashing: picotool takes the board over")
-            self._push(json.dumps({"event": "device_closed", "reason": "flashing"}))
+            self.close_device("flashing")
             return path, baud
 
         async def reopen(path: str, baud: int) -> None:

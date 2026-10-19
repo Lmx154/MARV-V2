@@ -50,6 +50,8 @@ def resolve_device(path, globs: tuple[str, ...]) -> str:
         raise ValueError(f"device path {path!r} must be absolute and normalised")
     if not any(fnmatch.fnmatchcase(path, g) for g in globs):
         raise ValueError(f"device path {path!r} is not one of: {', '.join(globs)}")
+    if not os.path.realpath(path).startswith("/dev/"):
+        raise ValueError(f"device path {path!r} does not resolve to a device under /dev/")
     return path
 
 
@@ -134,9 +136,19 @@ class RunSupervisor:
     def active(self) -> dict | None:
         """{"id", "kind"} of the run that is going (relaunch gaps included), else None."""
         cur = self._current
-        if cur is None or not cur["launcher"].active():
+        if cur is None or cur["manifest"]["state"] != "running" or not cur["launcher"].active():
             return None
         return {"id": cur["id"], "kind": cur["kind"]}
+
+    def busy(self) -> str | None:
+        """The id of the run that is going, "(sil_start)" for a SIL launcher started without the supervisor, else None. A run that
+        has ended (its manifest says so) is over even while its watcher thread is still returning."""
+        active = self.active()
+        if active is not None:
+            return active["id"]
+        cur = self._current
+        ended_sil = cur is not None and cur["kind"] == "sil" and cur["manifest"]["state"] != "running"
+        return "(sil_start)" if self.sil.active() and not ended_sil else None
 
     def status(self) -> dict:
         cur = self.active()

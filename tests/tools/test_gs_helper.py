@@ -1175,3 +1175,772 @@ def run_flash_test_with_validator(tmp_path, picotool, body, command):
         async with ws_connect(h) as ws:
             return await body(h, ws, image)
     return run_with_helper(tmp_path, wrapped, build_root=tmp_path / "build", picotool=str(picotool[0]), validate_command=command)
+
+
+# ---- GX-1: the run supervisor, autoconnect, host state and the heavy lock -------------------------------------------------------
+
+import hoststate  # noqa: E402
+import runs as runs_mod  # noqa: E402
+
+POLL_S = 0.1  # labelled harness value: the poll period these tests give the helper
+POLL_SLACK_S = 0.3  # labelled harness value: scheduler jitter allowed on top of one poll
+HEAVY = ROOT / "ci" / "heavy.sh"
+# A stand-in run: a leader and a child in one process group, both alive until signalled.
+GROUP = "sh -c 'sleep 600 & echo $! > {marker}; wait'"
+
+
+class Session:
+    """A WebSocket with a pump: replies in order for cmd(), events kept for wait_event()."""
+
+    def __init__(self, ws):
+        self.ws, self.events, self._replies = ws, [], asyncio.Queue()
+        self._changed = asyncio.Condition()
+        self._pump_task = asyncio.create_task(self._pump())
+
+    async def _pump(self):
+        try:
+            async for m in self.ws:
+                if isinstance(m, bytes):
+                    continue
+                d = json.loads(m)
+                if "event" in d:
+                    async with self._changed:
+                        self.events.append(d)
+                        self._changed.notify_all()
+                else:
+                    self._replies.put_nowait(d)
+        except ConnectionClosed:
+            pass
+
+    async def cmd(self, **msg):
+        await self.ws.send(json.dumps(msg))
+        return await asyncio.wait_for(self._replies.get(), TIMEOUT_S)
+
+    async def wait_event(self, name, timeout=TIMEOUT_S, **match):
+        """The first unconsumed event of that name whose fields include `match`; it is consumed."""
+        def find():
+            for e in self.events:
+                if e["event"] == name and all(e.get(k) == v for k, v in match.items()):
+                    return e
+            return None
+        async with self._changed:
+            await asyncio.wait_for(self._changed.wait_for(lambda: find() is not None), timeout)
+            e = find()
+            self.events.remove(e)
+            return e
+
+    def seen(self, name, **match):
+        return [e for e in self.events if e["event"] == name and all(e.get(k) == v for k, v in match.items())]
+
+    def close(self):
+        self._pump_task.cancel()
+
+
+def repo_state():
+    """(git status incl. untracked, SHA-256 of the diff against HEAD) of the checkout the tests run in (W-1)."""
+    status = subprocess.run(["git", "-C", str(ROOT), "status", "--porcelain=v1", "-uall"], capture_output=True, text=True, check=True).stdout
+    diff = subprocess.run(["git", "-C", str(ROOT), "diff", "HEAD"], capture_output=True, check=True).stdout
+    return status, hashlib.sha256(diff).hexdigest()
+
+
+def alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def fake_board(tmp_path, name):
+    """A pty standing in for a board's CDC, linked under tmp/by-id/<name>; returns (path of the link, the fds to keep open)."""
+    master, slave = os.openpty()
+    by_id = tmp_path / "by-id"
+    by_id.mkdir(exist_ok=True)
+    link = by_id / name
+    link.symlink_to(os.ttyname(slave))
+    return str(link), (master, slave)
+
+
+def hold_heavy(tmp_path, seconds=60):
+    """ci/heavy.sh running `sleep` on tmp/heavy.lock (what dev_check does to a host); returns the process (group leader)."""
+    env = {**os.environ, "MARV_HEAVY_LOCK": str(tmp_path / "heavy.lock")}
+    env.pop("MARV_HEAVY_HELD", None)
+    proc = subprocess.Popen(["bash", str(HEAVY), "--", "sleep", str(seconds)], env=env, start_new_session=True,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # the holder line is written just after the lock is taken: until then the holder is unknown
+    assert wait_for(lambda: hoststate.heavy_lock_state(tmp_path / "heavy.lock")["holder"]), "heavy.sh did not take the lock"
+    return proc
+
+
+def release_heavy(proc):
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    proc.wait()
+
+
+def heavy_run(tmp_path, *args, env=None):
+    full = {**os.environ, "MARV_HEAVY_LOCK": str(tmp_path / "heavy.lock"), **(env or {})}
+    full.pop("MARV_HEAVY_HELD", None) if env is None or "MARV_HEAVY_HELD" not in env else None
+    return subprocess.run(["bash", str(HEAVY), *args], env=full, capture_output=True, text=True, timeout=TIMEOUT_S)
+
+
+# -- ci/heavy.sh and the host state
+
+def test_heavy_script_runs_the_command_holding_the_lock_and_passes_its_status(tmp_path):
+    lock = tmp_path / "heavy.lock"
+    done = heavy_run(tmp_path, "--", "bash", "-c", f"{sys.executable} -c \"import sys; sys.path.insert(0, '{ROOT}/tools/gs'); import hoststate, json; "
+                     f"print(json.dumps(hoststate.heavy_lock_state('{lock}')))\"; exit 7")
+    assert done.returncode == 7
+    state = json.loads(done.stdout)
+    assert state["held"] and "cmd=bash -c" in state["holder"] and f"pid=" in state["holder"]
+    assert hoststate.heavy_lock_state(lock)["held"] is False  # released at exit
+
+
+def test_heavy_script_refuses_while_held_names_the_holder_and_is_reentrant(tmp_path):
+    holder = hold_heavy(tmp_path)
+    try:
+        second = heavy_run(tmp_path, "--wait", "0", "--", "true")
+        assert second.returncode == 75 and "held" in second.stderr and "sleep" in second.stderr
+        status = heavy_run(tmp_path, "--status")
+        assert status.returncode == 75 and status.stdout.startswith("held: pid=") and "cmd=sleep" in status.stdout
+        state = hoststate.heavy_lock_state(tmp_path / "heavy.lock")
+        assert state["held"] and "cmd=sleep" in state["holder"]
+    finally:
+        release_heavy(holder)
+    assert heavy_run(tmp_path, "--status").stdout.strip() == "free"
+    # re-entrant: the command of a run that holds the lock may take it again (dev_check under heavy.sh)
+    inner = heavy_run(tmp_path, "--", "bash", str(HEAVY), "--wait", "0", "--", "echo", "inner")
+    assert inner.returncode == 0 and inner.stdout.strip() == "inner"
+
+
+def test_heavy_script_lock_is_not_kept_by_a_daemon_the_command_leaves_behind(tmp_path):
+    marker = tmp_path / "daemon.pid"
+    done = heavy_run(tmp_path, "--", "bash", "-c", f"sleep 600 >/dev/null 2>&1 & echo $! > {marker}")
+    assert done.returncode == 0
+    daemon = int(marker.read_text())
+    try:
+        assert alive(daemon)
+        assert heavy_run(tmp_path, "--status").stdout.strip() == "free"
+    finally:
+        os.kill(daemon, signal.SIGKILL)
+
+
+@pytest.mark.parametrize("script,args", [("dev_check.sh", []), ("local_ci.sh", ["core"])])
+def test_dev_check_and_local_ci_take_the_heavy_lock_and_stop_when_it_is_held(tmp_path, script, args):
+    holder = hold_heavy(tmp_path)
+    try:
+        env = {**os.environ, "MARV_HEAVY_LOCK": str(tmp_path / "heavy.lock")}
+        env.pop("MARV_HEAVY_HELD", None)
+        done = subprocess.run(["bash", str(ROOT / "ci" / script), *args], env=env, capture_output=True, text=True, timeout=TIMEOUT_S)
+        assert done.returncode == 75, done.stdout + done.stderr  # refused before any work (dev_check's first line of work is the smoke test)
+        assert "heavy lock" in done.stderr and "sleep" in done.stderr
+        assert "##### smoke" not in done.stdout
+    finally:
+        release_heavy(holder)
+
+
+def test_host_state_has_load_memory_and_the_heavy_lock_holder(tmp_path):
+    holder = hold_heavy(tmp_path)
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            host = (await s.cmd(cmd="host_state"))["host"]
+            assert len(host["loadavg"]) == 3 and all(x >= 0 for x in host["loadavg"]) and host["cpus"] >= 1
+            assert 0 < host["mem_available_bytes"] <= host["mem_total_bytes"]
+            assert host["heavy_lock"]["held"] and "cmd=sleep" in host["heavy_lock"]["holder"]
+            assert (await s.cmd(cmd="status"))["status"]["host"]["heavy_lock"]["held"]
+            release_heavy(holder)
+            assert not (await s.cmd(cmd="host_state"))["host"]["heavy_lock"]["held"]
+            await s.wait_event("host_state")  # pushed by the monitor
+            s.close()
+    try:
+        run_with_helper(tmp_path, body, poll_s=POLL_S)
+    finally:
+        release_heavy(holder)
+
+
+# -- the run supervisor
+
+def test_run_plan_names_the_argv_the_directory_and_the_refusals_and_starts_nothing(tmp_path):
+    port, keep = fake_board(tmp_path, "usb-Fake_Board_1-if00")
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            sil_plan = (await s.cmd(cmd="run_plan", kind="sil"))["plan"]
+            assert sil_plan["allowed"] and sil_plan["refusals"] == [] and sil_plan["kind"] == "sil"
+            assert sil_plan["argv"][1].endswith("tools/sim/run_quad_fc.py") and "--interactive" in sil_plan["argv"]
+            hil_plan = (await s.cmd(cmd="run_plan", kind="hil", port=port, seconds=3, expect="none", gui=True))["plan"]
+            assert hil_plan["argv"][1].endswith("tools/sim/run_hil_s4.py")
+            assert hil_plan["argv"][hil_plan["argv"].index("--port") + 1] == port
+            assert hil_plan["argv"][hil_plan["argv"].index("--expect") + 1] == "none" and "--gui" in hil_plan["argv"]
+            assert hil_plan["argv"][hil_plan["argv"].index("--out-dir") + 1] == hil_plan["out_dir"]
+            assert hil_plan["allowed"] and h.runs.active() is None and not (h.run_dir / "runs").exists()
+            h.device = type("Fake", (), {"close": lambda self: None})()  # no serial port: unchanged
+            s.close()
+    try:
+        run_with_helper(tmp_path, body)
+    finally:
+        for fd in keep:
+            os.close(fd)
+
+
+def test_run_start_and_stop_write_the_manifest_emit_events_and_leave_no_processes(tmp_path):
+    marker = tmp_path / "child.pid"
+    command = ["sh", "-c", f"sleep 600 & echo $! > {marker}; wait"]
+    pids = {}
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            started = await s.cmd(cmd="run_start", kind="sil")
+            assert started["ok"]
+            run = started["run"]
+            await s.wait_event("run_started", run_id=run["run_id"], kind="sil")
+            assert await asyncio.to_thread(wait_for, lambda: marker.exists() and marker.read_text().strip())
+            pids["child"], pids["leader"] = int(marker.read_text()), run["pid"]
+            path = h.run_dir / "runs" / run["run_id"] / "manifest.json"
+            m = json.loads(path.read_text())
+            assert m["state"] == "running" and m["kind"] == "sil" and m["argv"] == command and m["exit_status"] is None
+            assert m["schema"] == 1 and m["pid"] == run["pid"]
+            assert (await s.cmd(cmd="run_list"))["runs"] == [run["run_id"]]
+            stopped = await s.cmd(cmd="run_stop")
+            assert stopped["ok"] and stopped["exit_status"] == -signal.SIGTERM
+            assert (await s.wait_event("run_stopped", run_id=run["run_id"]))["exit_status"] == -signal.SIGTERM
+            m = json.loads(path.read_text())
+            assert m["state"] == "stopped" and m["exit_status"] == -signal.SIGTERM and m["ended_utc"] >= m["started_utc"]
+            assert (await s.cmd(cmd="run_manifest", run_id=run["run_id"]))["manifest"] == m
+            assert not (await s.cmd(cmd="run_stop"))["ok"]  # nothing to stop
+            assert h.token not in path.read_text() and h.token not in json.dumps(m)
+            s.close()
+    run_with_helper(tmp_path, body, sil_command=command)
+    for pid in pids.values():
+        assert wait_for(lambda: not alive(pid)), f"process {pid} outlived the stopped run"
+
+
+def test_a_run_that_ends_by_itself_is_run_exited_and_a_new_run_may_start(tmp_path):
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            port, keep = fake_board(tmp_path, "usb-Fake_Board_1-if00")
+            first = (await s.cmd(cmd="run_start", kind="hil", port=port))["run"]
+            exited = await s.wait_event("run_exited", run_id=first["run_id"])
+            assert exited["exit_status"] == os.EX_TEMPFAIL and exited["kind"] == "hil"  # a HIL run is not relaunched
+            m = json.loads((h.run_dir / "runs" / first["run_id"] / "manifest.json").read_text())
+            assert m["state"] == "exited" and m["exit_status"] == os.EX_TEMPFAIL
+            second = await s.cmd(cmd="run_start", kind="hil", port=port)
+            assert second["ok"] and second["run"]["run_id"] != first["run_id"]
+            assert len((await s.cmd(cmd="run_list"))["runs"]) == 2
+            for fd in keep:
+                os.close(fd)
+            s.close()
+    run_with_helper(tmp_path, body, hil_command=["sh", "-c", f"exit {os.EX_TEMPFAIL}"])
+
+
+def test_hil_run_is_a_process_group_that_stop_empties_and_it_owns_the_board_port(tmp_path):
+    marker = tmp_path / "child.pid"
+    port, keep = fake_board(tmp_path, "usb-Fake_Board_1-if00")
+    link, keep2 = fake_board(tmp_path, "usb-Fake_Board_1-if02")
+    pids = {}
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            run = (await s.cmd(cmd="run_start", kind="hil", port=port))["run"]
+            assert await asyncio.to_thread(wait_for, lambda: marker.exists() and marker.read_text().strip())
+            pids["child"], pids["leader"] = int(marker.read_text()), run["pid"]
+            assert os.getpgid(run["pid"]) == run["pid"] != os.getpgid(os.getpid())  # its own group
+            with pytest.raises(device.DeviceError, match="HIL run is going"):  # the board port is the run's: no serial open meanwhile
+                await h.open_serial(link, 115200, from_browser=False)
+            assert h.device is None
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            s.close()
+    try:
+        run_with_helper(tmp_path, body, hil_command=["sh", "-c", f"sleep 600 & echo $! > {marker}; wait"], autoconnect=False)
+    finally:
+        for fd in (*keep, *keep2):
+            os.close(fd)
+    for pid in pids.values():
+        assert wait_for(lambda: not alive(pid)), f"process {pid} outlived the stopped run"
+
+
+def test_two_sims_are_refused_in_either_order(tmp_path):
+    port, keep = fake_board(tmp_path, "usb-Fake_Board_1-if00")
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            assert (await s.cmd(cmd="run_start", kind="sil"))["ok"]
+            second_sil = await s.cmd(cmd="run_start", kind="sil")
+            assert not second_sil["ok"] and "one simulation at a time" in second_sil["error"]
+            hil = await s.cmd(cmd="run_start", kind="hil", port=port)
+            assert not hil["ok"] and "one simulation at a time" in hil["refusals"][0]
+            assert not (await s.cmd(cmd="run_plan", kind="hil", port=port))["plan"]["allowed"]
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            assert (await s.cmd(cmd="run_start", kind="hil", port=port))["ok"]
+            sil = await s.cmd(cmd="run_start", kind="sil")
+            assert not sil["ok"] and "one simulation at a time" in sil["error"]
+            assert (await s.cmd(cmd="sil_start"))["ok"] is False  # the old command is the same run
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            assert len((await s.cmd(cmd="run_list"))["runs"]) == 2  # the refused starts left no manifest
+            s.close()
+    try:
+        run_with_helper(tmp_path, body, sil_command=["sleep", "600"], hil_command=["sleep", "600"])
+    finally:
+        for fd in keep:
+            os.close(fd)
+
+
+def test_hil_is_refused_while_the_helper_has_a_serial_port_open(tmp_path):
+    port, keep = fake_board(tmp_path, "usb-Fake_Board_1-if00")
+    link, keep2 = fake_board(tmp_path, "usb-Fake_Board_1-if02")
+    ran = tmp_path / "hil.ran"
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            await h.open_serial(link, 115200, from_browser=False)
+            refused = await s.cmd(cmd="run_start", kind="hil", port=port)
+            assert not refused["ok"] and "serial port open" in refused["error"] and refused["refusals"]
+            assert not ran.exists() and h.runs.active() is None and (await s.cmd(cmd="run_list"))["runs"] == []
+            assert not (await s.cmd(cmd="run_plan", kind="hil", port=port))["plan"]["allowed"]
+            # control: with the port closed the same request starts
+            assert (await s.cmd(cmd="close"))["ok"]
+            started = await s.cmd(cmd="run_start", kind="hil", port=port)
+            assert started["ok"]
+            assert await asyncio.to_thread(wait_for, ran.exists)
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            s.close()
+    try:
+        run_with_helper(tmp_path, body, hil_command=["sh", "-c", f"touch {ran}; sleep 600"], autoconnect=False)
+    finally:
+        for fd in (*keep, *keep2):
+            os.close(fd)
+
+
+def test_hil_port_must_be_an_allow_listed_device_and_present(tmp_path):
+    outside = tmp_path / "not_a_device"
+    outside.write_text("")
+    (tmp_path / "by-id").mkdir()
+    (tmp_path / "by-id" / "usb-Fake-if00").symlink_to(outside)  # a by-id name whose target is not under /dev
+    (tmp_path / "by-id" / "evil; touch pwned").symlink_to("/dev/null")
+    ran = tmp_path / "hil.ran"
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            bad = [str(outside), "/dev/null", "/dev/ttyACM0", "/dev/serial/by-id/usb-X-if00", f"{tmp_path}/by-id/../not_a_device",
+                   f"{tmp_path}/by-id//usb-Fake-if00", f"{tmp_path}/by-id/usb-Fake-if00", "by-id/usb-Fake-if00", "", 5, None, ["x"]]
+            for port in bad:
+                for cmd in ("run_plan", "run_start"):
+                    reply = await s.cmd(cmd=cmd, kind="hil", port=port)
+                    assert not reply["ok"], (cmd, port)
+            assert not (await s.cmd(cmd="run_start", kind="hil"))["ok"]  # no port at all
+            assert h.runs.active() is None and not ran.exists()
+            # an allowed name with no device behind it: planned but refused, never started
+            (tmp_path / "by-id" / "usb-Absent-if00").symlink_to("/dev/does-not-exist-gx1")
+            plan = (await s.cmd(cmd="run_plan", kind="hil", port=f"{tmp_path}/by-id/usb-Absent-if00"))["plan"]
+            assert not plan["allowed"] and "not present" in plan["refusals"][0]
+            # shell metacharacters in a name are one argv element; no shell sees them
+            plan = (await s.cmd(cmd="run_plan", kind="hil", port=f"{tmp_path}/by-id/evil; touch pwned"))["plan"]
+            assert plan["argv"][plan["argv"].index("--port") + 1] == f"{tmp_path}/by-id/evil; touch pwned"
+            s.close()
+    run_with_helper(tmp_path, body, hil_command=None)
+    assert not (ROOT / "pwned").exists() and not (tmp_path / "pwned").exists()
+
+
+def test_run_options_are_a_closed_list_with_checked_values(tmp_path):
+    port, keep = fake_board(tmp_path, "usb-Fake_Board_1-if00")
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            for msg in [dict(kind="sil", port=port), dict(kind="sil", card="vehicles/x.yaml"), dict(kind="sil", out_dir="/etc"),
+                        dict(kind="hil", port=port, out_dir="/etc"), dict(kind="hil", port=port, expect="bogus"),
+                        dict(kind="hil", port=port, seconds=0), dict(kind="hil", port=port, seconds=-1),
+                        dict(kind="hil", port=port, seconds=True), dict(kind="hil", port=port, seconds="3"),
+                        dict(kind="hil", port=port, seconds=float("inf")), dict(kind="hil", port=port, gui="yes"),
+                        dict(kind="rocket"), dict(kind=3), dict(kind="hil", port=port, argv=["x"])]:
+                for cmd in ("run_plan", "run_start"):
+                    assert not (await s.cmd(cmd=cmd, **msg))["ok"], (cmd, msg)
+            assert h.runs.active() is None
+            s.close()
+    try:
+        run_with_helper(tmp_path, body, sil_command=["sleep", "600"], hil_command=["sleep", "600"])
+    finally:
+        for fd in keep:
+            os.close(fd)
+
+
+def test_run_manifest_and_run_id_must_name_a_run_under_the_runs_directory(tmp_path):
+    secret = tmp_path / "elsewhere"
+    secret.mkdir()
+    (secret / "manifest.json").write_text('{"secret": 1}')
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            assert (await s.cmd(cmd="run_start", kind="sil"))["ok"]
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            run_id = (await s.cmd(cmd="run_list"))["runs"][0]
+            for bad in ["../../../etc/passwd", "..", f"../{run_id}", str(secret), "", None, 3, run_id + "/../..", "20260101T000000Z-sil-1/.."]:
+                reply = await s.cmd(cmd="run_manifest", run_id=bad)
+                assert not reply["ok"], bad
+            # a run directory that is a symlink out of the runs directory is not followed
+            link = h.run_dir / "runs" / "20260101T000000Z-sil-99"
+            link.symlink_to(secret)
+            reply = await s.cmd(cmd="run_manifest", run_id=link.name)
+            assert not reply["ok"] and "outside" in reply["error"]
+            assert link.name in (await s.cmd(cmd="run_list"))["runs"]  # listed by name only; reading it is what is refused
+            assert (await s.cmd(cmd="run_manifest", run_id=run_id))["ok"]
+            s.close()
+    run_with_helper(tmp_path, body, sil_command=["sleep", "600"])
+
+
+def test_resolve_under_refuses_symlinks_and_dotdot_out_of_the_root(tmp_path):
+    root = tmp_path / "root"
+    (root / "a").mkdir(parents=True)
+    (tmp_path / "out").mkdir()
+    (root / "a" / "link").symlink_to(tmp_path / "out")
+    assert runs_mod.resolve_under(root / "a", (root,)) == root / "a"
+    for bad in (root / "a" / "link", root / ".." / "out", tmp_path / "out", "/etc/passwd", "", root / "a" / ".." / ".." / "out"):
+        with pytest.raises(ValueError):
+            runs_mod.resolve_under(bad, (root,))
+    assert runs_mod.resolve_under(tmp_path / "out", (root, tmp_path / "out")) == tmp_path / "out"
+
+
+def test_heavy_lock_held_refuses_a_run_and_the_refusal_names_the_holder(tmp_path):
+    holder = hold_heavy(tmp_path)
+    port, keep = fake_board(tmp_path, "usb-Fake_Board_1-if00")
+    ran = tmp_path / "ran"
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            for msg in (dict(kind="sil"), dict(kind="hil", port=port)):
+                reply = await s.cmd(cmd="run_start", **msg)
+                assert not reply["ok"] and "heavy lock is held" in reply["error"] and "cmd=sleep" in reply["error"], msg
+                assert not (await s.cmd(cmd="run_plan", **msg))["plan"]["allowed"]
+            assert not (await s.cmd(cmd="sil_start"))["ok"]
+            assert not ran.exists() and h.runs.active() is None
+            release_heavy(holder)  # control: the same requests start once the lock is free
+            assert (await s.cmd(cmd="run_start", kind="sil"))["ok"]
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            assert (await s.cmd(cmd="run_start", kind="hil", port=port))["ok"]
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            s.close()
+    try:
+        run_with_helper(tmp_path, body, sil_command=["sh", "-c", f"touch {ran}; sleep 600"], hil_command=["sleep", "600"])
+    finally:
+        release_heavy(holder)
+        for fd in keep:
+            os.close(fd)
+
+
+def test_validation_or_flash_in_progress_refuses_a_run(tmp_path):
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            h._validation_task = asyncio.create_task(asyncio.sleep(600))
+            reply = await s.cmd(cmd="run_start", kind="sil")
+            assert not reply["ok"] and "validation is running" in reply["error"]
+            h._validation_task.cancel()
+            h._flash_task = asyncio.create_task(asyncio.sleep(600))
+            reply = await s.cmd(cmd="run_start", kind="sil")
+            assert not reply["ok"] and "flash is running" in reply["error"]
+            h._flash_task.cancel()
+            s.close()
+    run_with_helper(tmp_path, body, sil_command=["sleep", "600"])
+
+
+# -- autoconnect
+
+# A stand-in SIL for the autoconnect tests: binds the link port. The first launch exits EX_TEMPFAIL once the trigger file exists
+# (the reboot request); a later launch records the first datagram it receives (the helper's keepalive) and stays up.
+STAND_IN_SIL = """
+import os, socket, sys, time
+port = int(os.environ['{env}'])
+trigger, got, launches = sys.argv[1], sys.argv[2], sys.argv[3]
+n = len(open(launches).read()) if os.path.exists(launches) else 0
+open(launches, 'a').write('x')
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.bind(('127.0.0.1', port))
+if n == 0:
+    while not os.path.exists(trigger):
+        time.sleep(0.01)
+    sys.exit({tempfail})
+s.settimeout(30)
+data, addr = s.recvfrom(64)
+open(got, 'w').write('keepalive')
+time.sleep(600)
+""".format(env=sil.UDP_PORT_ENV, tempfail=os.EX_TEMPFAIL)
+
+
+def test_autoconnect_opens_the_sil_link_within_one_poll_of_the_bind_and_keeps_it_across_a_relaunch(tmp_path, monkeypatch):
+    monkeypatch.setattr(device, "KEEPALIVE_S", 0.05)
+    port = free_udp_port()
+    trigger, got, launches = tmp_path / "trigger", tmp_path / "got", tmp_path / "launches"
+    command = [sys.executable, "-c", STAND_IN_SIL, str(trigger), str(got), str(launches)]
+    bound_at = {}
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            watcher = threading.Thread(target=lambda: (wait_for(lambda: sil.udp_bound(port)), bound_at.setdefault("t", time.monotonic())), daemon=True)
+            assert (await s.cmd(cmd="run_start", kind="sil"))["ok"]
+            watcher.start()
+            assert h.device is None or True
+            opened = await s.wait_event("autoconnect", state="opened", source="sil")
+            opened_at = time.monotonic()
+            watcher.join(TIMEOUT_S)
+            assert opened["device"] == f"udp 127.0.0.1:{port}"
+            assert opened_at - bound_at["t"] < POLL_S + POLL_SLACK_S, "the UDP link opened later than one poll after the bind"
+            device_before = h.device
+            assert device_before is not None
+            trigger.write_text("go")  # the SIL asks for a reboot
+            relaunched = await s.wait_event("sil_relaunched")
+            assert relaunched["relaunches"] == 1 and relaunched["pid"] != s.seen("run_started")[0].get("pid")
+            assert await asyncio.to_thread(wait_for, got.exists), "the relaunched SIL never heard the helper (keepalive)"
+            assert h.device is device_before  # the same open link: not closed, not reopened
+            assert not s.seen("autoconnect", state="closed")
+            assert json.loads((h.run_dir / "runs" / relaunched["run_id"] / "manifest.json").read_text())["relaunches"] == 1
+            await s.cmd(cmd="run_stop")
+            closed = await s.wait_event("autoconnect", state="closed", source="sil")
+            assert h.device is None and closed["reason"] == "the SIL run ended" or h.device is None
+            s.close()
+    run_with_helper(tmp_path, body, sil_command=command, sil_udp_port=port, poll_s=POLL_S)
+
+
+def test_autoconnect_off_or_closed_by_the_user_is_not_reopened_until_the_run_changes(tmp_path):
+    port = free_udp_port()
+    command = [sys.executable, "-c", BIND_PORT]
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            assert (await s.cmd(cmd="autoconnect", enabled=False))["autoconnect"]["enabled"] is False
+            assert (await s.cmd(cmd="run_start", kind="sil"))["ok"]
+            assert await asyncio.to_thread(wait_for, lambda: h.sil.link_state() == "ready")
+            await asyncio.sleep(POLL_S * 5)
+            assert h.device is None and not s.seen("autoconnect", state="opened")
+            assert (await s.cmd(cmd="autoconnect", enabled=True))["ok"]
+            await s.wait_event("autoconnect", state="opened", source="sil")
+            assert (await s.cmd(cmd="close"))["ok"]  # the user closes it: it stays closed
+            await asyncio.sleep(POLL_S * 5)
+            assert h.device is None and not s.seen("autoconnect", state="opened")
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            assert (await s.cmd(cmd="run_start", kind="sil"))["ok"]  # a new run is a new link
+            await s.wait_event("autoconnect", state="opened", source="sil")
+            assert not (await s.cmd(cmd="autoconnect", enabled="yes"))["ok"]
+            s.close()
+    run_with_helper(tmp_path, body, sil_command=command, sil_udp_port=port, poll_s=POLL_S)
+
+
+def test_sil_relaunched_is_an_event_even_without_a_link(tmp_path):
+    marker = tmp_path / "first.done"
+    stand_in = f"if [ ! -e {marker} ]; then touch {marker}; exit {os.EX_TEMPFAIL}; fi; sleep 600"
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            run = (await s.cmd(cmd="run_start", kind="sil"))["run"]
+            event = await s.wait_event("sil_relaunched", run_id=run["run_id"])
+            assert event["relaunches"] == 1
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            assert not s.seen("sil_relaunched") and not s.seen("run_exited")
+            s.close()
+    run_with_helper(tmp_path, body, sil_command=["sh", "-c", stand_in], autoconnect=True, poll_s=POLL_S)
+
+
+def test_board_watcher_opens_only_the_link_interface_and_never_a_board_without_one(tmp_path):
+    keep = []
+
+    async def body(h):
+        async with ws_connect(h) as ws:  # connected first: the events are pushed to the attached browser only
+            s = Session(ws)
+            # a board that shows up with only the console interface, the HIL image's single CDC and a -if02 that is no device
+            _, k = fake_board(tmp_path, "usb-Fake_Board_1-if00")
+            keep.extend(k)
+            _, k = fake_board(tmp_path, "usb-Fake_HIL_2-if00")
+            keep.extend(k)
+            (tmp_path / "by-id" / "usb-Fake_File_3-if02").symlink_to(tmp_path)
+            await asyncio.sleep(POLL_S * 5)
+            assert h.device is None and not s.seen("autoconnect", state="opened")
+            link, k = fake_board(tmp_path, "usb-Fake_Board_1-if02")
+            keep.extend(k)
+            opened = await s.wait_event("autoconnect", state="opened", source="board")
+            assert opened["device"] == f"serial {link} 115200" and h.device.path == link
+            await asyncio.sleep(POLL_S * 4)
+            assert h.device.path == link and not s.seen("autoconnect", state="opened")  # nothing else was opened
+            assert (await s.cmd(cmd="close"))["ok"]  # the user closes it: it stays closed while the board stays
+            await asyncio.sleep(POLL_S * 4)
+            assert h.device is None and not s.seen("autoconnect", state="opened")
+            s.close()
+    try:
+        run_with_helper(tmp_path, body, poll_s=POLL_S)
+    finally:
+        for fd in keep:
+            os.close(fd)
+
+
+def test_board_watcher_reports_a_board_it_cannot_open_once_and_opens_it_when_it_can(tmp_path):
+    import fcntl
+    keep = []
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            link, k = fake_board(tmp_path, "usb-Fake_Board_1-if02")
+            keep.extend(k)
+            other_fd = os.open(os.path.realpath(link), os.O_RDWR | os.O_NOCTTY)
+            fcntl.flock(other_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)  # held elsewhere: the helper's own flock fails
+            failed = await s.wait_event("autoconnect", state="failed", source="board")
+            assert "cannot configure" in failed["reason"]
+            await asyncio.sleep(POLL_S * 5)
+            assert not s.seen("autoconnect", state="failed")  # told once, not every poll
+            assert h.device is None
+            os.close(other_fd)  # released: the next poll opens it
+            await s.wait_event("autoconnect", state="opened", source="board")
+            assert h.device is not None
+            s.close()
+    try:
+        run_with_helper(tmp_path, body, poll_s=POLL_S)
+    finally:
+        for fd in keep:
+            os.close(fd)
+
+
+def test_board_autoconnect_is_suspended_during_a_hil_run_and_a_flash(tmp_path):
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            port, keep_p = fake_board(tmp_path, "usb-Fake_HIL_2-if00")
+            assert (await s.cmd(cmd="run_start", kind="hil", port=port))["ok"]
+            await s.wait_event("autoconnect", state="suspended")
+            link, keep_l = fake_board(tmp_path, "usb-Fake_Board_1-if02")
+            await asyncio.sleep(POLL_S * 5)
+            assert h.device is None and not s.seen("autoconnect", state="opened")  # a link interface appeared; the run owns the bus
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            await s.wait_event("autoconnect", state="resumed")
+            await s.wait_event("autoconnect", state="opened", source="board")
+            # a flash: the port is given up and picotool takes the board; the watcher must not take it back meanwhile
+            assert (await s.cmd(cmd="close"))["ok"]
+            h._flash_task = asyncio.create_task(asyncio.sleep(600))
+            await s.wait_event("autoconnect", state="suspended")
+            os.unlink(link)
+            link2, keep_l2 = fake_board(tmp_path, "usb-Fake_Board_9-if02")
+            await asyncio.sleep(POLL_S * 5)
+            assert h.device is None
+            h._flash_task.cancel()
+            await s.wait_event("autoconnect", state="resumed")
+            await s.wait_event("autoconnect", state="opened", source="board")
+            for fd in (*keep_p, *keep_l, *keep_l2):
+                os.close(fd)
+            s.close()
+    run_with_helper(tmp_path, body, hil_command=["sleep", "600"], poll_s=POLL_S)
+
+
+# -- W-1 and the gate
+
+def test_no_command_writes_into_the_repository(tmp_path):
+    """W-1: `git status` and the diff against HEAD are the same after every command as before it."""
+    port, keep = fake_board(tmp_path, "usb-Fake_Board_1-if00")
+    udp = free_udp_port()
+    before = repo_state()
+    seen = []
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+
+            async def cmd(**msg):
+                reply = await s.cmd(**msg)
+                seen.append((msg["cmd"], repo_state()))
+                return reply
+            await cmd(cmd="status")
+            await cmd(cmd="host_state")
+            await cmd(cmd="run_plan", kind="sil")
+            await cmd(cmd="run_plan", kind="hil", port=port)
+            assert (await cmd(cmd="run_start", kind="sil"))["ok"]
+            await cmd(cmd="run_start", kind="hil", port=port)  # refused: a run is going
+            await s.wait_event("autoconnect", state="opened", source="sil")
+            await cmd(cmd="autoconnect", enabled=False)
+            await cmd(cmd="run_list")
+            await cmd(cmd="close")
+            assert (await cmd(cmd="run_stop"))["ok"]
+            run_id = (await cmd(cmd="run_list"))["runs"][0]
+            await cmd(cmd="run_manifest", run_id=run_id)
+            await cmd(cmd="run_manifest", run_id="../../..")
+            assert (await cmd(cmd="run_start", kind="hil", port=port))["ok"]
+            await cmd(cmd="run_stop")
+            await cmd(cmd="sil_start")
+            await cmd(cmd="sil_stop")
+            await cmd(cmd="open", udp_port=udp)
+            await cmd(cmd="no_such_command")
+            s.close()
+    try:
+        run_with_helper(tmp_path, body, sil_command=[sys.executable, "-c", BIND_PORT], hil_command=["sleep", "600"], sil_udp_port=udp,
+                        poll_s=POLL_S)
+    finally:
+        for fd in keep:
+            os.close(fd)
+    assert len(seen) >= 18
+    for name, state in seen:
+        assert state == before, f"{name} changed the repository"
+    assert repo_state() == before
+
+
+def test_new_commands_need_the_gate_like_every_other(tmp_path):
+    async def body(h):
+        for token in ("", "wrong"):
+            with pytest.raises(InvalidStatus) as e:
+                async with ws_connect(h, token=token) as ws:
+                    await ws.send(json.dumps({"cmd": "run_start", "kind": "sil"}))
+            assert e.value.response.status_code == 401
+        with pytest.raises(InvalidStatus) as e:
+            async with ws_connect(h, origin="http://evil.example") as ws:
+                await ws.send(json.dumps({"cmd": "run_start", "kind": "sil"}))
+        assert e.value.response.status_code == 403
+        assert h.runs.active() is None and not (h.run_dir / "runs").exists()
+    run_with_helper(tmp_path, body, sil_command=["sleep", "600"])
+
+
+# -- device_closed on every close path
+
+def test_every_close_path_pushes_device_closed(tmp_path):
+    port = free_udp_port()
+    keep = []
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            # the close command
+            assert (await s.cmd(cmd="open", udp_port=port))["ok"]
+            await s.wait_event("device_opened")
+            assert (await s.cmd(cmd="close"))["ok"]
+            assert (await s.wait_event("device_closed"))["reason"] == "closed by request"
+            assert (await s.cmd(cmd="close"))["ok"] and not s.seen("device_closed")  # nothing open: nothing closed
+            # the device ending by itself (the pty's far end goes away)
+            link, k = fake_board(tmp_path, "usb-Fake_Board_1-if02")
+            keep.extend(k)
+            await h.open_serial(link, 115200, from_browser=False)
+            os.close(k[0])
+            keep.remove(k[0])
+            reason = (await s.wait_event("device_closed"))["reason"]
+            assert reason.startswith(("read error", "end of file")), reason
+            assert h.device is None
+            # autoconnect closing the SIL link when its run ends
+            assert (await s.cmd(cmd="run_start", kind="sil"))["ok"]
+            await s.wait_event("autoconnect", state="opened", source="sil")
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            assert (await s.wait_event("device_closed"))["reason"] == "the SIL run ended"
+            # the flash giving the port up: test_flash_with_a_passing_report... expects exactly one device_closed, then device_opened
+            s.close()
+    try:
+        run_with_helper(tmp_path, body, sil_command=[sys.executable, "-c", BIND_PORT], sil_udp_port=port, poll_s=POLL_S)
+    finally:
+        for fd in keep:
+            os.close(fd)
