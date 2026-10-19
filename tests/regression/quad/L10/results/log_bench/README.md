@@ -46,7 +46,7 @@ the 30-minute soak (U2b); the ring margin against 0.809 s is +25.8 ms (`tools/ci
    ```
 
    The console is `/dev/serial/by-id/usb-Raspberry_Pi_Pico_B2189353BDF6DD1E-if00` and shows `log state=Ready` once a second after about
-   a second of boot. The board is not armed in this image and nothing it does moves a motor (the receiver is not needed).
+   a second of boot. SAFETY: this image links the full flight composition and the motor outputs; it stays disarmed only because nothing arms it. During the pendulum keep the flight battery UNPLUGGED (the ESC unpowered; a battery strapped on for the mass is fine if its lead is disconnected) and the transmitter OFF, or remove the props. The receiver is not needed for logging.
 2. Log one axis (repeat for each of the three; every run makes a new file; the card has room for hundreds):
 
    ```sh
