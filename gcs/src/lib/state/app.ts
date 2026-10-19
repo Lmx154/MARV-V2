@@ -3,12 +3,14 @@
 import { derived, get, writable, type Readable } from 'svelte/store';
 import { HelperConnection, type HelperConnectionState } from '$link/transport';
 import { LinkSession } from '$link/session';
-import { VehicleClient } from '$link/vehicle';
+import { VehicleClient, type VehicleState } from '$link/vehicle';
 import type { ImageEntry } from '$lib/params/library';
+import { mergeParams, type ParamRow } from '$lib/params/merge';
 import { HelperApi, readHelperInfo, type HelperInfo, type HelperStatus } from './helper_api';
 import { FlashController } from './flash_state';
 import { channelMapOf, LiveController } from './live_state';
 import { ManifestController, type ManifestState } from './manifest_state';
+import { RadioController } from './radio_state';
 import { Problems, type Problem } from './problems';
 import { SimController } from './sim_state';
 import { ShellController, type AutoconnectEvent, type Indicator } from './shell';
@@ -28,6 +30,10 @@ export interface App {
 	flash: FlashController | null;
 	/** The Vehicle page: the live panels of the vehicle's telemetry; null without a helper. */
 	live: LiveController | null;
+	/** The Radio page: the receiver channels, their mapping, the thresholds and the display checks; null without a helper. */
+	radio: RadioController | null;
+	/** The manifest merged with what the vehicle reports (the Parameters page's rows); empty until a manifest or the parameters are known. */
+	paramRows: Readable<readonly ParamRow[]>;
 	/** The Simulation page: the SIL run definition, its plan, launch and stop; null without a helper. */
 	sim: SimController | null;
 	status: Readable<HelperStatus | null>;
@@ -142,6 +148,11 @@ function create(): App {
 		? new LiveController({ telemetry: vehicle.telemetry, channelMap: derived(vehicle.state, (v) => channelMapOf(v.params)) })
 		: null;
 
+	const paramRows = derived([manifest.state, vehicle ? vehicle.state : writable<VehicleState | null>(null)], ([m, v]) =>
+		mergeParams(m.loaded?.manifest ?? null, m.loaded?.provenance ?? null, v && v.params.length > 0 ? v.params : null).rows
+	);
+	const radio = vehicle ? new RadioController({ telemetry: vehicle.telemetry, rows: paramRows }) : null;
+
 	const sim =
 		helper && api
 			? new SimController({
@@ -175,6 +186,8 @@ function create(): App {
 		validation,
 		flash,
 		live,
+		radio,
+		paramRows,
 		sim,
 		status: shell.status,
 		device: shell.device,
