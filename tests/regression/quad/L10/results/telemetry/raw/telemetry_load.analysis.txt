@@ -1,0 +1,53 @@
+clk_sys 150000000 Hz
+closed: 19 windows; interrupt-entry spacing window max 134.11 us, min 132.69 us; IMU interrupt (irq) window max 81.63 us; USBCTRL chain window max 88.46 us
+open: 19 windows; interrupt-entry spacing window max 134.15 us, min 132.65 us; IMU interrupt (irq) window max 81.65 us; USBCTRL chain window max 53.91 us
+load: 59 windows; interrupt-entry spacing window max 134.17 us, min 132.64 us; IMU interrupt (irq) window max 81.66 us; USBCTRL chain window max 89.07 us
+after: 19 windows; interrupt-entry spacing window max 134.09 us, min 132.83 us; IMU interrupt (irq) window max 81.66 us; USBCTRL chain window max 89.63 us
+load: {"seconds": 60.000102043151855, "frames": 118841, "bytes": 6629138, "seq_gaps": 0, "heartbeats": 60, "streams": {"SYS_STATUS": {"granted_interval_us": 5051, "granted_hz": 197.98059790140567, "frames": 11877, "host_hz": 197.9496633432074}, "ATTITUDE": {"granted_interval_us": 5051, "granted_hz": 197.98059790140567, "frames": 11879, "host_hz": 197.98299661985018, "board_hz": 197.97986532435496, "gap_min_us": 1000, "gap_max_us": 10000}, "ATTITUDE_QUATERNION": {"granted_interval_us": 5051, "granted_hz": 197.98059790140567, "frames": 11879, "host_hz": 197.98299661985018, "board_hz": 197.97986532435496, "gap_min_us": 2000, "gap_max_us": 8000}, "RC_CHANNELS": {"granted_interval_us": 5051, "granted_hz": 197.98059790140567, "frames": 11879, "host_hz": 197.98299661985018, "board_hz": 197.97986532435496, "gap_min_us": 2000, "gap_max_us": 7000}, "ATTITUDE_TARGET": {"granted_interval_us": 5051, "granted_hz": 197.98059790140567, "frames": 11879, "host_hz": 197.98299661985018, "board_hz": 197.97986532435496, "gap_min_us": 3000, "gap_max_us": 7000}, "HIGHRES_IMU": {"granted_interval_us": 5051, "granted_hz": 197.98059790140567, "frames": 11872, "host_hz": 197.8663301516004, "board_hz": 197.87845492181776, "gap_min_us": 533, "gap_max_us": 10139}, "ACTUATOR_OUTPUT_STATUS": {"granted_interval_us": 5051, "granted_hz": 197.98059790140567, "frames": 11879, "host_hz": 197.98299661985018, "board_hz": 197.9801722140812, "gap_min_us": 800, "gap_max_us": 9605}, "MARV_FC_STATUS": {"granted_interval_us": 5051, "granted_hz": 197.98059790140567, "frames": 11879, "host_hz": 197.98299661985018, "board_hz": 197.98104998994845, "gap_min_us": 1600, "gap_max_us": 8538}, "MARV_ESTIMATOR": {"granted_interval_us": 5051, "granted_hz": 197.98059790140567, "frames": 11879, "host_hz": 197.98299661985018, "board_hz": 197.9801722140812, "gap_min_us": 2402, "gap_max_us": 7737}, "MARV_IDENTITY": {"granted_interval_us": 5051, "granted_hz": 197.98059790140567, "frames": 11879, "host_hz": 197.98299661985018}}, "frames_per_s": 1980.679964752893, "bytes_per_s": 110485.44542861523}
+rate executions, timing_faults first ('757322', '1') last ('1207114', '1')
+attitude faults, timing_faults last ('0', '0'); est_valid last 1
+imu samples ovr spi partial clamp order empty first ('1514643', '0', '0', '0', '0', '0', '0') last ('2414228', '0', '0', '0', '0', '0', '0')
+arming states seen ['no_link']; usb_reset_refused last 0
+== tools/target/bench_stats.py report (whole capture)
+
+== telemetry_load.console.log: 121 lines, device time 202.1 s to 322.1 s (120.0 s of lines), clk_sys 150000000 Hz
+   marv_fc3v2 quad-L2-pass-532-g4c5470c
+   params ok: generated defaults, rate_period_tolerance_us 3
+   imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc
+   bench stats: on (MARV_FC3V2_BENCH_STATS, DWT CYCCNT at clk_sys)
+   stage     count        max cyc   max us   max (after the first line) us   p50 us  p99 us  p99.99 us  mean-bucket us
+   read        2414238         3640    24.27                          24.27    23.89   23.89     27.30        22.21
+   decode      2414238         2330    15.53                          13.75    17.06   17.06     17.06        15.34
+   filter      2414238         2237    14.91                          13.21    10.23   13.65     13.65        11.09
+   rate        1207119          937     6.25                           6.25     6.82    6.82      6.82         6.40
+   mixer       1207119         1640    10.93                          10.90    11.94   11.94     11.94        11.09
+   gate        1207119          109     0.73                           0.73     0.74    0.74      0.74         0.69
+   dshot       1207119         1782    11.88                          11.86    11.94   11.94     11.94        11.09
+   publish     2414238          238     1.59                           1.59     1.70    1.70      1.70         1.60
+   bench       2414238          380     2.53                           2.53     2.55    2.55      2.55         2.35
+   irq         2414238        12369    82.46                          81.66    54.61   81.91     95.57        63.17
+   account     2414237          580     3.87                           3.87     3.41    4.26      4.26         3.31
+   usb_irq      212706        13445    89.63                          89.63     2.98    4.26     95.57         2.85
+   IMU interrupt-entry spacing (one sample each): n 2414237, mean 20010.3 cyc = 133.402 us, min 84.20 us, max 134.17 us; largest window (max - mean) 0.76 us, (mean - min) 0.77 us
+   max samples per interrupt 1, IMU interrupts begun inside the USBCTRL chain 5781
+   instrumentation inside the IMU interrupt: the bench stage (still sums) and the marks are inside irq; account follows irq; the default image has none of them
+   last counter line: imu dt=1000057us irq/s=7496.6 words/s=14993.1 samples/s=7496.6 ticks/s=7496.6 writes/s=3747.8 motor_drops=0 | total samples=2414228 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=322148644 gyro=(-0.0037,+0.0061,-0.0012) accel=(-0.029,+0.263,-9.777) temp=301.74K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.8 executions=1207114 timing_faults=1 | rc frames/s=0.0 total=0 link_frames=0 bad_crc=0 bad_length=0 dropped_bytes=0 uart_errors=0 age_us=-1 roll=+0.000 pitch=+0.000 throttle=0.000 yaw=+0.000 tilt=0.0265 est_valid=1 | arming=no_link | attitude faults=0 timing_faults=0 | usb_reset_refused=0
+
+== EMB-3 (core 4.1: per core, utilization within n(2^(1/n) - 1) or exact response-time analysis, on measured worst cases)
+   telemetry_load.console.log: T = 133.402 us (measured mean interrupt-entry spacing)
+     C = irq + account max (including start-up) = 86.33 us; U = C/T = 0.647 vs the n = 1 bound 1.000: PASS (margin +35.3 % of T); RTA R = C + B = 87.09 us with B = 0.76 us vs D = T: PASS (margin +46.31 us)
+     C = irq + account max (after the first line) = 85.53 us; U = C/T = 0.641 vs the n = 1 bound 1.000: PASS (margin +35.9 % of T); RTA R = C + B = 86.29 us with B = 0.76 us vs D = T: PASS (margin +47.11 us)
+     mean (histogram midpoints, not a worst case): 66.48 us per interrupt, 49.8 % of the core
+
+== Still bench IMU (899584 samples between the first and the last bench_imu line, 120.0 s; FRD, after the board mounting map)
+   profile /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-tele-bench/sensors/profiles/madflight_fc3v2_revc.yaml: gyro 2.8 mdps/rtHz x sqrt(537 Hz) = 64.9 mdps; accel 60 ug/rtHz x sqrt(3840 Hz) = 3.72 mg; offsets +-1 dps, +-12 mg; LSB 70 mdps, 0.488 mg (quantisation LSB/sqrt(12) = 20.2 mdps, 0.141 mg)
+   if the gyro LPF2 is first order: noise bandwidth pi/2 x 537 Hz = 844 Hz, sd 81.3 mdps; with the quantisation 83.8 mdps
+   gyro  x: mean   -154.10 mdps (offset  -154.10 vs +-1000: inside), sd  104.59 mdps (within 1 s windows  104.55) vs profile 64.89: ratio 1.61
+   gyro  y: mean   +277.28 mdps (offset  +277.28 vs +-1000: inside), sd  103.20 mdps (within 1 s windows  103.16) vs profile 64.89: ratio 1.59
+   gyro  z: mean   -123.18 mdps (offset  -123.18 vs +-1000: inside), sd   79.33 mdps (within 1 s windows   79.29) vs profile 64.89: ratio 1.22
+   accel x: mean     -3.24 mg (offset    -3.24 vs +-12: inside), sd    2.65 mg (within 1 s windows    2.65) vs profile 3.72: ratio 0.71
+   accel y: mean    +26.55 mg (offset   +26.55 vs +-12: OUTSIDE), sd    2.60 mg (within 1 s windows    2.60) vs profile 3.72: ratio 0.70
+   accel z: mean   -998.78 mg (offset    +1.22 vs +-12: inside), sd    2.96 mg (within 1 s windows    2.96) vs profile 3.72: ratio 0.79
+   temperature (newest sample per line): 28.36 to 28.65 degC over the run
+   gyro  drift (mean of the last tenth - first tenth): (-2.01, +0.81, -1.50) mdps
+   accel drift (mean of the last tenth - first tenth): (+0.00, +0.03, -0.03) mg
