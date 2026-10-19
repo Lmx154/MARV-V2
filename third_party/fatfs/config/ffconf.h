@@ -17,6 +17,9 @@
 /    FF_MIN_SS = FF_MAX_SS = 512          the sector size of an SD card in SPI mode (SD Physical Layer Simplified
 /                                         Specification 9.10, section 7.2.3: SDHC and SDXC blocks are fixed at 512 bytes).
 /    FF_USE_MKFS 0                        the board never formats a card.
+/    FF_USE_EXPAND 1                      f_expand: the onboard logger reserves its log file as one contiguous cluster block
+/                                         while disarmed and then writes its sectors directly (serena memory
+/                                         quad-m4/architect-onboard-logger-2026-10-18 item 2; unit U2).
 /    FF_FS_REENTRANT 0, FF_FS_LOCK 0      single caller (the background loop).
 /---------------------------------------------------------------------------*/
 
@@ -60,7 +63,7 @@
 /* This option switches fast seek feature. (0:Disable or 1:Enable) */
 
 
-#define FF_USE_EXPAND	0
+#define FF_USE_EXPAND	1
 /* This option switches f_expand(). (0:Disable or 1:Enable) */
 
 

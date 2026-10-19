@@ -22,3 +22,15 @@ if(MARV_TARGET STREQUAL "host")
     PRIVATE marv_attitude marv_estimator marv_sched marv_rate_group marv_rate marv_mixer marv_stick_rates marv_dshot marv_crsf_decode marv_params_fc3v2_eskf_runtime)
   marv_apply_flags(marv_composition_quad_fc_eskf FIRMWARE)
 endif()
+
+# The same composition, the one source file unchanged and without definitions, compiled against the FC3v2 set with the logger
+# register (marv_params_fc3v2_log, which keeps every id of marv_params_fc3v2), for the bench log image only
+# (MARV_FC3V2_LOG_BENCH, fw/hal/target/CMakeLists.txt; onboard logger unit U2). Not defined in any other configuration.
+if(MARV_FC3V2_LOG_BENCH)
+  add_library(marv_composition_quad_fc_log STATIC src/quad_fc.cpp)
+  target_include_directories(marv_composition_quad_fc_log PUBLIC include)
+  target_link_libraries(marv_composition_quad_fc_log
+    PUBLIC marv_hal marv_types marv_prim marv_arming marv_params
+    PRIVATE marv_attitude marv_estimator marv_sched marv_rate_group marv_rate marv_mixer marv_stick_rates marv_dshot marv_crsf_decode marv_params_fc3v2_log_runtime)
+  marv_apply_flags(marv_composition_quad_fc_log FIRMWARE)
+endif()

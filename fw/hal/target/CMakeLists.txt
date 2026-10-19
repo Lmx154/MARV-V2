@@ -129,6 +129,40 @@ if(MARV_FC3V2_SD_BENCH)
   target_include_directories(marv_hal_target SYSTEM PRIVATE
     $<TARGET_PROPERTY:pico_stdio_headers,INTERFACE_INCLUDE_DIRECTORIES>)
 endif()
+# MARV_FC3V2_LOG_BENCH (bench only, default OFF; the onboard SD logger's unit U2, serena memory
+# quad-m4/architect-onboard-logger-2026-10-18 items 1-5): the flight image with the onboard logger. The tick pushes every sample,
+# rate-tick write and new receiver frame into a ring (src/log_tick.cpp, from the sample sink, hal_actuators_write and
+# hal_manual_control; the composition is not changed), and the background loop runs the U1 logger (fw/log) on it with the SD
+# card as its storage (src/log_storage_sd.cpp: a contiguous preallocated file per session, data written straight into it).
+# The image uses the parameter set marv_params_fc3v2_log (the FC3v2 set plus the log_* entries; the composition and the
+# config store are compiled against it: marv_composition_quad_fc_log, marv_store_log), runs no link service and gives the
+# config store no working memory, which frees the SRAM for the ring. Its console has the bench commands of
+# marv/hal_target/log_bench.hpp, among them the bench trigger `log start`, which logs without arming. The ring and staging
+# sizes are the ruling's design values (item 3: a dedicated 256 KiB ring; a 16 KiB staging chunk); the post-link check
+# tools/ci/check_log_ring.py fails the build unless the ring holds the fast stream for sd_log_write_stall_max_s (invariant L-5,
+# core EMB-6). MARV_FC3V2_LOG_BENCH_FILE_BYTES, when set, replaces log_file_bytes through the parameter table (a scenario value:
+# a long file for the soak, a short one for the card-full check). Combines with MARV_FC3V2_BENCH_STATS (EMB-3 with the hooks);
+# excludes every other bench variant.
+option(MARV_FC3V2_LOG_BENCH "FC3v2 bench image that runs the onboard SD logger (no link service)" OFF)
+set(MARV_FC3V2_LOG_RING_BYTES 262144 CACHE STRING
+    "Log bench: the ring's bytes (design value, architect ruling 2026-10-18 item 3: a dedicated 256 KiB ring)")
+set(MARV_FC3V2_LOG_STAGING_BYTES 16384 CACHE STRING
+    "Log bench: the staging chunk's bytes, a whole number of 512-byte sectors (design value, 16 KiB)")
+set(MARV_FC3V2_LOG_BENCH_FILE_BYTES "" CACHE STRING
+    "Log bench: log_file_bytes through the parameter table (scenario value; empty: the generated value)")
+if(MARV_FC3V2_LOG_BENCH AND (MARV_FC3V2_HIL OR MARV_FC3V2_HIL_LINK OR MARV_FC3V2_IMU_LOG OR MARV_FC3V2_COUNT_ONLY OR
+                             MARV_FC3V2_SD_BENCH OR MARV_FC3V2_USB_BENCH OR MARV_FC3V2_BENCH_ACCEPT_SPACING))
+  message(FATAL_ERROR "MARV_FC3V2_LOG_BENCH excludes MARV_FC3V2_HIL, MARV_FC3V2_HIL_LINK, MARV_FC3V2_IMU_LOG, MARV_FC3V2_COUNT_ONLY, MARV_FC3V2_SD_BENCH, MARV_FC3V2_USB_BENCH and MARV_FC3V2_BENCH_ACCEPT_SPACING")
+endif()
+if(NOT MARV_FC3V2_LOG_BENCH AND NOT MARV_FC3V2_LOG_BENCH_FILE_BYTES STREQUAL "")
+  message(FATAL_ERROR "MARV_FC3V2_LOG_BENCH_FILE_BYTES needs MARV_FC3V2_LOG_BENCH")
+endif()
+if(MARV_FC3V2_LOG_BENCH)
+  target_sources(marv_hal_target PRIVATE src/log_tick.cpp src/log_storage_sd.cpp src/log_bench.cpp)
+  target_compile_definitions(marv_hal_target PUBLIC MARV_FC3V2_LOG_BENCH
+    PRIVATE MARV_FC3V2_LOG_RING_BYTES=${MARV_FC3V2_LOG_RING_BYTES} MARV_FC3V2_LOG_STAGING_BYTES=${MARV_FC3V2_LOG_STAGING_BYTES})
+  target_link_libraries(marv_hal_target PUBLIC marv_log)
+endif()
 # The composite USB device (ground-segment unit 12a, decision 0053; src/usb.cpp, marv/hal_target/usb.hpp): every image but the
 # two HIL ones keeps the SDK's pico_stdio_usb for the console (CDC 0, interface 0) and supplies its own descriptors (console
 # CDC, link CDC at interface 2, the Raspberry Pi reset interface at interface 4), a tusb_config.h with two CDC instances
@@ -181,6 +215,26 @@ target_compile_definitions(marv_fc3v2 PRIVATE MARV_FC3V2_VERSION="${MARV_FC3V2_V
   $<$<BOOL:${MARV_FC3V2_BENCH_ACCEPT_SPACING}>:MARV_FC3V2_BENCH_ACCEPT_SPACING>)
 if(MARV_FC3V2_HIL_LINK)
   target_link_libraries(marv_fc3v2 PRIVATE marv_hal_target marv_lsm6dsv_decode pico_stdlib hardware_spi hardware_pio hardware_uart)
+elseif(MARV_FC3V2_LOG_BENCH)
+  target_link_libraries(marv_fc3v2 PRIVATE
+    marv_composition_quad_fc_log marv_store_log marv_hal_target marv_lsm6dsv_decode marv_console_decode marv_log
+    marv_params_fc3v2_log_generated marv_params_fc3v2_log_runtime pico_stdlib hardware_spi hardware_pio hardware_uart
+    hardware_flash hardware_watchdog pico_sha256 pico_rand)
+  if(NOT MARV_FC3V2_LOG_BENCH_FILE_BYTES STREQUAL "")
+    target_compile_definitions(marv_fc3v2 PRIVATE MARV_FC3V2_LOG_BENCH_FILE_BYTES=${MARV_FC3V2_LOG_BENCH_FILE_BYTES})
+  endif()
+  marv_check_param_table(marv_fc3v2 marv_params_fc3v2_log)
+  # Invariant L-5 (core EMB-6) on the linked ring and the set's parameters, or the build fails and the image is removed.
+  set(marv_log_python "${MARV_PYTHON}")
+  if(marv_log_python STREQUAL "")
+    set(marv_log_python "${PROJECT_SOURCE_DIR}/.venv/bin/python")
+  endif()
+  add_custom_command(TARGET marv_fc3v2 POST_BUILD
+    COMMAND "${marv_log_python}" "${PROJECT_SOURCE_DIR}/tools/ci/check_log_ring.py"
+            --manifest "$<TARGET_PROPERTY:marv_params_fc3v2_log_generated,MARV_PARAM_MANIFEST>"
+            --elf "$<TARGET_FILE:marv_fc3v2>" --nm "${CMAKE_NM}" --delete-on-failure
+    COMMENT "Checking the log ring of marv_fc3v2 against the fast stream x the worst SD stall (L-5)"
+    VERBATIM)
 else()
   target_link_libraries(marv_fc3v2 PRIVATE
     marv_composition_quad_fc marv_store marv_hal_target marv_lsm6dsv_decode marv_console_decode marv_params_fc3v2_generated
