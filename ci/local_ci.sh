@@ -33,6 +33,13 @@ HEADROOM_BYTES="${MARV_LOCAL_CI_HEADROOM_BYTES:-1025118208}"
 set -euo pipefail
 export MARV_CI_MODE="${MARV_CI_MODE:-full}"
 
+# One heavy job at a time on this host (ci/heavy.sh): take the lock, or stop here when someone holds it (before the arguments
+# are consumed, so the command is re-run whole).
+self="$(readlink -f "${BASH_SOURCE[0]}")"
+if ! bash "$(dirname "${self}")/heavy.sh" --held; then
+  exec bash "$(dirname "${self}")/heavy.sh" -- bash "${self}" "$@"
+fi
+
 usage() {
   echo "usage: ci/local_ci.sh [--commit <rev>] [--no-cache] [--parallel N] [core|gz-l2|gz-l4|gz-l5|gz-l7|gz-l11 ...]" >&2
   exit 2
