@@ -22,8 +22,17 @@
 #include "marv/hal_target/motor_test.hpp"
 #include "marv/hal_target/receiver.hpp"
 #include "marv/hal_target/usb.hpp"
+#if defined(MARV_FC3V2_BENCH_PROFILE) && defined(MARV_FC3V2_LOG_BENCH)
+#error "MARV_FC3V2_BENCH_PROFILE and MARV_FC3V2_LOG_BENCH are separate images and cannot be combined"
+#endif
 #if defined(MARV_FC3V2_BENCH_PROFILE)
 #include "marv/bench_profile.hpp"
+#elif defined(MARV_FC3V2_LOG_BENCH)
+#include <pico/rand.h>
+
+#include "marv/hal_target/log_bench.hpp"
+#include "marv/hal_target/log_tick.hpp"
+#include "marv/log/params.hpp"
 #else
 #include "marv/link/service.hpp"
 #endif
@@ -54,6 +63,15 @@ void log_then_tick(const marv::ImuSample& s) noexcept {
 }
 constexpr marv::hal_target::ImuSink kSink = &log_then_tick;
 constexpr const char* kTickMode = "quad_fc + IMU log (MARV_FC3V2_IMU_LOG)";
+#elif defined(MARV_FC3V2_LOG_BENCH)
+// The bench log image (fw/hal/target/CMakeLists.txt): the one call that hands the composition a sample first pushes it into the
+// onboard logger's ring (log_tick.hpp), so the log holds exactly the stream the composition's tick receives, flags included.
+void log_then_tick(const marv::ImuSample& s) noexcept {
+  marv::hal_target::log_tick_sample(s);
+  marv::composition::tick(s);
+}
+constexpr marv::hal_target::ImuSink kSink = &log_then_tick;
+constexpr const char* kTickMode = "quad_fc + onboard SD log (MARV_FC3V2_LOG_BENCH)";
 #else
 constexpr marv::hal_target::ImuSink kSink = &marv::composition::tick;
 constexpr const char* kTickMode = "quad_fc";
@@ -90,6 +108,24 @@ constexpr const char* kParamMode = "bench: rate_period_tolerance_us raised (MARV
 #elif defined(MARV_FC3V2_BENCH_PROFILE)
 std::span<const marv::ParamRecord, marv::kParamCount> param_table() { return marv::param_defaults(); }
 constexpr const char* kParamMode = "generated defaults of the bench-profile set (no config store)";
+#elif defined(MARV_FC3V2_LOG_BENCH_FILE_BYTES)
+// Bench log image only (fw/hal/target/CMakeLists.txt): log_file_bytes is set, through the parameter table, to the scenario
+// value MARV_FC3V2_LOG_BENCH_FILE_BYTES (a long file for the soak, a short one for the card-full check). Every other image
+// loads the generated table unchanged.
+std::array<marv::ParamRecord, marv::kParamCount> g_bench_table{};
+
+std::span<const marv::ParamRecord, marv::kParamCount> param_table() {
+  const std::span<const marv::ParamRecord, marv::kParamCount> d = marv::param_defaults();
+  for (std::size_t i = 0; i < marv::kParamCount; ++i) {
+    g_bench_table[i] = d[i];
+  }
+  marv::ParamRecord& bytes = g_bench_table[static_cast<std::size_t>(marv::ParamId::log_file_bytes)];
+  bytes.value.i32 = MARV_FC3V2_LOG_BENCH_FILE_BYTES;
+  bytes.origin = marv::ParamOrigin::Manual;
+  bytes.source = "bench: MARV_FC3V2_LOG_BENCH_FILE_BYTES, the bench log image's scenario value of the log file's region";
+  return std::span<const marv::ParamRecord, marv::kParamCount>{g_bench_table};
+}
+constexpr const char* kParamMode = "bench: log_file_bytes set (MARV_FC3V2_LOG_BENCH_FILE_BYTES)";
 #else
 std::span<const marv::ParamRecord, marv::kParamCount> param_table() { return marv::param_defaults(); }
 constexpr const char* kParamMode = "generated defaults";
@@ -103,9 +139,9 @@ bool armed_now() noexcept { return marv::arming::is_armed(marv::composition::arm
 // hash it binds stored configs to, and how long the hash took at boot. The flight image has a slot's worth, so any file a
 // slot holds can be applied. Bench images whose own buffers take that RAM have less: the bench-statistics image half a slot,
 // which still holds every config the generator writes (tools/config/mcfg.py --max-bytes, half a slot), and refuses a larger
-// staged config (store::activate: too large); the SD and USB bench images none (they run no link service, so nothing can ask
-// them for an activation), so their boot step applies no pending file.
-#if defined(MARV_FC3V2_SD_BENCH) || defined(MARV_FC3V2_USB_BENCH)
+// staged config (store::activate: too large); the SD, USB and log bench images none (they run no link service, so nothing can
+// ask them for an activation), so their boot step applies no pending file.
+#if defined(MARV_FC3V2_SD_BENCH) || defined(MARV_FC3V2_USB_BENCH) || defined(MARV_FC3V2_LOG_BENCH)
 constexpr std::size_t kStoreScratchBytes = 0;
 #elif defined(MARV_FC3V2_BENCH_STATS)
 constexpr std::size_t kStoreScratchBytes = marv::kConfigSlotBytes / 2;
@@ -430,6 +466,10 @@ const char* reason_text(marv::MotorTestReason r) {
 // a request, forwarded. The composition validates and replies through print_motor_test_events.
 void console_byte(char c) {
   marv::hal_target::motor_test_post_cancel(marv::MotorTestCancel::Cancel);
+#if defined(MARV_FC3V2_LOG_BENCH)
+  // The bench log image's own commands (log_bench.hpp): a `log` line is answered there and is not a motor-test refusal.
+  const bool log_line = marv::hal_target::log_bench_console_byte(c, armed_now());
+#endif
   marv::hal_target::ParsedLine line;
   if (!line_buffer.push(c, line)) {
     return;
@@ -441,6 +481,11 @@ void console_byte(char c) {
       std::printf("motor_test: stop received\n");
       break;
     case marv::hal_target::LineKind::Refused:
+#if defined(MARV_FC3V2_LOG_BENCH)
+      if (log_line) {
+        break;
+      }
+#endif
       ++console_refused;
       std::printf("motor_test refused: %s (console)\n", refusal_text(line.refusal));
       break;
@@ -537,6 +582,39 @@ void bench_profile_service() {
 }
 #endif
 
+#if defined(MARV_FC3V2_LOG_BENCH)
+// The onboard logger of the bench log image (log_bench.hpp): a TRNG session id per file, the generated parameter names, the
+// arming state code for the rate-tick record, and the header and configuration from this boot's table.
+std::uint64_t log_session_id(void*) noexcept { return get_rand_64(); }
+const char* log_param_name(std::size_t id) noexcept { return marv::param_name(static_cast<marv::ParamId>(id)); }
+std::uint8_t log_arm_state() noexcept { return static_cast<std::uint8_t>(marv::composition::arming_status()); }
+
+void log_start() noexcept {
+  using marv::ParamId;
+  const marv::store::BootReport& b = marv::store::boot_report();
+  marv::log::HeaderInfo h;
+  h.image_hash = image_hash.sha256;
+  h.config_hash = b.config_hash;
+  h.schema_hash = marv::kParamSchemaHash;
+  h.boot.config_source = static_cast<std::uint8_t>(b.source);
+  h.boot.slot = static_cast<std::uint8_t>(b.slot);
+  h.boot.config_status = static_cast<std::uint8_t>(b.status);
+  h.boot.fault = static_cast<std::uint8_t>(b.fault);
+  h.boot.request = static_cast<std::uint8_t>(b.request);
+  h.boot.request_fault = static_cast<std::uint8_t>(b.request_fault);
+  h.boot.sequence = b.sequence;
+  h.tick_num_us = static_cast<std::uint32_t>(marv::param_value<ParamId::tick_period_num_us>());
+  h.tick_den = static_cast<std::uint32_t>(marv::param_value<ParamId::tick_period_den>());
+  h.odr_hz = static_cast<float>(imu_boot.odr_hz_by_trim);
+  h.params = marv::param_active_table();
+  h.param_name = &log_param_name;
+  marv::hal_target::log_bench_start(
+      marv::log::logger_config_from_params(marv::param_active_table(), marv::hal_target::log_ring().capacity_cells(),
+                                           &log_session_id, nullptr),
+      h);
+}
+#endif
+
 }  // namespace
 
 // The M1 image: stdio over USB CDC, a banner, the default parameters, the composition's init, the motor output, the receiver UART (CRSF, M2 P5b), then the IMU: from then
@@ -597,16 +675,23 @@ int main() {
                                                     marv::param_value<ParamId::rc_channel_angle>());
   stage = Stage::kReceiverOk;
   std::printf("receiver ok\n");
+#if defined(MARV_FC3V2_LOG_BENCH)
+  marv::hal_target::log_tick_set_arm_source(&log_arm_state);
+#endif
   imu_start_us = marv::hal_time_us();
   imu_boot = marv::hal_target::imu_start(
       kSink, &rate_counts,
       {marv::param_value<ParamId::tick_period_num_us>(), marv::param_value<ParamId::tick_period_den>()});
   stage = Stage::kImuOk;
   print_progress();
-#if !defined(MARV_FC3V2_USB_BENCH) && !defined(MARV_FC3V2_SD_BENCH) && !defined(MARV_FC3V2_BENCH_PROFILE)
+#if defined(MARV_FC3V2_LOG_BENCH)
+  log_start();
+#endif
+#if !defined(MARV_FC3V2_USB_BENCH) && !defined(MARV_FC3V2_SD_BENCH) && !defined(MARV_FC3V2_BENCH_PROFILE) && !defined(MARV_FC3V2_LOG_BENCH)
   // The ground link (ground-segment unit 12b) on the link CDC, served from this loop only; its identity carries the image hash
-  // the store's boot step above was given. Not in the USB bench image (its echo owns the port) nor the SD bench image (the
-  // link's state and the store's staged sources do not fit the SRAM beside the SD bench's buffers and the bench statistics).
+  // the store's boot step above was given. Not in the USB bench image (its echo owns the port), the SD bench image (the
+  // link's state and the store's staged sources do not fit the SRAM beside the SD bench's buffers and the bench statistics)
+  // nor the log bench image (the same SRAM holds its ring).
   marv::link::service_init(marv::link::ServiceConfig{
       marv::link::Transport{&marv::hal_target::link_port_receive, &marv::hal_target::link_port_send,
                             &marv::hal_target::link_port_writable, &marv::hal_target::link_port_connected},
@@ -643,7 +728,10 @@ int main() {
         console_byte(static_cast<char>(c));
       }
     }
-#if !defined(MARV_FC3V2_USB_BENCH) && !defined(MARV_FC3V2_SD_BENCH) && !defined(MARV_FC3V2_BENCH_PROFILE)
+#if defined(MARV_FC3V2_LOG_BENCH)
+    marv::hal_target::log_bench_service(marv::hal_time_us(), armed_now());
+#endif
+#if !defined(MARV_FC3V2_USB_BENCH) && !defined(MARV_FC3V2_SD_BENCH) && !defined(MARV_FC3V2_BENCH_PROFILE) && !defined(MARV_FC3V2_LOG_BENCH)
     // Once the board's hal_reboot has armed its delayed watchdog reboot, step returns true; the loop keeps serving (the link's
     // queued answers go out) until the watchdog resets the chip.
     static_cast<void>(marv::link::service_step());
@@ -659,6 +747,9 @@ int main() {
       const marv::hal_target::ReceiverStats rc_now = marv::hal_target::receiver_stats();
       print_stats(now, before, rc_now, rc_before, t - t_before);
       print_bench(t);
+#if defined(MARV_FC3V2_LOG_BENCH)
+      marv::hal_target::log_bench_print(t);
+#endif
       before = now;
       rc_before = rc_now;
       t_before = t;
