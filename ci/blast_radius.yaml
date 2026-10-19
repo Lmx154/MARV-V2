@@ -627,8 +627,15 @@ rules:
     ctest_labels: []
     run_ci_steps: [gs3_check, tools_tests]
     pytest_paths: [tests/tools]
-    gz_groups: []
-    why: "the interactive SIL's run definition checks (card, overrides, gui; GX-3), imported by run_quad_fc.py and by the GCS helper (tools/gs/runs.py); held by tests/tools/test_sim_run.py and tests/tools/test_gs_helper.py"
+    gz_groups: [l7]
+    why: "the interactive SIL's run definition checks (card, overrides, gui; GX-3), imported by run_quad_fc.py and by the GCS helper (tools/gs/runs.py); held by tests/tools/test_sim_run.py and tests/tools/test_gs_helper.py; run_quad_fc.py imports it and the l7 sim channel gz test (tests/regression/quad/L10/gz/test_sim_channel.py) runs through run_quad_fc, so the l7 group is selected"
+
+  - paths: [tools/sim/sim_channel.py]
+    ctest_labels: []
+    run_ci_steps: [tools_tests]
+    pytest_paths: [tests/tools]
+    gz_groups: [l7]
+    why: "the sim channel's run-definition elements and reference decoder (GX-8), imported by run_quad_fc.py, run_hil_s4.py and the sim channel gz test (l7, host-gz-quadfc); held by tests/tools/test_sim_run.py and tests/regression/quad/L10/gz/test_sim_channel.py"
 
   - paths: [tools/sim/measure_sim3.py]
     ctest_labels: []
