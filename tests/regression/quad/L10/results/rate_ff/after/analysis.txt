@@ -1,0 +1,3 @@
+run after: overrides none; log sha256 4e059530a0b41847947f942001a97bb0762a002cff775758c01a4d79a36effac
+  step  stick 0.35406142473220825 -> command 100.00 deg/s at 6504016 us: t63 117.6 ms, overshoot 6.1 %, rate/command at the window's end 1.061
+  flick stick 0.5219563245773315 -> command 200.00 deg/s held 176.0 ms at 11704083 us: reach 81.3 % of command, peak 7.1 ms after release, to 10 % of peak 361.3 ms after release (354.3 ms after the peak), undershoot -1.8 % of command
