@@ -21,8 +21,8 @@ in §6:
 - B4 vehicle zoo;
 - B5 avoidance and CV.
 
-**Not in this spec:** the ground segment and the rocket. The spine's pilot input uses a minimal joystick bridge (L8),
-not the GCS.
+**Not in this spec:** the ground segment and the rocket. The spine's pilot input in SIL is the GCS's SIL pilot bridge
+(ground spec §3, decision 0056), which is L8's joystick bridge.
 
 ---
 
