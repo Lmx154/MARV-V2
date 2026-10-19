@@ -1288,17 +1288,14 @@ TAU_REF_METHOD = (
 TAU_REF_SOURCE = ("the gain rule's inputs (decision 0014) and the vehicle card rotors thrust_coeff and speed_range, the mixer "
                   "M and the scenario register rate_max_<axis>; decision 0005 QF-2; lead decision 2026-10-01 (decision 0014 "
                   "c5)")
+# Rule step 14 under model following. Kept short: the FC3v2 ESKF set's config file sits near half a config slot
+# (tools/config/mcfg.py stores this text per distinct source).
 TAU_REF_MF_METHOD = (
-    "derived(tau_ref = max(rate_max/alpha_max, tau_m (1 + tau_robustness_band) + d) of QF-2 under model following "
-    "(rate_ref_ff_enable 1, decision 0058; rule step 14 of tools/card/rate_lead.py): d the loop delay every chain "
-    "configuration carries, the profile's latency plus the gyro chain's group delay at w_c,nom with every notch bypassed "
-    "plus one rate-loop period; alpha_max = tau_max/(J (1 + inertia_robustness_band)), tau_max the air-mode envelope torque "
-    "of the mixer M with the collective free; rounded up to f32; asserted: the full-stick reference torque J "
-    "rate_max/tau_ref stays within tau_max at J (1 -+ inertia_robustness_band))")
-TAU_REF_MF_SOURCE = ("vehicle card rotors.motor_lag.tau, inertia_diag, thrust_coeff and speed_range, the mixer M; design-budget "
-                     "tau_robustness_band, inertia_robustness_band; scenario register rate_max_<axis>, rate_ref_ff_enable, "
-                     "tick_period_num_us, tick_period_den, rate_loop_divisor; the sensor profile the card names (latency, the "
-                     "gyro chain) and the rate gains' crossover (decision 0014); decision 0058 (Luis, 2026-10-18)")
+    "derived(tau_ref = max(rate_max/alpha_max, tau_m (1 + tau_robustness_band) + d), QF-2 under model following (rule step "
+    "14 of tools/card/rate_lead.py): d = latency + low-pass group delay at w_c,nom + one rate-loop period; alpha_max = "
+    "tau_max/(J (1 + inertia_robustness_band)); rounded up to f32; asserted: J rate_max/tau_ref <= tau_max at J (1 -+ "
+    "inertia_robustness_band))")
+TAU_REF_MF_SOURCE = "the gain rule's inputs (decision 0014) and the scenario register rate_ref_ff_enable; decision 0058"
 T_FF_METHOD = (
     "derived(T_ff = the smallest T_ff >= 0 whose combined RMS of the D path and the lag-compensated omega x J omega "
     "feed-forward path per motor at rate_max (every sign pattern, every notch bypassed) is at most d_path_noise_budget x "
