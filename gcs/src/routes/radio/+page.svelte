@@ -57,9 +57,11 @@
 	});
 	const readBlocked = $derived(whyCannotRead({ helper: $helperState, device: $device, heartbeat: $session?.heartbeat, listing: $vehicle?.listing }));
 
-	// The parameters are read once when the page finds a live vehicle without them: reading changes nothing on the vehicle.
+	// The parameters are read when the page finds a live vehicle without them (again after the vehicle restarted and forgot them):
+	// reading changes nothing on the vehicle. A read that fails leaves the listing 'incomplete', and the button reads again.
 	$effect(() => {
-		if (!autoRead && readBlocked === null && ($vehicle?.params.length ?? 0) === 0 && $vehicle?.listing === 'idle' && $vehicle.identity) {
+		if (($vehicle?.params.length ?? 0) > 0) autoRead = false;
+		else if (!autoRead && readBlocked === null && $vehicle?.listing === 'idle' && $vehicle.identity) {
 			autoRead = true;
 			void gcs.loadParams();
 		}
