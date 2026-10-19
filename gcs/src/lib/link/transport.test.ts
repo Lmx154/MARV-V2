@@ -85,6 +85,7 @@ describe('the helper connection', () => {
 		t.socket.deliver(JSON.stringify({ ok: true, id: sent.id }));
 		await expect(ok).resolves.toMatchObject({ ok: true });
 		await expect(bad).rejects.toThrow('nothing is open');
+		await expect(bad).rejects.toMatchObject({ reply: { ok: false, error: 'nothing is open' } });
 		expect(events).toEqual(['device_opened']);
 	});
 

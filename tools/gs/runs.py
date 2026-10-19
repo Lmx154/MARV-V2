@@ -97,6 +97,17 @@ def resolve_card(path) -> str:
     return f"vehicles/{real.name}"
 
 
+def list_cards() -> list[str]:
+    """The cards a sil run accepts: the repository-relative `vehicles/<name>.yaml` files, sorted (each one passes resolve_card)."""
+    names = []
+    for path in sorted(CARD_DIR.glob("*.yaml")):
+        try:
+            names.append(resolve_card(f"vehicles/{path.name}"))
+        except ValueError:
+            continue
+    return names
+
+
 def parse_sil_options(msg: dict, param_types: Callable[[], dict[str, str]] | None) -> dict:
     opts: dict = {}
     if "card" in msg:

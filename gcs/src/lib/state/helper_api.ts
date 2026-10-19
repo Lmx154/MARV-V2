@@ -24,6 +24,15 @@ export interface RunManifest {
 	state: 'running' | 'stopped' | 'exited';
 	exit_status: number | null;
 	relaunches: number;
+	/** 'sil-override' when the run has a firmware parameter override, else null. */
+	label?: string | null;
+	/** The overrides of a sil run, with the type the image's manifest gives each. */
+	overrides?: Array<{ name: string; type: string; value: number }>;
+	/** The options the run was started with (a sil run's card and gui). */
+	options?: { card?: string; gui?: boolean } & Record<string, unknown>;
+	argv?: string[];
+	started_utc?: string;
+	ended_utc?: string | null;
 }
 
 export interface RunsStatus {
