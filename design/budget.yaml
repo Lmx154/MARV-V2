@@ -318,9 +318,9 @@ config_slot_bytes:
     (decision 0053 Q3, ground-segment unit 14). The rule: the smallest multiple of the flash erase block that is at least
     twice the largest config file any parameter set generates. The erase block is the 4096 B sector, FLASH_SECTOR_SIZE of
     the pinned Pico SDK 2.3.1 (hardware/flash.h), the smallest erase the SDK's flash_range_erase accepts. The largest
-    config when this entry was last set (2026-10-18, ground-segment unit 11: the telemetry entries after the 7-inch card
-    made the earlier 49152 B limit refuse it): build/<preset>/generated/marv_params_fc3v2_eskf/marv_params_fc3v2_eskf.mcfg,
-    49712 B; 2 x 49712 = 99424 B; ceil(99424 / 4096) = 25 sectors = 102400 B (was 24 sectors, 98304 B, from 47224 B). The
+    config when this entry was last set (2026-10-19, ground-segment unit 11a, after the sd_log_write_stall_max_s merge;
+    the telemetry entries after the 7-inch card made the earlier 49152 B limit refuse it): build/<preset>/generated/marv_params_fc3v2_eskf/marv_params_fc3v2_eskf.mcfg,
+    49824 B; 2 x 49824 = 99648 B; ceil(99648 / 4096) = 25 sectors = 102400 B (was 24 sectors, 98304 B, from 47224 B). The
     factor 2 is the design's headroom for staged source texts and parameter growth. tools/config/mcfg.py encode refuses
     (and so fails the build) any generated config above half of this value, 51200 B; that refusal is the signal to
     recompute this entry. The two slots take 2 x 102400 B = 204800 B from the flash end: offsets 0x1ce000 (A) and 0x1e7000
