@@ -1,0 +1,11 @@
+sectors: 40046 valid of 40046; session: 0xc88fa4284ff958fb
+records: end 1, imu 488243, rate_tick 244122, status 66
+end record: yes
+imu: 488243 records over 65.126 s = 7496.9 Hz (nominal 7500.3 Hz)
+imu spacing: median 133.0 us, min 132 us, max 134 us, > 1.5 x median: 0
+gap records: 0
+last status: state PostRoll drops imu/rate/manual 0/0/0 pushed imu/rate 975521/487761 ring high water 3398 cells, write failures 0
+gyro_x: mean -0.00211 sd 0.00185 peak-to-peak 0.01833 rad/s
+gyro_y: mean +0.00428 sd 0.00180 peak-to-peak 0.01588 rad/s
+gyro_z: mean -0.00255 sd 0.00140 peak-to-peak 0.01222 rad/s
+gyro csv: /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/u2a-gyro.csv (6510 rows, every 75 record)
