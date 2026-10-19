@@ -1802,6 +1802,96 @@ def test_sil_relaunched_is_an_event_even_without_a_link(tmp_path):
     run_with_helper(tmp_path, body, sil_command=["sh", "-c", stand_in], autoconnect=True, poll_s=POLL_S)
 
 
+# A stand-in SIL that binds its link port only once the trigger file exists: a SIL run that is starting, its port not yet up.
+LATE_BIND_SIL = ("import os, socket, sys, time\n"
+                 f"port = int(os.environ['{sil.UDP_PORT_ENV}'])\n"
+                 "while not os.path.exists(sys.argv[1]):\n    time.sleep(0.01)\n"
+                 "s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.bind(('127.0.0.1', port)); time.sleep(600)\n")
+
+
+def test_a_sil_run_takes_precedence_over_a_board_while_it_lives_and_the_board_is_chosen_when_none_is_active(tmp_path):
+    keep = []
+    port = free_udp_port()
+    trigger = tmp_path / "bind-now"
+    command = [sys.executable, "-c", LATE_BIND_SIL, str(trigger)]
+
+    def opened_or_closed(s):
+        return [(e["state"], e.get("source")) for e in s.events if e["event"] == "autoconnect" and e["state"] in ("opened", "closed")]
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            # control: a board and no run -> the board
+            link, k = fake_board(tmp_path, "usb-Raspberry_Pi_Pico_FAKE1-if02")
+            keep.extend(k)
+            opened = await s.wait_event("autoconnect", state="opened", source="board")
+            assert opened["device"] == f"serial {link} 115200" and opened["reason"] == "no SIL run is active"
+            status = (await s.cmd(cmd="status"))["status"]["autoconnect"]
+            assert status["prefer"] == "board" and status["owner"] == "board" and "no SIL run" in status["reason"]
+            # a SIL run starts, its port not yet bound: the board autoconnect opened is released at once and not taken again
+            assert (await s.cmd(cmd="run_start", kind="sil"))["ok"]
+            assert h.device is None
+            closed = await s.wait_event("autoconnect", state="closed", source="board")
+            assert "takes precedence" in closed["reason"]
+            status = (await s.cmd(cmd="status"))["status"]["autoconnect"]
+            assert status["prefer"] == "sil" and status["owner"] is None and "takes precedence over any board" in status["reason"]
+            # a second board plugged while the SIL is still starting does not take the link either
+            link2, k = fake_board(tmp_path, "usb-Raspberry_Pi_Pico_FAKE2-if02")
+            keep.extend(k)
+            await asyncio.sleep(POLL_S * 6)
+            assert h.device is None and not s.seen("autoconnect", state="opened")
+            # the port binds: the SIL is opened
+            trigger.write_text("go")
+            opened = await s.wait_event("autoconnect", state="opened", source="sil")
+            assert opened["device"] == f"udp 127.0.0.1:{port}"
+            # a board appearing mid-run leaves the link on the SIL
+            link3, k = fake_board(tmp_path, "usb-Raspberry_Pi_Pico_FAKE3-if02")
+            keep.extend(k)
+            await asyncio.sleep(POLL_S * 6)
+            assert h.device.description == f"udp 127.0.0.1:{port}" and not s.seen("autoconnect", state="opened")
+            # the run stops: back to the board, once (sorted first), and it stays there
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            await s.wait_event("autoconnect", state="closed", source="sil")
+            opened = await s.wait_event("autoconnect", state="opened", source="board")
+            assert opened["device"] == f"serial {link} 115200"
+            await asyncio.sleep(POLL_S * 6)
+            assert h.device.path == link and not s.seen("autoconnect", state="opened") and not s.seen("autoconnect", state="closed")
+            status = (await s.cmd(cmd="status"))["status"]["autoconnect"]
+            assert status["prefer"] == "board" and status["owner"] == "board"
+            s.close()
+    try:
+        run_with_helper(tmp_path, body, sil_command=command, sil_udp_port=port, poll_s=POLL_S)
+    finally:
+        for fd in keep:
+            os.close(fd)
+
+
+def test_a_sil_run_the_user_closed_or_that_never_binds_is_not_replaced_by_a_board(tmp_path):
+    keep = []
+    port = free_udp_port()
+    command = [sys.executable, "-c", BIND_PORT]
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            _, k = fake_board(tmp_path, "usb-Raspberry_Pi_Pico_FAKE1-if02")
+            keep.extend(k)
+            await s.wait_event("autoconnect", state="opened", source="board")
+            assert (await s.cmd(cmd="run_start", kind="sil"))["ok"]
+            await s.wait_event("autoconnect", state="opened", source="sil")
+            assert (await s.cmd(cmd="close"))["ok"]  # the user closes the SIL link: it stays closed, and the board does not take over
+            await asyncio.sleep(POLL_S * 6)
+            assert h.device is None and not s.seen("autoconnect", state="opened")
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            await s.wait_event("autoconnect", state="opened", source="board")
+            s.close()
+    try:
+        run_with_helper(tmp_path, body, sil_command=command, sil_udp_port=port, poll_s=POLL_S)
+    finally:
+        for fd in keep:
+            os.close(fd)
+
+
 def test_board_watcher_opens_only_the_link_interface_and_never_a_board_without_one(tmp_path):
     keep = []
 

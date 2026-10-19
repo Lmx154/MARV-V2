@@ -106,6 +106,10 @@ export function computeBar(inputs: BarInputs, now: number, timing: ShellTiming =
 			{
 				name: 'autoconnect',
 				value: !status ? 'unknown' : !status.autoconnect.enabled ? 'off' : status.autoconnect.suspended ? `suspended: ${status.autoconnect.suspended}` : 'on'
+			},
+			{
+				name: 'autoconnect prefers',
+				value: !status?.autoconnect.prefer ? '—' : `${status.autoconnect.prefer}: ${status.autoconnect.reason ?? ''}`
 			}
 		]
 	};
