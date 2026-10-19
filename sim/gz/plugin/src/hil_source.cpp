@@ -37,6 +37,9 @@ constexpr std::size_t kReadChunk = std::size_t{1} << (2 * CHAR_BIT);  // bytes p
 // board sends at most two records' worth of reports, hil.cpp kQueueSize, and a version of a few dozen bytes).
 constexpr std::uint32_t kMaxCountSpan = std::numeric_limits<std::uint8_t>::max();
 constexpr double kDegPerRad = 180.0 / std::numbers::pi;  // a half turn is 180 degrees and pi radians
+// The status line's touchdown text (<ground>): " | touchdown ", up to 20 digits, " (last ", a %.1f speed and " m/s)" fit with
+// room; a longer text is cut, never overrun (snprintf). Labelled harness value.
+constexpr std::size_t kTouchdownTextBytes = 96;
 // Labelled harness values of open(): DTR is held low for 50 ms (many polls of the board's background loop, which reads the
 // line state on every pass) before it is raised, and the edge is repeated after 1.5 s without a hello (longer than the
 // board's hello and receiver-boot records take); a poll waits at most 10 ms.
@@ -599,15 +602,22 @@ void HilCommandSource::status_line(std::uint64_t tick) {
                               StatusField::BytesDropped, StatusField::QueueOverflows, StatusField::ReportOverflows}) {
     link_faults += field(status_, f);
   }
+  std::string ground;
+  if (show_touchdowns_) {
+    std::array<char, kTouchdownTextBytes> text{};
+    std::snprintf(text.data(), text.size(), " | touchdown %llu (last %.1f m/s)", static_cast<unsigned long long>(touchdowns_),
+                  last_touchdown_m_s_);
+    ground = text.data();
+  }
   std::fprintf(stderr,
                "marv_gz_lockstep: hil t=%7.1f s | board %s | rc frames %u lq %.2f throttle %.2f | dshot %u %u %u %u | "
-               "height %+.2f m vz %+.2f m/s tilt %.1f deg | margin min %.0f us lag %.1f ms | deadline misses %u link faults %u\n",
+               "height %+.2f m vz %+.2f m/s tilt %.1f deg | margin min %.0f us lag %.1f ms | deadline misses %u link faults %u%s\n",
                t_s, arm_text(field(status_, StatusField::ArmingState)), rx_frames_, static_cast<double>(rx_lq_),
                static_cast<double>(rx_throttle_), applied_[0], applied_[1], applied_[2], applied_[3], -body_.pos_ned_m[2],
                -body_.vel_ned_m_s[2], std::acos(cos_tilt) * kDegPerRad,
                reports_used_ == 0 ? 0.0 : static_cast<double>(min_margin_ns_) / static_cast<double>(kNsPerUs),
                static_cast<double>(lag_ns_) / static_cast<double>(kNsPerUs * kUsPerMs), field(status_, StatusField::DeadlineMisses),
-               link_faults);
+               link_faults, ground.c_str());
 }
 
 void HilCommandSource::finish() {

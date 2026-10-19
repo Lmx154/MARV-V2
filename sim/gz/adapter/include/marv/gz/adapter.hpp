@@ -49,8 +49,20 @@
 // before and after; only the rotor angle moves, by omega dt, below the resolution of any angle but 0 (and 0 becomes about
 // 1e-305 rad). Release is the first tick on which the contact force's NED-down component -F_z is >= 0 (the pad would pull:
 // the vertical thrust has reached the weight): from that tick on the contact force is exactly 0 (set once), the tick's
-// wrench counts in W_bar, and the hold never re-engages. TickOutput::pad_held is true on a held tick; release_tick() is the
-// first free tick. This is not ground contact: no ground, collision or landing.
+// wrench counts in W_bar, and the hold never re-engages (but see the ground below). TickOutput::pad_held is true on a held
+// tick, TickOutput::pad_released on a release tick; release_tick() is the first free tick. Without the ground this is not
+// ground contact: no ground, collision or landing.
+//
+// Opt-in ground (AdapterConfig::ground, with launch_pad only; false, the default, leaves every output as without it; decision
+// 0047 amendment, Luis 2026-10-18). The ground's NED down position is the body's at the first step() (the pad). After a
+// release, the first host step whose body is at or below the ground (pos_ned_m[2] >= ground) while moving down
+// (vel_ned_m_s[2] > 0) is a touchdown at its first tick: every tick of that step uses the rest body (the body's north and
+// east, the ground's down; level with the body's yaw kept, w >= 0; zero velocity and rates) instead of the body passed, and
+// the pad's hold re-engages from that tick with the rule above (contact = -F, release on the first tick -F_z >= 0, which may
+// be the touchdown tick itself). StepResult::touchdown holds the tick, the impact (the body passed: NED down speed,
+// horizontal speed, ZYX roll and pitch) and the rest body; the caller puts its vehicle at rest there (the lockstep plugin:
+// gz pose and velocity commands). release_tick() stays the first release. Not a contact model: no bounce, friction or
+// tip-over; the hold balances the whole wrench as at the start.
 
 #include <array>
 #include <cstdint>
@@ -166,16 +178,28 @@ struct TickOutput {
   marv_plant_rotor_speed_out rotor_speed{};  // the rotor-speed sample of this tick; zero unless that path is enabled
   marv_plant_out out{};  // as marv_plant_step returned it, NED
   bool pad_held = false;  // the launch pad held the body at this tick (decision 0047); its wrench is not in W_bar
+  bool pad_released = false;  // the pad released at this tick (the first free tick after a hold)
   Wrench wrench_enu{};   // W_j
 };
 
 enum class Status { kOk, kZeroTicks, kCommandSource, kPlant, kBadDelay };
+
+// A touchdown on the opt-in ground (header comment).
+struct Touchdown {
+  std::uint64_t tick = 0;              // the first tick of the host step
+  double down_speed_m_s = 0.0;         // the body's NED down velocity at the impact (> 0)
+  double horizontal_speed_m_s = 0.0;   // |(v_north, v_east)| at the impact
+  double roll_rad = 0.0;               // ZYX roll and pitch of the body's attitude at the impact
+  double pitch_rad = 0.0;
+  marv_plant_body rest{};              // the body every tick of the host step used
+};
 
 struct StepResult {
   Status status = Status::kOk;
   std::int32_t plant_status = MARV_PLANT_OK;  // of the failing marv_plant_step when status is kPlant
   Wrench wrench_enu{};                        // W_bar, valid when status is kOk
   std::vector<TickOutput> ticks;              // the ticks completed, in order
+  std::optional<Touchdown> touchdown;         // with the ground, a touchdown at this host step's first tick
 };
 
 struct AdapterConfig {
@@ -194,6 +218,8 @@ struct AdapterConfig {
   // The launch pad above (decision 0047). The IMU path is the pad's purpose (the contact force reaches only the IMU's specific
   // force) but not a precondition.
   bool launch_pad = false;
+  // The ground above (decision 0047 amendment); with launch_pad only, ignored without it.
+  bool ground = false;
 };
 
 class Adapter {
@@ -236,6 +262,9 @@ class Adapter {
   std::size_t delay_head_ = 0;
   bool pad_ = false;
   std::optional<std::uint64_t> release_tick_;
+  bool held_ = false;                     // the pad holds the body (from tick 0 with the pad; again from a touchdown)
+  bool ground_ = false;
+  std::optional<double> ground_down_m_;  // NED down of the ground: the body's at the first step()
 };
 
 }  // namespace marv::gz
