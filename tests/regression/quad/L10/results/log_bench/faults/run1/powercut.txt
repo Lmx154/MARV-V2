@@ -1,0 +1,34 @@
+cycle 1: file 8: log start: bench trigger on
+cycle 1: last status before the reset: log state=Logging trigger=1 card=on file=8 start_sector=17204288 capacity=16777216 cursor=2219008
+cycle 1: reset command took 0.3 s
+cycle 1: after the reset: log state=Ready trigger=0 card=on file=9 start_sector=17237056 capacity=16777216 cursor=7168
+cycle 1: transitions after boot: []
+pull: 16777216 of 16777216 bytes -> /home/luis/marv-bench-logs/u2b/faults/powercut1.mlog; image says: log dump: DONE index=8 sent=16777216 us=40503182
+cycle 1: file 8: 32768 sectors, valid contiguous prefix 4590 sectors = 2350080 B (console cursor at the last status line before the cut: 2219008 B)
+cycle 1: first sector outside the prefix: 4590 (magic); after it: bad magic 28178, bad CRC 0, valid sectors of another session (stale) 0, valid sectors of the same session 0
+cycle 1: strict decode: 4590 valid sectors, stopped at sector 4590, end record False, problems: ['sector 4590: magic'], ends inside a record False
+cycle 1: resync decode: 4590 valid sectors, 28178 problems, end record False
+CHECK powercut cycle 1: PASS: prefix >= last console cursor, the strict decoder stops at the first bad sector, no valid sector of the cut session after it, the board re-prepared file 9
+cycle 2: file 9: log start: bench trigger on
+cycle 2: last status before the reset: log state=Logging trigger=1 card=on file=9 start_sector=17237056 capacity=16777216 cursor=2857984
+cycle 2: reset command took 1.7 s
+cycle 2: after the reset: log state=Ready trigger=0 card=on file=10 start_sector=17269824 capacity=16777216 cursor=7168
+cycle 2: transitions after boot: []
+pull: 16777216 of 16777216 bytes -> /home/luis/marv-bench-logs/u2b/faults/powercut2.mlog; image says: log dump: DONE index=9 sent=16777216 us=40701543
+cycle 2: file 9: 32768 sectors, valid contiguous prefix 6446 sectors = 3300352 B (console cursor at the last status line before the cut: 2857984 B)
+cycle 2: first sector outside the prefix: 6446 (magic); after it: bad magic 26322, bad CRC 0, valid sectors of another session (stale) 0, valid sectors of the same session 0
+cycle 2: strict decode: 6446 valid sectors, stopped at sector 6446, end record False, problems: ['sector 6446: magic'], ends inside a record False
+cycle 2: resync decode: 6446 valid sectors, 26322 problems, end record False
+CHECK powercut cycle 2: PASS: prefix >= last console cursor, the strict decoder stops at the first bad sector, no valid sector of the cut session after it, the board re-prepared file 10
+cycle 3: file 10: log start: bench trigger on
+cycle 3: last status before the reset: log state=Logging trigger=1 card=on file=10 start_sector=17269824 capacity=16777216 cursor=3824640
+cycle 3: reset command took 0.4 s
+cycle 3: after the reset: log state=Ready trigger=0 card=on file=11 start_sector=17302592 capacity=16777216 cursor=7168
+cycle 3: transitions after boot: []
+pull: 16777216 of 16777216 bytes -> /home/luis/marv-bench-logs/u2b/faults/powercut3.mlog; image says: log dump: DONE index=10 sent=16777216 us=40861035
+cycle 3: file 10: 32768 sectors, valid contiguous prefix 7918 sectors = 4054016 B (console cursor at the last status line before the cut: 3824640 B)
+cycle 3: first sector outside the prefix: 7918 (magic); after it: bad magic 24850, bad CRC 0, valid sectors of another session (stale) 0, valid sectors of the same session 0
+cycle 3: strict decode: 7918 valid sectors, stopped at sector 7918, end record False, problems: ['sector 7918: magic'], ends inside a record False
+cycle 3: resync decode: 7918 valid sectors, 24850 problems, end record False
+CHECK powercut cycle 3: PASS: prefix >= last console cursor, the strict decoder stops at the first bad sector, no valid sector of the cut session after it, the board re-prepared file 11
+rc=0

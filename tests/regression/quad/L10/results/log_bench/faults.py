@@ -32,6 +32,7 @@ READY_TIMEOUT_S = 40.0  # labelled harness value: boot (about 1 s), mount, f_exp
 REENUMERATE_TIMEOUT_S = 30.0  # labelled harness value: the console node returns after the chip reboot
 PULL_TIMEOUT_S = 600.0  # labelled harness value: 16 MiB at the measured 0.37 MB/s is 45 s
 CUT_WAITS_S = (7.3, 9.9, 12.6)  # labelled harness values: seconds of logging before each reset (arbitrary, unequal, so the cuts land at different phases)
+CUT_WAIT_STEP_S = 0.37  # labelled harness value: added to the wait for each pass through CUT_WAITS_S (more cycles, new phases)
 STATE_RE = r"log state=(\w+) trigger=(\d) card=(\w+) file=(\d+) start_sector=(\d+) capacity=(\d+) cursor=(\d+)"
 LINE_RE = re.compile(r"log state=[^\n]*\n")
 RATE_RE = re.compile(r"rate executions/s=([\d.]+) executions=(\d+) timing_faults=(\d+)")
@@ -138,7 +139,7 @@ def powercut(a: argparse.Namespace) -> int:
         return 1
     for cycle in range(1, a.cycles + 1):
         idx = int(m.group(4))
-        wait_s = CUT_WAITS_S[(cycle - 1) % len(CUT_WAITS_S)]
+        wait_s = CUT_WAITS_S[(cycle - 1) % len(CUT_WAITS_S)] + CUT_WAIT_STEP_S * ((cycle - 1) // len(CUT_WAITS_S))
         mark = len(b.text)
         b.send("log start")
         s = b.wait_for(r"log start: (bench trigger on|REFUSED[^\n]*)", 10.0, mark)

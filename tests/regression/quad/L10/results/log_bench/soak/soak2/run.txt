@@ -1,0 +1,4 @@
+run: logging for 1800 s (hold the board still, then rotate it as asked)
+run: log: PostRoll -> Absent t=1821215229 file=6 start_sector=13010048 capacity=1073741824 written=568105984 session=95fc3610faa75178 prepare_us=1038289 close_us=615508 fatfs_error=0
+run: log hist n=34674 fail=0 bytes=568098816 max_us=161579 mean_us=12612.7 us: 10240-12288:603 12288-14336:33609 14336-16384:240
+pull: 568105984 of 568105984 bytes -> /home/luis/marv-bench-logs/u2b/soak2/soak2.mlog; image says: log dump: DONE index=6 sent=568105984 us=1493971989
