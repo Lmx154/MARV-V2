@@ -34,9 +34,10 @@ PROC_NET_UDP = Path("/proc/net/udp")
 STOP_GRACE_S = 10.0  # labelled harness value: how long SIGTERM gets before SIGKILL
 
 
-def default_command(out_dir: Path, config_dir: Path, udp_port: int | None) -> list[str]:
+def default_command(out_dir: Path, config_dir: Path, udp_port: int | None, extra: list[str] | None = None) -> list[str]:
+    """`extra`: the run definition's options (--card, --override, --gui; tools/gs/runs.py sil_args), after --config-dir."""
     command = [sys.executable, str(ROOT / "tools" / "sim" / "run_quad_fc.py"), "--out-dir", str(out_dir), "--interactive",
-               "--config-dir", str(config_dir)]
+               "--config-dir", str(config_dir), *(extra or [])]
     return command + (["--link-udp-port", str(udp_port)] if udp_port is not None else [])
 
 
@@ -65,6 +66,7 @@ class SilLauncher:
         self.relaunch = relaunch
         self.on_relaunch, self.on_exit = on_relaunch, on_exit
         self._command = command
+        self.extra_args: list[str] = []  # the run definition's options; the relaunch uses them again (set before start())
         self._proc: subprocess.Popen | None = None
         self._log = None
         self._lock = threading.Lock()
@@ -86,9 +88,11 @@ class SilLauncher:
             self._watcher = threading.Thread(target=self._watch, args=(proc,), name="sil-watcher", daemon=True)
             self._watcher.start()
 
-    def command(self) -> list[str]:
-        """The argv a start would run: the given command, else the interactive run on this launcher's directories."""
-        return list(self._command) if self._command else default_command(self.out_dir, self.config_dir, self.udp_port)
+    def command(self, extra: list[str] | None = None) -> list[str]:
+        """The argv a start would run: the given command, else the interactive run on this launcher's directories with the
+        options `extra` (default: this launcher's extra_args)."""
+        return list(self._command) if self._command else default_command(
+            self.out_dir, self.config_dir, self.udp_port, self.extra_args if extra is None else extra)
 
     def _spawn(self) -> None:
         """Starts the command in its own process group; the caller holds the lock."""
