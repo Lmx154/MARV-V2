@@ -17,6 +17,37 @@ export interface SilStatus {
 	link: unknown;
 }
 
+/** The manifest of a supervised run (tools/gs/runs.py), the fields the shell reads. */
+export interface RunManifest {
+	run_id: string;
+	kind: string;
+	state: 'running' | 'stopped' | 'exited';
+	exit_status: number | null;
+	relaunches: number;
+}
+
+export interface RunsStatus {
+	/** The run that is going (relaunch gaps included), else null. */
+	active: { id: string; kind: string } | null;
+	/** The latest run of this helper session, ended or not. */
+	last: RunManifest | null;
+}
+
+export interface HostState {
+	loadavg: number[] | null;
+	cpus: number | null;
+	mem_total_bytes: number | null;
+	mem_available_bytes: number | null;
+	heavy_lock: { held: boolean; holder: string | null; path: string };
+}
+
+export interface AutoconnectStatus {
+	enabled: boolean;
+	suspended: string | null;
+	/** 'sil' or 'board' while the open device was opened by autoconnect. */
+	owner: string | null;
+}
+
 export interface HelperStatus {
 	origin: string;
 	run_dir: string;
@@ -24,6 +55,9 @@ export interface HelperStatus {
 	client: boolean;
 	dropped_bytes: number;
 	sil: SilStatus;
+	runs: RunsStatus;
+	host: HostState;
+	autoconnect: AutoconnectStatus;
 	validation: { running: boolean; image_hash?: string; config_hash?: string; verdict?: string | null; report_id?: string | null } | null;
 	gcs_built: boolean;
 }
