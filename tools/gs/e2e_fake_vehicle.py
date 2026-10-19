@@ -93,6 +93,13 @@ PARAMS = (
     ("angle_switch_threshold", TYPE_REAL32, _f32(SWITCH_THRESHOLD), False, FAKE),
     ("arm_throttle_min", TYPE_REAL32, _f32((1050 - 988) / 1024), True, "locked in the fake vehicle, as on the real one"),
 )
+
+
+def link_id(name: str) -> str:
+    """The id a parameter has on the link (decision 0053 Q1): the name if at most 16 bytes, else name[:11] + "_" + the first 4 hex digits of SHA-256(name)."""
+    return name if len(name) <= 16 else f"{name[:11]}_{hashlib.sha256(name.encode()).hexdigest()[:4]}"
+
+
 # The channel parameters that rule R-1 compares (the angle channel 0 = none), by name.
 CHANNEL_PARAMS = ("rc_channel_roll", "rc_channel_pitch", "rc_channel_throttle", "rc_channel_yaw", "rc_channel_arm", "rc_channel_angle")
 
@@ -223,7 +230,7 @@ class Vehicle:
         self.mav.autopilot_version_send(CAPABILITY_PARAM_ENCODE_BYTEWISE, 0, 0, 0, 0, bytes(8), bytes(8), bytes(8), 0, 0, 0, bytes(18))
 
     def value(self, i: int) -> None:
-        self.mav.param_value_send(PARAMS[i][0].encode(), raw_float(self.staged[i]), PARAMS[i][1], len(PARAMS), i)
+        self.mav.param_value_send(link_id(PARAMS[i][0]).encode(), raw_float(self.staged[i]), PARAMS[i][1], len(PARAMS), i)
 
     def record(self, i: int) -> None:
         chunk = self.text[i].encode()[:CHUNK]
@@ -251,7 +258,7 @@ class Vehicle:
             self.param(m.param_index)
         elif kind == "PARAM_SET":
             name = m.param_id.rstrip("\0") if isinstance(m.param_id, str) else m.param_id.decode().rstrip("\0")
-            index = next((i for i, p in enumerate(PARAMS) if p[0] == name), None)
+            index = next((i for i, p in enumerate(PARAMS) if link_id(p[0]) == name), None)
             if index is None:
                 self.status(f"refused: no parameter {name}")
             elif PARAMS[index][3]:
@@ -260,8 +267,8 @@ class Vehicle:
             elif m.param_type != PARAMS[index][1]:
                 self.status(f"refused: {name}: type differs from the record")
                 self.value(index)
-            elif name in CHANNEL_PARAMS and self.collides(name, raw_bits(m.param_value)):
-                self.status(f"refused: {name}: channel in use (R-1)")  # at most STATUS_TEXT bytes
+            elif PARAMS[index][0] in CHANNEL_PARAMS and self.collides(PARAMS[index][0], raw_bits(m.param_value)):
+                self.status(f"refused: {PARAMS[index][0]}: channel in use (R-1)")  # at most STATUS_TEXT bytes
                 self.value(index)
             else:
                 self.staged[index] = raw_bits(m.param_value)
@@ -291,7 +298,7 @@ class Vehicle:
 def manifest() -> dict:
     """The parameter manifest of this vehicle in the form tools/gen/params_gen.py writes (the part the GCS reads), keyed by the vehicle's schema hash."""
     params = {
-        name: {"id": i, "type": "f32" if kind == TYPE_REAL32 else "i32", "unit": "1", "link_id": name, "lock": locked,
+        name: {"id": i, "type": "f32" if kind == TYPE_REAL32 else "i32", "unit": "1", "link_id": link_id(name), "lock": locked,
                "default_bits": f"0x{bits:08x}", "method": "scenario", "sigma_kind": "Choice", "sigma": 0.0, "sigma_bits": "0x00000000",
                "origin": "DefaultFromCard", "source": text, "source_file": "e2e_fake_vehicle.py"}
         for i, (name, kind, bits, locked, text) in enumerate(PARAMS)

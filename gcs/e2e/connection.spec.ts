@@ -160,8 +160,8 @@ test('every page of the navigation opens with the status bar on it', async ({ pa
 		await expect(page.getByRole('heading', { level: 1, name: heading, exact: true })).toBeVisible();
 		await expect(bar(page).getByRole('group')).toHaveCount(6);
 	}
-	await nav.getByRole('link', { name: 'Radio', exact: true }).click();
-	await expect(page.getByText(/Not built yet: GX-7 builds this page/)).toBeVisible();
+	await nav.getByRole('link', { name: 'Logs', exact: true }).click();
+	await expect(page.getByText(/Not built yet: GX-15 builds this page/)).toBeVisible();
 	await shot(page, '5-placeholder');
 	// A page that is loaded directly (not by the navigation) is served by the helper too.
 	await page.goto(new URL('/vehicle', url as string).toString() + new URL(url as string).search);

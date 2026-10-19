@@ -40,11 +40,19 @@ function signalVehicle(signal: 'SIGSTOP' | 'SIGCONT'): void {
 	process.kill(-vehiclePid, signal);
 }
 
-test.afterEach(() => {
+test.afterEach(async ({ page }) => {
 	try {
 		signalVehicle('SIGCONT');
 	} catch {
 		// the group is gone
+	}
+	// The fake vehicle keeps a stream until it is stopped, and the page stops them when it is left: leave it, so that the next spec starts
+	// from a quiet vehicle (a closed browser tab stops them only on a best-effort basis).
+	try {
+		await page.getByRole('navigation', { name: 'Pages' }).getByRole('link', { name: 'Connection', exact: true }).click({ timeout: RETRY_MS * 5 });
+		await page.waitForTimeout(RETRY_MS);
+	} catch {
+		// the page never got as far as the navigation
 	}
 });
 
