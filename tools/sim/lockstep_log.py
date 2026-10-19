@@ -37,7 +37,13 @@ record, m TICK records, one APPLIED record. A TRAILER record is the last record 
             R^T (0, 0, -g(h)), and held ticks add nothing to the applied wrench (the pad resists torques and lateral forces
             too); not ground contact
   RELEASE 13 only with <launch_pad>, once, if the pad released within the run, after the TICK record of the first free tick
-            (and its TRUTH, VERTICAL, ROTOR and MANUAL records, if any): u64 tick; the trailer's counts do not include it
+            (and its TRUTH, VERTICAL, ROTOR and MANUAL records, if any): u64 tick; the trailer's counts do not include it. With
+            <ground> once more after each TOUCHDOWN whose hold released within the run (after that tick's TOUCHDOWN record, if
+            the same tick)
+  TOUCHDOWN 14 only with <ground> (decision 0047 amendment), once per touchdown, while the pad is released, after that tick's
+            TICK record (and its TRUTH, VERTICAL, ROTOR and MANUAL records, if any): u64 tick; f64 down_speed_m_s, f64
+            horizontal_speed_m_s, f64 roll_rad, f64 pitch_rad (the body at impact); the hold re-engages from that tick until the
+            next RELEASE record; the trailer's counts do not include it
   ROTOR 7   only with <rotor_speed_model>, after that tick's TICK record (and its TRUTH and VERTICAL records, if any): u64
             tick; the 20 bytes of marv_rotor_speed_meas (4 x f32 omega, u32 flags); the trailer's counts do not include it
   VERTICAL 8 only when the plugin has <vertical_source>truth</vertical_source> (decision 0020), directly after that tick's
@@ -46,9 +52,11 @@ record, m TICK records, one APPLIED record. A TRAILER record is the last record 
 
 read() returns {"header": dict, "steps": [dict], "ticks": [dict], "applied": [dict], "truths": [dict],
 "trailer": dict or None, "raw_records": bytes (everything after the header, for byte comparison), "sensors": dict or None,
-"rotors": [dict], "rounding": dict or None, "delay": dict or None, "manuals": [dict], "pad": dict or None}; with a PAD record "pad" is
-{"release_tick": the RELEASE record's tick or None} and every dict in "ticks" also has "pad_held" (the tick is before the release
-tick, or there is none); without one "pad" is None and the tick dicts have no "pad_held" key; with a DELAY record every dict in "ticks" also has
+"rotors": [dict], "rounding": dict or None, "delay": dict or None, "manuals": [dict], "pad": dict or None, "touchdowns": [dict]}; with a PAD record "pad" is
+{"release_tick": the first RELEASE record's tick or None} and every dict in "ticks" also has "pad_held" (the tick is before the
+first release tick, or there is none, or it is in a touchdown's hold); without one "pad" is None and the tick dicts have no
+"pad_held" key; "touchdowns" holds one {"tick", "down_speed_m_s", "horizontal_speed_m_s", "roll_rad", "pitch_rad",
+"release_tick" (the RELEASE record that ended its hold, or None)} per TOUCHDOWN record (empty without); with a DELAY record every dict in "ticks" also has
 "dshot_applied" (the dshot of the tick N before, else initial_dshot), a VERTICAL record is the "vertical" dict of its tick's dict in "ticks" (a tick without one has no
 "vertical" key). A file that is cut inside a record, has an
 unknown record type, a record after the trailer or a TRUTH record that does not directly follow the TICK record of
@@ -64,8 +72,8 @@ import sys
 
 MAGIC = b"MARVLOCK"
 VERSION = 1
-STEP, TICK, APPLIED, TRAILER, TRUTH, SENSORS, ROTOR, VERTICAL, ROUNDING, DELAY, MANUAL, PAD, RELEASE = (
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13)
+STEP, TICK, APPLIED, TRAILER, TRUTH, SENSORS, ROTOR, VERTICAL, ROUNDING, DELAY, MANUAL, PAD, RELEASE, TOUCHDOWN = (
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14)
 _STEP = struct.Struct("<QQ26d")
 _TICK = struct.Struct("<QQ32s4HII20d")
 _APPLIED = struct.Struct("<6d")
@@ -79,9 +87,10 @@ _DELAY = struct.Struct("<I4H")
 _MANUAL = struct.Struct("<QIQ4f16f")
 _PAD = struct.Struct("<")
 _RELEASE = struct.Struct("<Q")
+_TOUCHDOWN = struct.Struct("<Q4d")
 _SIZES = {STEP: _STEP.size, TICK: _TICK.size, APPLIED: _APPLIED.size, TRAILER: _TRAILER.size, TRUTH: _TRUTH.size,
           SENSORS: _SENSORS.size, ROTOR: _ROTOR.size, VERTICAL: _VERTICAL.size, ROUNDING: _ROUNDING.size, DELAY: _DELAY.size,
-          MANUAL: _MANUAL.size, PAD: _PAD.size, RELEASE: _RELEASE.size}
+          MANUAL: _MANUAL.size, PAD: _PAD.size, RELEASE: _RELEASE.size, TOUCHDOWN: _TOUCHDOWN.size}
 GYRO_SOURCES = ("none", "truth", "model")
 
 
@@ -130,7 +139,7 @@ def read(path):
     header = _header(data)
     pos = header["header_size"]
     steps, ticks, applied, truths, trailer = [], [], [], [], None
-    sensors, rotors, rounding, delay, manuals, pad = None, [], None, None, [], None
+    sensors, rotors, rounding, delay, manuals, pad, touchdowns = None, [], None, None, [], None, []
     last_kind = None
     while pos < len(data):
         if trailer is not None:
@@ -178,11 +187,26 @@ def read(path):
             pad = {"release_tick": None}
         elif kind == RELEASE:
             v = _RELEASE.unpack_from(data, pos + 1)
-            if (pad is None or pad["release_tick"] is not None or not ticks or v[0] != ticks[-1]["tick"]
-                    or last_kind not in (TICK, TRUTH, VERTICAL, ROTOR, MANUAL)):
-                raise LogError(f"RELEASE record of tick {v[0]} at byte {pos} is not the pad's first release after that tick's "
-                               "TICK record")
-            pad["release_tick"] = v[0]
+            if touchdowns and pad is not None and pad["release_tick"] is not None:
+                if (touchdowns[-1]["release_tick"] is not None or v[0] != ticks[-1]["tick"]
+                        or last_kind not in (TICK, TRUTH, VERTICAL, ROTOR, MANUAL, TOUCHDOWN)):
+                    raise LogError(f"RELEASE record of tick {v[0]} at byte {pos} is not the release of the last touchdown's hold "
+                                   "after that tick's TICK record")
+                touchdowns[-1]["release_tick"] = v[0]
+            else:
+                if (pad is None or pad["release_tick"] is not None or not ticks or v[0] != ticks[-1]["tick"]
+                        or last_kind not in (TICK, TRUTH, VERTICAL, ROTOR, MANUAL)):
+                    raise LogError(f"RELEASE record of tick {v[0]} at byte {pos} is not the pad's first release after that "
+                                   "tick's TICK record")
+                pad["release_tick"] = v[0]
+        elif kind == TOUCHDOWN:
+            v = _TOUCHDOWN.unpack_from(data, pos + 1)
+            if (pad is None or pad["release_tick"] is None or (touchdowns and touchdowns[-1]["release_tick"] is None)
+                    or not ticks or v[0] != ticks[-1]["tick"] or last_kind not in (TICK, TRUTH, VERTICAL, ROTOR, MANUAL)):
+                raise LogError(f"TOUCHDOWN record of tick {v[0]} at byte {pos} is not a touchdown of a released pad after that "
+                               "tick's TICK record")
+            touchdowns.append({"tick": v[0], "down_speed_m_s": v[1], "horizontal_speed_m_s": v[2], "roll_rad": v[3],
+                               "pitch_rad": v[4], "release_tick": None})
         elif kind == ROTOR:
             v = _ROTOR.unpack_from(data, pos + 1)
             if last_kind not in (TICK, TRUTH, VERTICAL) or v[0] != ticks[-1]["tick"]:
@@ -212,11 +236,16 @@ def read(path):
         for i, t in enumerate(ticks):
             t["dshot_applied"] = ticks[i - delay["ticks"]]["dshot"] if i >= delay["ticks"] else delay["initial_dshot"]
     if pad is not None:
+        holds = [(0, pad["release_tick"])] + [(d["tick"], d["release_tick"]) for d in touchdowns]  # [start, end), in order
+        k = 0
         for t in ticks:
-            t["pad_held"] = pad["release_tick"] is None or t["tick"] < pad["release_tick"]
+            while k + 1 < len(holds) and holds[k + 1][0] <= t["tick"]:
+                k += 1
+            start, end = holds[k]
+            t["pad_held"] = start <= t["tick"] and (end is None or t["tick"] < end)
     return {"header": header, "steps": steps, "ticks": ticks, "applied": applied, "truths": truths, "trailer": trailer,
             "raw_records": data[header["header_size"]:], "sensors": sensors, "rotors": rotors, "rounding": rounding,
-            "delay": delay, "manuals": manuals, "pad": pad}
+            "delay": delay, "manuals": manuals, "pad": pad, "touchdowns": touchdowns}
 
 
 def main(argv=None):

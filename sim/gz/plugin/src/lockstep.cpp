@@ -35,6 +35,7 @@
 #include <gz/sim/components/Inertial.hh>
 #include <gz/sim/components/Physics.hh>
 #include <gz/sim/components/Pose.hh>
+#include <gz/sim/components/PoseCmd.hh>
 #include <gz/sim/components/World.hh>
 #include <gz/sim/components/AngularVelocity.hh>
 #include <gz/sim/components/AngularVelocityCmd.hh>
@@ -181,6 +182,7 @@ struct Parsed {
   std::optional<std::uint32_t> command_delay_ticks;
   std::optional<ManualScript> manual_script;
   bool launch_pad = false;
+  bool ground = false;
   std::optional<HilConfig> hil;
   std::optional<std::uint32_t> link_udp_port;
   std::optional<std::string> config_dir;
@@ -634,6 +636,12 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
         refuse("<launch_pad> takes no content");
       }
       p.launch_pad = true;
+    } else if (name == "ground") {
+      once(name);
+      if (e->GetFirstElement() || !trim(text_of(e)).empty()) {
+        refuse("<ground> takes no content");
+      }
+      p.ground = true;
     } else if (name == "attitude_source") {
       once(name);
       if (trim(text_of(e)) != "truth") {
@@ -1099,6 +1107,10 @@ class Lockstep final : public gzs::System,
     if (p.truth_vertical && !p.truth_attitude) {
       refuse("<vertical_source> needs <attitude_source>truth</attitude_source>");
     }
+    if (p.ground && (!p.launch_pad || !p.model_gyro)) {
+      // Decision 0047 amendment (Luis, 2026-10-18): a touchdown re-engages the pad's hold (adapter.hpp).
+      refuse("<ground> needs <launch_pad/> and <gyro_source>model</gyro_source> (a touchdown re-engages the pad's hold)");
+    }
     if (p.launch_pad) {
       // Decision 0047: the pad's contact force reaches the model IMU's specific force only, and a held start has no motion.
       if (!p.model_gyro) {
@@ -1287,6 +1299,13 @@ class Lockstep final : public gzs::System,
         ecm.RemoveComponent<gzs::components::AngularVelocityCmd>(link_.Entity());
       }
     }
+    // A touchdown's pose command (below), removed at the PreUpdate after the one that set it, as the velocity commands: the
+    // Physics system of gz-sim 8.15 applies a model's WorldPoseCmd in its UpdatePhysics and removes it only at the next one,
+    // after applying it once more (src/systems/physics/Physics.cc, worldPoseCmdsToRemove).
+    if (pose_cmd_pending_) {
+      pose_cmd_pending_ = false;
+      ecm.RemoveComponent<gzs::components::WorldPoseCmd>(model_.Entity());
+    }
     const std::chrono::nanoseconds host_dt{host_ns_};
     if (info.dt != host_dt) {
       refuse("UpdateInfo dt " + std::to_string(std::chrono::nanoseconds(info.dt).count()) + " ns is not " +
@@ -1327,6 +1346,9 @@ class Lockstep final : public gzs::System,
     const std::uint64_t first_tick = steps_ * m_;
     source_.begin_step();
     source_.set_body(body);
+    if (ground_) {
+      hil_.set_touchdowns(touchdowns_, last_touchdown_m_s_);
+    }
     const StepResult r = adapter_->step(body, first_tick, m_);
 
     LogBuffer b;
@@ -1397,7 +1419,15 @@ class Lockstep final : public gzs::System,
           b.u32(std::bit_cast<std::uint32_t>(v));
         }
       }
-      if (adapter_->release_tick() && *adapter_->release_tick() == t.tick) {
+      if (r.touchdown && r.touchdown->tick == t.tick) {
+        b.u8(static_cast<std::uint8_t>(LogRecord::kTouchdown));
+        b.u64(t.tick);
+        b.f64(r.touchdown->down_speed_m_s);
+        b.f64(r.touchdown->horizontal_speed_m_s);
+        b.f64(r.touchdown->roll_rad);
+        b.f64(r.touchdown->pitch_rad);
+      }
+      if (t.pad_released) {
         b.u8(static_cast<std::uint8_t>(LogRecord::kRelease));
         b.u64(t.tick);
       }
@@ -1440,6 +1470,22 @@ class Lockstep final : public gzs::System,
         link_.SetAngularVelocity(ecm, gzm::Vector3d(flu[0], flu[1], flu[2]));
       }
       vel_cmd_pending_ = true;
+    }
+    // A touchdown on the opt-in ground (adapter.hpp): the body is put at rest at the adapter's rest body for the physics step
+    // that follows. The pose goes through the model's WorldPoseCmd (gz Model::SetWorldPoseCmd; the link is the model frame,
+    // checked in Configure, so the model pose is the link pose), applied by the Physics system before its step; the zero
+    // velocities through the link's velocity commands as above (zero in any frame), removed at the next PreUpdate.
+    if (r.touchdown) {
+      const marv_plant_body& rest = r.touchdown->rest;
+      const Vec3 p = ned_to_enu_world({rest.pos_ned_m[0], rest.pos_ned_m[1], rest.pos_ned_m[2]});
+      const Quat q = attitude_ned_frd_to_enu_flu({rest.q_wxyz[0], rest.q_wxyz[1], rest.q_wxyz[2], rest.q_wxyz[3]});
+      model_.SetWorldPoseCmd(ecm, gzm::Pose3d(gzm::Vector3d(p[0], p[1], p[2]), gzm::Quaterniond(q[0], q[1], q[2], q[3])));
+      link_.SetLinearVelocity(ecm, gzm::Vector3d::Zero);
+      link_.SetAngularVelocity(ecm, gzm::Vector3d::Zero);
+      vel_cmd_pending_ = true;
+      pose_cmd_pending_ = true;
+      ++touchdowns_;
+      last_touchdown_m_s_ = r.touchdown->down_speed_m_s;
     }
     if (link_on_) {
       serve_link();
@@ -1619,6 +1665,8 @@ class Lockstep final : public gzs::System,
     // rounded host step (decision 0046 item 1) it is the plant's tick time as well.
     ac.command_delay_ticks = delay_ticks_;
     ac.launch_pad = p.launch_pad;
+    ac.ground = p.ground;
+    ground_ = p.ground;
     ac.t_tick_true_s = (clock_ || rounded_) ? static_cast<double>(host_ns_) / (static_cast<double>(m_) * kNanosecondsPerSecond) : 0.0;
     adapter_ = std::make_unique<Adapter>(plant, source_, ac);
     if (adapter_->imu_attach_status() != MARV_PLANT_OK) {
@@ -1727,6 +1775,7 @@ class Lockstep final : public gzs::System,
     if (!model.Valid(ecm)) {
       refuse("the plugin is not a child of a model");
     }
+    model_ = model;
     const std::vector<gzs::Entity> links = model.Links(ecm);
     if (links.size() != 1) {
       refuse("the model does not have exactly one link");
@@ -1799,6 +1848,13 @@ class Lockstep final : public gzs::System,
     std::uint64_t seed;
   } log_params_{};
   gzs::Link link_{gzs::kNullEntity};
+  gzs::Model model_{gzs::kNullEntity};
+  // The opt-in ground (decision 0047 amendment): on, the touchdowns so far and the last one's NED down speed at impact, and a
+  // touchdown's pose command to remove at the next PreUpdate.
+  bool ground_ = false;
+  std::uint64_t touchdowns_ = 0;
+  double last_touchdown_m_s_ = 0.0;
+  bool pose_cmd_pending_ = false;
   HilCommandSource hil_;
   RecordingSource source_;
   std::unique_ptr<Adapter> adapter_;

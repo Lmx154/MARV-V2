@@ -60,8 +60,9 @@ The interactive run (--interactive, for the ground station's SIL launcher; --run
 --max-s do not apply). The same card, tick, site, sensors, N and launch pad, in a world of gen_world mode "pilot", whose
 <real_time_factor> 1 makes gz-sim pace the host steps on the wall clock (the plugin itself reads no wall clock); one script
 segment of INTERACTIVE_S keeps the link on, the sticks centred, the throttle 0 and the arm switch low (the vehicle stays
-disarmed on the pad). No log and no analysis: the run lasts INTERACTIVE_S unless it is stopped (SIGTERM) first. Files:
-<dir>/interactive/<stem>.sdf.
+disarmed on the pad). The world also has <ground/> (decision 0047 amendment, Luis 2026-10-18): a touchdown at or below the start
+height while moving down puts the vehicle at rest there and re-engages the pad's hold. No log and no analysis: the run lasts
+INTERACTIVE_S unless it is stopped (SIGTERM) first. Files: <dir>/interactive/<stem>.sdf.
 """
 
 from __future__ import annotations
@@ -276,12 +277,12 @@ def link_xml(link_udp_port=None, config_dir=None):
     return text
 
 
-def sdf_edit_for(phases, overrides, com_offset_m=0.0, link=""):
+def sdf_edit_for(phases, overrides, com_offset_m=0.0, link="", ground=False):
     def edit(text):
         if com_offset_m:
             text = com_offset_edit(text, com_offset_m)
         text = re.sub(r'\s*<sil_override param="ol_dshot_m\d" type="i32">\d+</sil_override>', "", text)
-        add = "<launch_pad/>\n" + script_xml(phases) + "\n" + link
+        add = "<launch_pad/>\n" + ("<ground/>\n" if ground else "") + script_xml(phases) + "\n" + link
         for name, value in overrides:
             add += f'<sil_override param="{name}" type="f32">{value}</sil_override>\n'
         assert text.count("<gyro_source>") == 1
@@ -865,7 +866,7 @@ def run_interactive(out_dir, plugin_dir, link):
     name, text = gen_world.generate(CARD, scenario, "pilot", M, "lo", None, ROOT, sensors=sensors,
                                     command_delay_ticks=COMMAND_DELAY_TICKS)
     world = out_dir / name
-    world.write_text(sdf_edit_for(phases, (), 0.0, link)(text), encoding="utf-8")
+    world.write_text(sdf_edit_for(phases, (), 0.0, link, ground=True)(text), encoding="utf-8")
     cmd = [*run_scenario.GZ_ARGS, "-s", "-r", "--iterations", str(iterations), "--seed", str(SEED), str(world)]
     print(f"interactive run: {world} (real-time factor 1; until stopped, at most {INTERACTIVE_S:.0f} s)", flush=True)
     return subprocess.run(cmd, env=run_scenario.gz_env(plugin_dir), check=False).returncode

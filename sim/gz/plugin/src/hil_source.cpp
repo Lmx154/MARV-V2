@@ -18,6 +18,9 @@
 #include <limits>
 #include <numbers>
 #include <span>
+#include <string_view>
+
+#include <marv/params/param_ids.hpp>
 
 #include "constants.hpp"
 #include "marv/arming/arming.hpp"
@@ -37,6 +40,9 @@ constexpr std::size_t kReadChunk = std::size_t{1} << (2 * CHAR_BIT);  // bytes p
 // board sends at most two records' worth of reports, hil.cpp kQueueSize, and a version of a few dozen bytes).
 constexpr std::uint32_t kMaxCountSpan = std::numeric_limits<std::uint8_t>::max();
 constexpr double kDegPerRad = 180.0 / std::numbers::pi;  // a half turn is 180 degrees and pi radians
+// The status line's touchdown text (<ground>): " | touchdown ", up to 20 digits, " (last ", a %.1f speed and " m/s)" fit with
+// room; a longer text is cut, never overrun (snprintf). Labelled harness value.
+constexpr std::size_t kTouchdownTextBytes = 96;
 // Labelled harness values of open(): DTR is held low for 50 ms (many polls of the board's background loop, which reads the
 // line state on every pass) before it is raised, and the edge is repeated after 1.5 s without a hello (longer than the
 // board's hello and receiver-boot records take); a poll waits at most 10 ms.
@@ -180,6 +186,22 @@ bool HilCommandSource::fail(const std::string& why) {
 
 std::string HilCommandSource::open(const HilConfig& cfg) {
   cfg_ = cfg;
+  // For the status line's flight mode: quad_fc selects angle iff rc_channel_angle is not 0 and that channel is >=
+  // angle_switch_threshold (a NaN is acro; quad_fc.cpp), read by name from this plugin's parameter table, the one the board runs
+  // (its values CRC is checked below). A table without them (not quad_fc) shows no mode.
+  for (std::size_t i = 0; i < kParamCount; ++i) {
+    const std::string_view name = generated::kParamNames[i];
+    const ParamValue& v = generated::kParamDefaults[i].value;
+    if (name == "rc_channel_angle" && v.i32 > 0 && static_cast<std::size_t>(v.i32) <= prim::kCrsfRcChannels) {
+      angle_channel_ = static_cast<std::size_t>(v.i32);
+    } else if (name == "angle_switch_threshold") {
+      angle_threshold_ = v.f32;
+      have_angle_threshold_ = true;
+    }
+  }
+  if (!have_angle_threshold_) {
+    angle_channel_ = 0;
+  }
   if (cfg_.samples_per_record < 1 || cfg_.num_us == 0 || cfg_.den == 0) {
     return "<hil> samples_per_record, or the tick period, is 0";
   }
@@ -419,6 +441,9 @@ void HilCommandSource::parse() {
         rx_frames_ = get_u32(q);
         rx_throttle_ = get_f32(q + sizeof(std::uint32_t) + sizeof(std::uint64_t) + 3 * sizeof(float));
         rx_lq_ = get_f32(q + sizeof(std::uint32_t) + sizeof(std::uint64_t) + (4 + prim::kCrsfRcChannels) * sizeof(float));
+        // The flight mode the board's quad_fc selects from this frame (open(): the angle channel and threshold).
+        rx_angle_ = angle_channel_ > 0 && get_f32(q + sizeof(std::uint32_t) + sizeof(std::uint64_t) +
+                                                  (4 + angle_channel_ - 1) * sizeof(float)) >= angle_threshold_;
         break;
       case Kind::kReceiverStatus:
         receiver_status_.assign(count, 0);
@@ -599,15 +624,24 @@ void HilCommandSource::status_line(std::uint64_t tick) {
                               StatusField::BytesDropped, StatusField::QueueOverflows, StatusField::ReportOverflows}) {
     link_faults += field(status_, f);
   }
+  std::string ground;
+  if (show_touchdowns_) {
+    std::array<char, kTouchdownTextBytes> text{};
+    std::snprintf(text.data(), text.size(), " | touchdown %llu (last %.1f m/s)", static_cast<unsigned long long>(touchdowns_),
+                  last_touchdown_m_s_);
+    ground = text.data();
+  }
   std::fprintf(stderr,
-               "marv_gz_lockstep: hil t=%7.1f s | board %s | rc frames %u lq %.2f throttle %.2f | dshot %u %u %u %u | "
-               "height %+.2f m vz %+.2f m/s tilt %.1f deg | margin min %.0f us lag %.1f ms | deadline misses %u link faults %u\n",
-               t_s, arm_text(field(status_, StatusField::ArmingState)), rx_frames_, static_cast<double>(rx_lq_),
+               "marv_gz_lockstep: hil t=%7.1f s | board %s %s | rc frames %u lq %.2f throttle %.2f | dshot %u %u %u %u | "
+               "height %+.2f m vz %+.2f m/s tilt %.1f deg | margin min %.0f us lag %.1f ms | deadline misses %u link faults %u%s\n",
+               t_s, arm_text(field(status_, StatusField::ArmingState)),
+               receiver_frames_ == 0 || !have_angle_threshold_ ? "-" : rx_angle_ ? "ANGLE" : "ACRO", rx_frames_,
+               static_cast<double>(rx_lq_),
                static_cast<double>(rx_throttle_), applied_[0], applied_[1], applied_[2], applied_[3], -body_.pos_ned_m[2],
                -body_.vel_ned_m_s[2], std::acos(cos_tilt) * kDegPerRad,
                reports_used_ == 0 ? 0.0 : static_cast<double>(min_margin_ns_) / static_cast<double>(kNsPerUs),
                static_cast<double>(lag_ns_) / static_cast<double>(kNsPerUs * kUsPerMs), field(status_, StatusField::DeadlineMisses),
-               link_faults);
+               link_faults, ground.c_str());
 }
 
 void HilCommandSource::finish() {
