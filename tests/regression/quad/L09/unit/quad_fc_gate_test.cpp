@@ -27,7 +27,8 @@
 //
 // Telemetry (decision 0053 Q4, ground-segment unit 11): every rate tick ends by publishing one snapshot of what it read, computed
 // and wrote, and no other tick publishes; the seqlock it goes through never makes the writer wait (a write completes while a
-// reader is stopped inside its read, and that read is refused) and never gives a reader a torn value (a concurrent stress).
+// reader is stopped inside its read, and that read is refused) and never gives a reader a torn value (a concurrent stress);
+// the snapshot carries its layout version and a sequence number with no gap from one rate tick to the next.
 #include <gtest/gtest.h>
 #include <sys/prctl.h>
 
@@ -64,6 +65,7 @@
 #include <marv/types/actuator.hpp>
 #include <marv/types/attitude_state.hpp>
 #include <marv/types/imu_sample.hpp>
+#include <marv/types/rotor_speed_sample.hpp>
 #include <marv/types/seqlock.hpp>
 #include <marv/types/telemetry.hpp>
 
@@ -1951,12 +1953,25 @@ void init_with_case(const RejectCase& c) {
 
 // ---- Telemetry: the snapshot of every rate tick (decision 0053 Q4, ground-segment unit 11) ----
 
+bool has_flag(const Telemetry& t, TelemetryFlag f) { return (t.flags & telemetry_flag(f)) != 0; }
+
+// The layout is versioned and numbered: version kTelemetryVersion, sequence 1 for the first snapshot after init. The rotor
+// speeds are the HAL's latest sample (here one the test stages).
 TEST_F(MotorTestGateTest, NoSnapshotBeforeTheFirstRateTickAfterInitAndOneOfWhatItWroteAfterIt) {
   Telemetry t;
   EXPECT_FALSE(composition::telemetry(t));  // SetUp ran init; no tick yet
+  const std::array<float, kQuadXMotors> omega{100.0F, 200.0F, 0.0F, 400.0F};
+  const std::uint32_t valid = rotor_speed_flag(RotorSpeedFlag::M1Valid) | rotor_speed_flag(RotorSpeedFlag::M2Valid) |
+                              rotor_speed_flag(RotorSpeedFlag::M4Valid);
+  hal_sim::stage_rotor_speed(omega, valid);
   const Out o = next_rate_tick();          // tick 0 is a rate tick
   ASSERT_TRUE(o.wrote);
   ASSERT_TRUE(composition::telemetry(t));
+  EXPECT_EQ(t.version, kTelemetryVersion);
+  EXPECT_EQ(t.sequence, 1U);
+  EXPECT_EQ(t.rotor_flags, valid);
+  EXPECT_EQ(t.rotor_speed_rad_s, omega);
+  EXPECT_EQ(t.rotor_t_us, t.time_us);
   EXPECT_EQ(t.rate_executions, 1U);
   EXPECT_EQ(t.rate_executions, composition::rate_counts().executions);
   EXPECT_EQ(t.arm_state, static_cast<std::uint8_t>(composition::arming_status()));
@@ -1964,8 +1979,9 @@ TEST_F(MotorTestGateTest, NoSnapshotBeforeTheFirstRateTickAfterInitAndOneOfWhatI
   for (std::size_t i = 0; i < composition::kMotors; ++i) {
     EXPECT_EQ(t.motor_dshot[i], o.motor[i].raw()) << i;
   }
-  EXPECT_EQ(t.manual.frames, 0U);
-  EXPECT_FALSE(t.eskf_present);
+  EXPECT_EQ(t.rc_frames, 0U);
+  EXPECT_FALSE(has_flag(t, TelemetryFlag::EskfPresent));
+  EXPECT_EQ(t.reserved, 0U);
   composition::init();
   EXPECT_FALSE(composition::telemetry(t));  // init clears it
 }
@@ -1980,11 +1996,14 @@ TEST_F(ArmedGateTest, EveryRateTickPublishesOneSnapshotOfWhatItReadComputedAndWr
   Telemetry t;
   ASSERT_TRUE(composition::telemetry(t));
   std::uint64_t executions = t.rate_executions;
+  std::uint64_t sequence = t.sequence;
   for (std::size_t k = 0; k < 20; ++k) {
     const RateOut r = hold(fly, kSwitchOn, fly);
     ASSERT_TRUE(composition::telemetry(t));
     EXPECT_EQ(t.rate_executions, executions + 1) << k;
+    EXPECT_EQ(t.sequence, sequence + 1) << k;  // one snapshot per rate execution: no gap
     executions = t.rate_executions;
+    sequence = t.sequence;
     EXPECT_EQ(t.rate_executions, composition::rate_counts().executions);
     const Tick rate_tick_n = n_ - 1;
     EXPECT_EQ(t.time_us, hal_sim::stamp_us(period_, rate_tick_n));
@@ -1999,11 +2018,11 @@ TEST_F(ArmedGateTest, EveryRateTickPublishesOneSnapshotOfWhatItReadComputedAndWr
     for (std::size_t i = 0; i < composition::kMotors; ++i) {
       EXPECT_EQ(t.motor_dshot[i], r.out.motor[i].raw()) << k << " motor " << (i + 1);
     }
-    EXPECT_EQ(t.manual.frames, frames_);
-    EXPECT_EQ(t.manual.t_us, t.time_us);  // the frame staged before this rate tick, stamped with its time
-    EXPECT_EQ(t.manual.roll, fly.roll);
-    EXPECT_EQ(t.manual.throttle, fly.throttle);
-    EXPECT_EQ(t.manual.channels[kLuisArmChannel - 1], kSwitchOn);
+    EXPECT_EQ(t.rc_frames, frames_);
+    EXPECT_EQ(t.rc_t_us, t.time_us);  // the frame staged before this rate tick, stamped with its time
+    EXPECT_EQ(t.rc_roll, fly.roll);
+    EXPECT_EQ(t.rc_throttle, fly.throttle);
+    EXPECT_EQ(t.rc_channels[kLuisArmChannel - 1], kSwitchOn);
     const prim::Vec3<float> sp = stick_rates::rate_setpoint(rates_, prim::Vec3<float>(fly.roll, fly.pitch, fly.yaw));
     for (std::size_t a = 0; a < prim::kSpatialDim; ++a) {
       EXPECT_EQ(t.rate_setpoint_rad_s[a], sp[a]) << k << " axis " << a;
@@ -2012,13 +2031,14 @@ TEST_F(ArmedGateTest, EveryRateTickPublishesOneSnapshotOfWhatItReadComputedAndWr
     EXPECT_GT(t.thrust_max_n, t.thrust_n);
     EXPECT_EQ(t.arm_state, static_cast<std::uint8_t>(arming::ArmState::Armed));
     EXPECT_EQ(t.motor_gate, 1U);  // Armed
-    EXPECT_FALSE(t.angle_mode);
-    EXPECT_TRUE(t.gyro_calibrated);
-    EXPECT_TRUE(t.estimator_valid);
-    EXPECT_TRUE(t.mahony_valid);
-    EXPECT_FALSE(t.eskf_present);
-    EXPECT_EQ(t.q_mahony.w, est_ref_.quat().w);  // the beside estimator, stepped on the same samples
-    EXPECT_EQ(t.q_mahony.x, est_ref_.quat().x);
+    EXPECT_FALSE(has_flag(t, TelemetryFlag::AngleMode));
+    EXPECT_TRUE(has_flag(t, TelemetryFlag::GyroCalibrated));
+    EXPECT_TRUE(has_flag(t, TelemetryFlag::EstimatorValid));
+    EXPECT_TRUE(has_flag(t, TelemetryFlag::MahonyValid));
+    EXPECT_FALSE(has_flag(t, TelemetryFlag::EskfPresent));
+    EXPECT_EQ(t.q_mahony[0], est_ref_.quat().w);  // the beside estimator, stepped on the same samples
+    EXPECT_EQ(t.q_mahony[1], est_ref_.quat().x);
+    EXPECT_EQ(t.rotor_flags, 0U);  // no rotor speed staged
     EXPECT_EQ(t.rate_faults, 0U);
   }
   const Telemetry last = t;
@@ -2027,6 +2047,7 @@ TEST_F(ArmedGateTest, EveryRateTickPublishesOneSnapshotOfWhatItReadComputedAndWr
   EXPECT_FALSE(o.wrote);
   ASSERT_TRUE(composition::telemetry(t));
   EXPECT_EQ(t.rate_executions, last.rate_executions);
+  EXPECT_EQ(t.sequence, last.sequence);
   EXPECT_EQ(t.sample_us, last.sample_us);
 }
 
@@ -2040,44 +2061,47 @@ TEST_F(AngleGateTest, TheSnapshotCarriesTheAttitudeSetpointAndTheLawsRateSetpoin
     ASSERT_EQ(r.out.motor, r.mixed) << k;
     Telemetry t;
     ASSERT_TRUE(composition::telemetry(t));
-    EXPECT_TRUE(t.angle_mode);
+    EXPECT_TRUE(has_flag(t, TelemetryFlag::AngleMode));
     for (std::size_t a = 0; a < prim::kSpatialDim; ++a) {
       EXPECT_EQ(t.rate_setpoint_rad_s[a], angle_sp_[a]) << k << " axis " << a;
     }
-    EXPECT_GT(std::abs(t.q_setpoint.x), 0.0F) << k;  // a roll stick tilts the setpoint about x
+    EXPECT_GT(std::abs(t.q_setpoint[1]), 0.0F) << k;  // a roll stick tilts the setpoint about x (w x y z)
   }
   leave_angle();
   (void)hold({}, kSwitchOn, {});
   Telemetry t;
   ASSERT_TRUE(composition::telemetry(t));
-  EXPECT_FALSE(t.angle_mode);
-  EXPECT_EQ(t.q_setpoint.w, 1.0F);  // identity outside angle mode
-  EXPECT_EQ(t.q_setpoint.x, 0.0F);
+  EXPECT_FALSE(has_flag(t, TelemetryFlag::AngleMode));
+  EXPECT_EQ(t.q_setpoint[0], 1.0F);  // identity outside angle mode
+  EXPECT_EQ(t.q_setpoint[1], 0.0F);
 }
 
 // The seqlock (marv/types/seqlock.hpp) on the snapshot type itself. A test value: every counter of the snapshot from one number,
 // so a copy that mixes two writes shows as two numbers.
 Telemetry numbered(std::uint32_t k) {
   Telemetry t;
+  t.sequence = k;
   t.time_us = k;
   t.sample_us = k;
   t.rate_executions = k;
   t.motor_dshot.fill(static_cast<std::uint16_t>(k));
-  t.manual.frames = k;
-  t.manual.channels.fill(static_cast<float>(k));
+  t.rc_frames = k;
+  t.rc_channels.fill(static_cast<float>(k));
   t.rate_faults = k;
   t.imu_deadline_misses = k;
+  t.arm_state = static_cast<std::uint8_t>(k);
   return t;
 }
 
 // The number of a value, or 0 if its fields hold different numbers (a torn value).
 std::uint32_t number_of(const Telemetry& t) {
   const auto k = static_cast<std::uint32_t>(t.rate_executions);
-  bool same = t.time_us == k && t.sample_us == k && t.manual.frames == k && t.rate_faults == k && t.imu_deadline_misses == k;
+  bool same = t.sequence == k && t.time_us == k && t.sample_us == k && t.rc_frames == k && t.rate_faults == k &&
+              t.imu_deadline_misses == k && t.arm_state == static_cast<std::uint8_t>(k);
   for (const std::uint16_t m : t.motor_dshot) {
     same = same && m == static_cast<std::uint16_t>(k);
   }
-  for (const float c : t.manual.channels) {
+  for (const float c : t.rc_channels) {
     same = same && c == static_cast<float>(k);
   }
   return same ? k : 0;

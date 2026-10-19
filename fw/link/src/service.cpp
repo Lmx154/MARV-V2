@@ -378,12 +378,6 @@ void send_heartbeat() noexcept {
   return static_cast<std::uint32_t>(t / prim::kMicrosecondsPerMillisecond);
 }
 
-[[nodiscard]] std::array<float, prim::kSpatialDim> axes(const prim::Vec3<float>& v) noexcept { return {v[0], v[1], v[2]}; }
-
-[[nodiscard]] std::array<float, std::tuple_size_v<decltype(MarvEstimator::q_mahony)>> wxyz(const prim::Quat<float>& q) noexcept {
-  return {q.w, q.x, q.y, q.z};
-}
-
 template <class Flag>
 [[nodiscard]] std::uint8_t bit_if(bool on, Flag flag) noexcept {
   return on ? static_cast<std::uint8_t>(flag) : 0;
@@ -391,14 +385,16 @@ template <class Flag>
 
 [[nodiscard]] bool has(std::uint32_t flags, ImuFlag f) noexcept { return (flags & imu_flag(f)) != 0; }
 
-// The estimate in use: the ESKF in the image that flies it, else Mahony.
-[[nodiscard]] const prim::Quat<float>& attitude_of(const Telemetry& t) noexcept {
-  return t.eskf_in_use ? t.q_eskf : t.q_mahony;
+[[nodiscard]] bool has(const Telemetry& t, TelemetryFlag f) noexcept { return (t.flags & telemetry_flag(f)) != 0; }
+
+// The estimate in use (w x y z): the ESKF in the image that flies it, else Mahony.
+[[nodiscard]] const std::array<float, kQuatComponents>& attitude_of(const Telemetry& t) noexcept {
+  return has(t, TelemetryFlag::EskfInUse) ? t.q_eskf : t.q_mahony;
 }
 
 // The RC link is up: a valid frame no older than the link-loss time the arming machine uses (failsafe_loss_us).
 [[nodiscard]] bool rc_up(const Telemetry& t) noexcept {
-  return t.manual.frames != 0 && t.time_us >= t.manual.t_us && t.time_us - t.manual.t_us <= g.rc_loss_us;
+  return t.rc_frames != 0 && t.time_us >= t.rc_t_us && t.time_us - t.rc_t_us <= g.rc_loss_us;
 }
 
 [[nodiscard]] std::uint16_t saturated_u16(std::uint64_t v) noexcept {
@@ -426,7 +422,7 @@ template <class Flag>
   if (rc_up(t)) {
     health |= kMavSysStatusSensorRcReceiver;
   }
-  if (t.estimator_valid) {
+  if (has(t, TelemetryFlag::EstimatorValid)) {
     health |= kMavSysStatusAhrs;
   }
   SysStatus m{};
@@ -444,12 +440,12 @@ template <class Flag>
 
 // The ZYX (yaw, pitch, roll) angles of the body-to-NED attitude in use, and the rate loop's input as the angular rates.
 [[nodiscard]] Attitude attitude_message(const Telemetry& t) noexcept {
-  const prim::Quat<float>& q = attitude_of(t);
+  const auto& [w, x, y, z] = attitude_of(t);
   Attitude m{};
   m.time_boot_ms = boot_ms(t.time_us);
-  m.roll = std::atan2(2.0F * (q.w * q.x + q.y * q.z), 1.0F - 2.0F * (q.x * q.x + q.y * q.y));
-  m.pitch = std::asin(std::clamp(2.0F * (q.w * q.y - q.z * q.x), -1.0F, 1.0F));
-  m.yaw = std::atan2(2.0F * (q.w * q.z + q.x * q.y), 1.0F - 2.0F * (q.y * q.y + q.z * q.z));
+  m.roll = std::atan2(2.0F * (w * x + y * z), 1.0F - 2.0F * (x * x + y * y));
+  m.pitch = std::asin(std::clamp(2.0F * (w * y - z * x), -1.0F, 1.0F));
+  m.yaw = std::atan2(2.0F * (w * z + x * y), 1.0F - 2.0F * (y * y + z * z));
   m.rollspeed = t.rate_gyro_rad_s[0];
   m.pitchspeed = t.rate_gyro_rad_s[1];
   m.yawspeed = t.rate_gyro_rad_s[2];
@@ -457,13 +453,13 @@ template <class Flag>
 }
 
 [[nodiscard]] AttitudeQuaternion attitude_quaternion(const Telemetry& t) noexcept {
-  const prim::Quat<float>& q = attitude_of(t);
+  const auto& [w, x, y, z] = attitude_of(t);
   AttitudeQuaternion m{};
   m.time_boot_ms = boot_ms(t.time_us);
-  m.q1 = q.w;
-  m.q2 = q.x;
-  m.q3 = q.y;
-  m.q4 = q.z;
+  m.q1 = w;
+  m.q2 = x;
+  m.q3 = y;
+  m.q4 = z;
   m.rollspeed = t.rate_gyro_rad_s[0];
   m.pitchspeed = t.rate_gyro_rad_s[1];
   m.yawspeed = t.rate_gyro_rad_s[2];
@@ -482,17 +478,17 @@ template <class Flag>
   constexpr std::uint16_t kUnused = std::numeric_limits<std::uint16_t>::max();
   RcChannels m{};
   m.time_boot_ms = boot_ms(t.time_us);
-  const bool received = t.manual.frames != 0;
+  const bool received = t.rc_frames != 0;
   m.chancount = received ? narrow<std::uint8_t>(prim::kCrsfRcChannels) : std::uint8_t{0};
   for (std::size_t i = 0; i < kChannels.size(); ++i) {
-    const float x = std::clamp(t.manual.channels[i], -1.0F, 1.0F);
+    const float x = std::clamp(t.rc_channels[i], -1.0F, 1.0F);
     m.*kChannels[i] = received ? static_cast<std::uint16_t>(std::lround(prim::kCrsfUsCentre + prim::kRcUsHalfSpan * x)) : kUnused;
   }
   m.chan17_raw = kUnused;
   m.chan18_raw = kUnused;
-  m.rssi = t.manual.link_t_us == 0
+  m.rssi = t.rc_link_t_us == 0
                ? std::numeric_limits<std::uint8_t>::max()
-               : static_cast<std::uint8_t>(std::lround(std::clamp(t.manual.link_quality, 0.0F, 1.0F) * prim::kRcChannelsRssiMax));
+               : static_cast<std::uint8_t>(std::lround(std::clamp(t.rc_link_quality, 0.0F, 1.0F) * prim::kRcChannelsRssiMax));
   return m;
 }
 
@@ -501,8 +497,8 @@ template <class Flag>
 [[nodiscard]] AttitudeTarget attitude_target(const Telemetry& t) noexcept {
   AttitudeTarget m{};
   m.time_boot_ms = boot_ms(t.time_us);
-  if (t.angle_mode) {
-    m.q = wxyz(t.q_setpoint);
+  if (has(t, TelemetryFlag::AngleMode)) {
+    m.q = t.q_setpoint;
   } else {
     m.type_mask = standard::kAttitudeTargetTypemaskAttitudeIgnore;
   }
@@ -558,33 +554,38 @@ template <class Flag>
   m.attitude_faults = t.attitude_faults;
   m.attitude_timing_faults = t.attitude_timing_faults;
   m.imu_deadline_misses = t.imu_deadline_misses;
-  m.rc_frames = t.manual.frames;
+  m.rc_frames = t.rc_frames;
   constexpr std::uint32_t kNoFrame = std::numeric_limits<std::uint32_t>::max();
-  const TimeUs age = t.time_us > t.manual.t_us ? t.time_us - t.manual.t_us : 0;
-  m.rc_age_us = t.manual.frames == 0 ? kNoFrame : static_cast<std::uint32_t>(std::min<TimeUs>(age, kNoFrame - 1));
+  const TimeUs age = t.time_us > t.rc_t_us ? t.time_us - t.rc_t_us : 0;
+  m.rc_age_us = t.rc_frames == 0 ? kNoFrame : static_cast<std::uint32_t>(std::min<TimeUs>(age, kNoFrame - 1));
   m.arm_state = static_cast<MarvArmState>(t.arm_state);
   m.motor_gate = static_cast<MarvMotorGate>(t.motor_gate);
   m.flags = static_cast<std::uint8_t>(
-      bit_if(t.angle_mode, MarvFcStatusFlag::AngleMode) | bit_if(t.airmode, MarvFcStatusFlag::Airmode) |
-      bit_if(t.iterm_held, MarvFcStatusFlag::ItermHeld) | bit_if(t.gyro_calibrated, MarvFcStatusFlag::GyroCalibrated) |
-      bit_if(t.estimator_valid, MarvFcStatusFlag::EstimatorValid) | bit_if(t.upright, MarvFcStatusFlag::Upright) |
-      bit_if(t.imu_invalid, MarvFcStatusFlag::ImuInvalid) | bit_if(t.imu_saturated, MarvFcStatusFlag::ImuSaturated));
-  m.rate_fault = static_cast<std::uint8_t>(bit_if(t.rate_fault_active, MarvRateFaultFlag::Active) |
-                                           bit_if(t.rate_fault_latched, MarvRateFaultFlag::Latched));
+      bit_if(has(t, TelemetryFlag::AngleMode), MarvFcStatusFlag::AngleMode) |
+      bit_if(has(t, TelemetryFlag::Airmode), MarvFcStatusFlag::Airmode) |
+      bit_if(has(t, TelemetryFlag::ItermHeld), MarvFcStatusFlag::ItermHeld) |
+      bit_if(has(t, TelemetryFlag::GyroCalibrated), MarvFcStatusFlag::GyroCalibrated) |
+      bit_if(has(t, TelemetryFlag::EstimatorValid), MarvFcStatusFlag::EstimatorValid) |
+      bit_if(has(t, TelemetryFlag::Upright), MarvFcStatusFlag::Upright) |
+      bit_if(has(t, TelemetryFlag::ImuInvalid), MarvFcStatusFlag::ImuInvalid) |
+      bit_if(has(t, TelemetryFlag::ImuSaturated), MarvFcStatusFlag::ImuSaturated));
+  m.rate_fault = static_cast<std::uint8_t>(bit_if(has(t, TelemetryFlag::RateFaultActive), MarvRateFaultFlag::Active) |
+                                           bit_if(has(t, TelemetryFlag::RateFaultLatched), MarvRateFaultFlag::Latched));
   return m;
 }
 
 [[nodiscard]] MarvEstimator estimator_message(const Telemetry& t) noexcept {
   MarvEstimator m{};
   m.time_usec = t.time_us;
-  m.q_mahony = wxyz(t.q_mahony);
-  m.q_eskf = wxyz(t.q_eskf);
-  m.gyro_bias_cal = axes(t.gyro_bias_cal);
-  m.gyro_bias_mahony = axes(t.gyro_bias_mahony);
-  m.gyro_bias_eskf = axes(t.gyro_bias_eskf);
-  m.flags = static_cast<std::uint8_t>(
-      bit_if(t.mahony_valid, MarvEstimatorFlag::MahonyValid) | bit_if(t.eskf_present, MarvEstimatorFlag::EskfPresent) |
-      bit_if(t.eskf_valid, MarvEstimatorFlag::EskfValid) | bit_if(t.eskf_in_use, MarvEstimatorFlag::EskfInUse));
+  m.q_mahony = t.q_mahony;
+  m.q_eskf = t.q_eskf;
+  m.gyro_bias_cal = t.gyro_bias_cal;
+  m.gyro_bias_mahony = t.gyro_bias_mahony;
+  m.gyro_bias_eskf = t.gyro_bias_eskf;
+  m.flags = static_cast<std::uint8_t>(bit_if(has(t, TelemetryFlag::MahonyValid), MarvEstimatorFlag::MahonyValid) |
+                                      bit_if(has(t, TelemetryFlag::EskfPresent), MarvEstimatorFlag::EskfPresent) |
+                                      bit_if(has(t, TelemetryFlag::EskfValid), MarvEstimatorFlag::EskfValid) |
+                                      bit_if(has(t, TelemetryFlag::EskfInUse), MarvEstimatorFlag::EskfInUse));
   return m;
 }
 

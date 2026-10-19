@@ -57,9 +57,10 @@
 // again until a disarm, however low the throttle goes.
 //
 // Telemetry (decision 0053 Q4; ground-segment unit 11). Every rate tick ends, after its actuator write, by publishing one
-// snapshot (marv/types/telemetry.hpp) through a seqlock that never waits: the tick's sample as the estimator received it, the
-// rate loop's input, both estimators, the setpoints and thrust, the values written, the pilot's input, the counters and the
-// arming state. Nothing reads it back into the tick; composition::telemetry reads it from any context.
+// snapshot (marv/types/telemetry.hpp, versioned, with a sequence number) through a seqlock that never waits: the tick's sample
+// as the estimator received it, the rate loop's input, both estimators, the setpoints and thrust, the values written, the
+// latest rotor speeds (hal_rotor_speed), the pilot's input, the counters and the arming state. Nothing reads it back into the
+// tick; composition::telemetry reads it from any context.
 //
 // The motor-test request comes from the HAL (hal_motor_test), is read only on a rate tick and is validated here, never
 // by the console: motor 1..4, value in [kDshotThrottleMin, motor_test_dshot_max], duration in [1 ms,
@@ -110,6 +111,7 @@
 #include <marv/types/actuator.hpp>
 #include <marv/types/attitude_state.hpp>
 #include <marv/types/imu_sample.hpp>
+#include <marv/types/rotor_speed_sample.hpp>
 #include <marv/types/seqlock.hpp>
 #include <marv/types/telemetry.hpp>
 #include <marv/types/time.hpp>
@@ -184,6 +186,7 @@ std::atomic<float> g_tilt_xy2{0.0F};  // x^2 + y^2 of the estimate's quaternion,
 std::atomic<float> g_tilt_wz2{1.0F};  // w^2 + z^2
 std::atomic<bool> g_estimator_valid{false};
 Seqlock<Telemetry> g_telemetry;  // written once per rate tick, at its end; read by composition::telemetry
+std::uint64_t g_telemetry_sequence = 0;  // the snapshots published since init
 
 // The saturation bits of ImuSample::flags (gyro and accel, every axis), GyroSatX .. AccelSatZ.
 [[nodiscard]] constexpr std::uint32_t saturation_mask() noexcept {
@@ -195,6 +198,11 @@ Seqlock<Telemetry> g_telemetry;  // written once per rate tick, at its end; read
 }
 
 [[nodiscard]] bool fired(std::uint32_t due, Group g) noexcept { return (due & (std::uint32_t{1} << g)) != 0; }
+
+// Telemetry's plain layouts (marv/types/telemetry.hpp): a vector's axes, a quaternion's w x y z, a flag's bit if set.
+[[nodiscard]] std::array<float, prim::kSpatialDim> axes(const prim::Vec3<float>& v) noexcept { return {v[0], v[1], v[2]}; }
+[[nodiscard]] std::array<float, kQuatComponents> wxyz(const prim::Quat<float>& q) noexcept { return {q.w, q.x, q.y, q.z}; }
+[[nodiscard]] std::uint32_t flag_if(bool on, TelemetryFlag f) noexcept { return on ? telemetry_flag(f) : 0U; }
 
 // The values written to the motors in gate state `gate`: stop on every motor, except Armed the mixer's output `mixed`
 // and in MotorTest the one motor of `run`.
@@ -513,6 +521,7 @@ void init() noexcept {
   g_imu_saturated = false;
   g_arming_state.store(static_cast<std::uint8_t>(arming::ArmState::Boot), std::memory_order_relaxed);
   g_telemetry.reset();
+  g_telemetry_sequence = 0;
 
   const MotorTestPoll seen = hal_motor_test();
   g_seen_cancel = seen.cancel_count;
@@ -652,52 +661,62 @@ void tick(const ImuSample& raw) noexcept {
   hal_actuators_write(written);
 
   Telemetry t;
+  t.sequence = ++g_telemetry_sequence;
   t.time_us = now;
   t.sample_us = s.t_us;
   t.rate_executions = g_step.execution_count();
-  t.gyro_rad_s = s.gyro_rad_s;
-  t.accel_m_s2 = s.accel_m_s2;
-  t.temp_k = s.temp_k;
+  t.rc_t_us = mc.t_us;
+  t.rc_link_t_us = mc.link_t_us;
+  const RotorSpeedSample rotor = hal_rotor_speed();
+  t.rotor_t_us = rotor.t_us;
   t.imu_flags = s.flags;
-  t.rate_gyro_rad_s = g_step.rate_input().gyro_rad_s;
-  t.q_mahony = g_estimator.quat();
-  t.gyro_bias_cal = g_gyro_cal.complete() ? g_gyro_cal.bias() : prim::Vec3<float>();
-  t.gyro_bias_mahony = g_estimator.bias();
-  t.mahony_valid = g_estimator.valid();
-#ifdef MARV_QUAD_FC_ESKF
-  t.q_eskf = g_eskf.quat();
-  t.gyro_bias_eskf = g_eskf.bias();
-  t.eskf_present = true;
-  t.eskf_valid = g_eskf.valid();
-  t.eskf_in_use = true;
-#else
-  t.q_eskf = prim::Quat<float>(0.0F, 0.0F, 0.0F, 0.0F);
-#endif
-  t.rate_setpoint_rad_s = setpoint;
-  t.q_setpoint = q_setpoint;
-  t.thrust_n = thrust;
-  t.thrust_max_n = g_thrust_root_max * g_thrust_root_max;
-  for (std::size_t m = 0; m < kMotors; ++m) {
-    t.motor_dshot[m] = written.motor[m].raw();
-  }
-  t.manual = mc;
+  t.rc_frames = mc.frames;
+  t.rotor_flags = rotor.flags;
   t.rate_faults = e.rate.fault_count;
   t.rate_timing_faults = e.rate.timing_fault_count;
   t.attitude_faults = g_attitude_faults.load(std::memory_order_relaxed);
   t.attitude_timing_faults = g_attitude_timing_faults.load(std::memory_order_relaxed);
   t.imu_deadline_misses = deadline_misses;
+  t.gyro_rad_s = axes(s.gyro_rad_s);
+  t.accel_m_s2 = axes(s.accel_m_s2);
+  t.temp_k = s.temp_k;
+  t.rate_gyro_rad_s = axes(g_step.rate_input().gyro_rad_s);
+  t.q_mahony = wxyz(g_estimator.quat());
+  t.gyro_bias_cal = axes(g_gyro_cal.complete() ? g_gyro_cal.bias() : prim::Vec3<float>());
+  t.gyro_bias_mahony = axes(g_estimator.bias());
+  std::uint32_t flags = flag_if(angle_run, TelemetryFlag::AngleMode) | flag_if(g_airmode_active, TelemetryFlag::Airmode) |
+                        flag_if(throttle_low, TelemetryFlag::ItermHeld) |
+                        flag_if(in.gyro_calibrated, TelemetryFlag::GyroCalibrated) |
+                        flag_if(in.estimator_valid, TelemetryFlag::EstimatorValid) |
+                        flag_if(in.upright, TelemetryFlag::Upright) |
+                        flag_if(!in.imu_samples_valid, TelemetryFlag::ImuInvalid) |
+                        flag_if(in.imu_saturated, TelemetryFlag::ImuSaturated) |
+                        flag_if(e.rate.fault_active, TelemetryFlag::RateFaultActive) |
+                        flag_if(e.rate.fault_latched, TelemetryFlag::RateFaultLatched) |
+                        flag_if(g_estimator.valid(), TelemetryFlag::MahonyValid);
+#ifdef MARV_QUAD_FC_ESKF
+  t.q_eskf = wxyz(g_eskf.quat());
+  t.gyro_bias_eskf = axes(g_eskf.bias());
+  flags |= telemetry_flag(TelemetryFlag::EskfPresent) | flag_if(g_eskf.valid(), TelemetryFlag::EskfValid) |
+           telemetry_flag(TelemetryFlag::EskfInUse);
+#endif
+  t.flags = flags;
+  t.rate_setpoint_rad_s = axes(setpoint);
+  t.q_setpoint = wxyz(q_setpoint);
+  t.thrust_n = thrust;
+  t.thrust_max_n = g_thrust_root_max * g_thrust_root_max;
+  t.rc_roll = mc.roll;
+  t.rc_pitch = mc.pitch;
+  t.rc_yaw = mc.yaw;
+  t.rc_throttle = mc.throttle;
+  t.rc_channels = mc.channels;
+  t.rc_link_quality = mc.link_quality;
+  t.rotor_speed_rad_s = rotor.omega_rad_s;
+  for (std::size_t m = 0; m < kMotors; ++m) {
+    t.motor_dshot[m] = written.motor[m].raw();
+  }
   t.arm_state = static_cast<std::uint8_t>(out.state);
   t.motor_gate = static_cast<std::uint8_t>(g_gate);
-  t.angle_mode = angle_run;
-  t.airmode = g_airmode_active;
-  t.iterm_held = throttle_low;
-  t.gyro_calibrated = in.gyro_calibrated;
-  t.estimator_valid = in.estimator_valid;
-  t.upright = in.upright;
-  t.imu_invalid = !in.imu_samples_valid;
-  t.imu_saturated = in.imu_saturated;
-  t.rate_fault_active = e.rate.fault_active;
-  t.rate_fault_latched = e.rate.fault_latched;
   g_telemetry.write(t);
 }
 
