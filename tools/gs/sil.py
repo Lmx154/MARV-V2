@@ -52,10 +52,18 @@ def udp_bound(port: int) -> bool:
 
 
 class SilLauncher:
-    def __init__(self, run_dir: Path, udp_port: int | None, command: list[str] | None = None):
+    """One supervised process group. `relaunch` False: an EX_TEMPFAIL exit is an ordinary exit (a HIL run). `on_relaunch(n)` runs
+    after the n-th relaunch and `on_exit(status)` when the run ends by itself (not by stop()); both run on the watcher thread,
+    outside the lock."""
+
+    def __init__(self, run_dir: Path, udp_port: int | None, command: list[str] | None = None, *, out_dir: Path | None = None,
+                 relaunch: bool = True, on_relaunch=None, on_exit=None):
         self.run_dir = Path(run_dir)
         self.udp_port = udp_port
         self.config_dir = self.run_dir / "store"
+        self.out_dir = Path(out_dir) if out_dir is not None else self.run_dir / "sil"
+        self.relaunch = relaunch
+        self.on_relaunch, self.on_exit = on_relaunch, on_exit
         self._command = command
         self._proc: subprocess.Popen | None = None
         self._log = None
@@ -68,10 +76,9 @@ class SilLauncher:
         with self._lock:
             if self._proc is not None and self._proc.poll() is None:
                 raise RuntimeError("a SIL run is already running")
-            out_dir = self.run_dir / "sil"
-            out_dir.mkdir(parents=True, exist_ok=True)
+            self.out_dir.mkdir(parents=True, exist_ok=True)
             if self._log is None:
-                self._log = open(out_dir / "launcher.log", "ab")
+                self._log = open(self.out_dir / "launcher.log", "ab")
             self._stopping = False
             self._relaunches = 0
             self._spawn()
@@ -79,31 +86,51 @@ class SilLauncher:
             self._watcher = threading.Thread(target=self._watch, args=(proc,), name="sil-watcher", daemon=True)
             self._watcher.start()
 
+    def command(self) -> list[str]:
+        """The argv a start would run: the given command, else the interactive run on this launcher's directories."""
+        return list(self._command) if self._command else default_command(self.out_dir, self.config_dir, self.udp_port)
+
     def _spawn(self) -> None:
         """Starts the command in its own process group; the caller holds the lock."""
         env = dict(os.environ)
         if self.udp_port is not None:
             env[UDP_PORT_ENV] = str(self.udp_port)
-        command = self._command or default_command(self.run_dir / "sil", self.config_dir, self.udp_port)
+        command = self.command()
         self._proc = subprocess.Popen(command, cwd=ROOT, env=env, stdout=self._log, stderr=subprocess.STDOUT,
                                       start_new_session=True)
 
     def _watch(self, proc: subprocess.Popen) -> None:
-        """Relaunches the run while it exits with EX_TEMPFAIL and stop() has not been called."""
+        """Relaunches the run while it exits with EX_TEMPFAIL and stop() has not been called; tells on_exit when it ends by itself."""
         while True:
             proc.wait()
             with self._lock:
-                if self._stopping or self._proc is not proc or proc.returncode != os.EX_TEMPFAIL:
+                if self._stopping or self._proc is not proc:
                     return
-                self._relaunches += 1
-                self._log.write(f"sil.py: exit EX_TEMPFAIL (reboot requested): relaunch {self._relaunches}\n".encode())
-                self._log.flush()
-                self._spawn()
-                proc = self._proc
+                if not self.relaunch or proc.returncode != os.EX_TEMPFAIL:
+                    ended = True
+                else:
+                    ended = False
+                    self._relaunches += 1
+                    count = self._relaunches
+                    self._log.write(f"sil.py: exit EX_TEMPFAIL (reboot requested): relaunch {count}\n".encode())
+                    self._log.flush()
+                    self._spawn()
+                    proc = self._proc
+            if ended:
+                if self.on_exit is not None:
+                    self.on_exit(proc.returncode)
+                return
+            if self.on_relaunch is not None:
+                self.on_relaunch(count)
 
     def running(self) -> bool:
         proc = self._proc
         return proc is not None and proc.poll() is None
+
+    def active(self) -> bool:
+        """True from start() until the run has ended for good: it stays True across the gap of a relaunch, where running() is False."""
+        watcher = self._watcher
+        return watcher is not None and watcher.is_alive()
 
     def stop(self) -> int | None:
         """Ends the relaunching, SIGTERMs the run's whole process group, SIGKILLs what is left after STOP_GRACE_S; returns the
@@ -147,7 +174,7 @@ class SilLauncher:
     def link_state(self) -> str:
         if self.udp_port is None:
             return "none"
-        if not self.running():
+        if not self.active():
             return "stopped"
         if udp_bound(self.udp_port):
             return "ready"

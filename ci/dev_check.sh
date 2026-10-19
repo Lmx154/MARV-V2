@@ -7,7 +7,8 @@
 # The selection comes from ci/affected.py and the map ci/blast_radius.yaml. A path the map does not know selects
 # everything, so the check never silently skips.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+self="$(readlink -f "${BASH_SOURCE[0]}")"
+cd "$(dirname "${self}")/.."
 
 base_args=()
 if (($# > 0)); then
@@ -16,6 +17,11 @@ if (($# > 0)); then
     exit 2
   }
   base_args=(--base "$2")
+fi
+
+# One heavy job at a time on this host (ci/heavy.sh): take the lock, or stop here when someone holds it.
+if ! bash ci/heavy.sh --held; then
+  exec bash ci/heavy.sh -- bash "${self}" "$@"
 fi
 
 started="${SECONDS}"

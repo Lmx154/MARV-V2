@@ -809,6 +809,13 @@ rules:
     gz_groups: []
     why: "the ground-segment helper (unit 7): byte relay, token and Origin gate, ground log, image library, SIL launcher; held by its tests/tools pytest file, and GS-3 holds it clear of MAVLink (it only relays bytes)"
 
+  - paths: [ci/heavy.sh]
+    ctest_labels: []
+    run_ci_steps: [tools_tests]
+    pytest_paths: [tests/tools]
+    gz_groups: []
+    why: "the host-wide heavy lock script (GX-1): dev_check.sh and local_ci.sh (both full roots) run under it; its behaviour (held, status, re-entrant, daemon-proof, the two scripts stopping on a held lock) and the helper's lock probe are held by tests/tools/test_gs_helper.py"
+
   - paths: [tools/validate/**]
     ctest_labels: [L07]
     run_ci_steps: ["@host", gs3_check, tools_tests]
