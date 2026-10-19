@@ -35,12 +35,15 @@ import sys
 import time
 from pathlib import Path
 
+import yaml
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import slots_common as sc  # noqa: E402
 from slots_common import lc, mcfg  # noqa: E402
 
 PICOTOOL = lc.PICOTOOL
-SLOT_BYTES = 98304  # design/budget.yaml config_slot_bytes (the bench reads the value it was built with; checked below)
+# design/budget.yaml config_slot_bytes (the build must have been configured with the same value; checked below)
+SLOT_BYTES = yaml.safe_load((lc.ROOT / "design" / "budget.yaml").read_text(encoding="utf-8"))["config_slot_bytes"]["value"]
 FLASH_BYTES = 2097152  # PICO_FLASH_SIZE_BYTES of boards/madflight_fc3v2_revc.h
 SECTOR = 4096  # FLASH_SECTOR_SIZE of the pinned Pico SDK
 SLOT_OFFSET = {"slot A": FLASH_BYTES - 2 * SLOT_BYTES, "slot B": FLASH_BYTES - SLOT_BYTES}
