@@ -1,0 +1,8 @@
+wall_ns 1792434121955014196 mono_ns 597975500560984
+event t_ns 597975500790612: helper started on http://127.0.0.1:46099
+event t_ns 597975505038482: device opened: serial /dev/serial/by-id/usb-Raspberry_Pi_Pico_B2189353BDF6DD1E-if02 115200
+event t_ns 598043338038056: device closed: helper stopping
+event t_ns 598043340054754: helper stopped
+rx: 71100 records, 6654431 bytes
+tx: 32 records, 1378 bytes
+event: 4 records, 174 bytes

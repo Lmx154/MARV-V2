@@ -1,0 +1,121 @@
+{
+ "console_before": {
+  "t_us": 25131692,
+  "est_valid": 1,
+  "arming": "no_link",
+  "rate_timing_faults": 1,
+  "attitude_timing_faults": 0,
+  "usb_reset_refused": 0,
+  "imu_faults": "ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0",
+  "line": "imu dt=1000004us irq/s=7496.0 words/s=14991.9 samples/s=7496.0 ticks/s=7496.0 writes/s=3748.0 motor_drops=0 | total samples=187748 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=25131692 gyro=(-0.0012,+0.0037,-0.0037) accel=(-0.029,+0.239,-9.748) temp=301.74K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3748.0 executions=93874 timing_faults=1 | rc frames/s=0.0 total=0 link_frames=0 bad_crc=0 bad_length=0 dropped_bytes=0 uart_errors=0 age_us=-1 roll=+0.000 pitch=+0.000 throttle=0.000 yaw=+0.000 tilt=0.0264 est_valid=1 | arming=no_link | attitude faults=0 timing_faults=0 | usb_reset_refused=0\r"
+ },
+ "armed": false,
+ "identity": {
+  "config_source": 0,
+  "config_state": 0,
+  "config_refusal": 0,
+  "config_sha256": "97a450cfcb06d329c4ef432b2255e58c9fcb0fe725a21107f2386f146f298746",
+  "image_sha256": "17bb03aa722ebdc49ce895465a57d1c2e995754914bb34b606d56300ca5acfae"
+ },
+ "streams": {
+  "seconds": 60.00132966041565,
+  "frames": 118849,
+  "bytes": 6629688,
+  "seq_gaps": 0,
+  "heartbeats": 60,
+  "streams": {
+   "SYS_STATUS": {
+    "granted_interval_us": 5051,
+    "granted_hz": 197.98059790140567,
+    "frames": 11879,
+    "host_hz": 197.9789459205413
+   },
+   "ATTITUDE": {
+    "granted_interval_us": 5051,
+    "granted_hz": 197.98059790140567,
+    "frames": 11879,
+    "host_hz": 197.9789459205413,
+    "board_hz": 197.97986532435496,
+    "gap_min_us": 3000,
+    "gap_max_us": 7000
+   },
+   "ATTITUDE_QUATERNION": {
+    "granted_interval_us": 5051,
+    "granted_hz": 197.98059790140567,
+    "frames": 11879,
+    "host_hz": 197.9789459205413,
+    "board_hz": 197.97986532435496,
+    "gap_min_us": 3000,
+    "gap_max_us": 7000
+   },
+   "RC_CHANNELS": {
+    "granted_interval_us": 5051,
+    "granted_hz": 197.98059790140567,
+    "frames": 11878,
+    "host_hz": 197.96227962321655,
+    "board_hz": 197.9796969545432,
+    "gap_min_us": 4000,
+    "gap_max_us": 7000
+   },
+   "ATTITUDE_TARGET": {
+    "granted_interval_us": 5051,
+    "granted_hz": 197.98059790140567,
+    "frames": 11879,
+    "host_hz": 197.9789459205413,
+    "board_hz": 197.97986532435496,
+    "gap_min_us": 3000,
+    "gap_max_us": 7000
+   },
+   "HIGHRES_IMU": {
+    "granted_interval_us": 5051,
+    "granted_hz": 197.98059790140567,
+    "frames": 11879,
+    "host_hz": 197.9789459205413,
+    "board_hz": 197.98043620600478,
+    "gap_min_us": 3735,
+    "gap_max_us": 6404
+   },
+   "ACTUATOR_OUTPUT_STATUS": {
+    "granted_interval_us": 5051,
+    "granted_hz": 197.98059790140567,
+    "frames": 11879,
+    "host_hz": 197.9789459205413,
+    "board_hz": 197.98043620600478,
+    "gap_min_us": 3735,
+    "gap_max_us": 6404
+   },
+   "MARV_FC_STATUS": {
+    "granted_interval_us": 5051,
+    "granted_hz": 197.98059790140567,
+    "frames": 11879,
+    "host_hz": 197.9789459205413,
+    "board_hz": 197.98043620600478,
+    "gap_min_us": 3735,
+    "gap_max_us": 6403
+   },
+   "MARV_ESTIMATOR": {
+    "granted_interval_us": 5051,
+    "granted_hz": 197.98059790140567,
+    "frames": 11879,
+    "host_hz": 197.9789459205413,
+    "board_hz": 197.9804329061014,
+    "gap_min_us": 3735,
+    "gap_max_us": 6404
+   },
+   "MARV_IDENTITY": {
+    "granted_interval_us": 5051,
+    "granted_hz": 197.98059790140567,
+    "frames": 11879,
+    "host_hz": 197.9789459205413
+   }
+  },
+  "frames_per_s": 1980.7727707475724,
+  "bytes_per_s": 110492.35137823567
+ },
+ "armed_after": false,
+ "helper_output": [
+  "GCS:     http://127.0.0.1:46099/?token=t8O1KVWCLesA71wmhSyCS-2xcFSo9G0suCB3hamega4",
+  "run dir: ../tb/gl/gs-runs/20261019T182201Z",
+  "device:  serial /dev/serial/by-id/usb-Raspberry_Pi_Pico_B2189353BDF6DD1E-if02 115200"
+ ]
+}
