@@ -40,6 +40,17 @@ const shown = (p: PanelView, key: string): string => {
 	return r.unit ? `${r.value} ${r.unit}` : r.value;
 };
 
+describe('a value that rounds to zero', () => {
+	it('is shown without a minus sign', async () => {
+		const { vehicle, view } = await setup();
+		vehicle.emit({ ...m.attitude, rollspeed: -0.0001, pitchspeed: -0.1 });
+		await flush();
+		const p = panel(view().panels, 'rates');
+		expect(shown(p, 'gyro.x')).toBe('0.0 °/s');
+		expect(shown(p, 'gyro.y')).toBe('-5.7 °/s');
+	});
+});
+
 describe('eulerOf', () => {
 	it('is zero for the identity and a quarter turn about each axis for the matching quaternion', () => {
 		expect(eulerOf([1, 0, 0, 0])).toEqual([0, 0, 0]);

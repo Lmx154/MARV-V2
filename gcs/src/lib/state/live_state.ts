@@ -104,7 +104,10 @@ export function channelMapOf(params: readonly VehicleParam[]): ChannelMap | null
 // ---- values -----------------------------------------------------------------------------------------------------------------
 
 function fixed(v: number | null | undefined, decimals: number): string {
-	return v === null || v === undefined || !Number.isFinite(v) ? DASH : v.toFixed(decimals);
+	if (v === null || v === undefined || !Number.isFinite(v)) return DASH;
+	const text = v.toFixed(decimals);
+	// A value that rounds to zero is shown as zero, not as "-0.0".
+	return /^-0(\.0*)?$/.test(text) ? text.slice(1) : text;
 }
 
 const deg = (rad: number | null | undefined): string => fixed(rad === null || rad === undefined ? null : rad * DEG_PER_RAD, DECIMALS.angle);

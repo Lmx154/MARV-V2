@@ -169,7 +169,8 @@ test.describe('the vehicle page', () => {
 		await expect(row(page, 'arming', 'state')).toHaveText(/\w+/);
 		await expect(row(page, 'estimators', 'mahony.valid')).toHaveText(/^\s*(yes|no)\s*$/);
 		await expect(row(page, 'faults', 'deadline')).toContainText(/^\s*\d+\s*$/);
-		await expect(row(page, 'imu', 'temp')).toContainText(/^-?\d+\.\d\s*°C\s*$/);
+		// The fake vehicle sends a temperature; the SIL's sample carries none, and the panel says so ("—") rather than invent one.
+		await expect(row(page, 'imu', 'temp')).toContainText(live ? /^(-?\d+\.\d|—)\s*°C\s*$/ : /^-?\d+\.\d\s*°C\s*$/);
 		const az = await number(row(page, 'imu', 'accel.z'));
 		expect(az, 'the accelerometer at rest reads about -g on z (FRD)').toBeLessThan(-7);
 		expect(az).toBeGreaterThan(-12);

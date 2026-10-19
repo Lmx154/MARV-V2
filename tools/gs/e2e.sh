@@ -77,7 +77,10 @@ print(s.getsockname()[1])')"
 
 # The helper refuses a run while the host's heavy lock is held (H-3). This script is often run under that lock (ci/heavy.sh), so the
 # helper watches a lock file of its own: the run is this script's own heavy work, which the outer lock already covers.
-helper_args=(--port 0 --runs-dir "${work}/runs" --sil-udp-port "${udp_port}" --heavy-lock "${work}/heavy.lock")
+# The helper's board autoconnect looks in an empty directory: a board plugged into this host must not take the link from the simulator
+# (or be opened by a test).
+mkdir -p "${work}/byid"
+helper_args=(--port 0 --runs-dir "${work}/runs" --sil-udp-port "${udp_port}" --heavy-lock "${work}/heavy.lock" --byid-dir "${work}/byid")
 if [[ "${mode}" == light ]]; then
   echo "##### fake vehicle on udp ${udp_port}"
   mkdir -p build/gs-e2e/defs
