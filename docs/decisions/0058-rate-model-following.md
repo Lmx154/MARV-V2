@@ -30,6 +30,10 @@
    tests/regression/quad/L06/d_term/rate_loop_test.cpp
    tests/regression/quad/L06/tools/test_rate_lead.py
    tests/regression/quad/L06/product_params/marv_params_product_table.txt
+   tests/regression/quad/L06/results/ff_eval/card_worst.txt
+   tests/regression/quad/L06/results/ff_eval/sweep.txt
+   (the two ff_eval outputs re-run by their README commands: only the input sha256 lines changed, for the edited
+   design/scenario_values.yaml; sweep.txt's design/budget.yaml line was already stale and is current again)
 
 ## Why
 
@@ -56,7 +60,16 @@ overshoot), lower margins, narrower bands without measurements, and a lag-compen
     and L06 suites pass on the off sets.
   - I3, no feed-forward in the bypass: `L5RateBypassNoReferenceFeedforward.*`.
   - I4: the `test_model_following_*` tests, with two controls, plus the generator's refusal.
-- SIL comparison in acro, before against after: `tests/regression/quad/L10/results/rate_ff/`.
+- SIL comparison in acro, before against after, in gz SIL with quad_fc on the FC3v2 card
+  (`tests/regression/quad/L10/results/rate_ff/`):
+
+  | Response | Before | After |
+  | --- | --- | --- |
+  | Step t63 | 387 ms | 118 ms |
+  | Step overshoot | none in 0.6 s | 6.1 % |
+  | Flick reach | 37.7 % | 81.3 % |
+  | Flick peak after release | 173 ms | 7 ms |
+  | Flick, peak to 10 % | 642 ms | 354 ms |
 
 ## Approval
 
