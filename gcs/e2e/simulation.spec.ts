@@ -55,6 +55,9 @@ async function openPage(page: Page): Promise<void> {
 	await expect(page.getByRole('combobox', { name: 'Card' })).toBeEnabled();
 }
 
+/** The value of a fact in a definition list of the page (the term and its definition sit in separate boxes: no text runs between them). */
+const fact = (list: Locator, name: string): Locator => list.locator(`xpath=./dt[normalize-space()="${name}"]/following-sibling::dd[1]`);
+
 async function addOverride(page: Page, n: number, name: string, value: string): Promise<void> {
 	await page.getByRole('button', { name: 'Add override' }).click();
 	await page.getByLabel(`Override ${n} parameter`).fill(name);
@@ -88,8 +91,8 @@ test('a plan with one override shows the sil-override label on the row and on th
 
 	await page.getByRole('button', { name: 'Plan' }).click();
 	const plan = page.locator('dl[aria-label="Plan"]');
-	await expect(plan).toContainText(new RegExp(`label\\s+${LABEL}`));
-	await expect(plan).toContainText(/allowed\s+yes/);
+	await expect(fact(plan, 'label')).toHaveText(LABEL);
+	await expect(fact(plan, 'allowed')).toHaveText('yes');
 	await expect(plan.locator('[data-plan="argv"]')).not.toBeEmpty();
 	await expect(page.getByRole('table', { name: 'Planned overrides' })).toContainText(PARAM);
 	await expect(page.getByRole('table', { name: 'Planned overrides' })).toContainText(LABEL);
@@ -98,7 +101,7 @@ test('a plan with one override shows the sil-override label on the row and on th
 	// The control: the same plan without the override carries no label.
 	await page.getByRole('button', { name: 'Remove override 1' }).click();
 	await page.getByRole('button', { name: 'Plan' }).click();
-	await expect(page.locator('dl[aria-label="Plan"]')).toContainText(/label\s+none: no override/);
+	await expect(fact(page.locator('dl[aria-label="Plan"]'), 'label')).toHaveText('none: no override');
 	await expect(page.getByRole('table', { name: 'Planned overrides' })).toHaveCount(0);
 });
 
@@ -135,9 +138,9 @@ test('launches a run with one override and the GUI off, the vehicle connects by 
 	await page.getByRole('button', { name: 'Launch' }).click();
 
 	const run = page.locator('dl[aria-label="Run"]');
-	await expect(run).toContainText(/state\s+running/, { timeout: CONNECT_MS });
-	await expect(run).toContainText(LABEL);
-	await expect(run).toContainText(/gui\s+off/);
+	await expect(fact(run, 'state')).toContainText('running', { timeout: CONNECT_MS });
+	await expect(fact(run, 'state')).toContainText(LABEL);
+	await expect(fact(run, 'gui')).toHaveText('off');
 	const runRow = page.getByRole('table', { name: 'Run overrides' }).getByRole('row', { name: new RegExp(PARAM) });
 	await expect(runRow).toContainText(VALUE);
 	await expect(runRow).toContainText(LABEL);
@@ -157,8 +160,8 @@ test('launches a run with one override and the GUI off, the vehicle connects by 
 
 	await page.getByRole('button', { name: 'Stop' }).click();
 
-	await expect(run).toContainText(/state\s+stopped/, { timeout: GONE_MS });
-	await expect(run).toContainText(LABEL);
+	await expect(fact(run, 'state')).toContainText('stopped', { timeout: GONE_MS });
+	await expect(fact(run, 'state')).toContainText(LABEL);
 	await expect(page.getByRole('button', { name: 'Launch' })).toBeEnabled();
 	await expect(page.getByRole('button', { name: 'Stop' })).toBeDisabled();
 	await expect(indicator(page, 'Run')).toContainText(/sil stopped/);
