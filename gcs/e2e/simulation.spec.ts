@@ -88,9 +88,10 @@ test('lists the vehicle cards and the firmware parameters', async ({ page }) => 
 	await openPage(page);
 	const options = await page.getByRole('combobox', { name: 'Card' }).locator('option').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
 	for (const card of CARDS) expect(options).toContain(card);
-	const names = await page.locator('#sim-parameters option').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
-	expect(names).toContain(PARAM);
-	expect(names.length).toBeGreaterThan(1);
+	// The names come from the image library's manifest, read a moment after the page opens.
+	const names = (): Promise<string[]> => page.locator('#sim-parameters option').evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
+	await expect.poll(names, { timeout: LIVE_START_MS }).toContain(PARAM);
+	expect((await names()).length).toBeGreaterThan(1);
 });
 
 test('a plan with one override shows the sil-override label on the row and on the plan; without an override it shows none', async ({ page }) => {
