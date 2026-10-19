@@ -2,6 +2,11 @@ FROM ubuntu:24.04@sha256:008173c23f95b170204355c12626cb5a965d779a7e1283b09e9cffb
 
 ARG UV_VERSION=0.12.20
 ARG UV_SHA256=6590717592ace991ff83a63fef799e3ad9d33ecc8f96c5d6bdd732496e79337f
+# Node runs the GCS tests (gcs/: vitest, svelte-check; ci/run_ci.sh step gcs_tests). 22.x is the line the GCS is developed on
+# (gcs/package.json devDependencies: @types/node 22, vite 8, vitest 5); the tarball is the official linux-x64 build, checked
+# against the SHA-256 in https://nodejs.org/dist/v22.23.3/SHASUMS256.txt.
+ARG NODE_VERSION=22.23.3
+ARG NODE_SHA256=1084aa36196bba4c3a5e69a1ee388a6e4ff729dad09445fbcd434b28fe3c24af
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -29,6 +34,15 @@ RUN curl -fsSL -o /tmp/uv.tar.gz \
         uv-x86_64-unknown-linux-gnu/uv uv-x86_64-unknown-linux-gnu/uvx \
     && rm /tmp/uv.tar.gz \
     && uv --version
+
+RUN curl -fsSL -o /tmp/node.tar.gz \
+        "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" \
+    && echo "${NODE_SHA256}  /tmp/node.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/node.tar.gz -C /usr/local --strip-components=1 --no-same-owner \
+        --exclude="node-v${NODE_VERSION}-linux-x64/CHANGELOG.md" --exclude="node-v${NODE_VERSION}-linux-x64/README.md" \
+    && rm /tmp/node.tar.gz \
+    && node --version \
+    && npm --version
 
 ENV UV_PYTHON=python3.12 \
     UV_PYTHON_DOWNLOADS=never

@@ -16,7 +16,7 @@ env:
 
 # Caches. Each job restores and saves one host directory, mounted at /cache in the container (MARV_CACHE_DIR=/cache; the
 # compiler cache is /cache/ccache, ci/Dockerfile). The key carries the hashes of what changes the compiler, the image and
-# the Python environment plus the commit, so every run saves; restore-keys fall back to the newest cache of the same job
+# the Python environment (and, for the core job, the gcs lock file: the npm cache) plus the commit, so every run saves; restore-keys fall back to the newest cache of the same job
 # and the same hashes (ccache validates every entry by content, so a cache of an older commit is safe). The save step
 # runs on failure too: a failed build still filled the compiler cache. One key per job name, so the jobs do not race on a
 # key. The two Docker images are built with buildx and the gha layer cache (one scope per image); the gz image is
@@ -41,9 +41,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/marv-cache
-          key: ${{ runner.os }}-marv-cache-core-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}
+          key: ${{ runner.os }}-marv-cache-core-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'gcs/package-lock.json', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-marv-cache-core-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-
+            ${{ runner.os }}-marv-cache-core-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'gcs/package-lock.json', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
       - name: Build CI image
@@ -55,6 +55,9 @@ jobs:
           load: true
           cache-from: type=gha,scope=marv-ci
           cache-to: type=gha,scope=marv-ci,mode=max
+      # ci/run_ci.sh (MARV_CI_MODE=full) runs the step gcs_tests: `npm ci` in gcs/ (Node 22 is in the image, ci/Dockerfile; the npm
+      # cache is /cache/npm, in the cache directory above), then vitest and svelte-check. The Playwright run (tools/gs/e2e.sh) is not
+      # part of the merge gate yet: it needs a browser, which the image does not carry.
       - name: Run CI
         env:
           # Pull request: check against the target branch. Push: check the whole pushed range (the commit before the
@@ -66,7 +69,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/marv-cache
-          key: ${{ runner.os }}-marv-cache-core-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}
+          key: ${{ runner.os }}-marv-cache-core-${{ hashFiles('ci/Dockerfile*', 'uv.lock', 'gcs/package-lock.json', 'CMakePresets.json', 'cmake/pico_sdk.cmake') }}-${{ github.sha }}
 
   gz-l2:
     runs-on: ubuntu-24.04

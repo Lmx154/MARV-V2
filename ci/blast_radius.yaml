@@ -762,10 +762,10 @@ rules:
 
   - paths: [gcs/**]
     ctest_labels: [L00]
-    run_ci_steps: [gs3_check, tools_tests]
+    run_ci_steps: [gs3_check, tools_tests, gcs_tests]
     pytest_paths: [tests/regression/quad/L00/tools]
     gz_groups: []
-    why: "the ground-station package: its TypeScript codec is held by the L00 link suite (ctest link_ts_conformance where Node is present; the CI images carry none yet), its generated messages.ts by the L00 tools test_link_gen, and GS-3 holds the rest of gcs/ clear of MAVLink"
+    why: "the ground-station package: gcs_tests runs its vitest and svelte-check (the CI image carries Node 22 since GX-0; ci/dev_check.sh fails when gcs/node_modules is missing), its TypeScript codec is also held by the L00 link suite (ctest link_ts_conformance where gcs/node_modules exists), its generated messages.ts by the L00 tools test_link_gen, and GS-3 holds the rest of gcs/ clear of MAVLink; the Playwright run (tools/gs/e2e.sh) is not part of the selection"
 
   - paths: [CLAUDE.md]
     ctest_labels: []
