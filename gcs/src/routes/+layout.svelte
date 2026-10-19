@@ -8,22 +8,32 @@
 	import type { Problem } from '$lib/state/problems';
 	import { readable } from 'svelte/store';
 	import StatusBar from '$lib/components/StatusBar.svelte';
+	import { simView } from '$lib/sim/instance';
 
 	let { children } = $props();
 
 	const gcs = typeof document === 'undefined' ? null : app();
 	const problems = gcs?.problems ?? readable<Problem[]>([]);
+	// The sim channel (GX-8) is separate from the vehicle's app: the layout only asks whether a simulation is publishing, to list the SIM page.
+	const sim = typeof document === 'undefined' ? null : simView();
+	const simPresent = sim?.present ?? readable(false);
 
 	let theme = $state<'system' | 'light' | 'dark'>('system');
 	let headerEl = $state<HTMLElement | null>(null);
 
 	onMount(() => {
 		void gcs?.connect();
+		sim?.start();
 		const stopShell = gcs?.startShell();
 		const saved = readSetting('theme');
 		if (saved === 'light' || saved === 'dark') theme = saved;
 		// Pages with a sticky table header sit below this one: they read its height from --header-h.
-		if (!headerEl) return () => stopShell?.();
+		if (!headerEl) {
+			return () => {
+				stopShell?.();
+				sim?.stop();
+			};
+		}
 		const el = headerEl;
 		const publish = (): void => document.documentElement.style.setProperty('--header-h', `${el.offsetHeight}px`);
 		publish();
@@ -32,6 +42,7 @@
 		return () => {
 			observer.disconnect();
 			stopShell?.();
+			sim?.stop();
 		};
 	});
 
@@ -55,7 +66,7 @@
 	<div class="top">
 		<span class="brand mono">MARV GCS</span>
 		<nav aria-label="Pages">
-			{#each ROUTES as r (r.path)}
+			{#each ROUTES.filter((x) => !x.simOnly || $simPresent) as r (r.path)}
 				<a href={r.path} aria-current={current === r.path ? 'page' : undefined} class:planned={r.unit !== null} title={r.unit ? `built by ${r.unit}` : undefined}>{r.label}</a>
 			{/each}
 		</nav>

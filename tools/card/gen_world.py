@@ -101,6 +101,12 @@ Card children come from gen_plant_config.plugin_element() unchanged; scenario ch
                                                           only for a SIL library built with STORAGE
   link_udp_port                 int            (run_quad_fc.py --link-udp-port) OPTIONAL: the SIL link's UDP port on
                                                           127.0.0.1; absent → MARV_SIL_LINK_UDP_PORT, else no link
+  sim_telemetry_udp_port,       int, int      (run_quad_fc.py / run_hil_s4.py --sim-telemetry-udp-port, --sim-telemetry-hz) OPTIONAL, both or
+  sim_telemetry_period_us                                 neither: the sim channel (ground segment unit GX-8, decision 0056): a
+                                                          versioned record of truth and of the injected inputs every period of
+                                                          SIM time to UDP 127.0.0.1:<port> (sim/gz/plugin/src/sim_telemetry.hpp,
+                                                          tools/sim/sim_channel.py); it does not change the run (the lockstep log
+                                                          is the same). Written by those scripts, not by this generator.
   log_path                      text           --log-path OPTIONAL, present iff given; where the plugin writes its
                                                           binary log; no log if absent. Never written into the log.
 

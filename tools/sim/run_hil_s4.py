@@ -31,6 +31,10 @@ it so we can collide with the ground"): a touchdown at or below the start height
 (level, yaw kept) and re-engages the pad's hold until the vertical thrust reaches the weight again; the status line counts the
 touchdowns and the report lists them. Not a contact model: no bounce, friction or tip-over.
 
+--sim-telemetry-udp-port <port> [--sim-telemetry-hz <hz>]: the plugin also publishes the sim channel (ground-segment unit GX-8: truth,
+the injected IMU sample, the DShot, and the board's arm state, receiver frames, command margin and lag) to 127.0.0.1:<port>, where the
+ground-station helper listens (tools/sim/sim_channel.py); without the port the world is byte-identical to one without the option.
+
 Choosing N (decision 0046 item 2): N >= F + the measured turnaround (the report's "turnaround" line gives the measured
 maximum in ticks) and N <= N_max = 249 (tests/regression/quad/L09/results/hil_s2/hil_delay_margin.txt, whose nominal rows the
 report quotes for the N run).

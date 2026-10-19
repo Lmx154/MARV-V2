@@ -8,6 +8,8 @@ export interface NavRoute {
 	unit: string | null;
 	/** What the page will hold, shown on a placeholder. */
 	will: string;
+	/** Listed only while a simulation publishes the sim channel (GX-8): the page itself always exists. */
+	simOnly?: boolean;
 }
 
 export const ROUTES: readonly NavRoute[] = [
@@ -19,7 +21,8 @@ export const ROUTES: readonly NavRoute[] = [
 	{ path: '/flash', label: 'Flash', unit: null, will: 'Images and configs through the validation gate.' },
 	{ path: '/bench', label: 'Bench', unit: 'GX-10, GX-16', will: 'The console, the hardware-in-the-loop launcher and the bench images.' },
 	{ path: '/logs', label: 'Logs', unit: 'GX-15', will: 'The onboard logs: import, viewer and replay.' },
-	{ path: '/flight-prep', label: 'Flight prep', unit: 'GX-17', will: 'The pre-flight checklist and the diffs of the configs.' }
+	{ path: '/flight-prep', label: 'Flight prep', unit: 'GX-17', will: 'The pre-flight checklist and the diffs of the configs.' },
+	{ path: '/sim', label: 'SIM', unit: null, will: 'Simulator truth and the inputs it injects, on the sim channel; present only while a simulation publishes.', simOnly: true }
 ];
 
 /** The route a pathname belongs to (a trailing slash or a .html suffix does not matter); null if none. */
