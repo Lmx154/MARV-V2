@@ -134,6 +134,18 @@ below set resolution and termination only)
      L + 1 and the bypassed ones). The configurations run in --procs worker processes; each evaluation is a function of
      its configuration alone and the results come back in input order, so the result is the serial one for any count.
      The four motors share the speed, as in step 1; motors at different speeds are not swept.
+ 14. tau_ref per axis (QF-2), by the scenario register's rate_ref_ff_enable. Not 1 (no reference feed-forward):
+     decision 0005's rule, rate.py step 9 with step 11's tau_cl, r32_up(max(tau_cl, rate_max_a / alpha_max_a)). 1 (model
+     following, decision 0056: the firmware adds J_a (r_n - r_(n-1)) / dt_n in acro): r32_up(max(rate_max_a / alpha_max_a,
+     tau_m (1 + b_tau) + d)), d the loop delay every configuration of step 13's set carries: the profile's latency
+     (latency T_s), the group delay at w_c,nom of the chain with every notch bypassed (its low-pass alone,
+     gyro_chain_design.group_delay_s) and one rate-loop period T (the execution's sample and hold). The notches' own group
+     delay depends on the rotor speed and lies on the measurement path only, which the feed-forward does not cross.
+     Asserted (invariant I4, a refusal otherwise): the stored f32 tau_ref is at least that maximum, and
+     a full-stick step's reference acceleration rate_max_a / tau_ref (the bound of every execution's (r_n - r_(n-1)) /
+     dt_n from rest, whatever dt_n) times J_a at each inertia corner (1 - b_J, 1, 1 + b_J) J_a, the nominal one being the
+     feed-forward torque itself, is at most tau_max,a. The gains and every margin row are computed before this step and
+     do not read the switch.
 
     uv run python tools/card/rate_lead.py --report
 """
@@ -1056,7 +1068,7 @@ def design(card, budget, scenario, profile, card_path, profile_path, procs=None,
         refuse(card_path, f"the f32 design fails a floor over the configuration set (rule step 13): worst PM {pm!r} rad at "
                           f"{pl}, {pa} {pc} (PM_min {pm_min!r}); worst Ms {ms!r} at {ml}, {ma} {mc} (Ms_max {ms_max!r})")
 
-    return {
+    result = {
         "set": cset,
         "inputs": {"inertia": inp["inertia"], "tau": inp["tau"], "PM_min": pm_min, "Ms_max": ms_max, "b_tau": inp["b_tau"],
                    "b_J": inp["b_J"], "noise_budget": noise_budget, "rate_max": rate_max, "sigma_d": sigma_d,
@@ -1074,6 +1086,63 @@ def design(card, budget, scenario, profile, card_path, profile_path, procs=None,
         "pi_with_chain": grid[0], "pi_l4": pi,
         "j_corners": physical_corners(inp["inertia"], inp["b_J"]),
     }
+    # Rule step 14.
+    ref_ff = rate._value(scenario, "rate_ref_ff_enable", "scenario entry", card_path) == 1
+    result["tau_ref_rule"] = tau_ref_rule(result, ref_ff)
+    if ref_ff:
+        check_model_following(result["tau_ref_rule"], card_path)
+    return result
+
+
+# ---- tau_ref (rule step 14) ------------------------------------------------------------------------------------------
+
+
+def loop_delay(result):
+    """Rule step 14's loop delay d (s) and its parts: the latency (latency T_s), the group delay at w_c,nom of the chain
+    with every notch bypassed, and one rate-loop period T."""
+    i, c = result["inputs"], result["chain"]
+    latency_s = i["latency"] * i["T_s"]
+    lowpass = gcd.chain_stages(c["t_s"], c["f_c"], c["q"], c["omega_th"], [c["omega_th"]] * MOTORS, bypass_all=True)
+    group = gcd.group_delay_s(lowpass, result["omega_c"], i["T_s"])
+    return {"d": latency_s + group + i["T"], "latency": latency_s, "group": group, "T": i["T"]}
+
+
+def tau_ref_rule(result, model_following):
+    """Rule step 14 on a design() result: per axis the terms, the bound and the stored f32 tau_ref; model_following is
+    rate_ref_ff_enable == 1."""
+    pi, i = result["pi_l4"], result["inputs"]
+    delay = loop_delay(result)
+    motor = i["tau"] * (1 + i["b_tau"])
+    rows = []
+    for k, ax in enumerate(AXES):
+        a = pi["axes"][ax]
+        bound = max(a["authority_term"], motor + delay["d"]) if model_following else max(result["tau_cl"],
+                                                                                          a["authority_term"])
+        j = i["inertia"][k]
+        rows.append({"axis": ax, "authority": a["authority_term"], "bound": bound, "tau_ref": rate.r32_up(bound),
+                     "rate_max": a["rate_max"], "tau_max": a["tau_max"],
+                     "j_corners": ((1 - i["b_J"]) * j, j, (1 + i["b_J"]) * j)})
+    return {"model_following": model_following, "motor": motor, "delay": delay, "tau_cl": result["tau_cl"], "rows": rows,
+            "tau_ref": [r["tau_ref"] for r in rows]}
+
+
+def ff_torques(row):
+    """J rate_max / tau_ref at each inertia corner of a rule-step-14 row (N m): the nominal one is the full-stick
+    feed-forward torque's bound, the others the torque the plant at that corner needs to follow the reference."""
+    return [j * row["rate_max"] / row["tau_ref"] for j in row["j_corners"]]
+
+
+def check_model_following(rule, card_path):
+    """Invariant I4 (rule step 14): refuse unless every axis's tau_ref is at least its bound and the full-stick
+    reference torque stays at or below tau_max at every inertia corner."""
+    for row in rule["rows"]:
+        if not row["tau_ref"] >= row["bound"]:
+            refuse(card_path, f"tau_ref {row['tau_ref']!r} s of axis {row['axis']} is below the model-following bound "
+                              f"{row['bound']!r} s (rule step 14)")
+        worst = max(ff_torques(row))
+        if not worst <= row["tau_max"]:
+            refuse(card_path, f"the full-stick reference torque {worst!r} N m of axis {row['axis']} at tau_ref "
+                              f"{row['tau_ref']!r} s exceeds tau_max {row['tau_max']!r} N m (rule step 14)")
 
 
 # ---- the report ------------------------------------------------------------------------------------------------------
@@ -1173,6 +1242,19 @@ def report_lines(r):
     for v in r["j_corners"]:
         lines.append(f"  J {v['J'][0]:.6g} {v['J'][1]:.6g} {v['J'][2]:.6g}  "
                      + ("box" if v["box"] else "cut") + (" common-scale" if v["common_scale"] else ""))
+    rule = r["tau_ref_rule"]
+    if rule["model_following"]:
+        dl = rule["delay"]
+        lines.append(f"tau_ref (rule step 14, rate_ref_ff_enable 1, model following): max(rate_max/alpha_max, tau_m (1 + b_tau) "
+                     f"{rule['motor']!r} + d {dl['d']!r}) s; d = latency {dl['latency']!r} + low-pass group delay at "
+                     f"w_c,nom {dl['group']!r} + T {dl['T']!r} s")
+        for row in rule["rows"]:
+            lines.append(f"  {row['axis']:<5} rate_max/alpha_max {row['authority']!r} s, bound {row['bound']!r} s, tau_ref "
+                         f"{row['tau_ref']!r} s (f32 up); J rate_max/tau_ref at J (1 - b_J, 1, 1 + b_J): "
+                         + " ".join(f"{x!r}" for x in ff_torques(row)) + f" N m <= tau_max {row['tau_max']!r} N m")
+    else:
+        lines.append(f"tau_ref (rule step 14, rate_ref_ff_enable not 1): max(tau_cl {rule['tau_cl']!r}, rate_max/alpha_max) s: "
+                     + "  ".join(f"{row['axis']} {row['tau_ref']!r}" for row in rule["rows"]))
     return lines
 
 
@@ -1206,6 +1288,17 @@ TAU_REF_METHOD = (
 TAU_REF_SOURCE = ("the gain rule's inputs (decision 0014) and the vehicle card rotors thrust_coeff and speed_range, the mixer "
                   "M and the scenario register rate_max_<axis>; decision 0005 QF-2; lead decision 2026-10-01 (decision 0014 "
                   "c5)")
+TAU_REF_MF_METHOD = (
+    "derived(tau_ref = max(rate_max/alpha_max, tau_m (1 + tau_robustness_band) + d) of QF-2 under model following "
+    "(rate_ref_ff_enable 1, decision 0056; rule step 14 of tools/card/rate_lead.py): d the loop delay every chain "
+    "configuration carries, the profile's latency plus the gyro chain's group delay at w_c,nom with every notch bypassed "
+    "plus one rate-loop period; alpha_max = tau_max/(J (1 + inertia_robustness_band)), tau_max the air-mode envelope torque "
+    "of the mixer M with the collective free; rounded up to f32; asserted: the full-stick reference torque J "
+    "rate_max/tau_ref stays within tau_max at J (1 -+ inertia_robustness_band))")
+TAU_REF_MF_SOURCE = ("vehicle card rotors.motor_lag.tau, inertia_diag, thrust_coeff and speed_range, the mixer M; design-budget "
+                     "tau_robustness_band, inertia_robustness_band; scenario register rate_max_<axis>, rate_ref_ff_enable, "
+                     "tick_period_num_us, tick_period_den, rate_loop_divisor; the sensor profile the card names (latency, the "
+                     "gyro chain) and the rate gains' crossover (decision 0014); decision 0056 (Luis, 2026-10-18)")
 T_FF_METHOD = (
     "derived(T_ff = the smallest T_ff >= 0 whose combined RMS of the D path and the lag-compensated omega x J omega "
     "feed-forward path per motor at rate_max (every sign pattern, every notch bypassed) is at most d_path_noise_budget x "
@@ -1215,9 +1308,9 @@ T_FF_METHOD = (
 
 
 def tau_ref_lead(result):
-    """tau_ref per axis: rate.py rule step 9, r32_up(max(tau_cl, rate_max_a / alpha_max_a)), with this design's tau_cl."""
-    pi = result["pi_l4"]
-    return [rate.r32_up(max(result["tau_cl"], pi["axes"][ax]["authority_term"])) for ax in AXES]
+    """tau_ref per axis (rule step 14): rate.py rule step 9, r32_up(max(tau_cl, rate_max_a / alpha_max_a)) with this
+    design's tau_cl, or under model following r32_up(max(rate_max_a / alpha_max_a, tau_m (1 + b_tau) + d))."""
+    return list(result["tau_ref_rule"]["tau_ref"])
 
 
 def entries_from(result):
@@ -1230,9 +1323,11 @@ def entries_from(result):
             method = TF_METHOD if column == 3 else GAIN_METHOD
             out.append((f"rate_{name}_{axis}", {"type": "f32", "value": ax32[i][column], "unit": unit, "method": method,
                                                  "source": GAIN_SOURCE, "sigma": schema.UNKNOWN}))
+    mf = result["tau_ref_rule"]["model_following"]
+    method, source = (TAU_REF_MF_METHOD, TAU_REF_MF_SOURCE) if mf else (TAU_REF_METHOD, TAU_REF_SOURCE)
     for i, axis in enumerate(AXES):
-        out.append((f"rate_tau_ref_{axis}", {"type": "f32", "value": tau_ref[i], "unit": "s", "method": TAU_REF_METHOD,
-                                              "source": TAU_REF_SOURCE, "sigma": schema.UNKNOWN}))
+        out.append((f"rate_tau_ref_{axis}", {"type": "f32", "value": tau_ref[i], "unit": "s", "method": method,
+                                              "source": source, "sigma": schema.UNKNOWN}))
     out.append(("rate_ff_filter_tau", {"type": "f32", "value": result["t_ff"], "unit": "s", "method": T_FF_METHOD,
                                        "source": GAIN_SOURCE, "sigma": schema.UNKNOWN}))
     return out

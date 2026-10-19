@@ -1,6 +1,7 @@
 # FC3v2 target scenario-values register (quad spec 4.0 M1; used by the parameter set marv_params_fc3v2 only). The
 # product register design/scenario_values.yaml (which the SIL goldens depend on), copied so that the target's tick
-# period can differ from it; it differs in the tick period (this part's mean period from its ODR trim) and in the rate-loop divisor's rationale text.
+# period can differ from it; it differs in the tick period (this part's mean period from its ODR trim), in the rate-loop divisor's rationale text
+# and in rate_ref_ff_enable (1 here, the reference feed-forward on; decision 0056).
 # Same schema (tools/card/schema.py, lint.py --scenario).
 # Betaflight citations are to tag 4.5.2, commit 024f8e13d4e642eb6a380308685b9ea3aa3ef1a2.
 
@@ -131,6 +132,23 @@ rate_ff_enable:
     tests/regression/quad/L06/XFAIL_GATE_CLOSED (decision 0014, owner decision 2: "FF goes live at stage (e), with the
     gate file"). Stage (c)'s FF-on evidence switches it through the test harness (sil_override), not here.
   used_by: [rate loop feed-forward]
+
+rate_ref_ff_enable:
+  value: 1
+  unit: "1"
+  method: scenario
+  sigma: choice
+  rationale: >-
+    Switch of the rate loop's reference feed-forward (model following, QF-2, decision 0056): 1 = on (fw/rate
+    RateConfig takes J_ref from inertia_xx/yy/zz and adds J_ref (r_n - r_(n-1)) / dt_n to the acro torque; never in
+    angle mode), any other value = off (J_ref 0, the law without it, bit for bit). It also selects the rate
+    generator's tau_ref rule (tools/card/rate_lead.py tau_ref_lead): 1 = max(rate_max / alpha_max, tau_m (1 +
+    tau_robustness_band) + the design model's loop delay), with the full-stick feed-forward torque asserted inside
+    tau_max at every inertia corner; other values = decision 0005's max(tau_cl, rate_max / alpha_max). 1 here: Luis,
+    2026-10-18, "Approve (Recommended)" on the architect's model-following feed-forward with the tau_ref bound,
+    enabled for fc3v2 (decision 0056); the product register (design/scenario_values.yaml), which feeds the SIL and
+    regression sets, keeps 0.
+  used_by: [rate loop reference feed-forward, rate-loop tau_ref rule]
 
 site_latitude_rad:
   value: 0.82

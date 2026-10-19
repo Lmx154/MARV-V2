@@ -197,6 +197,11 @@ TEST(L6DTerm, DefaultsAreOffAndTheLoopIsTodaysLawBitForBit) {
   EXPECT_EQ(cfg.inertia[0], 0.0F);
   EXPECT_EQ(cfg.motor_tau, 0.0F);
   EXPECT_EQ(cfg.ff_filter_tau, 0.0F);
+  // The reference feed-forward is off in the product set the regression suites read (rate_ref_ff_enable 0, decision
+  // 0056 invariant I2).
+  for (std::size_t a = 0; a < kA; ++a) {
+    EXPECT_EQ(cfg.ref_ff_inertia[a], 0.0F) << a;
+  }
   EXPECT_TRUE(matches_todays_law(fx, cfg));
 }
 
@@ -219,6 +224,139 @@ TEST(L6DTerm, ControlFilterOrFeedforwardOnBreaksTheBitIdentity) {
   RateConfig<float> ff_on = pid_config(fx);
   ff_on.inertia = V3(0.01F, 0.02F, 0.03F);
   EXPECT_FALSE(matches_todays_law(fx, ff_on));
+  RateConfig<float> ref_ff_on = pid_config(fx);
+  ref_ff_on.ref_ff_inertia = V3(0.01F, 0.02F, 0.03F);
+  EXPECT_FALSE(matches_todays_law(fx, ref_ff_on));
+}
+
+// ---- Reference feed-forward (model following, decision 0056) -------------------------------------------------------
+// u_n = (the law without the term) + J_ref (r_n - r_(n-1)) / dt_n, r the prefilter of execute. Two loops of one
+// configuration, J_ref = 0 (off) and J_ref = kRefJ (on), run one input; nothing feeds the term back into the state (no
+// allocation record here, the omega x J omega term off), so the off loop's torque is the on loop's before the addition.
+
+// Scenario test values: J_ref per axis (kg m^2), distinct so an axis mix-up shows; the scripted setpoint moves r by up to
+// about 0.1 rad/s per tick, so the term is of the order of the PID torque.
+const V3 kRefJ(0.01F, 0.02F, 0.03F);
+
+RateConfig<float> ref_ff_config(const Fixture& fx, const V3& j_ref) {
+  RateConfig<float> c = pid_config(fx);
+  c.ref_ff_inertia = j_ref;
+  return c;
+}
+
+// The prefilter of the header in the same float operations: r + alpha (sp - r), alpha = 1 - exp(-dt / tau_ref).
+V3 prefilter_step(const RateConfig<float>& cfg, const V3& r, const V3& sp) {
+  V3 out;
+  for (std::size_t a = 0; a < kA; ++a) {
+    const float alpha = 1.0F - std::exp(-kDt / cfg.tau_ref[a]);
+    out[a] = r[a] + alpha * (sp[a] - r[a]);
+  }
+  return out;
+}
+
+// Whether the on loop's torque is the off loop's plus J (r_n - r_(n-1)) / dt, rounded once, bit for bit at every
+// execution of the script, with the term computed from `j_model` (j_on for the claim, another J for the control).
+bool torque_is_law_plus_term(const Fixture& fx, const V3& j_on, const V3& j_model) {
+  const RateConfig<float> off_cfg = pid_config(fx);
+  Rig on;
+  Rig off;
+  on.init(fx, ref_ff_config(fx, j_on));
+  off.init(fx, off_cfg);
+  V3 r;
+  bool same = true;
+  for (std::size_t n = 0; n < kScript; ++n) {
+    const V3 u_on = on.step(script_y(n), script_sp(n));
+    const V3 u_off = off.step(script_y(n), script_sp(n));
+    if (n == 0) {
+      r = script_y(n);  // the seed: zero torque, no term
+      same = same && bits_equal(u_on, V3()) && bits_equal(u_off, V3());
+      continue;
+    }
+    const V3 r_prev = r;
+    r = prefilter_step(off_cfg, r, script_sp(n));
+    V3 want;
+    for (std::size_t a = 0; a < kA; ++a) {
+      want[a] = u_off[a] + j_model[a] * (r[a] - r_prev[a]) / kDt;
+    }
+    same = same && bits_equal(u_on, want);
+  }
+  return same;
+}
+
+TEST(L6RefFeedforward, TorqueIsTheLawPlusJRefTimesTheReferenceIncrementOverDt) {
+  REQUIRE_FIXTURE();
+  EXPECT_TRUE(torque_is_law_plus_term(fx, kRefJ, kRefJ));
+}
+
+TEST(L6RefFeedforward, ControlPermutedOrScaledJRefBreaksTheKnownAnswer) {
+  REQUIRE_FIXTURE();
+  EXPECT_TRUE(torque_is_law_plus_term(fx, kRefJ, kRefJ));  // the baseline passes
+  EXPECT_FALSE(torque_is_law_plus_term(fx, kRefJ, V3(kRefJ[2], kRefJ[0], kRefJ[1])));
+  EXPECT_FALSE(torque_is_law_plus_term(fx, kRefJ, V3(1.1F * kRefJ[0], 1.1F * kRefJ[1], 1.1F * kRefJ[2])));
+}
+
+// Invariant I1: the term depends on the setpoint path only, so the torque's response to the gyro is the same with it on
+// and off. Each configuration runs the script twice, the second time with the gyro moved by kDy from the second
+// execution on (the seed is the same, so r is the same in all four runs). With P, P' the off loop's torques and F the
+// term (the same float in both on runs), the on loop gives fl(P + F) and fl(P' + F), so
+//   |(u_on(y') - u_on(y)) - (u_off(y') - u_off(y))| <= u (|u_on(y)| + |u_on(y')|) (1 + u),
+// one rounding of each sum (half an ulp, at most u |x|, u = 2^-24); the differences are formed in double from float
+// values, adding at most 2^-52 of the magnitudes involved per operation (4 of them). Returns the largest ratio of the
+// discrepancy to that bound over the script and the axes; the term's own largest magnitude goes to *term_max.
+// Scenario test value: the gyro perturbation, rad/s per axis, distinct per axis.
+const V3 kDy(0.25F, -0.5F, 0.125F);
+
+double sensitivity_ratio(const Fixture& fx, const RateConfig<float>& on_cfg, double* term_max) {
+  const RateConfig<float> off_cfg = pid_config(fx);
+  Rig on;
+  Rig on_p;
+  Rig off;
+  Rig off_p;
+  on.init(fx, on_cfg);
+  on_p.init(fx, on_cfg);
+  off.init(fx, off_cfg);
+  off_p.init(fx, off_cfg);
+  constexpr double kU64 = 0x1p-52;
+  double worst = 0.0;
+  *term_max = 0.0;
+  for (std::size_t n = 0; n < kScript; ++n) {
+    const V3 y = script_y(n);
+    const V3 yp = n == 0 ? y : V3(y[0] + kDy[0], y[1] + kDy[1], y[2] + kDy[2]);
+    const V3 a = on.step(y, script_sp(n));
+    const V3 ap = on_p.step(yp, script_sp(n));
+    const V3 b = off.step(y, script_sp(n));
+    const V3 bp = off_p.step(yp, script_sp(n));
+    for (std::size_t k = 0; k < kA; ++k) {
+      const double da = static_cast<double>(ap[k]) - static_cast<double>(a[k]);
+      const double db = static_cast<double>(bp[k]) - static_cast<double>(b[k]);
+      const double mag = std::fabs(static_cast<double>(a[k])) + std::fabs(static_cast<double>(ap[k])) +
+                         std::fabs(static_cast<double>(b[k])) + std::fabs(static_cast<double>(bp[k]));
+      const double bound = kU * (std::fabs(static_cast<double>(a[k])) + std::fabs(static_cast<double>(ap[k]))) *
+                               (1.0 + kU) +
+                           4.0 * kU64 * mag;
+      const double err = std::fabs(da - db);
+      worst = std::max(worst, bound > 0.0 ? err / bound : (err == 0.0 ? 0.0 : std::numeric_limits<double>::infinity()));
+      *term_max = std::max(*term_max, std::fabs(static_cast<double>(a[k]) - static_cast<double>(b[k])));
+    }
+  }
+  return worst;
+}
+
+TEST(L6RefFeedforward, GyroSensitivityIsTheSameWithTheTermOnAndOff) {
+  REQUIRE_FIXTURE();
+  double term_max = 0.0;
+  EXPECT_LE(sensitivity_ratio(fx, ref_ff_config(fx, kRefJ), &term_max), 1.0);
+  // The term is live in this run (not a comparison of two equal loops): far above the bound's scale.
+  EXPECT_GT(term_max, 0.1);  // scenario test value, N m
+}
+
+TEST(L6RefFeedforward, ControlATermThatReadsTheGyroBreaksTheSensitivityCheck) {
+  REQUIRE_FIXTURE();
+  double term_max = 0.0;
+  // The omega x J omega feed-forward (decision 0014) reads the gyro: added to the on loop, the same check fails.
+  RateConfig<float> gyro_term = ref_ff_config(fx, kRefJ);
+  gyro_term.inertia = V3(0.01F, 0.02F, 0.03F);
+  EXPECT_GT(sensitivity_ratio(fx, gyro_term, &term_max), 1.0);
 }
 
 // ---- D low-pass: the step response of the discrete first-order filter ---------------------------------------------
@@ -573,10 +711,16 @@ TEST(L6DTerm, ValidateAcceptsZeroAndRejectsNegativeAndNonFinite) {
   EXPECT_EQ(with([&](auto& c) { c.ff_filter_tau = -0.01F; }), rate::ConfigError::Feedforward);
   EXPECT_EQ(with([&](auto& c) { c.ff_filter_tau = nan; }), rate::ConfigError::NonFinite);
   EXPECT_EQ(with([&](auto& c) { c.ff_filter_tau = inf; }), rate::ConfigError::NonFinite);
+  for (std::size_t a = 0; a < kA; ++a) {
+    EXPECT_EQ(with([&](auto& c) { c.ref_ff_inertia[a] = -0.01F; }), rate::ConfigError::Feedforward) << a;
+    EXPECT_EQ(with([&](auto& c) { c.ref_ff_inertia[a] = nan; }), rate::ConfigError::NonFinite) << a;
+    EXPECT_EQ(with([&](auto& c) { c.ref_ff_inertia[a] = inf; }), rate::ConfigError::NonFinite) << a;
+  }
   // The inert configuration is RateConfig's default; from the product parameter set J stays 0 (the feed-forward is
   // inert until stage (e), decision 0014), while T_f is a product parameter.
   EXPECT_EQ(RateConfig<float>{}.d_filter_tau[0], 0.0F);
   EXPECT_EQ(rate::from_params().inertia[2], 0.0F);
+  EXPECT_EQ(rate::from_params().ref_ff_inertia[2], 0.0F);
 }
 
 }  // namespace

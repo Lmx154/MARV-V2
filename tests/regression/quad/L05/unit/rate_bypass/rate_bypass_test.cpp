@@ -7,6 +7,8 @@
 //         applied reference (control: the prefilter seeded from the gyro instead).
 //   I-A4  faults and the period check behave as in execute (control: a run without a fault must not satisfy the check);
 //         a spacing off the period is refused and counted, never a halt (decision 0034).
+//   I-A5  the bypass never adds the reference feed-forward (decision 0056, invariant I3): a loop with J_ref > 0 equals
+//         one with J_ref = 0 at every bypassed execution (control: through execute the same pair differs).
 //
 // Numbers in this file are one of: read from the fixture files, derived (the rule is stated), or a "scenario test
 // value" named with its reason.
@@ -338,6 +340,50 @@ TEST(L5RateBypassSwitchBack, ExecuteAfterBypassContinuesItsPrefilterFromTheLastA
 TEST(L5RateBypassSwitchBack, NegativeControlAPrefilterSeededFromTheGyroDiffers) {
   EXPECT_TRUE(switch_matches(false));  // the baseline passes
   EXPECT_FALSE(switch_matches(true));
+}
+
+// ---- I-A5: no reference feed-forward in the bypass -----------------------------------------------------------------
+
+// Scenario test values: J_ref per axis (kg m^2), distinct so an axis mix-up shows; with the stream's references of
+// +-1 rad/s and alpha about 0.1, J_ref (r_n - r_(n-1)) / dt is of the order of the PID torque, so the term is visible.
+constexpr std::array<float, kA> kRefInertia{0.01F, 0.02F, 0.03F};
+
+// Loop F (J_ref = kRefInertia) and loop Z (J_ref = 0) on one input stream, both bypassed or both through execute, with
+// the same scripted allocations. Returns the first execution at which any output or state differs, or kNone.
+std::size_t ref_ff_pair(bool bypass) {
+  RateConfig<float> with_ff = test_config();
+  for (std::size_t a = 0; a < kA; ++a) {
+    with_ff.ref_ff_inertia[a] = kRefInertia[a];
+  }
+  Rig f(with_ff);
+  Rig z(test_config());
+  Rng in{kSeed};
+  Rng alloc_f{kSeed + 1};
+  Rng alloc_z{kSeed + 1};
+  for (std::size_t n = 0; n < kPairExecutions; ++n) {
+    const V3 y = random_v3(in);
+    const V3 sp = random_v3(in);
+    const ImuSample sf = f.sample(y, 0);
+    const ImuSample sz = z.sample(y, 0);
+    const RateOutput<float> of = bypass ? f.loop.execute_bypass(sf, sp) : f.loop.execute(sf, sp);
+    const RateOutput<float> oz = bypass ? z.loop.execute_bypass(sz, sp) : z.loop.execute(sz, sp);
+    if (!same_state(of, f.loop, oz, z.loop)) {
+      return n;
+    }
+    record(f.loop, of.torque, alloc_f);
+    record(z.loop, oz.torque, alloc_z);
+  }
+  return kNone;
+}
+
+TEST(L5RateBypassNoReferenceFeedforward, BypassWithJRefIsBitEqualToBypassWithout) {
+  EXPECT_EQ(ref_ff_pair(true), kNone);
+}
+
+TEST(L5RateBypassNoReferenceFeedforward, NegativeControlThroughExecuteTheSamePairDiffers) {
+  EXPECT_EQ(ref_ff_pair(true), kNone);  // the baseline passes
+  // The first execution seeds (zero torque in both); the term acts from the second.
+  EXPECT_EQ(ref_ff_pair(false), 1U);
 }
 
 // ---- I-A4: faults and the period check --------------------------------------------------------------------------
