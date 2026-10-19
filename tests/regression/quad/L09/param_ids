@@ -1,3 +1,5 @@
 # Product-set parameter ids added by quad L9 (ground-segment unit 14, decision 0053; decision 0004 manifest rule). One id per line.
 # config_slot_bytes is a design-budget entry (flattened by flatten.py like every numeric register entry).
 config_slot_bytes
+# sd_log_write_stall_max_s: the onboard SD logger's worst-stall budget entry (core EMB-6; unit U1 LOG-CORE, architect ruling 2026-10-18)
+sd_log_write_stall_max_s
