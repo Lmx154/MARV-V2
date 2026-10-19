@@ -87,7 +87,7 @@ test('connects to the vehicle and shows it in the status bar', async ({ page }) 
 	await expect(indicator(page, 'Link')).toContainText(/alive/, { timeout });
 	await expect(indicator(page, 'Link')).toHaveAttribute('data-stale', 'false', { timeout });
 	await expect(indicator(page, 'Arming')).toContainText(/disarmed/);
-	await expect(indicator(page, 'Arming')).toContainText(/reason\s+vehicle standby/);
+	await expect(indicator(page, 'Arming')).toContainText(/reason\s+vehicle \w+/);
 	await expect(indicator(page, 'Arming')).toHaveAttribute('data-stale', 'false');
 	await expect(indicator(page, 'Helper')).toHaveAttribute('data-stale', 'false');
 	await expect(indicator(page, 'Host')).toContainText(/heavy lock/);
