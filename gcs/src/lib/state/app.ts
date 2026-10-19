@@ -9,6 +9,7 @@ import { HelperApi, readHelperInfo, type HelperInfo, type HelperStatus } from '.
 import { FlashController } from './flash_state';
 import { ManifestController, type ManifestState } from './manifest_state';
 import { Problems, type Problem } from './problems';
+import { SimController } from './sim_state';
 import { ShellController, type AutoconnectEvent, type Indicator } from './shell';
 import { ValidationController } from './validation_state';
 
@@ -24,6 +25,8 @@ export interface App {
 	validation: ValidationController | null;
 	/** Flashing an image of the library through the G7 gate; null without a helper. */
 	flash: FlashController | null;
+	/** The Simulation page: the SIL run definition, its plan, launch and stop; null without a helper. */
+	sim: SimController | null;
 	status: Readable<HelperStatus | null>;
 	/** The device the helper has open, from its events and status. */
 	device: Readable<string | null>;
@@ -132,6 +135,16 @@ function create(): App {
 				})
 			: null;
 
+	const sim =
+		helper && api
+			? new SimController({
+					request: (cmd, args) => helper.request(cmd, args),
+					listImages: () => api.images(),
+					artifact: (hash, name) => api.artifact(hash, name),
+					refresh: () => shell.refresh()
+				})
+			: null;
+
 		// The identity arrives after the connection: load the matching manifest then.
 	let lastIdentityKey = '';
 	vehicle?.state.subscribe((s) => {
@@ -154,6 +167,7 @@ function create(): App {
 		vehicle,
 		validation,
 		flash,
+		sim,
 		status: shell.status,
 		device: shell.device,
 		bar: shell.bar,

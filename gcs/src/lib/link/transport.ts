@@ -18,6 +18,14 @@ export interface HelperReply {
 	[key: string]: unknown;
 }
 
+/** The error of a command the helper answered {ok: false}: its text, and the whole reply (a refusal may list several reasons). */
+export class HelperError extends Error {
+	constructor(readonly reply: HelperReply, cmd: string) {
+		super(reply.error ?? `${cmd} failed`);
+		this.name = 'HelperError';
+	}
+}
+
 export interface HelperEvent {
 	event: string;
 	[key: string]: unknown;
@@ -121,7 +129,7 @@ export class HelperConnection implements ByteLink {
 				reject(new Error(`the helper did not answer ${cmd}`));
 			}, CONTROL_TIMEOUT_MS);
 			this.pending.set(id, {
-				resolve: (r) => (r.ok ? resolve(r) : reject(new Error(r.error ?? `${cmd} failed`))),
+				resolve: (r) => (r.ok ? resolve(r) : reject(new HelperError(r, cmd))),
 				reject,
 				timer
 			});

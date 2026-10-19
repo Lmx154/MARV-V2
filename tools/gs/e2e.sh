@@ -19,6 +19,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 root="$(pwd)"
 
 mode=light
+# Light mode: the SIL run is `sleep` of this many seconds (a labelled harness value: it only has to outlast a spec; stop ends it). The
+# number is unusual on purpose, so that a spec can look for the stand-in process by it.
+STAND_IN_SECONDS=7654.321
 out_dir="${root}/build/gs-e2e/out"
 while (($# > 0)); do
   case "$1" in
@@ -84,9 +87,25 @@ if [[ "${mode}" == light ]]; then
     sleep 0.1
   done
   grep -q '^fake vehicle on' "${work}/vehicle.log" || { cat "${work}/vehicle.log"; echo "the fake vehicle did not start" >&2; exit 1; }
-  # An empty library: the run is not about the images in build/.
-  mkdir -p "${work}/build-root"
-  helper_args+=(--build-root "${work}/build-root")
+  # A library of one stand-in SIL image (an empty file) with a small parameter manifest in the build tree the helper checks SIL
+  # overrides against (tools/sim/sil_run.py), so that the Simulation page lists parameters and the helper validates its overrides; the
+  # run itself is the stand-in command `sleep` (no simulator), and the fake vehicle already holds the run's UDP port, which is what the
+  # helper's autoconnect waits for. The run_start / run_stop answers are the helper's own; only the simulator is replaced.
+  gz_tree="${work}/build-root/host-gz-quadfc"
+  mkdir -p "${gz_tree}/sim/quad_fc" "${gz_tree}/generated/marv_params_fc3v2/marv/params"
+  : >"${gz_tree}/sim/quad_fc/libmarv_sil_quad_fc.so"
+  uv run python - "${gz_tree}/generated/marv_params_fc3v2/marv/params/params_manifest.json" <<'PY'
+import json, sys
+names = (("att_kp", "f32", False), ("rate_kp_roll", "f32", False), ("rc_channel_roll", "i32", False), ("rc_channel_arm", "i32", True))
+params = {
+    name: {"id": i, "type": kind, "unit": "1", "link_id": name, "lock": locked, "default_bits": "0x00000001", "method": "scenario",
+           "sigma_kind": "Choice", "sigma": 0.0, "sigma_bits": "0x00000000", "origin": "DefaultFromCard", "source": "stand-in of the GCS e2e",
+           "source_file": "e2e.sh"}
+    for i, (name, kind, locked) in enumerate(names)
+}
+json.dump({"schema_hash": "0x00000000000000e2", "count": len(params), "params": params}, open(sys.argv[1], "w"))
+PY
+  helper_args+=(--build-root "${work}/build-root" --sil-command "sleep ${STAND_IN_SECONDS}")
 fi
 
 echo "##### helper"
@@ -110,6 +129,7 @@ status=0
   # The staleness control stops and continues the light mode's fake vehicle (its process group); the live mode has no such process.
   MARV_E2E_URL="${url}" MARV_E2E_MODE="$([[ "${mode}" == live ]] && echo live || true)" MARV_E2E_OUT="${out_dir}" \
     MARV_E2E_VEHICLE_PID="$([[ "${mode}" == light ]] && echo "${pids[0]}" || true)" \
+    MARV_E2E_STAND_IN="$([[ "${mode}" == light ]] && echo "${STAND_IN_SECONDS}" || true)" \
     npx --no-install playwright test "$@"
 ) || status=$?
 echo "report: ${out_dir}/report.json"
