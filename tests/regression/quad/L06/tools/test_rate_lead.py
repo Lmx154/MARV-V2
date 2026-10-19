@@ -1,16 +1,19 @@
 """L6 stage (c) rate-loop gain rule (tools/card/rate_lead.py; decision 0014 "the design", owner decisions 3, 6 and 8): the
 cross-check that the rule extends rate.py (N = 1, H = 1, latency 0), N* on the floors with its control, the noise model's
 linearity and the T_ff control, the physical J corners, the f32 guard with its control, the floors over the
-configuration set (rule step 13) with its two controls, and the closed-loop stability of every loop of that set (decision 0014
-fifth round item 4) with the gain-margin bracket as its control.
+configuration set (rule step 13) with its two controls, the closed-loop stability of every loop of that set (decision 0014
+fifth round item 4) with the gain-margin bracket as its control, and rule step 14's model-following tau_ref (decision 0058:
+invariant I4 with its two controls; the switch moves tau_ref only, the I1 side of the generator).
 
 Every acceptance test has a control that breaks it (core 7.2). Tolerances are derived on their lines. The committed-card
 design runs once (module fixture, about 45 s of plain Python).
 """
 
 import cmath
+import copy
 import math
 import multiprocessing
+import struct
 import sys
 from pathlib import Path
 
@@ -20,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[5]
 sys.path.insert(0, str(ROOT / "tools" / "card"))
 import attitude_lead as al  # noqa: E402
 import gen_imu_config as gic  # noqa: E402
+import gen_plant_config as gpc  # noqa: E402
 import gyro_chain_design as gcd  # noqa: E402
 import rate  # noqa: E402
 import rate_lead as rl  # noqa: E402
@@ -378,3 +382,98 @@ def test_control_gains_at_the_gain_margin_over_1_1_are_stable_and_at_1_1_times_i
         assert cert_lo > 0 and rho_lo < 1, (r["key"], r["axis"], r["corner"], r["bracket"])
         assert not cert_hi > 0 and rho_hi > 1, (r["key"], r["axis"], r["corner"], r["bracket"])
     print(f"min gain margin {min(r['gm'] for r in records)!r}")
+
+
+# ---- rule step 14: tau_ref under model following (decision 0058) ------------------------------------------------------
+# The committed register keeps rate_ref_ff_enable 0 (the SIL and regression sets, invariant I2), so the session's design
+# carries decision 0005's rule; the model-following rule is evaluated on the same design with the switch planted on.
+
+# The group delay's cross-check step: a central difference of arg H at relative step 2^-20 (the rule uses 2^-12). The
+# truncation error of a central difference is O(h^2) of the third derivative; at both steps it is far below 1e-9 s for a
+# low-pass whose corner is decades above w_c,nom, and the rounding is eps |arg H| / h. Tolerance 1e-9 s (one millionth of
+# the loop delay's scale, 1 ms); observed differences are below 1e-12 s.
+GROUP_STEP = 2.0 ** -20
+GROUP_TOL = 1e-9
+
+
+def _model_following_terms(lead):
+    """The bound's terms from the sources, independently of rule step 14's code: tau_m (1 + b_tau) from the card and the
+    budget, the latency from the profile, T and T_s from the register, the low-pass group delay by its own difference."""
+    card, budget, scenario, _ = documents()
+    tau = float(card["rotors"]["motor_lag"]["tau"]["value"])
+    b_tau = float(budget["tau_robustness_band"]["value"])
+    si, _, _ = gic.imu_config(PROFILE)
+    num, den = scenario["tick_period_num_us"]["value"], scenario["tick_period_den"]["value"]
+    t_s = num / den / 1e6
+    t = scenario["rate_loop_divisor"]["value"] * t_s
+    c = lead["chain"]
+    lowpass = gcd.chain_stages(c["t_s"], c["f_c"], c["q"], c["omega_th"], [c["omega_th"]] * gcd.MOTORS, bypass_all=True)
+    w, h = lead["omega_c"], lead["omega_c"] * GROUP_STEP
+    group = -(cmath.phase(gcd.chain_response(lowpass, (w + h) * t_s) / gcd.chain_response(lowpass, (w - h) * t_s))) / (2 * h)
+    return tau * (1 + b_tau), si["latency_samples"] * t_s, group, t
+
+
+def test_model_following_tau_ref_meets_its_bound_and_the_full_stick_torque_stays_inside_tau_max(lead):
+    assert not lead["tau_ref_rule"]["model_following"]
+    rule = rl.tau_ref_rule(lead, True)
+    motor, latency, group, t = _model_following_terms(lead)
+    d = rule["delay"]
+    assert abs(rule["motor"] / motor - 1) <= TOL
+    assert abs(d["latency"] / latency - 1) <= TOL and abs(d["T"] / t - 1) <= TOL
+    assert abs(d["group"] - group) <= GROUP_TOL, (d["group"], group)
+    pi, inp = lead["pi_l4"], lead["inputs"]
+    for k, row in enumerate(rule["rows"]):
+        ax = pi["axes"][row["axis"]]
+        bound = max(ax["authority_term"], motor + latency + group + t)
+        # I4 (a): the stored f32 is at least both terms (the bound to the group delay's tolerance).
+        assert row["tau_ref"] >= ax["authority_term"] and row["tau_ref"] >= motor + latency + group + t - GROUP_TOL
+        assert row["tau_ref"] == rate.r32(row["tau_ref"]) and abs(row["bound"] - bound) <= GROUP_TOL
+        # I4 (b): every execution's (r_n - r_(n-1)) / dt_n from rest is at most rate_max / tau_ref (the prefilter's
+        # increment alpha (sp - r) with alpha = 1 - e^(-dt/tau_ref) < dt/tau_ref), so J rate_max / tau_ref bounds the
+        # full-stick torque; at every corner of the J band it is inside tau_max.
+        j = inp["inertia"][k]
+        for jc in ((1 - inp["b_J"]) * j, j, (1 + inp["b_J"]) * j):
+            assert jc * ax["rate_max"] / row["tau_ref"] <= ax["tau_max"], (row["axis"], jc)
+    rl.check_model_following(rule, CARD)
+
+
+def test_model_following_control_tau_ref_one_f32_step_below_its_bound_is_refused(lead):
+    rule = rl.tau_ref_rule(lead, True)
+    rl.check_model_following(rule, CARD)  # the baseline passes
+    for k in range(len(rule["rows"])):
+        planted = copy.deepcopy(rule)
+        row = planted["rows"][k]
+        row["tau_ref"] = struct_prev_f32(row["tau_ref"])
+        assert row["tau_ref"] < row["bound"]
+        with pytest.raises(gpc.GenError, match="below the model-following bound"):
+            rl.check_model_following(planted, CARD)
+
+
+def test_model_following_control_a_tau_max_below_the_full_stick_torque_is_refused(lead):
+    rule = rl.tau_ref_rule(lead, True)
+    for k in range(len(rule["rows"])):
+        planted = copy.deepcopy(rule)
+        row = planted["rows"][k]
+        row["tau_max"] = math.nextafter(max(rl.ff_torques(row)), 0.0)  # tau_ref still meets its bound
+        with pytest.raises(gpc.GenError, match="exceeds tau_max"):
+            rl.check_model_following(planted, CARD)
+
+
+def test_the_switch_moves_tau_ref_only(lead):
+    on = dict(lead, tau_ref_rule=rl.tau_ref_rule(lead, True))
+    off_entries, on_entries = dict(rl.entries_from(lead)), dict(rl.entries_from(on))
+    assert off_entries.keys() == on_entries.keys()
+    assert {n for n in off_entries if off_entries[n] != on_entries[n]} == {f"rate_tau_ref_{a}" for a in rl.AXES}
+    # Every report line before rule step 14's block (the gains, the margin rows over the corners and the configuration
+    # set, the noise and t63 rows) is the same; the block is the last one (1 line off, 1 + 3 lines on).
+    off_lines, on_lines = rl.report_lines(lead), rl.report_lines(on)
+    assert off_lines[:-1] == on_lines[:-4]
+    assert off_lines[-1].startswith("tau_ref (rule step 14") and on_lines[-4].startswith("tau_ref (rule step 14")
+    # Control: the decision 0005 rule's tau_ref differs from the model-following one on the axes the motor term binds.
+    assert any(off_entries[f"rate_tau_ref_{a}"]["value"] != on_entries[f"rate_tau_ref_{a}"]["value"] for a in rl.AXES)
+
+
+def struct_prev_f32(x):
+    """The largest float32 below the positive float32 x."""
+    bits = struct.unpack("<I", struct.pack("<f", x))[0]
+    return struct.unpack("<f", struct.pack("<I", bits - 1))[0]

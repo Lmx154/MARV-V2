@@ -22,6 +22,10 @@
 // constant. The motor torque follows the request through a first-order lag, tau_m u' + u = u_req, so u_req = u + tau_m u'
 // delivers u (feed-forward by inverting the first-order actuator lag; the identity is derived here, in this line);
 // here u = g and u' = gdot. All J_a = 0 skips the term: u is exactly the PID law.
+// Reference feed-forward (model following, QF-2, decision 0058), when some J_ref,a > 0, in execute only (never in
+// execute_bypass): u_n += J_ref (r_n - r_(n-1)) / dt_n, the torque that gives inertia J_ref the reference model's rate
+// change over the execution. It is a function of the setpoint path alone (r after its seed), so the loop seen from the
+// gyro is unchanged. All J_ref,a = 0 skips the term: u is exactly the law above.
 // freeze_n is recorded by record_allocation from execution n's allocation and gates the increment applied at
 // execution n + 1, so the update has no lag.
 
@@ -60,6 +64,7 @@ struct RateConfig {
   prim::Vec3<T> inertia{};       // J, kg*m^2, principal moments [roll, pitch, yaw]; all 0 = no feed-forward
   T motor_tau{};                 // motor time constant tau_m, s
   T ff_filter_tau{};             // T_ff, the filter of the feed-forward derivative, s; 0 = unfiltered
+  prim::Vec3<T> ref_ff_inertia{};  // J_ref, kg*m^2, [roll, pitch, yaw]; all 0 = no reference feed-forward
   // Effectiveness B of decision 0004 item 2: column i = [1, -y_i, x_i, s_i c_q], index = logical motor - 1.
   std::array<T, kMotors> rotor_x{};   // m, FRD
   std::array<T, kMotors> rotor_y{};   // m, FRD
@@ -82,7 +87,7 @@ template <class T>
   bool finite = isfinite(c.period) && isfinite(c.torque_ratio) && isfinite(c.motor_tau) && isfinite(c.ff_filter_tau);
   for (std::size_t a = 0; a < kTorqueAxes; ++a) {
     finite = finite && isfinite(c.kp[a]) && isfinite(c.ki[a]) && isfinite(c.kd[a]) && isfinite(c.tau_ref[a]) &&
-             isfinite(c.d_filter_tau[a]) && isfinite(c.inertia[a]);
+             isfinite(c.d_filter_tau[a]) && isfinite(c.inertia[a]) && isfinite(c.ref_ff_inertia[a]);
   }
   for (std::size_t i = 0; i < kMotors; ++i) {
     finite = finite && isfinite(c.rotor_x[i]) && isfinite(c.rotor_y[i]) && isfinite(c.yaw_sign[i]);
@@ -110,7 +115,7 @@ template <class T>
   }
   bool ff_ok = c.motor_tau >= T(0) && c.ff_filter_tau >= T(0);
   for (std::size_t a = 0; a < kTorqueAxes; ++a) {
-    ff_ok = ff_ok && c.inertia[a] >= T(0);
+    ff_ok = ff_ok && c.inertia[a] >= T(0) && c.ref_ff_inertia[a] >= T(0);
   }
   if (!ff_ok) {
     return ConfigError::Feedforward;
@@ -180,6 +185,8 @@ class RateLoop {
     slack_ = den_ * static_cast<std::uint64_t>(cfg.period_tolerance_us);
     dt_max_ = std::numeric_limits<std::uint64_t>::max() / std::max<std::uint64_t>(den_, 1);
     ff_on_ = cfg.inertia[kRollAxis] > T(0) || cfg.inertia[kPitchAxis] > T(0) || cfg.inertia[kYawAxis] > T(0);
+    ref_ff_on_ = cfg.ref_ff_inertia[kRollAxis] > T(0) || cfg.ref_ff_inertia[kPitchAxis] > T(0) ||
+                 cfg.ref_ff_inertia[kYawAxis] > T(0);
     reset_state();
     have_t_ = false;
     latched_ = false;
@@ -203,9 +210,9 @@ class RateLoop {
   }
 
   // The same execution with the reference-model prefilter bypassed: r_n = reference, so the PID law runs on the
-  // given reference directly (angle mode feeds it the attitude loop's rate request). Seeding, the dt check, the
-  // fault handling and the allocation record are those of execute. After a bypassed execution r_ holds the applied
-  // reference, so a following execute continues its prefilter from it.
+  // given reference directly (angle mode feeds it the attitude loop's rate request), without the reference
+  // feed-forward. Seeding, the dt check, the fault handling and the allocation record are those of execute. After a
+  // bypassed execution r_ holds the applied reference, so a following execute continues its prefilter from it.
   [[nodiscard]] RateOutput<T> execute_bypass(const ImuSample& imu, const prim::Vec3<T>& reference) noexcept {
     return step<false>(imu, reference);
   }
@@ -297,6 +304,7 @@ class RateLoop {
     } else {
       const T dt = static_cast<T>(dt_us) / static_cast<T>(prim::kMicrosecondsPerSecond);
       for (std::size_t a = 0; a < kTorqueAxes; ++a) {
+        [[maybe_unused]] const T r_prev = r_[a];
         if constexpr (kPrefilter) {
           const T alpha = T(1) - exp(-dt / cfg_.tau_ref[a]);
           r_[a] = r_[a] + alpha * (setpoint[a] - r_[a]);
@@ -314,6 +322,11 @@ class RateLoop {
           d = d_f_[a];
         }
         u[a] = cfg_.kp[a] * e + integral_[a] + d;
+        if constexpr (kPrefilter) {
+          if (ref_ff_on_) {
+            u[a] = u[a] + cfg_.ref_ff_inertia[a] * (r_[a] - r_prev) / dt;
+          }
+        }
         e_[a] = e;
       }
       if (ff_on_) {
@@ -382,6 +395,7 @@ class RateLoop {
   prim::Vec3<T> g_prev_{};   // w x (J w) at the previous execution
   prim::Vec3<T> gdot_f_{};   // the filtered derivative of w x (J w)
   bool ff_on_ = false;
+  bool ref_ff_on_ = false;
   std::array<bool, kTorqueAxes> freeze_{};
   TimeUs t_us_ = 0;
   bool have_t_ = false;
@@ -395,7 +409,9 @@ class RateLoop {
 // T = rate_loop_divisor * tick_period_num_us / tick_period_den microseconds in seconds, the spacing check's
 // tick_period_num_us, tick_period_den, rate_loop_divisor and rate_period_tolerance_us, rotor_position_m<i>_{x,y},
 // rotor_yaw_sign_m<i> and rotor_torque_ratio. With rate_ff_enable == 1 also inertia_{xx,yy,zz}, motor_tau and
-// rate_ff_filter_tau (the feed-forward); any other value leaves them 0. Not validated. pre: params_init succeeded.
+// rate_ff_filter_tau (the feed-forward); any other value leaves them 0. With rate_ref_ff_enable == 1 also
+// ref_ff_inertia = inertia_{xx,yy,zz} (the reference feed-forward); any other value leaves it 0. Not validated.
+// pre: params_init succeeded.
 [[nodiscard]] RateConfig<float> from_params() noexcept;
 
 // The same read from `table` (a candidate table of the set's kParamCount records) instead of the runtime table.

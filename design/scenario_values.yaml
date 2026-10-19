@@ -119,6 +119,22 @@ rate_ff_enable:
     gate file"). Stage (c)'s FF-on evidence switches it through the test harness (sil_override), not here.
   used_by: [rate loop feed-forward]
 
+rate_ref_ff_enable:
+  value: 0
+  unit: "1"
+  method: scenario
+  sigma: choice
+  rationale: >-
+    Switch of the rate loop's reference feed-forward (model following, QF-2, decision 0058): 1 = on (fw/rate
+    RateConfig takes J_ref from inertia_xx/yy/zz and adds J_ref (r_n - r_(n-1)) / dt_n to the acro torque; never in
+    angle mode), any other value = off (J_ref 0, the law without it, bit for bit). It also selects the rate
+    generator's tau_ref rule (tools/card/rate_lead.py tau_ref_lead): 1 = max(rate_max / alpha_max, tau_m (1 +
+    tau_robustness_band) + the design model's loop delay), with the full-stick feed-forward torque asserted inside
+    tau_max at every inertia corner; other values = decision 0005's max(tau_cl, rate_max / alpha_max). 0 here: the
+    product register feeds the SIL and regression sets, whose frozen rate tests run the law without it (decision
+    0058 invariant I2); the FC3v2 register (fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml) sets 1.
+  used_by: [rate loop reference feed-forward, rate-loop tau_ref rule]
+
 site_latitude_rad:
   value: 0.82
   unit: rad

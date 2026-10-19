@@ -40,7 +40,8 @@ const char* message(ConfigError e) noexcept {
     case ConfigError::DFilter:
       return "rate: a D filter time constant is negative";
     case ConfigError::Feedforward:
-      return "rate: an inertia, the motor time constant or the feed-forward filter time constant is negative";
+      return "rate: an inertia, a reference feed-forward inertia, the motor time constant or the feed-forward "
+             "filter time constant is negative";
     case ConfigError::Timing:
       return "rate: the tick period or divisor is below 1, or rate_period_tolerance_us is not in [0, half a tick)";
   }
@@ -78,6 +79,11 @@ RateConfig<float> from_params(ParamTable t) noexcept {
     c.inertia = load_axes<ParamId::inertia_xx, ParamId::inertia_yy, ParamId::inertia_zz>(t);
     c.motor_tau = param_value<ParamId::motor_tau>(t);
     c.ff_filter_tau = param_value<ParamId::rate_ff_filter_tau>(t);
+  }
+  // The reference feed-forward only while rate_ref_ff_enable is 1 (decision 0058); otherwise J_ref keeps
+  // RateConfig's 0.
+  if (param_value<ParamId::rate_ref_ff_enable>(t) == 1) {
+    c.ref_ff_inertia = load_axes<ParamId::inertia_xx, ParamId::inertia_yy, ParamId::inertia_zz>(t);
   }
   return c;
 }
