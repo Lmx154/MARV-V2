@@ -659,6 +659,13 @@ rules:
     gz_groups: []
     why: "the GS-3 codec-isolation checker, its gate step, its control and its L00 tools test"
 
+  - paths: [tools/ci/check_s1.py, tests/tools/test_check_s1.py]
+    ctest_labels: []
+    run_ci_steps: [s1_check, tools_tests]
+    pytest_paths: [tests/tools]
+    gz_groups: []
+    why: "the S-1 import-boundary checker (the vehicle's side and the GCS's SIM panels never import each other), its gate step and its planted controls in tests/tools/test_check_s1.py"
+
   - paths: [tools/link/**]
     ctest_labels: [L00]
     run_ci_steps: ["@flight_gates", gs3_check, tools_tests]
@@ -811,7 +818,7 @@ rules:
 
   - paths: [gcs/**]
     ctest_labels: [L00]
-    run_ci_steps: [gs3_check, tools_tests, gcs_tests]
+    run_ci_steps: [gs3_check, s1_check, tools_tests, gcs_tests]
     pytest_paths: [tests/regression/quad/L00/tools]
     gz_groups: []
     why: "the ground-station package: gcs_tests runs its vitest and svelte-check (the CI image carries Node 22 since GX-0; ci/dev_check.sh fails when gcs/node_modules is missing), its TypeScript codec is also held by the L00 link suite (ctest link_ts_conformance where gcs/node_modules exists), its generated messages.ts by the L00 tools test_link_gen, and GS-3 holds the rest of gcs/ clear of MAVLink; the Playwright run (tools/gs/e2e.sh) is not part of the selection"

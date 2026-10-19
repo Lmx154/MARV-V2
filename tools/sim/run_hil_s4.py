@@ -61,6 +61,7 @@ import hil_fc  # noqa: E402
 import lockstep_log  # noqa: E402
 import run_quad_fc  # noqa: E402
 import run_scenario  # noqa: E402
+import sim_channel  # noqa: E402
 
 PLUGIN_DIR = ROOT / "build" / "host-gz-quadfc" / "sim" / "gz" / "plugin"
 PARAM_DEFAULTS = ROOT / "build" / "host-gz-quadfc" / hil_compare.PARAM_DEFAULTS_REL
@@ -112,7 +113,7 @@ def hil_xml(port, stem, f, n, values_crc):
             f"<reports_path>{stem}.reports.csv</reports_path></hil>")
 
 
-def world(out_dir, port, f, n, values_crc, ground=False):
+def world(out_dir, port, f, n, values_crc, ground=False, sim_xml=""):
     scenario, num, den = run_quad_fc.fc3_scenario(out_dir)
     name, _ = gen_world.generate(run_quad_fc.CARD, scenario, "test", M, "lo", None, ROOT)
     stem = (Path(out_dir) / f"{Path(name).stem}_hil_n{n}").resolve()
@@ -121,7 +122,7 @@ def world(out_dir, port, f, n, values_crc, ground=False):
     text = re.sub(r'\s*<sil_override param="ol_dshot_m\d" type="i32">\d+</sil_override>', "", text)
     assert text.count("<gyro_source>") == 1
     pad = "<launch_pad/>\n" + ("<ground/>\n" if ground else "")
-    text = text.replace("<gyro_source>", pad + hil_xml(port, stem, f, n, values_crc) + "\n<gyro_source>", 1)
+    text = text.replace("<gyro_source>", pad + hil_xml(port, stem, f, n, values_crc) + "\n" + sim_xml + "<gyro_source>", 1)
     seed = int(re.search(r"<seed>(\d+)</seed>", text).group(1))
     Path(f"{stem}.sdf").write_text(text, encoding="utf-8")
     return stem, num, den, seed
@@ -344,6 +345,11 @@ def main(argv=None):
     ap.add_argument("--expect", choices=("s4a", "late", "none"), default="s4a")
     ap.add_argument("--gui", action="store_true",
                     help="display-only visuals in the world and a gz GUI client (S4b: see the quad while flying)")
+    ap.add_argument("--sim-telemetry-udp-port", type=int, default=None,
+                    help="the sim channel's destination, UDP 127.0.0.1:<port> (the plugin's <sim_telemetry_udp_port>, "
+                         "tools/sim/sim_channel.py); default: no element")
+    ap.add_argument("--sim-telemetry-hz", type=float, default=sim_channel.DEFAULT_RATE_HZ,
+                    help="the sim channel's rate in SIM time (a labelled harness value, default %(default)s)")
     a = ap.parse_args(argv)
     out_dir = Path(a.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -352,7 +358,12 @@ def main(argv=None):
     values_crc = hil_compare.values_crc(hil_compare.load_table(PARAM_DEFAULTS))
     if not a.no_reset:
         reset_board(a.port)
-    stem, num, den, seed = world(out_dir, a.port, a.samples_per_record, a.delay_ticks, values_crc, ground=a.expect == "none")
+    try:
+        sim_xml = sim_channel.sim_telemetry_xml(a.sim_telemetry_udp_port, a.sim_telemetry_hz)
+    except ValueError as e:
+        ap.error(str(e))
+    stem, num, den, seed = world(out_dir, a.port, a.samples_per_record, a.delay_ticks, values_crc, ground=a.expect == "none",
+                                 sim_xml=sim_xml)
     if a.gui:
         sdf = Path(f"{stem}.sdf")
         sdf.write_text(display_world.display_world(sdf.read_text(encoding="utf-8")), encoding="utf-8")
