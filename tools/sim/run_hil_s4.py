@@ -122,12 +122,79 @@ def world(out_dir, port, f, n, values_crc):
     return stem, num, den, seed
 
 
-def run_gz(stem, iterations, seed, plugin_dir, seconds):
+# --gui (S4b, Luis flying, 2026-10-18: "it's tough for me to do anything when i can't see the gazebo 3d env"): display-only
+# additions to the world and a gz GUI client on the server's partition. Nothing here has mass, inertia or collision, so the
+# plant is unchanged; every size below is a labelled display value, not vehicle data. The rotor discs sit at the card's rotor
+# positions (FRD in the plugin block, drawn in the link's FLU frame: y and z negated).
+DISPLAY_PROP_RADIUS_M = 0.0889  # display only: a 7 inch propeller disc (Luis, 2026-10-18: "it's a 7 inch frame")
+DISPLAY_BODY_M = (0.10, 0.05, 0.03)  # display only: the body box
+DISPLAY_GROUND_Z_M = -0.04  # display only: the ground visual just below the body (the world has no ground and no gravity)
+DISPLAY_MARKER_SPACING_M = 2.0  # display only: reference posts every 2 m so motion is visible against the ground
+DISPLAY_MARKER_COUNT = 5  # display only: posts per side of the grid
+DISPLAY_GUI_START_S = 15.0  # harness value: the GUI loads its rendering engine before the real-time run starts
+DISPLAY_SUN = "<light type='directional' name='sun'><cast_shadows>true</cast_shadows><pose>0 0 10 0 0 0</pose>" \
+    "<diffuse>0.9 0.9 0.9 1</diffuse><direction>-0.5 0.1 -0.9</direction></light>"
+
+
+def display_world(text):
+    """The world with display-only visuals (quad body, arms, rotor discs, a red nose, ground plane and reference posts),
+    the scene broadcaster a GUI client needs, and a light."""
+    rotors = re.findall(r'<rotor motor="(\d)">\s*<position_frd_m unit="m">([-\d.e]+) ([-\d.e]+) ([-\d.e]+)</position_frd_m>', text)
+    assert len(rotors) == 4, rotors
+    bx, by, bz = DISPLAY_BODY_M
+    vis = [f"<visual name='body'><geometry><box><size>{bx} {by} {bz}</size></box></geometry>"
+           "<material><ambient>0.15 0.15 0.15 1</ambient><diffuse>0.2 0.2 0.2 1</diffuse></material></visual>",
+           f"<visual name='nose'><pose>{bx / 2} 0 0 0 0 0</pose><geometry><box><size>{bz} {bz} {bz}</size></box></geometry>"
+           "<material><ambient>0.8 0 0 1</ambient><diffuse>1 0 0 1</diffuse></material></visual>"]
+    for motor, x, y, z in rotors:
+        fx, fy, fz = float(x), -float(y), -float(z)
+        arm = math.hypot(fx, fy)
+        yaw = math.atan2(fy, fx)
+        colour = "0.1 0.4 1 0.6" if float(x) > 0 else "0.9 0.9 0.9 0.6"  # front rotors blue, rear white
+        vis.append(f"<visual name='arm{motor}'><pose>{fx / 2} {fy / 2} 0 0 0 {yaw}</pose><geometry><box><size>{arm} 0.012 0.008"
+                   "</size></box></geometry><material><diffuse>0.3 0.3 0.3 1</diffuse></material></visual>")
+        vis.append(f"<visual name='rotor{motor}'><pose>{fx} {fy} {fz} 0 0 0</pose><geometry><cylinder><radius>"
+                   f"{DISPLAY_PROP_RADIUS_M}</radius><length>0.004</length></cylinder></geometry><material><ambient>{colour}"
+                   f"</ambient><diffuse>{colour}</diffuse></material><transparency>0.4</transparency></visual>")
+    text = text.replace("</inertial>", "</inertial>\n" + "\n".join(vis), 1)
+    posts = []
+    half = DISPLAY_MARKER_COUNT // 2
+    for i in range(-half, half + 1):
+        for j in range(-half, half + 1):
+            if i == 0 and j == 0:
+                continue
+            px, py = i * DISPLAY_MARKER_SPACING_M, j * DISPLAY_MARKER_SPACING_M
+            posts.append(f"<visual name='post_{i}_{j}'><pose>{px} {py} 0.5 0 0 0</pose><geometry><cylinder><radius>0.03</radius>"
+                         "<length>1.0</length></cylinder></geometry><material><diffuse>1 0.6 0 1</diffuse></material></visual>")
+    ground = ("<model name='display_ground'><static>true</static><pose>0 0 " f"{DISPLAY_GROUND_Z_M}" " 0 0 0</pose>"
+              "<link name='ground_link'><visual name='ground'><geometry><plane><normal>0 0 1</normal><size>40 40</size></plane>"
+              "</geometry><material><ambient>0.3 0.45 0.3 1</ambient><diffuse>0.35 0.55 0.35 1</diffuse></material></visual>"
+              + "".join(posts) + "</link></model>")
+    extra = ("<plugin filename='gz-sim-scene-broadcaster-system' name='gz::sim::systems::SceneBroadcaster'/>\n"
+             + DISPLAY_SUN + "\n" + ground + "\n")
+    i = text.index("<model name=")
+    return text[:i] + extra + text[i:]
+
+
+def run_gz(stem, iterations, seed, plugin_dir, seconds, gui=False):
     cmd = [*run_scenario.GZ_ARGS, "-s", "-r", "--iterations", str(iterations), "--seed", str(seed), f"{stem}.sdf"]
     Path(f"{stem}.bin").unlink(missing_ok=True)
+    env = run_scenario.gz_env(plugin_dir)
     t0 = time.monotonic()
+    gui_p = None
+    if gui:
+        # The GUI client joins the server's partition; it renders on its own process and only reads the scene. It starts
+        # first, at the lowest CPU priority, and the server only after DISPLAY_GUI_START_S: the first S4b try with both
+        # starting together lagged the wall-clock schedule by 106 ms at t = 2 s, the board missed its IMU deadline and
+        # latched imu_stale (no arming for the rest of the run).
+        gui_log = open(f"{stem}.gui.txt", "w", encoding="utf-8")
+        gui_p = subprocess.Popen(["nice", "-n", "19", *run_scenario.GZ_ARGS, "-g"], env=env, stdout=gui_log,
+                                 stderr=subprocess.STDOUT)
+        print(f"run_hil_s4: gz GUI starting; the simulation starts in {DISPLAY_GUI_START_S:.0f} s", flush=True)
+        time.sleep(DISPLAY_GUI_START_S)
+        t0 = time.monotonic()
     with open(f"{stem}.stderr.txt", "w", encoding="utf-8") as err, open(f"{stem}.stdout.txt", "w", encoding="utf-8") as out:
-        p = subprocess.Popen(cmd, env=run_scenario.gz_env(plugin_dir), stdout=out, stderr=subprocess.PIPE, text=True, bufsize=1)
+        p = subprocess.Popen(cmd, env=env, stdout=out, stderr=subprocess.PIPE, text=True, bufsize=1)
         try:
             for line in p.stderr:
                 err.write(line)
@@ -138,6 +205,13 @@ def run_gz(stem, iterations, seed, plugin_dir, seconds):
             print("run_hil_s4: interrupted; stopping gz (the board sees no more samples: IMU deadline miss, disarm)", flush=True)
             p.send_signal(signal.SIGINT)
             rc = p.wait(timeout=TIMEOUT_EXTRA_S)
+        finally:
+            if gui_p is not None:
+                gui_p.terminate()
+                try:
+                    gui_p.wait(timeout=PORT_WAIT_S)
+                except subprocess.TimeoutExpired:
+                    gui_p.kill()
     return rc, time.monotonic() - t0
 
 
@@ -318,6 +392,8 @@ def main(argv=None):
     ap.add_argument("--plugin-dir", default=str(PLUGIN_DIR))
     ap.add_argument("--no-reset", action="store_true", help="do not reboot the board first")
     ap.add_argument("--expect", choices=("s4a", "late", "none"), default="s4a")
+    ap.add_argument("--gui", action="store_true",
+                    help="display-only visuals in the world and a gz GUI client (S4b: see the quad while flying)")
     a = ap.parse_args(argv)
     out_dir = Path(a.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -327,10 +403,13 @@ def main(argv=None):
     if not a.no_reset:
         reset_board(a.port)
     stem, num, den, seed = world(out_dir, a.port, a.samples_per_record, a.delay_ticks, values_crc)
+    if a.gui:
+        sdf = Path(f"{stem}.sdf")
+        sdf.write_text(display_world(sdf.read_text(encoding="utf-8")), encoding="utf-8")
     iterations = math.ceil(a.seconds * 1e6 * den / num) // M
     print(f"run_hil_s4: world {stem}.sdf; {iterations} ticks ({a.seconds} s), N = {a.delay_ticks}, F = {a.samples_per_record}",
           flush=True)
-    rc, wall = run_gz(stem, iterations, seed, a.plugin_dir, a.seconds)
+    rc, wall = run_gz(stem, iterations, seed, a.plugin_dir, a.seconds, gui=a.gui)
     lines, reasons = analyse(stem, a.delay_ticks, a.samples_per_record, a.seconds, iterations, rc, wall, a.expect)
     text = "\n".join(lines) + "\n"
     Path(f"{stem}.hil_report.txt").write_text(text, encoding="utf-8")
