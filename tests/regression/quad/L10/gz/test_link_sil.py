@@ -39,10 +39,24 @@ What is checked:
     "REBOOT REQUESTED"); the relaunch of the same world comes up on the factory config. Not checked: the vehicle arming between
     IN_PROGRESS and the grant (DENIED): the SIL cannot stage it, since the next rate tick after the request decides the grant,
     before a scripted raise can arm.
+  - The telemetry streams (ground-segment unit 11; real time, the plumbing raise with the angle switch up, the run logged): a
+    message that is not a stream is UNSUPPORTED; HIGHRES_IMU asked above its cap gets the cap's interval (MESSAGE_INTERVAL
+    ceil(1e6 / tlm_hz_imu) us, the factory value) and every other stream the interval asked; a stream stopped with interval 0
+    reports -1. Each stream arrives at its interval: consecutive stamps differ from it by at most one rate period, one tick and
+    the stamp's resolution (a stream is sent on the first host step at or after it is due, with the latest rate tick's
+    snapshot). Values against the SIL's own log: ACTUATOR_OUTPUT_STATUS equals the logged DShot values of its tick; HIGHRES_IMU's
+    accelerometer equals the logged sample bit for bit and its gyro is the logged gyro less the boot calibration's bias of
+    MARV_ESTIMATOR, rounded to binary32; MARV_ESTIMATOR's and ATTITUDE_QUATERNION's tilt and ATTITUDE's roll and pitch are within
+    attitude_tilt_error_max (design budget, the estimator's tilt share) of the plant's; MARV_FC_STATUS counts the rate executions
+    of the logged ticks and reports armed after the raise, with no IMU deadline miss; RC_CHANNELS carries the logged channels in
+    microseconds; ATTITUDE_TARGET carries an attitude setpoint only once armed in angle mode; SYS_STATUS reports the gyro, the
+    accelerometer, the RC receiver and the estimate healthy once calibrated and the link up.
 """
 
+import bisect
 import hashlib
 import json
+import math
 import os
 import re
 import signal
@@ -105,6 +119,13 @@ VALIDATE_TIMEOUT_S = 3600  # labelled harness value: bounds a hung validator run
 COMMIT_MAGIC = b"MARVSLOT"  # fw/store/include/marv/store/store.hpp kCommitMagic; record: magic, sequence u32, length u32, SHA-256
 SLOT_FILE = "slot_a.bin"  # hal_sim's file of slot A (marv/hal_sim/storage.hpp)
 ERASED = 0xFF  # a slot byte past the file reads as erased flash (marv/hal_sim/storage.hpp)
+TELEMETRY_ARMED_US = 6_000_000  # labelled harness value: sim time the telemetry run stays armed after the raise
+STREAM_INTERVAL_US = 20_000  # labelled harness value: the interval asked for most streams (50 Hz)
+STATUS_INTERVAL_US = 100_000  # labelled harness value: the interval asked for SYS_STATUS and MARV_IDENTITY (10 Hz)
+ABOVE_CAP_INTERVAL_US = 1_000  # labelled harness value: HIGHRES_IMU asked at 1 kHz, above its cap
+BUDGET = ROOT / "design" / "budget.yaml"
+FC3V2_SCENARIO = ROOT / "fw" / "compositions" / "quad_fc" / "params" / "fc3v2_scenario_values.yaml"
+RC_US_CENTRE, RC_US_HALF_SPAN = 1500, 512  # the pilot-input contract x = (us - 1500) / 512 (fw/types manual_control.hpp)
 
 pytestmark = pytest.mark.skipif(not (PLUGIN.exists() and run_scenario.gz8_available()),
                                 reason="gz-sim 8 or the host-gz-quadfc build of libmarv_gz_lockstep.so is absent")
@@ -664,3 +685,175 @@ def test_the_reboot_command_reboots_through_the_store_and_other_actions_are_unsu
             assert ident.last_activation_result == d.MARV_ACTIVATION_RESULT_NONE
     finally:
         client.close()
+
+
+# ---- the telemetry streams (ground-segment unit 11) ------------------------------------------------------------------------
+
+def command(client, d, cmd, *params):
+    """COMMAND_LONG to the vehicle; returns its COMMAND_ACK."""
+    at = client.mark()
+    values = [float(p) for p in params] + [0.0] * (7 - len(params))
+    client.send(d.MAVLink_command_long_message(*VEHICLE, cmd, 0, *values))
+    return client.wait(lambda m: m.get_type() == "COMMAND_ACK" and m.command == cmd, f"COMMAND_ACK {cmd}", at)
+
+
+def interval_of(client, d, msg_id):
+    """The interval in force for msg_id: REQUEST_MESSAGE(MESSAGE_INTERVAL, msg_id) and its MESSAGE_INTERVAL."""
+    at = client.mark()
+    client.send(d.MAVLink_command_long_message(*VEHICLE, d.MAV_CMD_REQUEST_MESSAGE, 0, float(d.MAVLINK_MSG_ID_MESSAGE_INTERVAL),
+                                               float(msg_id), 0, 0, 0, 0, 0))
+    return client.wait(lambda m: m.get_type() == "MESSAGE_INTERVAL" and m.message_id == msg_id, f"MESSAGE_INTERVAL {msg_id}",
+                       at).interval_us
+
+
+def f32(x):
+    return struct.unpack("<f", struct.pack("<f", x))[0]
+
+
+def body_down(q):
+    """The NED down direction in body axes for a body-to-NED quaternion (w, x, y, z): the third row of R(q)."""
+    w, x, y, z = q
+    return (2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y))
+
+
+def tilt_between(q, p):
+    a, b = body_down(q), body_down(p)
+    na, nb = math.sqrt(sum(v * v for v in a)), math.sqrt(sum(v * v for v in b))
+    return math.acos(max(-1.0, min(1.0, sum(u * v for u, v in zip(a, b)) / (na * nb))))
+
+
+def roll_pitch(q):
+    w, x, y, z = q
+    return math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y)), math.asin(max(-1.0, min(1.0, 2 * (w * y - z * x))))
+
+
+def test_telemetry_streams_at_their_rates_capped_and_consistent_with_the_log(dialect, manifest, factory, tmp_path):
+    d = dialect
+    names = list(manifest["params"])
+    records = mcfg.section_records(factory.section("quad"))
+    cap_hz = f32_of(records[names.index("tlm_hz_imu")].value_bits)
+    tilt_max = yaml.safe_load(BUDGET.read_text(encoding="utf-8"))["attitude_tilt_error_max"]["value"]
+    divisor = yaml.safe_load(FC3V2_SCENARIO.read_text(encoding="utf-8"))["rate_loop_divisor"]["value"]
+    tick_us = NUM_US / DEN
+    rate_period_us = divisor * tick_us
+    asked = {  # message name -> interval asked, us
+        "ATTITUDE": STREAM_INTERVAL_US, "ATTITUDE_QUATERNION": STREAM_INTERVAL_US, "ATTITUDE_TARGET": STREAM_INTERVAL_US,
+        "ACTUATOR_OUTPUT_STATUS": STREAM_INTERVAL_US, "RC_CHANNELS": STREAM_INTERVAL_US, "MARV_FC_STATUS": STREAM_INTERVAL_US,
+        "MARV_ESTIMATOR": STREAM_INTERVAL_US, "SYS_STATUS": STATUS_INTERVAL_US, "MARV_IDENTITY": STATUS_INTERVAL_US}
+    store = tmp_path / "store"
+    store.mkdir()
+    port = free_udp_port()
+    duration = READY_US + TELEMETRY_ARMED_US
+    log = tmp_path / "run.bin"
+    n = iterations(duration)
+    sdf = world(tmp_path / "telemetry.sdf", "pilot", log,
+                script([seg(0, READY_US, SWITCH_LOW), seg(READY_US, TELEMETRY_ARMED_US, SWITCH_HIGH)]), store, port)
+    client = Client(d, port)
+    granted = {}
+    try:
+        with Gz(sdf, n, tmp_path) as gz:
+            client.connect()
+            assert command(client, d, d.MAV_CMD_SET_MESSAGE_INTERVAL, d.MAVLINK_MSG_ID_HEARTBEAT,
+                           STREAM_INTERVAL_US).result == d.MAV_RESULT_UNSUPPORTED
+            highres = d.MAVLINK_MSG_ID_HIGHRES_IMU
+            assert command(client, d, d.MAV_CMD_SET_MESSAGE_INTERVAL, highres,
+                           ABOVE_CAP_INTERVAL_US).result == d.MAV_RESULT_ACCEPTED
+            granted["HIGHRES_IMU"] = interval_of(client, d, highres)
+            assert granted["HIGHRES_IMU"] == math.ceil(1e6 / cap_hz), "asking above the cap does not give the cap"
+            identity = d.MAVLINK_MSG_ID_MARV_IDENTITY
+            assert command(client, d, d.MAV_CMD_SET_MESSAGE_INTERVAL, identity, STATUS_INTERVAL_US).result == d.MAV_RESULT_ACCEPTED
+            assert command(client, d, d.MAV_CMD_SET_MESSAGE_INTERVAL, identity, 0).result == d.MAV_RESULT_ACCEPTED
+            assert interval_of(client, d, identity) == -1, "interval 0 (the default rate) does not stop the stream"
+            for name, interval in asked.items():
+                msg_id = getattr(d, f"MAVLINK_MSG_ID_{name}")
+                assert command(client, d, d.MAV_CMD_SET_MESSAGE_INTERVAL, msg_id, interval).result == d.MAV_RESULT_ACCEPTED, name
+                granted[name] = interval_of(client, d, msg_id)
+                assert granted[name] == interval, name
+            started = client.mark()
+            deadline = time.monotonic() + TIMEOUT_S
+            while gz.proc.poll() is None and time.monotonic() < deadline:
+                client.pump()
+            assert gz.wait() == 0 and "REFUSED" not in gz.stderr(), run_scenario.stderr_tail(gz.stderr())
+            client.pump()
+    finally:
+        client.close()
+    run = lockstep_log.read(log)
+    assert run["trailer"] == {"steps": n, "ticks": n, "applied": n}
+    tick_of = {t["sil_t_us"]: t for t in run["ticks"]}
+    tick_times = [t["sil_t_us"] for t in run["ticks"]]
+
+    def nearest_tick(t_us):
+        i = bisect.bisect_left(tick_times, t_us)
+        return min((k for k in (i - 1, i) if 0 <= k < len(tick_times)), key=lambda k: abs(tick_times[k] - t_us))
+    got = {name: client.since(started, name) for name in granted}
+
+    # every stream at its interval
+    stamps = {"time_usec": 1, "time_boot_ms": 1000}  # the stamp field and its resolution in us
+    for name, messages in got.items():
+        assert len(messages) >= 2, f"{name}: {len(messages)} messages"
+        field = next((f for f in stamps if f in type(messages[0]).fieldnames), None)
+        if field is None:  # MARV_IDENTITY carries no stamp
+            continue
+        times = [getattr(m, field) * stamps[field] for m in messages]
+        slack = rate_period_us + tick_us + stamps[field]
+        gaps = [b - a for a, b in zip(times, times[1:])]
+        assert all(abs(g - granted[name]) <= slack for g in gaps), (name, granted[name], min(gaps), max(gaps))
+
+    # values against the log
+    estimator = got["MARV_ESTIMATOR"]
+    bias = tuple(estimator[-1].gyro_bias_cal)
+    assert any(bias), "the boot calibration's bias never arrived"
+    for m in got["HIGHRES_IMU"]:
+        tick = tick_of[m.time_usec]
+        g = struct.unpack("<7fI", tick["imu"])
+        assert (m.xacc, m.yacc, m.zacc) == g[3:6], m.time_usec
+        expected = [tuple(f32(g[a] - b[a]) for a in range(3)) for b in ((0.0, 0.0, 0.0), bias)]
+        assert (m.xgyro, m.ygyro, m.zgyro) in expected, m.time_usec
+        if m.time_usec > READY_US:
+            assert (m.xgyro, m.ygyro, m.zgyro) == expected[1], m.time_usec
+    for m in got["ACTUATOR_OUTPUT_STATUS"]:
+        assert m.active == 0xF and tuple(int(v) for v in m.actuator[:4]) == tuple(tick_of[m.time_usec]["dshot"]), m.time_usec
+    for m in estimator:
+        if m.flags & d.MARV_ESTIMATOR_FLAG_MAHONY_VALID:
+            truth = run["steps"][tick_of[m.time_usec]["tick"]]["body_q_wxyz"]
+            assert tilt_between(tuple(m.q_mahony), truth) <= tilt_max, m.time_usec
+    valid_from = min(m.time_usec for m in estimator if m.flags & d.MARV_ESTIMATOR_FLAG_MAHONY_VALID)
+    for m in got["ATTITUDE_QUATERNION"]:
+        t_us = m.time_boot_ms * 1000
+        if t_us > valid_from + 1000:
+            truth = run["steps"][nearest_tick(t_us)]["body_q_wxyz"]
+            assert tilt_between((m.q1, m.q2, m.q3, m.q4), truth) <= tilt_max, t_us
+    for m in got["ATTITUDE"]:
+        t_us = m.time_boot_ms * 1000
+        if t_us > valid_from + 1000:
+            truth = run["steps"][nearest_tick(t_us)]["body_q_wxyz"]
+            roll, pitch = roll_pitch(truth)
+            assert abs(m.roll - roll) <= tilt_max and abs(m.pitch - pitch) <= tilt_max, t_us
+    raised_us = min(x["t_us"] for x in run["manuals"] if x["channels"][ARM_CHANNEL - 1] == SWITCH_HIGH)
+    for m in got["MARV_FC_STATUS"]:
+        assert m.rate_executions == tick_of[m.time_usec]["tick"] // divisor + 1, m.time_usec
+        assert m.imu_deadline_misses == 0 and m.rc_frames > 0
+        if m.time_usec > raised_us + FRAME_PERIOD_US + rate_period_us:
+            assert m.arm_state == d.MARV_ARM_STATE_ARMED and m.motor_gate == d.MARV_MOTOR_GATE_ARMED, m.time_usec
+            assert m.flags & d.MARV_FC_STATUS_FLAG_ANGLE_MODE
+    changes = [x["t_us"] for a, x in zip(run["manuals"], run["manuals"][1:]) if a["channels"] != x["channels"]]
+    for m in got["RC_CHANNELS"]:
+        t_us = m.time_boot_ms * 1000
+        if any(abs(t_us - c) <= FRAME_PERIOD_US + 1000 for c in changes):
+            continue
+        frame = max((x for x in run["manuals"] if x["t_us"] <= t_us), key=lambda x: x["t_us"])
+        assert m.chancount == 16
+        want = [round(RC_US_CENTRE + RC_US_HALF_SPAN * c) for c in frame["channels"]]
+        assert [getattr(m, f"chan{k}_raw") for k in range(1, 17)] == want, t_us
+    for m in got["ATTITUDE_TARGET"]:
+        t_us = m.time_boot_ms * 1000
+        if t_us < raised_us:
+            assert m.type_mask & d.ATTITUDE_TARGET_TYPEMASK_ATTITUDE_IGNORE, t_us
+        elif t_us > raised_us + FRAME_PERIOD_US + rate_period_us + 1000:
+            assert m.type_mask == 0 and 0.0 <= m.thrust <= 1.0, t_us
+    healthy = (d.MAV_SYS_STATUS_SENSOR_3D_GYRO | d.MAV_SYS_STATUS_SENSOR_3D_ACCEL | d.MAV_SYS_STATUS_SENSOR_RC_RECEIVER
+               | d.MAV_SYS_STATUS_AHRS)
+    last = got["SYS_STATUS"][-1]
+    assert (last.onboard_control_sensors_present & healthy) == healthy
+    assert (last.onboard_control_sensors_health & healthy) == healthy
+    assert all(m.config_source == d.MARV_CONFIG_SOURCE_FACTORY for m in got["MARV_IDENTITY"])
