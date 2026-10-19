@@ -43,6 +43,7 @@ I4 bounds the feed-forward against the collective-free tau_max, and nothing clam
 pitch slam asks for about 0.6 tau_max; a full yaw reversal asks for 1.33 to 2 tau_max for about 0.2 s. Before acro with props
 on: a per-axis symmetric clamp on u_ff at k tau_max (at hover collective), k set by Luis (a safety number), with a T3 test and
 a clamp-off bit-identity case. Angle mode, hover and props-off work are unaffected; the angle-to-acro switch is continuous.
+Luis, 2026-10-19 (AskUserQuestion, k as a fraction of the authority at hover throttle): "0.5 (Recommended)".
 
 ## Evidence
 
