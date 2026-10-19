@@ -14,6 +14,8 @@ import {
 } from './radio_state';
 import { SHELL_TIMING } from './shell';
 
+/** A bar by its index in the view (0-based). */
+const barOf = (v: RadioView, i: number) => v.bars[i]!;
 const flush = () => new Promise((r) => setTimeout(r, 0));
 const STALE = SHELL_TIMING.vehicleStaleMs;
 const T0 = 50_000;
@@ -101,7 +103,7 @@ describe('the channel bars', () => {
 		await rc();
 		const v = view();
 		expect(v.bars).toHaveLength(16);
-		const b = (c: number) => v.bars[c - 1];
+		const b = (c: number) => v.bars[c - 1]!;
 		expect(b(5)).toMatchObject({ channel: 5, us: 2012, x: 1, bar: 1, roles: ['arm'] });
 		expect(b(3)).toMatchObject({ us: 988, x: -1, bar: 0, roles: ['throttle'] });
 		expect(b(1)).toMatchObject({ us: 1500, x: 0, bar: 0.5, roles: ['roll'] });
@@ -115,9 +117,9 @@ describe('the channel bars', () => {
 		const { rc, view } = await setup();
 		await rc({ chancount: 4 });
 		const v = view();
-		expect(v.bars[3].us).toBe(1244);
-		expect(v.bars[4]).toMatchObject({ us: null, x: null, bar: null });
-		expect(v.bars[15].us).toBeNull();
+		expect(barOf(v, 3).us).toBe(1244);
+		expect(barOf(v, 4)).toMatchObject({ us: null, x: null, bar: null });
+		expect(barOf(v, 15).us).toBeNull();
 	});
 
 	it('shows the link quality, and nothing for a receiver that sends none', async () => {
@@ -138,7 +140,7 @@ describe('the channel bars', () => {
 		clock.t += STALE + 1;
 		const later = view();
 		expect(later.rc).toMatchObject({ heard: true, stale: true });
-		expect(later.bars[4].us).toBe(2012);
+		expect(barOf(later, 4).us).toBe(2012);
 	});
 
 	it('marks a channel that has moved since the page was opened', () => {
@@ -147,8 +149,8 @@ describe('the channel bars', () => {
 		activity = observe(activity, channels({ 14: 1000 }));
 		expect(rangeUs(activity, 14)).toBe(1012);
 		const v = computeRadio({ snapshot: emptySnapshot(), rows: rows(), now: T0, activity, detection: IDLE });
-		expect(v.bars[13]).toMatchObject({ movedUs: 1012, active: true, detected: false });
-		expect(v.bars[0]).toMatchObject({ movedUs: 0, active: false });
+		expect(barOf(v, 13)).toMatchObject({ movedUs: 1012, active: true, detected: false });
+		expect(barOf(v, 0)).toMatchObject({ movedUs: 0, active: false });
 	});
 });
 
@@ -186,7 +188,7 @@ describe('the mapping, derived from the vehicle parameters', () => {
 		expect(v.mapKnown).toBe(true);
 		expect(v.map.find((r) => r.id === 'bench')).toMatchObject({ present: false, active: null });
 		expect(v.switches.map((s) => s.id)).toEqual(['arm', 'angle']);
-		expect(v.bars[5].roles).toEqual([]);
+		expect(barOf(v, 5).roles).toEqual([]);
 	});
 
 	it('shows a staged remap beside the running one, the controls moving to the staged channel', async () => {
@@ -195,8 +197,8 @@ describe('the mapping, derived from the vehicle parameters', () => {
 		const v = view(rows({ rc_channel_angle: { staged: 14 } }));
 		const angle = v.map.find((r) => r.id === 'angle');
 		expect(angle).toMatchObject({ active: 8, staged: 14, differs: true });
-		expect(v.bars[7]).toMatchObject({ roles: ['angle'], stagedRoles: [] });
-		expect(v.bars[13]).toMatchObject({ roles: [], stagedRoles: ['angle'] });
+		expect(barOf(v, 7)).toMatchObject({ roles: ['angle'], stagedRoles: [] });
+		expect(barOf(v, 13)).toMatchObject({ roles: [], stagedRoles: ['angle'] });
 		// The thresholds still read the running config's channel: that is what the vehicle uses now.
 		expect(v.switches.find((s) => s.id === 'angle')?.channel).toBe(8);
 	});
@@ -212,9 +214,9 @@ describe('rule R-1: a collision is a warning before staging', () => {
 		const f = findingsOf({ roll: 5, pitch: 2, throttle: 3, yaw: 4, arm: 5, angle: 8 });
 		expect(f).toHaveLength(1);
 		expect(f[0]).toMatchObject({ kind: 'collision', functions: ['roll', 'arm'] });
-		expect(f[0].text).toContain('Channel 5 is used by Roll and Arm switch');
-		expect(findingsOf({ roll: 1, pitch: 2, throttle: 3, yaw: 4, arm: 5, angle: 3 })[0].functions).toEqual(['throttle', 'angle']);
-		expect(findingsOf({ roll: 1, pitch: 2, throttle: 3, yaw: 4, arm: 5, angle: 8, bench: 8 })[0].functions).toEqual(['angle', 'bench']);
+		expect(f[0]!.text).toContain('Channel 5 is used by Roll and Arm switch');
+		expect(findingsOf({ roll: 1, pitch: 2, throttle: 3, yaw: 4, arm: 5, angle: 3 })[0]!.functions).toEqual(['throttle', 'angle']);
+		expect(findingsOf({ roll: 1, pitch: 2, throttle: 3, yaw: 4, arm: 5, angle: 8, bench: 8 })[0]!.functions).toEqual(['angle', 'bench']);
 	});
 
 	it('flags a channel outside 1 .. 16 (the angle channel outside 0 .. 16)', () => {
@@ -230,11 +232,11 @@ describe('rule R-1: a collision is a warning before staging', () => {
 		expect(candidateFindings(map, 'angle', 14)).toEqual([]);
 		const f = candidateFindings(map, 'angle', 5);
 		expect(f).toHaveLength(1);
-		expect(f[0].functions).toEqual(['arm', 'angle']);
+		expect(f[0]!.functions).toEqual(['arm', 'angle']);
 		// A collision that exists elsewhere is not blamed on this control.
 		expect(candidateFindings({ ...map, pitch: 1 }, 'angle', 14)).toEqual([]);
 		// A swap in one step collides (the vehicle refuses it): the warning says which.
-		expect(candidateFindings(map, 'roll', 2)[0].functions).toEqual(['roll', 'pitch']);
+		expect(candidateFindings(map, 'roll', 2)[0]!.functions).toEqual(['roll', 'pitch']);
 	});
 
 	it('reports the findings of the running map and of the staged map separately', async () => {
@@ -243,7 +245,7 @@ describe('rule R-1: a collision is a warning before staging', () => {
 		const v = view(rows({ rc_channel_angle: { staged: 5 } }));
 		expect(v.findingsActive).toEqual([]);
 		expect(v.findingsStaged).toHaveLength(1);
-		expect(v.findingsStaged[0].functions).toEqual(['arm', 'angle']);
+		expect(v.findingsStaged[0]!.functions).toEqual(['arm', 'angle']);
 	});
 });
 
@@ -309,8 +311,8 @@ describe('hints: a switch that moved on a channel nothing uses', () => {
 		activity = observe(activity, channels({ 14: 988 }));
 		const v = computeRadio({ snapshot: emptySnapshot(), rows: rows(), now: T0, activity, detection: IDLE });
 		expect(v.hints).toHaveLength(1);
-		expect(v.hints[0]).toContain('Channel 14 moved by 1024 µs and no control uses it');
-		expect(v.hints[0]).toContain('the arm switch (channel 5) and the angle switch (channel 8) has not moved');
+		expect(v.hints[0]!).toContain('Channel 14 moved by 1024 µs and no control uses it');
+		expect(v.hints[0]!).toContain('the arm switch (channel 5) and the angle switch (channel 8) has not moved');
 	});
 
 	it('says nothing once the switch itself has moved, or when the moved channel is used', () => {
@@ -430,14 +432,14 @@ describe('the lock display', () => {
 		await rc();
 		const locks = view().locks;
 		const by = Object.fromEntries(locks.map((l) => [l.name, l]));
-		expect(by.rc_channel_arm.locked).toBe(true);
-		expect(by.rc_channel_arm.text).toBe('locked by Luis 2026-10-17 (manual); change only by a firmware build');
-		expect(by.arm_switch_threshold.locked).toBe(true);
-		expect(by.arm_throttle_min.locked).toBe(true);
-		expect(by.airmode_activate_throttle.locked).toBe(true);
-		expect(by.failsafe_recovery_us.locked).toBe(true);
+		expect(by.rc_channel_arm!.locked).toBe(true);
+		expect(by.rc_channel_arm!.text).toBe('locked by Luis 2026-10-17 (manual); change only by a firmware build');
+		expect(by.arm_switch_threshold!.locked).toBe(true);
+		expect(by.arm_throttle_min!.locked).toBe(true);
+		expect(by.airmode_activate_throttle!.locked).toBe(true);
+		expect(by.failsafe_recovery_us!.locked).toBe(true);
 		expect(by.rc_channel_angle).toMatchObject({ locked: false, text: 'not locked' });
-		expect(by.rc_channel_roll.locked).toBe(false);
+		expect(by.rc_channel_roll!.locked).toBe(false);
 		expect(by.estimator_kp).toBeUndefined();
 	});
 });
@@ -465,13 +467,13 @@ describe('the controller', () => {
 		await frame({ 14: 2012 });
 		await frame({ 14: 988 });
 		expect(get(radio.view)?.detection).toMatchObject({ phase: 'found', channel: 14 });
-		expect(get(radio.view)?.bars[13].active).toBe(true);
-		expect(get(radio.view)?.hints[0]).toContain('Channel 14');
+		expect(get(radio.view)?.bars[13]?.active).toBe(true);
+		expect(get(radio.view)?.hints[0]!).toContain('Channel 14');
 
 		radio.cancelDetection();
 		expect(get(radio.view)?.detection.phase).toBe('idle');
 		radio.resetActivity();
-		expect(get(radio.view)?.bars[13].active).toBe(false);
+		expect(get(radio.view)?.bars[13]?.active).toBe(false);
 
 		// The control: with the vehicle silent the view turns stale as the clock passes the timeout.
 		expect(get(radio.view)?.rc.stale).toBe(false);
@@ -496,10 +498,10 @@ describe('the controller', () => {
 		vehicle.emit({ ...m.rcChannels, chan14_raw: 2012 });
 		await flush();
 		radio.tick();
-		expect(get(radio.view)?.bars[13].active).toBe(true);
+		expect(get(radio.view)?.bars[13]?.active).toBe(true);
 		telemetry.reset();
 		radio.tick();
-		expect(get(radio.view)?.bars[13].active).toBe(false);
+		expect(get(radio.view)?.bars[13]?.active).toBe(false);
 		radio.stop();
 	});
 });

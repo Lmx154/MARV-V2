@@ -175,7 +175,8 @@ export function stepDetection(d: Detection, channelsUs: ReadonlyArray<number | n
 	const track = observe(d.track, channelsUs);
 	const moved = movedChannels(track);
 	if (moved.length === 0) return { ...d, track };
-	if (moved.length === 1) return { phase: 'found', fn: d.fn, channel: moved[0], moved: rangeUs(track, moved[0]), track };
+	const [only] = moved;
+	if (moved.length === 1 && only !== undefined) return { phase: 'found', fn: d.fn, channel: only, moved: rangeUs(track, only), track };
 	return { phase: 'ambiguous', fn: d.fn, channels: moved, track };
 }
 

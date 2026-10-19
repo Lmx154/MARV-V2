@@ -14,7 +14,7 @@ export const ROUTES: readonly NavRoute[] = [
 	{ path: '/', label: 'Connection', unit: null, will: 'The helper, the device, the link.' },
 	{ path: '/vehicle', label: 'Vehicle', unit: null, will: 'The live view of the vehicle: attitude, sensors, estimators, rates, motors, radio, arming, faults and link health.' },
 	{ path: '/simulation', label: 'Simulation', unit: null, will: 'Define, launch and stop a simulation run; its parameters and overrides, labelled.' },
-	{ path: '/radio', label: 'Radio', unit: 'GX-7', will: 'The receiver channels, their mapping, the switch thresholds and the display checks.' },
+	{ path: '/radio', label: 'Radio', unit: null, will: 'The receiver channels, their mapping, the switch thresholds and the display checks.' },
 	{ path: '/params', label: 'Parameters', unit: null, will: 'The vehicle parameters.' },
 	{ path: '/flash', label: 'Flash', unit: null, will: 'Images and configs through the validation gate.' },
 	{ path: '/bench', label: 'Bench', unit: 'GX-10, GX-16', will: 'The console, the hardware-in-the-loop launcher and the bench images.' },
