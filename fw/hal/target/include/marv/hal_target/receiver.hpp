@@ -27,9 +27,10 @@ struct ReceiverStats {
   ManualControl last{};           // the newest published ManualControl (frames == 0: none yet)
 };
 
-// Configures the UART and enables its RX interrupt. hal_panic if `map` is not valid (rc_channel_map_valid) or the UART
+// Configures the UART and enables its RX interrupt. hal_panic if `map` is not valid (rc_channel_map_valid), if the stick
+// channels, `arm` and `angle` (0 = no switch) are not pairwise distinct (rc_channels_distinct, rule R-1), or the UART
 // cannot be set to the baud rate. Call once, from main, before the IMU interrupt is enabled.
-ReceiverBoot receiver_start(const RcChannelMap& map) noexcept;
+ReceiverBoot receiver_start(const RcChannelMap& map, std::int32_t arm, std::int32_t angle) noexcept;
 
 // A consistent snapshot of the counters (a seqlock read; never blocks the interrupt).
 [[nodiscard]] ReceiverStats receiver_stats() noexcept;

@@ -155,6 +155,32 @@ TEST(RcInput, MapValidation) {
   EXPECT_EQ(m.roll, 0.25F);  // unchanged
 }
 
+// Rule R-1 (GX-6): receiver_start (receiver.cpp, target only) panics unless this holds for the rc_channel_* parameters.
+TEST(RcInput, ChannelsDistinctRefusesEveryCollisionOfSticksArmAndAngle) {
+  constexpr std::int32_t kArm = 5;
+  constexpr std::int32_t kAngle = 8;
+  EXPECT_TRUE(rc_channels_distinct(kAetr, kArm, kAngle));
+  EXPECT_TRUE(rc_channels_distinct(kAetr, kArm, 14));  // Luis's current angle channel
+  EXPECT_TRUE(rc_channels_distinct(kAetr, kArm, 0));   // no angle switch
+  EXPECT_TRUE(rc_channels_distinct({4, 3, 2, 1}, 6, 0));
+  EXPECT_FALSE(rc_channels_distinct({kArm, 2, 3, 4}, kArm, kAngle));  // the found defect: roll on the arm channel
+  EXPECT_FALSE(rc_channels_distinct({1, kArm, 3, 4}, kArm, kAngle));
+  EXPECT_FALSE(rc_channels_distinct({1, 2, kArm, 4}, kArm, kAngle));
+  EXPECT_FALSE(rc_channels_distinct({1, 2, 3, kArm}, kArm, kAngle));
+  EXPECT_FALSE(rc_channels_distinct({kAngle, 2, 3, 4}, kArm, kAngle));
+  EXPECT_FALSE(rc_channels_distinct({1, kAngle, 3, 4}, kArm, kAngle));
+  EXPECT_FALSE(rc_channels_distinct({1, 2, kAngle, 4}, kArm, kAngle));
+  EXPECT_FALSE(rc_channels_distinct({1, 2, 3, kAngle}, kArm, kAngle));
+  EXPECT_FALSE(rc_channels_distinct(kAetr, kArm, kArm));
+  EXPECT_FALSE(rc_channels_distinct({1, 1, 3, 4}, kArm, kAngle));
+  EXPECT_FALSE(rc_channels_distinct({1, 2, 1, 4}, kArm, kAngle));
+  EXPECT_FALSE(rc_channels_distinct({1, 2, 3, 1}, kArm, kAngle));
+  EXPECT_FALSE(rc_channels_distinct({1, 2, 2, 4}, kArm, kAngle));
+  EXPECT_FALSE(rc_channels_distinct({1, 2, 3, 2}, kArm, kAngle));
+  EXPECT_FALSE(rc_channels_distinct({1, 2, 3, 3}, kArm, kAngle));
+  EXPECT_FALSE(rc_channels_distinct({1, 1, 3, 4}, kArm, 0));  // a disabled angle channel still leaves the rest checked
+}
+
 TEST(RcInput, ConversionLeavesTheStampsAlone) {
   ManualControl m;
   m.t_us = 123;

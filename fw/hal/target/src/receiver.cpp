@@ -111,9 +111,12 @@ void on_uart() noexcept {
 
 }  // namespace
 
-ReceiverBoot receiver_start(const RcChannelMap& map) noexcept {
+ReceiverBoot receiver_start(const RcChannelMap& map, std::int32_t arm, std::int32_t angle) noexcept {
   if (!rc_channel_map_valid(map)) {
     hal_panic("the rc_channel_* parameters are not channel numbers 1 .. 16");
+  }
+  if (!rc_channels_distinct(map, arm, angle)) {
+    hal_panic("the stick, arm and angle channels (rc_channel_*) are not pairwise distinct");
   }
   g_map = map;
   g_uart = uart_get_instance(MADFLIGHT_FC3V2_SER0_UART);

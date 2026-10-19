@@ -20,6 +20,19 @@ bool rc_channel_map_valid(const RcChannelMap& map) noexcept {
   return channel_ok(map.roll) && channel_ok(map.pitch) && channel_ok(map.throttle) && channel_ok(map.yaw);
 }
 
+bool rc_channels_distinct(const RcChannelMap& map, std::int32_t arm, std::int32_t angle) noexcept {
+  const std::array assigned{map.roll, map.pitch, map.throttle, map.yaw, arm, angle};
+  const std::size_t used = angle == 0 ? assigned.size() - 1 : assigned.size();
+  for (std::size_t i = 0; i < used; ++i) {
+    for (std::size_t j = i + 1; j < used; ++j) {
+      if (assigned[i] == assigned[j]) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 float crsf_ticks_to_us(std::uint16_t ticks) noexcept {
   return static_cast<float>(static_cast<std::int32_t>(ticks) - prim::kCrsfTickCentre) * prim::kCrsfUsPerTickNum /
              prim::kCrsfUsPerTickDen +

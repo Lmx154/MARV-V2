@@ -95,6 +95,14 @@ lead summary here). Items marked (Luis) were signed by him on 2026-10-17 (Approv
 6. **Units (ordered):** 1 G0-IF (Luis signs GD-1), 2 GEN, 3 VALIDATE, 4 STORE, 5 CODEC, 6 LINK-SIL, 7 HELPER,
    8 GCS-PARAMS, 9 REPORT, 10 DERIVE, 11 PLOTS, 12 USB (bench), 13 SD (bench), 14 FLASH-SLOTS (bench), 15 FLASH-PANEL,
    16 END-BOOTSTRAP (after first flight or Luis's go). The M4 flight board stays on its compiled table until 9 and 14 pass.
+   GX-6 RADIO-SAFE (rule R-1 of the GCS-first ruling, decision 0056): the four stick channels, the arm channel and the angle
+   channel (0 = no switch, takes no channel) are pairwise distinct. composition validate refuses a collision (a stick pair or a
+   stick on the arm channel: "the stick, arm and angle channels (rc_channel_*) are not pairwise distinct"; the angle channel
+   keeps its own reason) and receiver_start hal_panics on it (hal_target::rc_channels_distinct; its signature gains arm and
+   angle). Found defect: rc_channel_roll = 5 with the arm channel 5 passed validate. Frozen tests extended, stricter only:
+   tests/regression/quad/L09/unit/quad_fc_gate_test.cpp (two reject cases, every pair of the six channels refused, the shipped
+   map and angle channels 0, 6, 8, 14 and 16 accepted) and tests/regression/quad/L08/unit/rc_input_test.cpp
+   (rc_channels_distinct, the receiver-start check).
 
 ## Why
 

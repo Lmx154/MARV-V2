@@ -592,7 +592,9 @@ int main() {
   receiver_boot = marv::hal_target::receiver_start({marv::param_value<ParamId::rc_channel_roll>(),
                                                     marv::param_value<ParamId::rc_channel_pitch>(),
                                                     marv::param_value<ParamId::rc_channel_throttle>(),
-                                                    marv::param_value<ParamId::rc_channel_yaw>()});
+                                                    marv::param_value<ParamId::rc_channel_yaw>()},
+                                                    marv::param_value<ParamId::rc_channel_arm>(),
+                                                    marv::param_value<ParamId::rc_channel_angle>());
   stage = Stage::kReceiverOk;
   std::printf("receiver ok\n");
   imu_start_us = marv::hal_time_us();
