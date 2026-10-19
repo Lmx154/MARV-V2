@@ -56,6 +56,7 @@ Endpoints (all need the token):
            absent; else starts the run and answers {"run": manifest}. {"cmd": "run_stop"}: stops the run's process group,
            answers {"run": manifest, "exit_status"}. {"cmd": "run_list"}: {"runs": [run id]}. {"cmd": "run_manifest", "run_id"}:
            {"manifest"} (the id must name a run under <run dir>/runs).
+         {"cmd": "cards"}: {"cards": ["vehicles/<name>.yaml", ...]}: the cards a sil run's "card" accepts, sorted.
          {"cmd": "host_state"}: {"host": {"loadavg", "cpus", "mem_total_bytes", "mem_available_bytes", "heavy_lock": {"held",
            "holder", "path"}}}. {"cmd": "autoconnect", "enabled": bool}: {"autoconnect": {"enabled", "suspended", "owner"}}.
          {"cmd": "config_report", "image_hash": H, "view": V}: the config hash of V and whether a report of (H, that hash) is
@@ -117,7 +118,7 @@ import mcfg  # noqa: E402
 from artifacts import ARTIFACT_KEYS, ImageLibrary, ReportLibrary  # noqa: E402
 from device import DEFAULT_BAUD, LOOPBACK, Device, DeviceError, SerialDevice, UdpDevice  # noqa: E402
 import hoststate  # noqa: E402
-from runs import KINDS, RunRefused, RunSupervisor, parse_options  # noqa: E402
+from runs import KINDS, RunRefused, RunSupervisor, list_cards, parse_options  # noqa: E402
 import sil_run  # noqa: E402  (tools/sim, on the path since runs)
 from sil import SilLauncher, udp_bound  # noqa: E402
 
@@ -783,6 +784,8 @@ class Helper:
                 reply["runs"] = self.runs.list_runs()
             elif cmd == "run_manifest":
                 reply["manifest"] = self.runs.manifest(msg.get("run_id"))
+            elif cmd == "cards":
+                reply["cards"] = list_cards()
             elif cmd == "host_state":
                 reply["host"] = hoststate.host_state(self.heavy_lock)
             elif cmd == "autoconnect":

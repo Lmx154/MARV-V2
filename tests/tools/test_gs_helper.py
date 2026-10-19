@@ -2091,6 +2091,19 @@ def test_run_plan_of_a_sil_run_definition_names_the_card_overrides_gui_and_the_l
     run_with_helper(tmp_path, body)
 
 
+def test_cards_lists_the_vehicle_cards_a_run_accepts_and_each_one_plans(tmp_path):
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            cards = (await s.cmd(cmd="cards"))["cards"]
+            assert cards == sorted(f"vehicles/{p.name}" for p in (ROOT / "vehicles").glob("*.yaml")) and CARD_A in cards and CARD_B in cards
+            assert not any(c.endswith(".py") for c in cards)  # control: the inertia model script beside the cards is not one
+            for card in cards:  # every listed card is one the run definition accepts
+                assert (await s.cmd(cmd="run_plan", kind="sil", card=card))["plan"]["options"] == {"card": card}
+            s.close()
+    run_with_helper(tmp_path, body)
+
+
 def test_sil_run_manifest_and_event_record_every_override_and_the_label(tmp_path):
     write_manifest(tmp_path)
     overrides = [{"name": "att_kp", "value": 3.5}, {"name": "rc_channel_arm", "value": 6}]
