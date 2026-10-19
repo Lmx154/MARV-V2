@@ -121,6 +121,11 @@ def main() -> int:
     if st:
         last = st[-1]
         print("last status: " + " ".join(f"{k}={v}" for k, v in last.items() if k not in ("kind", "sector")))
+        first = st[0]
+        keys = ("drops_imu", "drops_rate_tick", "drops_manual_control", "pushed_imu", "pushed_rate_tick", "pushed_manual_control",
+                "write_failures", "close_failures", "chunks_written")
+        print("counters last minus first status (this session; the first is written at the start of logging, so the drops the boot-time "
+              "prepare caused before it are excluded): " + " ".join(f"{k}={last[k] - first[k]}" for k in keys))
         print(f"largest ring high water in any status: {max(r['ring_high_water_cells'] for r in st)} cells; "
               f"largest ring backlog in any status: {max(r['ring_backlog_cells'] for r in st)} cells")
     for e in s.kept["end"]:
