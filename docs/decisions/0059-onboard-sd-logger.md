@@ -16,6 +16,7 @@ tests/regression/quad/L09/unit/CMakeLists.txt
 The first gains one appended line for the new design-budget entry `sd_log_write_stall_max_s` (EMB-6's worst stall, 0.809 s
 from tests/regression/quad/L10/results/sd/README.md, PLACEHOLDER until the U2 soak); the second appends the registration of
 the new logger tests (unit_log_ring, unit_log_logger, log_roundtrip_*). No existing test, threshold or predicate changes.
+tests/regression/quad/L09/unit/CMakeLists.txt also appends the bench-profile registrations of unit U3 (unit_quad_fc_bench_profile, bench_profile_symbols and its negative control, bench_profile_param_ids); no existing test changes.
 
 ## Why
 
