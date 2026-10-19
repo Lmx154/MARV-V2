@@ -1,0 +1,43 @@
+
+== emb3.console.log: 658 lines, device time 4.2 s to 664.1 s (659.9 s of lines), clk_sys 150000000 Hz
+   marv_fc3v2 quad-L2-pass-446-g7816e23-dirty
+   params ok: bench: log_file_bytes set (MARV_FC3V2_LOG_BENCH_FILE_BYTES), rate_period_tolerance_us 3
+   imu ok: LSM6DSV, SPI 9375000 Hz, FREQ_FINE -18 (ODR 7500.3 Hz by DS13476 9.49), tick quad_fc + onboard SD log (MARV_FC3V2_LOG_BENCH)
+   bench stats: on (MARV_FC3V2_BENCH_STATS, DWT CYCCNT at clk_sys)
+   stage     count        max cyc   max us   max (after the first line) us   p50 us  p99 us  p99.99 us  mean-bucket us
+   read        4976750         3638    24.25                          24.25    23.89   23.89     27.30        22.21
+   decode      4976750         2670    17.80                          16.85    17.06   17.06     17.06        15.36
+   filter      4976750         2161    14.41                          13.35    10.23   13.65     13.65        11.09
+   rate        2488375          817     5.45                           5.45     5.97    5.97      5.97         5.55
+   mixer       2488375         1637    10.91                          10.88    11.94   11.94     11.94        11.09
+   gate        2488375          107     0.71                           0.71     0.74    0.74      0.74         0.69
+   dshot       2488375          639     4.26                           4.23     4.26    4.26      4.26         3.84
+   publish     4976750          235     1.57                           1.57     1.70    1.70      1.70         1.60
+   bench       4976750          377     2.51                           2.51     2.55    2.55      2.55         2.35
+   irq         4976750        11596    77.31                          76.37    54.61   81.91     81.91        63.15
+   account     4976749          567     3.78                           3.78     3.41    4.26      4.26         3.31
+   usb_irq       42777        12524    83.49                          83.49     2.98    3.41     95.57         2.82
+   IMU interrupt-entry spacing (one sample each): n 4976749, mean 20012.3 cyc = 133.415 us, min 132.63 us, max 134.19 us; largest window (max - mean) 0.78 us, (mean - min) 0.78 us
+   max samples per interrupt 1, IMU interrupts begun inside the USBCTRL chain 1228
+   instrumentation inside the IMU interrupt: the bench stage (still sums) and the marks are inside irq; account follows irq; the default image has none of them
+   last counter line: imu dt=1000083us irq/s=7495.4 words/s=14990.8 samples/s=7495.4 ticks/s=7495.4 writes/s=3747.7 motor_drops=0 | total samples=4976741 ovr=0 spi=0 partial=0 clamp=0 order=0 empty=0 | spacing=[133,134]us | t=664058584 gyro=(-0.0012,+0.0073,-0.0024) accel=(-0.005,+0.249,-9.835) temp=304.99K flags=0x1c0 | motor_test console_refused=0 forwarded=0 accepted=0 refused=0 stopped=0 | rate executions/s=3747.7 executions=2488371 timing_faults=0 | rc frames/s=0.0 total=0 link_frames=0 bad_crc=0 bad_length=0 dropped_bytes=0 uart_errors=0 age_us=-1 roll=+0.000 pitch=+0.000 throttle=0.000 yaw=+0.000 tilt=0.0277 est_valid=1 | arming=no_link | attitude faults=0 timing_faults=0 | usb_reset_refused=0
+
+== EMB-3 (core 4.1: per core, utilization within n(2^(1/n) - 1) or exact response-time analysis, on measured worst cases)
+   emb3.console.log: T = 133.415 us (measured mean interrupt-entry spacing)
+     C = irq + account max (including start-up) = 81.09 us; U = C/T = 0.608 vs the n = 1 bound 1.000: PASS (margin +39.2 % of T); RTA R = C + B = 81.86 us with B = 0.78 us vs D = T: PASS (margin +51.55 us)
+     C = irq + account max (after the first line) = 80.15 us; U = C/T = 0.601 vs the n = 1 bound 1.000: PASS (margin +39.9 % of T); RTA R = C + B = 80.92 us with B = 0.78 us vs D = T: PASS (margin +52.49 us)
+     mean (histogram midpoints, not a worst case): 66.45 us per interrupt, 49.8 % of the core
+
+== Still bench IMU (4945909 samples between the first and the last bench_imu line, 659.9 s; FRD, after the board mounting map)
+   profile sensors/profiles/madflight_fc3v2_revc.yaml: gyro 2.8 mdps/rtHz x sqrt(537 Hz) = 64.9 mdps; accel 60 ug/rtHz x sqrt(3840 Hz) = 3.72 mg; offsets +-1 dps, +-12 mg; LSB 70 mdps, 0.488 mg (quantisation LSB/sqrt(12) = 20.2 mdps, 0.141 mg)
+   if the gyro LPF2 is first order: noise bandwidth pi/2 x 537 Hz = 844 Hz, sd 81.3 mdps; with the quantisation 83.8 mdps
+   gyro  x: mean   -167.09 mdps (offset  -167.09 vs +-1000: inside), sd  102.99 mdps (within 1 s windows  102.91) vs profile 64.89: ratio 1.59
+   gyro  y: mean   +288.38 mdps (offset  +288.38 vs +-1000: inside), sd  102.33 mdps (within 1 s windows  102.28) vs profile 64.89: ratio 1.58
+   gyro  z: mean    -90.45 mdps (offset   -90.45 vs +-1000: inside), sd   79.54 mdps (within 1 s windows   79.50) vs profile 64.89: ratio 1.23
+   accel x: mean     -3.32 mg (offset    -3.32 vs +-12: inside), sd    2.65 mg (within 1 s windows    2.65) vs profile 3.72: ratio 0.71
+   accel y: mean    +26.79 mg (offset   +26.79 vs +-12: OUTSIDE), sd    2.59 mg (within 1 s windows    2.59) vs profile 3.72: ratio 0.70
+   accel z: mean   -998.17 mg (offset    +1.83 vs +-12: inside), sd    2.90 mg (within 1 s windows    2.90) vs profile 3.72: ratio 0.78
+   temperature (newest sample per line): 30.68 to 32.06 degC over the run
+   gyro  drift (mean of the last tenth - first tenth): (-7.57, +4.63, +4.03) mdps
+   accel drift (mean of the last tenth - first tenth): (-0.17, -0.03, +0.50) mg
+rc=0

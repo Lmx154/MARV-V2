@@ -1,0 +1,18 @@
+start: log state=Ready trigger=0 card=on file=11 start_sector=17302592 capacity=16777216 cursor=7168
+CHECK timing (baseline, Ready, card on): 5 status lines; rate executions/s min 3747.8 max 3747.8; rate timing_faults [0]; attitude faults [0] timing_faults [0]
+A (Ready, card off, 6 s): state Ready card=off (a Ready logger holds its prepared file; it probes nothing)
+A after `log start` with the card off: log state=Fault trigger=1 card=off file=11 start_sector=17302592 capacity=16777216 cursor=7168 | transitions ['log: Ready -> Logging t=56299866 file=11 start_sector=17302592 capacity=16777216 written=7', 'log: Logging -> Fault t=56321992 file=11 start_sector=17302592 capacity=16777216 written=7']
+A counters: ring pushed=449787,224894,0 dropped=0,0,0 gaps=0 high_water=1080 backlog=530 corrupt=0 | session dropped=0,0,0 backlog_max=7 pass_max_us=116 backlog_post_write_max=0 | writes n=0 fail=1 bytes=0 max_us=0 mean_us=0.0 | logger chunks=1 write_failures=1 absent=0 full=0 error=0 close_failures=0 discarded=1122966 sessions=1 bytes=7168 | t=60092206
+A after `log stop` (trigger off, disarmed), 12 s: state Absent; transitions ['log: Fault -> Absent t=60498202 file=11 start_sector=17302592 capacity=16777216 written=71']; probe lines 6
+A after `log card on`: log state=Ready trigger=0 card=on file=12 start_sector=17335360 capacity=16777216 cursor=7168
+CHECK timing (case A, whole run so far): 30 status lines; rate executions/s min 3747.8 max 3747.8; rate timing_faults [0]; attitude faults [0] timing_faults [0]
+B Logging: log state=Logging trigger=1 card=on file=12 start_sector=17335360 capacity=16777216 cursor=1268736
+B (Logging, card off, trigger still on, 6 s): states ['Fault', 'Logging']; last log state=Fault trigger=1 card=off file=12 start_sector=17335360 capacity=16777216 cursor=1580032; transitions ['log: Logging -> Fault t=80116642 file=12 start_sector=17335360 capacity=16777216 written=1']; probe lines 0 (a probe while the trigger is on would be a defect)
+B counters: ring pushed=637231,318616,0 dropped=0,0,0 gaps=0 high_water=1603 backlog=525 corrupt=0 | session dropped=0,0,0 backlog_max=48 pass_max_us=32478 backlog_post_write_max=558 | writes n=96 fail=1 bytes=1572864 max_us=29741 mean_us=12921.9 | logger chunks=98 write_failures=2 absent=6 full=0 error=0 close_failures=1 discarded=1496939 sessions=2 bytes=1580032 | t=85099792
+B after `log stop`, 12 s: state Absent; transitions ['log: Fault -> Absent t=86102438 file=12 start_sector=17335360 capacity=16777216 written=15']; probe lines 5
+B after `log card on`: log state=Ready trigger=0 card=on file=13 start_sector=17368128 capacity=16777216 cursor=7168
+CHECK timing (whole run): 54 status lines; rate executions/s min 3747.2 max 3748.0; rate timing_faults [0]; attitude faults [0] timing_faults [0]
+pull: 16777216 of 16777216 bytes -> /home/luis/marv-bench-logs/u2b/faults/cardoff_B.mlog; image says: log dump: DONE index=12 sent=16777216 us=40228477
+B file 12: valid prefix 3086 sectors, strict decode stopped at 3086, end record False, imu records 37467
+CHECK cardoff: PASS (see the lines above for the state machine)
+rc=0

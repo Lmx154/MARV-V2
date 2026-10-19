@@ -45,6 +45,9 @@ struct WriteTimes {
   std::array<std::uint32_t, bench::kBuckets> buckets{};  // bench::bucket_of(us)
 };
 WriteTimes g_times{};
+// The most cells the ring held at the end of any data write since `log start` (the ring fills while a write blocks, so this is
+// the ring's occupancy at the end of the worst stall; the ring's own high-water mark is since boot and includes the prepare).
+std::uint32_t g_backlog_post_write_max = 0;
 bool g_card_off = false;
 TimeUs g_prepare_us = 0;
 TimeUs g_close_us = 0;
@@ -74,6 +77,7 @@ class BenchStorage final : public log::LogStorage {
       ++g_times.failures;
       return s;
     }
+    g_backlog_post_write_max = std::max(g_backlog_post_write_max, static_cast<std::uint32_t>(log_ring().backlog_cells()));
     ++g_times.writes;
     g_times.sum_us += dt;
     g_times.bytes += chunk.size();
@@ -280,6 +284,7 @@ void command(std::string_view line, bool armed) noexcept {
       std::printf("log start: REFUSED: the logger is %s, not Ready\n", state_text(state));
     } else {
       g_times = WriteTimes{};
+      g_backlog_post_write_max = 0;
       g_ring_at_start = log_ring().stats();
       g_backlog_max = 0;
       g_pass_max_us = 0;
@@ -401,7 +406,7 @@ void log_bench_print(TimeUs now) noexcept {
   std::printf(
       "log state=%s trigger=%d card=%s file=%lu start_sector=%lu capacity=%llu cursor=%llu | ring pushed=%lu,%lu,%lu "
       "dropped=%lu,%lu,%lu gaps=%lu high_water=%lu backlog=%lu corrupt=%lu | session dropped=%lu,%lu,%lu backlog_max=%lu "
-      "pass_max_us=%llu | writes n=%lu fail=%lu bytes=%llu max_us=%lu mean_us=%.1f | logger chunks=%lu write_failures=%lu "
+      "pass_max_us=%llu backlog_post_write_max=%lu | writes n=%lu fail=%lu bytes=%llu max_us=%lu mean_us=%.1f | logger chunks=%lu write_failures=%lu "
       "absent=%lu full=%lu error=%lu close_failures=%lu discarded=%lu sessions=%lu bytes=%llu | t=%llu\n",
       state_text(g_logger->state()), g_trigger ? 1 : 0, g_card_off ? "off" : "on", static_cast<unsigned long>(f.index),
       static_cast<unsigned long>(f.start_sector), static_cast<unsigned long long>(f.capacity_bytes),
@@ -413,7 +418,8 @@ void log_bench_print(TimeUs now) noexcept {
       static_cast<unsigned long>(r.corrupt), static_cast<unsigned long>(r.dropped[0] - g_ring_at_start.dropped[0]),
       static_cast<unsigned long>(r.dropped[1] - g_ring_at_start.dropped[1]),
       static_cast<unsigned long>(r.dropped[2] - g_ring_at_start.dropped[2]), static_cast<unsigned long>(g_backlog_max),
-      static_cast<unsigned long long>(g_pass_max_us), static_cast<unsigned long>(g_times.writes),
+      static_cast<unsigned long long>(g_pass_max_us), static_cast<unsigned long>(g_backlog_post_write_max),
+      static_cast<unsigned long>(g_times.writes),
       static_cast<unsigned long>(g_times.failures), static_cast<unsigned long long>(g_times.bytes),
       static_cast<unsigned long>(g_times.max_us), mean, static_cast<unsigned long>(counter(StatusField::ChunksWritten)),
       static_cast<unsigned long>(counter(StatusField::WriteFailures)),

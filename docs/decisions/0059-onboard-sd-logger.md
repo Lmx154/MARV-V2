@@ -35,3 +35,7 @@ while logging, and a C++ to Python round trip.
 Luis, 2026-10-18 (AskUserQuestion): bench switch "ch6 fully up (Recommended)"; motors "One at a time (Recommended)"; profile
 "Approve as proposed"; eRPM "Yes, pull it forward (Recommended)" (decision 0057). The logger itself follows his request
 quoted above; the lead accepted the architect's design.
+
+Unit U2b (board soak and fault evidence, 2026-10-19) edits two files of the U2a bench record, adding evidence only:
+tests/regression/quad/L10/results/log_bench/README.md (the U2b section) and
+tests/regression/quad/L10/results/log_bench/log_bench.py (--dump-timeout and the backlog readout). No test or threshold changes.

@@ -1,0 +1,4 @@
+marv_fc3v2 quad-L2-pass-444-g9adf3b7
+image: sha256 71366afd0e172097832a6a8c597d54a931d9c832278daba0826f9235c5a53d49 (212580 bytes, SHA-256 accelerator, 15670 us)
+config: source factory, status ok, boot request none
+params ok: bench: log_file_bytes set (MARV_FC3V2_LOG_BENCH_FILE_BYTES), rate_period_tolerance_us 3

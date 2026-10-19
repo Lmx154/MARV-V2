@@ -1,0 +1,11 @@
+start: log state=Ready trigger=0 card=on file=13 start_sector=17368128 capacity=16777216 cursor=7168
+transition: log: Logging -> Full t=195308218 file=13 start_sector=17368128 capacity=16777216 written=16752128 session=b9a85bb74e00ae
+10 s later: log state=Full trigger=1 card=on file=13 start_sector=17368128 capacity=16777216 cursor=16752128
+counters: ring pushed=1537650,768825,0 dropped=0,0,0 gaps=0 high_water=1603 backlog=527 corrupt=0 | session dropped=0,0,0 backlog_max=52 pass_max_us=31692 backlog_post_write_max=543 | writes n=1023 fail=0 bytes=16744960 max_us=28941 mean_us=12383.3 | logger chunks=1122 write_failures=2 absent=11 full=0 error=0 close_failures=2 discarded=2750794 sessions=3 bytes=16752128 | t=205225941
+console imu lines since log start: 63 (the board keeps running; no panic)
+CHECK timing (during and after the fill): 63 status lines; rate executions/s min 3747.1 max 3748.0; rate timing_faults [0]; attitude faults [0] timing_faults [0]
+after `log stop`: transitions ['log: Full -> Absent t=205434753 file=13 start_sector=17368128 capacity=16777216 written=16', 'log: Absent -> Ready t=207485832 file=14 start_sector=17400896 capacity=16777216 written=7']; log state=Ready trigger=0 card=on file=14 start_sector=17400896 capacity=16777216 cursor=7168
+pull: 16752128 of 16752128 bytes -> /home/luis/marv-bench-logs/u2b/faults/full.mlog; image says: log dump: DONE index=13 sent=16752128 us=44026540
+file 13: capacity 16777216 B; pulled 16752128 B; sectors 32719 valid of 32719; end record True {'kind': 'end', 'sector': 32718, 'reason': 'full', 't_us': 195294442, 'sectors': 32719}; problems []
+CHECK full: PASS: the logger entered Full, the file closed with an End record (reason full), decoded clean
+rc=0
