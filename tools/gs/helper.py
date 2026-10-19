@@ -46,8 +46,11 @@ Endpoints (all need the token):
          {"cmd": "sil_start"} {"cmd": "sil_stop"}: run_start / run_stop of kind sil
          {"cmd": "run_plan", "kind": "sil"|"hil", ...options}: the argv, run id and directory a start would use, and the reasons it
            would be refused ({"plan": {"kind", "run_id", "argv", "options", "out_dir", "udp_port", "allowed", "refusals"}}).
-           The options of a hil run: "port" (required, under the by-id directory), "seconds", "expect" (s4a|late|none), "gui";
-           a sil run has none; any other key is refused.
+           The options of a hil run: "port" (required, under the by-id directory), "seconds", "expect" (s4a|late|none), "gui".
+           The options of a sil run (GX-3, the run definition): "card" (vehicles/<name>.yaml), "overrides" ([{"name", "value"}]:
+           firmware parameters of the image's manifest, values inside their type's domain, each name once) and "gui" (display-only
+           visuals and a gz GUI client); a run with an override is labelled "sil-override" ("label" and "overrides" in the plan, the
+           manifest and run_started). Any other key is refused.
          {"cmd": "run_start", "kind": ..., ...options}: refused ("refusals": [...], ok false) while a run is going (one simulation
            at a time), a validation or flash runs, the heavy lock is held, or (hil) the helper has a serial port open or the port is
            absent; else starts the run and answers {"run": manifest}. {"cmd": "run_stop"}: stops the run's process group,
@@ -115,6 +118,7 @@ from artifacts import ARTIFACT_KEYS, ImageLibrary, ReportLibrary  # noqa: E402
 from device import DEFAULT_BAUD, LOOPBACK, Device, DeviceError, SerialDevice, UdpDevice  # noqa: E402
 import hoststate  # noqa: E402
 from runs import KINDS, RunRefused, RunSupervisor, parse_options  # noqa: E402
+import sil_run  # noqa: E402  (tools/sim, on the path since runs)
 from sil import SilLauncher, udp_bound  # noqa: E402
 
 from websockets.asyncio.server import ServerConnection, serve  # noqa: E402
@@ -320,10 +324,14 @@ class Helper:
 
     # ---- runs (H-1 to H-3) ----------------------------------------------------------------------------------------------
 
+    def param_types(self) -> dict[str, str]:
+        """name -> type of the image's parameter set, from the gz build's manifest (the SIL the interactive run loads)."""
+        return sil_run.load_param_types(sil_run.manifest_path(self.build_root / sil_run.GZ_BUILD))
+
     def run_options(self, msg: dict) -> tuple[str, dict]:
         kind = msg.get("kind", "sil")
         try:
-            return kind, parse_options(kind, msg, device_globs=(f"{self.byid_dir}/*",))
+            return kind, parse_options(kind, msg, device_globs=(f"{self.byid_dir}/*",), param_types=self.param_types)
         except (ValueError, TypeError) as e:
             raise DeviceError(str(e)) from None
 

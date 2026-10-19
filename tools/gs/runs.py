@@ -3,15 +3,21 @@ manifest JSON per run, driven by the helper's run_plan, run_start and run_stop c
 
 A run is one of two kinds:
   sil  tools/sim/run_quad_fc.py --interactive on the run directory (tools/gs/sil.py builds the command; the run relaunches on
-       EX_TEMPFAIL, the helper tells the browser with a sil_relaunched event)
+       EX_TEMPFAIL, the helper tells the browser with a sil_relaunched event). Its run definition (GX-3) is the options "card"
+       (a repo-relative vehicles/<name>.yaml), "overrides" ([{"name", "value"}]: firmware parameter values in the SIL, checked
+       against the image's parameter manifest by tools/sim/sil_run.py) and "gui" (the display-only visuals and a gz GUI client);
+       a run with an override is labelled "sil-override" in the plan, the manifest and the run_started event (invariant O-1: the
+       validator refuses a config that carries the label)
   hil  tools/sim/run_hil_s4.py --port <board port> --out-dir <dir> [--seconds S] [--expect E] [--gui]
 Both are subprocesses started from an argv list, never through a shell, in a process group of their own that stop() signals.
 Everything a browser supplies is validated here before it reaches an argv: only the options of the kind are accepted (unknown keys
-are refused), a board port must be one of the allow-listed device globs and resolve under /dev, and a run id read back must
+are refused), a board port must be one of the allow-listed device globs and resolve under /dev, a card must be a file of the
+vehicles directory, an override must name a parameter of the image with a value in its type's domain, and a run id read back must
 resolve under the runs directory.
 
 The manifest, <run dir>/runs/<run id>/manifest.json, is written when the run starts and again when it ends: schema, run id, kind,
-state (running, stopped, exited), argv, the options, the directories, UTC start and end, exit status, relaunch count. It never
+state (running, stopped, exited), argv, the options, the label ("sil-override" or null) and the overrides, the directories, UTC
+start and end, exit status, relaunch count. It never
 holds the session token (the supervisor never receives it) nor the environment.
 """
 
@@ -30,11 +36,16 @@ from typing import Callable
 
 from sil import ROOT, SilLauncher
 
+sys.path.insert(0, str(ROOT / "tools" / "sim"))
+import sil_run  # noqa: E402
+
 KINDS = ("sil", "hil")
 MANIFEST_SCHEMA = 1
 HIL_EXPECT = ("s4a", "late", "none")  # tools/sim/run_hil_s4.py --expect choices
 RUN_ID_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z-(sil|hil)-[0-9]+$")
-OPTIONS = {"sil": (), "hil": ("port", "seconds", "expect", "gui")}
+OPTIONS = {"sil": ("card", "overrides", "gui"), "hil": ("port", "seconds", "expect", "gui")}
+CARD_DIR = ROOT / "vehicles"
+OVERRIDE_KEYS = ("name", "value")
 
 
 class RunRefused(Exception):
@@ -67,15 +78,80 @@ def resolve_under(path, roots: tuple[Path, ...]) -> Path:
     raise ValueError(f"path {str(path)!r} is outside the allowed roots")
 
 
-def parse_options(kind: str, msg: dict, *, device_globs: tuple[str, ...]) -> dict:
+def resolve_card(path) -> str:
+    """The card of a sil run from the browser: a file `vehicles/<name>.yaml` of the repository (a bare `<name>.yaml` too), nothing
+    else (a symlink or ../ out of the vehicles directory, a subdirectory or another suffix is refused). Returns the
+    repository-relative path."""
+    if not isinstance(path, str) or not path or "\0" in path:
+        raise ValueError("card must be a non-empty string")
+    name = path[len("vehicles/"):] if path.startswith("vehicles/") else path
+    unknown = ValueError(f"unknown card {path!r}: a file of the vehicles directory")
+    if "/" in name or name.startswith("."):
+        raise unknown
+    try:
+        real = resolve_under(CARD_DIR / name, (CARD_DIR,))
+    except ValueError:
+        raise unknown from None
+    if real.parent != Path(os.path.realpath(CARD_DIR)) or real.suffix != ".yaml" or not real.is_file():
+        raise unknown
+    return f"vehicles/{real.name}"
+
+
+def parse_sil_options(msg: dict, param_types: Callable[[], dict[str, str]] | None) -> dict:
+    opts: dict = {}
+    if "card" in msg:
+        opts["card"] = resolve_card(msg["card"])
+    if "overrides" in msg:
+        items = msg["overrides"]
+        if not isinstance(items, list):
+            raise ValueError("overrides must be a list of {name, value}")
+        pairs = []
+        for item in items:
+            if not isinstance(item, dict) or set(item) != set(OVERRIDE_KEYS):
+                raise ValueError(f"an override is exactly {{{', '.join(OVERRIDE_KEYS)}}}")
+            if isinstance(item["value"], bool) or not isinstance(item["value"], (int, float)):
+                raise ValueError(f"override {item['name']}: the value must be a JSON number")
+            pairs.append((item["name"], item["value"]))
+        if pairs:
+            if param_types is None:
+                raise ValueError("this helper has no parameter manifest to check overrides against")
+            opts["overrides"] = sil_run.check_overrides(pairs, param_types())
+    if "gui" in msg:
+        if not isinstance(msg["gui"], bool):
+            raise ValueError("gui must be true or false")
+        opts["gui"] = msg["gui"]
+    return opts
+
+
+def sil_args(opts: dict) -> list[str]:
+    """The run_quad_fc.py options of a sil run's run definition."""
+    args: list[str] = []
+    if "card" in opts:
+        args += ["--card", str(ROOT / opts["card"])]
+    for o in opts.get("overrides", []):
+        args += ["--override", sil_run.cli_arg(o)]
+    if opts.get("gui"):
+        args.append("--gui")
+    return args
+
+
+def label_of(opts: dict) -> str | None:
+    return sil_run.LABEL if opts.get("overrides") else None
+
+
+def parse_options(kind: str, msg: dict, *, device_globs: tuple[str, ...],
+                  param_types: Callable[[], dict[str, str]] | None = None) -> dict:
     """The validated options of a run_plan or run_start message (ValueError names the offending key). `msg` has the cmd, id and
-    kind keys besides the options; every other key must be an option of the kind."""
+    kind keys besides the options; every other key must be an option of the kind. `param_types` reads the image's parameter
+    names and types (tools/sim/sil_run.py), called only when a sil run has overrides."""
     if kind not in KINDS:
         raise ValueError(f"unknown run kind {kind!r}: {', '.join(KINDS)}")
     unknown = sorted(set(msg) - {"cmd", "id", "kind"} - set(OPTIONS[kind]))
     if unknown:
         raise ValueError(f"not an option of a {kind} run: {', '.join(unknown)}")
     opts: dict = {}
+    if kind == "sil":
+        opts = parse_sil_options(msg, param_types)
     if kind == "hil":
         if "port" not in msg:
             raise ValueError("a hil run needs the board's port (/dev/serial/by-id/...)")
@@ -161,10 +237,11 @@ class RunSupervisor:
         run_id = self._next_id(kind, advance=False)
         out_dir = self.sil.out_dir if kind == "sil" else self.runs_dir / run_id / "out"
         if kind == "sil":
-            argv = self.sil.command()
+            argv = self.sil.command(sil_args(opts))
         else:
             argv = list(self._hil_override) if self._hil_override else hil_command(out_dir, opts)
-        return {"kind": kind, "run_id": run_id, "argv": argv, "options": opts, "out_dir": str(out_dir),
+        return {"kind": kind, "run_id": run_id, "argv": argv, "options": opts, "label": label_of(opts),
+                "overrides": list(opts.get("overrides", [])), "out_dir": str(out_dir),
                 "udp_port": self.sil.udp_port if kind == "sil" else None}
 
     def _next_id(self, kind: str, *, advance: bool) -> str:
@@ -180,10 +257,12 @@ class RunSupervisor:
             plan = self.plan(kind, opts)
             run_id = self._next_id(kind, advance=True)
             plan["run_id"] = run_id
+            if kind == "sil":
+                self.sil.extra_args = sil_args(opts)
             launcher = self.sil if kind == "sil" else SilLauncher(self.run_dir, None, plan["argv"], out_dir=Path(plan["out_dir"]),
                                                                   relaunch=False)
             manifest = {"schema": MANIFEST_SCHEMA, "run_id": run_id, "kind": kind, "state": "running", "argv": plan["argv"],
-                        "options": opts, "out_dir": plan["out_dir"], "run_dir": str(self.run_dir),
+                        "options": opts, "label": plan["label"], "overrides": plan["overrides"], "out_dir": plan["out_dir"], "run_dir": str(self.run_dir),
                         "store_dir": str(self.sil.config_dir) if kind == "sil" else None, "udp_port": plan["udp_port"],
                         "started_utc": utc_iso(), "ended_utc": None, "exit_status": None, "relaunches": 0}
             path = self.runs_dir / run_id / "manifest.json"
@@ -199,7 +278,7 @@ class RunSupervisor:
                 raise RunRefused(f"the run did not start: {e}") from None
             manifest["pid"] = launcher.status()["pid"]
             self._write(path, manifest)
-        self._emit({"event": "run_started", "run_id": run_id, "kind": kind, "manifest": str(path)})
+        self._emit({"event": "run_started", "run_id": run_id, "kind": kind, "label": plan["label"], "manifest": str(path)})
         return manifest
 
     def stop(self) -> dict:

@@ -2042,3 +2042,171 @@ def test_every_close_path_pushes_device_closed(tmp_path):
     finally:
         for fd in keep:
             os.close(fd)
+
+
+# ---- GX-3: the SIL run definition (card, overrides, gui) ------------------------------------------------------------------------
+
+sys.path.insert(0, str(ROOT / "tools" / "sim"))
+import sil_run  # noqa: E402
+
+CARD_A, CARD_B = "vehicles/marv_7in_fc3v2.yaml", "vehicles/uzh_neurobem_5in.yaml"
+PARAM_TYPES = {"att_kp": "f32", "rate_ki_roll": "f32", "rc_channel_roll": "i32", "rc_channel_arm": "i32"}  # a stand-in parameter set
+
+
+def write_manifest(tmp_path, types=PARAM_TYPES):
+    """The parameter manifest of the gz build where the helper reads it (names and types)."""
+    path = sil_run.manifest_path(tmp_path / "build" / sil_run.GZ_BUILD)
+    path.parent.mkdir(parents=True)
+    path.write_text(json.dumps({"params": {n: {"type": t} for n, t in types.items()}}))
+
+
+def flag_values(argv, flag):
+    return [argv[i + 1] for i, a in enumerate(argv) if a == flag]
+
+
+def test_run_plan_of_a_sil_run_definition_names_the_card_overrides_gui_and_the_label_and_starts_nothing(tmp_path):
+    write_manifest(tmp_path)
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            plain = (await s.cmd(cmd="run_plan", kind="sil"))["plan"]  # control: no definition, the argv of before the options
+            assert plain["label"] is None and plain["overrides"] == [] and plain["options"] == {}
+            assert not {"--card", "--override", "--gui"} & set(plain["argv"])
+            assert plain["argv"] == sil.default_command(Path(plain["out_dir"]), h.run_dir / "store", None)
+            empty = (await s.cmd(cmd="run_plan", kind="sil", overrides=[]))["plan"]  # an empty list is no override and no label
+            assert empty["label"] is None and empty["argv"] == plain["argv"]
+            plan = (await s.cmd(cmd="run_plan", kind="sil", card=CARD_B, gui=True, overrides=[
+                {"name": "att_kp", "value": 3.5}, {"name": "rc_channel_roll", "value": 7}]))["plan"]
+            assert plan["allowed"] and plan["label"] == "sil-override" and plan["kind"] == "sil"
+            assert flag_values(plan["argv"], "--card") == [str(ROOT / CARD_B)] and "--gui" in plan["argv"]
+            assert flag_values(plan["argv"], "--override") == ["att_kp=3.5", "rc_channel_roll=7"]
+            assert plan["overrides"] == [{"name": "att_kp", "type": "f32", "value": 3.5},
+                                         {"name": "rc_channel_roll", "type": "i32", "value": 7}]
+            assert plan["options"] == {"card": CARD_B, "overrides": plan["overrides"], "gui": True}
+            bare = (await s.cmd(cmd="run_plan", kind="sil", card="uzh_neurobem_5in.yaml"))["plan"]  # a bare file name is the same card
+            assert bare["options"] == {"card": CARD_B} and bare["label"] is None
+            assert h.runs.active() is None and not (h.run_dir / "runs").exists()
+            s.close()
+    run_with_helper(tmp_path, body)
+
+
+def test_sil_run_manifest_and_event_record_every_override_and_the_label(tmp_path):
+    write_manifest(tmp_path)
+    overrides = [{"name": "att_kp", "value": 3.5}, {"name": "rc_channel_arm", "value": 6}]
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            run = (await s.cmd(cmd="run_start", kind="sil", card=CARD_B, overrides=overrides, gui=False))["run"]
+            event = await s.wait_event("run_started", run_id=run["run_id"])
+            assert event["label"] == "sil-override"
+            on_disk = json.loads((h.run_dir / "runs" / run["run_id"] / "manifest.json").read_text())
+            expect = [{"name": "att_kp", "type": "f32", "value": 3.5}, {"name": "rc_channel_arm", "type": "i32", "value": 6}]
+            assert on_disk["label"] == "sil-override" and on_disk["overrides"] == expect
+            assert on_disk["options"] == {"card": CARD_B, "overrides": expect, "gui": False}
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            ended = (await s.cmd(cmd="run_manifest", run_id=run["run_id"]))["manifest"]
+            assert ended["state"] == "stopped" and ended["label"] == "sil-override" and ended["overrides"] == expect
+            # control: the next run has no overrides and no label (nothing carries over)
+            run = (await s.cmd(cmd="run_start", kind="sil"))["run"]
+            assert run["label"] is None and run["overrides"] == [] and run["options"] == {}
+            assert (await s.wait_event("run_started", run_id=run["run_id"]))["label"] is None
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            s.close()
+    run_with_helper(tmp_path, body, sil_command=["sleep", "600"])
+
+
+def test_sil_launcher_builds_the_run_definition_into_every_spawn_the_relaunch_included(tmp_path, monkeypatch):
+    plain = sil.SilLauncher(tmp_path, 14550).command()
+    launcher = sil.SilLauncher(tmp_path, 14550)
+    launcher.extra_args = ["--card", "c.yaml", "--override", "att_kp=3.5", "--gui"]
+    command = launcher.command()
+    assert command[:-2] == [*plain[:-2], *launcher.extra_args] and command[-2:] == ["--link-udp-port", "14550"]
+    assert launcher.command(extra=[]) == plain  # control: no definition, today's command
+    spawned = []
+    marker = tmp_path / "first"
+
+    def fake(out_dir, config_dir, udp_port, extra=None):
+        spawned.append(list(extra or []))
+        return [sys.executable, "-c", f"import os, pathlib, sys; m = pathlib.Path({str(marker)!r}); "
+                                       "sys.exit(os.EX_TEMPFAIL if not m.exists() and m.write_text('x') else 0)"]
+    monkeypatch.setattr(sil, "default_command", fake)
+    done = threading.Event()
+    launcher.on_exit = lambda status: done.set()
+    launcher.start()
+    assert done.wait(TIMEOUT_S)
+    launcher.stop()
+    assert spawned == [launcher.extra_args, launcher.extra_args]  # the same definition at the start and at the relaunch
+
+
+REFUSED_SIL_DEFINITIONS = [
+    dict(card="vehicles/no_such_card.yaml"), dict(card="no_such_card.yaml"), dict(card="vehicles/../tools/gs/runs.py"),
+    dict(card="../vehicles/marv_7in_fc3v2.yaml"), dict(card="/etc/passwd"), dict(card=str(ROOT / CARD_A)), dict(card="vehicles"),
+    dict(card="vehicles/marv_7in_fc3v2_inertia_model.py"), dict(card=""), dict(card=3), dict(card=["vehicles/marv_7in_fc3v2.yaml"]),
+    dict(overrides=[{"name": "no_such_parameter", "value": 1}]),  # unknown parameter
+    dict(overrides=[{"name": "att_kp", "value": float("inf")}]), dict(overrides=[{"name": "att_kp", "value": float("nan")}]),
+    dict(overrides=[{"name": "att_kp", "value": 1e39}]),  # outside f32
+    dict(overrides=[{"name": "rc_channel_roll", "value": 1.5}]), dict(overrides=[{"name": "rc_channel_roll", "value": 2 ** 31}]),
+    dict(overrides=[{"name": "rc_channel_roll", "value": -(2 ** 31) - 1}]),  # outside i32
+    dict(overrides=[{"name": "att_kp", "value": True}]), dict(overrides=[{"name": "att_kp", "value": "3.5"}]),
+    dict(overrides=[{"name": "att_kp", "value": None}]), dict(overrides=[{"name": "att_kp"}]), dict(overrides=[{"value": 1}]),
+    dict(overrides=[{"name": "att_kp", "value": 1, "type": "i32"}]),  # a type is the manifest's, not the browser's
+    dict(overrides=[{"name": "att_kp", "value": 1}, {"name": "att_kp", "value": 2}]),  # twice
+    dict(overrides=[{"name": 3, "value": 1}]), dict(overrides=["att_kp=1"]), dict(overrides={"att_kp": 1}), dict(overrides="att_kp=1"),
+    dict(gui="yes"), dict(gui=1), dict(gui=None),
+    dict(argv=["--override", "att_kp=1"]), dict(out_dir="/etc"), dict(plugin_dir="/tmp"), dict(port="/dev/ttyACM0"),
+]
+
+
+@pytest.mark.parametrize("definition", REFUSED_SIL_DEFINITIONS, ids=lambda d: json.dumps(d, default=str)[:60])
+def test_sil_run_definition_refusals_start_nothing(tmp_path, definition):
+    write_manifest(tmp_path)
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            for cmd in ("run_plan", "run_start"):
+                reply = await s.cmd(cmd=cmd, kind="sil", **definition)
+                assert not reply["ok"] and reply["error"], (cmd, definition)
+            assert h.runs.active() is None and not (h.run_dir / "runs").exists()
+            s.close()
+    run_with_helper(tmp_path, body, sil_command=["sleep", "600"])
+
+
+def test_sil_overrides_need_the_parameter_manifest_of_the_gz_build(tmp_path):
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            for cmd in ("run_plan", "run_start"):
+                reply = await s.cmd(cmd=cmd, kind="sil", overrides=[{"name": "att_kp", "value": 1}])
+                assert not reply["ok"] and "build host-gz-quadfc first" in reply["error"]
+            assert (await s.cmd(cmd="run_start", kind="sil", card=CARD_A, gui=True))["ok"]  # control: no override, no manifest needed
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            s.close()
+    run_with_helper(tmp_path, body, sil_command=["sleep", "600"])
+
+
+def test_heavy_lock_held_refuses_a_sil_run_definition_and_the_same_request_starts_when_it_is_free(tmp_path):
+    write_manifest(tmp_path)
+    holder = hold_heavy(tmp_path)
+    ran = tmp_path / "ran"
+    definition = dict(kind="sil", card=CARD_B, gui=True, overrides=[{"name": "att_kp", "value": 3.5}])
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            reply = await s.cmd(cmd="run_start", **definition)
+            assert not reply["ok"] and "heavy lock is held" in reply["error"] and "cmd=sleep" in reply["error"]
+            plan = (await s.cmd(cmd="run_plan", **definition))["plan"]
+            assert not plan["allowed"] and plan["label"] == "sil-override" and any("heavy lock" in r for r in plan["refusals"])
+            assert not ran.exists() and h.runs.active() is None and not (h.run_dir / "runs").exists()
+            release_heavy(holder)  # control
+            run = (await s.cmd(cmd="run_start", **definition))["run"]
+            assert run["label"] == "sil-override" and run["options"]["gui"] is True
+            assert (await s.cmd(cmd="run_stop"))["ok"]
+            s.close()
+    try:
+        run_with_helper(tmp_path, body, sil_command=["sh", "-c", f"touch {ran}; sleep 600"])
+    finally:
+        release_heavy(holder)
