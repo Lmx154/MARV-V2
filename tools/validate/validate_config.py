@@ -20,6 +20,8 @@ The checks are those of the required-check list, run in its order (each one's ru
 composition (marv_validate_table: the firmware's store::decode with composition::validate), ctest (ctest -L
 config-validation with MARV_VALIDATE_CONFIG naming the config), sil (tools/validate/sil_check.py: a quad_fc Gazebo run on
 the card with the existing behaviour predicates). Each is run even when an earlier one failed, as far as it can be.
+The records check also fails a record whose source text is "sil-override" (a SIL override made it; invariant O-1, ground-segment
+unit GX-3): such a config is never validated for a vehicle, the same config with its real sources is.
 
 The report (format marv-validation-report/1) is canonical JSON: sorted keys, separators "," and ":", UTF-8, one final newline.
 Its id is the SHA-256 of exactly those bytes, so it carries no timestamp and no absolute path: the same inputs, tools and
@@ -62,6 +64,7 @@ DEFAULT_CARD = ROOT / "vehicles" / "marv_7in_fc3v2.yaml"
 DEFAULT_BUDGET = ROOT / "design" / "budget.yaml"
 DEFAULT_REQUIRED = HERE / "required_checks.yaml"
 PARAMETER_SET = "marv_params_fc3v2"
+SIL_OVERRIDE_SOURCE = "sil-override"  # fw/sil/src/param_override.cpp: the source of a record a SIL <sil_override> made (O-1)
 SECTION = "quad"
 SIL_LIBRARY = Path("sim") / "quad_fc" / "libmarv_sil_quad_fc.so"
 PLUGIN_DIR = Path("sim") / "gz" / "plugin"
@@ -170,6 +173,9 @@ def check_records(check, cfg, cfg_error, manifest, table):
             failures.append(f"{name}: sigma kind {r.sigma_kind} with sigma bits 0x{r.sigma_bits:08x} breaks I1")
         if not r.source.strip():
             failures.append(f"{name}: the source text is empty")
+        elif r.source.strip().startswith(SIL_OVERRIDE_SOURCE):
+            failures.append(f"{name}: the source is {SIL_OVERRIDE_SOURCE!r}: a record made by a SIL override is never validated for a "
+                            "vehicle (invariant O-1)")
         if d.locked:
             locked += 1
             if r != d:
