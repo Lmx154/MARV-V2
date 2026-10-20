@@ -14,7 +14,7 @@
   "error": null,
   "step": null,
   "steps": null,
-  "tail": [],
+  "tail_lines": 0,
   "log": "/tmp/gx14-helper-runs-82pknxbv/20261020T083108Z/builds/20261020T084019Z-host-gz-quadfc.log",
   "images": []
  }

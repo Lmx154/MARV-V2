@@ -7,11 +7,12 @@ GCS's Build panel sends, in the panel's order: build_status (the allow-list and 
 the events until build_done, build_status again, and GET /api/images. It writes into --out-dir:
   status_before.json   the build_status answer before the click (the dry run: "N steps" or "not configured")
   build_reply.json     the helper's answer to the click
-  events.jsonl         every event the helper pushed for the build (build_started, build_progress, build_done), one JSON object per line
+  events.jsonl         build_started and build_done as the helper pushed them, and the number of build_progress events (the output text is left out: see below)
   status_after.json    the build_status answer after the build (the dry run: "up to date")
   library_entry.json   the entry of GET /api/images for the tree host-gz-quadfc: its hash and its `build` {preset, describe, finished_utc}
-  build.log            the helper's own copy of the cmake and ninja output (<run dir>/builds/)
   heavy_lock_during.txt the holder line of the heavy lock while the build ran (ci/heavy.sh --status)
+The cmake and ninja output (the helper's own copy, <run dir>/builds/*.log, and the `tail` of the status) is not committed: the GS-3 word scan of the repository
+flags the output, which names the link targets. The status JSON keeps `tail_lines` (how many lines the tail held) in its place.
 The build tree is not removed afterwards; the lock is the helper's own and is released when the build ends; the helper's run directory (a temporary directory) is removed.
 
   uv run python tests/regression/quad/L10/results/gcs/gx14/real_build.py --out-dir DIR [--wait-lock SECONDS] [--timeout SECONDS]
@@ -36,6 +37,15 @@ from websockets.asyncio.client import connect
 ROOT = Path(__file__).resolve().parents[7]
 PRESET = "host-gz-quadfc"
 POLL_S = 5.0  # harness value: the poll period of the wait for the heavy lock
+
+
+def without_output(obj):
+    """The same JSON with every `tail` list (the build output the helper keeps) replaced by `tail_lines`, its length."""
+    if isinstance(obj, dict):
+        return {("tail_lines" if k == "tail" else k): (len(v) if k == "tail" and isinstance(v, list) else without_output(v)) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [without_output(v) for v in obj]
+    return obj
 
 
 def heavy_status() -> tuple[int, str]:
@@ -84,10 +94,10 @@ async def main(args) -> int:
                 return await asyncio.wait_for(replies.get(), 600)
 
             before = await cmd(cmd="build_status", preset=PRESET)
-            (out / "status_before.json").write_text(json.dumps(before, indent=1) + "\n")
+            (out / "status_before.json").write_text(json.dumps(without_output(before), indent=1) + "\n")
             print("before:", before["build"]["status"], "refusals:", before["build"]["refusals"], flush=True)
             reply = await cmd(cmd="build", preset=PRESET)
-            (out / "build_reply.json").write_text(json.dumps(reply, indent=1) + "\n")
+            (out / "build_reply.json").write_text(json.dumps(without_output(reply), indent=1) + "\n")
             print("build reply ok:", reply["ok"], reply.get("error"), flush=True)
             if not reply["ok"]:
                 return 1
@@ -100,18 +110,17 @@ async def main(args) -> int:
                     return 1
                 await asyncio.sleep(1)
             done = next(e for e in events if e["event"] == "build_done")
-            (out / "events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in events if e["event"].startswith("build_")))
+            kept = [e for e in events if e["event"] in ("build_started", "build_done")]
+            kept.insert(1, {"event": "build_progress", "count": sum(e["event"] == "build_progress" for e in events)})
+            (out / "events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in kept))
             after = await cmd(cmd="build_status", preset=PRESET)
-            (out / "status_after.json").write_text(json.dumps(after, indent=1) + "\n")
+            (out / "status_after.json").write_text(json.dumps(without_output(after), indent=1) + "\n")
             print("done:", {k: done[k] for k in ("ok", "exit_status", "error", "describe")}, "after:", after["build"]["status"], flush=True)
             c = http.client.HTTPConnection("127.0.0.1", port, timeout=60)
             c.request("GET", "/api/images", headers={"Host": f"127.0.0.1:{port}", "Authorization": f"Bearer {token}"})
             images = json.loads(c.getresponse().read())
             entry = [e for e in images["images"] if e["tree"] == PRESET]
             (out / "library_entry.json").write_text(json.dumps(entry, indent=1) + "\n")
-            logs = sorted((runs).glob("*/builds/*.log"))
-            if logs:
-                shutil.copy(logs[-1], out / "build.log")
             pump_task.cancel()
             print("library entry:", json.dumps(entry, indent=1))
             return 0 if done["ok"] and entry and entry[0]["build"] and entry[0]["build"]["describe"] == done["describe"] else 1
