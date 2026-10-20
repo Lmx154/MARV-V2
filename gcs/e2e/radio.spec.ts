@@ -2,7 +2,8 @@
 // the bars move with the vehicle's RC stream, the mapping comes from the vehicle's parameters, a switch that sends on a channel nothing
 // uses is pointed out, "move the switch" finds it, a collision is warned about before staging and the vehicle's refusal is shown, a
 // staged remap goes to the staged panel, and stopping the vehicle turns the page stale (the control). The live mode has no radio that
-// moves (the SIL's sticks are held by its script), so these specs are light only.
+// moves (the SIL's sticks are held by its script), so these specs are light only. The Tuning page (the grouped view of the parameter writes) has
+// one flow here too, since the same staged panel and the same fake vehicle serve it: edit a rate gain, write, read the staged value back.
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
 const url = process.env.MARV_E2E_URL;
@@ -19,6 +20,8 @@ const GONE_MS = 15_000;
 const RETRY_MS = 1_000;
 /** The channel the fake radio's switch sends on, and the channels the parameters name for the angle and the arm switch and for roll. */
 const SWITCH_CHANNEL = 14;
+const TUNED_GAIN = '0.5';
+const SOURCE_TUNING = 'bench hover on the e2e frame: the response was sluggish (e2e)';
 const SOURCE = 'Luis 2026-10-19: the RadioMaster sends the angle switch on channel 14 (e2e)';
 
 test.beforeAll(() => {
@@ -211,4 +214,39 @@ test('stopping the vehicle turns the page stale, keeping the last values; contin
 	await shot(page, '5-vehicle-stopped');
 	signalVehicle('SIGCONT');
 	await expect(summary).toContainText('live', { timeout: STALE_FLIP_MS + CONNECT_MS });
+});
+
+test('the Tuning page writes an edited rate gain through the staging path and shows the value the vehicle read back', async ({ page }) => {
+	await launch(page);
+	const nav = page.getByRole('navigation', { name: 'Pages' });
+	await nav.getByRole('link', { name: 'Tuning', exact: true }).click();
+	await expect(page.getByRole('heading', { level: 1, name: 'Tuning', exact: true })).toBeVisible();
+	const gain = page.locator('tr[data-item="rate_kp_roll"]');
+	await expect(gain.locator('[data-cell="current"]')).toHaveText('0.25', { timeout: CONNECT_MS });
+	await expect(gain.locator('[data-cell="staged"]')).toHaveText('0.25');
+	// The groups the fake vehicle does not have a parameter for say so, and the write is off until something is typed with its reason.
+	await expect(page.locator('tr[data-item="Integrator limit"]')).toContainText('not a parameter in this image');
+	await expect(page.locator('[data-link-gate]')).toContainText('disarmed');
+	const write = page.getByRole('button', { name: 'Write to vehicle' });
+	await expect(write).toBeDisabled();
+	await page.getByLabel('New value of rate_kp_roll').fill(TUNED_GAIN);
+	await expect(page.locator('[data-change="rate_kp_roll"]')).toContainText(`0.25 → ${TUNED_GAIN}`);
+	await expect(write).toBeDisabled();
+	await page.getByLabel('Why (stored with each value as its source text)').fill(SOURCE_TUNING);
+	await expect(write).toBeEnabled();
+	await write.click();
+	await expect(page.locator('[data-written="rate_kp_roll"]')).toContainText('staged', { timeout: CONNECT_MS });
+	// The staged cell also says, for a screen reader, that it differs from the current value.
+	await expect(gain.locator('[data-cell="staged"]')).toHaveText(`${TUNED_GAIN}(differs from the current value)`);
+	await expect(gain.locator('[data-cell="current"]')).toHaveText('0.25');
+	await expect(page.getByRole('heading', { name: 'Staged changes (1)' })).toBeVisible();
+	await expect(page.getByRole('button', { name: 'Activate' })).toBeVisible();
+	await shot(page, '6-tuning-staged');
+
+	// Put the vehicle back as it was: write the old gain again, so that nothing is staged.
+	await page.getByLabel('New value of rate_kp_roll').fill('0.25');
+	await page.getByLabel('Why (stored with each value as its source text)').fill(SOURCE_TUNING);
+	await write.click();
+	await expect(gain.locator('[data-cell="staged"]')).toHaveText('0.25', { timeout: CONNECT_MS });
+	await expect(page.getByRole('heading', { name: 'Staged changes (0)' })).toBeVisible();
 });

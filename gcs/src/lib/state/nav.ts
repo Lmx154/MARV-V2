@@ -18,6 +18,7 @@ export const ROUTES: readonly NavRoute[] = [
 	{ path: '/simulation', label: 'Simulation', unit: null, will: 'Define, launch and stop a simulation run; its parameters and overrides, labelled.' },
 	{ path: '/radio', label: 'Radio', unit: null, will: 'The receiver channels, their mapping, the switch thresholds and the display checks.' },
 	{ path: '/params', label: 'Parameters', unit: null, will: 'The vehicle parameters.' },
+	{ path: '/tuning', label: 'Tuning', unit: null, will: 'The tuning parameters in groups: rate gains and feed-forward, angle mode, motor and mixer, filters.' },
 	{ path: '/flash', label: 'Flash', unit: null, will: 'Images and configs through the validation gate.' },
 	{ path: '/bench', label: 'Bench', unit: null, will: 'The hardware-in-the-loop launcher and the bench images.' },
 	{ path: '/console', label: 'Console', unit: null, will: "The board's console as text." },
