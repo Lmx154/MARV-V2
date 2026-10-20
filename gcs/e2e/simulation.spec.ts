@@ -59,7 +59,7 @@ async function openPage(page: Page): Promise<void> {
 	await nav.getByRole('link', { name: 'Connection', exact: true }).click();
 	const close = page.getByRole('button', { name: 'Close device' });
 	await expect(async () => {
-		if (await close.isEnabled()) await close.click();
+		if (await close.isEnabled()) await close.click({ timeout: RETRY_MS });
 		await expect(page.getByRole('button', { name: 'Open SIL UDP' })).toBeEnabled({ timeout: RETRY_MS });
 	}).toPass();
 	await expect(indicator(page, 'Link')).toContainText(/device\s+none/);
