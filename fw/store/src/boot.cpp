@@ -9,6 +9,7 @@
 #include <marv/params/param_ids.hpp>
 
 #include "internal.hpp"
+#include "marv/store/arena.hpp"
 #include "marv/store/store.hpp"
 
 namespace marv::store {
@@ -266,6 +267,9 @@ ParamTable boot(const BootInputs& in) noexcept {
   if (in.factory.size() != kParamCount) {
     hal_panic("store::boot: the factory table is not this image's parameter set");
   }
+  if (!in.arena.empty() && (in.scratch.data() != in.arena.data() || in.scratch.size() > in.arena.size())) {
+    hal_panic("store::boot: the scratch is not the start of the arena");
+  }
   g_booted = true;
   g_in = in;
   g_report = BootReport{};
@@ -273,6 +277,7 @@ ParamTable boot(const BootInputs& in) noexcept {
   if (hal_config_request_take(want)) {
     process_request(want);
   }
+  arena_open(in.arena);
   return choose();
 }
 
