@@ -9,6 +9,10 @@ Image hash = SHA-256 of the image file:
 Beside the image, in the same entry, when present: the ELF and the UF2 of a board image, and the image's parameter set files
 (params_manifest.json, params_provenance.json, the factory <set>.mcfg) from <tree>/generated/<set>/.
 
+A GCS build (tools/gs/build.py) leaves <tree>/gs-build.json with the `git describe --dirty` of its source and the hashes of the images
+it produced; an entry whose hash is in it carries `build`: {preset, describe, finished_utc}, else `build` is null (an image another
+build left in the tree has no GCS describe string).
+
 Which parameter set an image links is not written in the build tree. PARAM_SET_OF names it for the images whose set is not
 `marv_params_<name>` (CMake: sim/quad_fc and fw/hal/target link marv_params_fc3v2); an image not listed uses
 `marv_params_<name after marv_sil_>` when that set exists, else it has no parameter files (`params_set` null).
@@ -17,6 +21,7 @@ Which parameter set an image links is not written in the build tree. PARAM_SET_O
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import sys
 from pathlib import Path
@@ -30,6 +35,7 @@ PARAM_SET_OF = {
     "marv_fc3v2": "marv_params_fc3v2",
 }
 BOARD_NAME = "marv_fc3v2"
+BUILD_RECORD = "gs-build.json"  # tools/gs/build.py writes it into the build tree
 HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 ARTIFACT_KEYS = ("image", "elf", "uf2", "params_manifest", "params_provenance", "factory_mcfg")
 CHUNK = 1 << 20  # file read size for hashing: an implementation constant
@@ -83,11 +89,20 @@ class ImageLibrary:
             name = "marv_params_" + image_name[len("marv_sil_"):]
         return name if name and (tree / "generated" / name).is_dir() else None
 
+    @staticmethod
+    def _build_record(tree: Path) -> dict:
+        try:
+            record = json.loads((tree / BUILD_RECORD).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return record if isinstance(record, dict) and isinstance(record.get("images"), dict) else {}
+
     def scan(self) -> dict:
         """{"images": [entry, ...] sorted by tree then name, "unkeyed": [{"tree", "name", "reason"}]}. Paths are relative to the build root."""
         images, unkeyed = [], []
         trees = sorted(p for p in self.root.iterdir() if p.is_dir()) if self.root.is_dir() else []
         for tree in trees:
+            record = self._build_record(tree)
             candidates = []  # (kind, name, image path, extra artifacts, image hash when not the SHA-256 of the file)
             for lib in sorted(tree.glob("sim/**/libmarv_sil_*.so")):
                 candidates.append(("sil", lib.stem[len("lib"):], lib, {}, None))
@@ -108,14 +123,16 @@ class ImageLibrary:
             for kind, name, image, extra, known_hash in candidates:
                 set_name = self._set_name(tree, name)
                 files = {"image": image, **extra, **self._param_files(tree, set_name)}
+                image_hash = known_hash or self._hash(image)
                 images.append({
-                    "hash": known_hash or self._hash(image),
+                    "hash": image_hash,
                     "tree": tree.name,
                     "name": name,
                     "kind": kind,
                     "image_file": image.name,
                     "size": image.stat().st_size,
                     "params_set": set_name,
+                    "build": {k: record.get(k) for k in ("preset", "describe", "finished_utc")} if image_hash in record.get("images", {}) else None,
                     "artifacts": {k: str(p.relative_to(self.root)) for k, p in files.items()},
                 })
         return {"images": images, "unkeyed": unkeyed}

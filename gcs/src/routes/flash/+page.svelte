@@ -7,6 +7,7 @@
 	import type { SessionState } from '$link/session';
 	import type { VehicleState } from '$link/vehicle';
 	import Badge from '$lib/components/ui/Badge.svelte';
+	import BuildPanel from '$lib/components/BuildPanel.svelte';
 	import Panel from '$lib/components/ui/Panel.svelte';
 
 	const gcs = app();
@@ -66,6 +67,8 @@
 </p>
 
 <div class="grid">
+	<BuildPanel />
+
 	<Panel title="Image" label="library">
 		<div class="row">
 			<label for="flash-image">Board image</label>

@@ -1,0 +1,105 @@
+{
+ "ok": true,
+ "build": {
+  "allowed": [
+   {
+    "preset": "host-gz-quadfc",
+    "tree": "host-gz-quadfc",
+    "configure": "host-gz-quadfc",
+    "cache": {},
+    "targets": []
+   },
+   {
+    "preset": "m33",
+    "tree": "m33",
+    "configure": "m33",
+    "cache": {},
+    "targets": []
+   },
+   {
+    "preset": "m33-hil",
+    "tree": "m33-hil",
+    "configure": "m33",
+    "cache": {
+     "MARV_FC3V2_HIL": "ON",
+     "MARV_FC3V2_HIL_RECEIVER": "ON"
+    },
+    "targets": [
+     "marv_fc3v2"
+    ]
+   }
+  ],
+  "running": false,
+  "current": {
+   "running": false,
+   "preset": "host-gz-quadfc",
+   "tree": "host-gz-quadfc",
+   "describe": "quad-L2-pass-606-g1534916",
+   "started_utc": "2026-10-20T08:40:19Z",
+   "finished_utc": "2026-10-20T08:40:23Z",
+   "ok": true,
+   "cancelled": false,
+   "exit_status": 0,
+   "error": null,
+   "step": 14,
+   "steps": 14,
+   "tail_lines": 40,
+   "log": "/tmp/gx14-helper-runs-82pknxbv/20261020T083108Z/builds/20261020T084019Z-host-gz-quadfc.log",
+   "images": [
+    {
+     "hash": "8824d254462e8175c919ba7ef415f277cbd078a2bb186a85a066953b51f8d27e",
+     "name": "marv_sil_l11_vertical_scripted",
+     "kind": "sil"
+    },
+    {
+     "hash": "08a546410e7fbafd21372243eb4a9c5cf4aced035469129562e2573b3a0e53af",
+     "name": "marv_sil_l2_open_loop",
+     "kind": "sil"
+    },
+    {
+     "hash": "7ad5a8a1ad7b9d8aff7a2680910df4b4e05778cf04240dbd0b47d6191e431d87",
+     "name": "marv_sil_l4_rate_scripted",
+     "kind": "sil"
+    },
+    {
+     "hash": "48163c825f949dabc705f47a549579bc71d64b017aae2f0054af5270cdf4532e",
+     "name": "marv_sil_l5_attitude_scripted",
+     "kind": "sil"
+    },
+    {
+     "hash": "05994561f52cd79ff31bef0bfc3d6f302158fbe8058c7de387dee3fb854cb8f8",
+     "name": "marv_sil_l7_attitude_estimated",
+     "kind": "sil"
+    },
+    {
+     "hash": "26ed92bfb9f71872e9f66aab03b06caf823cc1cd81baffc45460f0f11eb80ff6",
+     "name": "marv_sil_l0",
+     "kind": "sil"
+    },
+    {
+     "hash": "8f230abee1e5cd14de6e5df514242cb169ba64c1745582fea35a55c4506782d4",
+     "name": "marv_sil_quad_fc",
+     "kind": "sil"
+    },
+    {
+     "hash": "900e134cc99b89f15361feded344cd89b1d509e7284b026b02e141e07b1477cd",
+     "name": "marv_sil_quad_fc_eskf",
+     "kind": "sil"
+    }
+   ]
+  },
+  "limits": {
+   "min_free_bytes": 8589934592,
+   "mem_available_bytes": 22752550912
+  },
+  "preset": "host-gz-quadfc",
+  "status": {
+   "kind": "steps",
+   "steps": 2,
+   "text": "2 steps"
+  },
+  "refusals": [
+   "the heavy lock is held (pid=1109392 user=luis since=2026-10-20T08:40:23Z cmd=bash ci/dev_check.sh --base dcf4b3c): heavy work waits for it (H-3)"
+  ]
+ }
+}

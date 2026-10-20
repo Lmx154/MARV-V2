@@ -1,0 +1,21 @@
+{
+ "ok": true,
+ "started": true,
+ "build": {
+  "running": true,
+  "preset": "host-gz-quadfc",
+  "tree": "host-gz-quadfc",
+  "describe": "quad-L2-pass-606-g1534916",
+  "started_utc": "2026-10-20T08:40:19Z",
+  "finished_utc": null,
+  "ok": null,
+  "cancelled": false,
+  "exit_status": null,
+  "error": null,
+  "step": null,
+  "steps": null,
+  "tail_lines": 0,
+  "log": "/tmp/gx14-helper-runs-82pknxbv/20261020T083108Z/builds/20261020T084019Z-host-gz-quadfc.log",
+  "images": []
+ }
+}

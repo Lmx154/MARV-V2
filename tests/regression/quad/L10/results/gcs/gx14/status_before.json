@@ -1,0 +1,46 @@
+{
+ "ok": true,
+ "build": {
+  "allowed": [
+   {
+    "preset": "host-gz-quadfc",
+    "tree": "host-gz-quadfc",
+    "configure": "host-gz-quadfc",
+    "cache": {},
+    "targets": []
+   },
+   {
+    "preset": "m33",
+    "tree": "m33",
+    "configure": "m33",
+    "cache": {},
+    "targets": []
+   },
+   {
+    "preset": "m33-hil",
+    "tree": "m33-hil",
+    "configure": "m33",
+    "cache": {
+     "MARV_FC3V2_HIL": "ON",
+     "MARV_FC3V2_HIL_RECEIVER": "ON"
+    },
+    "targets": [
+     "marv_fc3v2"
+    ]
+   }
+  ],
+  "running": false,
+  "current": null,
+  "limits": {
+   "min_free_bytes": 8589934592,
+   "mem_available_bytes": 23023673344
+  },
+  "preset": "host-gz-quadfc",
+  "status": {
+   "kind": "steps",
+   "steps": 2,
+   "text": "2 steps"
+  },
+  "refusals": []
+ }
+}
