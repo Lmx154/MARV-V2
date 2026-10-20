@@ -1304,6 +1304,13 @@ rules:
     gz_groups: []
     why: "the L09 arena lease test (invariant L-8, onboard logger unit U4-2) is a host ctest entry, added from the top-level CMakeLists.txt"
 
+  - paths: [tests/regression/quad/L09/filelife/**]
+    ctest_labels: [L09]
+    run_ci_steps: ["@host"]
+    pytest_paths: []
+    gz_groups: []
+    why: "the L09 file-life test (invariant L-10, onboard logger unit U4-5) is a host ctest entry, added from the top-level CMakeLists.txt"
+
   - paths:
       - tests/regression/quad/L11/CMakeLists.txt
       - tests/regression/quad/L11/unit/**

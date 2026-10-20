@@ -52,6 +52,7 @@ void Logger::try_open(TimeUs now) noexcept {
   bytes_written_ = 0;
   full_ = false;
   finalizing_ = false;
+  data_started_ = false;
   file_open_ = true;
   session_ = config_.session_id != nullptr ? config_.session_id(config_.session_ctx) : 0;
   framer_.begin(session_);
@@ -66,6 +67,7 @@ void Logger::try_open(TimeUs now) noexcept {
 
 void Logger::start_logging(TimeUs now) noexcept {
   bump(StatusField::Sessions);
+  data_started_ = true;
   state_ = LoggerState::Logging;
   next_status_ = now + config_.status_period_us;
   next_slow_ = now + config_.slow_period_us;
@@ -168,7 +170,8 @@ void Logger::write_end(TimeUs now, EndReason reason) noexcept {
 
 void Logger::close_file(TimeUs now, TimeUs next_probe) noexcept {
   if (file_open_) {
-    if (storage_.close(bytes_written_) != StorageStatus::Ok) {
+    // A file that never logged holds the header only: it is closed whole, so the next prepare can reuse it (invariant L-10).
+    if (storage_.close(data_started_ ? bytes_written_ : capacity_) != StorageStatus::Ok) {
       bump(StatusField::CloseFailures);
     }
     file_open_ = false;

@@ -5,9 +5,10 @@
 // driver (sd_spi.hpp). Background loop only, never the tick.
 //
 //   prepare  (disarmed) mounts the volume afresh (the driver initialises the card), creates /marv/log if needed, scans it for
-//            the highest NNNNNNNN.mlog, creates the next index, reserves the asked size as ONE contiguous cluster block
-//            (f_expand), syncs the directory entry and the FAT, and computes the block's first sector:
-//            database + csize x (start cluster - 2) (FatFs f_expand documentation).
+//            the highest NNNNNNNN.mlog and reuses that file in place when it holds no data sector of its own session and is one
+//            contiguous block of the asked size (marv/log/file_life.hpp, invariant L-10); otherwise creates the next index,
+//            reserves the asked size as ONE contiguous cluster block (f_expand), syncs the directory entry and the FAT. The
+//            block's first sector is database + csize x (start cluster - 2) (FatFs f_expand documentation).
 //   write    (armed or not) puts a whole number of sectors at the cursor with the driver's multi-block write (CMD25; one sector
 //            is a single-block write), straight into that block: no FatFs call, so no FAT, directory or FSINFO write.
 //   close    (disarmed) seeks to the bytes used, truncates the file there (f_truncate frees the rest of the block), syncs and

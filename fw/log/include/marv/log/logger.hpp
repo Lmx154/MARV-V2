@@ -88,6 +88,7 @@ class Logger final : private ChunkSink {
   std::uint64_t capacity_ = 0;
   std::uint64_t bytes_written_ = 0;
   bool file_open_ = false;
+  bool data_started_ = false;  // the session entered Logging: the file may hold data sectors (invariant L-10)
   bool full_ = false;        // the sink refused a chunk for want of room
   bool finalizing_ = false;  // the reserve may be used
   TimeUs next_probe_ = 0;
