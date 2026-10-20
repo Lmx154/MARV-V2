@@ -38,6 +38,15 @@ target_link_libraries(unit_sil_quad_fc PRIVATE marv_sil_quad_fc marv_params_fc3v
 marv_apply_flags(unit_sil_quad_fc)
 marv_frozen_suite(unit_sil_quad_fc)
 
+# The SIL's raw RC frame entry (fw/sil/src/rc_frame.cpp, ground-segment unit GX-9, invariant R-2): compiled into the test over hal_sim and
+# the FC3v2 set; the staged ManualControl is compared bit for bit with rc_input::crsf_to_controls, with the factory and a remapped table.
+add_executable(unit_sil_rc_frame sil_rc_frame_test.cpp "${PROJECT_SOURCE_DIR}/fw/sil/src/rc_frame.cpp")
+target_include_directories(unit_sil_rc_frame PRIVATE "${PROJECT_SOURCE_DIR}/fw/sil/include" "${PROJECT_SOURCE_DIR}/fw/sil/src")
+target_link_libraries(unit_sil_rc_frame PRIVATE
+  marv_crsf_decode marv_params_fc3v2_runtime marv_params_fc3v2_generated marv_types marv_hal_sim GTest::gtest_main)
+marv_apply_flags(unit_sil_rc_frame)
+marv_frozen_suite(unit_sil_rc_frame)
+
 # marv_sil_quad_fc must resolve the FC3v2 parameter table, not the product set's that marv_attitude, marv_rate and marv_mixer
 # also link (the link order decides): the size of the linked marv::generated::kParamDefaults. The control swaps the sets: the
 # library's table is not the product set's, so the check must fail.

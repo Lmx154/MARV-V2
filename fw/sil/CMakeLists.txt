@@ -1,6 +1,6 @@
 add_library(marv_sil INTERFACE)
 
-# marv_add_sil_library(<name> COMPOSITION <static-lib-target> [PARAMS <param-set>] [TRUTH_STATE] [TRUTH_VERTICAL] [STORAGE])
+# marv_add_sil_library(<name> COMPOSITION <static-lib-target> [PARAMS <param-set>] [TRUTH_STATE] [TRUTH_VERTICAL] [STORAGE] [RC_FRAME])
 #
 # Host only. Builds the SIL entry as the shared library <name>: fw/sil sources, the composition, marv_hal_sim and
 # the runtime of the parameter set PARAMS (marv_add_param_set; default marv_params, the product set), which must be the
@@ -18,6 +18,12 @@ add_library(marv_sil INTERFACE)
 # marv_sil_link_service run fw/link's service (marv_link_service) on hal_sim's UDP socket. It sets the target property
 # MARV_SIL_STORAGE to TRUE. Without the option marv_sil.cpp returns the compiled table and the library has no link entries.
 #
+# RC_FRAME (ground-segment unit GX-9, the SIL pilot bridge; the flight composition only: its parameter set must have the rc_channel_roll,
+# _pitch, _throttle and _yaw parameters) adds src/rc_frame.cpp, which exports marv_sil_stage_rc_frame: a raw 16-channel 11-bit RC
+# frame is decoded by rc_input::crsf_to_controls (marv_crsf_decode, the function the board's receiver calls) with the table's
+# rc_channel_* and staged as the manual control. It sets the target property MARV_SIL_RC_FRAME to TRUE. Without the option nothing
+# changes.
+#
 # TRUTH_STATE (test only; decision 0006 section B) adds src/truth_state.cpp, which exports marv_truth_state_set and hands
 # the state to marv::composition::attitude_input (declared by the composition's own marv/composition.hpp; a composition
 # without it fails the build), links with marv_sil_truth.map (marv_sil_* and exactly marv_truth_state_set) and sets the
@@ -30,7 +36,7 @@ add_library(marv_sil INTERFACE)
 # exactly marv_truth_state_set and marv_truth_vertical_set), and sets the target property MARV_SIL_TRUTH_VERTICAL to
 # TRUE. Without the option nothing changes.
 function(marv_add_sil_library name)
-  cmake_parse_arguments(ARG "TRUTH_STATE;TRUTH_VERTICAL;STORAGE" "COMPOSITION;PARAMS" "" ${ARGN})
+  cmake_parse_arguments(ARG "TRUTH_STATE;TRUTH_VERTICAL;STORAGE;RC_FRAME" "COMPOSITION;PARAMS" "" ${ARGN})
   if(NOT ARG_PARAMS)
     set(ARG_PARAMS marv_params)
   endif()
@@ -67,6 +73,12 @@ function(marv_add_sil_library name)
     target_link_libraries(${name} PRIVATE marv_store marv_hal_storage marv_link_service)
     set_target_properties(marv_store PROPERTIES POSITION_INDEPENDENT_CODE ON)
     set_target_properties(${name} PROPERTIES MARV_SIL_STORAGE TRUE)
+  endif()
+  if(ARG_RC_FRAME)
+    target_sources(${name} PRIVATE "${sil_dir}/src/rc_frame.cpp")
+    target_link_libraries(${name} PRIVATE marv_crsf_decode)
+    set_target_properties(marv_crsf_decode PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    set_target_properties(${name} PROPERTIES MARV_SIL_RC_FRAME TRUE)
   endif()
   if(ARG_TRUTH_STATE)
     set(version_script "${sil_dir}/marv_sil_truth.map")

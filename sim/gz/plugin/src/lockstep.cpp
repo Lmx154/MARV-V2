@@ -12,6 +12,11 @@
 // plugin injects (sim_telemetry.hpp has the layout and the argument that it does not perturb the run). Without them nothing of
 // this runs.
 //
+// The pilot input (ground-segment unit GX-9, decision 0056): the optional <pilot_udp_port> (127.0.0.1) receives the pilot's raw RC
+// frames from the ground-station helper (pilot_input.hpp has the datagram and the staging rule) and stages each through
+// marv_sil_stage_rc_frame, with a SIL library built with RC_FRAME only. It excludes <manual_control_script> and <hil> and needs a
+// real-time world (real_time_factor above 0: the pilot mode, not the test mode). Without it nothing of this runs.
+//
 // The ground link (decision 0053 Q4; ground-segment unit 6), with a SIL library built with STORAGE only: the optional
 // <config_dir> opens the config storage in that existing directory (marv_sil_storage_open) and the optional <link_udp_port>
 // (else the environment variable MARV_SIL_LINK_UDP_PORT; neither = no link) opens the link's UDP socket (marv_sil_link_open);
@@ -75,6 +80,7 @@
 #include "constants.hpp"
 #include "hil_source.hpp"
 #include "lockstep_log.hpp"
+#include "pilot_input.hpp"
 #include "sim_telemetry.hpp"
 #include "marv/gz/adapter.hpp"
 #include "marv/gz/frames.hpp"
@@ -195,6 +201,7 @@ struct Parsed {
   std::optional<std::string> config_dir;
   std::optional<std::uint32_t> sim_telemetry_port;
   std::optional<std::uint64_t> sim_telemetry_period_us;
+  std::optional<std::uint32_t> pilot_port;
 };
 
 std::string text_of(const sdf::ElementPtr& e) { return e->Get<std::string>(); }
@@ -672,6 +679,9 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
     } else if (name == "sim_telemetry_period_us") {
       once(name);
       p.sim_telemetry_period_us = integer_of<std::uint64_t>(e);
+    } else if (name == "pilot_udp_port") {
+      once(name);
+      p.pilot_port = integer_of<std::uint32_t>(e);
     } else if (name == "config_dir") {
       once(name);
       const std::string t = trim(text_of(e));
@@ -838,6 +848,42 @@ class ManualStager {
   std::uint32_t frames_ = 0;
 };
 
+// The ManualControl stream of a <pilot_udp_port> (pilot_input.hpp): before each tick the socket is drained and the newest valid
+// frame, if any, is staged through marv_sil_stage_rc_frame with the tick's SIL stamp (the stamp of ManualStager: floor(tick *
+// num_us / den)). With no new frame nothing is staged.
+class PilotStager {
+ public:
+  void configure(PilotInput& input, std::uint32_t num_us, std::uint32_t den) {
+    input_ = &input;
+    num_us_ = num_us;
+    den_ = den;
+  }
+  bool active() const { return input_ != nullptr; }
+  // Returns the status of marv_sil_stage_rc_frame (OK where no frame was due).
+  std::int32_t stage(std::uint64_t tick) {
+    const std::optional<PilotFrame> f = input_->poll();
+    if (!f) {
+      return MARV_SIL_OK;
+    }
+#ifdef MARV_GZ_SIL_RC_FRAME
+    marv_rc_frame rc{};
+    rc.struct_size = sizeof(rc);
+    rc.t_us = (tick / den_) * num_us_ + ((tick % den_) * num_us_) / den_;
+    for (std::size_t i = 0; i < kPilotChannels; ++i) {
+      rc.raw[i] = f->raw[i];
+    }
+    return marv_sil_stage_rc_frame(&rc);
+#else
+    return MARV_SIL_E_STATE;  // not reached: Configure refuses <pilot_udp_port> without the entry
+#endif
+  }
+
+ private:
+  PilotInput* input_ = nullptr;
+  std::uint32_t num_us_ = 0;
+  std::uint32_t den_ = 1;
+};
+
 // A command source that keeps the SIL's stamp and the IMU sample of every tick of the current host step. The sample is
 // the one passed to the SIL: SilCommandSource passes a zeroed one; the truth-gyro source (optional <gyro_source>) its own.
 // With the optional <attitude_source> (which needs the truth gyro and a SIL library built with TRUTH_STATE) the truth-
@@ -908,7 +954,8 @@ class RecordingSource final : public CommandSource {
       return hil_->failure();
     }
     if (stage_status_ != MARV_SIL_OK) {
-      return std::string("marv_sil_stage_manual_control: ") + marv_sil_status_str(static_cast<marv_sil_status>(stage_status_));
+      return std::string(pilot_.active() ? "marv_sil_stage_rc_frame: " : "marv_sil_stage_manual_control: ") +
+             marv_sil_status_str(static_cast<marv_sil_status>(stage_status_));
     }
 #ifdef MARV_GZ_TRUTH_STATE
     if (use_attitude_ && use_model_ && attitude_model_.truth_status() != MARV_SIL_OK) {
@@ -936,6 +983,7 @@ class RecordingSource final : public CommandSource {
   void use_manual_script(const ManualScript& script, std::uint32_t num_us, std::uint32_t den) {
     manual_.configure(script, num_us, den);
   }
+  void use_pilot(PilotInput& input, std::uint32_t num_us, std::uint32_t den) { pilot_.configure(input, num_us, den); }
   void use_truth_gyro() { use_truth_ = true; }
   void use_model_gyro() { use_model_ = true; }
   // HIL stage S4: the model path's commands come from the board (hil_source.hpp) instead of the SIL.
@@ -987,14 +1035,14 @@ class RecordingSource final : public CommandSource {
  private:
   // Before the tick's marv_sil_tick, once per tick (the overloads delegate to one another): stages the frame that is due.
   bool stage_manual(std::uint64_t tick) {
-    if (!manual_.active()) {
+    if (!manual_.active() && !pilot_.active()) {
       return true;
     }
     if (staged_tick_ && *staged_tick_ == tick) {
       return true;
     }
     staged_tick_ = tick;
-    stage_status_ = manual_.stage(tick, pending_manual_);
+    stage_status_ = manual_.active() ? manual_.stage(tick, pending_manual_) : pilot_.stage(tick);
     return stage_status_ == MARV_SIL_OK;
   }
   void keep_manual() {
@@ -1040,6 +1088,7 @@ class RecordingSource final : public CommandSource {
 #endif
 #endif
   ManualStager manual_;
+  PilotStager pilot_;
   std::optional<std::uint64_t> staged_tick_;
   std::optional<marv_manual_control> pending_manual_;
   std::int32_t stage_status_ = MARV_SIL_OK;
@@ -1154,6 +1203,19 @@ class Lockstep final : public gzs::System,
       if (p.link_udp_port || p.config_dir) {
         refuse("<hil> excludes <link_udp_port> and <config_dir> (the board runs the firmware, not the SIL)");
       }
+    }
+    if (p.pilot_port) {
+      // Ground-segment unit GX-9 (pilot_input.hpp): the pilot's frames are the only sticks, and they arrive on the wall clock.
+      if (p.manual_script) {
+        refuse("<pilot_udp_port> and <manual_control_script> are exclusive: the pilot's frames are the only sticks");
+      }
+      if (p.hil) {
+        refuse("<hil> takes the sticks from the board's receiver; <pilot_udp_port> is for the SIL");
+      }
+#ifndef MARV_GZ_SIL_RC_FRAME
+      refuse("<pilot_udp_port> needs a SIL library with marv_sil_stage_rc_frame (built with RC_FRAME, target property "
+             "MARV_SIL_RC_FRAME); the linked one has none");
+#endif
     }
     if (p.sim_telemetry_port.has_value() != p.sim_telemetry_period_us.has_value()) {
       refuse("<sim_telemetry_udp_port> and <sim_telemetry_period_us> go together; one of them is missing");
@@ -1292,6 +1354,16 @@ class Lockstep final : public gzs::System,
         refuse("<hil>: " + error);
       }
       source_.use_hil(hil_);
+    }
+
+    // The pilot input (pilot_input.hpp): the socket opens here, once the SIL is up; a world in test mode is refused at the first
+    // step (check_physics), where the physics element is first readable.
+    if (p.pilot_port) {
+      const std::string error = pilot_input_.open(*p.pilot_port);
+      if (!error.empty()) {
+        refuse(error);
+      }
+      source_.use_pilot(pilot_input_, p.num_us, p.den);
     }
 
     log_path_ = p.log_path;
@@ -1543,6 +1615,10 @@ class Lockstep final : public gzs::System,
     const auto* phys = ecm.Component<gzs::components::Physics>(world);
     if (phys == nullptr) {
       refuse("the world has no physics component");
+    }
+    if (pilot_input_.enabled() && !(phys->Data().RealTimeFactor() > 0.0)) {
+      refuse("<pilot_udp_port> needs a real-time world (physics real_time_factor above 0, the pilot mode): the pilot's frames "
+             "arrive on the wall clock, and the test mode runs uncapped");
     }
     const double want_step = static_cast<double>(host_ns_) / kNanosecondsPerSecond;
     if (!same_bits(phys->Data().MaxStepSize(), want_step)) {
@@ -1933,6 +2009,8 @@ class Lockstep final : public gzs::System,
   // The optional sim channel (sim_telemetry.hpp): the socket, the static flags of the record, the plant constants of its
   // specific-force field, and whether the pad has released.
   SimTelemetry telemetry_;
+  // The optional pilot input (pilot_input.hpp): the socket, bound in Configure.
+  PilotInput pilot_input_;
   std::uint32_t telemetry_flags_ = 0;
   double plant_mass_kg_ = 1.0;
   double plant_thrust_coeff_ = 0.0;

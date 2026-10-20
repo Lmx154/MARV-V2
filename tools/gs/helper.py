@@ -17,12 +17,16 @@
   - receives the simulator's sim channel on a UDP socket of its own (tools/gs/simchannel.py, GX-8; the lockstep plugin's versioned
     record of sim truth and injected inputs), relays each datagram unparsed on /ws/sim and logs it in sim.log, a sibling of the
     ground log (sim truth is never in the ground log: S-1);
+  - bridges the pilot's joystick to the SIL (tools/gs/pilot.py, GX-9): reads the RadioMaster in USB-joystick mode (Linux joystick API),
+    sends raw 16-channel RC frames to the plugin's <pilot_udp_port> of a run started with the pilot option (never on the link: PB-1)
+    and tells the GCS the pilot state at most 30 Hz;
   - serves the built GCS (gcs/build) at /.
 
   uv run python tools/gs/helper.py [--serial PATH [--baud N] | --udp PORT] [--port N] [--runs-dir DIR] [--build-root DIR]
                                    [--gcs-dir DIR] [--sil-udp-port N] [--sil-command CMD] [--reports-dir DIR]
                                    [--validate-command CMD] [--picotool PATH] [--extra-origin ORIGIN ...]
                                    [--hil-command CMD] [--heavy-lock FILE] [--byid-dir DIR] [--no-autoconnect] [--board-serial SERIAL]
+                                   [--pilot-udp-port N] [--pilot-dir DIR]
 
 Security. It binds 127.0.0.1 only. Every request must carry the Host `127.0.0.1:<port>`; an Origin header, when present, must
 be exactly `http://127.0.0.1:<port>` (the WebSocket requires it); and every request needs the per-session token (random, printed
@@ -56,12 +60,20 @@ Endpoints (all need the token):
            firmware parameters of the image's manifest, values inside their type's domain, each name once) and "gui" (display-only
            visuals and a gz GUI client); a run with an override is labelled "sil-override" ("label" and "overrides" in the plan, the
            manifest and run_started). "sim_channel" (boolean, default true; sil and hil): the run is given the helper's sim channel
-           port (--sim-telemetry-udp-port); false leaves it out. Any other key is refused.
+           port (--sim-telemetry-udp-port); false leaves it out. "pilot" (boolean, default false; sil only, GX-9): the run is given the
+           pilot port (--pilot-udp-port; "pilot_port" in the plan and the manifest) and a world without the stick script. Any other key
+           is refused.
          {"cmd": "run_start", "kind": ..., ...options}: refused ("refusals": [...], ok false) while a run is going (one simulation
            at a time), a validation or flash runs, the heavy lock is held, or (hil) the helper has a serial port open or the port is
            absent; else starts the run and answers {"run": manifest}. {"cmd": "run_stop"}: stops the run's process group,
            answers {"run": manifest, "exit_status"}. {"cmd": "run_list"}: {"runs": [run id]}. {"cmd": "run_manifest", "run_id"}:
            {"manifest"} (the id must name a run under <run dir>/runs).
+         {"cmd": "pilot_devices"}: {"devices": [the joystick device files /dev/input/js<N>]}. {"cmd": "pilot_open", "device": "/dev/input/js0",
+           "axis_map": [16 axis numbers or null]}: refused unless a sil run started with the pilot option is going, or the device is not
+           a js<N> of the joystick directory or cannot be opened; else starts one RC frame per period to the run's pilot port
+           ({"pilot": status}). {"cmd": "pilot_close"}: stops the frames at once (idempotent). Pushed: {"event": "pilot_state", "state":
+           "open"|"closed"|"lost", "reason", "device", "port", "frames_sent", "send_errors", "channels": [16 raw 11-bit values]|null}, a
+           change of state at once and the periodic ones at most 30 Hz. The run's end closes the pilot.
          {"cmd": "cards"}: {"cards": ["vehicles/<name>.yaml", ...]}: the cards a sil run's "card" accepts, sorted.
          {"cmd": "host_state"}: {"host": {"loadavg", "cpus", "mem_total_bytes", "mem_available_bytes", "heavy_lock": {"held",
            "holder", "path"}}}. {"cmd": "autoconnect", "enabled": bool}: {"autoconnect": {"enabled", "suspended", "owner",
@@ -125,6 +137,7 @@ import mcfg  # noqa: E402
 from artifacts import ARTIFACT_KEYS, ImageLibrary, ReportLibrary  # noqa: E402
 from device import DEFAULT_BAUD, LOOPBACK, Device, DeviceError, SerialDevice, UdpDevice  # noqa: E402
 import hoststate  # noqa: E402
+from pilot import Pilot, PilotError, free_udp_port  # noqa: E402
 from simchannel import SimChannel  # noqa: E402
 from runs import KINDS, RunRefused, RunSupervisor, list_cards, parse_options  # noqa: E402
 import sil_run  # noqa: E402  (tools/sim, on the path since runs)
@@ -176,7 +189,8 @@ class Helper:
                  sil_command: list[str] | None = None, extra_origins: tuple[str, ...] = (), reports_dir: Path | None = None,
                  validate_command: list[str] | None = None, picotool: str | None = None, hil_command: list[str] | None = None,
                  heavy_lock: Path | None = None, byid_dir: Path | None = None, autoconnect: bool = True, poll_s: float = POLL_S,
-                 board_serial: str | None = None, sysfs_dir: Path | None = None, sim_channel_port: int = 0):
+                 board_serial: str | None = None, sysfs_dir: Path | None = None, sim_channel_port: int = 0,
+                 pilot_port: int = 0, pilot_dir: Path | None = None):
         self.token = token or secrets.token_urlsafe(32)
         self.extra_origins = frozenset(extra_origins)
         self.build_root, self.gcs_dir = Path(build_root), Path(gcs_dir)
@@ -206,8 +220,10 @@ class Helper:
         self._sim_queue: asyncio.Queue | None = None
         self._sim_queued_bytes = 0
         self.sim_dropped_bytes = 0
+        self.pilot_port = pilot_port or free_udp_port()  # the plugin's <pilot_udp_port> of a run with the pilot option (GX-9)
+        self.pilot = Pilot(self._pilot_event, pilot_dir)
         self.runs = RunSupervisor(self.run_dir, self.sil, self._emit_threadsafe, hil_command_override=hil_command,
-                                  sim_port=lambda: self.sim_channel.port or None)
+                                  sim_port=lambda: self.sim_channel.port or None, pilot_port=lambda: self.pilot_port)
         self.heavy_lock = Path(heavy_lock) if heavy_lock is not None else None  # None: $MARV_HEAVY_LOCK or the default (hoststate.py)
         self.byid_dir = Path(byid_dir) if byid_dir is not None else BYID_DIR
         self.autoconnect_enabled = autoconnect
@@ -216,6 +232,7 @@ class Helper:
         self.poll_s = poll_s
         self._ac_owner: str | None = None  # "sil" or "board" while the open device was opened by autoconnect
         self._ac_key: str | None = None
+        self._pilot_logged = "closed"
         self._ac_declined: str | None = None  # the key whose device the user closed: not opened again until the key changes
         self._ac_suspended: str | None = None
         self._ac_failed: dict = {}
@@ -256,6 +273,7 @@ class Helper:
             self._server.close()
             await self._server.wait_closed()
         self.close_device("helper stopping")
+        self.pilot.close("helper stopping")
         await self.stop_validation()
         await self.stop_flash()
         await asyncio.to_thread(self.runs.shutdown)
@@ -352,6 +370,21 @@ class Helper:
         self.log.write(groundlog.TX, data)
         self.device.write(data)
 
+    # ---- the pilot bridge (GX-9, tools/gs/pilot.py) ---------------------------------------------------------------------
+
+    def _pilot_event(self, event: dict) -> None:
+        """A pilot_state event of the pilot bridge, on the event loop; a change of state is also written to the ground log."""
+        if event["state"] != self._pilot_logged:
+            self._pilot_logged = event["state"]
+            self.log.event(f"pilot {event['state']}: " + json.dumps({k: event[k] for k in ("device", "port", "reason")}))
+        self._push(json.dumps(event))
+
+    async def pilot_open(self, msg: dict) -> None:
+        port = self.runs.active_pilot_port()
+        if port is None:
+            raise Refusal("no SIL run with the pilot option is going: start one from the Simulation page (Pilot) first")
+        await self.pilot.open(msg.get("device"), port, msg.get("axis_map"))
+
     # ---- runs (H-1 to H-3) ----------------------------------------------------------------------------------------------
 
     def param_types(self) -> dict[str, str]:
@@ -411,6 +444,7 @@ class Helper:
             manifest = self.runs.stop()
         except RunRefused as e:
             raise DeviceError(str(e)) from None
+        self.pilot.close("the run was stopped")
         return {"run": manifest, "exit_status": manifest["exit_status"]}
 
     # ---- autoconnect and host state -------------------------------------------------------------------------------------
@@ -482,6 +516,8 @@ class Helper:
             await asyncio.sleep(self.poll_s)
 
     async def poll(self) -> None:
+        if self.pilot.is_open and self.runs.active_pilot_port() != self.pilot.port:
+            self.pilot.close("the run with the pilot option ended")
         """One autoconnect step. The one rule: while a SIL run lives its UDP link (once its port is bound) is the only device
         autoconnect opens, and an autoconnect-opened board is closed when the run starts; with no SIL run a board's link interface
         is opened. The choice follows the run supervisor's single active-run slot, so it changes only when a run starts or ends
@@ -564,6 +600,7 @@ class Helper:
             "runs": self.runs.status(),
             "host": hoststate.host_state(self.heavy_lock),
             "autoconnect": self.autoconnect_status(),
+            "pilot": self.pilot.status(),
             "validation": self.validation,
             "flash": self.flash_state,
             "gcs_built": (self.gcs_dir / "index.html").is_file(),
@@ -869,6 +906,14 @@ class Helper:
                 reply["runs"] = self.runs.list_runs()
             elif cmd == "run_manifest":
                 reply["manifest"] = self.runs.manifest(msg.get("run_id"))
+            elif cmd == "pilot_devices":
+                reply["devices"] = self.pilot.devices()
+            elif cmd == "pilot_open":
+                await self.pilot_open(msg)
+                reply["pilot"] = self.pilot.status()
+            elif cmd == "pilot_close":
+                self.pilot.close()
+                reply["pilot"] = self.pilot.status()
             elif cmd == "cards":
                 reply["cards"] = list_cards()
             elif cmd == "host_state":
@@ -889,7 +934,7 @@ class Helper:
                 reply.update(await self.start_flash(msg))
             else:
                 raise DeviceError(f"unknown command {cmd!r}")
-        except (DeviceError, RuntimeError, ValueError, TypeError, OSError) as e:
+        except (DeviceError, PilotError, RuntimeError, ValueError, TypeError, OSError) as e:
             reply = {"ok": False, "error": str(e), **getattr(e, "extra", {}), **({"id": msg["id"]} if "id" in msg else {})}
         return reply
 
@@ -1012,7 +1057,8 @@ async def run(args: argparse.Namespace) -> int:
                     validate_command=shlex.split(args.validate_command) if args.validate_command else None,
                     picotool=args.picotool, hil_command=shlex.split(args.hil_command) if args.hil_command else None,
                     heavy_lock=args.heavy_lock, byid_dir=args.byid_dir, autoconnect=not args.no_autoconnect,
-                    board_serial=args.board_serial, sim_channel_port=args.sim_channel_port)
+                    board_serial=args.board_serial, sim_channel_port=args.sim_channel_port, pilot_port=args.pilot_udp_port,
+                    pilot_dir=args.pilot_dir)
     await helper.start(args.port)
     try:
         if args.serial:
@@ -1070,6 +1116,11 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--sim-channel-port", type=int, default=0,
                     help="the UDP port on 127.0.0.1 the simulator's sim channel is received on (0, the default, picks a free one); "
                          "runs the helper starts are given it (--sim-telemetry-udp-port)")
+    ap.add_argument("--pilot-udp-port", type=int, default=0,
+                    help="the UDP port on 127.0.0.1 a sil run with the pilot option binds (<pilot_udp_port>) and the pilot bridge sends "
+                         "to (0, the default, picks a free one)")
+    ap.add_argument("--pilot-dir", type=Path, default=None,
+                    help="the directory of the joystick devices js<N> the pilot bridge may open (default /dev/input); tests give their own")
     ap.add_argument("--no-autoconnect", action="store_true", help="do not open the SIL's UDP link or a board's link interface by itself")
     ap.add_argument("--picotool", help=f"the picotool executable the flash runs (default $MARV_PICOTOOL, else `{flash.PICOTOOL}` on PATH)")
     ap.add_argument("--extra-origin", action="append", default=[], type=origin_arg, metavar="ORIGIN",
