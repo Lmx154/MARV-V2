@@ -50,9 +50,10 @@ if(MARV_TARGET STREQUAL "host")
 endif()
 
 # The same composition, the one source file unchanged and without definitions, compiled against the FC3v2 set with the logger
-# register (marv_params_fc3v2_log, which keeps every id of marv_params_fc3v2), for the bench log image only
-# (MARV_FC3V2_LOG_BENCH, fw/hal/target/CMakeLists.txt; onboard logger unit U2). Not defined in any other configuration.
-if(MARV_FC3V2_LOG_BENCH)
+# register (marv_params_fc3v2_log, which keeps every id of marv_params_fc3v2), for the bench log image
+# (MARV_FC3V2_LOG_BENCH, fw/hal/target/CMakeLists.txt; onboard logger unit U2) and the flight image with the logger
+# (MARV_FC3V2_FLIGHT_LOG, unit U4-4) only. Not defined in any other configuration.
+if(MARV_FC3V2_LOG_BENCH OR MARV_FC3V2_FLIGHT_LOG)
   add_library(marv_composition_quad_fc_log STATIC src/quad_fc.cpp)
   target_include_directories(marv_composition_quad_fc_log PUBLIC include)
   target_link_libraries(marv_composition_quad_fc_log

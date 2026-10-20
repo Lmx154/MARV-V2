@@ -5,8 +5,10 @@
 // order: the sample (the image's sample sink calls log_tick_sample before composition::tick), then that tick's pull of a new
 // receiver frame (hal_manual_control) and its actuator write (hal_actuators_write). The composition is not changed and reads
 // nothing written here (invariant L-2). A push is wait-free and bounded and calls no FatFs or SD function (invariant L-1);
-// when the ring is full the newest record is dropped and counted (ring.hpp). Compiled only into the bench log image
-// (MARV_FC3V2_LOG_BENCH, fw/hal/target/CMakeLists.txt); the ring holds MARV_FC3V2_LOG_RING_BYTES bytes.
+// when the ring is full the newest record is dropped and counted (ring.hpp). Two images implement the hooks: the bench log image
+// (MARV_FC3V2_LOG_BENCH, fw/hal/target/CMakeLists.txt) on its own ring of MARV_FC3V2_LOG_RING_BYTES bytes (src/log_tick.cpp,
+// with log_ring), and the flight image with the logger (MARV_FC3V2_FLIGHT_LOG) through the arena logger's published ring
+// pointer (src/flight_log.cpp, marv/hal_target/flight_log.hpp; log_ring is not defined there).
 //
 // The rate-tick record's arm state is the composition's ArmState code as the image's arm-state source reads it in the write
 // (composition::arming_status, which the rate tick publishes before its write). Its gate state is kGateUnknown: the

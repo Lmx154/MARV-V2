@@ -1,0 +1,19 @@
+# git describe: quad-L2-pass-631-g5a1a2f3-dirty (5a1a2f3 plus the uncommitted image wiring, MARV_FC3V2_RAM_FREE_BYTES 0 for MARV_FC3V2_FLIGHT_LOG)
+# command: bash tests/regression/quad/L10/results/arena/measure_flight_log.sh build/m33-flog
+relinked: build/m33-flog/fw/hal/target/marv_fc3v2.elf (the build tree's link command, without its post-link checks)
+MARV_FC3V2_FLIGHT_LOG:BOOL=ON
+MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN:BOOL=OFF
+image: build/m33-flog/fw/hal/target/marv_fc3v2.elf
+200727a4 B __end__
+20080000 B __HeapLimit
+20081800 A __StackBottom
+20082000 R __StackTop
+free (__HeapLimit - __end__): 55388 B
+.ram_vector_table         272   536870912
+.text                  148212   536871200
+.data                   83392   537019416
+.bss                   237004   537102808
+.heap                    2048   537339812
+.stack_dummy             2048   537399296
+20058f40 00019000 b (anonymous namespace)::g_arena
+2003c55c 00000234 b marv::hal_target::(anonymous namespace)::g_fs

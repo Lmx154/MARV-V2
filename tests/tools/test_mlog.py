@@ -532,6 +532,22 @@ def test_a_loss_just_under_65_ms_is_followed_exactly():
     assert [r["t_us"] for r in mlog.records_of(d, "imu")] == [t for t, r in s if r[0] == 13 and not 100_000 + 133 * 800 <= t < 100_000 + 133 * 1290]
 
 
+def test_a_run_of_v1_imu_records_re_anchors_the_16_bit_chain():
+    # Found defect (U4-3 review): the 32-byte imu record (the writer's fallback for a sample that is not a whole number of counts)
+    # is a sample of the same stream with its 32-bit stamp, so the chain continues from it. A run of 600 of them (79.8 ms, longer
+    # than the 16-bit span) between two imu_raw runs must neither lose a wrap of the next imu_raw times nor be reported.
+    truth, items = [], []
+    for i in range(2000):
+        t = 100_000 + 133 * i
+        truth.append(t)
+        items.append(rec_imu(t) if 700 <= i < 1300 else rec_imu_raw(t, [i % 100] * 6))
+        if i % 2 == 1:
+            items.append(rec_rate(t))
+    d = _decode_stream(items)
+    assert d.clean, [str(p) for p in d.problems]
+    assert [r["t_us"] for r in mlog.records_of(d, "imu")] == truth
+
+
 def test_imu_raw_records_with_no_stamp_to_anchor_them_are_reported():
     d = mlog.decode(v2_log([rec_imu_raw(5000, [1] * 6), rec_imu_raw(5133, [2] * 6)]))
     assert [p.reason for p in d.problems] == ["imu_time"]

@@ -19,7 +19,7 @@ back to back in the payload stream and may span sectors. The decoder
     header_imu_raw record, the saturation flags from the counts at an int16 limit. Its 16-bit times are chained (each is less than
     65.536 ms after the last) and checked against the 32-bit stamps of the tick-ordered records (rate_tick, imu, gap): a chain
     that disagrees with a stamp by half the 16-bit span or more means more than 65 ms of IMU records were lost without a Gap
-    record, and is reported as an imu_time problem.
+    record, and is reported as an imu_time problem. A 32-byte imu record re-anchors the chain at its own time.
 
 Output: Decoded.records (a list of dicts), Decoded.header (a dict), Decoded.problems; as CSV (one file per kind) or JSON from the CLI.
 Standard library only.
@@ -193,7 +193,7 @@ class _Stream:
             "format_version": version, "sector_bytes": sector_bytes, "session_start_us": start,
             "image_hash": image.hex(), "config_hash": config.hex(), "schema_hash": schema,
             "tick_num_us": tick_num, "tick_den": tick_den, "odr_hz": odr,
-            "boot": dict(zip(names, rec[o2: o2 + 6]), sequence=boot_seq)}
+            "boot": dict(zip(names, rec[o2: o2 + 6]), sequence=boot_seq), "build_flags": rec[o2 + 6]}
         self.last_t = start
 
     def _data(self, kind: int, rec: bytes) -> None:
@@ -225,7 +225,7 @@ class _Stream:
                     row["t_us"] = self.unwrap(row[key])
                     break
             if kind in (K_IMU, K_RATE, K_GAP) and "t_us" in row:
-                self._stamp(row["t_us"], announced=kind == K_GAP)
+                self._stamp(row["t_us"], announced=kind == K_GAP, imu=kind == K_IMU)
         self.out.records.append(row)
 
     # -- the 16-bit IMU times ---------------------------------------------------------------------------------
@@ -292,10 +292,11 @@ class _Stream:
             self.out.records.append(row)
         self.held = None
 
-    def _stamp(self, a: int, announced: bool) -> None:
+    def _stamp(self, a: int, announced: bool, imu: bool = False) -> None:
         """A tick-ordered record's absolute time a: anchors the rows waiting for it, checks the chain, or (a Gap) restarts it.
         The chain is checked when the record follows an imu_raw record (the sample comes first in a tick, so the two are within a
-        few ticks of each other; a stamp after a long silence of imu_raw records proves nothing about the chain)."""
+        few ticks of each other; a stamp after a long silence of imu_raw records proves nothing about the chain). A 32-byte imu
+        record is a sample of the same stream: the chain continues from its time."""
         fresh = self.imu_fresh
         self.imu_fresh = False
         if self.held is not None and self.imu_t is not None:
@@ -315,6 +316,8 @@ class _Stream:
         self.imu_ref = a
         if announced:
             self.imu_t = None
+        elif imu:
+            self.imu_t = a
 
     def settle_imu_chain(self, why: str) -> None:
         """Rows still waiting for a stamp when the stream ends or breaks are returned, placed nearest to the last known time."""

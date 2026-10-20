@@ -52,6 +52,7 @@ class Builder {
                                h.boot.request_fault}) {
     r[o++] = v;
   }
+  r[info::kOffBuildFlags] = h.build_flags;
   return f.append(b.finish(), sink);
 }
 
