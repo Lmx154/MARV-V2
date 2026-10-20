@@ -68,12 +68,13 @@ namespace detail {
   return static_cast<float>(sign) * static_cast<float>(count) * scale;
 }
 
-// The count whose scaled value `v` is (the nearest integer to sign x v / scale), if it is an int16.
-[[nodiscard]] constexpr std::optional<std::int16_t> count_of(float v, std::int8_t sign, float scale) noexcept {
+// The count whose scaled value `v` is (the nearest integer to sign x v / scale), if it is an int16. Named so that it does not
+// collide with the Pico SDK's count_of macro; the open interval keeps the rounding cast inside int16.
+[[nodiscard]] constexpr std::optional<std::int16_t> nearest_count(float v, std::int8_t sign, float scale) noexcept {
   const float x = static_cast<float>(sign) * v / scale;
   const float lo = static_cast<float>(std::numeric_limits<std::int16_t>::min());
   const float hi = static_cast<float>(std::numeric_limits<std::int16_t>::max());
-  if (!(x >= lo - 0.5F && x < hi + 0.5F)) {
+  if (!(x > lo - 0.5F && x < hi + 0.5F)) {
     return std::nullopt;
   }
   return static_cast<std::int16_t>(x >= 0.0F ? x + 0.5F : x - 0.5F);
@@ -141,14 +142,14 @@ namespace detail {
       return std::nullopt;
     }
     if ((f & imu_raw::kFlagGyroValid) != 0) {
-      const auto g = detail::count_of(s.gyro_rad_s[i], sc.sign[i], sc.gyro_rad_s_per_lsb);
+      const auto g = detail::nearest_count(s.gyro_rad_s[i], sc.sign[i], sc.gyro_rad_s_per_lsb);
       if (!g) {
         return std::nullopt;
       }
       put<std::uint16_t>(r, imu_raw::kOffGyro + i * sizeof(std::int16_t), static_cast<std::uint16_t>(*g));
     }
     if ((f & imu_raw::kFlagAccelValid) != 0) {
-      const auto a = detail::count_of(s.accel_m_s2[i], sc.sign[i], sc.accel_m_s2_per_lsb);
+      const auto a = detail::nearest_count(s.accel_m_s2[i], sc.sign[i], sc.accel_m_s2_per_lsb);
       if (!a) {
         return std::nullopt;
       }
