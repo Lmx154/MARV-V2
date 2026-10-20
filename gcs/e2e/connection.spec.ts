@@ -31,6 +31,7 @@ const PAGES: Array<[string, string]> = [
 	['Simulation', 'Simulation'],
 	['Radio', 'Radio'],
 	['Parameters', 'Parameters'],
+	['Tuning', 'Tuning'],
 	['Flash', 'Flash'],
 	['Bench', 'Bench'],
 	['Logs', 'Logs'],
