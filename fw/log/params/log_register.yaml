@@ -1,7 +1,7 @@
 # The onboard SD flight logger's tunables (fw/log, unit U1 LOG-CORE; architect ruling 2026-10-18, serena memory
-# quad-m4/architect-onboard-logger-2026-10-18), in params_gen input form (tools/gen/params_gen.py). Appended after the
-# FC3v2 set in the parameter set marv_params_fc3v2_log only (fw/params/CMakeLists.txt), which the log tests read; the board's
-# set marv_params_fc3v2 does not carry these entries yet (unit U4 integrates them), so the board image is unchanged.
+# quad-m4/architect-onboard-logger-2026-10-18), in params_gen input form (tools/gen/params_gen.py). The last register of the
+# board's set marv_params_fc3v2 (fw/params/CMakeLists.txt, decision 0060: the flight image runs the logger), which the log tests
+# also read under the alias marv_params_fc3v2_log.
 # None is a safety number: arming is never gated on the logger (decision 0053), and no entry changes what the vehicle does.
 # The worst SD write stall that sizes the ring is the design-budget entry sd_log_write_stall_max_s, not repeated here.
 # Every entry is a PLACEHOLDER: a labelled choice that makes the logger run until its bench (unit U2) or Luis replaces it.

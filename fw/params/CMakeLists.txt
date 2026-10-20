@@ -323,8 +323,9 @@ marv_add_card_param_set(marv_params_l11_vertical_scripted CARD "${MARV_VEHICLE_C
 # The quad flight composition's parameter set for the FC3v2 target (M1): the product set (card, budget, mixer, rate,
 # attitude, vertical) with the target's own scenario-values register (tick 7.68 kHz, 3125/24 us; the SIL's register
 # design/scenario_values.yaml stays as it is) followed by the target's rate-timing register (a PLACEHOLDER tolerance,
-# decision 0034), the composition's own register and the ground link's telemetry stream caps (fw/link/params, ground-segment
-# unit 11; the link service is built against this set). The card is
+# decision 0034), the composition's own register, the ground link's telemetry stream caps (fw/link/params, ground-segment
+# unit 11; the link service is built against this set) and the onboard logger's register (fw/log/params, decision 0060: the flight
+# image runs the logger, and the store, the link and the ground station read this one set). The card is
 # fixed to vehicles/marv_7in_fc3v2.yaml, the real airframe (M4 P1; not MARV_VEHICLE_CARD, which stays the UZH card of the SIL).
 # marv_rate, marv_mixer and marv_rate_group read the product ids, which this set keeps.
 marv_add_card_param_set(marv_params_fc3v2 CARD "vehicles/marv_7in_fc3v2.yaml" BUDGET "${MARV_DESIGN_BUDGET}"
@@ -332,11 +333,13 @@ marv_add_card_param_set(marv_params_fc3v2 CARD "vehicles/marv_7in_fc3v2.yaml" BU
   SCENARIO "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_scenario_values.yaml"
   EXTRA_REGISTER "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml"
                  "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml"
-                 "${PROJECT_SOURCE_DIR}/fw/link/params/telemetry_register.yaml")
+                 "${PROJECT_SOURCE_DIR}/fw/link/params/telemetry_register.yaml"
+                 "${PROJECT_SOURCE_DIR}/fw/log/params/log_register.yaml")
 
 # The FC3v2 set with the ESKF register appended (M4, decision 0055: the attitude and gyro-bias ESKF in shadow). Built from the
 # flattened sources of marv_params_fc3v2 above, in its order (no second flatten), then fw/estimator/params/eskf_register.yaml,
-# so every id of marv_params_fc3v2 keeps its id and value and the eskf_* entries follow. Only the host replay of the ESKF
+# so every id of marv_params_fc3v2 up to the telemetry caps keeps its id and value and the eskf_* entries follow; the logger's
+# log_* entries are not in it (with them its factory file is longer than half a config slot). Only the host replay of the ESKF
 # (tests/regression/quad/L07/replay, unit_l07_eskf_replay) links it; the board image and marv_sil_quad_fc link marv_params_fc3v2.
 set(marv_fc3v2_flat "${CMAKE_BINARY_DIR}/generated/marv_params_fc3v2/flatten/marv_params_fc3v2")
 marv_add_param_set(marv_params_fc3v2_eskf
@@ -349,19 +352,11 @@ marv_add_param_set(marv_params_fc3v2_eskf
            "${PROJECT_SOURCE_DIR}/fw/link/params/telemetry_register.yaml"
            "${PROJECT_SOURCE_DIR}/fw/estimator/params/eskf_register.yaml")
 
-# The FC3v2 set with the logger register appended (onboard SD flight logger, unit U1): built from the flattened sources of
-# marv_params_fc3v2, in its order (no second flatten), then fw/log/params/log_register.yaml, so every id of marv_params_fc3v2
-# keeps its id and value and the log_* entries follow. Only the log tests (tests/regression/quad/L09/unit/log_*_test.cpp) link
-# it; the board image and marv_sil_quad_fc link marv_params_fc3v2 (unit U4 integrates the entries).
-marv_add_param_set(marv_params_fc3v2_log
-  CARD "${marv_fc3v2_flat}_card.yaml" "${marv_fc3v2_flat}_mixer.yaml" "${marv_fc3v2_flat}_scenario.yaml"
-       "${marv_fc3v2_flat}_rate.yaml" "${marv_fc3v2_flat}_attitude.yaml" "${marv_fc3v2_flat}_gyro_chain.yaml"
-       "${marv_fc3v2_flat}_vertical.yaml"
-  REGISTER "${marv_fc3v2_flat}_register.yaml"
-           "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml"
-           "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml"
-           "${PROJECT_SOURCE_DIR}/fw/link/params/telemetry_register.yaml"
-           "${PROJECT_SOURCE_DIR}/fw/log/params/log_register.yaml")
+# The FC3v2 set with the logger register (onboard SD flight logger, unit U1) is marv_params_fc3v2 itself since decision 0060: the
+# names marv_params_fc3v2_log_generated and _runtime are aliases of its targets, for the log tests
+# (tests/regression/quad/L09/unit/log_*_test.cpp) and the bench log image (MARV_FC3V2_LOG_BENCH), so there is one schema.
+add_library(marv_params_fc3v2_log_generated ALIAS marv_params_fc3v2_generated)
+add_library(marv_params_fc3v2_log_runtime ALIAS marv_params_fc3v2_runtime)
 
 # The FC3v2 set with the bench-profile register appended (unit U3 BENCH-PROFILE, architect ruling 2026-10-18 item 8): built from
 # the flattened sources of marv_params_fc3v2, in its order (no second flatten), then
@@ -377,4 +372,5 @@ marv_add_param_set(marv_params_fc3v2_bench_profile
            "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml"
            "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/quad_fc_register.yaml"
            "${PROJECT_SOURCE_DIR}/fw/link/params/telemetry_register.yaml"
+           "${PROJECT_SOURCE_DIR}/fw/log/params/log_register.yaml"
            "${PROJECT_SOURCE_DIR}/fw/compositions/quad_fc/params/bench_profile_register.yaml")

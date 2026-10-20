@@ -90,6 +90,7 @@ EXTRA_REGISTERS = (
     "fw/compositions/quad_fc/params/fc3v2_rate_timing_register.yaml",
     "fw/compositions/quad_fc/params/quad_fc_register.yaml",
     "fw/link/params/telemetry_register.yaml",
+    "fw/log/params/log_register.yaml",
 )
 FLATTEN_PARTS = ("card", "mixer", "scenario", "rate", "attitude", "gyro_chain", "vertical")  # the order of marv_add_card_param_set's CARD list
 SLOT_RE = re.compile(r"\nconfig_slot_bytes:[ \t]*\n[ \t]+value:[ \t]*([0-9]+)[ \t]*\n")  # fw/hal/CMakeLists.txt
