@@ -685,7 +685,7 @@ rules:
     run_ci_steps: ["@host", tools_tests]
     pytest_paths: [tests/tools]
     gz_groups: []
-    why: "the flight-log decoder (mlog.py), read by tests/tools/test_mlog.py (L-4) and, with roundtrip_check.py, by the ctest log_roundtrip_decode that decodes what the C++ logger wrote"
+    why: "the flight-log decoder (mlog.py), read by tests/tools/test_mlog.py (L-4), by the helper's log library tools/gs/logs.py (held by tests/tools/test_gs_logs.py) and, with roundtrip_check.py, by the ctest log_roundtrip_decode that decodes what the C++ logger wrote"
 
   - paths: [tools/ci/check_log_no_panic.py]
     ctest_labels: []
@@ -844,12 +844,12 @@ rules:
     gz_groups: []
     why: "the smoke script runs a host-debug ctest subset"
 
-  - paths: [tools/gs/**, tests/tools/test_gs_helper.py]
+  - paths: [tools/gs/**, tests/tools/test_gs_helper.py, tests/tools/test_gs_logs.py, tests/tools/data/**]
     ctest_labels: []
     run_ci_steps: [gs3_check, tools_tests]
     pytest_paths: [tests/tools]
     gz_groups: []
-    why: "the ground-segment helper (unit 7): byte relay, token and Origin gate, ground log, image library, SIL launcher; held by its tests/tools pytest file, and GS-3 holds it clear of MAVLink (it only relays bytes)"
+    why: "the ground-segment helper (unit 7): byte relay, token and Origin gate, ground log, image library, SIL launcher; held by its tests/tools pytest file, and GS-3 holds it clear of MAVLink (it only relays bytes); tools/gs/logs.py (GX-15, the .mlog library) is held by tests/tools/test_gs_logs.py on the sample tests/tools/data/u1_sample.mlog"
 
   - paths: [tools/gs/hil.py, tools/gs/device.py]
     ctest_labels: []
