@@ -27,6 +27,8 @@ export interface SimForm {
 	card: string;
 	overrides: OverrideRow[];
 	gui: boolean;
+	/** Fly the run from a USB joystick (GX-9): the helper gives the run its pilot port and its world no stick script. */
+	pilot?: boolean;
 }
 
 /** The options of a sil run (tools/gs/runs.py OPTIONS). */
@@ -35,6 +37,7 @@ export interface RunRequest {
 	card?: string;
 	overrides?: Array<{ name: string; value: number }>;
 	gui: boolean;
+	pilot?: boolean;
 }
 
 /** The build tree whose parameter manifest the helper checks overrides against (tools/sim/sil_run.py GZ_BUILD). */
@@ -108,6 +111,7 @@ export function buildRequest(form: SimForm): { request: RunRequest; problems: []
 	const request: RunRequest = { kind: 'sil', gui: form.gui };
 	if (form.card !== '') request.card = form.card;
 	if (overrides.length > 0) request.overrides = overrides;
+	if (form.pilot) request.pilot = true;
 	return { request, problems: [] };
 }
 
@@ -187,7 +191,7 @@ export class SimController {
 		cardsError: null,
 		parameters: null,
 		parametersNote: null,
-		form: { card: '', overrides: [], gui: false },
+		form: { card: '', overrides: [], gui: false, pilot: false },
 		plan: null,
 		placed: emptyPlaced(),
 		busy: null
@@ -233,6 +237,10 @@ export class SimController {
 
 	setGui(gui: boolean): void {
 		this.edit((f) => ({ ...f, gui }));
+	}
+
+	setPilot(pilot: boolean): void {
+		this.edit((f) => ({ ...f, pilot }));
 	}
 
 	addOverride(): void {

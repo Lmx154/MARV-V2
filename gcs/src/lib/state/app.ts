@@ -10,6 +10,7 @@ import { HelperApi, readHelperInfo, type HelperInfo, type HelperStatus } from '.
 import { FlashController } from './flash_state';
 import { channelMapOf, LiveController } from './live_state';
 import { ManifestController, type ManifestState } from './manifest_state';
+import { PilotController } from './pilot_state';
 import { RadioController } from './radio_state';
 import { Problems, type Problem } from './problems';
 import { SimController } from './sim_state';
@@ -36,6 +37,8 @@ export interface App {
 	paramRows: Readable<readonly ParamRow[]>;
 	/** The Simulation page: the SIL run definition, its plan, launch and stop; null without a helper. */
 	sim: SimController | null;
+	/** The SIL pilot bridge: the RadioMaster's USB joystick, opened and closed through the helper; null without a helper. */
+	pilot: PilotController | null;
 	status: Readable<HelperStatus | null>;
 	/** The device the helper has open, from its events and status. */
 	device: Readable<string | null>;
@@ -163,6 +166,9 @@ function create(): App {
 				})
 			: null;
 
+	const pilot = helper ? new PilotController({ request: (cmd, args) => helper.request(cmd, args), onEvent: (handler) => helper.onEvent(handler) }) : null;
+	pilot?.start();
+
 		// The identity arrives after the connection: load the matching manifest then.
 	let lastIdentityKey = '';
 	vehicle?.state.subscribe((s) => {
@@ -189,6 +195,7 @@ function create(): App {
 		radio,
 		paramRows,
 		sim,
+		pilot,
 		status: shell.status,
 		device: shell.device,
 		bar: shell.bar,
