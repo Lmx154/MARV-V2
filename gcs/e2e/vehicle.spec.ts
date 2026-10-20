@@ -2,6 +2,10 @@
 // shows a value, leaving the page stops the streams, and stopping the vehicle turns every panel stale (the control) while continuing it
 // turns them live again. Assertions are DOM roles and values.
 //
+// The replay (GX-11, GS-8): the last test records the panels of a live session, ends the session, replays the helper's own ground log of it
+// from the Logs page and finds the same values on the Vehicle page (the control: the values moved during the session, so a replay of another
+// moment would differ).
+//
 // Two modes, set by tools/gs/e2e.sh. Light: the vehicle is the fake of tools/gs/e2e_fake_vehicle.py (it streams on request, a slow
 // harness motion); the staleness control stops its process group. Live (MARV_E2E_MODE=live): the helper starts the Gazebo SIL (GUI off)
 // and the control stops the processes of that run (those with the helper's run directory in their command line).
@@ -126,6 +130,20 @@ async function openVehicle(page: Page): Promise<void> {
 	await expect(page.getByRole('heading', { level: 1, name: 'Vehicle', exact: true })).toBeVisible();
 }
 
+/** The text of every row of the page's panels by row key (display values only, not the panels' staleness). */
+const rowTexts = (page: Page): Promise<Record<string, string>> =>
+	page
+		.getByRole('main')
+		.locator('[data-row]')
+		.evaluateAll((els) => Object.fromEntries(els.map((e) => [e.getAttribute('data-row') ?? '', (e.textContent ?? '').replace(/\s+/g, ' ').trim()])));
+
+/** A replay of the session's log is over within this long (a labelled harness value: the log is a few MB at most, fast mode). */
+const REPLAY_MS = 60_000;
+/** A page of panels shows at least this many rows (a labelled harness value: a vacuous comparison would pass on none). */
+const MIN_ROWS = 20;
+/** The live session runs this long between the two looks at the panels, so that its values have moved (a labelled harness value; the fake vehicle's motion has a 6 s period). */
+const MOVE_MS = 2_500;
+
 async function expectAll(page: Page, stale: boolean, timeout: number): Promise<void> {
 	for (const [title, id] of PANELS) {
 		const p = panel(page, id);
@@ -219,5 +237,42 @@ test.describe('the vehicle page', () => {
 		await expectAll(page, true, STALE_FLIP_MS);
 		for (const [, id] of PANELS) await expect(panel(page, id)).toHaveAttribute('data-heard', 'false');
 		await shot(page, '4-run-stopped');
+	});
+
+	test('a replay of the session just recorded shows on the Vehicle page the values the live session showed', async ({ page }) => {
+		await launch(page);
+		await openVehicle(page);
+		await expectAll(page, false, LIVE_PANELS_MS);
+		const early = await rowTexts(page);
+		await page.waitForTimeout(MOVE_MS);
+		// Freeze the live session: nothing more arrives, so the panels keep the last value of every stream.
+		signalVehicle('SIGSTOP');
+		await expectAll(page, true, STALE_FLIP_MS);
+		const recorded = await rowTexts(page);
+		expect(Object.keys(recorded).length).toBeGreaterThan(MIN_ROWS);
+		expect(recorded, 'the session moved: a replay of another moment would differ').not.toEqual(early);
+
+		// End the live session: stop the run; the helper closes its link, and a replay may start (it has no device).
+		const nav = page.getByRole('navigation', { name: 'Pages' });
+		await nav.getByRole('link', { name: 'Simulation', exact: true }).click();
+		await page.getByRole('button', { name: 'Stop' }).click();
+		await expect(page.getByRole('button', { name: 'Launch' })).toBeEnabled({ timeout: GONE_MS });
+		await nav.getByRole('link', { name: 'Logs', exact: true }).click();
+		await expect(indicator(page, 'Link')).toContainText(/device\s*none/, { timeout: GONE_MS });
+		await page.getByRole('button', { name: 'Rescan', exact: true }).first().click();
+
+		const log = page.getByRole('table', { name: 'Ground logs' }).locator('tr', { hasText: '(this session)' });
+		await log.getByRole('button', { name: /as fast as possible/ }).click();
+		const status = page.getByRole('status', { name: 'Replay status' });
+		await expect(status).toHaveAttribute('data-replay', 'finished', { timeout: REPLAY_MS });
+		await expect(indicator(page, 'Link')).toContainText(/replay\s*finished/);
+		await expect(indicator(page, 'Link')).toContainText(/device\s*none/);
+		await shot(page, '5-replay-finished');
+
+		// The same panels, from the recorded bytes alone: the values equal the live ones, on every row.
+		await openVehicle(page);
+		for (const [, id] of PANELS) await expect(panel(page, id)).toHaveAttribute('data-heard', 'true');
+		await expect.poll(() => rowTexts(page), { timeout: LIVE_PANELS_MS }).toEqual(recorded);
+		await shot(page, '6-replayed-vehicle');
 	});
 });

@@ -124,7 +124,10 @@ export function computeBar(inputs: BarInputs, now: number, timing: ShellTiming =
 		fields: [
 			{ name: 'device', value: status ? (status.device ?? 'none') : 'unknown' },
 			{ name: 'rx age', value: formatAge(age(session?.lastFrameAt ?? null, now)) },
-			{ name: 'heartbeat age', value: formatAge(age(session?.lastHeartbeatAt ?? null, now)) }
+			{ name: 'heartbeat age', value: formatAge(age(session?.lastHeartbeatAt ?? null, now)) },
+			...(status?.replay && status.replay.state !== 'idle'
+				? [{ name: 'replay', value: `${status.replay.state}: ${status.replay.log?.split('/').slice(-2, -1)[0] ?? ''}`, title: `a recorded session, not a vehicle: ${status.replay.log ?? ''}` }]
+				: [])
 		]
 	};
 

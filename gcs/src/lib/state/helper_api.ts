@@ -2,6 +2,7 @@
 // a Bearer header; the WebSocket URL carries it as a query (a browser WebSocket cannot set headers).
 import type { ImageList } from '$lib/params/library';
 import type { HilStatus } from './bench_state';
+import type { ReplayStatus } from './replay_state';
 
 export interface HelperInfo {
 	/** http origin of the helper, no trailing slash. */
@@ -76,6 +77,8 @@ export interface HelperStatus {
 	autoconnect: AutoconnectStatus;
 	/** The Bench page's facts: the hold, the saved verdict of the latest HIL run, the SWD flash (tools/gs/hil.py). */
 	hil?: HilStatus;
+	/** The replay of a recorded ground log (tools/gs/replay.py): while it is playing the helper has no device and the vehicle panels show the recording. */
+	replay?: ReplayStatus;
 	/** The board's console slot (tools/gs/console.py): its state, the interfaces it can open and why it cannot be opened now. */
 	console?: { state: string; reason: string | null; device: string | null; devices: string[]; blocked: string[] };
 	validation: { running: boolean; image_hash?: string; config_hash?: string; verdict?: string | null; report_id?: string | null } | null;

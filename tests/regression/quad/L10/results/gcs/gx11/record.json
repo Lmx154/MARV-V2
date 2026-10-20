@@ -1,0 +1,24 @@
+{
+ "helper_output": [
+  "GCS:     http://127.0.0.1:45247/?token=<redacted>",
+  "run dir: /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/gx11-rec/gs-runs/20261020T164432Z",
+  "device:  none (open one from the GCS)"
+ ],
+ "ws_bytes": 23595,
+ "rx_bytes": 23595,
+ "frames": 477,
+ "by_type": {
+  "HEARTBEAT": 5,
+  "COMMAND_ACK": 19,
+  "MARV_IDENTITY": 1,
+  "SYS_STATUS": 8,
+  "ATTITUDE": 74,
+  "ATTITUDE_QUATERNION": 37,
+  "RC_CHANNELS": 37,
+  "ATTITUDE_TARGET": 74,
+  "HIGHRES_IMU": 74,
+  "ACTUATOR_OUTPUT_STATUS": 74,
+  "MARV_FC_STATUS": 37,
+  "MARV_ESTIMATOR": 37
+ }
+}

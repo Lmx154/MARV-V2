@@ -12,6 +12,7 @@
 	} from '$lib/state/logs_state';
 	import type { HelperConnectionState } from '$link/transport';
 	import LogPlot from '$lib/components/LogPlot.svelte';
+	import ReplayPanel from '$lib/components/ReplayPanel.svelte';
 	import Badge from '$lib/components/ui/Badge.svelte';
 	import Panel from '$lib/components/ui/Panel.svelte';
 
@@ -81,6 +82,8 @@
 			{#if $st.error}<p class="notice bad small" role="alert" data-notice="logs">{$st.error}</p>{/if}
 			{#if $st.notice}<p class="notice small" role="status" data-notice="import">{$st.notice}</p>{/if}
 		</Panel>
+
+		<ReplayPanel />
 
 		<Panel title="Library" label="helper">
 			{#if $st.logs === null}
