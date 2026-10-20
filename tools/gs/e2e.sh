@@ -10,7 +10,8 @@
 #
 # Needs `uv sync --frozen`, `cd gcs && npm ci` and `cd gcs && npx playwright install chromium` (the browser lives in the
 # Playwright cache, not in the repository). It builds the GCS (gcs/build, ignored by git) and removes every process it started
-# on exit. The staleness control of the specs stops the fake vehicle (SIGSTOP of its process group, MARV_E2E_VEHICLE_PID) and
+# on exit. Light mode also starts the fake simulator of tools/gs/e2e_fake_sim.py, which publishes the sim channel (GX-8) to the helper's
+# --sim-channel-port; the sim spec stops and continues it (MARV_E2E_SIM_PID) to make the SIM panels come and go. The staleness control of the specs stops the fake vehicle (SIGSTOP of its process group, MARV_E2E_VEHICLE_PID) and
 # continues it; in live mode the vehicle page's control stops the processes of the helper's run (those with MARV_E2E_RUNS_DIR, the
 # helper's run directory, in their command line) and continues them. The Playwright JSON report and the failure screenshots land in the output directory (default build/gs-e2e/out).
 #
@@ -81,7 +82,14 @@ print(s.getsockname()[1])')"
 # (or be opened by a test).
 mkdir -p "${work}/byid"
 helper_args=(--port 0 --runs-dir "${work}/runs" --sil-udp-port "${udp_port}" --heavy-lock "${work}/heavy.lock" --byid-dir "${work}/byid")
+sim_pid=""
 if [[ "${mode}" == light ]]; then
+  sim_port="$(uv run python -c '
+import socket
+s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])')"
+  helper_args+=(--sim-channel-port "${sim_port}")
   echo "##### fake vehicle on udp ${udp_port}"
   mkdir -p build/gs-e2e/defs
   setsid uv run python tools/gs/e2e_fake_vehicle.py --udp-port "${udp_port}" --defs-dir build/gs-e2e/defs \
@@ -117,6 +125,13 @@ done
 [[ -n "${url}" ]] || { cat "${work}/helper.log"; echo "the helper did not print its address" >&2; exit 1; }
 echo "GCS served at ${url%%\?*}"
 
+if [[ "${mode}" == light ]]; then
+  echo "##### fake simulator to the helper's sim channel on udp ${sim_port}"
+  setsid uv run python tools/gs/e2e_fake_sim.py --port "${sim_port}" >"${work}/sim.log" 2>&1 &
+  pids+=("$!")
+  sim_pid="${pids[-1]}"
+fi
+
 echo "##### playwright (${mode})"
 mkdir -p "${out_dir}"
 status=0
@@ -126,7 +141,7 @@ status=0
   MARV_E2E_URL="${url}" MARV_E2E_MODE="$([[ "${mode}" == live ]] && echo live || true)" MARV_E2E_OUT="${out_dir}" \
     MARV_E2E_VEHICLE_PID="$([[ "${mode}" == light ]] && echo "${pids[0]}" || true)" \
     MARV_E2E_STAND_IN="$([[ "${mode}" == light ]] && echo "${STAND_IN_SECONDS}" || true)" \
-    MARV_E2E_RUNS_DIR="${work}/runs" \
+    MARV_E2E_RUNS_DIR="${work}/runs" MARV_E2E_SIM_PID="${sim_pid}" \
     npx --no-install playwright test "$@"
 ) || status=$?
 echo "report: ${out_dir}/report.json"

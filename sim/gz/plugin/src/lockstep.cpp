@@ -4,7 +4,13 @@
 // on stderr, then std::abort: a gz System cannot stop the server with a failure status, and an abort is the one
 // outcome that cannot be mistaken for a run). PreUpdate reads the state, steps the adapter, applies the wrench and
 // logs (lockstep_log.hpp). Everything is serial, in PreUpdate; nothing reads the wall clock, except the HIL command source
-// of the optional <hil> element (hil_source.hpp, HIL stage S4), which paces the ticks on it.
+// of the optional <hil> element (hil_source.hpp, HIL stage S4), which paces the ticks on it, and the optional sim channel
+// (below), which reads it for the real-time factor of its record and for nothing else.
+//
+// The sim channel (ground-segment unit GX-8, decision 0056): the optional <sim_telemetry_udp_port> (127.0.0.1) and
+// <sim_telemetry_period_us> (SIM time between records), both or neither, publish a versioned record of truth and of what the
+// plugin injects (sim_telemetry.hpp has the layout and the argument that it does not perturb the run). Without them nothing of
+// this runs.
 //
 // The ground link (decision 0053 Q4; ground-segment unit 6), with a SIL library built with STORAGE only: the optional
 // <config_dir> opens the config storage in that existing directory (marv_sil_storage_open) and the optional <link_udp_port>
@@ -69,6 +75,7 @@
 #include "constants.hpp"
 #include "hil_source.hpp"
 #include "lockstep_log.hpp"
+#include "sim_telemetry.hpp"
 #include "marv/gz/adapter.hpp"
 #include "marv/gz/frames.hpp"
 #include "marv/gz/truth_gyro.hpp"
@@ -186,6 +193,8 @@ struct Parsed {
   std::optional<HilConfig> hil;
   std::optional<std::uint32_t> link_udp_port;
   std::optional<std::string> config_dir;
+  std::optional<std::uint32_t> sim_telemetry_port;
+  std::optional<std::uint64_t> sim_telemetry_period_us;
 };
 
 std::string text_of(const sdf::ElementPtr& e) { return e->Get<std::string>(); }
@@ -657,6 +666,12 @@ Parsed parse_plugin(const sdf::ElementPtr& root) {
     } else if (name == "link_udp_port") {
       once(name);
       p.link_udp_port = integer_of<std::uint32_t>(e);
+    } else if (name == "sim_telemetry_udp_port") {
+      once(name);
+      p.sim_telemetry_port = integer_of<std::uint32_t>(e);
+    } else if (name == "sim_telemetry_period_us") {
+      once(name);
+      p.sim_telemetry_period_us = integer_of<std::uint64_t>(e);
     } else if (name == "config_dir") {
       once(name);
       const std::string t = trim(text_of(e));
@@ -1140,6 +1155,9 @@ class Lockstep final : public gzs::System,
         refuse("<hil> excludes <link_udp_port> and <config_dir> (the board runs the firmware, not the SIL)");
       }
     }
+    if (p.sim_telemetry_port.has_value() != p.sim_telemetry_period_us.has_value()) {
+      refuse("<sim_telemetry_udp_port> and <sim_telemetry_period_us> go together; one of them is missing");
+    }
 #ifndef MARV_GZ_TRUTH_VERTICAL
     if (p.truth_vertical) {
       refuse("<vertical_source> needs a SIL library with marv_truth_vertical_set (built with TRUTH_VERTICAL, target "
@@ -1278,6 +1296,18 @@ class Lockstep final : public gzs::System,
 
     log_path_ = p.log_path;
     log_params_ = {m_, p.num_us, p.den, p.seed};
+
+    // The sim channel (sim_telemetry.hpp): opened last, so that a refusal above never leaves a socket behind.
+    if (p.sim_telemetry_port) {
+      const std::string error = telemetry_.open(*p.sim_telemetry_port, *p.sim_telemetry_period_us);
+      if (!error.empty()) {
+        refuse(error);
+      }
+      plant_mass_kg_ = p.plant.mass_kg;
+      plant_thrust_coeff_ = p.plant.thrust_coeff;
+      telemetry_flags_ = (p.model_gyro ? kSimFlagImuModel : 0U) | (p.launch_pad ? kSimFlagLaunchPad : 0U) |
+                         (p.ground ? kSimFlagGround : 0U) | (p.hil ? kSimFlagHil : 0U);
+    }
   }
 
   void PreUpdate(const gzs::UpdateInfo& info, gzs::EntityComponentManager& ecm) override {
@@ -1487,6 +1517,15 @@ class Lockstep final : public gzs::System,
       ++touchdowns_;
       last_touchdown_m_s_ = r.touchdown->down_speed_m_s;
     }
+    if (telemetry_.enabled()) {
+      for (const TickOutput& t : r.ticks) {
+        pad_released_ = pad_released_ || t.pad_released;
+      }
+      const std::uint64_t sim_ns = static_cast<std::uint64_t>(std::chrono::nanoseconds(info.simTime).count());
+      if (telemetry_.due(sim_ns)) {
+        publish_telemetry(sim_ns, body, r);
+      }
+    }
     if (link_on_) {
       serve_link();
     }
@@ -1516,6 +1555,41 @@ class Lockstep final : public gzs::System,
       }
       refuse("physics max_step_size is not m*tick");
     }
+  }
+
+  // The sim channel's record of this host step (sim_telemetry.hpp); reads state the step already holds, changes none.
+  void publish_telemetry(std::uint64_t sim_ns, const marv_plant_body& body, const StepResult& r) {
+    const TickOutput& last = r.ticks.back();
+    SimSample s;
+    s.sim_time_ns = sim_ns;
+    s.tick = last.tick;
+    s.flags = telemetry_flags_ | (last.pad_held ? kSimFlagPadHeld : 0U) | (pad_released_ ? kSimFlagPadReleased : 0U);
+    for (std::size_t i = 0; i < 3; ++i) {
+      s.pos_ned_m[i] = body.pos_ned_m[i];
+      s.vel_ned_m_s[i] = body.vel_ned_m_s[i];
+      s.omega_frd_rad_s[i] = body.omega_frd_rad_s[i];
+    }
+    for (std::size_t i = 0; i < 4; ++i) {
+      s.q_wxyz[i] = body.q_wxyz[i];
+    }
+    double thrust_n = 0.0;
+    for (std::size_t i = 0; i < kMotors; ++i) {
+      s.rotor_speed_rad_s[i] = last.out.rotor_speed_rad_s[i];
+      thrust_n += plant_thrust_coeff_ * last.out.rotor_speed_rad_s[i] * last.out.rotor_speed_rad_s[i];
+      s.dshot_commanded[i] = last.dshot[i];
+      s.dshot_applied[i] = last.dshot_applied[i];
+    }
+    s.specific_force_frd_m_s2 = {0.0, 0.0, -thrust_n / plant_mass_kg_};
+    const marv_imu_meas& imu = source_.imus().back();
+    s.imu_gyro_rad_s = {imu.gyro_rad_s.x, imu.gyro_rad_s.y, imu.gyro_rad_s.z};
+    s.imu_accel_m_s2 = {imu.accel_m_s2.x, imu.accel_m_s2.y, imu.accel_m_s2.z};
+    s.imu_flags = imu.flags;
+    s.touchdowns = static_cast<std::uint32_t>(touchdowns_);
+    s.last_touchdown_down_m_s = static_cast<float>(last_touchdown_m_s_);
+    if ((telemetry_flags_ & kSimFlagHil) != 0U) {
+      s.hil = hil_.view();
+    }
+    telemetry_.publish(s);
   }
 
   // The ground link's elements (file comment): opens the config storage and the link's socket in the SIL before marv_sil_init
@@ -1856,6 +1930,13 @@ class Lockstep final : public gzs::System,
   double last_touchdown_m_s_ = 0.0;
   bool pose_cmd_pending_ = false;
   HilCommandSource hil_;
+  // The optional sim channel (sim_telemetry.hpp): the socket, the static flags of the record, the plant constants of its
+  // specific-force field, and whether the pad has released.
+  SimTelemetry telemetry_;
+  std::uint32_t telemetry_flags_ = 0;
+  double plant_mass_kg_ = 1.0;
+  double plant_thrust_coeff_ = 0.0;
+  bool pad_released_ = false;
   RecordingSource source_;
   std::unique_ptr<Adapter> adapter_;
   LogFile log_;

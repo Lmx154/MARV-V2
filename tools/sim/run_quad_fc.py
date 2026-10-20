@@ -4,7 +4,8 @@ angle mode, from a stick script, off the launch pad, with the N-tick command del
 tuned, nothing is a flight result, and the card values it flies are INFERRED / UNVERIFIED / PLACEHOLDER.
 
   run_quad_fc.py --out-dir <dir> [--plugin-dir <host-gz-quadfc plugin dir>] [--runs flight|control|both] [--max-s <s>]
-                 [--link-udp-port <port>] [--config-dir <dir>] [--interactive [--card <card.yaml>] [--override <name=value> ...] [--gui]]
+                 [--link-udp-port <port>] [--config-dir <dir>] [--sim-telemetry-udp-port <port> [--sim-telemetry-hz <hz>]]
+                 [--interactive [--card <card.yaml>] [--override <name=value> ...] [--gui]]
 
 Needs `cmake --preset host-gz-quadfc && cmake --build --preset host-gz-quadfc` and gz-sim 8. Per run it writes to <dir>:
 the world (<stem>.sdf), the full lockstep log (<stem>.bin, ~80 MB, not committed; its sha256 is in the analysis), the L2 run
@@ -56,6 +57,12 @@ the plugin element (sim/gz/plugin/src/lockstep.cpp); without them the world is b
 exit status of EX_TEMPFAIL is the plugin's "reboot requested" (a config command was accepted): the run stops, nothing is
 analysed, and this script exits with os.EX_TEMPFAIL so that the launcher (tools/gs/sil.py) relaunches it on the same config dir.
 
+The sim channel (ground-segment unit GX-8, decision 0056). --sim-telemetry-udp-port <port> writes <sim_telemetry_udp_port> (the
+plugin sends its versioned sim record to 127.0.0.1:<port>, where the ground-station helper listens) and <sim_telemetry_period_us>
+(1e6 / --sim-telemetry-hz, default tools/sim/sim_channel.py DEFAULT_RATE_HZ, a labelled harness value) into the plugin element;
+without the port the world is byte-identical to one without the option, and with it the lockstep log is unchanged (invariant SC-1,
+tests/regression/quad/L10/gz/test_sim_channel.py). It applies to every run of this script.
+
 The interactive run (--interactive, for the ground station's SIL launcher; --runs, --script, --step-stick, --com-offset-m and
 --max-s do not apply). The same card, tick, site, sensors, N and launch pad, in a world of gen_world mode "pilot", whose
 <real_time_factor> 1 makes gz-sim pace the host steps on the wall clock (the plugin itself reads no wall clock); one script
@@ -104,6 +111,7 @@ import mixer as card_mixer  # noqa: E402
 import run_scenario  # noqa: E402
 import scenario as scn  # noqa: E402
 import sil_run  # noqa: E402
+import sim_channel  # noqa: E402
 
 CARD = ROOT / "vehicles" / "marv_7in_fc3v2.yaml"
 BASE_SCENARIO = ROOT / "scenarios" / "quad" / "L02" / "hover.yaml"
@@ -944,6 +952,10 @@ def main(argv=None):
                     help="the SIL's ground-link UDP port on 127.0.0.1 (<link_udp_port>, a scenario value); default: no element")
     ap.add_argument("--config-dir", default=None,
                     help="the SIL's config storage directory (<config_dir>; created if missing); default: no element")
+    ap.add_argument("--sim-telemetry-udp-port", type=int, default=None,
+                    help="the sim channel's destination, UDP 127.0.0.1:<port> (<sim_telemetry_udp_port>); default: no element")
+    ap.add_argument("--sim-telemetry-hz", type=float, default=sim_channel.DEFAULT_RATE_HZ,
+                    help="the sim channel's rate in SIM time (a labelled harness value, default %(default)s)")
     ap.add_argument("--interactive", action="store_true",
                     help="one real-time run, arm switch low, no log and no analysis, until stopped (module docstring)")
     ap.add_argument("--card", default=None, help="interactive only: the plant card (default vehicles/marv_7in_fc3v2.yaml)")
@@ -958,7 +970,11 @@ def main(argv=None):
     if a.config_dir is not None:
         config_dir = Path(a.config_dir).resolve()
         config_dir.mkdir(parents=True, exist_ok=True)
-    link = link_xml(a.link_udp_port, config_dir)
+    try:
+        sim_xml = sim_channel.sim_telemetry_xml(a.sim_telemetry_udp_port, a.sim_telemetry_hz)
+    except ValueError as e:
+        ap.error(str(e))
+    link = link_xml(a.link_udp_port, config_dir) + sim_xml
     if a.interactive:
         card, overrides = interactive_options(ap, a)
         status = run_interactive(a.out_dir, a.plugin_dir, link, card, overrides, a.gui)

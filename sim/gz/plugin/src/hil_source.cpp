@@ -440,6 +440,12 @@ void HilCommandSource::parse() {
         ++receiver_frames_;
         rx_frames_ = get_u32(q);
         rx_throttle_ = get_f32(q + sizeof(std::uint32_t) + sizeof(std::uint64_t) + 3 * sizeof(float));
+        for (std::size_t i = 0; i < rx_sticks_.size(); ++i) {
+          rx_sticks_[i] = get_f32(q + sizeof(std::uint32_t) + sizeof(std::uint64_t) + i * sizeof(float));
+        }
+        for (std::size_t i = 0; i < rx_channels_.size(); ++i) {
+          rx_channels_[i] = get_f32(q + sizeof(std::uint32_t) + sizeof(std::uint64_t) + (rx_sticks_.size() + i) * sizeof(float));
+        }
         rx_lq_ = get_f32(q + sizeof(std::uint32_t) + sizeof(std::uint64_t) + (4 + prim::kCrsfRcChannels) * sizeof(float));
         // The flight mode the board's quad_fc selects from this frame (open(): the angle channel and threshold).
         rx_angle_ = angle_channel_ > 0 && get_f32(q + sizeof(std::uint32_t) + sizeof(std::uint64_t) +
@@ -642,6 +648,35 @@ void HilCommandSource::status_line(std::uint64_t tick) {
                reports_used_ == 0 ? 0.0 : static_cast<double>(min_margin_ns_) / static_cast<double>(kNsPerUs),
                static_cast<double>(lag_ns_) / static_cast<double>(kNsPerUs * kUsPerMs), field(status_, StatusField::DeadlineMisses),
                link_faults, ground.c_str());
+}
+
+HilView HilCommandSource::view() const {
+  using fmt::StatusField;
+  const auto sat = [](std::uint64_t v) {
+    return static_cast<std::uint32_t>(std::min<std::uint64_t>(v, std::numeric_limits<std::uint32_t>::max()));
+  };
+  HilView v;
+  v.arming_state = field(status_, StatusField::ArmingState);
+  v.status_records = sat(status_records_);
+  v.receiver_frames = sat(receiver_frames_);
+  v.frame_counter = rx_frames_;
+  v.mode = receiver_frames_ == 0 || !have_angle_threshold_ ? 0 : rx_angle_ ? 2 : 1;
+  v.deadline_misses = field(status_, StatusField::DeadlineMisses);
+  std::uint32_t link_faults = 0;
+  for (const StatusField f : {StatusField::CrcFailures, StatusField::BadHeaders, StatusField::SeqGaps, StatusField::TickGaps,
+                              StatusField::BytesDropped, StatusField::QueueOverflows, StatusField::ReportOverflows}) {
+    link_faults += field(status_, f);
+  }
+  v.link_faults = link_faults;
+  v.reports_used = sat(reports_used_);
+  v.lag_events = sat(lag_events_);
+  v.sticks = rx_sticks_;
+  v.channels = rx_channels_;
+  v.link_quality = rx_lq_;
+  v.margin_min_us = reports_used_ == 0 ? 0.0F : static_cast<float>(static_cast<double>(min_margin_ns_) / static_cast<double>(kNsPerUs));
+  v.margin_max_us = reports_used_ == 0 ? 0.0F : static_cast<float>(static_cast<double>(max_margin_ns_) / static_cast<double>(kNsPerUs));
+  v.lag_us = static_cast<float>(static_cast<double>(lag_ns_) / static_cast<double>(kNsPerUs));
+  return v;
 }
 
 void HilCommandSource::finish() {

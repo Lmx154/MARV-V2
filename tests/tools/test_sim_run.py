@@ -24,6 +24,7 @@ import gen_world  # noqa: E402
 import mcfg  # noqa: E402
 import run_quad_fc  # noqa: E402
 import sil_run  # noqa: E402
+import sim_channel  # noqa: E402
 import validate_config  # noqa: E402
 
 OTHER_CARD = ROOT / "vehicles" / "uzh_neurobem_5in.yaml"
@@ -213,6 +214,79 @@ def test_check_overrides_accepts_numbers_of_the_types_domain_and_orders_nothing(
     for bad in (1.5, sil_run.INT32_MAX + 1, sil_run.INT32_MIN - 1, float("inf"), "1.5"):
         with pytest.raises(ValueError):
             sil_run.check_overrides([("rc_channel_roll", bad)], TYPES)
+
+
+# ---- the sim channel (GX-8): the two plugin elements, the world without them, the reference decoder --------------------------------
+
+def test_sim_channel_elements_are_the_only_difference_of_the_world_and_absent_without_a_port(tmp_path, monkeypatch, plugin_tree):
+    code, args = parse(monkeypatch, plugin_tree, "--interactive")
+    assert code == 0 and args[2] == ""  # control: no port, no element, the link text of before
+    code, args = parse(monkeypatch, plugin_tree, "--interactive", "--sim-telemetry-udp-port", "5555", "--sim-telemetry-hz", "10")
+    assert code == 0 and args[2] == ("<sim_telemetry_udp_port>5555</sim_telemetry_udp_port>\n"
+                                     "<sim_telemetry_period_us>100000</sim_telemetry_period_us>\n")
+    code, args = parse(monkeypatch, plugin_tree, "--interactive", "--link-udp-port", "14550", "--sim-telemetry-udp-port", "5555")
+    assert args[2].startswith(run_quad_fc.link_xml(14550)) and f"<sim_telemetry_period_us>{sim_channel.period_us(sim_channel.DEFAULT_RATE_HZ)}" in args[2]
+    _, base = run_quad_fc.interactive_world(tmp_path, LINK)
+    _, with_channel = run_quad_fc.interactive_world(tmp_path, LINK + sim_channel.sim_telemetry_xml(5555))
+    removed = [line for line in difflib.ndiff(base.splitlines(), with_channel.splitlines()) if line[0] in "+-"]
+    assert removed == ["+ <sim_telemetry_udp_port>5555</sim_telemetry_udp_port>",
+                       f"+ <sim_telemetry_period_us>{sim_channel.period_us(sim_channel.DEFAULT_RATE_HZ)}</sim_telemetry_period_us>"]
+    assert run_quad_fc.interactive_world(tmp_path, LINK + sim_channel.sim_telemetry_xml(None))[1] == base
+
+
+@pytest.mark.parametrize("bad", [["--sim-telemetry-udp-port", "0"], ["--sim-telemetry-udp-port", "65536"],
+                                 ["--sim-telemetry-udp-port", "5555", "--sim-telemetry-hz", "0"],
+                                 ["--sim-telemetry-udp-port", "5555", "--sim-telemetry-hz", "-1"],
+                                 ["--sim-telemetry-udp-port", "5555", "--sim-telemetry-hz", "nan"]])
+def test_command_line_refuses_a_sim_channel_port_or_rate_outside_its_domain(plugin_tree, monkeypatch, capsys, bad):
+    with pytest.raises(SystemExit) as e:
+        parse(monkeypatch, plugin_tree, "--interactive", *bad)
+    assert e.value.code == 2 and capsys.readouterr().err.strip()
+
+
+def pack_record(**over):
+    """A version 1 record with the layout of sim/gz/plugin/src/sim_telemetry.hpp, every field a distinct value."""
+    import struct
+    header = sim_channel.HEADER.pack(b"MSIM", 1, sim_channel.RECORD_BYTES, over.get("seq", 7), over.get("flags", 0b101011),
+                                     123_456_789, 4242, 0.75)
+    truth = sim_channel.TRUTH.pack(*[float(i) + 0.5 for i in range(20)])
+    injected = sim_channel.INJECTED.pack(*[0.25 * i for i in range(6)], 0x1C0, 48, 49, 50, 51, 60, 61, 62, 63)
+    ground = sim_channel.GROUND.pack(3, 1.5)
+    hil = sim_channel.HIL.pack(0, 1, 2, 3, 1, 5, 6, 7, 8, *[0.5 * i for i in range(4)], *[float(i) for i in range(16)], 0.9, 1.0, 2.0, 3.0)
+    assert struct.calcsize("<9I4f16f4f") == sim_channel.HIL.size
+    return header + truth + injected + ground + hil
+
+
+def test_reference_decoder_reads_every_field_of_a_record_and_refuses_what_it_does_not_know():
+    assert sim_channel.RECORD_BYTES == 384  # the plugin's kSimRecordBytes
+    r = sim_channel.decode(pack_record())
+    assert r["seq"] == 7 and r["sim_time_ns"] == 123_456_789 and r["tick"] == 4242 and r["rtf"] == 0.75
+    assert r["flags"] == {"imu_model": True, "launch_pad": True, "ground": False, "hil": True, "pad_held": False, "pad_released": True}
+    assert r["pos_ned_m"] == (0.5, 1.5, 2.5) and r["q_wxyz"][0] == 6.5 and r["rotor_speed_rad_s"] == (16.5, 17.5, 18.5, 19.5)
+    assert r["imu_accel_m_s2"] == (0.75, 1.0, 1.25) and r["imu_flags"] == 0x1C0
+    assert r["dshot_commanded"] == (48, 49, 50, 51) and r["dshot_applied"] == (60, 61, 62, 63)
+    assert r["touchdowns"] == 3 and r["last_touchdown_down_m_s"] == 1.5
+    hil = r["hil"]
+    assert hil["arming_state"] == 0 and hil["lag_events"] == 8 and hil["mode"] == "acro" and hil["channels"][15] == 15.0
+    assert hil["sticks"] == (0.0, 0.5, 1.0, 1.5) and hil["link_quality"] == pytest.approx(0.9, abs=1e-6) and hil["lag_us"] == 3.0
+    good = pack_record()
+    for bad in (good[:-1], good + b"\x00", b"XSIM" + good[4:], good[:4] + b"\x02\x00" + good[6:], b"", good[:8]):
+        with pytest.raises(ValueError):
+            sim_channel.decode(bad)
+    longer = bytearray(good + b"\xaa" * 8)  # a later version may append fields: this decoder needs the length field to match
+    longer[6:8] = (len(longer)).to_bytes(2, "little")
+    assert sim_channel.decode(bytes(longer))["seq"] == 7
+
+
+def test_period_of_a_rate_and_the_elements():
+    assert sim_channel.period_us(20.0) == 50_000 and sim_channel.period_us(1.0) == 1_000_000 and sim_channel.period_us(3.0) == 333_333
+    assert sim_channel.sim_telemetry_xml(None) == ""
+    for bad in (0, 65536, -1, True, "5"):
+        with pytest.raises(ValueError):
+            sim_channel.sim_telemetry_xml(bad)
+    for bad in (0, -1.0, float("inf"), float("nan"), True, None):
+        with pytest.raises(ValueError):
+            sim_channel.period_us(bad)
 
 
 # ---- O-1: the validator refuses a record made by a SIL override --------------------------------------------------------------

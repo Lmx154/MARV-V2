@@ -14,6 +14,9 @@
   - flashes a board image through picotool (tools/gs/flash.py, ground-segment unit 15, G7): only with a passing validation report
     for the pair (image hash, the config the board will run); the helper checks that gate, runs picotool and opens the serial
     port again; the maintenance grant before it and the image hash read back after it are the GCS's (the link is its codec's);
+  - receives the simulator's sim channel on a UDP socket of its own (tools/gs/simchannel.py, GX-8; the lockstep plugin's versioned
+    record of sim truth and injected inputs), relays each datagram unparsed on /ws/sim and logs it in sim.log, a sibling of the
+    ground log (sim truth is never in the ground log: S-1);
   - serves the built GCS (gcs/build) at /.
 
   uv run python tools/gs/helper.py [--serial PATH [--baud N] | --udp PORT] [--port N] [--runs-dir DIR] [--build-root DIR]
@@ -41,6 +44,8 @@ Endpoints (all need the token):
                                   params_provenance, factory_mcfg
   GET  /api/reports/<image hash>/<config hash>
                                   the validation report of that pair (the bytes whose SHA-256 is the report id), 404 if none
+  WS   /ws/sim                    the sim channel: one binary message per datagram of the simulator's record, as it arrived; one way
+                                  (a client that sends is closed with 1008). Same Host, Origin and token rules as /ws; one client.
   WS   /ws                        binary frames are raw device bytes in both directions; text frames are JSON control:
          {"cmd": "status"} {"cmd": "open", "serial": "/dev/...", "baud": N} {"cmd": "open", "udp_port": N} {"cmd": "close"}
          {"cmd": "sil_start"} {"cmd": "sil_stop"}: run_start / run_stop of kind sil
@@ -50,7 +55,8 @@ Endpoints (all need the token):
            The options of a sil run (GX-3, the run definition): "card" (vehicles/<name>.yaml), "overrides" ([{"name", "value"}]:
            firmware parameters of the image's manifest, values inside their type's domain, each name once) and "gui" (display-only
            visuals and a gz GUI client); a run with an override is labelled "sil-override" ("label" and "overrides" in the plan, the
-           manifest and run_started). Any other key is refused.
+           manifest and run_started). "sim_channel" (boolean, default true; sil and hil): the run is given the helper's sim channel
+           port (--sim-telemetry-udp-port); false leaves it out. Any other key is refused.
          {"cmd": "run_start", "kind": ..., ...options}: refused ("refusals": [...], ok false) while a run is going (one simulation
            at a time), a validation or flash runs, the heavy lock is held, or (hil) the helper has a serial port open or the port is
            absent; else starts the run and answers {"run": manifest}. {"cmd": "run_stop"}: stops the run's process group,
@@ -119,6 +125,7 @@ import mcfg  # noqa: E402
 from artifacts import ARTIFACT_KEYS, ImageLibrary, ReportLibrary  # noqa: E402
 from device import DEFAULT_BAUD, LOOPBACK, Device, DeviceError, SerialDevice, UdpDevice  # noqa: E402
 import hoststate  # noqa: E402
+from simchannel import SimChannel  # noqa: E402
 from runs import KINDS, RunRefused, RunSupervisor, list_cards, parse_options  # noqa: E402
 import sil_run  # noqa: E402  (tools/sim, on the path since runs)
 from sil import SilLauncher, udp_bound  # noqa: E402
@@ -130,6 +137,8 @@ from websockets.http11 import Request, Response  # noqa: E402
 DEFAULT_PORT = 8765  # a convenience default for a stable URL (unprivileged, unassigned); --port 0 picks a free port
 COOKIE = "marv_gs_token"
 CLIENT_QUEUE_MAX_BYTES = 4 << 20  # labelled harness value: bytes queued for a slow browser before chunks are dropped (counted, logged)
+SIM_CLIENT_QUEUE_MAX_BYTES = 1 << 20  # labelled harness value: the same for the /ws/sim client (records are ~0.4 kB at tens of Hz)
+WS_POLICY = 1008  # RFC 6455 section 7.4.1 "policy violation": a /ws/sim client sent something (the channel is one way)
 SERIAL_GLOBS = ("/dev/ttyACM*", "/dev/ttyUSB*", "/dev/serial/by-id/*")
 WS_BUSY = 1013  # RFC 6455 section 7.4.2 "try again later"
 BYID_DIR = Path("/dev/serial/by-id")
@@ -167,7 +176,7 @@ class Helper:
                  sil_command: list[str] | None = None, extra_origins: tuple[str, ...] = (), reports_dir: Path | None = None,
                  validate_command: list[str] | None = None, picotool: str | None = None, hil_command: list[str] | None = None,
                  heavy_lock: Path | None = None, byid_dir: Path | None = None, autoconnect: bool = True, poll_s: float = POLL_S,
-                 board_serial: str | None = None, sysfs_dir: Path | None = None):
+                 board_serial: str | None = None, sysfs_dir: Path | None = None, sim_channel_port: int = 0):
         self.token = token or secrets.token_urlsafe(32)
         self.extra_origins = frozenset(extra_origins)
         self.build_root, self.gcs_dir = Path(build_root), Path(gcs_dir)
@@ -192,7 +201,13 @@ class Helper:
         self.flash_timing: dict = {}  # tests shorten flash.run_flash's waits (load_s, port_wait_s, settle_s)
         self._flash_task: asyncio.Task | None = None
         self.sil = SilLauncher(self.run_dir, sil_udp_port, sil_command)
-        self.runs = RunSupervisor(self.run_dir, self.sil, self._emit_threadsafe, hil_command_override=hil_command)
+        self.sim_channel = SimChannel(self.run_dir, self._sim_rx, sim_channel_port)
+        self.sim_client: ServerConnection | None = None
+        self._sim_queue: asyncio.Queue | None = None
+        self._sim_queued_bytes = 0
+        self.sim_dropped_bytes = 0
+        self.runs = RunSupervisor(self.run_dir, self.sil, self._emit_threadsafe, hil_command_override=hil_command,
+                                  sim_port=lambda: self.sim_channel.port or None)
         self.heavy_lock = Path(heavy_lock) if heavy_lock is not None else None  # None: $MARV_HEAVY_LOCK or the default (hoststate.py)
         self.byid_dir = Path(byid_dir) if byid_dir is not None else BYID_DIR
         self.autoconnect_enabled = autoconnect
@@ -219,9 +234,10 @@ class Helper:
 
     async def start(self, port: int) -> None:
         self._loop = asyncio.get_running_loop()
+        await self.sim_channel.start()
         self._server = await serve(self._ws_handler, LOOPBACK, port, process_request=self._process_request, compression=None)
         self.port = self._server.sockets[0].getsockname()[1]
-        self.log.event(f"helper started on {self.origin}")
+        self.log.event(f"helper started on {self.origin}; sim channel on udp {LOOPBACK}:{self.sim_channel.port}")
         self._monitor_task = asyncio.create_task(self._monitor())
 
     @property
@@ -244,6 +260,7 @@ class Helper:
         await self.stop_flash()
         await asyncio.to_thread(self.runs.shutdown)
         await asyncio.to_thread(self.sil.stop)
+        self.sim_channel.close()
         self.log.event("helper stopped")
         self.log.close()
 
@@ -253,6 +270,17 @@ class Helper:
         self.log.write(groundlog.RX, data)
         if self._queue is not None:
             self._push(data)
+
+    def _sim_rx(self, data: bytes) -> None:
+        """One sim record (a datagram): handed to the /ws/sim client as it is."""
+        queue = self._sim_queue
+        if queue is None:
+            return
+        if self._sim_queued_bytes + len(data) > SIM_CLIENT_QUEUE_MAX_BYTES:
+            self.sim_dropped_bytes += len(data)
+            return
+        self._sim_queued_bytes += len(data)
+        queue.put_nowait(data)
 
     def _device_closed(self, reason: str) -> None:
         self.log.event(f"device closed: {reason}")
@@ -530,6 +558,8 @@ class Helper:
             "device": self.device.description if self.device else None,
             "client": self.client is not None,
             "dropped_bytes": self.dropped_bytes,
+            "sim_channel": {**self.sim_channel.status(), "client": self.sim_client is not None,
+                            "dropped_bytes": self.sim_dropped_bytes},
             "sil": self.sil.status(),
             "runs": self.runs.status(),
             "host": hoststate.host_state(self.heavy_lock),
@@ -750,7 +780,35 @@ class Helper:
 
     # ---- WebSocket ------------------------------------------------------------------------------------------------------
 
+    async def _sim_ws_handler(self, ws: ServerConnection) -> None:
+        """/ws/sim: binary messages are the sim channel's datagrams, one record each, as they arrived. Nothing flows the other way: a
+        client that sends is closed."""
+        if self.sim_client is not None:
+            await ws.close(WS_BUSY, "another sim client is attached")
+            return
+        self.sim_client = ws
+        self._sim_queue = queue = asyncio.Queue()
+        self._sim_queued_bytes = 0
+
+        async def sender() -> None:
+            while True:
+                item = await queue.get()
+                self._sim_queued_bytes -= len(item)
+                await ws.send(item)
+
+        task = asyncio.create_task(sender())
+        try:
+            async for _ in ws:
+                await ws.close(WS_POLICY, "the sim channel is one way")
+                break
+        finally:
+            self.sim_client, self._sim_queue = None, None
+            task.cancel()
+
     async def _ws_handler(self, ws: ServerConnection) -> None:
+        if urlsplit(ws.request.path).path == "/ws/sim":
+            await self._sim_ws_handler(ws)
+            return
         if self.client is not None:
             await ws.close(WS_BUSY, "another client is attached")
             return
@@ -890,8 +948,8 @@ class Helper:
         if refusal is not None:
             return refusal
         if websocket:
-            return None if path == "/ws" else self._refuse(HTTPStatus.NOT_FOUND, "no such WebSocket path")
-        if path == "/ws":
+            return None if path in ("/ws", "/ws/sim") else self._refuse(HTTPStatus.NOT_FOUND, "no such WebSocket path")
+        if path in ("/ws", "/ws/sim"):
             return self._refuse(HTTPStatus.UPGRADE_REQUIRED, "WebSocket only")
         try:
             return self._http_get(path, in_query)
@@ -954,7 +1012,7 @@ async def run(args: argparse.Namespace) -> int:
                     validate_command=shlex.split(args.validate_command) if args.validate_command else None,
                     picotool=args.picotool, hil_command=shlex.split(args.hil_command) if args.hil_command else None,
                     heavy_lock=args.heavy_lock, byid_dir=args.byid_dir, autoconnect=not args.no_autoconnect,
-                    board_serial=args.board_serial)
+                    board_serial=args.board_serial, sim_channel_port=args.sim_channel_port)
     await helper.start(args.port)
     try:
         if args.serial:
@@ -1009,6 +1067,9 @@ def parse_args(argv=None) -> argparse.Namespace:
                     help=f"the directory the board watcher scans for link interfaces (default {BYID_DIR}); also the root of a HIL run's port")
     ap.add_argument("--board-serial", default=None, metavar="SERIAL",
                     help="autoconnect opens only the board whose USB serial string is SERIAL (default: any board that passes the checks)")
+    ap.add_argument("--sim-channel-port", type=int, default=0,
+                    help="the UDP port on 127.0.0.1 the simulator's sim channel is received on (0, the default, picks a free one); "
+                         "runs the helper starts are given it (--sim-telemetry-udp-port)")
     ap.add_argument("--no-autoconnect", action="store_true", help="do not open the SIL's UDP link or a board's link interface by itself")
     ap.add_argument("--picotool", help=f"the picotool executable the flash runs (default $MARV_PICOTOOL, else `{flash.PICOTOOL}` on PATH)")
     ap.add_argument("--extra-origin", action="append", default=[], type=origin_arg, metavar="ORIGIN",

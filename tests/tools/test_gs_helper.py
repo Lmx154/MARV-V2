@@ -2163,7 +2163,11 @@ def test_run_plan_of_a_sil_run_definition_names_the_card_overrides_gui_and_the_l
             plain = (await s.cmd(cmd="run_plan", kind="sil"))["plan"]  # control: no definition, the argv of before the options
             assert plain["label"] is None and plain["overrides"] == [] and plain["options"] == {}
             assert not {"--card", "--override", "--gui"} & set(plain["argv"])
-            assert plain["argv"] == sil.default_command(Path(plain["out_dir"]), h.run_dir / "store", None)
+            # The sim channel (GX-8): the helper's listener port is part of every run definition unless the run turns it off.
+            assert plain["argv"] == sil.default_command(Path(plain["out_dir"]), h.run_dir / "store", None,
+                                                        ["--sim-telemetry-udp-port", str(h.sim_channel.port)])
+            off = (await s.cmd(cmd="run_plan", kind="sil", sim_channel=False))["plan"]
+            assert off["argv"] == sil.default_command(Path(plain["out_dir"]), h.run_dir / "store", None) and off["sim_channel_port"] is None
             empty = (await s.cmd(cmd="run_plan", kind="sil", overrides=[]))["plan"]  # an empty list is no override and no label
             assert empty["label"] is None and empty["argv"] == plain["argv"]
             plan = (await s.cmd(cmd="run_plan", kind="sil", card=CARD_B, gui=True, overrides=[
@@ -2313,3 +2317,129 @@ def test_heavy_lock_held_refuses_a_sil_run_definition_and_the_same_request_start
         run_with_helper(tmp_path, body, sil_command=["sh", "-c", f"touch {ran}; sleep 600"])
     finally:
         release_heavy(holder)
+
+
+# -- the sim channel (ground-segment unit GX-8, decision 0056): the plugin's records relayed on /ws/sim unparsed and logged
+
+def sim_url(h, token=None, path="/ws/sim"):
+    return f"ws://127.0.0.1:{h.port}{path}" + (f"?token={h.token if token is None else token}" if token != "" else "")
+
+
+def sim_connect(h, *, token=None, origin="own", path="/ws/sim"):
+    return connect(sim_url(h, token, path), origin=h.origin if origin == "own" else origin, compression=None)
+
+
+def send_datagram(port, data):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.sendto(data, ("127.0.0.1", port))
+    finally:
+        s.close()
+
+
+async def recv_datagrams(ws, n):
+    return [await asyncio.wait_for(ws.recv(), TIMEOUT_S) for _ in range(n)]
+
+
+def test_sim_channel_relays_each_datagram_unparsed_in_order_and_logs_it_apart_from_the_ground_log(tmp_path):
+    # Not records of any version: the relay must not care what the bytes are (GS-3's twin for the sim channel).
+    datagrams = [b"MSIM" + bytes(range(40)), b"\x00", bytes(range(256)) * 4, b"not a record at all"]
+
+    async def body(h):
+        assert not (h.run_dir / "sim.log").exists()  # no simulator, no sim log
+        async with sim_connect(h) as ws:
+            for d in datagrams:
+                send_datagram(h.sim_channel.port, d)
+            assert await recv_datagrams(ws, len(datagrams)) == datagrams
+        assert h.sim_channel.status()["datagrams"] == len(datagrams)
+        return [r.data for r in groundlog.read_records(h.run_dir / "sim.log") if r.kind == groundlog.RX]
+
+    run_dir_logs = {}
+
+    async def wrapped(h):
+        logged = await body(h)
+        run_dir_logs["ground"] = [r for r in groundlog.read_records(h.run_dir / "ground.log")]
+        return logged
+
+    logged = run_with_helper(tmp_path, wrapped)
+    assert logged == datagrams
+    # S-1 control: the ground log (the vehicle's byte stream) holds none of it.
+    assert not any(r.kind in (groundlog.RX, groundlog.TX) for r in run_dir_logs["ground"])
+
+
+def test_sim_channel_datagrams_with_no_client_are_logged_and_a_later_client_gets_only_what_follows(tmp_path):
+    async def body(h):
+        send_datagram(h.sim_channel.port, b"early")
+        deadline = time.monotonic() + TIMEOUT_S
+        while h.sim_channel.status()["datagrams"] < 1 and time.monotonic() < deadline:
+            await asyncio.sleep(0.01)
+        async with sim_connect(h) as ws:
+            send_datagram(h.sim_channel.port, b"late")
+            assert await recv_datagrams(ws, 1) == [b"late"]
+        return [r.data for r in groundlog.read_records(h.run_dir / "sim.log") if r.kind == groundlog.RX]
+    assert run_with_helper(tmp_path, body) == [b"early", b"late"]
+
+
+def test_ws_sim_has_the_same_gate_as_ws_and_one_client(tmp_path):
+    async def body(h):
+        for token in ("", "wrong"):
+            with pytest.raises(InvalidStatus) as e:
+                async with sim_connect(h, token=token):
+                    pass
+            assert e.value.response.status_code == 401
+        with pytest.raises(InvalidStatus) as e:
+            async with sim_connect(h, origin="http://evil.example"):
+                pass
+        assert e.value.response.status_code == 403
+        with pytest.raises(InvalidStatus) as e:
+            async with sim_connect(h, path="/ws/other"):
+                pass
+        assert e.value.response.status_code == 404
+        assert (await http_get(h, "/ws/sim", token="own"))[0] == 426  # a plain GET: WebSocket only
+        assert (await http_get(h, "/ws/sim", token=None))[0] == 401
+        async with sim_connect(h) as first:  # control: the same request with the right token and origin is served
+            async with sim_connect(h) as second:
+                with pytest.raises(ConnectionClosed) as e:
+                    await asyncio.wait_for(second.recv(), TIMEOUT_S)
+                assert e.value.rcvd.code == helper_mod.WS_BUSY
+            send_datagram(h.sim_channel.port, b"still")
+            assert await recv_datagrams(first, 1) == [b"still"]
+            async with ws_connect(h) as link:  # the link relay at /ws is a client of its own
+                assert (await control(link, cmd="status"))["ok"]
+    run_with_helper(tmp_path, body)
+
+
+def test_ws_sim_is_one_way_a_client_that_sends_is_closed(tmp_path):
+    async def body(h):
+        async with sim_connect(h) as ws:
+            await ws.send(b"\x00" * 8)
+            with pytest.raises(ConnectionClosed) as e:
+                await asyncio.wait_for(ws.recv(), TIMEOUT_S)
+            assert e.value.rcvd.code == helper_mod.WS_POLICY
+        deadline = time.monotonic() + TIMEOUT_S
+        while h.sim_client is not None and time.monotonic() < deadline:
+            await asyncio.sleep(0.01)
+        assert h.sim_client is None
+    run_with_helper(tmp_path, body)
+
+
+def test_a_run_gets_the_sim_channel_port_in_its_argv_and_the_manifest_unless_it_turns_it_off(tmp_path):
+    port, keep = fake_board(tmp_path, "usb-Fake_Board_1-if00")
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            for kind, extra in (("sil", {}), ("hil", {"port": port})):
+                plan = (await s.cmd(cmd="run_plan", kind=kind, **extra))["plan"]
+                assert flag_values(plan["argv"], "--sim-telemetry-udp-port") == [str(h.sim_channel.port)], kind
+                assert plan["sim_channel_port"] == h.sim_channel.port
+                off = (await s.cmd(cmd="run_plan", kind=kind, sim_channel=False, **extra))["plan"]  # control
+                assert "--sim-telemetry-udp-port" not in off["argv"] and off["sim_channel_port"] is None
+            assert not (await s.cmd(cmd="run_plan", kind="sil", sim_channel="yes"))["ok"]
+            assert (await s.cmd(cmd="status"))["status"]["sim_channel"]["port"] == h.sim_channel.port
+            s.close()
+    try:
+        run_with_helper(tmp_path, body)
+    finally:
+        for fd in keep:
+            os.close(fd)

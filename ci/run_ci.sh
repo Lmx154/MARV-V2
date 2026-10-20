@@ -195,6 +195,12 @@ gs3_check() {
   uv run python tools/ci/check_gs3.py
 }
 
+# S-1 (GX-8): the vehicle's view and the simulator's sim channel never import each other; its negative controls (planted crossings in
+# both directions) are tests/tools/test_check_s1.py, run by tools_tests.
+s1_check() {
+  uv run python tools/ci/check_s1.py
+}
+
 # The GCS unit tests and the type check (GCS-first unit GX-0): vitest (gcs/src and the TypeScript side of the L00 codec
 # conformance suite) and svelte-check. The dependencies are gcs/node_modules (`cd gcs && npm ci`). The merge gate (MARV_CI_MODE=full:
 # Actions, ci/local_ci.sh) installs them itself in its fresh tree; the development check never installs behind the developer's
@@ -1078,6 +1084,7 @@ if [[ "${MARV_CI_MODE:-per-push}" != full ]]; then
 fi
 step "G8: CLAUDE.md keeps the ACTIVE-spec, number, UNKNOWN and CI-gate sections" g8_check
 step "GS-3: no tracked file outside the codec includes a MAVLink header or names MAVLink or an in-scope message" gs3_check
+step "S-1: the GCS's vehicle side and the simulator's sim channel (lib/sim) never import each other" s1_check
 step "GCS: vitest (npm test) and svelte-check (npm run check) in gcs/" gcs_tests
 step "L1: the committed vehicle card, its sensor profile and the design budget lint clean (sigma policy)" l1_card_lint
 step "L1: plant known-answer reference reproduces plant_ref_expected.txt from plant_ref_inputs.txt" plant_ref_reproduces

@@ -29,6 +29,8 @@ add_library(marv_gz_lockstep SHARED
   src/lockstep_log.hpp
   src/hil_source.cpp
   src/hil_source.hpp
+  src/sim_telemetry.cpp
+  src/sim_telemetry.hpp
   src/constants.hpp)
 target_include_directories(marv_gz_lockstep PRIVATE src "${PROJECT_SOURCE_DIR}/fw/sil/include")
 # The HIL command source (src/hil_source.hpp, HIL stage S4) shares the board's record formats and arming states: the two

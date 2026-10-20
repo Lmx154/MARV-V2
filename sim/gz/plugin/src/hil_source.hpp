@@ -35,6 +35,7 @@
 // times) and <reports_path> one per DShot report used (its tick, arrival time and the time it was needed), host
 // nanoseconds since t0. Once per second of tick time a status line goes to stderr (the live view of an S4 pilot).
 
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <deque>
@@ -63,6 +64,26 @@ struct HilConfig {
   std::string reports_path;
 };
 
+// What the board has reported so far, for the sim channel (sim_telemetry.hpp): a read-only copy of the state the status line
+// prints. Counts are saturated at the u32 range of the record.
+struct HilView {
+  std::uint32_t arming_state = 0;     // the board's ArmState code of its latest status record
+  std::uint32_t status_records = 0;   // status records received (0: arming_state is not known yet)
+  std::uint32_t receiver_frames = 0;  // receiver-frame records received
+  std::uint32_t frame_counter = 0;    // the receiver's own RC frame count in the latest frame
+  std::uint32_t mode = 0;             // 0 unknown, 1 acro, 2 angle
+  std::uint32_t deadline_misses = 0;
+  std::uint32_t link_faults = 0;
+  std::uint32_t reports_used = 0;
+  std::uint32_t lag_events = 0;
+  std::array<float, 4> sticks{};      // roll, pitch, yaw, throttle of the latest receiver frame
+  std::array<float, 16> channels{};   // channels 1..16 of the latest receiver frame
+  float link_quality = 0.0F;
+  float margin_min_us = 0.0F;
+  float margin_max_us = 0.0F;
+  float lag_us = 0.0F;
+};
+
 class HilCommandSource final : public CommandSource {
  public:
   HilCommandSource() = default;
@@ -85,6 +106,8 @@ class HilCommandSource final : public CommandSource {
     touchdowns_ = count;
     last_touchdown_m_s_ = last_down_m_s;
   }
+  // The board's state so far (a copy; reads nothing from the port).
+  HilView view() const;
   // Keeps reading the uplink for drain_us after the last record (the board's status after the stream ends), prints the
   // summary line and closes the port and the files. Idempotent.
   void finish();
@@ -150,6 +173,8 @@ class HilCommandSource final : public CommandSource {
   std::uint32_t rx_frames_ = 0;         // and the last one's fields, for the status line
   float rx_throttle_ = 0.0F;
   float rx_lq_ = 0.0F;
+  std::array<float, 4> rx_sticks_{};    // roll, pitch, yaw, throttle of the last frame (sim channel only)
+  std::array<float, 16> rx_channels_{};  // its channels 1..16 (sim channel only)
   bool rx_angle_ = false;               // the last frame selects angle mode (status line only)
   std::size_t angle_channel_ = 0;       // quad_fc's rc_channel_angle (0: none), and its angle_switch_threshold (open())
   float angle_threshold_ = 0.0F;

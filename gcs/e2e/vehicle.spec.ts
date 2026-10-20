@@ -56,10 +56,13 @@ async function shot(page: Page, name: string): Promise<void> {
 
 const number = async (locator: Locator): Promise<number> => Number.parseFloat(((await locator.innerText()) ?? '').trim());
 
-/** Counts the binary frames (link bytes) the helper sends to the page; text frames are the helper's own events. */
+/** Counts the binary frames (link bytes) the helper sends to the page on /ws; text frames are the helper's own events, and /ws/sim (the simulator's records, GX-8) is not the vehicle's. */
 function countFrames(page: Page): { count: () => number } {
 	let n = 0;
-	page.on('websocket', (ws) => ws.on('framereceived', (f) => void (typeof f.payload !== 'string' && n++)));
+	page.on('websocket', (ws) => {
+		if (new URL(ws.url()).pathname === '/ws/sim') return;
+		ws.on('framereceived', (f) => void (typeof f.payload !== 'string' && n++));
+	});
 	return { count: () => n };
 }
 
