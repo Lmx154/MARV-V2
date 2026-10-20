@@ -55,7 +55,7 @@
 <h1>Bench</h1>
 <p class="muted lead">
 	Hardware in the loop: the board flies the Gazebo world (stage S4b), the plugin gives it the simulated IMU and the board's own receiver takes your
-	radio. The helper checks the bench before it starts anything and names every reason it refuses. The console is built by GX-16.
+	radio. The helper checks the bench before it starts anything and names every reason it refuses. The board's console is on the Console page.
 </p>
 
 <div class="grid">
