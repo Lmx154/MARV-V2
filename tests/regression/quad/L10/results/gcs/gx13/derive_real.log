@@ -1,8 +1,8 @@
 git status before:
 diff sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
-derive started: 20261020T113116Z-0 card vehicles/marv_7in_fc3v2.yaml edits [] describe quad-L2-pass-621-g9f7477a
-derive done: 20261020T113116Z-0 ok True 
-derivation took 41.4 s; CPUs 16; state done; error None
+derive started: 20261020T135124Z-0 card vehicles/marv_7in_fc3v2.yaml edits [] describe quad-L2-pass-623-ga5fe43a
+derive done: 20261020T135124Z-0 ok True 
+derivation took 40.3 s; CPUs 16; state done; error None
 config hash 97a450cfcb06d329c4ef432b2255e58c9fcb0fe725a21107f2386f146f298746; schema hash 0x0fd34ce78b31e33f; mcfg {'name': 'marv_params_fc3v2.mcfg', 'size': 43268, 'sha256': '040c673cb7ef5131f81c9c1a7df565e98b7185670dc4c93484d40dccfd6939bc'}
 events: derive_started, derive_step:flatten, derive_step:params_gen, derive_step:mcfg, derive_done
 identical  marv_params_fc3v2.mcfg  sha256 040c673cb7ef5131f81c9c1a7df565e98b7185670dc4c93484d40dccfd6939bc
@@ -19,6 +19,7 @@ identical  flatten/marv_params_fc3v2_register.yaml  sha256 b041442610c7569e02edc
 identical  flatten/marv_params_fc3v2_scenario.yaml  sha256 27637246587184b74ab6039a757d55f8bddfbdd09e376d417a74d52edf3bab5e
 identical  flatten/marv_params_fc3v2_vertical.yaml  sha256 09ebacdacddf3957421863a57135ac3a33ea9b3c6de23ab2bf2e5e5a95b434ba
 identical  flatten/marv_params_fc3v2_vertical_report.txt  sha256 6fd0a7570391624915c6471695289af77de8e05404b9e75ebfc64f3a8ed0944c
+identical  marv_params_fc3v2_product_table.txt  sha256 4eac257c5bc6ebc0ad9f9bf9ff57f26e3de1f24c60f676dea59985bc01ee0659
 identical  gen/params_manifest.json  sha256 aa419fd315356bd11f7de00db938f70394817751d4da02dccf551d0e57d8328b
 identical  gen/params_provenance.json  sha256 48363141cfce984d49d9c6f5c7caad04be72bc22047316f817291882717fb753
 identical  gen/param_ids.hpp  sha256 2156ea5566a440a5e1fb581ba8fc8d5e726fb2e2ec584aef70a803b4eaba3261
@@ -27,4 +28,3 @@ git status after:
 diff sha256 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
 W-1: the working tree is unchanged
 RESULT PASS
-exit 0
