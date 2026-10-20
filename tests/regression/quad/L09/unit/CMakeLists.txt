@@ -128,6 +128,33 @@ add_test(NAME log_imu_raw_decode
 set_tests_properties(log_imu_raw_decode PROPERTIES FIXTURES_REQUIRED log_imu_raw_files)
 set_tests_properties(log_imu_raw_write log_imu_raw_encode log_imu_raw_decode PROPERTIES LABELS frozen)
 
+# The onboard logger of the flight image (MARV_FC3V2_FLIGHT_LOG, unit U4-4): its wiring, fw/hal/target/src/flight_log.cpp (no Pico
+# SDK header), compiled into the test over hal_sim with a fake card: the hooks reach the arena only through the lease, and an
+# arm-to-disarm session written through the hooks and the background service, which tools/log/roundtrip_check.py --flight decodes
+# with the Python decoder and compares (log_flight_*). The staging is the flight image's (fw/hal/target/CMakeLists.txt,
+# MARV_FC3V2_LOG_STAGING_BYTES, 16 KiB); the parameter set is marv_params_fc3v2_log, the flight-log image's.
+add_executable(unit_log_flight log_flight_test.cpp "${PROJECT_SOURCE_DIR}/fw/hal/target/src/flight_log.cpp")
+target_include_directories(unit_log_flight PRIVATE "${PROJECT_SOURCE_DIR}/fw/hal/target/include")
+target_compile_definitions(unit_log_flight PRIVATE MARV_FC3V2_LOG_STAGING_BYTES=16384)
+target_link_libraries(unit_log_flight PRIVATE
+  marv_log marv_store_arena marv_lsm6dsv_decode marv_console_decode marv_params_fc3v2_log_runtime
+  marv_params_fc3v2_log_generated marv_types marv_hal_sim GTest::gtest_main)
+marv_apply_flags(unit_log_flight)
+marv_frozen_suite(unit_log_flight)
+
+set(log_flight_dir "${CMAKE_CURRENT_BINARY_DIR}/log_flight")
+add_test(NAME log_flight_write
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${log_flight_dir}")
+add_test(NAME log_flight_encode COMMAND unit_log_flight --gtest_filter=FlightLogSession.*)
+set_tests_properties(log_flight_encode PROPERTIES
+  ENVIRONMENT "MARV_LOG_FLIGHT_DIR=${log_flight_dir}"
+  FIXTURES_SETUP log_flight_files
+  DEPENDS log_flight_write)
+add_test(NAME log_flight_decode
+  COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/log/roundtrip_check.py" --flight "${log_flight_dir}")
+set_tests_properties(log_flight_decode PROPERTIES FIXTURES_REQUIRED log_flight_files)
+set_tests_properties(log_flight_write log_flight_encode log_flight_decode PROPERTIES LABELS "frozen;L09")
+
 # The bench motor-step profile (unit U3 BENCH-PROFILE, architect ruling 2026-10-18 item 8; invariant L-7): the composition variant
 # marv_composition_quad_fc_bench_profile through hal_sim on marv_params_fc3v2_bench_profile (the FC3v2 set plus
 # fw/compositions/quad_fc/params/bench_profile_register.yaml): the sequence to the tick, every kill at every step, once per arm,
