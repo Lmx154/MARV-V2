@@ -525,6 +525,13 @@ rules:
     gz_groups: []
     why: "tools/config/mcfg.py writes every parameter set's factory .mcfg in the build (fw/params/CMakeLists.txt marv_add_param_set; the host and m33 builds fail if it does), and its L00 tools test; tools/config/image_hash.py is read by the m33 post-link flash-layout check and its control"
 
+  - paths: [tools/card/**, tools/config/**, vehicles/marv_7in_fc3v2.yaml, sensors/profiles/madflight_fc3v2_revc.yaml]
+    ctest_labels: []
+    run_ci_steps: [tools_tests]
+    pytest_paths: [tests/tools]
+    gz_groups: []
+    why: "the GCS derivation (tools/gs/derive.py, GX-13) runs tools/card/lint.py and flatten_cached.py, tools/gen/params_gen.py and tools/config/mcfg.py on a copy of the flight card (vehicles/marv_7in_fc3v2.yaml and the sensor profile it names); tests/tools/test_gs_derive.py lints the real cards through it, and the byte comparison with a CMake build (tests/tools/test_gs_derive_cmake.py) is a merge-gate file"
+
   - paths:
       - tools/sim/hover.py
       - tools/sim/prim_constants.py

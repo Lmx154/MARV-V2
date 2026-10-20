@@ -17,7 +17,7 @@
 # tools/gs/e2e_fake_joystick.py (a FIFO js0 in a directory of its own, the helper's --pilot-dir) for the pilot spec (GX-9); and the fake
 # console of tools/gs/e2e_fake_console.py (a pty linked as an -if00 entry of the by-id directory, which prints a banner and answers each line it
 # gets) for the console spec (GX-16); and the fake cmake and ninja of tools/gs/e2e_fake_build.py, first on the helper's PATH (the helper's builds
-# run them), for the build spec (GX-14);
+# run them), for the build spec (GX-14); and the stand-in derivation of tools/gs/e2e_fake_derive.py for the derive spec (GX-13);
 # the sim spec stops and continues it (MARV_E2E_SIM_PID) to make the SIM panels come and go. The staleness control of the specs stops the fake vehicle (SIGSTOP of its process group, MARV_E2E_VEHICLE_PID) and
 # continues it; in live mode the vehicle page's control stops the processes of the helper's run (those with MARV_E2E_RUNS_DIR, the
 # helper's run directory, in their command line) and continues them. The Playwright JSON report and the failure screenshots land in the output directory (default build/gs-e2e/out).
@@ -127,6 +127,14 @@ print(s.getsockname()[1])')"
   touch "${gz_tree}/build.ninja"
   helper_env=(PATH="${work}/fakebin:${PATH}" MARV_FAKE_BUILD_DIR="${work}/fakebuild" MARV_FAKE_BUILD_STEPS=8 MARV_FAKE_BUILD_STEP_S=0.5)
   helper_args+=(--build-min-free-bytes 1)
+  # The Derive panel (GX-13): the helper's derivation runs its three repository scripts with the stand-in Python of tools/gs/e2e_fake_derive.py (the real
+  # lint and .mcfg encoder, a flatten and a parameter generator that take a second instead of a minute), over the stand-in library's parameter manifest;
+  # its validator stand-in answers PASS. The step takes 1.5 s (a labelled harness value: long enough for a spec to see the derivation run and cancel it).
+  # The memory budget is one byte for the reason given for the build.
+  uv run python tools/gs/e2e_fake_derive.py --install "${work}/fakederive"
+  helper_env+=(MARV_FAKE_DERIVE_MANIFEST="${gz_tree}/generated/marv_params_fc3v2/marv/params/params_manifest.json" MARV_FAKE_DERIVE_STEP_S=1.5)
+  helper_args+=(--derive-python "${work}/fakederive/python" --derive-min-free-bytes 1
+                --validate-command "${work}/fakederive/python validate --config {config} --image {image} --build {build} --work-dir {work} --out {out}")
   # The Bench page (GX-10): a fake probe, board (the HIL image's port, a pty), HIL build tree and flash.sh under ${work}/bench; the HIL run
   # is the stand-in command `sleep`, and the helper reads the fake sysfs. No port of this host is opened.
   echo "##### fake bench (probe, board, HIL port, SWD flash stand-in)"

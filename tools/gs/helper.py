@@ -26,6 +26,8 @@
     into <run dir>/logs with their SHA-256, decoded with logger U1's tools/log/mlog.py, and a decimated min/max series of their fields;
   - builds the allow-listed presets (tools/gs/build.py, GX-14: host-gz-quadfc, m33, m33-hil) on an explicit click only, under the host-wide
     heavy lock, each build in its own process group, and records `git describe --dirty` in the library entry of what it produced;
+  - derives a config from an edited card copy (tools/gs/derive.py, GX-13): the repository's flatten, params_gen and .mcfg steps run on a copy in
+    a work directory of the run, under the heavy lock; the result joins the config library that `validate` takes ({"config": hash});
   - serves the built GCS (gcs/build) at /.
 
   uv run python tools/gs/helper.py [--serial PATH [--baud N] | --udp PORT] [--port N] [--runs-dir DIR] [--build-root DIR]
@@ -33,7 +35,7 @@
                                    [--validate-command CMD] [--picotool PATH] [--extra-origin ORIGIN ...]
                                    [--hil-command CMD] [--heavy-lock FILE] [--byid-dir DIR] [--no-autoconnect] [--board-serial SERIAL]
                                    [--pilot-udp-port N] [--pilot-dir DIR] [--log-card-dir DIR ...]
-                                   [--build-min-free-bytes N]
+                                   [--build-min-free-bytes N] [--derive-min-free-bytes N] [--derive-python PATH]
 
 Security. It binds 127.0.0.1 only. Every request must carry the Host `127.0.0.1:<port>`; an Origin header, when present, must
 be exactly `http://127.0.0.1:<port>` (the WebSocket requires it); and every request needs the per-session token (random, printed
@@ -119,6 +121,15 @@ Endpoints (all need the token):
            Pushed: {"event": "build_started", ...}, {"event": "build_progress", "preset", "line", "step", "steps"} and {"event": "build_done", "preset",
            "ok", "cancelled", "exit_status", "error", "describe", "images"}. {"cmd": "build_cancel"}: stops the build's process groups and every
            descendant, answers {"cancelled": true, "build"} when none is left. Status gains "build": the latest build.
+         {"cmd": "derive_card", "card"}: {"entries": [{"key", "value", "unit", "shape", "method", "source", "sigma", "status", "locked", "lock"}]}: the entries
+           of a vehicles/<name>.yaml card that a derivation may edit. {"cmd": "derive", "card", "edits": [{"key", "value", "source"}]} (tools/gs/derive.py, GX-13):
+           the card copy is linted first (ok false with "findings" [{"file", "entry", "reason"}] and nothing started); refused while the heavy lock is
+           held, free memory is below the derivation budget or a derivation runs; else takes the lock and answers {"started": true, "derive"} at once.
+           Pushed {"event": "derive_started"}, {"event": "derive_step", "id", "step", "index", "steps"} and {"event": "derive_done", "id", "ok", "state",
+           "error", "findings", "config_hash", "schema_hash", "reports", "images"}. {"cmd": "derive_status"}: {"derive": {"params_set", "running", "current",
+           "derivations", "limits", "refusals"}}; {"cmd": "derive_cancel"}; {"cmd": "derive_report", "derive_id", "name"}: {"text"} of a derivation report;
+           {"cmd": "derive_values", "derive_id"}: {"params": [{"name", "link_id", "type", "unit", "bits", "method", "locked", "source"}]} of the derived .mcfg.
+           A derived config is validated by {"cmd": "validate", "image_hash", "config": <its config hash>}. Status gains "derive": the latest derivation.
          {"cmd": "cards"}: {"cards": ["vehicles/<name>.yaml", ...]}: the cards a sil run's "card" accepts, sorted.
          {"cmd": "host_state"}: {"host": {"loadavg", "cpus", "mem_total_bytes", "mem_available_bytes", "heavy_lock": {"held",
            "holder", "path"}}}. {"cmd": "autoconnect", "enabled": bool}: {"autoconnect": {"enabled", "suspended", "owner",
@@ -191,6 +202,7 @@ from runs import KINDS, RunRefused, RunSupervisor, list_cards, parse_options  # 
 import sil_run  # noqa: E402  (tools/sim, on the path since runs)
 from sil import SilLauncher, udp_bound  # noqa: E402
 from build import BUILD_MIN_FREE_BYTES, BuildManager  # noqa: E402
+from derive import DERIVE_MIN_FREE_BYTES, DeriveManager, card_entries  # noqa: E402
 
 from websockets.asyncio.server import ServerConnection, serve  # noqa: E402
 from websockets.datastructures import Headers  # noqa: E402
@@ -241,7 +253,8 @@ class Helper:
                  heavy_lock: Path | None = None, byid_dir: Path | None = None, autoconnect: bool = True, poll_s: float = POLL_S,
                  board_serial: str | None = None, sysfs_dir: Path | None = None, sim_channel_port: int = 0,
                  swd_flash_script: Path | None = None, pilot_port: int = 0, pilot_dir: Path | None = None,
-                 log_card_dirs: list[Path] | None = None, build_min_free_bytes: int = BUILD_MIN_FREE_BYTES):
+                 log_card_dirs: list[Path] | None = None, build_min_free_bytes: int = BUILD_MIN_FREE_BYTES,
+                 derive_min_free_bytes: int = DERIVE_MIN_FREE_BYTES, derive_python: str | None = None):
         self.token = token or secrets.token_urlsafe(32)
         self.extra_origins = frozenset(extra_origins)
         self.build_root, self.gcs_dir = Path(build_root), Path(gcs_dir)
@@ -285,6 +298,9 @@ class Helper:
         self.builds = BuildManager(root=ROOT, build_root=self.build_root, run_dir=self.run_dir, library=self.images, log=self.log.event,
                                    lock_path=lambda: self.heavy_lock or hoststate.heavy_lock_path(), push=lambda e: self._push(json.dumps(e)),
                                    min_free_bytes=build_min_free_bytes)
+        self.derive = DeriveManager(root=ROOT, run_dir=self.run_dir, build_root=self.build_root, library=self.images, log=self.log.event,
+                                    lock_path=lambda: self.heavy_lock or hoststate.heavy_lock_path(), push=lambda e: self._push(json.dumps(e)),
+                                    min_free_bytes=derive_min_free_bytes, python=derive_python)
         self.hil = HilGcs(self, swd_flash_script)  # the GCS's HIL commands (tools/gs/hil.py, GX-10)
         self.console = Console(self, WS_BUSY)  # the board's console relay (tools/gs/console.py, GX-16)
         self._ac_owner: str | None = None  # "sil" or "board" while the open device was opened by autoconnect
@@ -335,6 +351,7 @@ class Helper:
         await self.stop_validation()
         await self.stop_flash()
         await self.builds.stop()
+        await self.derive.stop()
         await self.hil.stop()
         await asyncio.to_thread(self.logs.shutdown)
         await asyncio.to_thread(self.runs.shutdown)
@@ -678,6 +695,7 @@ class Helper:
             "flash": self.flash_state,
             "hil": self.hil.status(),
             "build": self.builds.view(),
+            "derive": self.derive.view(),
             "gcs_built": (self.gcs_dir / "index.html").is_file(),
         }
 
@@ -742,7 +760,7 @@ class Helper:
         if ref == "factory":
             path = self.build_root / entry["artifacts"]["factory_mcfg"] if "factory_mcfg" in entry["artifacts"] else None
         else:
-            path = self.reports.find_config(str(ref))
+            path = self.reports.find_config(str(ref)) or self.derive.find_config(str(ref))
         if path is None:
             raise DeviceError(f"the helper holds no copy of config {str(ref)[:16]}: stage and validate it from the Parameters page")
         try:
@@ -1023,6 +1041,18 @@ class Helper:
                 reply.update(await self.builds.start(msg.get("preset")))
             elif cmd == "build_cancel":
                 reply.update(await self.builds.cancel())
+            elif cmd == "derive_card":
+                reply.update(await asyncio.to_thread(card_entries, msg.get("card")))
+            elif cmd == "derive":
+                reply.update(await self.derive.start(msg))
+            elif cmd == "derive_status":
+                reply["derive"] = self.derive.status()
+            elif cmd == "derive_cancel":
+                reply.update(await self.derive.cancel())
+            elif cmd == "derive_report":
+                reply.update(self.derive.report(msg.get("derive_id"), msg.get("name")))
+            elif cmd == "derive_values":
+                reply.update(await asyncio.to_thread(self.derive.values, msg.get("derive_id")))
             elif cmd == "cards":
                 reply["cards"] = list_cards()
             elif cmd == "host_state":
@@ -1168,7 +1198,8 @@ async def run(args: argparse.Namespace) -> int:
                     heavy_lock=args.heavy_lock, byid_dir=args.byid_dir, autoconnect=not args.no_autoconnect,
                     board_serial=args.board_serial, sim_channel_port=args.sim_channel_port,
                     swd_flash_script=args.swd_flash_script, sysfs_dir=args.sysfs_dir, pilot_port=args.pilot_udp_port,
-                    pilot_dir=args.pilot_dir, log_card_dirs=args.log_card_dir, build_min_free_bytes=args.build_min_free_bytes)
+                    pilot_dir=args.pilot_dir, log_card_dirs=args.log_card_dir, build_min_free_bytes=args.build_min_free_bytes,
+                    derive_min_free_bytes=args.derive_min_free_bytes, derive_python=args.derive_python)
     await helper.start(args.port)
     try:
         if args.serial:
@@ -1239,6 +1270,9 @@ def parse_args(argv=None) -> argparse.Namespace:
                     help="a directory of mounted SD cards (<DIR>/<mount>/marv/log/*.mlog), repeatable (default /media/$USER and /run/media/$USER)")
     ap.add_argument("--build-min-free-bytes", type=int, default=BUILD_MIN_FREE_BYTES, metavar="N",
                     help="a GCS build starts only with this much memory available (default %(default)s: a PLACEHOLDER, tools/gs/build.py); tests give their own")
+    ap.add_argument("--derive-min-free-bytes", type=int, default=DERIVE_MIN_FREE_BYTES, metavar="N",
+                    help="a GCS derivation starts only with this much memory available (default %(default)s: a PLACEHOLDER, tools/gs/derive.py); tests give their own")
+    ap.add_argument("--derive-python", metavar="PATH", help="the Python the derivation's steps run with (default: this one); the GCS end-to-end run gives its stand-in")
     ap.add_argument("--no-autoconnect", action="store_true", help="do not open the SIL's UDP link or a board's link interface by itself")
     ap.add_argument("--picotool", help=f"the picotool executable the flash runs (default $MARV_PICOTOOL, else `{flash.PICOTOOL}` on PATH)")
     ap.add_argument("--extra-origin", action="append", default=[], type=origin_arg, metavar="ORIGIN",
