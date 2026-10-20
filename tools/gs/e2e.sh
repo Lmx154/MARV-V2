@@ -12,7 +12,8 @@
 # Playwright cache, not in the repository). It builds the GCS (gcs/build, ignored by git) and removes every process it started
 # on exit. Light mode also starts the fake simulator of tools/gs/e2e_fake_sim.py, which publishes the sim channel (GX-8) to the helper's
 # --sim-channel-port, and the fake bench of tools/gs/e2e_fake_bench.py (a probe, a board running the HIL image, its pty port, a HIL build tree and a
-# flash.sh stand-in, with the HIL run a stand-in `sleep`) for the Bench page (GX-10); light mode also starts the fake joystick of
+# flash.sh stand-in, with the HIL run a stand-in `sleep`) for the Bench page (GX-10); light mode also gives the helper a mounted SD card
+# (--log-card-dir) holding the sample .mlog of logger unit U1 (tests/tools/data/u1_sample.mlog) for the Logs page (GX-15); light mode also starts the fake joystick of
 # tools/gs/e2e_fake_joystick.py (a FIFO js0 in a directory of its own, the helper's --pilot-dir) for the pilot spec (GX-9);
 # the sim spec stops and continues it (MARV_E2E_SIM_PID) to make the SIM panels come and go. The staleness control of the specs stops the fake vehicle (SIGSTOP of its process group, MARV_E2E_VEHICLE_PID) and
 # continues it; in live mode the vehicle page's control stops the processes of the helper's run (those with MARV_E2E_RUNS_DIR, the
@@ -128,6 +129,18 @@ print(s.getsockname()[1])')"
   done
   grep -q '^fake bench ready' "${work}/bench.log" || { cat "${work}/bench.log"; echo "the fake bench did not start" >&2; exit 1; }
   export MARV_PROBE_SERIAL="E2EPROBE0001"
+  # The Logs page (GX-15): the sample .mlog on a fake mounted card (<mount>/marv/log), outside the repository; the values the spec expects are
+  # the decoder's own (tools/log/mlog.py) on that file.
+  log_sample="${work}/cards/MARVSD/marv/log/00000001.mlog"
+  mkdir -p "$(dirname "${log_sample}")"
+  cp tests/tools/data/u1_sample.mlog "${log_sample}"
+  helper_args+=(--log-card-dir "${work}/cards")
+  log_gyro_x="$(uv run python -c '
+import sys
+sys.path.insert(0, "tools/log")
+import mlog
+values = [r["gyro_x"] for r in mlog.records_of(mlog.decode(open(sys.argv[1], "rb").read()), "imu")]
+print(" ".join(str(float(f"{v:.7g}")).removesuffix(".0") for v in (min(values), max(values))))' "${log_sample}")"
   helper_args+=(--sysfs-dir "${work}/bench/sys" --swd-flash-script "${work}/bench/flash.sh" --hil-command "sleep ${HIL_STAND_IN_SECONDS}")
 fi
 
@@ -173,6 +186,8 @@ status=0
     MARV_E2E_STAND_IN="$([[ "${mode}" == light ]] && echo "${STAND_IN_SECONDS}" || true)" \
     MARV_E2E_HIL_STAND_IN="$([[ "${mode}" == light ]] && echo "${HIL_STAND_IN_SECONDS}" || true)" \
     MARV_E2E_FLASH_RECORD="${work}/bench/flash.record" \
+    MARV_E2E_LOG_SAMPLE="$([[ "${mode}" == light ]] && echo "${log_sample}" || true)" MARV_E2E_LOG_GYRO_X="$([[ "${mode}" == light ]] && echo "${log_gyro_x}" || true)" \
+    MARV_E2E_LOG_REPO_FILE="${root}/tests/tools/data/u1_sample.mlog" \
     MARV_E2E_RUNS_DIR="${work}/runs" MARV_E2E_SIM_PID="${sim_pid}" MARV_E2E_PILOT="$([[ "${mode}" == light ]] && echo 1 || true)" \
     npx --no-install playwright test "$@"
 ) || status=$?

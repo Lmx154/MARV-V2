@@ -58,6 +58,7 @@
 		fill: none;
 		stroke: var(--accent);
 		stroke-width: 1.5;
+		stroke-linecap: round; /* a bucket with one value is a zero-length stroke: a dot, not nothing */
 		vector-effect: non-scaling-stroke;
 	}
 
