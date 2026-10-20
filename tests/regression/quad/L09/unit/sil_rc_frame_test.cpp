@@ -41,7 +41,7 @@ namespace marv::sil {
 namespace {
 bool g_ready = false;
 }
-void set_ready(bool ready) noexcept { g_ready = ready; }
+inline void set_ready(bool ready) noexcept { g_ready = ready; }
 SessionView session_view() noexcept { return SessionView{g_ready, 0, hal_sim::TickPeriod{1, 1}}; }
 }  // namespace marv::sil
 
