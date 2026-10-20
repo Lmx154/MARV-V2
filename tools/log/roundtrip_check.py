@@ -8,6 +8,9 @@ the file with tools/log/mlog.py and requires the decoded records to equal the ac
 announced by Gap records that do not exceed the drops. It shares no code with the C++ writer, so a layout disagreement fails.
 
 Usage: roundtrip_check.py <dir>   Exit status: 0 equal, 1 differs, 2 usage or missing input.
+       roundtrip_check.py --imu-raw <dir>   the format-version-2 check (tests/regression/quad/L09/unit/log_imu_raw_test.cpp,
+       LogImuRawRoundTrip, writes imu_raw.mlog): each sample is in the file twice, as the 32-byte imu record and, 1 us later, as the
+       16-byte raw-count record; the decoded pairs must have the same flags and the same binary32 bit patterns.
 """
 
 from __future__ import annotations
@@ -74,7 +77,42 @@ def check(directory: Path) -> list[str]:
     return errors
 
 
+def check_imu_raw(directory: Path) -> list[str]:
+    dec = mlog.decode((directory / "imu_raw.mlog").read_bytes())
+    errors = [f"decoder problem: {p}" for p in dec.problems]
+    if not dec.ended:
+        errors.append("no End record")
+    if "imu_raw" not in dec.header:
+        errors.append("the header has no header_imu_raw record")
+    rows = mlog.records_of(dec, "imu")
+    if len(rows) < 2 or len(rows) % 2:
+        return errors + [f"{len(rows)} imu rows, expected the v1 and v2 record of every sample"]
+    keys = ("gyro_x", "gyro_y", "gyro_z", "accel_x", "accel_y", "accel_z")
+    differing = 0
+    for v1, v2 in zip(rows[0::2], rows[1::2]):
+        if v1["flags"] != v2["flags"] or [bits(v1[k]) for k in keys] != [bits(v2[k]) for k in keys] or v2["t_us"] != v1["t_us"] + 1:
+            differing += 1
+            if differing == 1:
+                errors.append(f"first difference at t_us {v1['t_us']}: {v1} / {v2}")
+    if differing:
+        errors.append(f"{differing} of {len(rows) // 2} samples differ between the 32-byte and the 16-byte record")
+    if [r["t_us"] for r in rows] != sorted(r["t_us"] for r in rows):
+        errors.append("imu stamps not monotone")
+    return errors
+
+
 def main(argv: list[str]) -> int:
+    if len(argv) == 3 and argv[1] == "--imu-raw":
+        d = Path(argv[2])
+        if not (d / "imu_raw.mlog").is_file():
+            print(f"roundtrip_check: no imu_raw.mlog in {d}", file=sys.stderr)
+            return 2
+        errors = check_imu_raw(d)
+        for e in errors:
+            print("FAIL", e)
+        if not errors:
+            print("roundtrip_check: the 16-byte records decode to the 32-byte records' values, bit for bit")
+        return 1 if errors else 0
     if len(argv) != 2:
         print(__doc__, file=sys.stderr)
         return 2

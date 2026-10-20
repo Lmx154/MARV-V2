@@ -242,6 +242,58 @@ def test_a_corrupted_sector_is_reported_and_the_import_still_succeeds(tmp_path):
     run(tmp_path, body)
 
 
+def v2_samples(n: int = 400, lose: range | None = None) -> tuple[bytes, bytes]:
+    """The same samples as a log of 32-byte imu records and as a log of 16-byte raw-count records (format version 2), a rate tick after
+    every second sample; `lose` removes those samples from both with no Gap record."""
+    v1, v2 = [], []
+    for i in range(n):
+        if lose is not None and i in lose:
+            continue
+        t = 5000 + 133 * i
+        counts = [((i * 37 + k * 1009) % 4001) - 2000 for k in range(6)]
+        v1.append(tm.rec_imu_v1_from_counts(t, counts, tm.RAW_GYRO | tm.RAW_ACCEL, (tm.GYRO_SCALE, tm.ACCEL_SCALE), tm.BOARD_SIGNS))
+        v2.append(tm.rec_imu_raw(t, counts))
+        if i % 2 == 1:
+            v1.append(tm.rec_rate(t))
+            v2.append(tm.rec_rate(t))
+    return tm.v2_log(v1, 5000), tm.v2_log(v2, 5000)
+
+
+def test_a_version_2_log_imports_and_plots_as_the_log_of_32_byte_records_of_the_same_samples(tmp_path):
+    d1, d2 = v2_samples()
+    assert d1 != d2
+    s1, s2 = put(tmp_path, "v1kind.mlog", d1), put(tmp_path, "v2kind.mlog", d2)
+
+    async def body(h, ws):
+        r1, r2 = await imp(ws, s1), await imp(ws, s2)
+        assert r1["ok"] and r2["ok"], (r1, r2)
+        check_summary(r2["summary"], d2)
+        assert r2["summary"]["clean"] and r2["summary"]["records"]["imu"] == 400 and "imu_raw" not in r2["summary"]["records"]
+        assert r2["summary"]["kinds"] == r1["summary"]["kinds"], "the same kinds, fields and time ranges as the 32-byte records give"
+        t0, t1 = r2["summary"]["kinds"]["imu"]["t_min_us"], r2["summary"]["kinds"]["imu"]["t_max_us"]
+        fields = ["gyro_x", "gyro_z", "accel_y", "accel_z"]
+        a = await gh.control(ws, cmd="log_series", sha256=r1["sha256"], kind="imu", fields=fields, t0_us=t0, t1_us=t1, buckets=11)
+        b = await gh.control(ws, cmd="log_series", sha256=r2["sha256"], kind="imu", fields=fields, t0_us=t0, t1_us=t1, buckets=11)
+        check_series(b, d2, "imu", fields, t0, t1, 11)
+        assert a["ok"] and b["ok"]
+        assert {k: v for k, v in b["series"].items() if k != "sha256"} == {k: v for k, v in a["series"].items() if k != "sha256"}
+
+    run(tmp_path, body)
+
+
+def test_a_version_2_log_with_a_loss_over_65_ms_is_imported_with_the_decoders_report(tmp_path):
+    lost = v2_samples(1000, lose=range(100, 700))[1]  # 600 samples = 79.8 ms with no Gap record
+    src = put(tmp_path, "lost.mlog", lost)
+
+    async def body(h, ws):
+        r = await imp(ws, src)
+        assert r["ok"], r
+        check_summary(r["summary"], lost)
+        assert [p["reason"] for p in r["summary"]["problems"]] == ["imu_time"] and r["summary"]["clean"] is False
+
+    run(tmp_path, body)
+
+
 def test_the_sha256_is_recorded_and_the_source_is_not_modified(tmp_path):
     data = sample_bytes()
     src = put(tmp_path, "sample.mlog", data)

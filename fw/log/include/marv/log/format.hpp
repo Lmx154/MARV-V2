@@ -1,4 +1,4 @@
-// The MARV flight-log file format, version 1 (the onboard SD logger, unit U1 LOG-CORE; architect ruling 2026-10-18, memory
+// The MARV flight-log file format, version 2 (the onboard SD logger, unit U1 LOG-CORE; architect ruling 2026-10-18, memory
 // quad-m4/architect-onboard-logger-2026-10-18). The decoder is tools/log/mlog.py; every size and offset below is derived
 // field by field (sizeof, the SD block size of constants.hpp), so the layout has one source and no literal.
 //
@@ -11,6 +11,8 @@
 // logger writes itself (Status, End, Telemetry and the header kinds) have the 4-byte lead kind u8, sub u8, length u16 (bytes
 // of the whole record) and any length. Every integer and float is little-endian (a float is its IEEE 754 binary32 bit
 // pattern); time fields named *_lo are the low 32 bits of hal_time_us(), the decoder unwraps them.
+// Version 2 adds the ImuRaw kind (a 16-byte raw-count IMU record) and the HeaderImuRaw record that carries its scales; every
+// version 1 kind is unchanged, so a version 1 file stays decodable and a version 2 file may hold either IMU kind.
 #pragma once
 
 #include <array>
@@ -28,7 +30,7 @@ namespace marv::log {
 
 // ---- sector framing -------------------------------------------------------------------------------------------------------
 inline constexpr std::array<std::uint8_t, sizeof(std::uint32_t)> kSectorMagic{'M', 'L', 'O', 'G'};
-inline constexpr std::uint16_t kFormatVersion = 1;
+inline constexpr std::uint16_t kFormatVersion = 2;
 inline constexpr std::size_t kSectorBytes = prim::kSdBlockBytes;
 
 inline constexpr std::size_t kSecOffMagic = 0;
@@ -58,6 +60,8 @@ enum class Kind : std::uint8_t {
   HeaderParam,
   HeaderField,
   HeaderTelemetry,
+  ImuRaw,
+  HeaderImuRaw,
   Count
 };
 inline constexpr std::size_t kKinds = static_cast<std::size_t>(Kind::Count);
@@ -66,7 +70,10 @@ inline constexpr std::size_t kKinds = static_cast<std::size_t>(Kind::Count);
 
 // The kinds the tick-context writer pushes into the ring, in the order of their drop counters.
 inline constexpr std::size_t kRingKinds = kind_index(Kind::ManualControl) - kind_index(Kind::Imu) + 1;
-[[nodiscard]] constexpr std::size_t ring_kind_index(Kind k) noexcept { return kind_index(k) - kind_index(Kind::Imu); }
+// ImuRaw is the Imu stream in its compact form: it is counted with the Imu records.
+[[nodiscard]] constexpr std::size_t ring_kind_index(Kind k) noexcept {
+  return k == Kind::ImuRaw ? 0 : kind_index(k) - kind_index(Kind::Imu);
+}
 
 // The ring's unit: 16 bytes. The design's slot is two cells (an IMU record fills one slot); a rate-tick record is one cell,
 // which is how the 60 kB/s of the rate-tick stream (not 120 kB/s of half-empty slots) leaves the ring.
@@ -90,6 +97,25 @@ inline constexpr std::size_t kOffGyro = kOffTime + sizeof(std::uint32_t);
 inline constexpr std::size_t kOffAccel = kOffGyro + prim::kSpatialDim * sizeof(float);
 inline constexpr std::size_t kBytes = kOffAccel + prim::kSpatialDim * sizeof(float);
 }  // namespace imu
+
+// ImuRaw, one cell: the same sample as Imu, as the sensor's int16 counts (the kind is the lossless compact form of Imu: the
+// SI values are recomputed from the counts with the scales of the HeaderImuRaw record, as sign x count x scale in binary32).
+//   kind u8, flags u8 (imu_raw::kFlag* bits), t_lo16 u16 (the low 16 bits of the time, us), gyro x y z i16, accel x y z i16.
+// A count is the chip's value of the sensor axis that feeds FRD axis i (before the mounting sign): that is always an int16, and
+// a saturation bit is then exactly "the count is at an int16 limit", so the saturation flags of Imu are not stored. The
+// decoder chains the 16-bit times: successive ImuRaw records are less than 2^16 us apart, and a Gap record or a 32-bit stamp
+// of a tick-ordered record re-anchors the chain.
+namespace imu_raw {
+inline constexpr std::size_t kOffFlags = sizeof(std::uint8_t);
+inline constexpr std::size_t kOffTime = kOffFlags + sizeof(std::uint8_t);
+inline constexpr std::size_t kOffGyro = kOffTime + sizeof(std::uint16_t);
+inline constexpr std::size_t kOffAccel = kOffGyro + prim::kSpatialDim * sizeof(std::int16_t);
+inline constexpr std::size_t kBytes = kOffAccel + prim::kSpatialDim * sizeof(std::int16_t);
+inline constexpr std::uint8_t kFlagGyroValid = 1U << 0;
+inline constexpr std::uint8_t kFlagAccelValid = 1U << 1;
+inline constexpr std::uint8_t kFlagTempValid = 1U << 2;
+}  // namespace imu_raw
+static_assert(imu_raw::kBytes == kCellBytes, "the compact IMU record is one cell");
 
 // RateTick, 16 bytes: one rate-loop tick.
 //   kind u8, arm_state u8, gate_state u8, reserved u8, now_lo u32 (us), dshot[4] u16 (motor index 0..3, 0 = stop).
@@ -131,6 +157,8 @@ inline constexpr std::size_t kBytes = cells_for(kOffDropped + kRingKinds * sizeo
   switch (k) {
     case Kind::Imu:
       return imu::kBytes;
+    case Kind::ImuRaw:
+      return imu_raw::kBytes;
     case Kind::RateTick:
       return kCellBytes;
     case Kind::ManualControl:
@@ -227,7 +255,7 @@ inline constexpr std::uint16_t kFlagLocked = 1;
 }  // namespace header_param
 
 // How a field of a record is read. The code is the header's, so the decoder needs no table of its own.
-enum class FieldType : std::uint8_t { U8, U16, U32, U64, F32, Bytes };
+enum class FieldType : std::uint8_t { U8, U16, U32, U64, F32, Bytes, I16 };
 
 // HeaderField: lead (sub = the kind the field belongs to), offset u16, size u8, FieldType u8, then the name and the unit, each
 // zero-terminated.
@@ -245,6 +273,15 @@ inline constexpr std::size_t kOffVersion = kLeadBytes;
 inline constexpr std::size_t kOffFieldCount = kOffVersion + sizeof(std::uint32_t);
 inline constexpr std::size_t kBytes = kOffFieldCount + sizeof(std::uint32_t);
 }  // namespace header_telemetry
+
+// HeaderImuRaw: lead (sub 0), gyro_rad_s_per_lsb f32, accel_m_s2_per_lsb f32, sign i8 x 3 (the mounting sign of FRD axis x, y,
+// z: 1 or -1). The scales of the ImuRaw records of the file (the full scales the sensor runs at, in SI per count).
+namespace header_imu_raw {
+inline constexpr std::size_t kOffGyroScale = kLeadBytes;
+inline constexpr std::size_t kOffAccelScale = kOffGyroScale + sizeof(float);
+inline constexpr std::size_t kOffSigns = kOffAccelScale + sizeof(float);
+inline constexpr std::size_t kBytes = kOffSigns + prim::kSpatialDim * sizeof(std::int8_t);
+}  // namespace header_imu_raw
 
 // ---- byte codec -----------------------------------------------------------------------------------------------------------
 template <typename T>

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Decoder of the MARV onboard flight log (.mlog), format version 1 (fw/log/include/marv/log/format.hpp is the layout's source).
+"""Decoder of the MARV onboard flight log (.mlog), format versions 1 and 2 (fw/log/include/marv/log/format.hpp is the layout's source).
 
 A file is a sequence of 512-byte self-validating sectors: magic "MLOG", session id u64, sector sequence u32, offset of the first
 record that begins in the sector u16, format version u16, 488 payload bytes, CRC-32 u32 over everything before it. Records are
@@ -13,7 +13,13 @@ back to back in the payload stream and may span sectors. The decoder
     cut by it and continues at the next record boundary the sector header names;
   * decodes the header records (hashes, boot report, tick, record kinds and fields with units, the parameter table) and then
     every data record by the field list the HEADER gives, so a reader needs nothing else; the 32-bit stamps (*_lo_us) are
-    unwrapped to 64-bit microseconds (column t_us) against the Status/End/Info records' full stamps.
+    unwrapped to 64-bit microseconds (column t_us) against the Status/End/Info records' full stamps;
+  * reads both IMU kinds. Version 2's imu_raw record (one cell: flags, a 16-bit time, six int16 counts) is turned back into the
+    row of the 32-byte imu record, bit for bit: SI = sign x count x scale in binary32, the scales and signs from the header's
+    header_imu_raw record, the saturation flags from the counts at an int16 limit. Its 16-bit times are chained (each is less than
+    65.536 ms after the last) and checked against the 32-bit stamps of the tick-ordered records (rate_tick, imu, gap): a chain
+    that disagrees with a stamp by half the 16-bit span or more means more than 65 ms of IMU records were lost without a Gap
+    record, and is reported as an imu_time problem.
 
 Output: Decoded.records (a list of dicts), Decoded.header (a dict), Decoded.problems; as CSV (one file per kind) or JSON from the CLI.
 Standard library only.
@@ -32,7 +38,7 @@ from pathlib import Path
 
 SECTOR = 512
 MAGIC = b"MLOG"
-FORMAT_VERSION = 1
+FORMAT_VERSIONS = (1, 2)
 SEC_HEADER = 20  # magic 4, session 8, sequence 4, first-record offset 2, version 2
 SEC_CRC = 4
 PAYLOAD = SECTOR - SEC_HEADER - SEC_CRC
@@ -41,17 +47,24 @@ LEAD = 4  # kind u8, sub u8, length u16
 
 KIND_NAMES = {
     0: "pad", 1: "imu", 2: "rate_tick", 3: "manual_control", 4: "gap", 5: "status", 6: "end", 7: "telemetry",
-    8: "header_info", 9: "header_kind", 10: "header_param", 11: "header_field", 12: "header_telemetry",
+    8: "header_info", 9: "header_kind", 10: "header_param", 11: "header_field", 12: "header_telemetry", 13: "imu_raw",
+    14: "header_imu_raw",
 }
 K_PAD, K_IMU, K_RATE, K_MANUAL, K_GAP, K_STATUS, K_END, K_TELEMETRY = 0, 1, 2, 3, 4, 5, 6, 7
 K_INFO, K_HKIND, K_HPARAM, K_HFIELD, K_HTELEM = 8, 9, 10, 11, 12
+K_IMU_RAW, K_HIMURAW = 13, 14
 # Records of the ring have a fixed size and no length field; every other kind carries its length in its lead.
-RING_SIZES = {K_IMU: 32, K_RATE: 16, K_MANUAL: 112, K_GAP: 32}
-FIELD_TYPES = {0: ("B", 1), 1: ("H", 2), 2: ("I", 4), 3: ("Q", 8), 4: ("f", 4), 5: (None, 0)}
-FIELD_TYPE_NAMES = {0: "u8", 1: "u16", 2: "u32", 3: "u64", 4: "f32", 5: "bytes"}
+RING_SIZES = {K_IMU: 32, K_IMU_RAW: 16, K_RATE: 16, K_MANUAL: 112, K_GAP: 32}
+FIELD_TYPES = {0: ("B", 1), 1: ("H", 2), 2: ("I", 4), 3: ("Q", 8), 4: ("f", 4), 5: (None, 0), 6: ("h", 2)}
+FIELD_TYPE_NAMES = {0: "u8", 1: "u16", 2: "u32", 3: "u64", 4: "f32", 5: "bytes", 6: "i16"}
 STATE_NAMES = {0: "Absent", 1: "Ready", 2: "Logging", 3: "PostRoll", 4: "Full", 5: "Fault"}
 END_REASONS = {0: "disarm", 1: "full", 2: "fault"}
 WRAP = 1 << 32
+WRAP16 = 1 << 16
+# imu_raw flag byte (format.hpp imu_raw::kFlag*) and the imu_flag bits of the 32-byte record (imu_sample.hpp ImuFlag order).
+RAW_GYRO_VALID, RAW_ACCEL_VALID, RAW_TEMP_VALID = 1, 2, 4
+FLAG_GYRO_SAT_X, FLAG_ACCEL_SAT_X, FLAG_GYRO_VALID, FLAG_ACCEL_VALID, FLAG_TEMP_VALID = 0, 3, 6, 7, 8
+INT16_LIMITS = (-(1 << 15), (1 << 15) - 1)
 
 
 @dataclass
@@ -89,7 +102,7 @@ def sector_check(buf: bytes) -> tuple[str | None, dict]:
     info = {"session": session, "seq": seq, "first": first, "version": version}
     if zlib.crc32(buf[: SECTOR - SEC_CRC]) != struct.unpack_from("<I", buf, SECTOR - SEC_CRC)[0]:
         return "crc", info
-    if version != FORMAT_VERSION:
+    if version not in FORMAT_VERSIONS:
         return "version", info
     if first > NO_RECORD:
         return "first_offset", info
@@ -105,6 +118,12 @@ class _Stream:
         self.fields: dict[int, list[dict]] = {}  # kind -> [{name, unit, offset, size, type}]
         self.last_t: int | None = None
         self.sector = 0
+        # imu_raw: the scales of the header, the chain of its 16-bit times and the rows waiting for the first 32-bit stamp.
+        self.imu_scales: tuple[float, float, tuple[int, int, int]] | None = None
+        self.imu_t: int | None = None  # absolute time of the last imu_raw record (provisional while self.held is a list)
+        self.imu_ref: int | None = None  # a stamp the next imu_raw record is lifted to when imu_t is None (after a gap)
+        self.held: list[tuple[dict, int]] | None = []  # imu rows with provisional times, until a stamp anchors the chain
+        self.imu_fresh = False  # the last record with a time was an imu_raw one (its tick's stamp is the next to follow)
 
     # -- records -----------------------------------------------------------------------------------------------
     @staticmethod
@@ -147,6 +166,11 @@ class _Stream:
         elif kind == K_HTELEM:
             version, count = struct.unpack_from("<II", rec, LEAD)
             out.header["telemetry"] = {"version": version, "field_count": count}
+        elif kind == K_HIMURAW:
+            gyro, accel = struct.unpack_from("<ff", rec, LEAD)
+            signs = struct.unpack_from("<3b", rec, LEAD + 8)
+            self.imu_scales = (gyro, accel, signs)
+            out.header["imu_raw"] = {"gyro_rad_s_per_lsb": gyro, "accel_m_s2_per_lsb": accel, "sign": list(signs)}
         elif kind == K_HPARAM:
             pid, flags, bits = struct.unpack_from("<HHI", rec, LEAD)
             name, p = _cstr(rec, LEAD + 8)
@@ -185,6 +209,9 @@ class _Stream:
                     row[f["name"]] = rec[f["offset"]: f["offset"] + f["size"]].hex()
                 else:
                     row[f["name"]] = struct.unpack_from("<" + fmt, rec, f["offset"])[0]
+        if kind == K_IMU_RAW:
+            self._imu_raw(row)
+            return
         if kind == K_STATUS:
             row["state"] = STATE_NAMES.get(row.get("state"), row.get("state"))
         if kind == K_END:
@@ -197,7 +224,105 @@ class _Stream:
                 if key.endswith("_lo_us"):
                     row["t_us"] = self.unwrap(row[key])
                     break
+            if kind in (K_IMU, K_RATE, K_GAP) and "t_us" in row:
+                self._stamp(row["t_us"], announced=kind == K_GAP)
         self.out.records.append(row)
+
+    # -- the 16-bit IMU times ---------------------------------------------------------------------------------
+    def reset_imu_chain(self) -> None:
+        """The stream broke (sectors missing): the chain's next times are provisional until a stamp anchors them."""
+        self.settle_imu_chain("before a hole")
+        self.imu_t = None
+        self.imu_ref = None
+        self.held = []
+
+    @staticmethod
+    def _lift(t16: int, ref: int) -> int:
+        """The time that is t16 modulo 2^16 and nearest to ref."""
+        return ref + ((t16 - ref + WRAP16 // 2) % WRAP16) - WRAP16 // 2
+
+    def _imu_raw(self, row: dict) -> None:
+        if self.imu_scales is None or "t_lo16_us" not in row:
+            self.out.problems.append(Problem(self.sector, "record", "imu_raw record without its header (scales or field list)"))
+            self.out.records.append(row)
+            return
+        gyro_scale, accel_scale, signs = self.imu_scales
+        raw = row
+        flags_raw = raw["flags"]
+        flags = 0
+        out = {"kind": "imu", "sector": raw["sector"], "flags": 0, "t_lo_us": 0}
+        for sensor, valid_raw, valid_bit, sat_bit, scale in (
+                ("gyro", RAW_GYRO_VALID, FLAG_GYRO_VALID, FLAG_GYRO_SAT_X, gyro_scale),
+                ("accel", RAW_ACCEL_VALID, FLAG_ACCEL_VALID, FLAG_ACCEL_SAT_X, accel_scale)):
+            valid = bool(flags_raw & valid_raw)
+            if valid:
+                flags |= 1 << valid_bit
+            for i, axis in enumerate("xyz"):
+                count = raw[f"{sensor}_{axis}_raw"]
+                if valid and count in INT16_LIMITS:
+                    flags |= 1 << (sat_bit + i)
+                # The firmware's expression (lsm6dsv_decode.cpp to_frd): binary32 sign x count x scale, one rounding. The
+                # product of the two binary32 values is exact in a double, so rounding it to binary32 is that one rounding.
+                value = float(signs[i]) * float(count) * scale if valid else 0.0
+                out[f"{sensor}_{axis}"] = struct.unpack("<f", struct.pack("<f", value))[0]
+        if flags_raw & RAW_TEMP_VALID:
+            flags |= 1 << FLAG_TEMP_VALID
+        out["flags"] = flags
+        t16 = raw["t_lo16_us"]
+        self.imu_fresh = True
+        if self.held is not None:
+            self.imu_t = t16 if self.imu_t is None else self.imu_t + (t16 - self.imu_t) % WRAP16
+            self.held.append((out, self.imu_t))
+            return
+        if self.imu_t is None:
+            self.imu_t = self._lift(t16, self.imu_ref if self.imu_ref is not None else self.last_t or 0)
+        else:
+            self.imu_t += (t16 - self.imu_t) % WRAP16
+        self._set_time(out, self.imu_t)
+        self.out.records.append(out)
+
+    @staticmethod
+    def _set_time(row: dict, t: int) -> None:
+        row["t_lo_us"] = t % WRAP
+        row["t_us"] = t
+
+    def flush_held(self, shift: int) -> None:
+        for row, t in self.held or []:
+            self._set_time(row, t + shift)
+            self.out.records.append(row)
+        self.held = None
+
+    def _stamp(self, a: int, announced: bool) -> None:
+        """A tick-ordered record's absolute time a: anchors the rows waiting for it, checks the chain, or (a Gap) restarts it.
+        The chain is checked when the record follows an imu_raw record (the sample comes first in a tick, so the two are within a
+        few ticks of each other; a stamp after a long silence of imu_raw records proves nothing about the chain)."""
+        fresh = self.imu_fresh
+        self.imu_fresh = False
+        if self.held is not None and self.imu_t is not None:
+            shift = round((a - self.imu_t) / WRAP16) * WRAP16
+            self.flush_held(shift)
+            self.imu_t += shift
+        elif self.held is not None:
+            self.held = None
+        elif self.imu_t is not None and fresh and not announced:
+            d = a - self.imu_t
+            if abs(d) >= WRAP16 // 2:
+                self.out.problems.append(Problem(
+                    self.sector, "imu_time",
+                    f"the 16-bit IMU time chain is {d} us from a 32-bit stamp: more than 65 ms of imu_raw records lost without a "
+                    "gap record"))
+                self.imu_t += round(d / WRAP16) * WRAP16
+        self.imu_ref = a
+        if announced:
+            self.imu_t = None
+
+    def settle_imu_chain(self, why: str) -> None:
+        """Rows still waiting for a stamp when the stream ends or breaks are returned, placed nearest to the last known time."""
+        if self.held:
+            self.out.problems.append(Problem(self.sector, "imu_time", f"imu_raw records {why} without a 32-bit stamp to anchor them"))
+            ref = self.last_t if self.last_t is not None else 0
+            self.flush_held(self._lift(self.imu_t % WRAP16, ref) - self.imu_t)
+        self.held = None
 
     # -- sector payloads --------------------------------------------------------------------------------------
     def lose_pending(self, why: str) -> None:
@@ -287,11 +412,13 @@ def decode(data: bytes, *, resync: bool = False) -> Decoded:
                 out.stopped_at = i
                 break
             stream.lose_pending("sectors missing")
+            stream.reset_imu_chain()
         expected = info["seq"] + 1
         out.sectors_ok += 1
         stream.feed(i, buf[SEC_HEADER: SEC_HEADER + PAYLOAD], info["first"])
         if out.ended:
             break
+    stream.settle_imu_chain("at the end of the file")
     out.ends_inside_record = out.stopped_at is None and not out.ended and bool(stream.pending)
     return out
 

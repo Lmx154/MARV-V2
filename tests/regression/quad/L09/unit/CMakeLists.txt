@@ -107,6 +107,27 @@ add_test(NAME log_roundtrip_decode
 set_tests_properties(log_roundtrip_decode PROPERTIES FIXTURES_REQUIRED log_roundtrip_files)
 set_tests_properties(log_roundtrip_write log_roundtrip_encode log_roundtrip_decode PROPERTIES LABELS frozen)
 
+# Log format version 2's raw-count IMU record (fw/log, unit U4-3, invariant V2-1): every int16 count against the firmware's own
+# decode, and a file written through the ring and the framer that tools/log/roundtrip_check.py --imu-raw decodes with the Python
+# decoder and compares (the 32-byte record of each sample against its 16-byte record).
+add_executable(unit_log_imu_raw log_imu_raw_test.cpp)
+target_link_libraries(unit_log_imu_raw PRIVATE marv_log marv_lsm6dsv_decode marv_types GTest::gtest_main)
+marv_apply_flags(unit_log_imu_raw)
+marv_frozen_suite(unit_log_imu_raw)
+
+set(log_imu_raw_dir "${CMAKE_CURRENT_BINARY_DIR}/log_imu_raw")
+add_test(NAME log_imu_raw_write
+  COMMAND "${CMAKE_COMMAND}" -E make_directory "${log_imu_raw_dir}")
+add_test(NAME log_imu_raw_encode COMMAND unit_log_imu_raw --gtest_filter=LogImuRawRoundTrip.*)
+set_tests_properties(log_imu_raw_encode PROPERTIES
+  ENVIRONMENT "MARV_LOG_IMU_RAW_DIR=${log_imu_raw_dir}"
+  FIXTURES_SETUP log_imu_raw_files
+  DEPENDS log_imu_raw_write)
+add_test(NAME log_imu_raw_decode
+  COMMAND "${MARV_PYTHON}" "${PROJECT_SOURCE_DIR}/tools/log/roundtrip_check.py" --imu-raw "${log_imu_raw_dir}")
+set_tests_properties(log_imu_raw_decode PROPERTIES FIXTURES_REQUIRED log_imu_raw_files)
+set_tests_properties(log_imu_raw_write log_imu_raw_encode log_imu_raw_decode PROPERTIES LABELS frozen)
+
 # The bench motor-step profile (unit U3 BENCH-PROFILE, architect ruling 2026-10-18 item 8; invariant L-7): the composition variant
 # marv_composition_quad_fc_bench_profile through hal_sim on marv_params_fc3v2_bench_profile (the FC3v2 set plus
 # fw/compositions/quad_fc/params/bench_profile_register.yaml): the sequence to the tick, every kill at every step, once per arm,

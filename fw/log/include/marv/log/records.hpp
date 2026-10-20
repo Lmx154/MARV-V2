@@ -3,13 +3,18 @@
 #pragma once
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <optional>
+#include <span>
 
 #include "marv/log/format.hpp"
 #include "marv/types/actuator.hpp"
 #include "marv/types/imu_sample.hpp"
 #include "marv/types/manual_control.hpp"
+#include "marv/prim/vec.hpp"
 #include "marv/types/time.hpp"
 
 namespace marv::log {
@@ -32,6 +37,133 @@ struct RateTickRecord {
   for (std::size_t i = 0; i < prim::kSpatialDim; ++i) {
     put_f32(r, imu::kOffGyro + i * sizeof(float), s.gyro_rad_s[i]);
     put_f32(r, imu::kOffAccel + i * sizeof(float), s.accel_m_s2[i]);
+  }
+  return r;
+}
+
+// What the ImuRaw records need to be turned back into SI (the HeaderImuRaw record): the SI per count of each sensor at the
+// full scales it runs at, and the mounting sign of each FRD axis (1 or -1). FRD axis i = sign[i] x count[i] x scale.
+struct ImuRawScales {
+  float gyro_rad_s_per_lsb = 0.0F;
+  float accel_m_s2_per_lsb = 0.0F;
+  std::array<std::int8_t, prim::kSpatialDim> sign{};
+};
+
+// What an ImuRaw record holds, as the Imu record would: flags in the imu_flag bits (the saturation bits are the counts at an
+// int16 limit), the SI vectors, and the low 16 bits of the time.
+struct ImuRawValue {
+  std::uint32_t flags = 0;
+  prim::Vec3<float> gyro_rad_s{};
+  prim::Vec3<float> accel_m_s2{};
+  std::uint16_t t_lo16 = 0;
+};
+
+namespace detail {
+[[nodiscard]] constexpr bool at_int16_limit(std::int16_t v) noexcept {
+  return v == std::numeric_limits<std::int16_t>::max() || v == std::numeric_limits<std::int16_t>::min();
+}
+
+// The lsm6dsv_decode.cpp rule: sign x count x scale, binary32, one rounding.
+[[nodiscard]] constexpr float scaled(std::int8_t sign, std::int16_t count, float scale) noexcept {
+  return static_cast<float>(sign) * static_cast<float>(count) * scale;
+}
+
+// The count whose scaled value `v` is (the nearest integer to sign x v / scale), if it is an int16.
+[[nodiscard]] constexpr std::optional<std::int16_t> count_of(float v, std::int8_t sign, float scale) noexcept {
+  const float x = static_cast<float>(sign) * v / scale;
+  const float lo = static_cast<float>(std::numeric_limits<std::int16_t>::min());
+  const float hi = static_cast<float>(std::numeric_limits<std::int16_t>::max());
+  if (!(x >= lo - 0.5F && x < hi + 0.5F)) {
+    return std::nullopt;
+  }
+  return static_cast<std::int16_t>(x >= 0.0F ? x + 0.5F : x - 0.5F);
+}
+}  // namespace detail
+
+// The inverse of encode_imu_raw: `r` is an ImuRaw record (imu_raw::kBytes). A sensor whose valid bit is clear reads as +0.
+[[nodiscard]] constexpr ImuRawValue decode_imu_raw(std::span<const std::uint8_t> r, const ImuRawScales& sc) noexcept {
+  ImuRawValue v;
+  const std::uint8_t f = r[imu_raw::kOffFlags];
+  const bool gyro = (f & imu_raw::kFlagGyroValid) != 0;
+  const bool accel = (f & imu_raw::kFlagAccelValid) != 0;
+  v.t_lo16 = get<std::uint16_t>(r, imu_raw::kOffTime);
+  if (gyro) {
+    v.flags |= imu_flag(ImuFlag::GyroValid);
+  }
+  if (accel) {
+    v.flags |= imu_flag(ImuFlag::AccelValid);
+  }
+  if ((f & imu_raw::kFlagTempValid) != 0) {
+    v.flags |= imu_flag(ImuFlag::TempValid);
+  }
+  for (std::size_t i = 0; i < prim::kSpatialDim; ++i) {
+    const auto g = static_cast<std::int16_t>(get<std::uint16_t>(r, imu_raw::kOffGyro + i * sizeof(std::int16_t)));
+    const auto a = static_cast<std::int16_t>(get<std::uint16_t>(r, imu_raw::kOffAccel + i * sizeof(std::int16_t)));
+    if (gyro) {
+      v.gyro_rad_s[i] = detail::scaled(sc.sign[i], g, sc.gyro_rad_s_per_lsb);
+      if (detail::at_int16_limit(g)) {
+        v.flags |= imu_flag(static_cast<ImuFlag>(static_cast<unsigned>(ImuFlag::GyroSatX) + i));
+      }
+    }
+    if (accel) {
+      v.accel_m_s2[i] = detail::scaled(sc.sign[i], a, sc.accel_m_s2_per_lsb);
+      if (detail::at_int16_limit(a)) {
+        v.flags |= imu_flag(static_cast<ImuFlag>(static_cast<unsigned>(ImuFlag::AccelSatX) + i));
+      }
+    }
+  }
+  return v;
+}
+
+// The ImuRaw record of `s`, or nothing if the record would not give `s` back bit for bit (the sample is not a whole number of
+// counts of these scales, or its flags are not those the counts imply): the caller then writes the Imu record instead.
+[[nodiscard]] constexpr std::optional<std::array<std::uint8_t, imu_raw::kBytes>> encode_imu_raw(
+    const ImuSample& s, const ImuRawScales& sc) noexcept {
+  if (!(sc.gyro_rad_s_per_lsb > 0.0F) || !(sc.accel_m_s2_per_lsb > 0.0F)) {
+    return std::nullopt;
+  }
+  std::array<std::uint8_t, imu_raw::kBytes> r{};
+  r[kLeadOffKind] = static_cast<std::uint8_t>(Kind::ImuRaw);
+  std::uint8_t f = 0;
+  if ((s.flags & imu_flag(ImuFlag::GyroValid)) != 0) {
+    f |= imu_raw::kFlagGyroValid;
+  }
+  if ((s.flags & imu_flag(ImuFlag::AccelValid)) != 0) {
+    f |= imu_raw::kFlagAccelValid;
+  }
+  if ((s.flags & imu_flag(ImuFlag::TempValid)) != 0) {
+    f |= imu_raw::kFlagTempValid;
+  }
+  r[imu_raw::kOffFlags] = f;
+  put<std::uint16_t>(r, imu_raw::kOffTime, static_cast<std::uint16_t>(s.t_us));
+  for (std::size_t i = 0; i < prim::kSpatialDim; ++i) {
+    if (sc.sign[i] != 1 && sc.sign[i] != -1) {
+      return std::nullopt;
+    }
+    if ((f & imu_raw::kFlagGyroValid) != 0) {
+      const auto g = detail::count_of(s.gyro_rad_s[i], sc.sign[i], sc.gyro_rad_s_per_lsb);
+      if (!g) {
+        return std::nullopt;
+      }
+      put<std::uint16_t>(r, imu_raw::kOffGyro + i * sizeof(std::int16_t), static_cast<std::uint16_t>(*g));
+    }
+    if ((f & imu_raw::kFlagAccelValid) != 0) {
+      const auto a = detail::count_of(s.accel_m_s2[i], sc.sign[i], sc.accel_m_s2_per_lsb);
+      if (!a) {
+        return std::nullopt;
+      }
+      put<std::uint16_t>(r, imu_raw::kOffAccel + i * sizeof(std::int16_t), static_cast<std::uint16_t>(*a));
+    }
+  }
+  const ImuRawValue back = decode_imu_raw(r, sc);
+  if (back.flags != s.flags) {
+    return std::nullopt;
+  }
+  for (std::size_t i = 0; i < prim::kSpatialDim; ++i) {
+    if (std::bit_cast<std::uint32_t>(back.gyro_rad_s[i]) != std::bit_cast<std::uint32_t>(s.gyro_rad_s[i]) ||
+        std::bit_cast<std::uint32_t>(back.accel_m_s2[i]) != std::bit_cast<std::uint32_t>(s.accel_m_s2[i])) {
+      return std::nullopt;
+    }
   }
   return r;
 }
