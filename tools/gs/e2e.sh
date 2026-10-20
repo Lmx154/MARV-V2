@@ -16,7 +16,8 @@
 # (--log-card-dir) holding the sample .mlog of logger unit U1 (tests/tools/data/u1_sample.mlog) for the Logs page (GX-15); light mode also starts the fake joystick of
 # tools/gs/e2e_fake_joystick.py (a FIFO js0 in a directory of its own, the helper's --pilot-dir) for the pilot spec (GX-9); and the fake
 # console of tools/gs/e2e_fake_console.py (a pty linked as an -if00 entry of the by-id directory, which prints a banner and answers each line it
-# gets) for the console spec (GX-16);
+# gets) for the console spec (GX-16); and the fake cmake and ninja of tools/gs/e2e_fake_build.py, first on the helper's PATH (the helper's builds
+# run them), for the build spec (GX-14);
 # the sim spec stops and continues it (MARV_E2E_SIM_PID) to make the SIM panels come and go. The staleness control of the specs stops the fake vehicle (SIGSTOP of its process group, MARV_E2E_VEHICLE_PID) and
 # continues it; in live mode the vehicle page's control stops the processes of the helper's run (those with MARV_E2E_RUNS_DIR, the
 # helper's run directory, in their command line) and continues them. The Playwright JSON report and the failure screenshots land in the output directory (default build/gs-e2e/out).
@@ -89,6 +90,7 @@ print(s.getsockname()[1])')"
 # The helper's board autoconnect looks in an empty directory: a board plugged into this host must not take the link from the simulator
 # (or be opened by a test).
 mkdir -p "${work}/byid"
+helper_env=()
 helper_args=(--port 0 --runs-dir "${work}/runs" --sil-udp-port "${udp_port}" --heavy-lock "${work}/heavy.lock" --byid-dir "${work}/byid")
 sim_pid=""
 if [[ "${mode}" == light ]]; then
@@ -118,6 +120,13 @@ print(s.getsockname()[1])')"
   : >"${gz_tree}/sim/quad_fc/libmarv_sil_quad_fc.so"
   uv run python tools/gs/e2e_fake_vehicle.py --manifest-out "${gz_tree}/generated/marv_params_fc3v2/marv/params/params_manifest.json"
   helper_args+=(--build-root "${work}/build-root" --sil-command "sleep ${STAND_IN_SECONDS}")
+  # The Build panel (GX-14): the fake cmake and ninja (tools/gs/e2e_fake_build.py), eight steps of half a second each (labelled harness values:
+  # long enough for a spec to see the build run and to cancel it), on the stand-in library's tree, which the fake ninja finds configured. The
+  # memory budget is one byte: a spec of the panel must not depend on this host's load (the budget itself is checked by tests/tools/test_gs_build.py).
+  uv run python tools/gs/e2e_fake_build.py --install "${work}/fakebin"
+  touch "${gz_tree}/build.ninja"
+  helper_env=(PATH="${work}/fakebin:${PATH}" MARV_FAKE_BUILD_DIR="${work}/fakebuild" MARV_FAKE_BUILD_STEPS=8 MARV_FAKE_BUILD_STEP_S=0.5)
+  helper_args+=(--build-min-free-bytes 1)
   # The Bench page (GX-10): a fake probe, board (the HIL image's port, a pty), HIL build tree and flash.sh under ${work}/bench; the HIL run
   # is the stand-in command `sleep`, and the helper reads the fake sysfs. No port of this host is opened.
   echo "##### fake bench (probe, board, HIL port, SWD flash stand-in)"
@@ -168,7 +177,7 @@ if [[ "${mode}" == light ]]; then
 fi
 
 echo "##### helper"
-setsid uv run python tools/gs/helper.py "${helper_args[@]}" >"${work}/helper.log" 2>&1 &
+setsid env ${helper_env[@]+"${helper_env[@]}"} uv run python tools/gs/helper.py "${helper_args[@]}" >"${work}/helper.log" 2>&1 &
 pids+=("$!")
 url=""
 for _ in $(seq 1 300); do
@@ -198,6 +207,7 @@ status=0
     MARV_E2E_STAND_IN="$([[ "${mode}" == light ]] && echo "${STAND_IN_SECONDS}" || true)" \
     MARV_E2E_HIL_STAND_IN="$([[ "${mode}" == light ]] && echo "${HIL_STAND_IN_SECONDS}" || true)" \
     MARV_E2E_FLASH_RECORD="${work}/bench/flash.record" \
+    MARV_E2E_HEAVY_LOCK="${work}/heavy.lock" MARV_E2E_FAKE_BUILD_DIR="${work}/fakebuild" \
     MARV_E2E_LOG_SAMPLE="$([[ "${mode}" == light ]] && echo "${log_sample}" || true)" MARV_E2E_LOG_GYRO_X="$([[ "${mode}" == light ]] && echo "${log_gyro_x}" || true)" \
     MARV_E2E_LOG_REPO_FILE="${root}/tests/tools/data/u1_sample.mlog" \
     MARV_E2E_RUNS_DIR="${work}/runs" MARV_E2E_SIM_PID="${sim_pid}" MARV_E2E_PILOT="$([[ "${mode}" == light ]] && echo 1 || true)" \

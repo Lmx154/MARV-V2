@@ -33,6 +33,7 @@
                                    [--validate-command CMD] [--picotool PATH] [--extra-origin ORIGIN ...]
                                    [--hil-command CMD] [--heavy-lock FILE] [--byid-dir DIR] [--no-autoconnect] [--board-serial SERIAL]
                                    [--pilot-udp-port N] [--pilot-dir DIR] [--log-card-dir DIR ...]
+                                   [--build-min-free-bytes N]
 
 Security. It binds 127.0.0.1 only. Every request must carry the Host `127.0.0.1:<port>`; an Origin header, when present, must
 be exactly `http://127.0.0.1:<port>` (the WebSocket requires it); and every request needs the per-session token (random, printed
@@ -189,7 +190,7 @@ from simchannel import SimChannel  # noqa: E402
 from runs import KINDS, RunRefused, RunSupervisor, list_cards, parse_options  # noqa: E402
 import sil_run  # noqa: E402  (tools/sim, on the path since runs)
 from sil import SilLauncher, udp_bound  # noqa: E402
-from build import BuildManager  # noqa: E402
+from build import BUILD_MIN_FREE_BYTES, BuildManager  # noqa: E402
 
 from websockets.asyncio.server import ServerConnection, serve  # noqa: E402
 from websockets.datastructures import Headers  # noqa: E402
@@ -240,7 +241,7 @@ class Helper:
                  heavy_lock: Path | None = None, byid_dir: Path | None = None, autoconnect: bool = True, poll_s: float = POLL_S,
                  board_serial: str | None = None, sysfs_dir: Path | None = None, sim_channel_port: int = 0,
                  swd_flash_script: Path | None = None, pilot_port: int = 0, pilot_dir: Path | None = None,
-                 log_card_dirs: list[Path] | None = None):
+                 log_card_dirs: list[Path] | None = None, build_min_free_bytes: int = BUILD_MIN_FREE_BYTES):
         self.token = token or secrets.token_urlsafe(32)
         self.extra_origins = frozenset(extra_origins)
         self.build_root, self.gcs_dir = Path(build_root), Path(gcs_dir)
@@ -282,7 +283,8 @@ class Helper:
         self.sysfs_dir = Path(sysfs_dir) if sysfs_dir is not None else SYSFS
         self.poll_s = poll_s
         self.builds = BuildManager(root=ROOT, build_root=self.build_root, run_dir=self.run_dir, library=self.images, log=self.log.event,
-                                   lock_path=lambda: self.heavy_lock or hoststate.heavy_lock_path(), push=lambda e: self._push(json.dumps(e)))
+                                   lock_path=lambda: self.heavy_lock or hoststate.heavy_lock_path(), push=lambda e: self._push(json.dumps(e)),
+                                   min_free_bytes=build_min_free_bytes)
         self.hil = HilGcs(self, swd_flash_script)  # the GCS's HIL commands (tools/gs/hil.py, GX-10)
         self.console = Console(self, WS_BUSY)  # the board's console relay (tools/gs/console.py, GX-16)
         self._ac_owner: str | None = None  # "sil" or "board" while the open device was opened by autoconnect
@@ -1166,7 +1168,7 @@ async def run(args: argparse.Namespace) -> int:
                     heavy_lock=args.heavy_lock, byid_dir=args.byid_dir, autoconnect=not args.no_autoconnect,
                     board_serial=args.board_serial, sim_channel_port=args.sim_channel_port,
                     swd_flash_script=args.swd_flash_script, sysfs_dir=args.sysfs_dir, pilot_port=args.pilot_udp_port,
-                    pilot_dir=args.pilot_dir, log_card_dirs=args.log_card_dir)
+                    pilot_dir=args.pilot_dir, log_card_dirs=args.log_card_dir, build_min_free_bytes=args.build_min_free_bytes)
     await helper.start(args.port)
     try:
         if args.serial:
@@ -1235,6 +1237,8 @@ def parse_args(argv=None) -> argparse.Namespace:
                     help="the directory of the joystick devices js<N> the pilot bridge may open (default /dev/input); tests give their own")
     ap.add_argument("--log-card-dir", type=Path, action="append", default=None, metavar="DIR",
                     help="a directory of mounted SD cards (<DIR>/<mount>/marv/log/*.mlog), repeatable (default /media/$USER and /run/media/$USER)")
+    ap.add_argument("--build-min-free-bytes", type=int, default=BUILD_MIN_FREE_BYTES, metavar="N",
+                    help="a GCS build starts only with this much memory available (default %(default)s: a PLACEHOLDER, tools/gs/build.py); tests give their own")
     ap.add_argument("--no-autoconnect", action="store_true", help="do not open the SIL's UDP link or a board's link interface by itself")
     ap.add_argument("--picotool", help=f"the picotool executable the flash runs (default $MARV_PICOTOOL, else `{flash.PICOTOOL}` on PATH)")
     ap.add_argument("--extra-origin", action="append", default=[], type=origin_arg, metavar="ORIGIN",

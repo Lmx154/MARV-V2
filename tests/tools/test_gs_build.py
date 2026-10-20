@@ -510,3 +510,21 @@ def test_no_build_command_writes_into_the_repository(tmp_path, fake):
             s.close()
     run(tmp_path, body)
     assert seen and all(state == before for state in seen)
+
+
+def test_the_helper_takes_the_build_memory_budget_from_its_option(tmp_path, fake):
+    import helper as helper_mod
+
+    assert helper_mod.parse_args([]).build_min_free_bytes == build_mod.BUILD_MIN_FREE_BYTES
+    assert helper_mod.parse_args(["--build-min-free-bytes", "1"]).build_min_free_bytes == 1
+
+    async def body(h):
+        async with ws_connect(h) as ws:
+            s = Session(ws)
+            assert h.builds.min_free_bytes == 1 << 62
+            refused = await s.cmd(cmd="build", preset=GZ)
+            assert refused["ok"] is False and "below the build budget" in refused["error"] and fake.calls() == []
+            h.builds.min_free_bytes = 1  # the control
+            assert (await built(s))["ok"] is True
+            s.close()
+    run(tmp_path, body, build_min_free_bytes=1 << 62)
