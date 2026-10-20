@@ -17,6 +17,7 @@ What is checked (behaviour predicates on the sim channel, never the design model
 """
 
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -253,7 +254,11 @@ def test_the_plugin_refuses_the_pilot_port_with_a_script(tmp_path):
 
 
 def test_the_plugin_refuses_the_pilot_port_with_hil(tmp_path):
-    hil = "<hil><device>/dev/null</device><samples_per_record>1</samples_per_record><delay_ticks>0</delay_ticks></hil>\n"
+    stem = tmp_path / "hil"
+    hil = ("<hil><device>/dev/null</device><samples_per_record>1</samples_per_record><delay_ticks>0</delay_ticks><values_crc>0</values_crc>"
+           "<hello_wait_us>1</hello_wait_us><late_wait_us>1</late_wait_us><drain_us>1</drain_us>"
+           f"<uplink_path>{stem}.uplink.bin</uplink_path><frames_path>{stem}.frames.csv</frames_path>"
+           f"<reports_path>{stem}.reports.csv</reports_path></hil>\n")  # well formed (the refusal is the plugin's, before it opens anything)
     _, text = run_quad_fc.interactive_world(tmp_path, "", pilot_port=free_port())
     text = text.replace(f"<command_delay_ticks>{run_quad_fc.COMMAND_DELAY_TICKS}</command_delay_ticks>", "")
     text = text.replace("<gyro_source>", hil + "<gyro_source>", 1)
@@ -269,11 +274,14 @@ def test_the_plugin_refuses_the_pilot_port_in_test_mode(tmp_path):
     _, text = gen_world.generate(run_quad_fc.CARD, scenario, "test", run_quad_fc.M, "lo", None, ROOT,
                                  sensors=gen_world.SensorSet(gyro="model", bias_signs=(0,) * 6),
                                  command_delay_ticks=run_quad_fc.COMMAND_DELAY_TICKS)
+    text = re.sub(r'\s*<sil_override param="ol_dshot_m\d" type="i32">\d+</sil_override>', "", text)  # the world's open-loop DShot, as run_quad_fc strips it
     text = text.replace("<gyro_source>", f"<launch_pad/>\n<pilot_udp_port>{free_port()}</pilot_udp_port>\n<gyro_source>", 1)
     assert "<real_time_factor>0" in text
     r = run_world(tmp_path, text)
     assert r.returncode != 0
     assert "marv_gz_lockstep: REFUSED: <pilot_udp_port> needs a real-time world" in r.stderr, run_scenario.stderr_tail(r.stderr)
+    ok = run_world(tmp_path, text.replace(f"<pilot_udp_port>{text.split('<pilot_udp_port>')[1].split('<')[0]}</pilot_udp_port>\n", ""))
+    assert ok.returncode == 0 and "REFUSED" not in ok.stderr, "control: the same test-mode world without the pilot port is accepted"
 
 
 def test_control_a_pilot_only_pilot_mode_world_is_accepted(tmp_path):
