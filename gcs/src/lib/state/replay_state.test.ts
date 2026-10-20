@@ -184,8 +184,8 @@ describe('replayed bytes decode to what the live session showed', () => {
 	// with the chunks as the operating system handed them over.
 	const second: Message[] = m.allStreamMessages.map((x) => (x.kind === 'Attitude' ? { ...x, roll: 0.75 } : x.kind === 'MarvEstimator' ? { ...x, gyro_bias_eskf: [0.5, 0.25, 0.125] } : x));
 	const frames = framesOf([...m.allStreamMessages, ...second]);
-	const MAVLINK2_HEADER = 10;
-	const SECOND_ATTITUDE_PAYLOAD = frames.slice(0, m.allStreamMessages.length + 1).reduce((n, f) => n + f.length, 0) + MAVLINK2_HEADER; // the first payload byte of the second round's ATTITUDE
+	const FRAME_HEADER_BYTES = 10;
+	const SECOND_ATTITUDE_PAYLOAD = frames.slice(0, m.allStreamMessages.length + 1).reduce((n, f) => n + f.length, 0) + FRAME_HEADER_BYTES; // the first payload byte of the second round's attitude frame
 	const stream = Uint8Array.from(frames.flatMap((f) => [...f]));
 	const LIVE_CHUNK = 37; // labelled harness values: read sizes that cut frames in the middle, differently for the live read and the replay's
 	const REPLAY_CHUNK = 101;
