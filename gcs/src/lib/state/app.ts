@@ -17,6 +17,7 @@ import { PilotController } from './pilot_state';
 import { RadioController } from './radio_state';
 import { Problems, type Problem } from './problems';
 import { BenchController } from './bench_state';
+import { BuildController } from './build_state';
 import { SimController } from './sim_state';
 import { ShellController, type AutoconnectEvent, type Indicator } from './shell';
 import { ValidationController } from './validation_state';
@@ -43,6 +44,8 @@ export interface App {
 	sim: SimController | null;
 	/** The Bench page: the HIL preflight and launch, the verdict form and the SWD flash of the bench images; null without a helper. */
 	bench: BenchController | null;
+	/** The Build panel on the Flash page: the helper's allow-listed builds under the heavy lock; null without a helper. */
+	build: BuildController | null;
 	/** The SIL pilot bridge: the RadioMaster's USB joystick, opened and closed through the helper; null without a helper. */
 	pilot: PilotController | null;
 	/** The Console page: the board's console text through the helper, opened and closed by the operator; null without a helper. */
@@ -183,6 +186,8 @@ function create(): App {
 					refresh: () => shell.refresh()
 				})
 			: null;
+	const build = helper ? new BuildController({ request: (cmd, args) => helper.request(cmd, args), onEvent: (handler) => helper.onEvent(handler), refreshImages: () => manifest.refreshImages() }) : null;
+	build?.start();
 	const pilot = helper ? new PilotController({ request: (cmd, args) => helper.request(cmd, args), onEvent: (handler) => helper.onEvent(handler) }) : null;
 	pilot?.start();
 	const consoleChannel = info && helper ? new ConsoleChannel({ url: consoleUrlOf(info.wsUrl) }) : null;
@@ -219,6 +224,7 @@ function create(): App {
 		paramRows,
 		sim,
 		bench,
+		build,
 		pilot,
 		console: consoleView,
 		logs,

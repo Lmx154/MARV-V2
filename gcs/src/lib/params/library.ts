@@ -8,6 +8,8 @@ export interface ImageEntry {
 	name: string;
 	kind: string;
 	params_set: string | null;
+	/** What the GCS build that produced this image recorded (tools/gs/build.py): null for an image another build left in the tree. */
+	build?: { preset: string; describe: string; finished_utc: string } | null;
 	artifacts: Record<string, string>;
 }
 
