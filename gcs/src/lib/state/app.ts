@@ -14,6 +14,7 @@ import { channelMapOf, LiveController } from './live_state';
 import { LogsController } from './logs_state';
 import { ManifestController, type ManifestState } from './manifest_state';
 import { PilotController } from './pilot_state';
+import { ReplayController } from './replay_state';
 import { RadioController } from './radio_state';
 import { Problems, type Problem } from './problems';
 import { BenchController } from './bench_state';
@@ -55,6 +56,8 @@ export interface App {
 	console: ConsoleController | null;
 	/** The Logs page: the .mlog library of the helper, the decoder's report and the decimated series; null without a helper. */
 	logs: LogsController | null;
+	/** The replay of a recorded ground log through the same decode path (GS-8): the Logs page's Replay panel; null without a helper. */
+	replay: ReplayController | null;
 	status: Readable<HelperStatus | null>;
 	/** The device the helper has open, from its events and status. */
 	device: Readable<string | null>;
@@ -226,6 +229,19 @@ function create(): App {
 	consoleView?.start();
 	const logs = helper ? new LogsController({ request: (cmd, args) => helper.request(cmd, args), onEvent: (handler) => helper.onEvent(handler) }) : null;
 	logs?.start();
+	const replay = helper
+		? new ReplayController({
+				request: (cmd, args) => helper.request(cmd, args),
+				onEvent: (handler) => helper.onEvent(handler),
+				// A replay brings its own vehicle: forget the one on screen, as a device opening does.
+				started: () => {
+					session?.reset();
+					vehicle?.reset();
+					manifest.connectionChanged();
+				}
+			})
+		: null;
+	replay?.start();
 
 		// The identity arrives after the connection: load the matching manifest then.
 	let lastIdentityKey = '';
@@ -259,6 +275,7 @@ function create(): App {
 		pilot,
 		console: consoleView,
 		logs,
+		replay,
 		status: shell.status,
 		device: shell.device,
 		bar: shell.bar,

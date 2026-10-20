@@ -858,12 +858,12 @@ rules:
     gz_groups: []
     why: "the smoke script runs a host-debug ctest subset"
 
-  - paths: [tools/gs/**, tests/tools/test_gs_helper.py, tests/tools/test_gs_logs.py, tests/tools/data/**]
+  - paths: [tools/gs/**, tests/tools/test_gs_helper.py, tests/tools/test_gs_logs.py, tests/tools/test_gs_replay.py, tests/tools/replay_decode.py, tests/tools/data/**]
     ctest_labels: []
     run_ci_steps: [gs3_check, tools_tests]
     pytest_paths: [tests/tools]
     gz_groups: []
-    why: "the ground-segment helper (unit 7): byte relay, token and Origin gate, ground log, image library, SIL launcher; held by its tests/tools pytest file, and GS-3 holds it clear of MAVLink (it only relays bytes); tools/gs/logs.py (GX-15, the .mlog library) is held by tests/tools/test_gs_logs.py on the sample tests/tools/data/u1_sample.mlog"
+    why: "the ground-segment helper (unit 7): byte relay, token and Origin gate, ground log, image library, SIL launcher; held by its tests/tools pytest file, and GS-3 holds it clear of MAVLink (it only relays bytes); tools/gs/logs.py (GX-15, the .mlog library) is held by tests/tools/test_gs_logs.py on the sample tests/tools/data/u1_sample.mlog; tools/gs/replay.py (GX-11, the ground-log replay) by tests/tools/test_gs_replay.py on the recorded SIL session under tests/tools/data/gx11 (decoded by tests/tools/replay_decode.py, whose use of pymavlink the GS-3 allow-list names)"
 
   - paths: [tools/gs/hil.py, tools/gs/device.py]
     ctest_labels: []

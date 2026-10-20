@@ -28,13 +28,16 @@
     heavy lock, each build in its own process group, and records `git describe --dirty` in the library entry of what it produced;
   - derives a config from an edited card copy (tools/gs/derive.py, GX-13): the repository's flatten, params_gen and .mcfg steps run on a copy in
     a work directory of the run, under the heavy lock; the result joins the config library that `validate` takes ({"config": hash});
+  - replays a recorded ground log (tools/gs/replay.py, GX-11, GS-8): its received bytes go to the GCS as binary frames of /ws, through the
+    path a live device's bytes take, at the recorded pace or as fast as the browser takes them; never to a device, refused while a device or
+    a run is open;
   - serves the built GCS (gcs/build) at /.
 
   uv run python tools/gs/helper.py [--serial PATH [--baud N] | --udp PORT] [--port N] [--runs-dir DIR] [--build-root DIR]
                                    [--gcs-dir DIR] [--sil-udp-port N] [--sil-command CMD] [--reports-dir DIR]
                                    [--validate-command CMD] [--picotool PATH] [--extra-origin ORIGIN ...]
                                    [--hil-command CMD] [--heavy-lock FILE] [--byid-dir DIR] [--no-autoconnect] [--board-serial SERIAL]
-                                   [--pilot-udp-port N] [--pilot-dir DIR] [--log-card-dir DIR ...]
+                                   [--pilot-udp-port N] [--pilot-dir DIR] [--log-card-dir DIR ...] [--replay-dir DIR ...]
                                    [--build-min-free-bytes N] [--derive-min-free-bytes N] [--derive-python PATH]
 
 Security. It binds 127.0.0.1 only. Every request must carry the Host `127.0.0.1:<port>`; an Origin header, when present, must
@@ -130,6 +133,15 @@ Endpoints (all need the token):
            "derivations", "limits", "refusals"}}; {"cmd": "derive_cancel"}; {"cmd": "derive_report", "derive_id", "name"}: {"text"} of a derivation report;
            {"cmd": "derive_values", "derive_id"}: {"params": [{"name", "link_id", "type", "unit", "bits", "method", "locked", "source"}]} of the derived .mcfg.
            A derived config is validated by {"cmd": "validate", "image_hash", "config": <its config hash>}. Status gains "derive": the latest derivation.
+         {"cmd": "replay_list"}: {"logs": [{"path", "name", "size", "current", "wall_utc", "rx_records", "rx_bytes", "tx_records", "events",
+           "duration_s"} or {"path", "name", "size", "error"}], "replay": status}: the ground logs `<runs dir>/<run>/ground.log` and
+           `<--replay-dir>/<run>/ground.log`. {"cmd": "replay_start", "log": <a listed path>, "mode": "paced"|"fast"} (tools/gs/replay.py, GX-11,
+           GS-8): feeds the log's received bytes to the GCS as binary frames of /ws, unchanged; refused (ok false, "refusals") while a replay
+           goes, the helper has a device open or a run is going; answers {"replay": status} at once. {"cmd": "replay_stop"} and {"cmd":
+           "replay_status"}: {"replay": {"state": "idle"|"playing"|"finished"|"stopped"|"failed", "reason", "log", "mode", "records_total",
+           "records_sent", "bytes_total", "bytes_sent", "position_s", "duration_s", "tx_dropped_bytes"}}. Pushed {"event": "replay_state", ...status}
+           at the start, the end and while playing at most every 0.25 s. A replay has no device: what the browser sends meanwhile is counted
+           ("tx_dropped_bytes") and dropped; status gains "replay".
          {"cmd": "cards"}: {"cards": ["vehicles/<name>.yaml", ...]}: the cards a sil run's "card" accepts, sorted.
          {"cmd": "host_state"}: {"host": {"loadavg", "cpus", "mem_total_bytes", "mem_available_bytes", "heavy_lock": {"held",
            "holder", "path"}}}. {"cmd": "autoconnect", "enabled": bool}: {"autoconnect": {"enabled", "suspended", "owner",
@@ -196,6 +208,7 @@ from console import Console  # noqa: E402
 import hoststate  # noqa: E402
 from hil import HilGcs  # noqa: E402
 from logs import LogLibrary  # noqa: E402
+from replay import Replay  # noqa: E402
 from pilot import Pilot, PilotError, free_udp_port  # noqa: E402
 from simchannel import SimChannel  # noqa: E402
 from runs import KINDS, RunRefused, RunSupervisor, list_cards, parse_options  # noqa: E402
@@ -253,7 +266,7 @@ class Helper:
                  heavy_lock: Path | None = None, byid_dir: Path | None = None, autoconnect: bool = True, poll_s: float = POLL_S,
                  board_serial: str | None = None, sysfs_dir: Path | None = None, sim_channel_port: int = 0,
                  swd_flash_script: Path | None = None, pilot_port: int = 0, pilot_dir: Path | None = None,
-                 log_card_dirs: list[Path] | None = None, build_min_free_bytes: int = BUILD_MIN_FREE_BYTES,
+                 log_card_dirs: list[Path] | None = None, replay_dirs: list[Path] | None = None, build_min_free_bytes: int = BUILD_MIN_FREE_BYTES,
                  derive_min_free_bytes: int = DERIVE_MIN_FREE_BYTES, derive_python: str | None = None):
         self.token = token or secrets.token_urlsafe(32)
         self.extra_origins = frozenset(extra_origins)
@@ -269,6 +282,8 @@ class Helper:
                 self.run_dir = Path(runs_dir) / f"{utc_stamp()}-{suffix}"
         self.log = groundlog.GroundLog(self.run_dir / "ground.log")
         self.logs = LogLibrary(self.run_dir, ROOT, log_card_dirs, self._emit_threadsafe)  # the .mlog library of GX-15 (tools/gs/logs.py)
+        self.replay_dirs = [Path(d).resolve() for d in replay_dirs or []]  # more parents of `<run>/ground.log` a replay may play (GX-11)
+        self.replay = Replay(self, CLIENT_QUEUE_MAX_BYTES)
         self.images = ImageLibrary(self.build_root)
         self.reports = ReportLibrary(reports_dir if reports_dir is not None else self.build_root / "gs-reports")
         self.validate_command = list(validate_command or VALIDATE_COMMAND)
@@ -345,6 +360,7 @@ class Helper:
         if self._server is not None:
             self._server.close()
             await self._server.wait_closed()
+        await self.replay.stop("helper stopping")
         self.close_device("helper stopping")
         self.console.close("helper stopping")
         self.pilot.close("helper stopping")
@@ -435,6 +451,8 @@ class Helper:
         self._opened()
 
     def _require_no_device(self) -> None:
+        if self.replay.active:
+            raise DeviceError("a replay is going: it has no device; stop it first")
         if self.device is not None:
             raise DeviceError("a device is already open; close it first (one connection at a time)")
 
@@ -443,6 +461,9 @@ class Helper:
         self._push(json.dumps({"event": "device_opened", "device": self.device.description}))
 
     def write_device(self, data: bytes) -> None:
+        if self.replay.active:  # a replay never sends: nothing reaches a device or the ground log (GS-8)
+            self.replay.discard_tx(len(data))
+            return
         if self.device is None:
             return
         self.log.write(groundlog.TX, data)
@@ -495,6 +516,8 @@ class Helper:
     def run_refusals(self, kind: str, opts: dict) -> list[str]:
         """Every reason a run of this kind cannot start now; empty when it can."""
         reasons = self.idle_refusals()
+        if self.replay.active:
+            reasons.append("a replay is going: stop it first, a run's link would open beside it")
         if kind == "hil":
             if isinstance(self.device, SerialDevice):
                 reasons.append(f"the helper has a serial port open ({self.device.path}): close it first, a HIL run owns the board "
@@ -618,6 +641,8 @@ class Helper:
             suspend = "a flash is running"
         elif held:
             suspend = held
+        elif self.replay.active:
+            suspend = "a replay is going"
         if suspend != self._ac_suspended:
             self._ac_suspended = suspend
             self._ac_event("suspended" if suspend else "resumed", reason=suspend)
@@ -691,6 +716,7 @@ class Helper:
             "autoconnect": self.autoconnect_status(),
             "pilot": self.pilot.status(),
             "console": self.console.status(),
+            "replay": self.replay.status(),
             "validation": self.validation,
             "flash": self.flash_state,
             "hil": self.hil.status(),
@@ -959,6 +985,7 @@ class Helper:
         finally:
             self.client, self._queue = None, None
             sender.cancel()
+            await self.replay.stop("the browser went away")
 
     async def _sender(self, ws: ServerConnection, queue: asyncio.Queue) -> None:
         while True:
@@ -1053,6 +1080,14 @@ class Helper:
                 reply.update(self.derive.report(msg.get("derive_id"), msg.get("name")))
             elif cmd == "derive_values":
                 reply.update(await asyncio.to_thread(self.derive.values, msg.get("derive_id")))
+            elif cmd == "replay_list":
+                reply.update(await asyncio.to_thread(self.replay.list_logs))
+            elif cmd == "replay_start":
+                reply.update(await self.replay.start(msg))
+            elif cmd == "replay_stop":
+                reply.update(await self.replay.stop())
+            elif cmd == "replay_status":
+                reply["replay"] = self.replay.status()
             elif cmd == "cards":
                 reply["cards"] = list_cards()
             elif cmd == "host_state":
@@ -1198,7 +1233,7 @@ async def run(args: argparse.Namespace) -> int:
                     heavy_lock=args.heavy_lock, byid_dir=args.byid_dir, autoconnect=not args.no_autoconnect,
                     board_serial=args.board_serial, sim_channel_port=args.sim_channel_port,
                     swd_flash_script=args.swd_flash_script, sysfs_dir=args.sysfs_dir, pilot_port=args.pilot_udp_port,
-                    pilot_dir=args.pilot_dir, log_card_dirs=args.log_card_dir, build_min_free_bytes=args.build_min_free_bytes,
+                    pilot_dir=args.pilot_dir, log_card_dirs=args.log_card_dir, replay_dirs=args.replay_dir, build_min_free_bytes=args.build_min_free_bytes,
                     derive_min_free_bytes=args.derive_min_free_bytes, derive_python=args.derive_python)
     await helper.start(args.port)
     try:
@@ -1268,6 +1303,8 @@ def parse_args(argv=None) -> argparse.Namespace:
                     help="the directory of the joystick devices js<N> the pilot bridge may open (default /dev/input); tests give their own")
     ap.add_argument("--log-card-dir", type=Path, action="append", default=None, metavar="DIR",
                     help="a directory of mounted SD cards (<DIR>/<mount>/marv/log/*.mlog), repeatable (default /media/$USER and /run/media/$USER)")
+    ap.add_argument("--replay-dir", type=Path, action="append", default=None, metavar="DIR",
+                    help="a directory of run directories (<DIR>/<run>/ground.log) a replay may also play, repeatable; the helper's own runs directory always is")
     ap.add_argument("--build-min-free-bytes", type=int, default=BUILD_MIN_FREE_BYTES, metavar="N",
                     help="a GCS build starts only with this much memory available (default %(default)s: a PLACEHOLDER, tools/gs/build.py); tests give their own")
     ap.add_argument("--derive-min-free-bytes", type=int, default=DERIVE_MIN_FREE_BYTES, metavar="N",
