@@ -11,6 +11,7 @@ import { mergeParams, type ParamRow } from '$lib/params/merge';
 import { HelperApi, readHelperInfo, type HelperInfo, type HelperStatus } from './helper_api';
 import { FlashController } from './flash_state';
 import { channelMapOf, LiveController } from './live_state';
+import { LogsController } from './logs_state';
 import { ManifestController, type ManifestState } from './manifest_state';
 import { PilotController } from './pilot_state';
 import { RadioController } from './radio_state';
@@ -46,6 +47,8 @@ export interface App {
 	pilot: PilotController | null;
 	/** The Console page: the board's console text through the helper, opened and closed by the operator; null without a helper. */
 	console: ConsoleController | null;
+	/** The Logs page: the .mlog library of the helper, the decoder's report and the decimated series; null without a helper. */
+	logs: LogsController | null;
 	status: Readable<HelperStatus | null>;
 	/** The device the helper has open, from its events and status. */
 	device: Readable<string | null>;
@@ -186,6 +189,8 @@ function create(): App {
 	const consoleView =
 		helper && consoleChannel ? new ConsoleController({ request: (cmd, args) => helper.request(cmd, args), onEvent: (handler) => helper.onEvent(handler), channel: consoleChannel }) : null;
 	consoleView?.start();
+	const logs = helper ? new LogsController({ request: (cmd, args) => helper.request(cmd, args), onEvent: (handler) => helper.onEvent(handler) }) : null;
+	logs?.start();
 
 		// The identity arrives after the connection: load the matching manifest then.
 	let lastIdentityKey = '';
@@ -216,6 +221,7 @@ function create(): App {
 		bench,
 		pilot,
 		console: consoleView,
+		logs,
 		status: shell.status,
 		device: shell.device,
 		bar: shell.bar,

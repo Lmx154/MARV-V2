@@ -22,13 +22,15 @@
     and tells the GCS the pilot state at most 30 Hz;
   - relays the board's console (tools/gs/console.py, GX-16, decision 0038): the by-id `-if00` CDC as text on /ws/console and the operator's
     typed lines back, opened and closed by the operator, never autoconnected, refused while a HIL run, the HIL hold or a flash owns the board;
+  - keeps the log library (tools/gs/logs.py, GX-15): onboard-logger .mlog files copied from a mounted SD card or a path the operator gives
+    into <run dir>/logs with their SHA-256, decoded with logger U1's tools/log/mlog.py, and a decimated min/max series of their fields;
   - serves the built GCS (gcs/build) at /.
 
   uv run python tools/gs/helper.py [--serial PATH [--baud N] | --udp PORT] [--port N] [--runs-dir DIR] [--build-root DIR]
                                    [--gcs-dir DIR] [--sil-udp-port N] [--sil-command CMD] [--reports-dir DIR]
                                    [--validate-command CMD] [--picotool PATH] [--extra-origin ORIGIN ...]
                                    [--hil-command CMD] [--heavy-lock FILE] [--byid-dir DIR] [--no-autoconnect] [--board-serial SERIAL]
-                                   [--pilot-udp-port N] [--pilot-dir DIR]
+                                   [--pilot-udp-port N] [--pilot-dir DIR] [--log-card-dir DIR ...]
 
 Security. It binds 127.0.0.1 only. Every request must carry the Host `127.0.0.1:<port>`; an Origin header, when present, must
 be exactly `http://127.0.0.1:<port>` (the WebSocket requires it); and every request needs the per-session token (random, printed
@@ -94,6 +96,17 @@ Endpoints (all need the token):
            {"cmd": "console_status"}: {"console": {"state": "closed"|"open"|"lost", "reason", "device", "client", "rx_bytes", "tx_bytes",
            "dropped_bytes", "log", "devices", "blocked"}}; status gains the same block. Pushed: {"event": "console_state", "state", "reason",
            "device"}. While a console is open console.log in the run directory holds its bytes (ground-log format).
+         {"cmd": "log_list"}: {"logs": [{"sha256", "size", "name", "source", "imported_utc", "summary"}], "importing": {"id", "name"}|null, "cards": [{"path", "name", "mount",
+           "size"}], "library"}: the imported logs with the decoder's summary (sectors, records by kind, problems, gaps, End record), and the
+           *.mlog files of the mounted cards (<--log-card-dir>/<mount>/marv/log). {"cmd": "log_import", "path"}: the path must be absolute and normalised, name a regular file
+           (no symbolic link) *.mlog outside the repository and the library; answers {"started": true, "import_id"} at once (the events carry it as "id"), one import at a time
+           (a second is refused), and the copy, the decode and the columnar cache run in a worker thread: pushed {"event":
+           "log_import_progress", "id", "phase": "copy"|"decode", "bytes_done", "bytes_total"} (rate-capped) and {"event": "log_import_done",
+           "id", "ok", "already_imported", "sha256", "size", "name", "source", "summary"} or {"ok": false, "error"}; the file is in
+           <run dir>/logs/<sha256>.mlog only after the import is done, the source is opened read-only, and a file with decoder problems is
+           imported with the report in "summary". Stopping the helper cancels the import and leaves no partial entry. {"cmd": "log_series", "sha256", "kind", "fields": [names], "t0_us"?, "t1_us"?,
+           "buckets"?}: {"series": {"bucket_us", "n": [records per bucket], "fields": {name: {"min": [...], "max": [...], "skipped"}}}}: the
+           minimum and maximum of each field in each of equal time buckets of the range (null for an empty one).
          {"cmd": "cards"}: {"cards": ["vehicles/<name>.yaml", ...]}: the cards a sil run's "card" accepts, sorted.
          {"cmd": "host_state"}: {"host": {"loadavg", "cpus", "mem_total_bytes", "mem_available_bytes", "heavy_lock": {"held",
            "holder", "path"}}}. {"cmd": "autoconnect", "enabled": bool}: {"autoconnect": {"enabled", "suspended", "owner",
@@ -159,6 +172,7 @@ from device import DEFAULT_BAUD, LOOPBACK, Device, DeviceError, SerialDevice, Ud
 from console import Console  # noqa: E402
 import hoststate  # noqa: E402
 from hil import HilGcs  # noqa: E402
+from logs import LogLibrary  # noqa: E402
 from pilot import Pilot, PilotError, free_udp_port  # noqa: E402
 from simchannel import SimChannel  # noqa: E402
 from runs import KINDS, RunRefused, RunSupervisor, list_cards, parse_options  # noqa: E402
@@ -213,7 +227,8 @@ class Helper:
                  validate_command: list[str] | None = None, picotool: str | None = None, hil_command: list[str] | None = None,
                  heavy_lock: Path | None = None, byid_dir: Path | None = None, autoconnect: bool = True, poll_s: float = POLL_S,
                  board_serial: str | None = None, sysfs_dir: Path | None = None, sim_channel_port: int = 0,
-                 swd_flash_script: Path | None = None, pilot_port: int = 0, pilot_dir: Path | None = None):
+                 swd_flash_script: Path | None = None, pilot_port: int = 0, pilot_dir: Path | None = None,
+                 log_card_dirs: list[Path] | None = None):
         self.token = token or secrets.token_urlsafe(32)
         self.extra_origins = frozenset(extra_origins)
         self.build_root, self.gcs_dir = Path(build_root), Path(gcs_dir)
@@ -227,6 +242,7 @@ class Helper:
                 suffix += 1
                 self.run_dir = Path(runs_dir) / f"{utc_stamp()}-{suffix}"
         self.log = groundlog.GroundLog(self.run_dir / "ground.log")
+        self.logs = LogLibrary(self.run_dir, ROOT, log_card_dirs, self._emit_threadsafe)  # the .mlog library of GX-15 (tools/gs/logs.py)
         self.images = ImageLibrary(self.build_root)
         self.reports = ReportLibrary(reports_dir if reports_dir is not None else self.build_root / "gs-reports")
         self.validate_command = list(validate_command or VALIDATE_COMMAND)
@@ -303,6 +319,7 @@ class Helper:
         await self.stop_validation()
         await self.stop_flash()
         await self.hil.stop()
+        await asyncio.to_thread(self.logs.shutdown)
         await asyncio.to_thread(self.runs.shutdown)
         await asyncio.to_thread(self.sil.stop)
         self.sim_channel.close()
@@ -976,6 +993,12 @@ class Helper:
                 reply["console"] = self.console.close()
             elif cmd == "console_status":
                 reply["console"] = self.console.status()
+            elif cmd == "log_list":
+                reply.update(await asyncio.to_thread(self.logs.list_logs))
+            elif cmd == "log_import":
+                reply.update(self.logs.start_import(msg.get("path")))
+            elif cmd == "log_series":
+                reply["series"] = await asyncio.to_thread(self.logs.series, msg)
             elif cmd == "cards":
                 reply["cards"] = list_cards()
             elif cmd == "host_state":
@@ -1121,7 +1144,7 @@ async def run(args: argparse.Namespace) -> int:
                     heavy_lock=args.heavy_lock, byid_dir=args.byid_dir, autoconnect=not args.no_autoconnect,
                     board_serial=args.board_serial, sim_channel_port=args.sim_channel_port,
                     swd_flash_script=args.swd_flash_script, sysfs_dir=args.sysfs_dir, pilot_port=args.pilot_udp_port,
-                    pilot_dir=args.pilot_dir)
+                    pilot_dir=args.pilot_dir, log_card_dirs=args.log_card_dir)
     await helper.start(args.port)
     try:
         if args.serial:
@@ -1188,6 +1211,8 @@ def parse_args(argv=None) -> argparse.Namespace:
                          "to (0, the default, picks a free one)")
     ap.add_argument("--pilot-dir", type=Path, default=None,
                     help="the directory of the joystick devices js<N> the pilot bridge may open (default /dev/input); tests give their own")
+    ap.add_argument("--log-card-dir", type=Path, action="append", default=None, metavar="DIR",
+                    help="a directory of mounted SD cards (<DIR>/<mount>/marv/log/*.mlog), repeatable (default /media/$USER and /run/media/$USER)")
     ap.add_argument("--no-autoconnect", action="store_true", help="do not open the SIL's UDP link or a board's link interface by itself")
     ap.add_argument("--picotool", help=f"the picotool executable the flash runs (default $MARV_PICOTOOL, else `{flash.PICOTOOL}` on PATH)")
     ap.add_argument("--extra-origin", action="append", default=[], type=origin_arg, metavar="ORIGIN",

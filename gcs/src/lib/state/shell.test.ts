@@ -239,9 +239,9 @@ describe('computeBar: contents', () => {
 });
 
 describe('the pages', () => {
-	it('has the connection, vehicle, simulation, radio, parameters, flash, bench and console pages and the placeholders, each with a unit when not built', () => {
+	it('has the connection, vehicle, simulation, radio, parameters, flash, bench, console and logs pages and the placeholders, each with a unit when not built', () => {
 		expect(ROUTES.map((r) => r.path)).toEqual(['/', '/vehicle', '/simulation', '/radio', '/params', '/flash', '/bench', '/console', '/logs', '/flight-prep', '/sim']);
-		expect(ROUTES.filter((r) => r.unit === null).map((r) => r.path)).toEqual(['/', '/vehicle', '/simulation', '/radio', '/params', '/flash', '/bench', '/console', '/sim']);
+		expect(ROUTES.filter((r) => r.unit === null).map((r) => r.path)).toEqual(['/', '/vehicle', '/simulation', '/radio', '/params', '/flash', '/bench', '/console', '/logs', '/sim']);
 		// The SIM page (GX-8) is listed only while a simulation publishes.
 		expect(ROUTES.filter((r) => r.simOnly).map((r) => r.path)).toEqual(['/sim']);
 	});
