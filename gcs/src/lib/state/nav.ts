@@ -20,7 +20,7 @@ export const ROUTES: readonly NavRoute[] = [
 	{ path: '/params', label: 'Parameters', unit: null, will: 'The vehicle parameters.' },
 	{ path: '/flash', label: 'Flash', unit: null, will: 'Images and configs through the validation gate.' },
 	{ path: '/bench', label: 'Bench', unit: 'GX-16', will: 'The hardware-in-the-loop launcher and the bench images; the console is built by GX-16.' },
-	{ path: '/logs', label: 'Logs', unit: 'GX-15', will: 'The onboard logs: import, viewer and replay.' },
+	{ path: '/logs', label: 'Logs', unit: null, will: 'The onboard logs: import, decoder report and plot.' },
 	{ path: '/flight-prep', label: 'Flight prep', unit: 'GX-17', will: 'The pre-flight checklist and the diffs of the configs.' },
 	{ path: '/sim', label: 'SIM', unit: null, will: 'Simulator truth and the inputs it injects, on the sim channel; present only while a simulation publishes.', simOnly: true }
 ];
