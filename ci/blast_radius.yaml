@@ -96,6 +96,7 @@ ignore:
   - docs/**
   - tests/regression/quad/L09/results/**   # bench logs (M1 P9, P11): evidence only, read by no test
   - tests/regression/quad/L10/results/**   # HIL S2e run reports and traces: evidence only, read by no test
+  - tests/flight/**   # flight test card and flight evidence (T7): procedure and evidence, read by no test
   - LICENSE
   - THIRD_PARTY_NOTICES.md
   - datasheets/**
