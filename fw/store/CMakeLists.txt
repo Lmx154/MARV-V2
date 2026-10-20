@@ -16,10 +16,11 @@ target_link_libraries(marv_store
 add_dependencies(marv_store marv_params_fc3v2_generated)
 marv_apply_flags(marv_store FIRMWARE)
 
-# The same store compiled against the FC3v2 set with the logger register (marv_params_fc3v2_log), for the bench log image only
-# (MARV_FC3V2_LOG_BENCH, fw/hal/target/CMakeLists.txt; onboard logger unit U2): its tables are that set's kParamCount records
-# and its schema is that set's. Not defined in any other configuration.
-if(MARV_FC3V2_LOG_BENCH)
+# The same store compiled against the FC3v2 set with the logger register (marv_params_fc3v2_log), for the bench log image
+# (MARV_FC3V2_LOG_BENCH, fw/hal/target/CMakeLists.txt; onboard logger unit U2) and the flight image with the logger
+# (MARV_FC3V2_FLIGHT_LOG, unit U4-4) only: its tables are that set's kParamCount records and its schema is that set's. Not
+# defined in any other configuration.
+if(MARV_FC3V2_LOG_BENCH OR MARV_FC3V2_FLIGHT_LOG)
   add_library(marv_store_log STATIC src/mcfg.cpp src/boot.cpp src/staging.cpp)
   target_include_directories(marv_store_log PUBLIC include)
   target_link_libraries(marv_store_log

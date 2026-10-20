@@ -18,7 +18,7 @@
 #if defined(MARV_FC3V2_HIL)
 #include "marv/hal_target/hil.hpp"
 #endif
-#if defined(MARV_FC3V2_LOG_BENCH)
+#if defined(MARV_FC3V2_LOG_BENCH) || defined(MARV_FC3V2_FLIGHT_LOG)
 #include "marv/hal_target/log_tick.hpp"
 #endif
 
@@ -104,7 +104,7 @@ void hal_actuators_write(std::span<const DshotValue> motor, std::span<const Serv
 #else
   hal_target::motor_output_write(motor);
 #endif
-#if defined(MARV_FC3V2_LOG_BENCH)
+#if defined(MARV_FC3V2_LOG_BENCH) || defined(MARV_FC3V2_FLIGHT_LOG)
   hal_target::log_tick_rate(motor);  // the onboard logger's rate-tick record (log_tick.hpp), after the frames are sent
 #endif
 }

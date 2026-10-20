@@ -163,6 +163,40 @@ if(MARV_FC3V2_LOG_BENCH)
     PRIVATE MARV_FC3V2_LOG_RING_BYTES=${MARV_FC3V2_LOG_RING_BYTES} MARV_FC3V2_LOG_STAGING_BYTES=${MARV_FC3V2_LOG_STAGING_BYTES})
   target_link_libraries(marv_hal_target PUBLIC marv_log)
 endif()
+# MARV_FC3V2_FLIGHT_LOG (default OFF; the onboard SD logger's unit U4-4, serena memories quad-m4/architect-onboard-logger-2026-10-18
+# items 1, 4, 5 and 7 and quad-m4/architect-logger-u4-2026-10-20): the flight image with the onboard logger on the disarmed arena
+# (src/flight_log.cpp, marv/hal_target/flight_log.hpp). The tick hooks of the bench log image push into the ring the logger leases
+# in the arena (the IMU sample as log format version 2's raw-count record), the logger runs in the background loop beside the
+# link service with the SD card as its storage (src/log_storage_sd.cpp), logs from the arm edge with the derived pre-roll to the
+# disarm edge plus the post-roll, writes the composition's Telemetry snapshot every log_slow_period_s, and gives the arena back to
+# the store only while Ready (invariant L-8). The image uses the parameter set marv_params_fc3v2_log (the FC3v2 set plus the
+# log_* entries; the composition, the config store and the link service are compiled against it: marv_composition_quad_fc_log,
+# marv_store_log, marv_link_service_log), so the default image's set and table are unchanged. Its staging is the first
+# MARV_FC3V2_LOG_STAGING_BYTES of the arena and its ring the rest; the post-link check tools/ci/check_log_ring.py fails the build
+# and removes the image unless that ring holds the fast stream for sd_log_write_stall_max_s (invariant L-5, core EMB-6), which it
+# cannot at the 0.809 s budget entry: the option stays OFF until unit U4-7 rules the stall figure.
+# MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN (bench only, default OFF, needs MARV_FC3V2_FLIGHT_LOG; invariant L-5a): the measurement build of
+# that image. Its banner and its log header carry the flag, its console has the trigger `log start` / `log stop` (flight_log.hpp),
+# and its L-5 check prints a warning instead of failing. Every symbol of that code names emb6_open: every other build of
+# marv_fc3v2 forbids such a symbol after the link (tools/ci/check_emb6_open.py, with the planted control of
+# tests/regression/quad/L09/emb6_open). Both exclude every bench variant.
+option(MARV_FC3V2_FLIGHT_LOG "FC3v2 flight image with the onboard SD logger on the disarmed arena (OFF until unit U4-7)" OFF)
+option(MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN "FC3v2 measurement build of the flight-log image: L-5 only warns, console log trigger" OFF)
+if(MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN AND NOT MARV_FC3V2_FLIGHT_LOG)
+  message(FATAL_ERROR "MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN needs MARV_FC3V2_FLIGHT_LOG")
+endif()
+if(MARV_FC3V2_FLIGHT_LOG AND (MARV_FC3V2_HIL OR MARV_FC3V2_HIL_LINK OR MARV_FC3V2_IMU_LOG OR MARV_FC3V2_COUNT_ONLY OR
+                              MARV_FC3V2_SD_BENCH OR MARV_FC3V2_USB_BENCH OR MARV_FC3V2_BENCH_ACCEPT_SPACING OR
+                              MARV_FC3V2_BENCH_STATS OR MARV_FC3V2_LOG_BENCH))
+  message(FATAL_ERROR "MARV_FC3V2_FLIGHT_LOG excludes MARV_FC3V2_HIL, MARV_FC3V2_HIL_LINK, MARV_FC3V2_IMU_LOG, MARV_FC3V2_COUNT_ONLY, MARV_FC3V2_SD_BENCH, MARV_FC3V2_USB_BENCH, MARV_FC3V2_BENCH_ACCEPT_SPACING, MARV_FC3V2_BENCH_STATS and MARV_FC3V2_LOG_BENCH")
+endif()
+if(MARV_FC3V2_FLIGHT_LOG)
+  target_sources(marv_hal_target PRIVATE src/flight_log.cpp src/log_storage_sd.cpp)
+  target_compile_definitions(marv_hal_target
+    PUBLIC MARV_FC3V2_FLIGHT_LOG $<$<BOOL:${MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN}>:MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN>
+    PRIVATE MARV_FC3V2_LOG_STAGING_BYTES=${MARV_FC3V2_LOG_STAGING_BYTES})
+  target_link_libraries(marv_hal_target PUBLIC marv_log)
+endif()
 # The composite USB device (ground-segment unit 12a, decision 0053; src/usb.cpp, marv/hal_target/usb.hpp): every image but the
 # two HIL ones keeps the SDK's pico_stdio_usb for the console (CDC 0, interface 0) and supplies its own descriptors (console
 # CDC, link CDC at interface 2, the Raspberry Pi reset interface at interface 4), a tusb_config.h with two CDC instances
@@ -235,6 +269,13 @@ elseif(MARV_FC3V2_LOG_BENCH)
             --elf "$<TARGET_FILE:marv_fc3v2>" --nm "${CMAKE_NM}" --delete-on-failure
     COMMENT "Checking the log ring of marv_fc3v2 against the fast stream x the worst SD stall (L-5)"
     VERBATIM)
+elseif(MARV_FC3V2_FLIGHT_LOG)
+  target_link_libraries(marv_fc3v2 PRIVATE
+    marv_composition_quad_fc_log marv_store_log marv_link_service_log marv_hal_target marv_lsm6dsv_decode marv_console_decode
+    marv_log marv_params_fc3v2_log_generated marv_params_fc3v2_log_runtime pico_stdlib hardware_spi hardware_pio hardware_uart
+    hardware_flash hardware_watchdog pico_sha256 pico_rand)
+  # The image holds exactly the flight-log set's parameter table, or the build fails and the image is removed.
+  marv_check_param_table(marv_fc3v2 marv_params_fc3v2_log)
 else()
   target_link_libraries(marv_fc3v2 PRIVATE
     marv_composition_quad_fc marv_store marv_hal_target marv_lsm6dsv_decode marv_console_decode marv_params_fc3v2_generated
@@ -291,6 +332,13 @@ marv_check_bench_profile(marv_fc3v2 FORBID)
 # every bench option changes the image's RAM, so the bench images keep the working memory alone.
 set(MARV_FC3V2_RAM_FREE_BYTES 84688)
 set(MARV_FC3V2_ARENA_MARGIN_BYTES 4096)
+# The flight image with the onboard logger (MARV_FC3V2_FLIGHT_LOG, and its measurement build) has more static RAM (the logger's code
+# and objects, the SD log storage, the FatFs calls it adds, the log set's parameter records): its own measurement by the same
+# procedure (0 here builds that image; its L-5 check then removes it, so measure_flight_log.sh links it again), 55388 bytes at
+# unit U4-4 (tests/regression/quad/L10/results/arena: measure_flight_log.sh, flight_log_at_slot.txt).
+if(MARV_FC3V2_FLIGHT_LOG)
+  set(MARV_FC3V2_RAM_FREE_BYTES 55388)
+endif()
 if(NOT (MARV_FC3V2_COUNT_ONLY OR MARV_FC3V2_BENCH_STATS OR MARV_FC3V2_BENCH_ACCEPT_SPACING OR MARV_FC3V2_IMU_LOG OR
         MARV_FC3V2_HIL_LINK OR MARV_FC3V2_HIL OR MARV_FC3V2_SD_BENCH OR MARV_FC3V2_USB_BENCH OR MARV_FC3V2_LOG_BENCH))
   target_compile_definitions(marv_fc3v2 PRIVATE MARV_FC3V2_RAM_FREE_BYTES=${MARV_FC3V2_RAM_FREE_BYTES}
@@ -321,15 +369,68 @@ function(marv_check_single_core target mode)
 endfunction()
 marv_check_single_core(marv_fc3v2 FORBID)
 
+# Invariant L-5a (onboard logger unit U4-4; serena memory quad-m4/architect-logger-u4-2026-10-20): only the measurement build
+# MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN may link with a ring below L-5, so no other build of the image may hold its code. After every
+# link, tools/ci/check_emb6_open.py lists the image's symbols (nm): FORBID fails the build and removes the image if a symbol names
+# emb6_open; REQUIRE fails it unless one does (the measurement build itself, and the negative control, the planted image of
+# tests/regression/quad/L09/emb6_open, which the same check must find). Python as marv_check_bench_profile.
+function(marv_check_emb6_open target mode)
+  set(python "${MARV_PYTHON}")
+  if(python STREQUAL "")
+    set(python "${PROJECT_SOURCE_DIR}/.venv/bin/python")
+  endif()
+  if(mode STREQUAL "FORBID")
+    set(check_args --forbid "$<TARGET_FILE:${target}>" --delete-on-failure)
+  elseif(mode STREQUAL "REQUIRE")
+    set(check_args --require "$<TARGET_FILE:${target}>")
+  else()
+    message(FATAL_ERROR "marv_check_emb6_open(${target} ${mode}): the mode is FORBID or REQUIRE")
+  endif()
+  add_custom_command(TARGET ${target} POST_BUILD
+    COMMAND "${python}" "${PROJECT_SOURCE_DIR}/tools/ci/check_emb6_open.py" --nm "${CMAKE_NM}" ${check_args}
+    COMMENT "Checking ${target} for the measurement build's symbols (invariant L-5a, ${mode})"
+    VERBATIM)
+endfunction()
+if(MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN)
+  marv_check_emb6_open(marv_fc3v2 REQUIRE)
+else()
+  marv_check_emb6_open(marv_fc3v2 FORBID)
+endif()
+
+# Invariant L-5 (core EMB-6) of the flight image with the logger, last after the other checks: the ring is what the arena logger
+# makes of the disarmed arena (main.cpp's g_arena less the staging at its start, from the first cell boundary; ArenaLogger), and
+# it must hold the fast stream for sd_log_write_stall_max_s of the image's set, or the build fails and the image is removed. In
+# the measurement build a shortfall is printed as a warning and the image is kept (invariant L-5a).
+if(MARV_FC3V2_FLIGHT_LOG)
+  set(marv_log_python "${MARV_PYTHON}")
+  if(marv_log_python STREQUAL "")
+    set(marv_log_python "${PROJECT_SOURCE_DIR}/.venv/bin/python")
+  endif()
+  if(MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN)
+    set(marv_l5_mode --warn)
+  else()
+    set(marv_l5_mode --delete-on-failure)
+  endif()
+  add_custom_command(TARGET marv_fc3v2 POST_BUILD
+    COMMAND "${marv_log_python}" "${PROJECT_SOURCE_DIR}/tools/ci/check_log_ring.py"
+            --manifest "$<TARGET_PROPERTY:marv_params_fc3v2_log_generated,MARV_PARAM_MANIFEST>"
+            --elf "$<TARGET_FILE:marv_fc3v2>" --nm "${CMAKE_NM}" --arena-symbol _ZN12_GLOBAL__N_17g_arenaE
+            --staging-bytes ${MARV_FC3V2_LOG_STAGING_BYTES} ${marv_l5_mode}
+    COMMENT "Checking the flight log ring of marv_fc3v2 (the arena less the staging) against the fast stream x the worst SD stall (L-5)"
+    VERBATIM)
+endif()
+
 # The bench motor-step profile image (unit U3 BENCH-PROFILE, architect ruling 2026-10-18 item 8; the props-off runbook is
 # tests/regression/quad/L10/results/bench_profile/README.md): main.cpp built with MARV_FC3V2_BENCH_PROFILE, linking the
 # composition variant marv_composition_quad_fc_bench_profile (the profile in place of the mixer's output while Armed, run
 # and killed from the radio, no USB needed) with the FC3v2 set plus the bench-profile register, and the console. It has no
 # config store and no link service: both are built against marv_params_fc3v2, whose table this set's is not, so the image
 # boots the compiled defaults, and a bench value changes only with a new image (a new hash). The onboard logger joins it
-# with unit U2. Built in the default configuration only: every bench option above changes marv_hal_target, which it shares.
+# with unit U2. Built in the default configuration only: every bench option above changes marv_hal_target, which it shares, and so
+# does MARV_FC3V2_FLIGHT_LOG (the tick hooks).
 if(NOT (MARV_FC3V2_COUNT_ONLY OR MARV_FC3V2_BENCH_STATS OR MARV_FC3V2_BENCH_ACCEPT_SPACING OR MARV_FC3V2_IMU_LOG OR
-        MARV_FC3V2_HIL_LINK OR MARV_FC3V2_HIL OR MARV_FC3V2_SD_BENCH OR MARV_FC3V2_USB_BENCH OR MARV_FC3V2_LOG_BENCH))
+        MARV_FC3V2_HIL_LINK OR MARV_FC3V2_HIL OR MARV_FC3V2_SD_BENCH OR MARV_FC3V2_USB_BENCH OR MARV_FC3V2_LOG_BENCH OR
+        MARV_FC3V2_FLIGHT_LOG))
   add_executable(marv_fc3v2_bench_profile src/main.cpp)
   pico_set_binary_type(marv_fc3v2_bench_profile copy_to_ram)
   target_compile_definitions(marv_fc3v2_bench_profile PRIVATE MARV_FC3V2_VERSION="${MARV_FC3V2_VERSION}"

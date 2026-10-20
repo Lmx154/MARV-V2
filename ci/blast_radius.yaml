@@ -699,7 +699,7 @@ rules:
     run_ci_steps: [tools_tests]
     pytest_paths: [tests/tools]
     gz_groups: []
-    why: "the L-5 post-link check (the bench log image's ring holds the fast stream x sd_log_write_stall_max_s, core EMB-6), run by the bench log image's build (MARV_FC3V2_LOG_BENCH, m33 only) and, with its negative control, by tests/tools/test_check_log_ring.py"
+    why: "the L-5 post-link check (the log ring holds the fast stream x sd_log_write_stall_max_s, core EMB-6), run by the bench log image's build (MARV_FC3V2_LOG_BENCH) and the flight-log image's (MARV_FC3V2_FLIGHT_LOG, the arena ring; a warning in its measurement build MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN), m33 only, neither in the default configuration, and, with its negative controls, by tests/tools/test_check_log_ring.py"
 
   - paths: [tools/ci/check_claude_md.py]
     ctest_labels: []
@@ -768,6 +768,13 @@ rules:
     pytest_paths: []
     gz_groups: []
     why: "invariant L-8b of the disarmed arena (onboard logger unit U4-2): run after every link of the m33 flight image (FORBID multicore_launch_core1) and of the planted image single_core_planted (REQUIRE, the control), both built by every m33 build (fw/hal/target/CMakeLists.txt, tests/regression/quad/L09/single_core)"
+
+  - paths: [tools/ci/check_emb6_open.py, tests/regression/quad/L09/emb6_open/**]
+    ctest_labels: []
+    run_ci_steps: [m33_build]
+    pytest_paths: []
+    gz_groups: []
+    why: "invariant L-5a of the onboard logger (unit U4-4): run after every link of the m33 flight image (FORBID the measurement build's emb6_open symbols; REQUIRE in the measurement build MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN) and of the planted image emb6_open_planted (REQUIRE, the control), both built by every m33 build (fw/hal/target/CMakeLists.txt, tests/regression/quad/L09/emb6_open)"
 
   - paths: [tools/ci/check_regression_changes.py]
     ctest_labels: []

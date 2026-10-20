@@ -46,3 +46,20 @@ if(MARV_TARGET STREQUAL "m33")
   target_compile_options(marv_link_codec_mavlink PRIVATE -Os)
   target_compile_options(marv_link_service PRIVATE -Os)
 endif()
+
+# The same service compiled against the FC3v2 set with the logger register (marv_params_fc3v2_log) and with the store of that set
+# (marv_store_log), for the flight image with the logger only (MARV_FC3V2_FLIGHT_LOG, fw/hal/target/CMakeLists.txt; onboard
+# logger unit U4-4), built for size like the service above. Not defined in any other configuration.
+if(MARV_FC3V2_FLIGHT_LOG)
+  add_library(marv_link_service_log STATIC src/service.cpp)
+  target_include_directories(marv_link_service_log PUBLIC include)
+  target_link_libraries(marv_link_service_log
+    PUBLIC marv_link marv_store_log
+    PRIVATE marv_link_codec_mavlink marv_hal marv_params marv_arming marv_prim marv_types
+            $<COMPILE_ONLY:marv_params_fc3v2_log_generated>)
+  add_dependencies(marv_link_service_log marv_params_fc3v2_log_generated)
+  marv_apply_flags(marv_link_service_log FIRMWARE)
+  if(MARV_TARGET STREQUAL "m33")
+    target_compile_options(marv_link_service_log PRIVATE -Os)
+  endif()
+endif()

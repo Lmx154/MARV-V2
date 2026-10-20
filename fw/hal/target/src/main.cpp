@@ -25,6 +25,9 @@
 #if defined(MARV_FC3V2_BENCH_PROFILE) && defined(MARV_FC3V2_LOG_BENCH)
 #error "MARV_FC3V2_BENCH_PROFILE and MARV_FC3V2_LOG_BENCH are separate images and cannot be combined"
 #endif
+#if defined(MARV_FC3V2_FLIGHT_LOG) && (defined(MARV_FC3V2_BENCH_PROFILE) || defined(MARV_FC3V2_LOG_BENCH))
+#error "MARV_FC3V2_FLIGHT_LOG is the flight image with the logger; it combines with neither bench image"
+#endif
 #if defined(MARV_FC3V2_BENCH_PROFILE)
 #include "marv/bench_profile.hpp"
 #elif defined(MARV_FC3V2_LOG_BENCH)
@@ -38,6 +41,15 @@
 #endif
 #if defined(MARV_FC3V2_SD_BENCH)
 #include "marv/hal_target/sd_bench.hpp"
+#endif
+#if defined(MARV_FC3V2_FLIGHT_LOG)
+#include <pico/rand.h>
+
+#include "marv/hal_target/flight_log.hpp"
+#include "marv/hal_target/log_storage_sd.hpp"
+#include "marv/hal_target/log_tick.hpp"
+#include "marv/hal_target/lsm6dsv_decode.hpp"
+#include "marv/log/params.hpp"
 #endif
 #include "marv/params/param.hpp"
 #include "marv/prim/constants.hpp"
@@ -72,6 +84,19 @@ void log_then_tick(const marv::ImuSample& s) noexcept {
 }
 constexpr marv::hal_target::ImuSink kSink = &log_then_tick;
 constexpr const char* kTickMode = "quad_fc + onboard SD log (MARV_FC3V2_LOG_BENCH)";
+#elif defined(MARV_FC3V2_FLIGHT_LOG)
+// The flight image with the onboard logger (marv/hal_target/flight_log.hpp): the one call that hands the composition a sample
+// first pushes it to the logger, so the log holds exactly the stream the composition's tick receives, flags included.
+void log_then_tick(const marv::ImuSample& s) noexcept {
+  marv::hal_target::log_tick_sample(s);
+  marv::composition::tick(s);
+}
+constexpr marv::hal_target::ImuSink kSink = &log_then_tick;
+#if defined(MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN)
+constexpr const char* kTickMode = "quad_fc + onboard SD flight log, MEASUREMENT BUILD (MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN)";
+#else
+constexpr const char* kTickMode = "quad_fc + onboard SD flight log (MARV_FC3V2_FLIGHT_LOG)";
+#endif
 #else
 constexpr marv::hal_target::ImuSink kSink = &marv::composition::tick;
 constexpr const char* kTickMode = "quad_fc";
@@ -258,6 +283,9 @@ void print_config() {
 
 void print_progress() {
   std::printf("marv_fc3v2 %s\n", MARV_FC3V2_VERSION);
+#if defined(MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN)
+  std::printf("%s\n", marv::hal_target::flight_log_emb6_open_banner);
+#endif
   if (stage >= Stage::kParamsOk) {
     print_config();
     std::printf("params ok: %s, rate_period_tolerance_us %ld\n", kParamMode,
@@ -485,6 +513,9 @@ void console_byte(char c) {
 #if defined(MARV_FC3V2_LOG_BENCH)
   // The bench log image's own commands (log_bench.hpp): a `log` line is answered there and is not a motor-test refusal.
   const bool log_line = marv::hal_target::log_bench_console_byte(c, armed_now());
+#elif defined(MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN)
+  // The measurement build's trigger (flight_log.hpp): a `log` line is answered there and is not a motor-test refusal.
+  const bool log_line = marv::hal_target::flight_log_emb6_open_console_byte(c, armed_now());
 #endif
   marv::hal_target::ParsedLine line;
   if (!line_buffer.push(c, line)) {
@@ -497,7 +528,7 @@ void console_byte(char c) {
       std::printf("motor_test: stop received\n");
       break;
     case marv::hal_target::LineKind::Refused:
-#if defined(MARV_FC3V2_LOG_BENCH)
+#if defined(MARV_FC3V2_LOG_BENCH) || defined(MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN)
       if (log_line) {
         break;
       }
@@ -598,12 +629,31 @@ void bench_profile_service() {
 }
 #endif
 
-#if defined(MARV_FC3V2_LOG_BENCH)
-// The onboard logger of the bench log image (log_bench.hpp): a TRNG session id per file, the generated parameter names, the
-// arming state code for the rate-tick record, and the header and configuration from this boot's table.
+#if defined(MARV_FC3V2_LOG_BENCH) || defined(MARV_FC3V2_FLIGHT_LOG)
+// The onboard logger of the bench log image (log_bench.hpp) and of the flight image (flight_log.hpp): a TRNG session id per file,
+// the generated parameter names, the arming state code for the rate-tick record, and the header and configuration from this
+// boot's table.
 std::uint64_t log_session_id(void*) noexcept { return get_rand_64(); }
 const char* log_param_name(std::size_t id) noexcept { return marv::param_name(static_cast<marv::ParamId>(id)); }
 std::uint8_t log_arm_state() noexcept { return static_cast<std::uint8_t>(marv::composition::arming_status()); }
+
+#if defined(MARV_FC3V2_FLIGHT_LOG)
+// The flight logger's configuration for the ring the arena lease gives it (the pre-roll is derived from the ring, params.hpp).
+marv::log::LoggerConfig flight_log_config(std::size_t ring_cells, void*) noexcept {
+  return marv::log::logger_config_from_params(marv::param_active_table(), ring_cells, &log_session_id, nullptr);
+}
+
+// The ImuRaw records' scales: the IMU driver's sensitivities (lsm6dsv_scales) and the board's mounting signs, the ones the
+// driver's mounting map uses (lsm6dsv.cpp kMounting, boards/madflight_fc3v2_revc.h).
+marv::log::ImuRawScales board_imu_raw_scales() noexcept {
+  const marv::hal_target::Lsm6dsvScales fs = marv::hal_target::lsm6dsv_scales();
+  marv::log::ImuRawScales s;
+  s.gyro_rad_s_per_lsb = fs.gyro_rad_s_per_lsb;
+  s.accel_m_s2_per_lsb = fs.accel_m_s2_per_lsb;
+  s.sign = {MADFLIGHT_FC3V2_IMU_FRD_X_SIGN, MADFLIGHT_FC3V2_IMU_FRD_Y_SIGN, MADFLIGHT_FC3V2_IMU_FRD_Z_SIGN};
+  return s;
+}
+#endif
 
 void log_start() noexcept {
   using marv::ParamId;
@@ -624,10 +674,20 @@ void log_start() noexcept {
   h.odr_hz = static_cast<float>(imu_boot.odr_hz_by_trim);
   h.params = marv::param_active_table();
   h.param_name = &log_param_name;
+#if defined(MARV_FC3V2_LOG_BENCH)
   marv::hal_target::log_bench_start(
       marv::log::logger_config_from_params(marv::param_active_table(), marv::hal_target::log_ring().capacity_cells(),
                                            &log_session_id, nullptr),
       h);
+#else
+  marv::hal_target::FlightLogStart start;
+  start.storage = &marv::hal_target::sd_log_storage();
+  start.config = &flight_log_config;
+  start.header = h;
+  start.imu_raw = board_imu_raw_scales();
+  start.telemetry = &marv::composition::telemetry;
+  marv::hal_target::flight_log_start(start);
+#endif
 }
 #endif
 
@@ -691,7 +751,7 @@ int main() {
                                                     marv::param_value<ParamId::rc_channel_angle>());
   stage = Stage::kReceiverOk;
   std::printf("receiver ok\n");
-#if defined(MARV_FC3V2_LOG_BENCH)
+#if defined(MARV_FC3V2_LOG_BENCH) || defined(MARV_FC3V2_FLIGHT_LOG)
   marv::hal_target::log_tick_set_arm_source(&log_arm_state);
 #endif
   imu_start_us = marv::hal_time_us();
@@ -700,7 +760,7 @@ int main() {
       {marv::param_value<ParamId::tick_period_num_us>(), marv::param_value<ParamId::tick_period_den>()});
   stage = Stage::kImuOk;
   print_progress();
-#if defined(MARV_FC3V2_LOG_BENCH)
+#if defined(MARV_FC3V2_LOG_BENCH) || defined(MARV_FC3V2_FLIGHT_LOG)
   log_start();
 #endif
 #if !defined(MARV_FC3V2_USB_BENCH) && !defined(MARV_FC3V2_SD_BENCH) && !defined(MARV_FC3V2_BENCH_PROFILE) && !defined(MARV_FC3V2_LOG_BENCH)
@@ -752,6 +812,10 @@ int main() {
     // queued answers go out) until the watchdog resets the chip.
     static_cast<void>(marv::link::service_step());
     marv::hal_target::link_port_pump();
+#endif
+#if defined(MARV_FC3V2_FLIGHT_LOG)
+    // The flight logger beside the link service (flight_log.hpp): the card is touched from here only, never from the tick.
+    marv::hal_target::flight_log_service(marv::hal_time_us(), armed_now());
 #endif
 #if defined(MARV_FC3V2_IMU_LOG)
     // The log variant prints no text status line or banner: the port carries binary records (imu_log_format.hpp).
