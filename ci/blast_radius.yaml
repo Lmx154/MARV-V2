@@ -851,6 +851,13 @@ rules:
     gz_groups: []
     why: "the ground-segment helper (unit 7): byte relay, token and Origin gate, ground log, image library, SIL launcher; held by its tests/tools pytest file, and GS-3 holds it clear of MAVLink (it only relays bytes)"
 
+  - paths: [tools/gs/hil.py, tools/gs/device.py]
+    ctest_labels: []
+    run_ci_steps: [gs3_check, tools_tests]
+    pytest_paths: [tests/tools]
+    gz_groups: [l7]
+    why: "the helper's HIL commands (GX-10; hil.py) and its serial device (device.py, which flocks its port): the helper's port lock is one half of the H-1 test tests/regression/quad/L10/gz/test_hil_port_lock.py (the plugin's flock on the HIL port, on host-gz-quadfc in gz group l7), which imports both; tests/tools/test_gs_hil.py holds the commands"
+
   - paths: [ci/heavy.sh]
     ctest_labels: []
     run_ci_steps: [tools_tests]
@@ -1296,7 +1303,7 @@ rules:
     run_ci_steps: []
     pytest_paths: []
     gz_groups: [l7]
-    why: "the L10 quad_fc plumbing test (a stick script staged into marv_sil_quad_fc by the plugin of host-gz-quadfc) runs in gz group l7"
+    why: "the L10 quad_fc plumbing test (a stick script staged into marv_sil_quad_fc by the plugin of host-gz-quadfc) runs in gz group l7, and so does the plugin's flock on the HIL port (test_hil_port_lock.py, GX-10, which imports tools/gs/hil.py and device.py)"
 
   - paths: [tests/regression/quad/L11/gz/**, tests/regression/quad/L11/i1/**]
     ctest_labels: []

@@ -1,6 +1,7 @@
 // The helper's HTTP side (tools/gs/helper.py): status, ports, the image library and the image artifacts. The token is sent as
 // a Bearer header; the WebSocket URL carries it as a query (a browser WebSocket cannot set headers).
 import type { ImageList } from '$lib/params/library';
+import type { HilStatus } from './bench_state';
 
 export interface HelperInfo {
 	/** http origin of the helper, no trailing slash. */
@@ -31,6 +32,8 @@ export interface RunManifest {
 	/** The options the run was started with (a sil run's card and gui). */
 	options?: { card?: string; gui?: boolean } & Record<string, unknown>;
 	argv?: string[];
+	/** The run's output directory: the HIL report and the verdict are in it. */
+	out_dir?: string;
 	started_utc?: string;
 	ended_utc?: string | null;
 }
@@ -71,6 +74,8 @@ export interface HelperStatus {
 	runs: RunsStatus;
 	host: HostState;
 	autoconnect: AutoconnectStatus;
+	/** The Bench page's facts: the hold, the saved verdict of the latest HIL run, the SWD flash (tools/gs/hil.py). */
+	hil?: HilStatus;
 	validation: { running: boolean; image_hash?: string; config_hash?: string; verdict?: string | null; report_id?: string | null } | null;
 	gcs_built: boolean;
 }
