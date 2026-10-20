@@ -397,6 +397,39 @@ TEST(FileLifeData, SectorsOfOtherSessionsPastTheHeaderAreNotData) {
   EXPECT_EQ(card.files.size(), 1U) << "stale sectors of another session are not this file's data";
 }
 
+TEST(FileLifeData, ATornHeaderSectorWithADataSectorAfterItKeepsTheFileAndAnIntactHeaderDoesNot) {
+  FakeCard card;
+  {
+    Boot b(card);
+    b.service();
+    ASSERT_TRUE(b.logger.yield(b.now, false));
+  }
+  Bytes& f = card.files.at(1);
+  const std::size_t h = header_sectors(f);
+  ASSERT_GT(h, 3U);
+
+  // Control: the header intact and no data sector after it is reused.
+  {
+    Boot c(card);
+    c.service();
+    ASSERT_EQ(c.logger.state(), LoggerState::Ready);
+    ASSERT_EQ(card.files.size(), 1U);
+    ASSERT_TRUE(c.logger.yield(c.now, false));
+  }
+
+  // A header sector torn (magic and framing intact, one payload byte changed) and a data sector of its session after the header.
+  Bytes& g = card.files.at(1);
+  put_data_sector(g, h, session_of(g));
+  g[3 * kSectorBytes + kSectorHeaderBytes + 1] ^= 0xFFU;
+  const Bytes torn = g;
+  Boot next(card);
+  next.service();
+  ASSERT_EQ(next.logger.state(), LoggerState::Ready);
+  EXPECT_EQ(card.files.size(), 2U) << "the file with the torn sector and a flight after it is not reused";
+  EXPECT_EQ(card.files.at(1), torn) << "byte for byte untouched, same size";
+  EXPECT_TRUE(card.shortened.empty());
+}
+
 TEST(FileLifeData, AFileTheCardCannotReadBackIsNotReused) {
   FakeCard card;
   {

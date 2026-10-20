@@ -38,9 +38,12 @@ FileContent classify_file(SectorSource& src, std::uint64_t sectors) noexcept {
       return FileContent::Unreadable;
     }
     const std::span<const std::uint8_t> b{s};
-    const bool valid = std::equal(kSectorMagic.begin(), kSectorMagic.end(), b.begin() + kSecOffMagic) &&
-                       get<std::uint32_t>(b, kSecOffCrc) == crc32(b.first(kSecOffCrc)) &&
-                       get<std::uint32_t>(b, kSecOffSeq) == i && (i == 0 || get<std::uint64_t>(b, kSecOffSession) == session);
+    const bool magic = std::equal(kSectorMagic.begin(), kSectorMagic.end(), b.begin() + kSecOffMagic);
+    if (magic && get<std::uint32_t>(b, kSecOffCrc) != crc32(b.first(kSecOffCrc))) {
+      return FileContent::Data;  // a sector of ours, torn or rotted: what follows it may be a flight, so the file is kept
+    }
+    const bool valid = magic && get<std::uint32_t>(b, kSecOffSeq) == i &&
+                       (i == 0 || get<std::uint64_t>(b, kSecOffSession) == session);
     if (!valid) {
       return FileContent::NoData;
     }
