@@ -4,7 +4,7 @@
 # this library alone), the image links the full SDK libraries it needs.
 add_library(marv_hal_target STATIC src/hal_target.cpp src/lsm6dsv.cpp src/motor_output.cpp src/motor_test.cpp
   src/manual_control.cpp src/receiver.cpp src/bench_stats.cpp src/storage_flash.cpp src/flash_image.cpp src/storage_sd.cpp
-  src/sd_spi.cpp)
+  src/sd_spi.cpp src/sd_volume.cpp)
 target_include_directories(marv_hal_target PUBLIC include)
 target_link_libraries(marv_hal_target
   PUBLIC marv_hal marv_types marv_dshot marv_crsf_decode

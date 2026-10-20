@@ -9,11 +9,7 @@
 #include <cstdint>
 
 #include "marv/hal/storage.hpp"
-#include "marv/hal_target/sd_spi.hpp"
-
-extern "C" {
-#include "ff.h"
-}
+#include "sd_volume.hpp"
 
 namespace marv {
 namespace {
@@ -22,15 +18,11 @@ constexpr const char* kDir = "/marv";
 constexpr const char* kPending = "/marv/pending.mcfg";
 constexpr const char* kTemp = "/marv/pending.tmp";
 
-FATFS g_fs;
 FIL g_file;
 
-FRESULT open_volume() noexcept { return f_mount(&g_fs, "", 1); }
+FRESULT open_volume() noexcept { return hal_target::sd_volume_mount(); }
 
-void close_volume() noexcept {
-  static_cast<void>(f_mount(nullptr, "", 0));
-  hal_target::sd::release();
-}
+void close_volume() noexcept { hal_target::sd_volume_unmount(); }
 
 // No card, a card that does not answer in SPI mode, or no file system on it: there is no pending file to speak of.
 bool no_volume(FRESULT r) noexcept { return r == FR_NOT_READY || r == FR_NO_FILESYSTEM; }

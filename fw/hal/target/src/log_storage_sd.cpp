@@ -10,10 +10,7 @@
 
 #include "marv/hal_target/sd_spi.hpp"
 #include "marv/prim/constants.hpp"
-
-extern "C" {
-#include "ff.h"
-}
+#include "sd_volume.hpp"
 
 namespace marv::hal_target {
 namespace {
@@ -41,7 +38,6 @@ constexpr std::uint32_t kLargestIndex = largest_index();
 
 constexpr std::uint64_t kLargestFile = std::numeric_limits<FSIZE_t>::max();
 
-FATFS g_fs;
 FIL g_file;    // the log file prepare reserved
 FIL g_reader;  // a log file read back (sd_log_read_file)
 DIR g_dir;
@@ -95,11 +91,8 @@ void close_reader() noexcept {
 
 void unmount() noexcept {
   close_reader();
-  if (g_mounted) {
-    static_cast<void>(f_mount(nullptr, "", 0));
-    g_mounted = false;
-  }
-  sd::release();
+  g_mounted = false;
+  sd_volume_unmount();
 }
 
 [[nodiscard]] Prepared failed(StorageStatus s, FRESULT r) noexcept {
@@ -148,9 +141,9 @@ class SdLogStorage final : public log::LogStorage {
       return failed(StorageStatus::Full, FR_INVALID_PARAMETER);
     }
     unmount();
-    FRESULT r = f_mount(&g_fs, "", 1);
+    FRESULT r = sd_volume_mount();
     if (r != FR_OK) {
-      sd::release();
+      sd_volume_unmount();
       return failed(r == FR_NOT_READY || r == FR_NO_FILESYSTEM ? StorageStatus::NoCard : StorageStatus::Error, r);
     }
     g_mounted = true;
@@ -184,7 +177,8 @@ class SdLogStorage final : public log::LogStorage {
       return failed(status_of(r), r);
     }
     g_log.index = index;
-    g_log.start_sector = static_cast<std::uint32_t>(g_fs.database + static_cast<LBA_t>(g_fs.csize) * (g_file.obj.sclust - 2));
+    const FATFS& fs = sd_volume();
+    g_log.start_sector = static_cast<std::uint32_t>(fs.database + static_cast<LBA_t>(fs.csize) * (g_file.obj.sclust - 2));
     g_log.capacity_bytes = bytes - bytes % prim::kSdBlockBytes;
     g_log.cursor_bytes = 0;
     g_log.open = true;
@@ -224,6 +218,11 @@ class SdLogStorage final : public log::LogStorage {
       return StorageStatus::Error;
     }
     return StorageStatus::Ok;
+  }
+
+  void release() noexcept override {
+    g_log.open = false;
+    unmount();
   }
 };
 
