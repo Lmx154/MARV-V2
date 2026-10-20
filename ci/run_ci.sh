@@ -56,7 +56,9 @@ host_preset() {
 m33_build() {
   local elf=build/m33/fw/hal/target/marv_fc3v2.elf
   cmake --preset m33 && cmake --build --preset m33 \
-    && arm-none-eabi-size -A "${elf}" && arm-none-eabi-readelf -A "${elf}"
+    && arm-none-eabi-size -A "${elf}" && arm-none-eabi-readelf -A "${elf}" \
+    && cmake --preset m33 -B build/m33-bp -DMARV_FC3V2_FLIGHT_LOG=OFF \
+    && cmake --build build/m33-bp --target marv_fc3v2_bench_profile
 }
 
 regression_change_check() {

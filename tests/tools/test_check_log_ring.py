@@ -193,6 +193,28 @@ def test_warn_reports_a_shortfall_and_keeps_the_image(tmp_path):
     assert run(*arena_args(m, elf, nm, "--warn", "--delete-on-failure")).returncode == 2
 
 
+def test_warn_reason_is_printed_and_the_image_is_kept(tmp_path):
+    # The flight image (decision 0060): the warning names the reason it is given, in place of the measurement build's.
+    m = str(manifest(tmp_path))
+    elf = tmp_path / "image.elf"
+    elf.write_bytes(b"x")
+    nm = write_fake_nm_lines(tmp_path, [arena_line(0x20000000, STAGING + 1000 * CELL)])
+    r = run(*arena_args(m, elf, nm, "--warn", "--warn-reason", "planted reason X"))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "LOG-RING: WARN: L-5 does not hold (planted reason X)" in r.stdout and "measurement build" not in r.stdout
+    assert elf.exists()
+
+
+def test_warn_reason_without_warn_is_a_usage_error(tmp_path):
+    m = str(manifest(tmp_path))
+    elf = tmp_path / "image.elf"
+    elf.write_bytes(b"x")
+    nm = write_fake_nm_lines(tmp_path, [arena_line(0x20000000, STAGING + 1000 * CELL)])
+    r = run(*arena_args(m, elf, nm, "--warn-reason", "planted reason X"))
+    assert r.returncode == 2 and "--warn-reason needs --warn" in r.stderr
+    assert elf.exists()
+
+
 def test_arena_usage_errors_are_not_a_pass(tmp_path):
     m = str(manifest(tmp_path))
     elf = tmp_path / "image.elf"
