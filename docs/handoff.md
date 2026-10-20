@@ -1,47 +1,59 @@
-# Handoff: M4 on `m4` (7-inch card, GS units 2-15 done, GCS-first scope signed); logger, feed-forward, telemetry, GCS shell in flight
+# Handoff: M4 on `m4` (7-inch card); logger U1-U2b, feed-forward, telemetry and GCS GX-0..GX-10 merged
 
-2026-10-19. A state file, not a history: at most 80 lines, rewritten at every milestone boundary and before a session ends.
-History is in git and `docs/decisions/`. The full session handoff is Serena memory **`session-handoff/2026-10-19`** (read it
-first: worktree paths, every branch's state and next step, Luis's day plan, rules).
+2026-10-19 (evening). A state file, not a history: at most 80 lines, rewritten at every milestone boundary and before a
+session ends. History is in git and `docs/decisions/`. The full session handoff is Serena memory
+**`session-handoff/2026-10-19`** (local, not tracked: worktree paths, every Luis ruling verbatim, rules).
 
 ## Read first
 - `CLAUDE.md`, quad spec §4.0 (M4), ground spec (ACTIVE, GCS-first scope, decisions 0051 and 0056).
-- Serena memories: `session-handoff/2026-10-19`; designs with Luis's rulings at their top:
-  `ground-segment/architect-gcs-first-class-2026-10-18`, `quad-m4/architect-onboard-logger-2026-10-18`,
-  `quad-m4/architect-rate-response-2026-10-18`; facts: `hardware/vehicle-build`, `hardware/barometer-timing`;
-  ground segment: `ground-segment/params-first-ruling-full`, `ground-segment/progress`, `ground-segment/gui-followups`.
+- Designs with Luis's rulings at their top (Serena): `ground-segment/architect-gcs-first-class-2026-10-18` (the GX list
+  and its order), `quad-m4/architect-onboard-logger-2026-10-18`, `quad-m4/architect-rate-response-2026-10-18`.
 
 ## Where things are
 | Item | State |
 | --- | --- |
 | M0-M3 | merged into `master`; tags `quad-M1-pass`..`quad-M3-pass` |
-| `origin/m4` | `e5003d4`, dev check PASS (GS 12-14, card `vehicles/marv_7in_fc3v2.yaml` k_T 3.274e-6, sim `<ground/>`) |
-| local `m4` | worktree `<session scratchpad>/wt-m4` (path in the memory), ahead of origin: decisions 0056/0057/0059, GX-0, logger U1, GX-1. NOT dev-checked as a whole: run `ci/dev_check.sh`, read PASS, then push |
-| Board | m4-era flight image, factory config; logger U2 worker was using it (check the console banner before use) |
-| Branches in flight | gs-telemetry (11a), log-target (U2), log-bench-profile (U3), rate-ff (done, in review, record 0058), gx2-shell (GX-2) — each one's state and next step in the memory |
+| `origin/m4` | `03390bb (+ this docs/docstring commit)`, dev check PASS on that sha |
+| Board | m4 flight image 4c5470c (banner quad-L2-pass-532-g4c5470c); free for agents (Luis: "it's all yours") |
+| Luis's GCS | `~/marv-gcs` (detached worktree), `~/marv-gcs-start.sh`, `~/marv-gcs-update.sh` (fetch + rebuild under the lock) |
+| Bench images | `~/marv-bench-images/` u3-c358806 (bench profile), u2-log-fbdad56 (log), u2b-*. Never `--delete-on-failure` there |
 
-## Done this session (2026-10-17..19)
-- GS units 2-15: params over MAVLink, store + SD (FatFs, exFAT off), flash A/B slots, USB two-CDC with gated resets, link
-  on the board (armed step with Luis 9/9), validation reports, flash panel with the G7 gate. ESKF in shadow (0055).
-- 7-inch card rename + k_T (Luis: "yes switch and rename"; 0052 item 5). Sim ground, HIL `--gui` (paused start).
-- S4b flown by Luis (ACRO: his angle switch drives ch14). Handling analysis → feed-forward (approved, branch rate-ff).
-- Decisions: 0056 GCS-first scope, 0057 eRPM pulled forward, 0058 (draft, rate-ff) model following, 0059 onboard logger.
+## On m4 now (this session)
+- Feed-forward (0058): model following, |u_ff| <= k·tau_max_hover, k = 0.5 (Luis). tau_max_hover uses the PLACEHOLDER
+  idle speed (f_min = 0): props-on ACRO blocked until idle speed is measured.
+- Logger U1, U2a (bench log image, SD storage, tick hooks), U2b (soaks, power cut 12/12, EMB-3 with hooks C 81.09 us).
+- U3 bench profile: fixed ceilings 450 / 40 s refused by validate, plus a clamp at the motor write (Luis: "Fixed + clamp").
+- Telemetry 11a (GX-4): EMB-3 disarmed PASS at every cap (C 86.33 us, 110.5 of 150 kB/s). Armed: UNKNOWN.
+- GCS: GX-0 e2e, GX-1 helper runs, GX-2 shell, GX-3 Simulation page, GX-5 live view, GX-6 R-1 (stick/arm/angle distinct),
+  GX-7 radio page (PLACEHOLDERs CENTRE_TOLERANCE, MOVED_US), autoconnect (SIL wins over board), GX-8 sim channel (SC-1
+  lockstep SHA equal; S-1 import check), GX-10 HIL from the GCS (Bench page: preflight, launch, verdict, SWD flash of
+  the hil kind only), GX-9 pilot bridge (RadioMaster as USB joystick in SIL; R-2 T1 bit-identical).
 
-## Luis's bench plan (2026-10-19)
-- Bifilar pendulum (inertia). Props-off bench-profile TB (U3 runbook; first check ch6 up/mid/down on the console).
-- ESC: KV 1700, poles 14. Radio: CH8 mix (or rc_channel_angle 14; it is not locked); then S4b in ANGLE with `--gui`.
-- CG check of the flight-ready quad. Props-on motor test only after the TB passes on the exact image (tau needs eRPM).
-- Pending his yes: the QF-2 sentence in record 0058; check-4 stricter form; ESKF board use.
+## Next (in order)
+1. Luis: CH8 mix on the RadioMaster (angle switch), then S4b in ANGLE launched from the Bench page
+   (`tests/regression/quad/L10/results/gcs/gx10/RUNBOOK.md`); confirms the INFERRED "Board CDC" HIL-image check.
+2. Luis: GX-9 bench check (`.../gcs/gx9/BENCH.md`: EdgeTX axis layout, joydev permissions) and GX-7 radio TB
+   (replaces the two PLACEHOLDERs). Telemetry EMB-3 armed (radio arm, ESC unpowered, ~2 min).
+3. Remaining GX units: GX-11 replay, GX-15 logs, GX-13 derive, GX-14 build, GX-12 lock editor, GX-16 console, GX-17/18.
+4. Logger U4 (flight logger): EMB-6 open for the flight image; hooks + telemetry not measured together; unused 1 GiB
+   files never truncated; HAL-pull kinds deferred.
+5. Luis physical: bifilar pendulum (u2-log image, battery unplugged, TX off); props-off bench-profile TB (u3-c358806
+   runbook, ch6 console check first); CG check; idle-speed measurement (then regenerate tau_max_hover).
+- Flight gates: first hover needs S4b ANGLE + CG; no m4 flight image flies before an armed EMB-3.
+- Pending Luis decisions from the old handoff: "check-4 stricter form", "ESKF board use" (ESKF tick may overrun EMB-3).
 
 ## Noticed, not changed
-- Boot timing fault with the receiver streaming at boot (INFERRED UART); rate timing_faults=1 after ~60 % of probe reboots
-  (L10/results/usb); G1 clang-tidy does not cover target-only files; R-1 (stick/arm/angle channels distinct) not enforced
-  by validate yet (GX-6); ESKF config set ~330 B under half a slot (telemetry branch recomputes the slot).
+- `gcs/e2e/connection.spec.ts` test 2 fails live: test 1 never stops its SIL run, so "Start SIL run" is disabled.
+- G1 clang-tidy does not cover target-only files; boot timing fault with the receiver streaming at boot.
+- dev_check does not detect stale `gcs/node_modules` (run `npm ci`); TelemetryClient start/stop not refcounted;
+  duplicate gating code in the Params and Radio pages; device.py's refusal text does not say a HIL run holds the port.
+- Pilot (GX-9) flights leave no lockstep log (wall-clock frames): not replayable.
 
 ## Rules the next lead keeps
-- Standing permission (Luis, 2026-10-15): commit and push each unit that passed review and `ci/dev_check.sh`; merge
-  into `master` after `ci/local_ci.sh` passes. Loosening a test, spec changes and tags stay Luis's. Fix forward.
-- Read the check's result before pushing, as a separate step (0c307dd was pushed after a failing check once).
-- No ESC power or motor spin without Luis present. Flashing during M4: permitted. Real-time HIL only on an idle host.
-- **Memory:** one build-heavy job at a time: wait until `pgrep -x ninja` is empty, `free -g`, -j4; `ci/heavy.sh` (local m4)
-  is the host-wide lock. Workers hit turn limits: have them commit in small steps; resume them with SendMessage.
+- Commit and push each unit that passed review and `ci/dev_check.sh` (read the result as a separate step first);
+  merge into `master` after `ci/local_ci.sh`. Loosening tests, spec changes, tags and safety numbers stay Luis's.
+- No ESC power or motor spin without Luis present. Flashing permitted. Real-time HIL only on an idle host.
+- Every build/test under `ci/heavy.sh --wait 10800 -- <cmd>` in the background. Never `pkill -f` broad patterns (the
+  scratchpad is shared). Check running workers before removing a worktree. Workers hit turn limits: resume them.
+- Motor-capable bench images (bench-profile, bench-log) are refused from the GCS until their props-off TB on the exact
+  image and Luis's presence acknowledgement.

@@ -534,13 +534,13 @@ class Helper:
             await asyncio.sleep(self.poll_s)
 
     async def poll(self) -> None:
-        if self.pilot.is_open and self.runs.active_pilot_port() != self.pilot.port:
-            self.pilot.close("the run with the pilot option ended")
         """One autoconnect step. The one rule: while a SIL run lives its UDP link (once its port is bound) is the only device
         autoconnect opens, and an autoconnect-opened board is closed when the run starts; with no SIL run a board's link interface
         is opened. The choice follows the run supervisor's single active-run slot, so it changes only when a run starts or ends
         (no flapping), and a board appearing mid-run waits for the run to end. Both are suspended while a HIL run or a flash owns
         the board; a device the operator opened is never touched."""
+        if self.pilot.is_open and self.runs.active_pilot_port() != self.pilot.port:
+            self.pilot.close("the run with the pilot option ended")
         active = self.runs.active()
         suspend = None
         held = self.hil.suspension(active)
