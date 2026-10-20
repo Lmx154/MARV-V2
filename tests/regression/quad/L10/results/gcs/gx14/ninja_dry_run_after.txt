@@ -1,0 +1,7 @@
+$ ninja -n -d explain -C build/host-gz-quadfc   (after the build above; ninja 1.11.1, cmake 3.28.3)
+ninja: Entering directory `build/host-gz-quadfc'
+ninja explain: output build/host-gz-quadfc/CMakeFiles/VerifyGlobs.cmake_force of phony edge with no inputs doesn't exist
+ninja explain: build/host-gz-quadfc/CMakeFiles/VerifyGlobs.cmake_force is dirty
+ninja explain: build/host-gz-quadfc/CMakeFiles/cmake.verify_globs is dirty
+[0/2] Re-checking globbed directories...
+[1/2] Re-running CMake...

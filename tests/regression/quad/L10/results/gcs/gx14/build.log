@@ -1,0 +1,277 @@
++ cmake --preset host-gz-quadfc -B /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc
+Preset CMake variables:
+
+  CMAKE_BUILD_TYPE="Debug"
+  MARV_GZ="ON"
+  MARV_GZ_PARAMS="marv_params_fc3v2"
+  MARV_GZ_SIL="marv_sil_quad_fc"
+  MARV_TARGET="host"
+
+-- Looking for gz-sim8 -- found version 8.15.0
+-- Searching for dependencies of gz-sim8
+-- Looking for sdformat14 -- found version 14.9.0
+-- Searching for dependencies of sdformat14
+-- Checking for module 'tinyxml2'
+--   Found tinyxml2, version 10.0.0
+-- Looking for gz-math7 -- found version 7.7.0
+-- Searching for dependencies of gz-math7
+-- Looking for gz-utils2 -- found version 2.2.1
+-- Searching for dependencies of gz-utils2
+-- Looking for gz-utils2 -- found version 2.2.1
+-- Searching for dependencies of gz-utils2
+-- Searching for <gz-utils2> component [cli]
+-- Looking for gz-utils2-cli -- found version 2.2.1
+-- Searching for dependencies of gz-utils2-cli
+-- Looking for gz-plugin2 -- found version 2.0.4
+-- Searching for dependencies of gz-plugin2
+-- Looking for gz-utils2 -- found version 2.2.1
+-- Searching for <gz-plugin2> component [loader]
+-- Looking for gz-plugin2-loader -- found version 2.0.4
+-- Searching for dependencies of gz-plugin2-loader
+-- Searching for <gz-plugin2> component [register]
+-- Looking for gz-plugin2-register -- found version 2.0.4
+-- Searching for dependencies of gz-plugin2-register
+-- Looking for gz-transport13 -- found version 13.6.0
+-- Searching for dependencies of gz-transport13
+-- Config-file not installed for ZeroMQ -- checking for pkg-config
+-- Checking for module 'libzmq >= 4'
+--   Found libzmq, version 4.3.5
+-- Checking for module 'uuid'
+--   Found uuid, version 2.39.3
+-- Looking for gz-utils2 -- found version 2.2.1
+-- Looking for gz-msgs10 -- found version 10.4.0
+-- Searching for dependencies of gz-msgs10
+-- Looking for gz-utils2 -- found version 2.2.1
+-- Looking for gz-math7 -- found version 7.7.0
+-- Searching for <gz-transport13> component [log]
+-- Looking for gz-transport13-log -- found version 13.6.0
+-- Searching for dependencies of gz-transport13-log
+-- Searching for <gz-transport13> component [parameters]
+-- Looking for gz-transport13-parameters -- found version 13.6.0
+-- Searching for dependencies of gz-transport13-parameters
+-- Looking for gz-msgs10 -- found version 10.4.0
+-- Looking for gz-common5 -- found version 5.9.0
+-- Searching for dependencies of gz-common5
+-- Looking for gz-utils2 -- found version 2.2.1
+-- Looking for dlfcn.h - found
+-- Looking for libdl - found
+-- Searching for <gz-common5> component [av]
+-- Looking for gz-common5-av -- found version 5.9.0
+-- Searching for dependencies of gz-common5-av
+-- Checking for module 'libswscale'
+--   Found libswscale, version 7.5.100
+-- Checking for module 'libavdevice >= 56.4.100'
+--   Found libavdevice, version 60.3.100
+-- Checking for module 'libavformat'
+--   Found libavformat, version 60.16.100
+-- Checking for module 'libavcodec'
+--   Found libavcodec, version 60.31.102
+-- Checking for module 'libavutil'
+--   Found libavutil, version 58.29.100
+-- Searching for <gz-common5> component [events]
+-- Looking for gz-common5-events -- found version 5.9.0
+-- Searching for dependencies of gz-common5-events
+-- Looking for gz-math7 -- found version 7.7.0
+-- Searching for <gz-common5> component [graphics]
+-- Looking for gz-common5-graphics -- found version 5.9.0
+-- Searching for dependencies of gz-common5-graphics
+-- Looking for gz-math7 -- found version 7.7.0
+-- Searching for <gz-common5> component [io]
+-- Looking for gz-common5-io -- found version 5.9.0
+-- Searching for dependencies of gz-common5-io
+-- Searching for <gz-common5> component [profiler]
+-- Looking for gz-common5-profiler -- found version 5.9.0
+-- Searching for dependencies of gz-common5-profiler
+-- Looking for gz-fuel_tools9 -- found version 9.1.1
+-- Searching for dependencies of gz-fuel_tools9
+-- Checking for module 'jsoncpp'
+--   Found jsoncpp, version 1.9.5
+-- Checking for module 'yaml-0.1'
+--   Found yaml-0.1, version 0.2.5
+-- Checking for module 'libzip'
+--   Found libzip, version 1.7.3
+-- Looking for gz-utils2 -- found version 2.2.1
+-- Looking for gz-common5 -- found version 5.9.0
+-- Searching for dependencies of gz-common5
+-- Looking for gz-utils2 -- found version 2.2.1
+-- Looking for dlfcn.h - found
+-- Looking for libdl - found
+-- Searching for <gz-common5> component [testing]
+-- Looking for gz-common5-testing -- found version 5.9.0
+-- Searching for dependencies of gz-common5-testing
+-- Looking for gz-math7 -- found version 7.7.0
+-- Looking for gz-msgs10 -- found version 10.4.0
+-- Looking for gz-gui8 -- found version 8.4.0
+-- Searching for dependencies of gz-gui8
+-- Looking for gz-utils2 -- found version 2.2.1
+-- Looking for gz-math7 -- found version 7.7.0
+-- Looking for gz-common5 -- found version 5.9.0
+-- Looking for gz-plugin2 -- found version 2.0.4
+-- Looking for gz-transport13 -- found version 13.6.0
+-- Looking for gz-rendering8 -- found version 8.3.0
+-- Searching for dependencies of gz-rendering8
+-- Looking for gz-math7 -- found version 7.7.0
+-- Searching for dependencies of gz-math7
+-- Looking for gz-utils2 -- found version 2.2.1
+-- Searching for <gz-math7> component [eigen3]
+-- Looking for gz-math7-eigen3 -- found version 7.7.0
+-- Searching for dependencies of gz-math7-eigen3
+-- Looking for gz-common5 -- found version 5.9.0
+-- Searching for dependencies of gz-common5
+-- Looking for gz-utils2 -- found version 2.2.1
+-- Looking for dlfcn.h - found
+-- Looking for libdl - found
+-- Searching for <gz-common5> component [graphics]
+-- Searching for <gz-common5> component [events]
+-- Searching for <gz-common5> component [geospatial]
+-- Looking for gz-common5-geospatial -- found version 5.9.0
+-- Searching for dependencies of gz-common5-geospatial
+-- Looking for gz-math7 -- found version 7.7.0
+-- Looking for gz-common5 -- found version 5.9.0
+-- Looking for gz-plugin2 -- found version 2.0.4
+-- Searching for dependencies of gz-plugin2
+-- Looking for gz-utils2 -- found version 2.2.1
+-- Searching for <gz-plugin2> component [all]
+-- Looking for all libraries of gz-plugin2 -- found version 2.0.4
+-- Looking for gz-plugin2 -- found version 2.0.4
+-- Looking for gz-utils2 -- found version 2.2.1
+-- Looking for gz-msgs10 -- found version 10.4.0
+-- Looking for gz-physics7 -- found version 7.8.0
+-- Searching for dependencies of gz-physics7
+-- Looking for gz-common5 -- found version 5.9.0
+-- Looking for gz-math7 -- found version 7.7.0
+-- Looking for gz-plugin2 -- found version 2.0.4
+-- Looking for gz-utils2 -- found version 2.2.1
+-- Searching for <gz-physics7> component [heightmap]
+-- Looking for gz-physics7-heightmap -- found version 7.8.0
+-- Searching for dependencies of gz-physics7-heightmap
+-- Looking for gz-common5 -- found version 5.9.0
+-- Searching for <gz-physics7> component [mesh]
+-- Looking for gz-physics7-mesh -- found version 7.8.0
+-- Searching for dependencies of gz-physics7-mesh
+-- Looking for gz-common5 -- found version 5.9.0
+-- Searching for <gz-physics7> component [sdf]
+-- Looking for gz-physics7-sdf -- found version 7.8.0
+-- Searching for dependencies of gz-physics7-sdf
+-- Looking for sdformat14 -- found version 14.9.0
+-- Looking for gz-sensors8 -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8
+-- Looking for gz-math7 -- found version 7.7.0
+-- Looking for gz-common5 -- found version 5.9.0
+-- Looking for gz-transport13 -- found version 13.6.0
+-- Looking for gz-rendering8 -- found version 8.3.0
+-- Looking for gz-msgs10 -- found version 10.4.0
+-- Looking for sdformat14 -- found version 14.9.0
+-- Searching for <gz-sensors8> component [air_pressure]
+-- Looking for gz-sensors8-air_pressure -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-air_pressure
+-- Searching for <gz-sensors8> component [air_speed]
+-- Looking for gz-sensors8-air_speed -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-air_speed
+-- Searching for <gz-sensors8> component [altimeter]
+-- Looking for gz-sensors8-altimeter -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-altimeter
+-- Searching for <gz-sensors8> component [imu]
+-- Looking for gz-sensors8-imu -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-imu
+-- Searching for <gz-sensors8> component [force_torque]
+-- Looking for gz-sensors8-force_torque -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-force_torque
+-- Searching for <gz-sensors8> component [logical_camera]
+-- Looking for gz-sensors8-logical_camera -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-logical_camera
+-- Searching for <gz-sensors8> component [magnetometer]
+-- Looking for gz-sensors8-magnetometer -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-magnetometer
+-- Searching for <gz-sensors8> component [navsat]
+-- Looking for gz-sensors8-navsat -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-navsat
+-- Searching for <gz-sensors8> component [dvl]
+-- Looking for gz-sensors8-dvl -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-dvl
+-- Looking for gz-sensors8 -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8
+-- Looking for gz-math7 -- found version 7.7.0
+-- Looking for gz-common5 -- found version 5.9.0
+-- Looking for gz-transport13 -- found version 13.6.0
+-- Looking for gz-rendering8 -- found version 8.3.0
+-- Looking for gz-msgs10 -- found version 10.4.0
+-- Looking for sdformat14 -- found version 14.9.0
+-- Searching for <gz-sensors8> component [rendering]
+-- Looking for gz-sensors8-rendering -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-rendering
+-- Searching for <gz-sensors8> component [rendering]
+-- Searching for <gz-sensors8> component [lidar]
+-- Looking for gz-sensors8-lidar -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-lidar
+-- Looking for gz-sensors8 -- found version 8.2.2
+-- Searching for <gz-sensors8> component [gpu_lidar]
+-- Looking for gz-sensors8-gpu_lidar -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-gpu_lidar
+-- Looking for gz-sensors8 -- found version 8.2.2
+-- Searching for <gz-sensors8> component [camera]
+-- Looking for gz-sensors8-camera -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-camera
+-- Looking for gz-sensors8 -- found version 8.2.2
+-- Searching for <gz-sensors8> component [boundingbox_camera]
+-- Looking for gz-sensors8-boundingbox_camera -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-boundingbox_camera
+-- Searching for <gz-sensors8> component [segmentation_camera]
+-- Looking for gz-sensors8-segmentation_camera -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-segmentation_camera
+-- Searching for <gz-sensors8> component [depth_camera]
+-- Looking for gz-sensors8-depth_camera -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-depth_camera
+-- Looking for gz-sensors8 -- found version 8.2.2
+-- Searching for <gz-sensors8> component [rgbd_camera]
+-- Looking for gz-sensors8-rgbd_camera -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-rgbd_camera
+-- Looking for gz-sensors8 -- found version 8.2.2
+-- Searching for <gz-sensors8> component [thermal_camera]
+-- Looking for gz-sensors8-thermal_camera -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-thermal_camera
+-- Looking for gz-sensors8 -- found version 8.2.2
+-- Searching for <gz-sensors8> component [wide_angle_camera]
+-- Looking for gz-sensors8-wide_angle_camera -- found version 8.2.2
+-- Searching for dependencies of gz-sensors8-wide_angle_camera
+-- Looking for gz-rendering8 -- found version 8.3.0
+-- Looking for gz-math7 -- found version 7.7.0
+-- Looking for gz-utils2 -- found version 2.2.1
+-- Looking for gz-plugin2 -- found version 2.0.4
+-- G3 flight targets: marv_prim;marv_types;marv_types_instantiate;marv_hal;marv_hal_storage;marv_sched;marv_params;marv_params_generated;marv_params_runtime;marv_params_l0_generated;marv_params_l0_runtime;marv_params_l1_fixture_generated;marv_params_l1_fixture_runtime;marv_params_l2_open_loop_generated;marv_params_l2_open_loop_runtime;marv_params_l4_rate_scripted_generated;marv_params_l4_rate_scripted_runtime;marv_params_l5_attitude_scripted_generated;marv_params_l5_attitude_scripted_runtime;marv_params_l7_attitude_estimated_generated;marv_params_l7_attitude_estimated_runtime;marv_params_l11_vertical_scripted_generated;marv_params_l11_vertical_scripted_runtime;marv_params_fc3v2_generated;marv_params_fc3v2_runtime;marv_params_fc3v2_eskf_generated;marv_params_fc3v2_eskf_runtime;marv_params_fc3v2_log_generated;marv_params_fc3v2_log_runtime;marv_params_fc3v2_bench_profile_generated;marv_params_fc3v2_bench_profile_runtime;marv_link;marv_link_codec_mavlink;marv_link_service;marv_mixer;marv_rate;marv_gyro_chain;marv_attitude;marv_stick_rates;marv_vertical;marv_rate_group;marv_arming;marv_store;marv_log;marv_estimator;marv_composition_l0;marv_composition_l2_open_loop;marv_composition_l4_rate_scripted;marv_composition_l5_attitude_scripted;marv_composition_l7_attitude_estimated;marv_composition_l11_vertical_scripted;marv_composition_quad_fc;marv_composition_quad_fc_eskf;marv_composition_quad_fc_bench_profile;marv_composition_quad_fc_bench_profile_inject;marv_lsm6dsv_decode;marv_dshot;marv_console_decode;marv_crsf_decode
+-- G3 SIL libraries: marv_sil_l0;marv_sil_l2_open_loop;marv_sil_l4_rate_scripted;marv_sil_l5_attitude_scripted;marv_sil_l7_attitude_estimated;marv_sil_l11_vertical_scripted;marv_sil_quad_fc;marv_sil_quad_fc_eskf;marv_sil_test;marv_sil_l05_truth_test;marv_sil_l11_truth_vertical_test
+-- Configuring done (0.8s)
+-- Generating done (0.1s)
+-- Build files have been written to: /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc
++ cmake --build /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc
+[0/2] Re-checking globbed directories...
+[1/14] Generating the plain link message structs
+[2/14] Writing the L1 run report (marv_params)
+[3/14] Generating the MAVLink C headers (pymavlink mavgen, MARV dialect)
+Validating /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc/mavlink/defs/marv.xml
+Parsing /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc/mavlink/defs/marv.xml
+Validating /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc/mavlink/defs/common.xml
+Parsing /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc/mavlink/defs/common.xml
+CAMERA_TRACKING_STATUS_FLAGS_IDLE has invalid values (bitmask must have powers of 2)
+Validating /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc/mavlink/defs/standard.xml
+Parsing /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc/mavlink/defs/standard.xml
+Validating /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc/mavlink/defs/minimal.xml
+Parsing /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc/mavlink/defs/minimal.xml
+Found 242 MAVLink message types in 4 XML files
+Generating C implementation in directory /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc/mavlink/c/marv
+Generating C implementation in directory /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc/mavlink/c/common
+Generating C implementation in directory /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc/mavlink/c/standard
+Generating C implementation in directory /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc/mavlink/c/minimal
+Copying fixed headers for protocol 2.0 to /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc/mavlink/c
+[4/14] Building CXX object fw/link/CMakeFiles/marv_link_service.dir/src/service.cpp.o
+[5/14] Building CXX object tests/regression/quad/L00/link/CMakeFiles/link_vectors_tool.dir/link_vectors_tool.cpp.o
+[6/14] Building CXX object fw/link/CMakeFiles/marv_link_codec_mavlink.dir/src/codec_mavlink.cpp.o
+[7/14] Linking CXX static library fw/link/libmarv_link_codec_mavlink.a
+[8/14] Linking CXX static library fw/link/libmarv_link_service.a
+[9/14] Linking CXX executable tests/regression/quad/L00/link/link_vectors_tool
+[10/14] Linking CXX shared library sim/quad_fc/libmarv_sil_quad_fc.so
+check_param_table: libmarv_sil_quad_fc.so: 155 records, schema 0x0fd34ce78b31e33f, names, types, units and values equal /tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx14/build/host-gz-quadfc/generated/marv_params_fc3v2/marv/params/params_manifest.json
+[11/14] Linking CXX executable tests/regression/quad/L09/unit/unit_sil_quad_fc
+[12/14] Linking CXX shared library sim/gz/plugin/libmarv_gz_lockstep.so
+[13/14] Building CXX object tests/regression/quad/L00/link/CMakeFiles/unit_link.dir/codec_conformance_test.cpp.o
+[14/14] Linking CXX executable tests/regression/quad/L00/link/unit_link
