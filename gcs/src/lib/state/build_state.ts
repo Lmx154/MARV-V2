@@ -20,6 +20,14 @@ export interface DryRun {
 	kind: 'up_to_date' | 'steps' | 'not_configured' | 'error';
 	steps: number | null;
 	text: string;
+	/** CMake's glob re-check and re-run were in the dry run (always dirty there); they are not counted in `steps`. */
+	glob_recheck?: boolean;
+}
+
+/** The status as the panel shows it: "up to date" says that CMake still re-checks its globs when the build runs. */
+export function statusText(s: DryRun | null): string {
+	if (!s) return '—';
+	return s.kind === 'up_to_date' && s.glob_recheck ? 'up to date (CMake re-checks its globs at build)' : s.text;
 }
 
 /** A build as the helper keeps it: the running one or the latest. */

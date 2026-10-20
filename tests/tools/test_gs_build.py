@@ -103,10 +103,29 @@ async def built(s, preset=GZ):
 def test_the_ninja_dry_run_parse_gives_up_to_date_or_the_number_of_steps():
     assert build_mod.parse_dry_run(0, "ninja: no work to do.\n") == {"kind": "up_to_date", "steps": None, "text": "up to date"}
     steps = build_mod.parse_dry_run(0, "[1/312] Building CXX object a.o\n[2/312] Linking CXX executable b\n[312/312] Linking x\n")
-    assert steps == {"kind": "steps", "steps": 312, "text": "312 steps"}
+    assert steps == {"kind": "steps", "steps": 312, "text": "312 steps", "glob_recheck": False}
     assert build_mod.parse_dry_run(0, "[1/1] Linking CXX executable b\n")["text"] == "1 step"
     for rc, text in ((1, "ninja: error: loading 'build.ninja': No such file or directory\n"), (0, ""), (0, "something else\n")):
         assert build_mod.parse_dry_run(rc, text)["kind"] == "error", (rc, text)
+
+
+RECHECK = "[0/2] Re-checking globbed directories...\n[1/2] Re-running CMake...\n"
+
+
+def test_cmakes_always_dirty_glob_steps_are_not_counted_and_say_so():
+    """The dry run recorded after the real build (tests/regression/quad/L10/results/gcs/gx14/ninja_dry_run_after.txt)."""
+    recorded = (ROOT / "tests" / "regression" / "quad" / "L10" / "results" / "gcs" / "gx14" / "ninja_dry_run_after.txt").read_text()
+    assert build_mod.parse_dry_run(0, recorded) == {"kind": "up_to_date", "steps": None, "text": "up to date", "glob_recheck": True}
+    assert build_mod.parse_dry_run(0, RECHECK)["glob_recheck"] is True
+    # the same two steps plus a compile step: that one counts, and only that one
+    one = build_mod.parse_dry_run(0, "[0/3] Re-checking globbed directories...\n[1/3] Re-running CMake...\n[2/3] Building CXX object a.o\n")
+    assert one == {"kind": "steps", "steps": 1, "text": "1 step", "glob_recheck": True}
+    # control: a step whose description is not exactly one of the two is counted, whatever its position
+    for other in ("Re-checking globbed directories", "Re-running CMake", "Re-checking globbed directories... x", "Re-running CMake (again)...", "Building CXX object"):
+        got = build_mod.parse_dry_run(0, f"[0/2] Re-checking globbed directories...\n[1/2] {other}\n")
+        assert got == {"kind": "steps", "steps": 1, "text": "1 step", "glob_recheck": True}, other
+        got = build_mod.parse_dry_run(0, f"[0/2] {other}\n[1/2] {other}\n")
+        assert got["kind"] == "steps" and got["steps"] == 2 and got["glob_recheck"] is False, other
 
 
 def test_the_status_runs_ninja_n_on_the_tree_and_names_not_configured_up_to_date_and_n_steps(tmp_path, fake):
@@ -121,7 +140,7 @@ def test_the_status_runs_ninja_n_on_the_tree_and_names_not_configured_up_to_date
             (tree / "build.ninja").write_text("# fake\n")
             fake.env(STEPS=7)
             status = (await s.cmd(cmd="build_status", preset=GZ))["build"]
-            assert status["status"] == {"kind": "steps", "steps": 7, "text": "7 steps"}
+            assert status["status"] == {"kind": "steps", "steps": 7, "text": "7 steps", "glob_recheck": False}
             assert fake.calls() == [["ninja", "-n", "-C", str(tree)]]
             assert status["refusals"] == [] and status["running"] is False and status["current"] is None
             done = await built(s)

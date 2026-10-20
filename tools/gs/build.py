@@ -15,7 +15,7 @@ A build is two steps, each its own process group (start_new_session): `cmake --p
 snapshots the descendants of the step's leader, sends SIGTERM to the group and to each of them, waits BUILD_STOP_S and sends SIGKILL to
 what is left; the lock is released after that, and `build_done` is pushed.
 
-Status is `ninja -n -C <tree> [targets]` (a dry run): "up to date" or "N steps" ("not configured" before the first configure).
+Status is `ninja -n -C <tree> [targets]` (a dry run): "up to date" or "N steps" (CMake's glob re-check and re-run, which a dry run always sees as dirty, are not counted; `glob_recheck` says they were there) ("not configured" before the first configure).
 
 The describe string, `git describe --dirty --always` of the source tree when the build starts, is recorded in <tree>/gs-build.json with the
 hashes of the images the build produced; tools/gs/artifacts.py puts it in the library entry of each (`build`: preset, describe,
@@ -65,7 +65,10 @@ BUILD_TAIL_LINES = 40
 DRAIN_S = 1.0
 READ_SIZE = 65536  # implementation constant: bytes per pipe read
 POLL_S = 0.05  # labelled harness value: the poll period of the cancel's wait for the processes to go
-STEP_RE = re.compile(r"^\[(\d+)/(\d+)\]")
+STEP_RE = re.compile(r"^\[(\d+)/(\d+)\]\s*(.*)$")
+# CMake's two steps that `ninja -n` always sees as dirty in a tree with CONFIGURE_DEPENDS globs: the glob check is a phony edge with no inputs, which a
+# dry run cannot run to see that nothing changed, and the CMake re-run depends on it. Their exact ninja descriptions; a step is excluded only by these.
+GLOB_RECHECK_STEPS = ("Re-checking globbed directories...", "Re-running CMake...")
 NOTHING_TO_DO = "ninja: no work to do."
 
 
@@ -113,11 +116,14 @@ def parse_dry_run(returncode: int, output: str) -> dict:
         return {"kind": "error", "steps": None, "text": f"ninja -n failed ({returncode}): {detail}"}
     if any(ln.strip() == NOTHING_TO_DO for ln in lines):
         return {"kind": "up_to_date", "steps": None, "text": "up to date"}
-    totals = [int(m.group(2)) for m in map(STEP_RE.match, lines) if m]
-    if not totals:
+    found = [m for m in map(STEP_RE.match, lines) if m]
+    if not found:
         return {"kind": "error", "steps": None, "text": "ninja -n gave neither 'no work to do' nor build steps"}
-    n = max(totals)
-    return {"kind": "steps", "steps": n, "text": f"{n} step" if n == 1 else f"{n} steps"}
+    recheck = sum(m.group(3).strip() in GLOB_RECHECK_STEPS for m in found)
+    n = max(int(m.group(2)) for m in found) - recheck
+    if n <= 0:
+        return {"kind": "up_to_date", "steps": None, "text": "up to date", "glob_recheck": recheck > 0}
+    return {"kind": "steps", "steps": n, "text": f"{n} step" if n == 1 else f"{n} steps", "glob_recheck": recheck > 0}
 
 
 def proc_table() -> dict[int, tuple[int, str, str]]:

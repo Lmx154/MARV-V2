@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { readable } from 'svelte/store';
 	import { app } from '$lib/state/app';
-	import { buildOutcome, whyNoBuild, type BuildState } from '$lib/state/build_state';
+	import { buildOutcome, statusText, whyNoBuild, type BuildState } from '$lib/state/build_state';
 	import { shortSha } from '$lib/state/logs_state';
 	import type { HelperConnectionState } from '$link/transport';
 	import Badge from '$lib/components/ui/Badge.svelte';
@@ -42,7 +42,7 @@
 	</div>
 	<dl class="facts mono" aria-label="Build status">
 		<dt>tree</dt><dd>{preset ? preset.tree : '—'}</dd>
-		<dt>status</dt><dd data-build="status" data-kind={s?.status?.kind ?? ''}>{s?.status ? s.status.text : '—'}</dd>
+		<dt>status</dt><dd data-build="status" data-kind={s?.status?.kind ?? ''}>{statusText(s?.status ?? null)}</dd>
 	</dl>
 	<div class="buttons">
 		<button type="button" class="primary" disabled={why !== null} title={why ?? 'Build this preset under the heavy lock'} aria-describedby="why-build" onclick={() => void build?.build()}>

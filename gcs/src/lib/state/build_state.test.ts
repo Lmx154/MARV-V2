@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { get } from 'svelte/store';
 import { HelperError, type HelperEvent, type HelperReply } from '$link/transport';
-import { BuildController, TAIL_LINES, buildOutcome, reasonsOf, recordOf, whyNoBuild, type BuildState } from './build_state';
+import { BuildController, TAIL_LINES, buildOutcome, reasonsOf, recordOf, statusText, whyNoBuild, type BuildState } from './build_state';
 
 const ALLOWED = [
 	{ preset: 'host-gz-quadfc', tree: 'host-gz-quadfc', configure: 'host-gz-quadfc', cache: {}, targets: [] },
@@ -156,6 +156,16 @@ describe('build and cancel', () => {
 		f.answers.set('build_cancel', new HelperError({ ok: false, error: 'no build is running' }, 'build_cancel'));
 		await f.controller.cancel();
 		expect(f.state.notices).toEqual(['no build is running']);
+	});
+});
+
+describe('statusText', () => {
+	it('says that CMake re-checks its globs only when the helper saw its two steps; a count is shown as the helper gives it', () => {
+		expect(statusText(null)).toBe('—');
+		expect(statusText({ kind: 'up_to_date', steps: null, text: 'up to date', glob_recheck: true })).toBe('up to date (CMake re-checks its globs at build)');
+		expect(statusText({ kind: 'up_to_date', steps: null, text: 'up to date' })).toBe('up to date');
+		expect(statusText({ kind: 'steps', steps: 1, text: '1 step', glob_recheck: true })).toBe('1 step');
+		expect(statusText({ kind: 'not_configured', steps: null, text: 'not configured' })).toBe('not configured');
 	});
 });
 
