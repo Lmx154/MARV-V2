@@ -3,6 +3,8 @@
 import { derived, get, writable, type Readable } from 'svelte/store';
 import { HelperConnection, type HelperConnectionState } from '$link/transport';
 import { LinkSession } from '$link/session';
+import { ConsoleChannel, consoleUrlOf } from '$lib/console/console_channel';
+import { ConsoleController } from '$lib/console/console_state';
 import { VehicleClient, type VehicleState } from '$link/vehicle';
 import type { ImageEntry } from '$lib/params/library';
 import { mergeParams, type ParamRow } from '$lib/params/merge';
@@ -42,6 +44,8 @@ export interface App {
 	bench: BenchController | null;
 	/** The SIL pilot bridge: the RadioMaster's USB joystick, opened and closed through the helper; null without a helper. */
 	pilot: PilotController | null;
+	/** The Console page: the board's console text through the helper, opened and closed by the operator; null without a helper. */
+	console: ConsoleController | null;
 	status: Readable<HelperStatus | null>;
 	/** The device the helper has open, from its events and status. */
 	device: Readable<string | null>;
@@ -178,6 +182,10 @@ function create(): App {
 			: null;
 	const pilot = helper ? new PilotController({ request: (cmd, args) => helper.request(cmd, args), onEvent: (handler) => helper.onEvent(handler) }) : null;
 	pilot?.start();
+	const consoleChannel = info && helper ? new ConsoleChannel({ url: consoleUrlOf(info.wsUrl) }) : null;
+	const consoleView =
+		helper && consoleChannel ? new ConsoleController({ request: (cmd, args) => helper.request(cmd, args), onEvent: (handler) => helper.onEvent(handler), channel: consoleChannel }) : null;
+	consoleView?.start();
 
 		// The identity arrives after the connection: load the matching manifest then.
 	let lastIdentityKey = '';
@@ -207,6 +215,7 @@ function create(): App {
 		sim,
 		bench,
 		pilot,
+		console: consoleView,
 		status: shell.status,
 		device: shell.device,
 		bar: shell.bar,
@@ -216,6 +225,7 @@ function create(): App {
 		// The image library is plain HTTP: it is read whether or not the WebSocket opens, and a second call (a remounted layout) is harmless.
 		connect: async () => {
 			if (!helper) return;
+			consoleChannel?.start();
 			const images = refreshImages();
 			const state = get(helper.state);
 			if (state === 'closed') {
