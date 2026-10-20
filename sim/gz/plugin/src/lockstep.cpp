@@ -874,6 +874,7 @@ class PilotStager {
     }
     return marv_sil_stage_rc_frame(&rc);
 #else
+    static_cast<void>(tick);
     return MARV_SIL_E_STATE;  // not reached: Configure refuses <pilot_udp_port> without the entry
 #endif
   }
