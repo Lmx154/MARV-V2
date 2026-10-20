@@ -13,7 +13,9 @@
 # on exit. Light mode also starts the fake simulator of tools/gs/e2e_fake_sim.py, which publishes the sim channel (GX-8) to the helper's
 # --sim-channel-port, and the fake bench of tools/gs/e2e_fake_bench.py (a probe, a board running the HIL image, its pty port, a HIL build tree and a
 # flash.sh stand-in, with the HIL run a stand-in `sleep`) for the Bench page (GX-10); light mode also starts the fake joystick of
-# tools/gs/e2e_fake_joystick.py (a FIFO js0 in a directory of its own, the helper's --pilot-dir) for the pilot spec (GX-9);
+# tools/gs/e2e_fake_joystick.py (a FIFO js0 in a directory of its own, the helper's --pilot-dir) for the pilot spec (GX-9); and the fake
+# console of tools/gs/e2e_fake_console.py (a pty linked as an -if00 entry of the by-id directory, which prints a banner and answers each line it
+# gets) for the console spec (GX-16);
 # the sim spec stops and continues it (MARV_E2E_SIM_PID) to make the SIM panels come and go. The staleness control of the specs stops the fake vehicle (SIGSTOP of its process group, MARV_E2E_VEHICLE_PID) and
 # continues it; in live mode the vehicle page's control stops the processes of the helper's run (those with MARV_E2E_RUNS_DIR, the
 # helper's run directory, in their command line) and continues them. The Playwright JSON report and the failure screenshots land in the output directory (default build/gs-e2e/out).
@@ -127,6 +129,16 @@ print(s.getsockname()[1])')"
     sleep 0.1
   done
   grep -q '^fake bench ready' "${work}/bench.log" || { cat "${work}/bench.log"; echo "the fake bench did not start" >&2; exit 1; }
+  # The Console page (GX-16): a fake board console, a pty linked as an -if00 entry of the same by-id directory.
+  echo "##### fake console"
+  setsid uv run python tools/gs/e2e_fake_console.py --byid-dir "${work}/byid" >"${work}/console.log" 2>&1 &
+  pids+=("$!")
+  for _ in $(seq 1 300); do
+    grep -q '^fake console ready' "${work}/console.log" 2>/dev/null && break
+    kill -0 "${pids[-1]}" 2>/dev/null || { cat "${work}/console.log"; echo "the fake console did not start" >&2; exit 1; }
+    sleep 0.1
+  done
+  grep -q '^fake console ready' "${work}/console.log" || { cat "${work}/console.log"; echo "the fake console did not start" >&2; exit 1; }
   export MARV_PROBE_SERIAL="E2EPROBE0001"
   helper_args+=(--sysfs-dir "${work}/bench/sys" --swd-flash-script "${work}/bench/flash.sh" --hil-command "sleep ${HIL_STAND_IN_SECONDS}")
 fi
