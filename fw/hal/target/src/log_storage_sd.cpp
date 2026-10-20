@@ -9,6 +9,7 @@
 #include <string_view>
 
 #include "marv/hal_target/sd_spi.hpp"
+#include "marv/log/file_life.hpp"
 #include "marv/prim/constants.hpp"
 #include "sd_volume.hpp"
 
@@ -21,20 +22,7 @@ using log::StorageStatus;
 constexpr const char* kDir = "/marv";
 constexpr const char* kLogDir = "/marv/log";
 constexpr std::string_view kLogDirPrefix = "/marv/log/";
-// The ruling's file name NNNNNNNN.mlog: the index in decimal, zero-padded to the pattern's width.
-constexpr std::string_view kIndexPattern = "NNNNNNNN";
-constexpr std::string_view kExtension = ".mlog";
-constexpr std::size_t kNameBytes = kIndexPattern.size() + kExtension.size();
-constexpr std::size_t kPathBytes = kLogDirPrefix.size() + kNameBytes + 1;
-
-[[nodiscard]] constexpr std::uint32_t largest_index() noexcept {
-  std::uint64_t m = 1;
-  for (std::size_t i = 0; i < kIndexPattern.size(); ++i) {
-    m *= prim::kDecimalRadix;
-  }
-  return static_cast<std::uint32_t>(m - 1);
-}
-constexpr std::uint32_t kLargestIndex = largest_index();
+constexpr std::size_t kPathBytes = kLogDirPrefix.size() + log::kNameBytes + 1;
 
 constexpr std::uint64_t kLargestFile = std::numeric_limits<FSIZE_t>::max();
 
@@ -54,32 +42,10 @@ using Path = std::array<char, kPathBytes>;
   for (const char c : kLogDirPrefix) {
     p[n++] = c;
   }
-  for (std::size_t i = kIndexPattern.size(); i-- > 0;) {
-    p[n + i] = static_cast<char>('0' + index % prim::kDecimalRadix);
-    index /= prim::kDecimalRadix;
-  }
-  n += kIndexPattern.size();
-  for (const char c : kExtension) {
+  for (const char c : log::name_of_index(index)) {
     p[n++] = c;
   }
-  p[n] = '\0';
   return p;
-}
-
-// The index of a directory entry named NNNNNNNN.mlog, or 0 for any other name.
-[[nodiscard]] std::uint32_t index_of(std::string_view name) noexcept {
-  if (name.size() != kNameBytes || name.substr(kIndexPattern.size()) != kExtension) {
-    return 0;
-  }
-  std::uint32_t v = 0;
-  for (std::size_t i = 0; i < kIndexPattern.size(); ++i) {
-    const char c = name[i];
-    if (c < '0' || c > '9') {
-      return 0;
-    }
-    v = v * prim::kDecimalRadix + static_cast<std::uint32_t>(c - '0');
-  }
-  return v;
 }
 
 void close_reader() noexcept {
@@ -110,81 +76,8 @@ void unmount() noexcept {
   return r == FR_EXIST ? FR_OK : r;
 }
 
-// The highest index in /marv/log (0 if none), or the FatFs error.
-[[nodiscard]] FRESULT highest_index(std::uint32_t& highest) noexcept {
-  highest = 0;
-  FRESULT r = f_opendir(&g_dir, kLogDir);
-  if (r != FR_OK) {
-    return r;
-  }
-  for (;;) {
-    r = f_readdir(&g_dir, &g_info_entry);
-    if (r != FR_OK || g_info_entry.fname[0] == '\0') {
-      break;
-    }
-    if ((g_info_entry.fattrib & AM_DIR) == 0) {
-      highest = std::max(highest, index_of(g_info_entry.fname));
-    }
-  }
-  static_cast<void>(f_closedir(&g_dir));
-  return r;
-}
-
-class SdLogStorage final : public log::LogStorage {
+class SdLogStorage final : public log::LifecycleStorage {
  public:
-  Prepared prepare(std::uint64_t bytes) noexcept override {
-    g_log = SdLogFile{};  // a file left open is abandoned: its region keeps the size f_expand gave it
-    if (bytes < prim::kSdBlockBytes) {
-      return failed(StorageStatus::Error, FR_INVALID_PARAMETER);
-    }
-    if (bytes > kLargestFile) {
-      return failed(StorageStatus::Full, FR_INVALID_PARAMETER);
-    }
-    unmount();
-    FRESULT r = sd_volume_mount();
-    if (r != FR_OK) {
-      sd_volume_unmount();
-      return failed(r == FR_NOT_READY || r == FR_NO_FILESYSTEM ? StorageStatus::NoCard : StorageStatus::Error, r);
-    }
-    g_mounted = true;
-    r = make_dir(kDir);
-    if (r == FR_OK) {
-      r = make_dir(kLogDir);
-    }
-    std::uint32_t highest = 0;
-    if (r == FR_OK) {
-      r = highest_index(highest);
-    }
-    if (r != FR_OK) {
-      return failed(status_of(r), r);
-    }
-    if (highest >= kLargestIndex) {
-      return failed(StorageStatus::Full, FR_DENIED);
-    }
-    const std::uint32_t index = highest + 1;
-    const Path path = path_of(index);
-    r = f_open(&g_file, path.data(), FA_CREATE_NEW | FA_WRITE);
-    if (r != FR_OK) {
-      return failed(status_of(r), r);
-    }
-    r = f_expand(&g_file, static_cast<FSIZE_t>(bytes), 1);
-    if (r == FR_OK) {
-      r = f_sync(&g_file);
-    }
-    if (r != FR_OK) {
-      static_cast<void>(f_close(&g_file));
-      static_cast<void>(f_unlink(path.data()));
-      return failed(status_of(r), r);
-    }
-    g_log.index = index;
-    const FATFS& fs = sd_volume();
-    g_log.start_sector = static_cast<std::uint32_t>(fs.database + static_cast<LBA_t>(fs.csize) * (g_file.obj.sclust - 2));
-    g_log.capacity_bytes = bytes - bytes % prim::kSdBlockBytes;
-    g_log.cursor_bytes = 0;
-    g_log.open = true;
-    return Prepared{StorageStatus::Ok, g_log.capacity_bytes};
-  }
-
   StorageStatus write(std::span<const std::uint8_t> chunk) noexcept override {
     if (!g_log.open || chunk.empty() || chunk.size() % prim::kSdBlockBytes != 0) {
       return StorageStatus::Error;
@@ -223,6 +116,111 @@ class SdLogStorage final : public log::LogStorage {
   void release() noexcept override {
     g_log.open = false;
     unmount();
+  }
+
+ protected:
+  void abandon() noexcept override { g_log = SdLogFile{}; }  // a file left open: its region keeps the size it has
+
+  std::uint64_t largest_file_bytes() const noexcept override { return kLargestFile; }
+
+  StorageStatus mount() noexcept override {
+    unmount();
+    FRESULT r = sd_volume_mount();
+    if (r != FR_OK) {
+      sd_volume_unmount();
+      return failed(r == FR_NOT_READY || r == FR_NO_FILESYSTEM ? StorageStatus::NoCard : StorageStatus::Error, r).status;
+    }
+    g_mounted = true;
+    r = make_dir(kDir);
+    if (r == FR_OK) {
+      r = make_dir(kLogDir);
+    }
+    return r == FR_OK ? StorageStatus::Ok : failed(status_of(r), r).status;
+  }
+
+  StorageStatus visit_names(log::NameVisitor visit, void* ctx) noexcept override {
+    FRESULT r = f_opendir(&g_dir, kLogDir);
+    if (r != FR_OK) {
+      return failed(status_of(r), r).status;
+    }
+    for (;;) {
+      r = f_readdir(&g_dir, &g_info_entry);
+      if (r != FR_OK || g_info_entry.fname[0] == '\0') {
+        break;
+      }
+      if ((g_info_entry.fattrib & AM_DIR) == 0) {
+        visit(ctx, g_info_entry.fname);
+      }
+    }
+    static_cast<void>(f_closedir(&g_dir));
+    return r == FR_OK ? StorageStatus::Ok : failed(status_of(r), r).status;
+  }
+
+  // A newest file that cannot serve (it does not open, is too short, or is not one contiguous block) is left alone and a new
+  // one is created: the logger still gets a file, and nothing is deleted or shortened.
+  StorageStatus open_existing(std::uint32_t index, std::uint64_t bytes, bool& usable) noexcept override {
+    usable = false;
+    const Path path = path_of(index);
+    FRESULT r = f_open(&g_file, path.data(), FA_WRITE | FA_OPEN_EXISTING);
+    if (r != FR_OK) {
+      g_log.last_fatfs_error = static_cast<int>(r);
+      return StorageStatus::Ok;
+    }
+    const std::uint64_t capacity = capacity_for(bytes);
+    const FATFS& fs = sd_volume();
+    const auto start = static_cast<std::uint32_t>(fs.database + static_cast<LBA_t>(fs.csize) * (g_file.obj.sclust - 2));
+    bool ok = f_size(&g_file) >= bytes;
+    if (ok) {
+      // The last sector of the region lies where one contiguous block puts it (the chain is followed to there).
+      const std::uint64_t last = capacity / prim::kSdBlockBytes - 1;
+      ok = f_lseek(&g_file, static_cast<FSIZE_t>(last * prim::kSdBlockBytes + 1)) == FR_OK &&
+           static_cast<std::uint64_t>(fs.database) + static_cast<std::uint64_t>(fs.csize) * (g_file.clust - 2) + last % fs.csize ==
+               static_cast<std::uint64_t>(start) + last;
+    }
+    if (!ok) {
+      static_cast<void>(f_close(&g_file));
+      return StorageStatus::Ok;
+    }
+    g_log.index = index;
+    g_log.start_sector = start;
+    g_log.capacity_bytes = capacity;
+    g_log.cursor_bytes = 0;
+    g_log.open = true;
+    usable = true;
+    return StorageStatus::Ok;
+  }
+
+  bool read_sector(std::uint64_t index, std::span<std::uint8_t> out) noexcept override {
+    return g_log.open && sd::read(static_cast<std::uint32_t>(g_log.start_sector + index), out);
+  }
+
+  void drop_existing() noexcept override {
+    static_cast<void>(f_close(&g_file));
+    g_log.open = false;
+  }
+
+  StorageStatus create(std::uint32_t index, std::uint64_t bytes) noexcept override {
+    const Path path = path_of(index);
+    FRESULT r = f_open(&g_file, path.data(), FA_CREATE_NEW | FA_WRITE);
+    if (r != FR_OK) {
+      return failed(status_of(r), r).status;
+    }
+    r = f_expand(&g_file, static_cast<FSIZE_t>(bytes), 1);
+    if (r == FR_OK) {
+      r = f_sync(&g_file);
+    }
+    if (r != FR_OK) {
+      static_cast<void>(f_close(&g_file));
+      static_cast<void>(f_unlink(path.data()));  // the file this call made, never one that held a log
+      return failed(status_of(r), r).status;
+    }
+    g_log.index = index;
+    const FATFS& fs = sd_volume();
+    g_log.start_sector = static_cast<std::uint32_t>(fs.database + static_cast<LBA_t>(fs.csize) * (g_file.obj.sclust - 2));
+    g_log.capacity_bytes = capacity_for(bytes);
+    g_log.cursor_bytes = 0;
+    g_log.open = true;
+    return StorageStatus::Ok;
   }
 };
 
