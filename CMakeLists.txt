@@ -73,6 +73,7 @@ add_subdirectory(tests/regression/quad/L00/controls)
 add_subdirectory(tests/regression/quad/L09/controls)
 if(MARV_TARGET STREQUAL "m33")
   add_subdirectory(tests/regression/quad/L09/flash_layout)
+  add_subdirectory(tests/regression/quad/L09/single_core)
 endif()
 
 include(cmake/marv_test_timeout.cmake)

@@ -297,6 +297,30 @@ if(NOT (MARV_FC3V2_COUNT_ONLY OR MARV_FC3V2_BENCH_STATS OR MARV_FC3V2_BENCH_ACCE
     MARV_FC3V2_ARENA_MARGIN_BYTES=${MARV_FC3V2_ARENA_MARGIN_BYTES})
 endif()
 
+# Invariant L-8b (onboard logger unit U4-2): the image that holds the arena lease never starts core 1, because withdrawing the
+# ring from the tick is safe only while the tick and the background loop share core 0 (marv/log/arena_logger.hpp). After every
+# link, tools/ci/check_single_core.py lists the image's symbols (nm): FORBID fails the build and removes the image if a symbol
+# starts with multicore_launch_core1; REQUIRE fails it unless one does (the negative control, the planted image of
+# tests/regression/quad/L09/single_core, which the same check must find launching core 1). Python as marv_check_bench_profile.
+function(marv_check_single_core target mode)
+  set(python "${MARV_PYTHON}")
+  if(python STREQUAL "")
+    set(python "${PROJECT_SOURCE_DIR}/.venv/bin/python")
+  endif()
+  if(mode STREQUAL "FORBID")
+    set(check_args --forbid "$<TARGET_FILE:${target}>" --delete-on-failure)
+  elseif(mode STREQUAL "REQUIRE")
+    set(check_args --require "$<TARGET_FILE:${target}>")
+  else()
+    message(FATAL_ERROR "marv_check_single_core(${target} ${mode}): the mode is FORBID or REQUIRE")
+  endif()
+  add_custom_command(TARGET ${target} POST_BUILD
+    COMMAND "${python}" "${PROJECT_SOURCE_DIR}/tools/ci/check_single_core.py" --nm "${CMAKE_NM}" ${check_args}
+    COMMENT "Checking that ${target} never starts core 1 (invariant L-8b, ${mode})"
+    VERBATIM)
+endfunction()
+marv_check_single_core(marv_fc3v2 FORBID)
+
 # The bench motor-step profile image (unit U3 BENCH-PROFILE, architect ruling 2026-10-18 item 8; the props-off runbook is
 # tests/regression/quad/L10/results/bench_profile/README.md): main.cpp built with MARV_FC3V2_BENCH_PROFILE, linking the
 # composition variant marv_composition_quad_fc_bench_profile (the profile in place of the mixer's output while Armed, run

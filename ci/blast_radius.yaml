@@ -762,6 +762,13 @@ rules:
     gz_groups: []
     why: "invariant L-6 of the bench motor-step profile (unit U3): run after every link of the m33 flight image (FORBID) and of the bench image marv_fc3v2_bench_profile (REQUIRE, the control) by fw/hal/target/CMakeLists.txt, and on the host by the L09 ctest entries bench_profile_symbols and bench_profile_symbols_negative_control"
 
+  - paths: [tools/ci/check_single_core.py, tests/regression/quad/L09/single_core/**]
+    ctest_labels: []
+    run_ci_steps: [m33_build]
+    pytest_paths: []
+    gz_groups: []
+    why: "invariant L-8b of the disarmed arena (onboard logger unit U4-2): run after every link of the m33 flight image (FORBID multicore_launch_core1) and of the planted image single_core_planted (REQUIRE, the control), both built by every m33 build (fw/hal/target/CMakeLists.txt, tests/regression/quad/L09/single_core)"
+
   - paths: [tools/ci/check_regression_changes.py]
     ctest_labels: []
     run_ci_steps: [tools_tests]
