@@ -387,23 +387,23 @@ def test_the_device_path_is_restricted_to_the_by_id_directory_and_a_console_inte
     async def body(h, board):
         by_id = tmp_path / "by-id"
         (by_id / "sub").mkdir()
-        (by_id / "regular-if00").symlink_to(regular)  # a symlink that leads to a file, not a device
-        (by_id / "null-if00").symlink_to("/dev/null")  # a character device under /dev, but not a tty
-        (by_id / "dir-if00").symlink_to(outside)
-        (outside / "usb-Elsewhere-if00").symlink_to(os.path.realpath(board.link))
-        (by_id / "usb-link-if02").symlink_to(os.path.realpath(board.link))
+        (by_id / "usb-Raspberry_Pi_Pico_REGULAR-if00").symlink_to(regular)  # a symlink that leads to a file, not a device
+        (by_id / "usb-Raspberry_Pi_Pico_NULL-if00").symlink_to("/dev/null")  # a character device under /dev, but not a tty
+        (by_id / "usb-Raspberry_Pi_Pico_DIR-if00").symlink_to(outside)
+        (outside / "usb-Raspberry_Pi_Pico_ELSEWHERE-if00").symlink_to(os.path.realpath(board.link))
+        (by_id / "usb-Raspberry_Pi_Pico_TESTLINK-if02").symlink_to(os.path.realpath(board.link))
         refused = {
             "traversal": f"{by_id}/../by-id/{NAME}",
-            "dotdot out": f"{by_id}/../outside/usb-Elsewhere-if00",
+            "dotdot out": f"{by_id}/../outside/usb-Raspberry_Pi_Pico_ELSEWHERE-if00",
             "relative": f"by-id/{NAME}",
             "bare name": NAME,
             "subdirectory": f"{by_id}/sub/{NAME}",
             "double slash": f"{by_id}//{NAME}",
-            "other directory": f"{outside}/usb-Elsewhere-if00",
-            "the link interface": f"{by_id}/usb-link-if02",
-            "symlink to a file": f"{by_id}/regular-if00",
-            "symlink to a directory": f"{by_id}/dir-if00",
-            "a device that is no tty": f"{by_id}/null-if00",
+            "other directory": f"{outside}/usb-Raspberry_Pi_Pico_ELSEWHERE-if00",
+            "the link interface": f"{by_id}/usb-Raspberry_Pi_Pico_TESTLINK-if02",
+            "symlink to a file": f"{by_id}/usb-Raspberry_Pi_Pico_REGULAR-if00",
+            "symlink to a directory": f"{by_id}/usb-Raspberry_Pi_Pico_DIR-if00",
+            "a device that is no tty": f"{by_id}/usb-Raspberry_Pi_Pico_NULL-if00",
             "a raw tty": os.path.realpath(board.link),
             "absent": f"{by_id}/usb-Absent-if00",
             "empty": "",
@@ -423,7 +423,7 @@ def test_the_device_path_is_restricted_to_the_by_id_directory_and_a_console_inte
             assert not (await s.cmd(cmd="console_open", device=board.link, baud=9600))["ok"]  # a closed list of fields
             assert (await s.cmd(cmd="console_open", device=board.link))["ok"]  # control: the by-id entry itself opens
             assert (await s.cmd(cmd="console_status"))["console"]["devices"] == sorted(
-                str(p) for p in by_id.iterdir() if p.name.endswith("-if00"))
+                str(p) for p in by_id.iterdir() if p.name.startswith("usb-Raspberry_Pi_Pico_") and p.name.endswith("-if00"))
             s.close()
     run_console(tmp_path, body)
 
@@ -495,4 +495,48 @@ def test_nothing_outlives_the_close_no_task_and_no_file_descriptor(tmp_path):
         leftover = [t for t in asyncio.all_tasks() if t not in tasks_before and not t.done()]
         assert leftover == [], leftover
         assert sorted(fds().values()) == sorted(fds_before.values())
+    run_console(tmp_path, body)
+
+
+def test_the_hold_closes_an_open_console_at_once_and_no_write_is_accepted_after_it(tmp_path):
+    async def body(h, board):
+        async with ws_connect(h) as link, sim_connect(h, path="/ws/console") as ws:
+            s = Session(link)
+            await opened(s, board)
+            await ws.send("before\n")  # control: open, the write reaches the board
+            assert await board.read_until(7) == b"before\n"
+            assert h.console.is_open
+            assert (await s.cmd(cmd="hil_hold", on=True))["hold"] is True
+            assert h.console.device is None and h.console.state == "closed"  # at once: no poll has run (autoconnect is off)
+            closed = await s.wait_event("console_state", state="closed")
+            assert "hold" in closed["reason"]
+            await ws.send("after\n")
+            await board.write(b"late\n")
+            assert await silence(ws)
+            assert board.pump() == b"before\n"
+            s.close()
+    run_console(tmp_path, body, poll_s=3600)  # the monitor's first poll runs at once; the next is an hour away
+
+
+def test_the_console_device_must_be_the_boards_interface_not_another_usb_serial_adapter(tmp_path):
+    async def body(h, board):
+        other = Pty(tmp_path, "usb-FTDI_FT232R_USB_UART_A1B2C3D4-if00")  # an ESC-pad adapter, say
+        spare = Pty(tmp_path, "usb-Raspberry_Pi_Pico_OTHERBOARD-if00")
+        try:
+            async with ws_connect(h) as link:
+                s = Session(link)
+                refused = await s.cmd(cmd="console_open", device=other.link)
+                assert not refused["ok"] and "not the board's console interface" in refused["error"] and h.console.device is None
+                assert (await s.cmd(cmd="console_status"))["console"]["devices"] == sorted([board.link, spare.link])
+                assert (await s.cmd(cmd="console_open", device=board.link))["ok"]  # control: the board's own interface
+                assert (await s.cmd(cmd="console_close"))["ok"]
+                h.board_serial = "TESTCONSOLE"  # with --board-serial only that board's
+                refused = await s.cmd(cmd="console_open", device=spare.link)
+                assert not refused["ok"] and "TESTCONSOLE" in refused["error"]
+                assert (await s.cmd(cmd="console_status"))["console"]["devices"] == [board.link]
+                assert (await s.cmd(cmd="console_open", device=board.link))["ok"]  # control
+                s.close()
+        finally:
+            other.close()
+            spare.close()
     run_console(tmp_path, body)

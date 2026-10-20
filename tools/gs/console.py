@@ -12,7 +12,8 @@ removes and interprets nothing, so whatever the operator types is what the board
 board's console parses; the helper and the GCS know no motor command). A binary frame from the client closes it (1003). /ws/console has the
 same Host, Origin and token gate as /ws and accepts one client; with no console open it carries nothing, and text sent to it is dropped.
 
-Path. The device named by the browser must be a `*-if00` entry of the by-id directory itself (an absolute normalised path whose directory
+Path. The device named by the browser must be a board's `usb-Raspberry_Pi_Pico_*-if00` entry (the link's vendor part; with --board-serial only that
+board's) of the by-id directory itself (an absolute normalised path whose directory
 is that directory: no ../, no subdirectory), and what it resolves to must be a character device under /dev. A symlink is how by-id entries
 are made, so a symlink is followed, but one that leads anywhere else is refused.
 
@@ -40,7 +41,8 @@ from device import DEFAULT_BAUD, DeviceError, SerialDevice
 
 WS_PATH = "/ws/console"
 WS_UNSUPPORTED = 1003  # RFC 6455 section 7.4.1 "unsupported data": a binary frame on the text channel
-CONSOLE_GLOB = "*-if00"  # the by-id name of the board's console interface (interface 0 of the composite device)
+BOARD_PREFIX = "usb-Raspberry_Pi_Pico_"  # the Pico SDK's product string in the by-id name (helper.py BOARD_LINK_GLOB has the same vendor part)
+CONSOLE_GLOB = BOARD_PREFIX + "*-if00"  # the by-id name of the board's console interface (interface 0 of the composite device)
 CLIENT_QUEUE_MAX_BYTES = 1 << 20  # PLACEHOLDER (harness): device bytes queued for a slow browser before chunks are dropped (counted, logged); the board prints ~0.4 kB a second
 
 
@@ -83,7 +85,14 @@ class Console:
             names = sorted(os.listdir(self.h.byid_dir))
         except OSError:
             return []
-        return [os.path.join(self.h.byid_dir, n) for n in names if fnmatch.fnmatchcase(n, CONSOLE_GLOB)]
+        return [os.path.join(self.h.byid_dir, n) for n in names if self._board_name(n)]
+
+    def _board_name(self, name: str) -> bool:
+        """Whether a by-id name is a board's console interface: CONSOLE_GLOB, and with --board-serial only that board's."""
+        if not fnmatch.fnmatchcase(name, CONSOLE_GLOB):
+            return False
+        serial = self.h.board_serial
+        return serial is None or name == f"{BOARD_PREFIX}{serial}-if00"
 
     def resolve(self, path) -> str:
         """A device path from the browser (module docstring); ConsoleError naming why not."""
@@ -91,8 +100,9 @@ class Console:
             raise ConsoleError("device must be a non-empty string")
         byid = str(self.h.byid_dir)
         if (os.path.normpath(path) != path or not os.path.isabs(path) or os.path.dirname(path) != byid
-                or not fnmatch.fnmatchcase(os.path.basename(path), CONSOLE_GLOB)):
-            raise ConsoleError(f"device {path!r} is not a console interface: {byid}/{CONSOLE_GLOB}")
+                or not self._board_name(os.path.basename(path))):
+            raise ConsoleError(f"device {path!r} is not the board's console interface: {byid}/{CONSOLE_GLOB}"
+                               + (f" of the board {self.h.board_serial}" if self.h.board_serial else ""))
         real = os.path.realpath(path)
         try:
             is_tty_node = stat.S_ISCHR(os.stat(real).st_mode)

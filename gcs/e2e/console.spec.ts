@@ -17,7 +17,7 @@ const out = process.env.MARV_E2E_OUT;
 const runsDir = process.env.MARV_E2E_RUNS_DIR ?? '';
 /** The fake console's texts (tools/gs/e2e_fake_console.py). */
 const BANNER = 'marv_fc3v2 fake console (e2e)';
-const DEVICE = /usb-MARV_E2E_console-if00/;
+const DEVICE = /usb-Raspberry_Pi_Pico_E2ECONSOLE0001-if00/;
 /** How long "nothing more arrives" is watched for: two periods of the fake's one-second line (a labelled harness value). */
 const QUIET_MS = 2500;
 

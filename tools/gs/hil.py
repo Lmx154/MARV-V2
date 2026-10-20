@@ -201,6 +201,7 @@ class HilGcs:
         if msg["on"]:
             if isinstance(self.h.device, SerialDevice):
                 self.h.close_device("held for a HIL run", by_user=True)
+            self.h.console.close("held for a HIL run (hil_hold)")
             self.hold = True
         else:
             self.hold, self.hold_run = False, None

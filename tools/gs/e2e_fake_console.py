@@ -2,7 +2,7 @@
 """The fake board console of the GCS end-to-end test (ground-segment unit GX-16; tools/gs/e2e.sh light mode). A test tool, never flown.
 
 It stands where the board's console CDC stands for the helper's console relay (tools/gs/console.py): a pty whose slave is linked under
---byid-dir as MARV_E2E_CONSOLE_NAME (an `-if00` entry the helper lists as a console interface). While a host has the slave open it
+--byid-dir as NAME (a board `-if00` entry the helper lists as a console interface). While a host has the slave open it
   - prints BANNER once, CONNECT_DELAY_S after the open (the helper's serial setup flushes the input queue just after it opens the port),
     then one TICK line a second, as the board prints its stats line a second;
   - answers every complete line it receives (a line ends at LF, as the board's console parser ends it) with one line,
@@ -21,7 +21,7 @@ import select
 import time
 from pathlib import Path
 
-NAME = "usb-MARV_E2E_console-if00"
+NAME = "usb-Raspberry_Pi_Pico_E2ECONSOLE0001-if00"
 BANNER = "marv_fc3v2 fake console (e2e)"
 CONNECT_DELAY_S = 0.3  # harness value: after the host opens the slave, before the banner
 TICK_S = 1.0  # harness value: the period of the stats-like line
