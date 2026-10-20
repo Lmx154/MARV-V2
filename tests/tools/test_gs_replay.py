@@ -367,3 +367,34 @@ def test_replay_module_reads_only_received_bytes(tmp_path):
     log = synthetic(tmp_path)
     assert [d for _, d in replay_mod.load_rx(log)] == CHUNKS
     assert replay_mod.summarise(log)["rx_records"] == 3
+
+
+def test_a_device_open_that_yields_while_a_replay_starts_is_refused_and_leaves_no_device(tmp_path, monkeypatch):
+    """The window of autoconnect's open_udp: the check passes, the open yields, a replay starts, the open returns."""
+    log = synthetic(tmp_path, gap_ns=int(5e9))
+    vehicle = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    vehicle.bind(("127.0.0.1", 0))
+    real_open = gh.helper_mod.UdpDevice.open
+    state = {}
+
+    async def open_then_replay(port, on_rx, on_close):
+        device = await real_open(port, on_rx, on_close)
+        state["start"] = await state["helper"].replay.start({"log": str(log), "mode": "paced"})  # the replay lands in the window
+        return device
+    monkeypatch.setattr(gh.helper_mod.UdpDevice, "open", staticmethod(open_then_replay))
+
+    async def body(h):
+        state["helper"] = h
+        try:
+            await h.open_udp(vehicle.getsockname()[1])
+            refused = None
+        except gh.helper_mod.DeviceError as e:
+            refused = str(e)
+        playing = h.replay.status()["state"]
+        await h.replay.stop()
+        return refused, h.device, playing
+    refused, device, playing = with_replays(tmp_path, body)
+    vehicle.close()
+    assert state["start"]["replay"]["state"] == "playing" and playing == "playing"
+    assert refused is not None and "replay is going" in refused
+    assert device is None

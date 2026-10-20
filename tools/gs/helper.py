@@ -447,7 +447,12 @@ class Helper:
 
     async def open_udp(self, port: int) -> None:
         self._require_no_device()
-        self.device = await UdpDevice.open(port, self._device_rx, self._device_closed)
+        device = await UdpDevice.open(port, self._device_rx, self._device_closed)
+        if self.replay.active or self.device is not None:  # the open yielded: a replay or another open came in; a device is never open beside a replay
+            device.close()
+            self._require_no_device()
+            raise DeviceError("a device is already open; close it first (one connection at a time)")
+        self.device = device
         self._opened()
 
     def _require_no_device(self) -> None:
