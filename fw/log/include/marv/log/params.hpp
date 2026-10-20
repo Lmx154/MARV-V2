@@ -1,7 +1,7 @@
 // The logger's configuration from a parameter table (the log_* entries of fw/log/params/log_register.yaml, the design-budget
 // entry sd_log_write_stall_max_s, and the tick rational and rate-loop divisor of the scenario register). Header-only and
 // templated on nothing: include it in a translation unit that links one parameter set that carries those entries
-// (marv_params_fc3v2_log); fw/log itself does not link a parameter set, so it stays usable with any.
+// (marv_params_fc3v2, decision 0060); fw/log itself does not link a parameter set, so it stays usable with any.
 #pragma once
 
 #include <cstddef>

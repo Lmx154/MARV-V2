@@ -340,7 +340,14 @@ rules:
     run_ci_steps: ["@flight_gates", tools_tests]
     pytest_paths: [tests/tools]
     gz_groups: []
-    why: "log is the onboard SD flight logger's core (unit U1 LOG-CORE): built by the host and m33 trees (not yet linked into an image), tested by the L09 unit_log_ring and unit_log_logger host tests and the log_roundtrip_* tests that decode its file with tools/log; fw/log/params/log_register.yaml is the source of the test-only parameter set marv_params_fc3v2_log; L-3 (no hal_panic under fw/log) is held by tests/tools/test_check_log_no_panic.py"
+    why: "log is the onboard SD flight logger's core (unit U1 LOG-CORE): built by the host and m33 trees and linked into the m33 flight image (MARV_FC3V2_FLIGHT_LOG, decision 0060), tested by the L09 unit_log_ring and unit_log_logger host tests and the log_roundtrip_* tests that decode its file with tools/log; L-3 (no hal_panic under fw/log) is held by tests/tools/test_check_log_no_panic.py"
+
+  - paths: [fw/log/params/**]
+    ctest_labels: [L00, L07, L09]
+    run_ci_steps: ["@flight_gates", tools_tests]
+    pytest_paths: [tests/regression/quad/L00/tools, tests/tools]
+    gz_groups: [l7]
+    why: "the logger's tunables are the last register of the parameter set marv_params_fc3v2 (decision 0060; the log tests read it under the alias marv_params_fc3v2_log): the flight image, the store and the factory .mcfg (L09), the link service (L00 link suite, the gz l7 link test on marv_sil_quad_fc), the Mahony replay (L07) and the ground station's derive recipe (tests/tools/test_gs_derive.py) read the set"
 
   - paths: [fw/estimator/**]
     ctest_labels: [L07, L09]
@@ -704,10 +711,10 @@ rules:
 
   - paths: [tools/ci/check_log_ring.py]
     ctest_labels: []
-    run_ci_steps: [tools_tests]
+    run_ci_steps: [tools_tests, m33_build]
     pytest_paths: [tests/tools]
     gz_groups: []
-    why: "the L-5 post-link check (the log ring holds the fast stream x sd_log_write_stall_max_s, core EMB-6), run by the bench log image's build (MARV_FC3V2_LOG_BENCH) and the flight-log image's (MARV_FC3V2_FLIGHT_LOG, the arena ring; a warning in its measurement build MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN), m33 only, neither in the default configuration, and, with its negative controls, by tests/tools/test_check_log_ring.py"
+    why: "the L-5 post-link check (the log ring holds the fast stream x sd_log_write_stall_max_s, core EMB-6), run by the bench log image's build (MARV_FC3V2_LOG_BENCH) and by the default m33 build of the flight image (MARV_FC3V2_FLIGHT_LOG, the arena ring; a warning there by decision 0060 and in its measurement build MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN), and, with its negative controls, by tests/tools/test_check_log_ring.py"
 
   - paths: [tools/ci/check_claude_md.py]
     ctest_labels: []

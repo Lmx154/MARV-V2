@@ -19,9 +19,10 @@ the --staging-bytes at its start, from the first cell boundary after them, in wh
 
 Usage: check_log_ring.py --manifest <params_manifest.json>
                          (--elf <image> --nm <nm> [--arena-symbol <mangled name> --staging-bytes N] | --ring-bytes N)
-                         [--delete-on-failure | --warn]
---warn (the measurement build MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN only, invariant L-5a): a ring that does not cover the stall is printed
-as a warning (LOG-RING: WARN) and the exit status is 0; the image is kept.
+                         [--delete-on-failure | --warn [--warn-reason TEXT]]
+--warn (the measurement build MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN, invariant L-5a; the flight image with the logger, decision 0060): a
+ring that does not cover the stall is printed as a warning (LOG-RING: WARN) and the exit status is 0; the image is kept.
+--warn-reason (with --warn): the reason the warning names, in place of the measurement build's.
 Exit status: 0 the ring covers the stall (or --warn); 1 it does not (lines tagged LOG-RING; with --delete-on-failure the ELF is
 removed); 2 usage, a missing parameter, a missing symbol or a file that cannot be read.
 """
@@ -42,6 +43,7 @@ RING_SYMBOL = "_ZN4marv10hal_target16g_log_ring_cellsE"  # marv::hal_target::g_l
 CELL_BYTES = mlog.RING_SIZES[mlog.K_RATE]
 PARAMS = ("tick_period_num_us", "tick_period_den", "rate_loop_divisor", "log_manual_rate_hz", "sd_log_write_stall_max_s")
 MICROSECONDS_PER_SECOND = 1e6
+WARN_REASON = "core EMB-6 is open in this measurement build, invariant L-5a"
 
 
 def param_values(manifest: Path) -> dict[str, float]:
@@ -100,12 +102,16 @@ def main(argv: list[str] | None = None) -> int:
     mode = ap.add_mutually_exclusive_group()
     mode.add_argument("--delete-on-failure", action="store_true")
     mode.add_argument("--warn", action="store_true")
+    ap.add_argument("--warn-reason")
     a = ap.parse_args(argv)
     if (a.elf is None) == (a.ring_bytes is None):
         print("LOG-RING: give exactly one of --elf and --ring-bytes", file=sys.stderr)
         return 2
     if (a.arena_symbol is None) != (a.staging_bytes is None) or (a.arena_symbol is not None and a.elf is None):
         print("LOG-RING: --arena-symbol and --staging-bytes go together, with --elf", file=sys.stderr)
+        return 2
+    if a.warn_reason is not None and not a.warn:
+        print("LOG-RING: --warn-reason needs --warn", file=sys.stderr)
         return 2
     try:
         p = param_values(a.manifest)
@@ -129,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"check_log_ring: L-5 holds: {what}")
         return 0
     if a.warn:
-        print(f"LOG-RING: WARN: L-5 does not hold (core EMB-6 is open in this measurement build, invariant L-5a): {what}")
+        print(f"LOG-RING: WARN: L-5 does not hold ({a.warn_reason or WARN_REASON}): {what}")
         return 0
     print(f"LOG-RING: L-5 FAILS (core EMB-6): {what}")
     if a.delete_on_failure and a.elf is not None:
