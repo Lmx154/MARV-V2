@@ -11,6 +11,7 @@
 
 #include "marv/log/format.hpp"
 #include "marv/log/framer.hpp"
+#include "marv/log/records.hpp"
 #include "marv/params/param_types.hpp"
 #include "marv/prim/constants.hpp"
 
@@ -59,6 +60,7 @@ struct HeaderInfo {
   std::span<const ParamRecord> params{};
   ParamNameFn param_name = nullptr;  // null: parameters are not written
   const TelemetryHook* telemetry = nullptr;
+  const ImuRawScales* imu_raw = nullptr;  // the ImuRaw records' scales; null: the file holds no ImuRaw record
 };
 
 // One kind's description for the header (also read by tests and the decoder's documentation).

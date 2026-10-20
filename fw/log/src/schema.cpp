@@ -13,6 +13,7 @@ namespace {
     case FieldType::U8:
       return sizeof(std::uint8_t);
     case FieldType::U16:
+    case FieldType::I16:
       return sizeof(std::uint16_t);
     case FieldType::U32:
     case FieldType::F32:
@@ -38,6 +39,17 @@ constexpr auto kImuFields = std::to_array<FieldDesc>({
     fd("accel_x", "m/s2", imu::kOffAccel, FieldType::F32),
     fd("accel_y", "m/s2", imu::kOffAccel + sizeof(float), FieldType::F32),
     fd("accel_z", "m/s2", imu::kOffAccel + 2 * sizeof(float), FieldType::F32),
+});
+
+constexpr auto kImuRawFields = std::to_array<FieldDesc>({
+    fd("flags", "1", imu_raw::kOffFlags, FieldType::U8),
+    fd("t_lo16_us", "us", imu_raw::kOffTime, FieldType::U16),
+    fd("gyro_x_raw", "lsb", imu_raw::kOffGyro, FieldType::I16),
+    fd("gyro_y_raw", "lsb", imu_raw::kOffGyro + sizeof(std::int16_t), FieldType::I16),
+    fd("gyro_z_raw", "lsb", imu_raw::kOffGyro + 2 * sizeof(std::int16_t), FieldType::I16),
+    fd("accel_x_raw", "lsb", imu_raw::kOffAccel, FieldType::I16),
+    fd("accel_y_raw", "lsb", imu_raw::kOffAccel + sizeof(std::int16_t), FieldType::I16),
+    fd("accel_z_raw", "lsb", imu_raw::kOffAccel + 2 * sizeof(std::int16_t), FieldType::I16),
 });
 
 constexpr std::array<const char*, rate::kMotors> kDshotNames{"dshot_1", "dshot_2", "dshot_3", "dshot_4"};
@@ -120,6 +132,7 @@ constexpr auto kTelemetryLead = std::to_array<FieldDesc>({
 
 constexpr auto kSchema = std::to_array<KindSchema>({
     {Kind::Imu, "imu", imu::kBytes, kImuFields},
+    {Kind::ImuRaw, "imu_raw", imu_raw::kBytes, kImuRawFields},
     {Kind::RateTick, "rate_tick", kCellBytes, kRateFields},
     {Kind::ManualControl, "manual_control", manual::kBytes, kManualFields},
     {Kind::Gap, "gap", gap::kBytes, kGapFields},

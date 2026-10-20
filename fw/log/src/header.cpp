@@ -74,6 +74,17 @@ class Builder {
   return f.append(b.finish(), sink);
 }
 
+[[nodiscard]] bool put_imu_raw(Builder& b, const ImuRawScales& sc, SectorFramer& f, ChunkSink& sink) noexcept {
+  b.begin(Kind::HeaderImuRaw, 0, header_imu_raw::kBytes);
+  const std::span<std::uint8_t> r = b.bytes();
+  put_f32(r, header_imu_raw::kOffGyroScale, sc.gyro_rad_s_per_lsb);
+  put_f32(r, header_imu_raw::kOffAccelScale, sc.accel_m_s2_per_lsb);
+  for (std::size_t i = 0; i < prim::kSpatialDim; ++i) {
+    r[header_imu_raw::kOffSigns + i] = static_cast<std::uint8_t>(sc.sign[i]);
+  }
+  return f.append(b.finish(), sink);
+}
+
 [[nodiscard]] bool put_param(Builder& b, const HeaderInfo& h, std::size_t id, SectorFramer& f, ChunkSink& sink) noexcept {
   const ParamRecord& p = h.params[id];
   b.begin(Kind::HeaderParam, static_cast<std::uint8_t>(p.value.type), header_param::kOffNames);
@@ -104,6 +115,9 @@ bool write_header(const HeaderInfo& info, SectorFramer& framer, ChunkSink& sink)
         return false;
       }
     }
+  }
+  if (info.imu_raw != nullptr && !put_imu_raw(b, *info.imu_raw, framer, sink)) {
+    return false;
   }
   const TelemetryHook none{};
   const TelemetryHook& t = info.telemetry != nullptr ? *info.telemetry : none;

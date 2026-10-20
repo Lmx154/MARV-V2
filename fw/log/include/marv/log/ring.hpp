@@ -47,6 +47,13 @@ class Ring {
   bool push_imu(const ImuSample& s) noexcept {
     return push(Kind::Imu, encode_imu(s), low32(s.t_us));
   }
+  // The compact record when the sample is exactly counts of `sc`, the Imu record when it is not (the stream stays lossless).
+  bool push_imu_raw(const ImuSample& s, const ImuRawScales& sc) noexcept {
+    if (const auto r = encode_imu_raw(s, sc)) {
+      return push(Kind::ImuRaw, *r, low32(s.t_us));
+    }
+    return push_imu(s);
+  }
   bool push_rate_tick(const RateTickRecord& t) noexcept {
     return push(Kind::RateTick, encode_rate_tick(t), low32(t.now_us));
   }
