@@ -48,7 +48,7 @@ function treeState(): string {
 	const inside = out ? relative(root, out) : '';
 	const exclude = inside !== '' && !inside.startsWith('..') ? [`:(exclude)${inside}`] : [];
 	const status = execFileSync('git', ['-C', root, 'status', '--porcelain=v1', '-uall', '--', '.', ...exclude], { encoding: 'utf8' });
-	const diff = execFileSync('git', ['-C', root, 'diff', 'HEAD'], { encoding: 'utf8', maxBuffer: 1 << 28 });
+	const diff = execFileSync('git', ['-C', root, 'diff', 'HEAD', '--', '.', ...exclude], { encoding: 'utf8', maxBuffer: 1 << 28 });
 	return `${status}\n${diff.length}\n${execFileSync('sha256sum', { input: diff, encoding: 'utf8' })}`;
 }
 
