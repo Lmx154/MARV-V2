@@ -52,6 +52,8 @@ class ArenaLogger {
   [[nodiscard]] bool holds_lease() const noexcept { return held_; }
   // The logger on the leased arena; null without one.
   [[nodiscard]] const Logger* logger() const noexcept { return logger_ ? &*logger_ : nullptr; }
+  // The ring on the leased arena, for reading its counters from the background loop; null without one.
+  [[nodiscard]] const Ring* ring() const noexcept { return ring_ ? &*ring_ : nullptr; }
 
   // ---- the tick context (ring.hpp's producer calls through the published ring pointer; false: no ring, or dropped) ----
   bool push_imu(const ImuSample& s) noexcept;
