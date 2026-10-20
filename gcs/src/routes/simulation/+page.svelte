@@ -7,9 +7,14 @@
 	import type { HelperStatus } from '$lib/state/helper_api';
 	import Badge from '$lib/components/ui/Badge.svelte';
 	import Panel from '$lib/components/ui/Panel.svelte';
+	import { CLOSED, type PilotState } from '$lib/state/pilot_state';
 
 	const gcs = app();
 	const sim = gcs.sim;
+	const pilot = gcs.pilot;
+	const pilotState = pilot?.state ?? readable<PilotState>({ view: CLOSED, devices: null, error: null, busy: false });
+	let pilotDevice = $state('');
+	let axisMapText = $state('');
 	const simState = sim?.state ?? readable<SimState | null>(null);
 	const status = gcs.status ?? readable<HelperStatus | null>(null);
 	const helperState = gcs.helper?.state ?? readable<HelperConnectionState>('closed');
@@ -17,6 +22,7 @@
 	onMount(() => {
 		void sim?.loadCards();
 		void sim?.loadParameters();
+		void pilot?.loadDevices();
 	});
 
 	const form = $derived($simState?.form ?? { card: '', overrides: [], gui: false });
@@ -27,6 +33,11 @@
 	const run = $derived(view.run);
 	const hasOverrides = $derived(form.overrides.some((r) => r.name.trim() !== '' || r.value.trim() !== ''));
 	const autoconnect = $derived($status?.autoconnect ?? null);
+	const pv = $derived($pilotState.view);
+	const pilotRun = $derived(view.running && run?.options?.pilot === true);
+	const whyNoPilotOpen = $derived(
+		$helperState !== 'open' ? 'the helper is not connected' : !pilotRun ? 'no run with the Pilot option is going: tick Pilot, then Launch' : pv.state === 'open' ? 'the joystick is open' : pilotDevice === '' ? 'choose a joystick device' : $pilotState.busy ? 'a command is in progress' : null
+	);
 
 	const whyNoLaunch = $derived.by(() => {
 		if ($helperState !== 'open') return 'the helper is not connected';
@@ -110,6 +121,11 @@
 			<label for="sim-gui" class="plain">GUI: the gz window and the display-only visuals</label>
 		</div>
 
+		<div class="row">
+			<input id="sim-pilot" type="checkbox" checked={form.pilot ?? false} disabled={busy !== null || view.running} onchange={(e) => sim?.setPilot(e.currentTarget.checked)} />
+			<label for="sim-pilot" class="plain">Pilot: fly the run from the RadioMaster (USB joystick, opened in the Pilot panel)</label>
+		</div>
+
 		<div class="buttons">
 			<button type="button" disabled={busy !== null || $helperState !== 'open'} onclick={() => void sim?.plan()}>{busy === 'plan' ? 'Planning…' : 'Plan'}</button>
 			<button type="button" class="primary" disabled={whyNoLaunch !== null} title={whyNoLaunch ?? 'Start the run'} onclick={() => void sim?.launch()}>{busy === 'launch' ? 'Launching…' : 'Launch'}</button>
@@ -146,6 +162,42 @@
 			</Panel>
 		{/if}
 
+		<Panel title="Pilot" label="sil">
+			<div class="row">
+				<label for="pilot-device">Joystick</label>
+				<select id="pilot-device" bind:value={pilotDevice} disabled={pv.state === 'open'}>
+					<option value="">choose a device</option>
+					{#each $pilotState.devices ?? [] as d (d)}<option value={d}>{d}</option>{/each}
+				</select>
+				<button type="button" onclick={() => void pilot?.loadDevices()}>Rescan</button>
+			</div>
+			<div class="row">
+				<label for="pilot-axes">Axis map</label>
+				<input id="pilot-axes" type="text" class="mono" spellcheck="false" autocomplete="off" placeholder="blank: channel n is axis n-1" bind:value={axisMapText} disabled={pv.state === 'open'} />
+			</div>
+			<div class="buttons">
+				<button type="button" class="primary" disabled={whyNoPilotOpen !== null} title={whyNoPilotOpen ?? 'Open the joystick and send its frames to the simulator'} onclick={() => void pilot?.open(pilotDevice, axisMapText)}>Open joystick</button>
+				<button type="button" disabled={pv.state !== 'open'} title={pv.state !== 'open' ? 'the joystick is not open' : 'Stop the frames and release the joystick'} onclick={() => void pilot?.close()}>Close joystick</button>
+			</div>
+			{#if $pilotState.error}<p class="notice bad small" role="alert" data-notice="pilot">{$pilotState.error}</p>{/if}
+			<dl class="facts mono" aria-label="Pilot">
+				<dt>state</dt>
+				<dd data-pilot="state"><Badge text={pv.state} tone={pv.state === 'open' ? 'ok' : pv.state === 'lost' ? 'bad' : 'neutral'} /></dd>
+				{#if pv.reason}<dt>reason</dt><dd data-pilot="reason">{pv.reason}</dd>{/if}
+				{#if pv.device}<dt>device</dt><dd data-pilot="device">{pv.device}</dd>{/if}
+				<dt>frames sent</dt><dd data-pilot="frames">{pv.framesSent}</dd>
+			</dl>
+			{#if pv.channels}
+				<table class="mono small" aria-label="Pilot channels">
+					<thead><tr><th>channel</th><th>raw (11 bit)</th></tr></thead>
+					<tbody>
+						{#each pv.channels as c, i (i)}<tr data-channel={i + 1}><td>{i + 1}</td><td>{c}</td></tr>{/each}
+					</tbody>
+				</table>
+			{/if}
+			<p class="muted small">Manual control goes to the simulator only, never on the vehicle link.</p>
+		</Panel>
+
 		<Panel title="Run" label="helper">
 			{#if !run}
 				<p class="muted" data-run="none">No run in this helper session.</p>
@@ -160,6 +212,7 @@
 					<dt>kind</dt><dd>{run.kind}</dd>
 					{#if run.options?.card}<dt>card</dt><dd>{run.options.card}</dd>{/if}
 					{#if run.options && 'gui' in run.options}<dt>gui</dt><dd>{run.options.gui ? 'on' : 'off'}</dd>{/if}
+					{#if run.options?.pilot}<dt>pilot</dt><dd>joystick</dd>{/if}
 					<dt>relaunches</dt><dd>{run.relaunches}</dd>
 					<dt>exit</dt><dd>{run.exit_status === null ? '—' : run.exit_status}</dd>
 				</dl>

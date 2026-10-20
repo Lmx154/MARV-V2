@@ -31,6 +31,8 @@ add_library(marv_gz_lockstep SHARED
   src/hil_source.hpp
   src/sim_telemetry.cpp
   src/sim_telemetry.hpp
+  src/pilot_input.cpp
+  src/pilot_input.hpp
   src/constants.hpp)
 target_include_directories(marv_gz_lockstep PRIVATE src "${PROJECT_SOURCE_DIR}/fw/sil/include")
 # The HIL command source (src/hil_source.hpp, HIL stage S4) shares the board's record formats and arming states: the two
@@ -67,4 +69,8 @@ target_compile_definitions(marv_gz_lockstep PRIVATE "$<${marv_gz_sil_truth_verti
 set(marv_gz_sil_storage "$<BOOL:$<TARGET_PROPERTY:${MARV_GZ_SIL},MARV_SIL_STORAGE>>")
 target_compile_definitions(marv_gz_lockstep PRIVATE "$<${marv_gz_sil_storage}:MARV_GZ_SIL_STORAGE=1>")
 target_include_directories(marv_gz_lockstep PRIVATE "${PROJECT_SOURCE_DIR}/fw/store/include")
+# The pilot input (ground-segment unit GX-9): <pilot_udp_port> is served only when the SIL library has marv_sil_stage_rc_frame
+# (target property MARV_SIL_RC_FRAME, marv_add_sil_library RC_FRAME). Without it the plugin refuses the element.
+set(marv_gz_sil_rc_frame "$<BOOL:$<TARGET_PROPERTY:${MARV_GZ_SIL},MARV_SIL_RC_FRAME>>")
+target_compile_definitions(marv_gz_lockstep PRIVATE "$<${marv_gz_sil_rc_frame}:MARV_GZ_SIL_RC_FRAME=1>")
 target_link_libraries(marv_gz_lockstep PRIVATE ${CMAKE_DL_LIBS})

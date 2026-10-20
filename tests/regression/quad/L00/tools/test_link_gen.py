@@ -62,3 +62,25 @@ def test_committed_messages_ts_equals_gen_ts_output(defs, tmp_path):
     committed = ROOT / "gcs" / "src" / "lib" / "link" / "generated" / "messages.ts"
     assert out.read_text() == committed.read_text(), "regenerate: tools/link/gen_ts.py --dialect link/marv.xml --include-dir <fetch_defs dir> --scope link/scope.txt --out <this file>"
 
+
+
+# PB-1 (ground-segment unit GX-9): manual control never goes on the MAVLink link. The SIL pilot bridge sends RC frames to the plugin's
+# own port (tools/gs/pilot.py); IF-8 to a real vehicle stays PARKED.
+MANUAL_CONTROL_MESSAGES = ("MANUAL_CONTROL", "RC_CHANNELS_OVERRIDE")
+
+
+def scope_names(text):
+    return {line.strip() for line in text.splitlines() if line.strip() and not line.lstrip().startswith("#")}
+
+
+def test_pb1_no_manual_control_message_is_in_the_link_scope_or_its_generated_codec():
+    scope = scope_names((ROOT / "link" / "scope.txt").read_text())
+    assert scope, "the scope file lists messages"
+    assert not scope & set(MANUAL_CONTROL_MESSAGES)
+    generated = (ROOT / "gcs" / "src" / "lib" / "link" / "generated" / "messages.ts").read_text()
+    assert not any(name in generated for name in MANUAL_CONTROL_MESSAGES)
+
+
+def test_pb1_the_check_sees_a_manual_control_message_planted_in_a_scope():
+    planted = (ROOT / "link" / "scope.txt").read_text() + "MANUAL_CONTROL\n"
+    assert scope_names(planted) & set(MANUAL_CONTROL_MESSAGES) == {"MANUAL_CONTROL"}

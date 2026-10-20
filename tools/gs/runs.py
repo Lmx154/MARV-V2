@@ -9,6 +9,9 @@ A run is one of two kinds:
        a run with an override is labelled "sil-override" in the plan, the manifest and the run_started event (invariant O-1: the
        validator refuses a config that carries the label)
   hil  tools/sim/run_hil_s4.py --port <board port> --out-dir <dir> [--seconds S] [--expect E] [--gui]
+A sil run also accepts "pilot" (a boolean, default false; ground-segment unit GX-9): the run is given the helper's pilot port
+(--pilot-udp-port), its world has <pilot_udp_port> and no stick script, and the pilot bridge (tools/gs/pilot.py) sends the
+RadioMaster's frames to that port while a joystick is open; false leaves the world byte-identical to one without the option.
 Both kinds also accept "sim_channel" (a boolean, default true): when the helper has a sim channel listener (tools/gs/simchannel.py,
 GX-8) the run gets --sim-telemetry-udp-port <its port>, so that the plugin publishes the sim record the helper relays on /ws/sim;
 false leaves the option out and the world byte-identical to one without a sim channel.
@@ -46,7 +49,7 @@ KINDS = ("sil", "hil")
 MANIFEST_SCHEMA = 1
 HIL_EXPECT = ("s4a", "late", "none")  # tools/sim/run_hil_s4.py --expect choices
 RUN_ID_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z-(sil|hil)-[0-9]+$")
-OPTIONS = {"sil": ("card", "overrides", "gui", "sim_channel"), "hil": ("port", "seconds", "expect", "gui", "sim_channel")}
+OPTIONS = {"sil": ("card", "overrides", "gui", "pilot", "sim_channel"), "hil": ("port", "seconds", "expect", "gui", "sim_channel")}
 CARD_DIR = ROOT / "vehicles"
 OVERRIDE_KEYS = ("name", "value")
 
@@ -134,6 +137,10 @@ def parse_sil_options(msg: dict, param_types: Callable[[], dict[str, str]] | Non
         if not isinstance(msg["gui"], bool):
             raise ValueError("gui must be true or false")
         opts["gui"] = msg["gui"]
+    if "pilot" in msg:
+        if not isinstance(msg["pilot"], bool):
+            raise ValueError("pilot must be true or false")
+        opts["pilot"] = msg["pilot"]
     return opts
 
 
@@ -149,9 +156,11 @@ def sim_channel_args(opts: dict, sim_port: int | None) -> list[str]:
     return ["--sim-telemetry-udp-port", str(sim_port)] if sim_port is not None and opts.get("sim_channel", True) else []
 
 
-def sil_args(opts: dict, sim_port: int | None = None) -> list[str]:
+def sil_args(opts: dict, sim_port: int | None = None, pilot_port: int | None = None) -> list[str]:
     """The run_quad_fc.py options of a sil run's run definition."""
     args: list[str] = sim_channel_args(opts, sim_port)
+    if opts.get("pilot") and pilot_port is not None:
+        args += ["--pilot-udp-port", str(pilot_port)]
     if "card" in opts:
         args += ["--card", str(ROOT / opts["card"])]
     for o in opts.get("overrides", []):
@@ -224,8 +233,10 @@ class RunSupervisor:
     and sil_relaunched event; `sil_command` / `hil_command` replace the scripts' command lines (tests)."""
 
     def __init__(self, run_dir: Path, sil: SilLauncher, emit: Callable[[dict], None], *,
-                 hil_command_override: list[str] | None = None, sim_port: Callable[[], int | None] | None = None):
+                 hil_command_override: list[str] | None = None, sim_port: Callable[[], int | None] | None = None,
+                 pilot_port: Callable[[], int | None] | None = None):
         self._sim_port = sim_port or (lambda: None)  # the port of the helper's sim channel listener, None when it has none
+        self._pilot_port = pilot_port or (lambda: None)  # the port the pilot bridge sends to, None when the helper has none
         self.run_dir = Path(run_dir)
         self.runs_dir = self.run_dir / "runs"
         self.sil = sil
@@ -259,6 +270,13 @@ class RunSupervisor:
         cur = self.active()
         return {"active": cur, "last": self._last}
 
+    def active_pilot_port(self) -> int | None:
+        """The pilot port of the sil run that is going, if it was started with the pilot option, else None."""
+        cur = self._current
+        if self.active() is None or cur["kind"] != "sil":
+            return None
+        return cur["manifest"].get("pilot_port")
+
     # ---- plan and start -------------------------------------------------------------------------------------------------
 
     def plan(self, kind: str, opts: dict) -> dict:
@@ -266,13 +284,14 @@ class RunSupervisor:
         run_id = self._next_id(kind, advance=False)
         out_dir = self.sil.out_dir if kind == "sil" else self.runs_dir / run_id / "out"
         if kind == "sil":
-            argv = self.sil.command(sil_args(opts, self._sim_port()))
+            argv = self.sil.command(sil_args(opts, self._sim_port(), self._pilot_port()))
         else:
             argv = list(self._hil_override) if self._hil_override else hil_command(out_dir, opts, self._sim_port())
         return {"kind": kind, "run_id": run_id, "argv": argv, "options": opts, "label": label_of(opts),
                 "overrides": list(opts.get("overrides", [])), "out_dir": str(out_dir),
                 "udp_port": self.sil.udp_port if kind == "sil" else None,
-                "sim_channel_port": self._sim_port() if opts.get("sim_channel", True) else None}
+                "sim_channel_port": self._sim_port() if opts.get("sim_channel", True) else None,
+                "pilot_port": self._pilot_port() if kind == "sil" and opts.get("pilot") else None}
 
     def _next_id(self, kind: str, *, advance: bool) -> str:
         n = self._counter + 1
@@ -288,13 +307,13 @@ class RunSupervisor:
             run_id = self._next_id(kind, advance=True)
             plan["run_id"] = run_id
             if kind == "sil":
-                self.sil.extra_args = sil_args(opts, self._sim_port())
+                self.sil.extra_args = sil_args(opts, self._sim_port(), self._pilot_port())
             launcher = self.sil if kind == "sil" else SilLauncher(self.run_dir, None, plan["argv"], out_dir=Path(plan["out_dir"]),
                                                                   relaunch=False)
             manifest = {"schema": MANIFEST_SCHEMA, "run_id": run_id, "kind": kind, "state": "running", "argv": plan["argv"],
                         "options": opts, "label": plan["label"], "overrides": plan["overrides"], "out_dir": plan["out_dir"], "run_dir": str(self.run_dir),
                         "store_dir": str(self.sil.config_dir) if kind == "sil" else None, "udp_port": plan["udp_port"],
-                        "sim_channel_port": plan["sim_channel_port"],
+                        "sim_channel_port": plan["sim_channel_port"], "pilot_port": plan["pilot_port"],
                         "started_utc": utc_iso(), "ended_utc": None, "exit_status": None, "relaunches": 0}
             path = self.runs_dir / run_id / "manifest.json"
             cur = {"id": run_id, "kind": kind, "launcher": launcher, "manifest": manifest, "path": path}

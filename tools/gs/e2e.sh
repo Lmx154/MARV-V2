@@ -12,7 +12,9 @@
 # Playwright cache, not in the repository). It builds the GCS (gcs/build, ignored by git) and removes every process it started
 # on exit. Light mode also starts the fake simulator of tools/gs/e2e_fake_sim.py, which publishes the sim channel (GX-8) to the helper's
 # --sim-channel-port, and the fake bench of tools/gs/e2e_fake_bench.py (a probe, a board running the HIL image, its pty port, a HIL build tree and a
-# flash.sh stand-in, with the HIL run a stand-in `sleep`) for the Bench page (GX-10); the sim spec stops and continues it (MARV_E2E_SIM_PID) to make the SIM panels come and go. The staleness control of the specs stops the fake vehicle (SIGSTOP of its process group, MARV_E2E_VEHICLE_PID) and
+# flash.sh stand-in, with the HIL run a stand-in `sleep`) for the Bench page (GX-10); light mode also starts the fake joystick of
+# tools/gs/e2e_fake_joystick.py (a FIFO js0 in a directory of its own, the helper's --pilot-dir) for the pilot spec (GX-9);
+# the sim spec stops and continues it (MARV_E2E_SIM_PID) to make the SIM panels come and go. The staleness control of the specs stops the fake vehicle (SIGSTOP of its process group, MARV_E2E_VEHICLE_PID) and
 # continues it; in live mode the vehicle page's control stops the processes of the helper's run (those with MARV_E2E_RUNS_DIR, the
 # helper's run directory, in their command line) and continues them. The Playwright JSON report and the failure screenshots land in the output directory (default build/gs-e2e/out).
 #
@@ -92,7 +94,7 @@ import socket
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.bind(("127.0.0.1", 0))
 print(s.getsockname()[1])')"
-  helper_args+=(--sim-channel-port "${sim_port}")
+  helper_args+=(--sim-channel-port "${sim_port}" --pilot-dir "${work}/input")
   echo "##### fake vehicle on udp ${udp_port}"
   mkdir -p build/gs-e2e/defs
   setsid uv run python tools/gs/e2e_fake_vehicle.py --udp-port "${udp_port}" --defs-dir build/gs-e2e/defs \
@@ -129,6 +131,17 @@ print(s.getsockname()[1])')"
   helper_args+=(--sysfs-dir "${work}/bench/sys" --swd-flash-script "${work}/bench/flash.sh" --hil-command "sleep ${HIL_STAND_IN_SECONDS}")
 fi
 
+if [[ "${mode}" == light ]]; then
+  echo "##### fake joystick ${work}/input/js0"
+  setsid uv run python tools/gs/e2e_fake_joystick.py --dir "${work}/input" >"${work}/joystick.log" 2>&1 &
+  pids+=("$!")
+  for _ in $(seq 1 300); do
+    grep -q '^fake joystick' "${work}/joystick.log" 2>/dev/null && break
+    sleep 0.1
+  done
+  grep -q '^fake joystick' "${work}/joystick.log" || { cat "${work}/joystick.log"; echo "the fake joystick did not start" >&2; exit 1; }
+fi
+
 echo "##### helper"
 setsid uv run python tools/gs/helper.py "${helper_args[@]}" >"${work}/helper.log" 2>&1 &
 pids+=("$!")
@@ -160,7 +173,7 @@ status=0
     MARV_E2E_STAND_IN="$([[ "${mode}" == light ]] && echo "${STAND_IN_SECONDS}" || true)" \
     MARV_E2E_HIL_STAND_IN="$([[ "${mode}" == light ]] && echo "${HIL_STAND_IN_SECONDS}" || true)" \
     MARV_E2E_FLASH_RECORD="${work}/bench/flash.record" \
-    MARV_E2E_RUNS_DIR="${work}/runs" MARV_E2E_SIM_PID="${sim_pid}" \
+    MARV_E2E_RUNS_DIR="${work}/runs" MARV_E2E_SIM_PID="${sim_pid}" MARV_E2E_PILOT="$([[ "${mode}" == light ]] && echo 1 || true)" \
     npx --no-install playwright test "$@"
 ) || status=$?
 echo "report: ${out_dir}/report.json"

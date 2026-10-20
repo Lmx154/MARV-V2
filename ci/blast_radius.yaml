@@ -858,6 +858,13 @@ rules:
     gz_groups: [l7]
     why: "the helper's HIL commands (GX-10; hil.py) and its serial device (device.py, which flocks its port): the helper's port lock is one half of the H-1 test tests/regression/quad/L10/gz/test_hil_port_lock.py (the plugin's flock on the HIL port, on host-gz-quadfc in gz group l7), which imports both; tests/tools/test_gs_hil.py holds the commands"
 
+  - paths: [tools/gs/pilot.py]
+    ctest_labels: []
+    run_ci_steps: [gs3_check, tools_tests]
+    pytest_paths: [tests/tools]
+    gz_groups: [l7]
+    why: "the SIL pilot bridge (GX-9): its datagram and constants are imported by the gz pilot test (tests/regression/quad/L10/gz/test_pilot_bridge.py, group l7, host-gz-quadfc) as well as by the helper and tests/tools/test_gs_pilot.py; it reads the CRSF constants of fw/prim (a full root)"
+
   - paths: [ci/heavy.sh]
     ctest_labels: []
     run_ci_steps: [tools_tests]

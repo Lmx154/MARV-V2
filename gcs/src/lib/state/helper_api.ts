@@ -30,7 +30,7 @@ export interface RunManifest {
 	/** The overrides of a sil run, with the type the image's manifest gives each. */
 	overrides?: Array<{ name: string; type: string; value: number }>;
 	/** The options the run was started with (a sil run's card and gui). */
-	options?: { card?: string; gui?: boolean } & Record<string, unknown>;
+	options?: { card?: string; gui?: boolean; pilot?: boolean } & Record<string, unknown>;
 	argv?: string[];
 	/** The run's output directory: the HIL report and the verdict are in it. */
 	out_dir?: string;

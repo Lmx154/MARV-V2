@@ -70,6 +70,23 @@ marv_sil_status marv_sil_tick_with_rotor_speed(uint64_t first_tick, uint32_t k, 
  * all 0 (E_INPUT). The ticks' IMU deadline-miss count is always 0 and the rotor-speed read reports no sample
  * (marv_sil_tick) or the tick's (marv_sil_tick_with_rotor_speed). */
 marv_sil_status marv_sil_stage_manual_control(const marv_manual_control* mc);
+/* A raw CRSF RC frame (ground-segment unit GX-9, the SIL pilot bridge; only in a library built with RC_FRAME, the flight
+ * composition's): the 16 channels as the 11-bit values on the wire (0 .. 2^11 - 1), channel_01 first. struct_size is
+ * sizeof(marv_rc_frame), checked (E_ABI). t_us is the frame stamp on the SIL clock (the stamp of the tick it is staged
+ * before, so its age is 0 at that tick). */
+typedef struct marv_rc_frame {
+  uint32_t struct_size;
+  uint32_t reserved;   /* 0 */
+  uint64_t t_us;
+  uint16_t raw[MARV_RC_CHANNELS];
+} marv_rc_frame;
+/* Stages the manual control that the board would hold after receiving this frame: rc_input::crsf_to_controls
+ * (fw/hal/target/decode/include/marv/hal_target/rc_input.hpp, the function the receiver calls) over the frame with the table's
+ * rc_channel_roll / _pitch / _throttle / _yaw, then the staging of marv_sil_stage_manual_control. frames counts the staged
+ * frames (it wraps and skips 0); link_quality and link_t_us stay as they were (0: no link statistics). READY, between tick
+ * calls; E_STATE otherwise, E_NULL for NULL, E_ABI for a struct_size or a nonzero reserved, E_INPUT for a raw value above
+ * 2^11 - 1, E_PARAM if the table's rc_channel_* are not channel numbers 1 .. 16. Nothing is staged on an error. */
+marv_sil_status marv_sil_stage_rc_frame(const marv_rc_frame* frame);
 marv_sil_status marv_sil_shutdown(void);                          /* READY -> DONE (terminal) */
 /* Config storage (decision 0053, ground-segment unit 4b; only in a library built with STORAGE, the flight composition's):
  * opens the config storage in the existing directory run_dir (fw/hal/sim/include/marv/hal_sim/storage.hpp: the two slot
