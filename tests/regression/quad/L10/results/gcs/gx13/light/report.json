@@ -1,0 +1,164 @@
+{
+  "config": {
+    "argv": [
+      "/usr/bin/node",
+      "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx13/gcs/node_modules/.bin/playwright",
+      "test",
+      "derive.spec.ts"
+    ],
+    "configFile": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx13/gcs/playwright.config.ts",
+    "rootDir": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx13/gcs/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx13/tests/regression/quad/L10/results/gcs/gx13/light/artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx13/gcs/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "/tmp/claude-1000/-home-luis-Projects-CPP-MARV-v2/ec831c91-48aa-46d0-8247-e13faa431357/scratchpad/wt-gx13/tests/regression/quad/L10/results/gcs/gx13/light/report.json"
+        }
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.63.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "derive.spec.ts",
+      "file": "derive.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "the panel lists the cards and the editable entries, an edit needs its source, a refused copy shows the lint findings, a derivation can be cancelled and then runs to its result, which is validated for an image of the library; the repository is not written",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6384,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-20T10:36:57.409Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "264d357882954cb5fa91-b6b526214415738278f4",
+          "file": "derive.spec.ts",
+          "line": 81,
+          "column": 1
+        }
+      ],
+      "suites": [
+        {
+          "title": "with the vehicle",
+          "file": "derive.spec.ts",
+          "line": 171,
+          "column": 6,
+          "specs": [
+            {
+              "title": "the values of a derived config are staged on the vehicle with their source texts, and the Parameters page lists them to be validated and activated there",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 120000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "",
+                  "projectName": "",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 7872,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-10-20T10:37:04.056Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "264d357882954cb5fa91-461517b9a0ecb684de0a",
+              "file": "derive.spec.ts",
+              "line": 199,
+              "column": 2
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-20T10:36:56.489Z",
+    "duration": 15577.518,
+    "expected": 2,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

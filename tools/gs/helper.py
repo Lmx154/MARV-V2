@@ -35,7 +35,7 @@
                                    [--validate-command CMD] [--picotool PATH] [--extra-origin ORIGIN ...]
                                    [--hil-command CMD] [--heavy-lock FILE] [--byid-dir DIR] [--no-autoconnect] [--board-serial SERIAL]
                                    [--pilot-udp-port N] [--pilot-dir DIR] [--log-card-dir DIR ...]
-                                   [--build-min-free-bytes N] [--derive-min-free-bytes N]
+                                   [--build-min-free-bytes N] [--derive-min-free-bytes N] [--derive-python PATH]
 
 Security. It binds 127.0.0.1 only. Every request must carry the Host `127.0.0.1:<port>`; an Origin header, when present, must
 be exactly `http://127.0.0.1:<port>` (the WebSocket requires it); and every request needs the per-session token (random, printed
@@ -254,7 +254,7 @@ class Helper:
                  board_serial: str | None = None, sysfs_dir: Path | None = None, sim_channel_port: int = 0,
                  swd_flash_script: Path | None = None, pilot_port: int = 0, pilot_dir: Path | None = None,
                  log_card_dirs: list[Path] | None = None, build_min_free_bytes: int = BUILD_MIN_FREE_BYTES,
-                 derive_min_free_bytes: int = DERIVE_MIN_FREE_BYTES):
+                 derive_min_free_bytes: int = DERIVE_MIN_FREE_BYTES, derive_python: str | None = None):
         self.token = token or secrets.token_urlsafe(32)
         self.extra_origins = frozenset(extra_origins)
         self.build_root, self.gcs_dir = Path(build_root), Path(gcs_dir)
@@ -300,7 +300,7 @@ class Helper:
                                    min_free_bytes=build_min_free_bytes)
         self.derive = DeriveManager(root=ROOT, run_dir=self.run_dir, build_root=self.build_root, library=self.images, log=self.log.event,
                                     lock_path=lambda: self.heavy_lock or hoststate.heavy_lock_path(), push=lambda e: self._push(json.dumps(e)),
-                                    min_free_bytes=derive_min_free_bytes)
+                                    min_free_bytes=derive_min_free_bytes, python=derive_python)
         self.hil = HilGcs(self, swd_flash_script)  # the GCS's HIL commands (tools/gs/hil.py, GX-10)
         self.console = Console(self, WS_BUSY)  # the board's console relay (tools/gs/console.py, GX-16)
         self._ac_owner: str | None = None  # "sil" or "board" while the open device was opened by autoconnect
@@ -1199,7 +1199,7 @@ async def run(args: argparse.Namespace) -> int:
                     board_serial=args.board_serial, sim_channel_port=args.sim_channel_port,
                     swd_flash_script=args.swd_flash_script, sysfs_dir=args.sysfs_dir, pilot_port=args.pilot_udp_port,
                     pilot_dir=args.pilot_dir, log_card_dirs=args.log_card_dir, build_min_free_bytes=args.build_min_free_bytes,
-                    derive_min_free_bytes=args.derive_min_free_bytes)
+                    derive_min_free_bytes=args.derive_min_free_bytes, derive_python=args.derive_python)
     await helper.start(args.port)
     try:
         if args.serial:
@@ -1272,6 +1272,7 @@ def parse_args(argv=None) -> argparse.Namespace:
                     help="a GCS build starts only with this much memory available (default %(default)s: a PLACEHOLDER, tools/gs/build.py); tests give their own")
     ap.add_argument("--derive-min-free-bytes", type=int, default=DERIVE_MIN_FREE_BYTES, metavar="N",
                     help="a GCS derivation starts only with this much memory available (default %(default)s: a PLACEHOLDER, tools/gs/derive.py); tests give their own")
+    ap.add_argument("--derive-python", metavar="PATH", help="the Python the derivation's steps run with (default: this one); the GCS end-to-end run gives its stand-in")
     ap.add_argument("--no-autoconnect", action="store_true", help="do not open the SIL's UDP link or a board's link interface by itself")
     ap.add_argument("--picotool", help=f"the picotool executable the flash runs (default $MARV_PICOTOOL, else `{flash.PICOTOOL}` on PATH)")
     ap.add_argument("--extra-origin", action="append", default=[], type=origin_arg, metavar="ORIGIN",

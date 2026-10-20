@@ -250,7 +250,7 @@
 	}
 
 	input.source {
-		min-width: 22rem;
+		min-width: 16rem;
 	}
 
 	button.active {
