@@ -141,6 +141,12 @@ bool armed_now() noexcept { return marv::arming::is_armed(marv::composition::arm
 // which still holds every config the generator writes (tools/config/mcfg.py --max-bytes, half a slot), and refuses a larger
 // staged config (store::activate: too large); the SD, USB and log bench images none (they run no link service, so nothing can
 // ask them for an activation), so their boot step applies no pending file.
+// The working memory is the start of the disarmed arena (marv/store/arena.hpp, onboard logger unit U4-2), which the store lends
+// whole once its boot step is done. The flight image's arena (derived; the inputs and their sources are in
+// fw/hal/target/CMakeLists.txt) is the working memory plus the largest whole number of SD sectors in the free RAM the image has
+// with the working memory alone (MARV_FC3V2_RAM_FREE_BYTES, measured) less the SDK's heap reservation (PICO_HEAP_SIZE, placed by
+// the linker after .bss) and the margin (MARV_FC3V2_ARENA_MARGIN_BYTES, a PLACEHOLDER); every bench image's is its working
+// memory alone.
 #if defined(MARV_FC3V2_SD_BENCH) || defined(MARV_FC3V2_USB_BENCH) || defined(MARV_FC3V2_LOG_BENCH)
 constexpr std::size_t kStoreScratchBytes = 0;
 #elif defined(MARV_FC3V2_BENCH_STATS)
@@ -148,7 +154,17 @@ constexpr std::size_t kStoreScratchBytes = marv::kConfigSlotBytes / 2;
 #else
 constexpr std::size_t kStoreScratchBytes = marv::kConfigSlotBytes;
 #endif
-std::array<std::uint8_t, kStoreScratchBytes> g_store_scratch{};
+#if defined(MARV_FC3V2_RAM_FREE_BYTES)
+constexpr std::size_t kArenaReserveBytes = PICO_HEAP_SIZE + MARV_FC3V2_ARENA_MARGIN_BYTES;
+constexpr std::size_t kArenaExtraBytes =
+    MARV_FC3V2_RAM_FREE_BYTES > kArenaReserveBytes
+        ? (MARV_FC3V2_RAM_FREE_BYTES - kArenaReserveBytes) / marv::prim::kSdBlockBytes * marv::prim::kSdBlockBytes
+        : 0;
+constexpr std::size_t kArenaBytes = kStoreScratchBytes + kArenaExtraBytes;
+#else
+constexpr std::size_t kArenaBytes = kStoreScratchBytes;
+#endif
+std::array<std::uint8_t, kArenaBytes> g_arena{};
 #endif
 marv::hal_target::ImageHash image_hash;
 marv::TimeUs image_hash_us = 0;
@@ -640,7 +656,7 @@ int main() {
       param_table(), image_hash.sha256,
       marv::store::Hooks{&validate_table, &armed_now, &marv::composition::request_maintenance,
                          &marv::composition::maintenance_granted},
-      g_store_scratch});
+      std::span<std::uint8_t>{g_arena}.first(kStoreScratchBytes), g_arena});
 #endif
   marv::hal_target::config_slots_seal();
   if (table.size() != marv::kParamCount) {

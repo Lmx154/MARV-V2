@@ -274,6 +274,29 @@ function(marv_check_bench_profile target mode)
 endfunction()
 marv_check_bench_profile(marv_fc3v2 FORBID)
 
+# The disarmed arena of the flight image (onboard logger unit U4-2; marv/store/arena.hpp): the config store's working memory and
+# the RAM the image leaves free, one block. src/main.cpp derives its size, kArenaBytes = kConfigSlotBytes plus the largest whole
+# number of 512-byte SD sectors in MARV_FC3V2_RAM_FREE_BYTES - PICO_HEAP_SIZE - MARV_FC3V2_ARENA_MARGIN_BYTES, from:
+#   MARV_FC3V2_RAM_FREE_BYTES (measured): the free RAM, __HeapLimit - __end__, of this image built with the working memory alone
+#     (this value set to 0 builds that image), 84688 bytes at unit U4-2 (tests/regression/quad/L10/results/arena: measure_ram.sh,
+#     arena_at_slot.txt).
+#     Measure it again whenever the image's static RAM changes (unit U4-4 adds the logger); an arena that reaches the SDK's heap
+#     reservation fails the link.
+#   PICO_HEAP_SIZE (the pinned Pico SDK's pico/platform.h, 2048 bytes): the heap reservation the linker places at __end__.
+#   MARV_FC3V2_ARENA_MARGIN_BYTES, a PLACEHOLDER: the RAM kept free between the heap reservation and the end of main RAM, which
+#     core 0's stack (2048 bytes in scratch_y) reaches once it has overflowed the scratch banks, and headroom for code and data
+#     added before the next measurement; nothing has measured the stack's depth. Replaced by a painted-stack high-water mark of
+#     the flight image with the logger wired (onboard logger units U4-4, U4-6).
+# Both are plain variables, not cached, so no build tree keeps a value this file no longer holds. The default configuration only:
+# every bench option changes the image's RAM, so the bench images keep the working memory alone.
+set(MARV_FC3V2_RAM_FREE_BYTES 84688)
+set(MARV_FC3V2_ARENA_MARGIN_BYTES 4096)
+if(NOT (MARV_FC3V2_COUNT_ONLY OR MARV_FC3V2_BENCH_STATS OR MARV_FC3V2_BENCH_ACCEPT_SPACING OR MARV_FC3V2_IMU_LOG OR
+        MARV_FC3V2_HIL_LINK OR MARV_FC3V2_HIL OR MARV_FC3V2_SD_BENCH OR MARV_FC3V2_USB_BENCH OR MARV_FC3V2_LOG_BENCH))
+  target_compile_definitions(marv_fc3v2 PRIVATE MARV_FC3V2_RAM_FREE_BYTES=${MARV_FC3V2_RAM_FREE_BYTES}
+    MARV_FC3V2_ARENA_MARGIN_BYTES=${MARV_FC3V2_ARENA_MARGIN_BYTES})
+endif()
+
 # The bench motor-step profile image (unit U3 BENCH-PROFILE, architect ruling 2026-10-18 item 8; the props-off runbook is
 # tests/regression/quad/L10/results/bench_profile/README.md): main.cpp built with MARV_FC3V2_BENCH_PROFILE, linking the
 # composition variant marv_composition_quad_fc_bench_profile (the profile in place of the mixer's output while Armed, run
