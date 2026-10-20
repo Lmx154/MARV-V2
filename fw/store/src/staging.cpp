@@ -22,6 +22,8 @@ std::array<ParamRecord, kParamCount> g_staged{};
 bool g_staged_ready = false;
 std::array<char, kConfigSlotBytes> g_sources{};
 std::size_t g_sources_used = 0;
+// Whether the text being received by stage_source_chunk holds a zero byte.
+bool g_received_zero = false;
 // Set once hal_reboot accepted a reboot: until the reset every command is refused, so none re-arms the reboot or replaces the
 // boot request the scheduled reboot is to carry out.
 bool g_reboot_scheduled = false;
@@ -42,6 +44,13 @@ bool g_reboot_scheduled = false;
 [[nodiscard]] StageResult refuse(StageRefusal r) noexcept { return StageResult{r, stage_refusal_text(r)}; }
 
 [[nodiscard]] CommandResult refused(const char* reason) noexcept { return CommandResult{CommandStep::Refused, reason}; }
+
+[[nodiscard]] bool source_unusable(const StageProvenance& p) noexcept {
+  if (p.source_bytes == 0) {
+    return true;
+  }
+  return p.source_in_place ? g_received_zero : (p.source == nullptr || std::memchr(p.source, 0, p.source_bytes) != nullptr);
+}
 
 constexpr const char* kCommandArmed = "refused while armed";
 constexpr const char* kCommandNotBooted = "the config store has not booted";
@@ -93,6 +102,22 @@ const char* stage_refusal_text(StageRefusal r) noexcept {
   return "unknown refusal";
 }
 
+void stage_source_chunk(std::size_t offset, std::span<const char> chunk) noexcept {
+  if (offset == 0) {
+    g_received_zero = false;
+  }
+  if (chunk.empty()) {
+    return;
+  }
+  if (std::memchr(chunk.data(), 0, chunk.size()) != nullptr) {
+    g_received_zero = true;
+  }
+  const std::size_t room = g_sources.size() - g_sources_used;
+  if (offset < room) {
+    std::copy_n(chunk.begin(), std::min(chunk.size(), room - offset), g_sources.begin() + static_cast<std::ptrdiff_t>(g_sources_used + offset));
+  }
+}
+
 StageResult stage_set(std::size_t index, ParamType type, std::uint32_t value_bits,
                       const StageProvenance* provenance) noexcept {
   const BootInputs* in = staging_inputs();
@@ -129,7 +154,7 @@ StageResult stage_set(std::size_t index, ParamType type, std::uint32_t value_bit
     return refuse(StageRefusal::Sigma);
   }
   const bool stated = provenance != nullptr;
-  if (stated && (p.source == nullptr || p.source_bytes == 0 || std::memchr(p.source, 0, p.source_bytes) != nullptr)) {
+  if (stated && source_unusable(p)) {
     return refuse(StageRefusal::Source);
   }
   if (stated && p.source_bytes + 1 > g_sources.size() - g_sources_used) {
@@ -145,7 +170,9 @@ StageResult stage_set(std::size_t index, ParamType type, std::uint32_t value_bit
   }
   if (stated) {
     char* text = g_sources.data() + g_sources_used;
-    std::copy_n(p.source, p.source_bytes, text);
+    if (!p.source_in_place) {
+      std::copy_n(p.source, p.source_bytes, text);
+    }
     text[p.source_bytes] = '\0';
     g_sources_used += p.source_bytes + 1;
     g_staged[index].source = text;
