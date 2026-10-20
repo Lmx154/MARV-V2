@@ -62,7 +62,7 @@ constexpr std::uint64_t kTicksPerFrame = 60;
 constexpr std::uint64_t kInexactEvery = 97;  // every 97th sample is not a whole number of counts
 constexpr std::uint8_t kArmedCode = 10;
 constexpr std::uint8_t kDisarmedCode = 1;
-constexpr std::array<std::int8_t, 3> kBoardSigns{-1, 1, -1};  // the FC3v2 Rev-C mounting map (boards/madflight_fc3v2_revc.h)
+constexpr std::array<std::int8_t, 3> kBoardSigns{-1, 1, -1};  // the FC3v2 Rev-C mounting map (the board header)
 
 std::array<std::uint8_t, kArenaBytes> g_arena{};
 
