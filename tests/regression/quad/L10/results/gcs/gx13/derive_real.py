@@ -73,6 +73,7 @@ def main() -> int:
     ok &= names == sorted(p.name for p in (work / "flatten").iterdir())
     for name in names:
         same(work / "flatten" / name, generated / "flatten" / name, f"flatten/{name}")
+    same(work / f"{derive.PARAMS_SET}_product_table.txt", generated / f"{derive.PARAMS_SET}_product_table.txt", f"{derive.PARAMS_SET}_product_table.txt")
     for name in ("params_manifest.json", "params_provenance.json", "param_ids.hpp", "param_defaults.cpp"):
         same(work / "gen" / "marv" / "params" / name, generated / "marv" / "params" / name, f"gen/{name}")
     after = tree_state()

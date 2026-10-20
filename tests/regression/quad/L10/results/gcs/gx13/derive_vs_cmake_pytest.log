@@ -1,7 +1,6 @@
 ...                                                                      [100%]
 ============================== slowest durations ===============================
-164.37s setup    tests/tools/test_gs_derive_cmake.py::test_the_mcfg_derived_from_the_unedited_card_is_the_cmake_builds_byte_for_byte
+163.20s setup    tests/tools/test_gs_derive_cmake.py::test_the_mcfg_derived_from_the_unedited_card_is_the_cmake_builds_byte_for_byte
 
 (8 durations < 0.005s hidden.  Use -vv to show these durations.)
-3 passed in 164.41s (0:02:44)
-exit 0
+3 passed in 163.25s (0:02:43)

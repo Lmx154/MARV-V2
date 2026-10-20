@@ -21,7 +21,7 @@ const IMAGES = [{ hash: 'a'.repeat(64), name: 'marv_sil_quad_fc', kind: 'sil', t
 const CONFIG = 'c'.repeat(64);
 const DONE = {
 	id: '20261021T000000Z-0', running: false, state: 'done', ok: true, card: 'vehicles/marv_7in_fc3v2.yaml', edits: [], started_utc: 't', finished_utc: 't2', error: null,
-	findings: [], step: 'mcfg', tail: [], config_hash: CONFIG, schema_hash: '0x1', reports: ['x_rate_report.txt'], images: IMAGES, changes: [], baseline: null
+	findings: [], step: 'mcfg', tail: [], config_hash: CONFIG, schema_hash: '0x0000000000000001', reports: ['x_rate_report.txt'], images: IMAGES, changes: [], baseline: null
 };
 
 class FakeVehicle implements DeriveVehicle {
@@ -29,8 +29,12 @@ class FakeVehicle implements DeriveVehicle {
 	list: Array<{ linkId: string | null; stagedBits: number | null; locked: boolean | null }> = [];
 	written: Array<[string, string, number, string]> = [];
 	refuse = new Set<string>();
+	schema: string | null = '0x0000000000000001';
 	whyCannotStage() {
 		return this.why;
+	}
+	schemaHash() {
+		return this.schema;
 	}
 	params() {
 		return this.list;
@@ -336,6 +340,30 @@ describe('staging on the vehicle', () => {
 		await f.controller.stage();
 		expect(f.state.staging.notes).toEqual(['p0: refused by the vehicle (not now)', 'p1: the vehicle does not list it']);
 		expect(f.state.staging.phase).toBe('failed');
+	});
+
+	it('refuses a vehicle of another parameter schema, naming both hashes, and writes nothing; the same config stages on a vehicle of its schema', async () => {
+		const f = new Fake();
+		await withResult(f);
+		f.answers.set('derive_values', values([0x40000000]));
+		f.vehicle.list = [{ linkId: 'l0', stagedBits: 0, locked: false }];
+		f.vehicle.schema = '0x00000000000000ff';
+		const why = f.controller.whyNoStage(f.state);
+		expect(why).toContain('0x0000000000000001');
+		expect(why).toContain('0x00000000000000ff');
+		await f.controller.stage();
+		expect(f.sent('derive_values')).toEqual([]);
+		expect(f.vehicle.written).toEqual([]);
+		expect(f.state.staging.phase).toBe('failed');
+		expect(f.state.staging.notes).toEqual([why]);
+		f.vehicle.schema = null;
+		expect(f.controller.whyNoStage(f.state)).toBe('the vehicle has not reported its identity');
+		// the control: the same derived config on a vehicle that reports its schema (compared as numbers of hex digits, whatever the case)
+		f.vehicle.schema = '0x0000000000000001';
+		expect(f.controller.whyNoStage(f.state)).toBeNull();
+		await f.controller.stage();
+		expect(f.vehicle.written).toEqual([['l0', 'f32', 0x40000000, 'source 0']]);
+		expect(f.state.staging.phase).toBe('done');
 	});
 
 	it('is off while the vehicle cannot take parameters and nothing is written', async () => {

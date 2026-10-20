@@ -9,7 +9,7 @@ run under ci/heavy.sh by hand (the evidence: tests/regression/quad/L10/results/g
   - the .mcfg bytes,
   - every file of the flatten directory (the derivation reports included: the work directory mirrors the repository paths, so their headers are the
     repository-relative ones a CMake build prints),
-  - params_manifest.json, params_provenance.json, param_ids.hpp and param_defaults.cpp (byte for byte),
+  - the product table, params_manifest.json, params_provenance.json, param_ids.hpp and param_defaults.cpp (byte for byte),
   - and, between the unedited and the edited card, the set of parameters whose default changed.
 """
 
@@ -86,6 +86,7 @@ def compare(work: Path, generated: Path) -> None:
     assert set(flat_work) == set(flat_cmake), set(flat_work) ^ set(flat_cmake)
     for name, path in sorted(flat_cmake.items()):
         assert flat_work[name].read_bytes() == path.read_bytes(), f"flatten/{name} differs"
+    assert (work / f"{SET}_product_table.txt").read_bytes() == (generated / f"{SET}_product_table.txt").read_bytes(), "the product table differs"
     for name in ("params_manifest.json", "params_provenance.json", "param_ids.hpp", "param_defaults.cpp"):
         assert (work / "gen" / "marv" / "params" / name).read_bytes() == (generated / "marv" / "params" / name).read_bytes(), f"{name} differs"
 

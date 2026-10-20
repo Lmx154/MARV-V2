@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -117,16 +118,63 @@ def test_the_recipe_table_is_the_cmake_call_of_the_flight_set():
     assert re.search(r'CARD "(vehicles/[^"]+)"', call).group(1) == CARD
     function = text[text.index("function(marv_add_card_param_set"):text.index("function(marv_add_card_report")]
     cmake_flags = set(re.findall(r"--[a-z][a-z-]*", function))  # the flags of the flatten_cached.py call, with and without SCENARIO
-    argv = derive_mod.DeriveManager(root=ROOT, run_dir=ROOT, build_root=ROOT, library=None, log=print, push=print, lock_path=lambda: ROOT / "x").plan_steps(
-        {"card": Path("c"), "budget": Path("b"), "scenario": Path("s"), "root": Path("r")}, Path("/w"))
+    argv = recipe_steps()
     assert {a for a in argv[0]["argv"] if a.startswith("--")} == cmake_flags, cmake_flags ^ {a for a in argv[0]["argv"] if a.startswith("--")}
     order = re.search(r"marv_add_param_set\(\$\{name\} CARD (.*?) REGISTER", function, re.S).group(1)
     assert re.findall(r"\$\{(\w+)\}", order) == ["scenario_outputs" if p == "scenario" else f"flat_{p}" for p in derive_mod.FLATTEN_PARTS]
     gen = argv[1]["argv"]
     assert [Path(gen[i + 1]).name for i, a in enumerate(gen) if a == "--card"] == [f"{derive_mod.PARAMS_SET}_{p}.yaml" for p in derive_mod.FLATTEN_PARTS]
-    encode = argv[2]["argv"]
-    assert encode[2:4] == ["encode", "--manifest"] and encode[encode.index("--section") + 1] == "quad"
-    assert "--section quad --max-bytes ${marv_mcfg_max_bytes}" in re.sub(r"\s+", " ", text)
+    # the whole argument lists of the two later steps, as marv_add_param_set's own COMMAND lines build them
+    assert cmake_argv(text, "params_gen", argv) == gen
+    assert cmake_argv(text, "mcfg", argv) == argv[2]["argv"]
+
+
+def recipe_steps():
+    return derive_mod.DeriveManager(root=ROOT, run_dir=ROOT, build_root=ROOT, library=None, log=print, push=print, lock_path=lambda: ROOT / "x").plan_steps(
+        {"card": Path("/r") / CARD, "budget": Path("/r/b"), "scenario": Path("/r/s"), "profile": Path("/r/sensors/profiles/p.yaml"), "root": Path("/r")}, Path("/w"))
+
+
+def values_after(argv, flag):
+    return [argv[i + 1] for i, a in enumerate(argv) if a == flag]
+
+
+def cmake_argv(text, step, steps):
+    """The argument list the CMake text of marv_add_param_set builds for `params_gen` or `mcfg`: its COMMAND line with ${gen_args} expanded from the
+    list(APPEND gen_args ...) statements in their order. Values (paths, the byte limit) are taken from the recipe's own list by flag, so what is
+    compared is every flag, its place and the number of values: an argument the CMake text has and the recipe lacks, or the other way round, differs."""
+    function = text[text.index("function(marv_add_param_set"):text.index("function(marv_card_profile_file")]
+    gen, mcfg_args = steps[1]["argv"], steps[2]["argv"]
+    command = re.search(r'COMMAND ("\$\{MARV_PYTHON\}" "\$\{MARV_PARAMS_GEN_SCRIPT\}".*?)\n\s+DEPENDS' if step == "params_gen"
+                        else r'COMMAND ("\$\{MARV_PYTHON\}" "\$\{MARV_MCFG_SCRIPT\}".*?)\n\s+DEPENDS', function, re.S).group(1)
+    lists = {"ARG_CARD": values_after(gen, "--card"), "ARG_REGISTER": values_after(gen, "--register"), "ARG_TABLE_INPUTS": values_after(gen, "--table-input"),
+             "ARG_TABLE": values_after(gen, "--out-table")}
+    appended = []
+    for m in re.finditer(r'foreach\(f IN LISTS (ARG_\w+)\)\s+list\(APPEND gen_args (--[a-z-]+) "\$\{f\}"\)|list\(APPEND gen_args (--out-table) "\$\{(ARG_TABLE)\}"\)', function):
+        if m.group(1):
+            appended += [x for v in lists[m.group(1)] for x in (m.group(2), v)]
+        else:
+            appended += [m.group(3), lists[m.group(4)][0]]
+    env = {"MARV_PYTHON": gen[0], "MARV_PARAMS_GEN_SCRIPT": gen[1], "MARV_MCFG_SCRIPT": mcfg_args[1], "gen_dir": values_after(gen, "--out-dir")[0],
+           "marv_mcfg_max_bytes": values_after(mcfg_args, "--max-bytes")[0], "mcfg_file": values_after(mcfg_args, "--out")[0]}
+    out = []
+    for token in shlex.split(command):
+        if token == "${gen_args}":
+            out += appended
+        else:
+            out.append(re.sub(r"\$\{(\w+)\}", lambda m: env[m.group(1)], token))
+    return out
+
+
+def test_a_planted_extra_argument_in_the_cmake_text_fails_the_drift_comparison():
+    text = (ROOT / "fw" / "params" / "CMakeLists.txt").read_text()
+    steps = recipe_steps()
+    for step, index, planted in (("params_gen", 1, '--out-dir "${gen_dir}"'), ("mcfg", 2, '--out "${mcfg_file}"')):
+        assert cmake_argv(text, step, steps) == steps[index]["argv"]  # the control: the real text matches
+        assert text.count(planted) == 1
+        drifted = text.replace(planted, planted + " --planted-extra")
+        assert cmake_argv(drifted, step, steps) != steps[index]["argv"]
+    # an argument the recipe has and the CMake text lacks
+    assert cmake_argv(text.replace('--section quad', ''), "mcfg", steps) != steps[2]["argv"]
 
 
 def test_the_slot_limit_is_half_the_budgets_config_slot():

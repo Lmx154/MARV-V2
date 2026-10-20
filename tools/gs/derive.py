@@ -7,7 +7,8 @@ scripts with the same arguments, in the same order, run as processes of the repo
   1. tools/card/flatten_cached.py   lints the card, the design budget, the scenario register and the sensor profile, then writes the
                                     flattened card, register, mixer, scenario, rate, attitude, gyro-chain and vertical files and the
                                     derivation reports (`--rate-guard mean_period`, the board's)
-  2. tools/gen/params_gen.py        the flattened files and the registers of the set -> params_manifest.json (and the generated headers)
+  2. tools/gen/params_gen.py        the flattened files and the registers of the set -> params_manifest.json (and the generated headers, and the
+                                    readable table of every record, <set>_product_table.txt)
   3. tools/config/mcfg.py encode    params_manifest.json -> <set>.mcfg, refused above half a config slot (design/budget.yaml,
                                     config_slot_bytes; the regular expression is the one of fw/hal/CMakeLists.txt)
 
@@ -35,7 +36,7 @@ The result joins the helper's config library: tools/gs/helper.py's `validate` ta
 store (tools/gs/artifacts.py ReportLibrary) then keeps config.mcfg and report.json for the (image, config) pair, which is what the
 G7 flash gate and the Parameters page's activation read.
 
-Commands (tools/gs/helper.py): {"cmd": "derive_cards"}, {"cmd": "derive_card", "card"}, {"cmd": "derive", "card", "edits"},
+Commands (tools/gs/helper.py): {"cmd": "cards"} (the helper's existing one), {"cmd": "derive_card", "card"}, {"cmd": "derive", "card", "edits"},
 {"cmd": "derive_status"}, {"cmd": "derive_cancel"}, {"cmd": "derive_report", "derive_id", "name"}, {"cmd": "derive_values", "derive_id"}. Events:
 {"event": "derive_started", ...}, {"event": "derive_step", ...}, {"event": "derive_done", ...}.
 """
@@ -529,8 +530,12 @@ class DeriveManager:
         gen = [self.python, str(self.root / "tools" / "gen" / "params_gen.py")]
         for part in FLATTEN_PARTS:
             gen += ["--card", str(out[part])]
-        gen += ["--register", str(out["register"]), *[a for r in EXTRA_REGISTERS for a in ("--register", str(self.root / r))],
-                "--out-dir", str(gen_dir)]
+        gen += ["--register", str(out["register"]), *[a for r in EXTRA_REGISTERS for a in ("--register", str(self.root / r))]]
+        # the readable table of every record (PRODUCT_TABLE): its header names these repository-relative inputs, as in a CMake build
+        rel = lambda key: Path(paths[key]).relative_to(paths["root"]).as_posix()  # noqa: E731
+        table_inputs = [rel("card"), *([rel("profile")] if "profile" in paths else []), BUDGET, SCENARIO, *EXTRA_REGISTERS, "tools/card/*.py"]
+        gen += [a for t in table_inputs for a in ("--table-input", t)]
+        gen += ["--out-table", str(work / f"{PARAMS_SET}_product_table.txt"), "--out-dir", str(gen_dir)]
         encode = [self.python, str(self.root / "tools" / "config" / "mcfg.py"), "encode", "--manifest", str(gen_dir / "params_manifest.json"),
                   "--section", "quad", "--max-bytes", str(self.slot_half()), "--out", str(work / f"{PARAMS_SET}.mcfg")]
         return [{"name": "flatten", "argv": flatten}, {"name": "params_gen", "argv": gen}, {"name": "mcfg", "argv": encode}]

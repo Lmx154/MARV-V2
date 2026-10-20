@@ -207,6 +207,7 @@ function create(): App {
 									if (sess.armed !== false) return sess.armed ? 'the vehicle is armed: parameters are written only while disarmed' : 'the arming state is not known';
 									return null;
 								},
+								schemaHash: () => get(vehicle.state).identity?.schemaHash ?? null,
 								params: () => get(vehicle.state).params,
 								stage: async (linkId, type, bits, source) => {
 									const r = await vehicle.stage(linkId, type, bits, source);

@@ -111,6 +111,8 @@ export interface DeriveState {
 export interface DeriveVehicle {
 	/** null when parameters can be written now, else why not. */
 	whyCannotStage(): string | null;
+	/** The parameter schema hash the connected vehicle's identity reports ("0x" and 16 hex digits), null until it has. */
+	schemaHash(): string | null;
 	params(): Array<{ linkId: string | null; stagedBits: number | null; locked: boolean | null }>;
 	stage(linkId: string, type: ParamType, bits: number, source: string): Promise<{ accepted: boolean; reasons: string[] }>;
 }
@@ -419,8 +421,17 @@ export class DeriveController {
 	whyNoStage(s: DeriveState): string | null {
 		if (s.busy) return 'a command is in progress';
 		if (!s.current?.ok || !s.current.config_hash) return 'no derived config';
-		if (!this.deps.vehicle) return 'no vehicle link';
-		return this.deps.vehicle.whyCannotStage();
+		const vehicle = this.deps.vehicle;
+		if (!vehicle) return 'no vehicle link';
+		const why = vehicle.whyCannotStage();
+		if (why !== null) return why;
+		const theirs = vehicle.schemaHash();
+		if (theirs === null) return 'the vehicle has not reported its identity';
+		const mine = s.current.schema_hash ?? '';
+		if (mine.toLowerCase() !== theirs.toLowerCase()) {
+			return `the derived config's parameter schema ${mine || 'unknown'} is not the connected vehicle's ${theirs}: its values would not match the vehicle's parameters`;
+		}
+		return null;
 	}
 
 	/**
@@ -432,7 +443,12 @@ export class DeriveController {
 		const s = get(this.store);
 		const cur = s.current;
 		const vehicle = this.deps.vehicle;
-		if (s.busy || !cur?.ok || !vehicle || this.whyNoStage(s) !== null) return;
+		if (s.busy || !cur?.ok || !vehicle) return;
+		const refused = this.whyNoStage(s);
+		if (refused !== null) {
+			this.patch({ staging: { phase: 'failed', staged: [], same: 0, notes: [refused] } });
+			return;
+		}
 		this.patch({ busy: 'stage', staging: { phase: 'staging', staged: [], same: 0, notes: [] } });
 		const set = (p: Partial<DeriveStaging>) => this.store.update((st) => ({ ...st, staging: { ...st.staging, ...p } }));
 		try {
