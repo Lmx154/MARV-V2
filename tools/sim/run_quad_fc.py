@@ -986,7 +986,8 @@ def main(argv=None):
     link = link_xml(a.link_udp_port, config_dir) + sim_xml
     if a.interactive:
         card, overrides = interactive_options(ap, a)
-        status = run_interactive(a.out_dir, a.plugin_dir, link, card, overrides, a.gui, a.pilot_udp_port)
+        status = run_interactive(a.out_dir, a.plugin_dir, link, card, overrides, a.gui,
+                                 *([] if a.pilot_udp_port is None else [a.pilot_udp_port]))
         if status == os.EX_TEMPFAIL:
             print("run_quad_fc: reboot requested (gz exit EX_TEMPFAIL); relaunch on the same config dir", file=sys.stderr)
             return os.EX_TEMPFAIL

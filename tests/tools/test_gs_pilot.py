@@ -28,8 +28,12 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(ROOT / "tools" / "gs"))
+for sub in ("sim", "card"):
+    sys.path.insert(0, str(ROOT / "tools" / sub))
 import pilot as pilot_mod  # noqa: E402
+import run_quad_fc  # noqa: E402
 import test_gs_helper as gh  # noqa: E402
+import runs as runs_mod  # noqa: E402
 
 PERIOD_S = 0.02  # the bridge's frame period under test (pilot.FRAME_PERIOD_S)
 SETTLE_PERIODS = 5  # labelled harness value: periods waited for frames to arrive or to be absent
@@ -285,3 +289,15 @@ def test_pilot_close_command_stops_the_frames(tmp_path):
 
     helper_run(tmp_path, body)
     sink.close()
+
+
+def test_the_pilot_world_has_the_port_and_no_stick_script_and_the_default_world_has_neither_pilot_element(tmp_path):
+    _, plain = run_quad_fc.interactive_world(tmp_path, "")
+    _, piloted = run_quad_fc.interactive_world(tmp_path, "", pilot_port=40123)
+    assert "<pilot_udp_port>" not in plain and "<manual_control_script>" in plain
+    assert "<pilot_udp_port>40123</pilot_udp_port>" in piloted and "<manual_control_script>" not in piloted
+    swapped = piloted.replace("<pilot_udp_port>40123</pilot_udp_port>", run_quad_fc.script_xml(
+        [run_quad_fc.Phase("idle", 0, run_quad_fc.us(run_quad_fc.INTERACTIVE_S), run_quad_fc.SWITCH_LOW)]), 1)
+    assert swapped == plain, "the two worlds differ by the stick source only"
+    assert runs_mod.sil_args({"pilot": True}, None, 40123) == ["--pilot-udp-port", "40123"]
+    assert runs_mod.sil_args({"pilot": False}, None, 40123) == [] and runs_mod.sil_args({}, None, 40123) == []
