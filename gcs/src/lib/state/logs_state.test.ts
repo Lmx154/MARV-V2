@@ -2,7 +2,7 @@
 // time range, the min/max band of a plot, and the controller's requests to the helper (the refusals are the helper's own text).
 import { describe, expect, it } from 'vitest';
 import { get } from 'svelte/store';
-import { HelperError, type HelperReply } from '$link/transport';
+import { HelperError, type HelperEvent, type HelperReply } from '$link/transport';
 import {
 	LogsController,
 	PLOT_BUCKETS,
@@ -54,14 +54,26 @@ const entry = (over: Partial<LogEntry> = {}): LogEntry => ({
 class Fake {
 	calls: Array<{ cmd: string; args: Record<string, unknown> | undefined }> = [];
 	answers = new Map<string, HelperReply | Error>();
+	handlers = new Set<(e: HelperEvent) => void>();
 	controller = new LogsController({
 		request: async (cmd, args) => {
 			this.calls.push({ cmd, args });
 			const a = this.answers.get(cmd) ?? { ok: true };
 			if (a instanceof Error) throw a;
 			return a;
+		},
+		onEvent: (h) => {
+			this.handlers.add(h);
+			return () => this.handlers.delete(h);
 		}
 	});
+	push(e: HelperEvent) {
+		this.handlers.forEach((h) => h(e));
+	}
+	/** Lets the controller's own follow-up reads (after a done event) finish. */
+	settle() {
+		return new Promise((r) => setTimeout(r, 0));
+	}
 	library(...logs: LogEntry[]) {
 		this.answers.set('log_list', { ok: true, logs, cards: [{ path: '/m/MARVSD/marv/log/00000001.mlog', name: '00000001.mlog', mount: '/m/MARVSD', size: 20992 }], library: '/run/logs' });
 	}
@@ -192,31 +204,78 @@ describe('the library', () => {
 });
 
 describe('import', () => {
-	it('sends the trimmed path, reads the library again and selects the imported log with the IMU gyro plotted first', async () => {
+	const started = (id = 3) => ({ ok: true, started: true, import_id: id });
+	const doneOf = (e: LogEntry, over: Record<string, unknown> = {}) => ({ event: 'log_import_done', id: 3, ok: true, already_imported: false, ...e, ...over });
+
+	it('sends the trimmed path, shows the helper’s progress, and on the done event reads the library and selects the log with the IMU gyro plotted first', async () => {
 		const f = new Fake();
+		const stop = f.controller.start();
+		f.controller.start();
+		expect(f.handlers.size).toBe(1);
 		f.library(entry());
-		f.answers.set('log_import', { ok: true, ...entry(), already_imported: false });
+		f.answers.set('log_import', started());
 		await f.controller.importPath('  /media/x/00000001.mlog ');
 		expect(f.sent('log_import')).toEqual([{ cmd: 'log_import', args: { path: '/media/x/00000001.mlog' } }]);
-		expect(f.sent('log_list')).toHaveLength(1);
-		expect(f.state).toMatchObject({ selected: SHA, kind: 'imu', fields: ['gyro_x'], error: null, busy: null });
+		expect(f.state.importing).toEqual({ id: 3, name: '00000001.mlog', phase: 'copy', bytesDone: 0, bytesTotal: 0 });
+		f.push({ event: 'log_import_progress', id: 3, phase: 'copy', bytes_done: 512, bytes_total: 1024 });
+		expect(f.state.importing).toMatchObject({ id: 3, name: '00000001.mlog', phase: 'copy', bytesDone: 512, bytesTotal: 1024 });
+		f.push({ event: 'log_import_progress', id: 3, phase: 'decode', bytes_done: 1024, bytes_total: 1024 });
+		expect(f.state.importing).toMatchObject({ phase: 'decode', bytesDone: 1024 });
+		f.push(doneOf(entry()));
+		await f.settle();
+		expect(f.state).toMatchObject({ importing: null, selected: SHA, kind: 'imu', fields: ['gyro_x'], error: null });
 		expect(f.state.notice).toBe(`00000001.mlog: ${shortSha(SHA)}`);
+		expect(f.sent('log_list')).toHaveLength(1);
+		stop();
+		expect(f.handlers.size).toBe(0);
+	});
+	it('does not start a second import while one goes (the page’s buttons are off too)', async () => {
+		const f = new Fake();
+		f.controller.start();
+		f.answers.set('log_import', started());
+		await f.controller.importPath('/a.mlog');
+		await f.controller.importPath('/b.mlog');
+		expect(f.sent('log_import')).toHaveLength(1);
+	});
+	it('takes a done event that arrives before the answer of the command (a small file) and does not show the finished import as going', async () => {
+		const f = new Fake();
+		f.controller.start();
+		f.library(entry());
+		f.answers.set('log_import', started());
+		const real = f.controller as unknown as { deps: { request: (c: string, a?: Record<string, unknown>) => Promise<HelperReply> } };
+		const request = real.deps.request;
+		real.deps.request = async (cmd, args) => {
+			if (cmd === 'log_import') {
+				f.push({ event: 'log_import_progress', id: 3, phase: 'copy', bytes_done: 0, bytes_total: 1024 });
+				f.push(doneOf(entry()));
+			}
+			return request(cmd, args);
+		};
+		await f.controller.importPath('/a.mlog');
+		await f.settle();
+		expect(f.state.importing).toBeNull();
+		expect(f.state.selected).toBe(SHA);
 	});
 	it('says so when the decoder reports problems and when the file was in the library', async () => {
 		const f = new Fake();
+		f.controller.start();
 		const bad = entry({ summary: summary({ clean: false, problems: [{ sector: 5, reason: 'crc', detail: '' }] }) });
 		f.library(bad);
-		f.answers.set('log_import', { ok: true, ...bad, already_imported: true });
-		await f.controller.importPath('/x.mlog');
+		f.push(doneOf(bad, { already_imported: true }));
+		await f.settle();
 		expect(f.state.notice).toBe(`00000001.mlog: ${shortSha(SHA)} (already in the library); the decoder reports 1 problem`);
 		expect(f.state.selected).toBe(SHA);
 	});
-	it('shows the helper’s refusal as it words it and selects nothing', async () => {
+	it('shows the helper’s refusal of the command as it words it, and a failed import as its error', async () => {
 		const f = new Fake();
+		f.controller.start();
 		f.refuse('log_import', 'the path is inside the repository (/r): copy the file out of it first (W-1)');
 		await f.controller.importPath('/r/x.mlog');
 		expect(f.state.error).toBe('the path is inside the repository (/r): copy the file out of it first (W-1)');
-		expect(f.state).toMatchObject({ selected: null, busy: null, notice: null });
+		expect(f.state).toMatchObject({ selected: null, importing: null, notice: null });
+		f.push({ event: 'log_import_done', id: 4, ok: false, error: 'cancelled', cancelled: true });
+		await f.settle();
+		expect(f.state).toMatchObject({ error: 'cancelled', importing: null, selected: null });
 		expect(f.sent('log_list')).toHaveLength(0);
 	});
 	it('does not send a blank path', async () => {
@@ -224,6 +283,12 @@ describe('import', () => {
 		await f.controller.importPath('   ');
 		expect(f.calls).toEqual([]);
 		expect(f.state.error).toMatch(/absolute/);
+	});
+	it('picks up an import that is already going when the page is opened', async () => {
+		const f = new Fake();
+		f.answers.set('log_list', { ok: true, logs: [], cards: [], library: '/run/logs', importing: { id: 8, name: 'big.mlog' } });
+		await f.controller.load();
+		expect(f.state.importing).toEqual({ id: 8, name: 'big.mlog', phase: 'copy', bytesDone: 0, bytesTotal: 0 });
 	});
 });
 

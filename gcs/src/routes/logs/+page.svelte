@@ -17,7 +17,7 @@
 
 	const gcs = app();
 	const logs = gcs.logs;
-	const empty: LogsState = { logs: null, cards: [], library: null, selected: null, kind: null, fields: [], from: '', to: '', series: null, error: null, notice: null, busy: null };
+	const empty: LogsState = { logs: null, cards: [], library: null, selected: null, kind: null, fields: [], from: '', to: '', series: null, error: null, notice: null, importing: null, busy: null };
 	const st = logs?.state ?? readable<LogsState>(empty);
 	const helperState = gcs.helper?.state ?? readable<HelperConnectionState>('closed');
 
@@ -30,7 +30,7 @@
 	const entry = $derived($st.logs?.find((l) => l.sha256 === $st.selected) ?? null);
 	const kindInfo = $derived(entry && $st.kind ? entry.summary.kinds[$st.kind] : undefined);
 	const origin = $derived(kindInfo?.t_min_us ?? 0);
-	const whyNoImport = $derived($helperState !== 'open' ? 'the helper is not connected' : $st.busy ? 'a command is in progress' : null);
+	const whyNoImport = $derived($helperState !== 'open' ? 'the helper is not connected' : $st.importing ? 'an import is going: one at a time' : null);
 	const whyNoPlot = $derived(
 		$helperState !== 'open' ? 'the helper is not connected' : $st.busy ? 'a command is in progress' : !entry ? 'choose a log' : $st.fields.length === 0 ? 'choose a field' : null
 	);
@@ -69,9 +69,15 @@
 				<label for="log-path">Absolute path of an .mlog file</label>
 				<input id="log-path" type="text" class="mono path" spellcheck="false" autocomplete="off" placeholder="/home/…/00000001.mlog" bind:value={importPath} />
 				<button type="button" class="primary" disabled={whyNoImport !== null || importPath.trim() === ''} title={whyNoImport ?? 'Copy it into the library'} onclick={() => void logs?.importPath(importPath)}>
-					{$st.busy === 'import' ? 'Importing…' : 'Import path'}
+					{$st.importing ? 'Importing…' : 'Import path'}
 				</button>
 			</div>
+			{#if $st.importing}
+				<div class="progress" data-import="progress">
+					<progress aria-label="Import progress" max={$st.importing.bytesTotal || 1} value={$st.importing.bytesDone}></progress>
+					<span class="mono small" data-import="text">{$st.importing.name} · {$st.importing.phase === 'copy' ? 'copying' : 'decoding'} {formatBytes($st.importing.bytesDone)} of {formatBytes($st.importing.bytesTotal)}</span>
+				</div>
+			{/if}
 			{#if $st.error}<p class="notice bad small" role="alert" data-notice="logs">{$st.error}</p>{/if}
 			{#if $st.notice}<p class="notice small" role="status" data-notice="import">{$st.notice}</p>{/if}
 		</Panel>
@@ -217,6 +223,18 @@
 		letter-spacing: normal;
 		font-size: 0.85rem;
 		color: inherit;
+	}
+
+	.progress {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		align-items: center;
+		margin: 0 0 0.5rem;
+	}
+
+	.progress progress {
+		flex: 1 1 12rem;
 	}
 
 	.path {

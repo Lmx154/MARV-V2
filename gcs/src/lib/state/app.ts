@@ -181,7 +181,8 @@ function create(): App {
 			: null;
 	const pilot = helper ? new PilotController({ request: (cmd, args) => helper.request(cmd, args), onEvent: (handler) => helper.onEvent(handler) }) : null;
 	pilot?.start();
-	const logs = helper ? new LogsController({ request: (cmd, args) => helper.request(cmd, args) }) : null;
+	const logs = helper ? new LogsController({ request: (cmd, args) => helper.request(cmd, args), onEvent: (handler) => helper.onEvent(handler) }) : null;
+	logs?.start();
 
 		// The identity arrives after the connection: load the matching manifest then.
 	let lastIdentityKey = '';

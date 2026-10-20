@@ -1,9 +1,11 @@
 // The Logs page's logic (GCS-first unit GX-15): the onboard logger's .mlog files pulled from the SD card. The helper (tools/gs/logs.py) copies a
 // file into its library with its SHA-256, reads it with logger U1's decoder (tools/log/mlog.py) and answers a decimated min/max series of
 // chosen fields; the browser decodes nothing and never receives the records. This controller sends the helper's commands (log_list, log_import,
-// log_series) and keeps what the page shows; every refusal is shown as the helper words it. IF-7 (log retrieval over the link) is not here.
+// log_series) and keeps what the page shows; every refusal is shown as the helper words it. An import runs in the helper (it answers at once and
+// pushes log_import_progress and log_import_done), so a file of a GiB is a progress bar, not a request that times out. IF-7 (log retrieval over
+// the link) is not here.
 import { get, writable, type Readable } from 'svelte/store';
-import type { HelperReply } from '$link/transport';
+import type { HelperEvent, HelperReply } from '$link/transport';
 
 /** One problem the decoder reports (a sector that failed its check, a hole, a record cut by one). */
 export interface LogProblem {
@@ -211,6 +213,15 @@ export function plotModel(min: Array<number | null>, max: Array<number | null>, 
 	return { path, yMin, yMax, dataMin: lo, dataMax: hi, filled };
 }
 
+/** The import that is going: what the helper's progress events say (bytesTotal is 0 until the first one arrives). */
+export interface ImportProgress {
+	id: number | null;
+	name: string;
+	phase: 'copy' | 'decode';
+	bytesDone: number;
+	bytesTotal: number;
+}
+
 export interface LogsState {
 	/** The library; null until read. */
 	logs: LogEntry[] | null;
@@ -226,11 +237,14 @@ export interface LogsState {
 	error: string | null;
 	/** What the last import did (the sha, and whether the decoder had problems). */
 	notice: string | null;
-	busy: 'list' | 'import' | 'series' | null;
+	/** The import that is going, else null: no other import is started while it is set. */
+	importing: ImportProgress | null;
+	busy: 'list' | 'series' | null;
 }
 
 export interface LogsDeps {
 	request(cmd: string, args?: Record<string, unknown>): Promise<HelperReply>;
+	onEvent(handler: (event: HelperEvent) => void): () => void;
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -250,11 +264,58 @@ const messageOf = (e: unknown): string => (e instanceof Error ? e.message : Stri
 
 export class LogsController {
 	private readonly store = writable<LogsState>({
-		logs: null, cards: [], library: null, selected: null, kind: null, fields: [], from: '', to: '', series: null, error: null, notice: null, busy: null
+		logs: null, cards: [], library: null, selected: null, kind: null, fields: [], from: '', to: '', series: null, error: null, notice: null, importing: null, busy: null
 	});
 	readonly state: Readable<LogsState> = { subscribe: this.store.subscribe };
 
+	private off: (() => void) | null = null;
+	/** The imports whose done event has been seen: the answer of log_import may arrive after the event of a small file. */
+	private readonly finished = new Set<number>();
+
 	constructor(private readonly deps: LogsDeps) {}
+
+	/** Starts following the helper's import events; returns what stops it. A second call does nothing. */
+	start(): () => void {
+		if (!this.off) this.off = this.deps.onEvent((e) => this.onEvent(e));
+		return () => {
+			this.off?.();
+			this.off = null;
+		};
+	}
+
+	private onEvent(e: HelperEvent): void {
+		const id = typeof e.id === 'number' ? e.id : null;
+		if (e.event === 'log_import_progress') {
+			if (id !== null && this.finished.has(id)) return;
+			const phase = e.phase === 'decode' ? 'decode' : 'copy';
+			const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+			this.store.update((s) => ({ ...s, importing: { id, name: s.importing?.name ?? '', phase, bytesDone: num(e.bytes_done), bytesTotal: num(e.bytes_total) } }));
+		} else if (e.event === 'log_import_done') {
+			if (id !== null) this.finished.add(id);
+			void this.importDone(e);
+		}
+	}
+
+	private async importDone(e: HelperEvent): Promise<void> {
+		if (e.ok !== true) {
+			this.store.update((s) => ({ ...s, importing: null, notice: null, error: typeof e.error === 'string' ? e.error : 'the import failed' }));
+			return;
+		}
+		const entry = entryOf(e);
+		const problems = entry?.summary.problems.length ?? 0;
+		const notice = entry
+			? `${entry.name}: ${shortSha(entry.sha256)}${e.already_imported === true ? ' (already in the library)' : ''}${
+					entry.summary.decoder_error ? `; the decoder failed: ${entry.summary.decoder_error}` : problems > 0 ? `; the decoder reports ${problems} problem${problems === 1 ? '' : 's'}` : ''
+				}`
+			: 'imported';
+		this.store.update((s) => ({ ...s, importing: null, error: null, notice }));
+		try {
+			await this.read();
+			if (entry) this.select(entry.sha256);
+		} catch (err) {
+			this.store.update((s) => ({ ...s, error: messageOf(err) }));
+		}
+	}
 
 	/** The library and the cards the helper sees. */
 	async load(): Promise<void> {
@@ -272,31 +333,34 @@ export class LogsController {
 		const reply = await this.deps.request('log_list');
 		const logs = (Array.isArray(reply.logs) ? reply.logs : []).map(entryOf).filter((e): e is LogEntry => e !== null);
 		const cards = (Array.isArray(reply.cards) ? reply.cards : []).map(cardOf).filter((c): c is CardFile => c !== null);
-		this.store.update((s) => ({ ...s, logs, cards, library: typeof reply.library === 'string' ? reply.library : null }));
+		const going = isObject(reply.importing) && typeof reply.importing.id === 'number' ? reply.importing : null;
+		this.store.update((s) => ({
+			...s,
+			logs,
+			cards,
+			library: typeof reply.library === 'string' ? reply.library : null,
+			importing: s.importing ?? (going && !this.finished.has(going.id as number) ? { id: going.id as number, name: String(going.name ?? ''), phase: 'copy', bytesDone: 0, bytesTotal: 0 } : null)
+		}));
 	}
 
-	/** Copies a file of the host into the library. A file the decoder has problems with is imported all the same; the notice says so. */
+	/** Asks the helper to copy a file of the host into the library. The helper answers at once; the progress and the end come as events. A file the
+	 *  decoder has problems with is imported all the same; the notice says so. */
 	async importPath(path: string): Promise<void> {
 		const p = path.trim();
-		if (get(this.store).busy) return;
+		if (get(this.store).importing) return;
 		if (p === '') {
 			this.store.update((s) => ({ ...s, error: 'give the path of an .mlog file (absolute), or import one of the card’s files' }));
 			return;
 		}
-		this.store.update((s) => ({ ...s, busy: 'import', notice: null }));
+		this.store.update((s) => ({ ...s, notice: null, error: null }));
 		try {
 			const reply = await this.deps.request('log_import', { path: p });
-			const entry = entryOf(reply);
-			if (!entry) throw new Error('the helper’s answer to log_import is not a log');
-			const problems = entry.summary.problems.length;
-			const notice = `${entry.name}: ${shortSha(entry.sha256)}${reply.already_imported === true ? ' (already in the library)' : ''}${
-				entry.summary.decoder_error ? `; the decoder failed: ${entry.summary.decoder_error}` : problems > 0 ? `; the decoder reports ${problems} problem${problems === 1 ? '' : 's'}` : ''
-			}`;
-			await this.read();
-			this.store.update((s) => ({ ...s, error: null, notice, busy: null }));
-			this.select(entry.sha256);
+			const id = typeof reply.import_id === 'number' ? reply.import_id : null;
+			if (id !== null && this.finished.has(id)) return; // a small file: its done event came first
+			const name = p.slice(p.lastIndexOf('/') + 1);
+			this.store.update((s) => ({ ...s, importing: { id, name, phase: s.importing?.phase ?? 'copy', bytesDone: s.importing?.bytesDone ?? 0, bytesTotal: s.importing?.bytesTotal ?? 0 } }));
 		} catch (e) {
-			this.store.update((s) => ({ ...s, error: messageOf(e), busy: null }));
+			this.store.update((s) => ({ ...s, error: messageOf(e) }));
 		}
 	}
 

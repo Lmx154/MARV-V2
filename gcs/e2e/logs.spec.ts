@@ -53,6 +53,8 @@ test('the card file is listed, imported with its SHA-256 and decoder report, and
 
 	await page.getByRole('button', { name: `Import ${CARD_NAME}` }).click();
 	await expect(page.getByRole('status').filter({ hasText: sha.slice(0, 12) })).toBeVisible();
+	// The import ran in the helper (progress events, then done): nothing is left going.
+	await expect(page.getByRole('progressbar', { name: 'Import progress' })).toHaveCount(0);
 	const table = page.getByRole('table', { name: 'Imported logs' });
 	await expect(table.getByRole('row')).toHaveCount(2); // the header row and the log
 	await expect(table.locator(`tr[data-sha="${sha}"]`)).toContainText('clean');

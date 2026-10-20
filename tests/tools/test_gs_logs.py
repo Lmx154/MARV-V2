@@ -9,9 +9,16 @@ decoder is U1's tools/log/mlog.py, and the expected values here come from callin
   - path refusals, each with the accepted control: relative, traversal, not normalised, NUL, not *.mlog, a directory, a symbolic link,
     a link into the repository, a path inside the repository, inside the library, a missing, an empty, an oversized file and a FIFO;
   - W-1: the repository's git status (ignored files included) is the same after an import, and the library is outside the repository;
-  - the card listing, a decoder failure that is reported and does not stop the import, and the refusals of a series request.
+  - the card listing, a decoder failure that is reported and does not stop the import, and the refusals of a series request;
+  - the import is asynchronous: it answers at once, pushes progress (copy, then decode) and one done event, a second import is refused while
+    one goes, and stopping the helper cancels it and leaves nothing in the library;
+  - the series come from the columnar cache: its layout, a log whose time goes back and a column with a non-finite value are bucketed as the
+    decoder's records are;
+  - the size measurement (slow, not in the default run): MARV_LOG_SIZE_TEST=1 uv run pytest tests/tools/test_gs_logs.py -k size -s
+    synthesises a log of MARV_LOG_SIZE_MIB MiB (default 256) with U1's encoder and times the import and a 3-field series.
 """
 
+import asyncio
 import dataclasses
 import hashlib
 import json
@@ -19,6 +26,8 @@ import os
 import struct
 import subprocess
 import sys
+import threading
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -73,6 +82,27 @@ def put(tmp_path, name, data: bytes) -> str:
     p.parent.mkdir(exist_ok=True)
     p.write_bytes(data)
     return str(p)
+
+
+IMPORT_WAIT_S = 900  # labelled harness value: bounds a hung import only
+REQUEST_TIMEOUT_S = 10  # the GCS's control request timeout (gcs/src/lib/link/transport.ts CONTROL_TIMEOUT_MS)
+
+
+async def imp(ws, path, events=None):
+    """log_import: the refusal if it is refused, else the done event (the progress events go to `events`, in order, with the done event)."""
+    await ws.send(json.dumps({"cmd": "log_import", "path": path, "id": 7}))
+    reply = done = None
+    while reply is None or (reply.get("started") and done is None):
+        m = json.loads(await asyncio.wait_for(ws.recv(), IMPORT_WAIT_S))
+        if m.get("event") == "log_import_done":
+            done = m
+        elif m.get("event") == "log_import_progress" and events is not None:
+            events.append(m)
+        elif m.get("id") == 7:
+            reply = m
+    if events is not None and done is not None:
+        events.append(done)
+    return done if reply["ok"] else reply
 
 
 def expected_summary(data: bytes) -> dict:
@@ -135,7 +165,7 @@ def test_summary_and_series_equal_what_the_decoder_returns(tmp_path):
     src = put(tmp_path, "sample.mlog", data)
 
     async def body(h, ws):
-        r = await gh.control(ws, cmd="log_import", path=src)
+        r = await imp(ws, src)
         assert r["ok"] and r["size"] == len(data) and r["already_imported"] is False
         check_summary(r["summary"], data)
         assert r["summary"]["clean"] and r["summary"]["records"]["imu"] == SAMPLE_IMU
@@ -163,7 +193,7 @@ def test_gap_records_are_counted_as_the_decoder_reads_them(tmp_path):
     src = put(tmp_path, "gaps.mlog", data)
 
     async def body(h, ws):
-        r = await gh.control(ws, cmd="log_import", path=src)
+        r = await imp(ws, src)
         assert r["ok"]
         check_summary(r["summary"], data)
         assert r["summary"]["gaps"]["count"] == 2 and r["summary"]["gaps"]["dropped"]["imu"] == (3 + 9) + (3 + 19)
@@ -177,7 +207,7 @@ def test_a_non_finite_value_is_skipped_and_counted_not_sent(tmp_path):
     src = put(tmp_path, "nan.mlog", b"".join(tm.frame(recs)))
 
     async def body(h, ws):
-        sha = (await gh.control(ws, cmd="log_import", path=src))["sha256"]
+        sha = (await imp(ws, src))["sha256"]
         r = await gh.control(ws, cmd="log_series", sha256=sha, kind="imu", fields=["gyro_x", "gyro_y"], buckets=1)
         assert r["ok"] and r["series"]["n"] == [3]
         assert r["series"]["fields"]["gyro_x"] == {"min": [500.0], "max": [633.0], "skipped": 1}
@@ -194,7 +224,7 @@ def test_a_corrupted_sector_is_reported_and_the_import_still_succeeds(tmp_path):
     src = put(tmp_path, "cut.mlog", bad)
 
     async def body(h, ws):
-        r = await gh.control(ws, cmd="log_import", path=src)
+        r = await imp(ws, src)
         assert r["ok"], r
         s = r["summary"]
         check_summary(s, bad)
@@ -202,7 +232,7 @@ def test_a_corrupted_sector_is_reported_and_the_import_still_succeeds(tmp_path):
         assert s["problems"] == [{"sector": CORRUPT_SECTOR, "reason": "crc", "detail": ""}] and s["stopped_at"] == CORRUPT_SECTOR
         assert s["sectors_ok"] == CORRUPT_SECTOR and 0 < s["records"]["imu"] < SAMPLE_IMU
         # Control: the same file undamaged is clean.
-        assert (await gh.control(ws, cmd="log_import", path=put(tmp_path, "good.mlog", good)))["summary"]["problems"] == []
+        assert (await imp(ws, put(tmp_path, "good.mlog", good)))["summary"]["problems"] == []
         # What the decoder could read is still plotted, equal to the decoder's.
         t0, t1 = s["kinds"]["imu"]["t_min_us"], s["kinds"]["imu"]["t_max_us"]
         check_series(await gh.control(ws, cmd="log_series", sha256=r["sha256"], kind="imu", fields=["gyro_x"], t0_us=t0, t1_us=t1, buckets=9),
@@ -220,14 +250,23 @@ def test_the_sha256_is_recorded_and_the_source_is_not_modified(tmp_path):
     sha = hashlib.sha256(data).hexdigest()
 
     async def body(h, ws):
-        r = await gh.control(ws, cmd="log_import", path=src)
+        r = await imp(ws, src)
         assert r["sha256"] == sha and r["source"] == src and r["name"] == "sample.mlog"
         lib = h.run_dir / "logs"
         assert (lib / f"{sha}.mlog").read_bytes() == data
         assert json.loads((lib / f"{sha}.json").read_text())["sha256"] == sha
-        assert sorted(p.name for p in lib.iterdir()) == [f"{sha}.json", f"{sha}.mlog"]  # no partial file left behind
+        assert sorted(p.name for p in lib.iterdir()) == [f"{sha}.cols", f"{sha}.json", f"{sha}.mlog"]  # no partial file left behind
+        # The cache: one file per numeric field of each kind and its t_us, little-endian, fixed dtype, and meta.json.
+        meta = json.loads((lib / f"{sha}.cols" / "meta.json").read_text())
+        assert meta["version"] == 1 and meta["byte_order"] == "little" and meta["kinds"]["imu"]["rows"] == SAMPLE_IMU
+        assert meta["kinds"]["imu"]["monotone"] is True
+        assert {n: c["dtype"] for n, c in meta["kinds"]["imu"]["columns"].items()} == {
+            "t_us": "q", "flags": "Q", **{f: "f" for f in ("gyro_x", "gyro_y", "gyro_z", "accel_x", "accel_y", "accel_z")}}
+        for name, c in meta["kinds"]["imu"]["columns"].items():
+            assert (lib / f"{sha}.cols" / f"imu.{name}.col").stat().st_size == SAMPLE_IMU * (4 if c["dtype"] == "f" else 8), name
+        assert not (lib / f"{sha}.cols" / "imu.t_lo_us.col").exists()  # the stamp the time was unwrapped from is not a column
         # The same bytes again: the same library file, told so.
-        again = await gh.control(ws, cmd="log_import", path=src)
+        again = await imp(ws, src)
         assert again["sha256"] == sha and again["already_imported"] is True
         assert len((await gh.control(ws, cmd="log_list"))["logs"]) == 1
 
@@ -247,7 +286,7 @@ def test_an_import_leaves_the_repository_as_it_was(tmp_path):
     before = git_state()
 
     async def body(h, ws):
-        r = await gh.control(ws, cmd="log_import", path=src)
+        r = await imp(ws, src)
         assert r["ok"]
         await gh.control(ws, cmd="log_series", sha256=r["sha256"], kind="imu", fields=["gyro_x"])
         lib = (h.run_dir / "logs").resolve()
@@ -292,17 +331,17 @@ def test_paths_are_refused_and_nothing_is_written(tmp_path):
 
     async def body(h, ws):
         for why, path in refused.items():
-            r = await gh.control(ws, cmd="log_import", path=path)
+            r = await imp(ws, path)
             assert r["ok"] is False and r["error"], why
-        assert (await gh.control(ws, cmd="log_import"))["ok"] is False  # no path at all
-        assert (await gh.control(ws, cmd="log_import", path=5))["ok"] is False
+        assert (await imp(ws, None))["ok"] is False  # no path at all
+        assert (await imp(ws, 5))["ok"] is False
         lib = h.run_dir / "logs"
         assert not lib.exists() or list(lib.iterdir()) == [], "a refusal writes nothing"
         # Control: the accepted path of the same bytes imports.
-        assert (await gh.control(ws, cmd="log_import", path=good))["ok"] is True
+        assert (await imp(ws, good))["ok"] is True
         # The library's own files are not imported again.
         sha = hashlib.sha256(data).hexdigest()
-        inside = await gh.control(ws, cmd="log_import", path=str(lib / f"{sha}.mlog"))
+        inside = await imp(ws, str(lib / f"{sha}.mlog"))
         assert inside["ok"] is False and "library" in inside["error"]
 
     run(tmp_path, body)
@@ -313,12 +352,12 @@ def test_the_size_limit_refuses_and_the_control_imports(tmp_path, monkeypatch):
 
     async def body(h, ws):
         monkeypatch.setattr(logs_mod, "IMPORT_MAX_BYTES", SAMPLE.stat().st_size - 1)
-        r = await gh.control(ws, cmd="log_import", path=src)
+        r = await imp(ws, src)
         assert r["ok"] is False and "limit" in r["error"]
         lib = h.run_dir / "logs"
         assert not lib.exists() or list(lib.iterdir()) == []
         monkeypatch.setattr(logs_mod, "IMPORT_MAX_BYTES", SAMPLE.stat().st_size)
-        assert (await gh.control(ws, cmd="log_import", path=src))["ok"] is True
+        assert (await imp(ws, src))["ok"] is True
 
     run(tmp_path, body)
 
@@ -339,7 +378,7 @@ def test_mounted_cards_are_listed_and_a_listed_file_imports(tmp_path):
         assert [(c["name"], c["mount"], c["size"]) for c in listed["cards"]] == [
             ("00000001.mlog", str(cards / "MARVSD"), SAMPLE.stat().st_size), ("00000002.mlog", str(cards / "MARVSD"), SAMPLE.stat().st_size)]
         assert listed["logs"] == []
-        r = await gh.control(ws, cmd="log_import", path=listed["cards"][1]["path"])
+        r = await imp(ws, listed["cards"][1]["path"])
         assert r["ok"] and r["summary"]["problems"][0]["reason"] == "crc"
         assert (log_dir / "00000002.mlog").read_bytes() == corrupt(sample_bytes())  # the card's file is as it was
 
@@ -355,7 +394,7 @@ def test_a_decoder_failure_is_reported_and_the_decoder_is_put_back(tmp_path, mon
 
     async def body(h, ws):
         monkeypatch.setattr(mlog, "decode", broken)
-        r = await gh.control(ws, cmd="log_import", path=src)
+        r = await imp(ws, src)
         assert r["ok"] is True and r["summary"] == {"decoder_error": "ValueError: planted"}
         assert mlog.Decoded is original
         # A series of a log the decoder cannot read is refused with the reason (it has no kinds).
@@ -370,7 +409,7 @@ def test_series_requests_are_checked(tmp_path):
     src = put(tmp_path, "sample.mlog", sample_bytes())
 
     async def body(h, ws):
-        sha = (await gh.control(ws, cmd="log_import", path=src))["sha256"]
+        sha = (await imp(ws, src))["sha256"]
         base = {"sha256": sha, "kind": "imu", "fields": ["gyro_x"]}
         assert (await gh.control(ws, cmd="log_series", **base))["ok"] is True  # control
         bad = {
@@ -391,3 +430,224 @@ def test_series_requests_are_checked(tmp_path):
 
     run(tmp_path, body)
 
+
+
+def test_a_log_whose_time_goes_back_is_bucketed_by_time_all_the_same(tmp_path):
+    times = [1000, 1133, 1266, 1100, 1399, 1532, 1050, 1665]
+    recs = tm.header_records() + [tm.rec_status(1000)] + [tm.rec_imu(t) for t in times] + [tm.rec_status(1700), tm.rec_end(1700, 0)]
+    data = b"".join(tm.frame(recs))
+    src = put(tmp_path, "back.mlog", data)
+
+    async def body(h, ws):
+        r = await imp(ws, src)
+        assert r["ok"]
+        meta = json.loads((h.run_dir / "logs" / f"{r['sha256']}.cols" / "meta.json").read_text())
+        assert meta["kinds"]["imu"]["monotone"] is False, "control: the cache knows the time went back"
+        for t0, t1, n in ((1000, 1665, 3), (1050, 1400, 5), (1100, 1100, 1)):
+            check_series(await gh.control(ws, cmd="log_series", sha256=r["sha256"], kind="imu", fields=["gyro_x", "accel_z"], t0_us=t0, t1_us=t1, buckets=n),
+                         data, "imu", ["gyro_x", "accel_z"], t0, t1, n)
+
+    run(tmp_path, body)
+
+
+def test_the_import_answers_at_once_then_progresses_through_copy_and_decode_to_one_done_event(tmp_path, monkeypatch):
+    monkeypatch.setattr(logs_mod, "COPY_CHUNK", 4096)
+    monkeypatch.setattr(logs_mod, "PROGRESS_INTERVAL_S", 0)
+    monkeypatch.setattr(logs_mod, "CHECK_EVERY_ROWS", 16)
+    data = sample_bytes()
+    src = put(tmp_path, "sample.mlog", data)
+
+    async def body(h, ws):
+        seen = []
+        done = await imp(ws, src, seen)
+        assert done["ok"] and done["event"] == "log_import_done"
+        progress = seen[:-1]
+        assert seen[-1] is done and progress and all(e["event"] == "log_import_progress" and e["id"] == done["id"] for e in progress)
+        assert all(e["bytes_total"] == len(data) and 0 <= e["bytes_done"] <= len(data) for e in progress)
+        phases = [e["phase"] for e in progress]
+        assert phases == sorted(phases, key=["copy", "decode"].index) and set(phases) == {"copy", "decode"}, "copy first, then decode"
+        for phase in ("copy", "decode"):
+            done_bytes = [e["bytes_done"] for e in progress if e["phase"] == phase]
+            assert done_bytes == sorted(done_bytes) and done_bytes[0] == 0 and done_bytes[-1] == len(data)
+        assert len([e for e in progress if e["phase"] == "copy"]) > 3, "the copy was told in steps"
+        assert len([e for e in progress if e["phase"] == "decode"]) > 3, "the decode was told in steps"
+        # The reply of the command itself: started, with the import's id (the request's own id is echoed in "id").
+        await ws.send(json.dumps({"cmd": "log_import", "path": src, "id": 99}))
+        while True:
+            m = json.loads(await asyncio.wait_for(ws.recv(), IMPORT_WAIT_S))
+            if m.get("id") == 99:
+                assert m["ok"] and m["started"] is True and m["import_id"] == done["id"] + 1
+                break
+        while json.loads(await asyncio.wait_for(ws.recv(), IMPORT_WAIT_S)).get("event") != "log_import_done":
+            pass
+
+    run(tmp_path, body)
+
+
+def test_a_second_import_is_refused_while_one_goes_and_accepted_after_it_is_done(tmp_path, monkeypatch):
+    src = put(tmp_path, "sample.mlog", sample_bytes())
+    other = put(tmp_path, "other.mlog", corrupt(sample_bytes()))
+    gate = threading.Event()
+    original = logs_mod.decode_into
+
+    def held(path, sink):
+        assert gate.wait(REQUEST_TIMEOUT_S * 3), "the test never released the import"
+        return original(path, sink)
+
+    monkeypatch.setattr(logs_mod, "decode_into", held)
+
+    async def body(h, ws):
+        await ws.send(json.dumps({"cmd": "log_import", "path": src, "id": 1}))
+        first = json.loads(await asyncio.wait_for(ws.recv(), REQUEST_TIMEOUT_S))
+        while first.get("id") != 1:
+            first = json.loads(await asyncio.wait_for(ws.recv(), REQUEST_TIMEOUT_S))
+        assert first["ok"] and first["started"]
+        refused = await imp(ws, other)
+        assert refused["ok"] is False and "still going" in refused["error"] and "sample.mlog" in refused["error"]
+        listed = await gh.control(ws, cmd="log_list")
+        assert listed["importing"] == {"id": first["import_id"], "name": "sample.mlog"} and listed["logs"] == []
+        gate.set()
+        while True:
+            m = json.loads(await asyncio.wait_for(ws.recv(), IMPORT_WAIT_S))
+            if m.get("event") == "log_import_done":
+                assert m["ok"]
+                break
+        # Control: the same request is accepted once the first is done, and the library lists both.
+        second = await imp(ws, other)
+        assert second["ok"] and second["event"] == "log_import_done"
+        listed = await gh.control(ws, cmd="log_list")
+        assert listed["importing"] is None and len(listed["logs"]) == 2
+
+    run(tmp_path, body)
+
+
+def test_stopping_the_helper_cancels_the_import_and_leaves_nothing_in_the_library(tmp_path, monkeypatch):
+    src = put(tmp_path, "sample.mlog", sample_bytes())
+    monkeypatch.setattr(logs_mod, "CHECK_EVERY_ROWS", 1)
+    entered = threading.Event()
+    original = logs_mod.decode_into
+    libs = []
+
+    def held(path, sink):
+        entered.set()
+        deadline = time.monotonic() + REQUEST_TIMEOUT_S * 3
+        while not libs[0]._cancel.is_set() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        return original(path, sink)  # the sink sees the cancel flag at its first record
+
+    monkeypatch.setattr(logs_mod, "decode_into", held)
+
+    async def body(h, ws):
+        libs.append(h.logs)
+        await ws.send(json.dumps({"cmd": "log_import", "path": src, "id": 1}))
+        assert await asyncio.to_thread(entered.wait, REQUEST_TIMEOUT_S), "the import reached the decoder"
+        lib = h.run_dir / "logs"
+        assert any(p.name.endswith(".part") for p in lib.iterdir()), "control: the import has its temporary copy while it goes"
+        return lib
+
+    lib = run(tmp_path, body)  # the helper stops when the body returns
+    assert list(lib.iterdir()) == [], "no copy, cache or sidecar is left"
+    assert libs[0].list_logs()["logs"] == [] and libs[0].list_logs()["importing"] is None
+
+
+def test_the_cancel_flag_ends_a_decode_midway_and_cleans_up(tmp_path, monkeypatch):
+    src = put(tmp_path, "sample.mlog", sample_bytes())
+    monkeypatch.setattr(logs_mod, "CHECK_EVERY_ROWS", 16)
+    monkeypatch.setattr(logs_mod, "PROGRESS_INTERVAL_S", 0)
+    events = []
+    lib = logs_mod.LogLibrary(tmp_path / "run", card_dirs=[], emit=lambda e: (events.append(e), e.get("phase") == "decode" and e["bytes_done"] > 0 and lib.cancel()))
+    lib.start_import(src)  # the emit above cancels it at its first decode progress
+    deadline = time.monotonic() + REQUEST_TIMEOUT_S
+    while not any(e["event"] == "log_import_done" for e in events) and time.monotonic() < deadline:
+        time.sleep(0.01)
+    done = [e for e in events if e["event"] == "log_import_done"]
+    assert len(done) == 1 and done[0]["ok"] is False and done[0]["cancelled"] is True
+    assert not any(e.get("phase") == "decode" and e["bytes_done"] == SAMPLE.stat().st_size for e in events), "the decode ended midway, not at its end"
+    assert list((tmp_path / "run" / "logs").iterdir()) == []
+
+
+def write_big_log(path: Path, mib: int) -> int:
+    """A log of about `mib` MiB of sectors, built with U1's encoder (header, one session, IMU records at the sample's spacing, status, End),
+    streamed to the file; returns the number of IMU records."""
+    n_imu = int(mib * (1 << 20) / mlog.SECTOR * mlog.PAYLOAD / 32)
+    t0, dt = 1000, 133
+
+    def records():
+        yield from tm.header_records()
+        yield tm.rec_status(t0)
+        for i in range(n_imu):
+            yield tm.rec_imu(t0 + dt * i)
+        yield tm.rec_status(t0 + dt * n_imu)
+        yield tm.rec_end(t0 + dt * n_imu, 0)
+
+    batch, cur, first, seq = [], bytearray(), mlog.NO_RECORD, 0
+    with path.open("wb") as out:
+        for r in records():
+            begun, done = False, 0
+            while done < len(r):
+                if not begun and first == mlog.NO_RECORD:
+                    first = len(cur)
+                begun = True
+                take = min(len(r) - done, mlog.PAYLOAD - len(cur))
+                cur += r[done: done + take]
+                done += take
+                if len(cur) == mlog.PAYLOAD:
+                    batch.append(tm.sector(tm.SESSION, seq, first, bytes(cur)))
+                    seq += 1
+                    cur, first = bytearray(), mlog.NO_RECORD
+                    if len(batch) == 4096:
+                        out.write(b"".join(batch))
+                        batch = []
+        if cur:
+            batch.append(tm.sector(tm.SESSION, seq, first, bytes(cur)))
+        out.write(b"".join(batch))
+    return n_imu
+
+
+@pytest.mark.skipif(os.environ.get("MARV_LOG_SIZE_TEST") != "1", reason="slow: MARV_LOG_SIZE_TEST=1 uv run pytest tests/tools/test_gs_logs.py -k size -s")
+def test_size_a_big_log_imports_and_a_three_field_series_answers_within_the_request_timeout(tmp_path):
+    mib = int(os.environ.get("MARV_LOG_SIZE_MIB", "256"))  # labelled harness value: the file's size
+    big = tmp_path / "src" / "big.mlog"
+    big.parent.mkdir()
+    t = time.monotonic()
+    n_imu = write_big_log(big, mib)
+    synth_s = time.monotonic() - t
+    size = big.stat().st_size
+    assert size >= mib * (1 << 20) * 0.99
+    timing = {}
+
+    async def body(h, ws):
+        t = time.monotonic()
+        done = await imp(ws, str(big))
+        timing["import_s"] = time.monotonic() - t
+        assert done["ok"] and done["summary"]["clean"] and done["summary"]["records"]["imu"] == n_imu
+        first = done["summary"]["kinds"]["imu"]["t_min_us"]
+        for buckets in (logs_mod.SERIES_BUCKETS_DEFAULT, logs_mod.SERIES_BUCKETS_MAX):
+            t = time.monotonic()
+            r = await gh.control(ws, cmd="log_series", sha256=done["sha256"], kind="imu", fields=["gyro_x", "gyro_y", "accel_z"], buckets=buckets)
+            timing[f"series_{buckets}_s"] = time.monotonic() - t
+            assert r["ok"] and r["series"]["records"] == n_imu and sum(r["series"]["n"]) == n_imu
+            s = r["series"]
+            assert s["fields"]["gyro_x"]["min"][0] == struct.unpack("<f", struct.pack("<f", first * 0.5))[0]
+            assert s["fields"]["gyro_y"]["min"] == s["fields"]["gyro_y"]["max"] == [1.0] * buckets
+            assert s["fields"]["accel_z"]["min"] == s["fields"]["accel_z"]["max"] == [-9.5] * buckets
+        # A narrow range in the middle: the same call, a different slice.
+        t = time.monotonic()
+        mid = first + 133 * (n_imu // 2)
+        r = await gh.control(ws, cmd="log_series", sha256=done["sha256"], kind="imu", fields=["gyro_x"], t0_us=mid, t1_us=mid + 133 * 999, buckets=10)
+        timing["series_narrow_s"] = time.monotonic() - t
+        assert r["ok"] and r["series"]["n"] == [100] * 10
+
+    async def main():  # gh.run_with_helper bounds the body at 30 s; an import of this size is not bounded by the request timeout
+        h = gh.helper_mod.Helper(runs_dir=tmp_path / "runs", build_root=tmp_path / "build", gcs_dir=tmp_path / "gcs", sil_udp_port=None,
+                                 reports_dir=tmp_path / "reports", heavy_lock=tmp_path / "heavy.lock", byid_dir=tmp_path / "by-id",
+                                 sysfs_dir=tmp_path / "sys")
+        await h.start(0)
+        try:
+            await with_ws(h, body)
+        finally:
+            await h.stop()
+
+    asyncio.run(main())
+    print(f"\nSIZE: file {size / (1 << 20):.1f} MiB, {n_imu} IMU records; synthesis {synth_s:.1f} s; " + ", ".join(f"{k} {v:.2f}" for k, v in timing.items()))
+    assert all(v < REQUEST_TIMEOUT_S for k, v in timing.items() if k.startswith("series"))

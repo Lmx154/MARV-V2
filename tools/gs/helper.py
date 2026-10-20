@@ -86,12 +86,15 @@ Endpoints (all need the token):
            ({"pilot": status}). {"cmd": "pilot_close"}: stops the frames at once (idempotent). Pushed: {"event": "pilot_state", "state":
            "open"|"closed"|"lost", "reason", "device", "port", "frames_sent", "send_errors", "channels": [16 raw 11-bit values]|null}, a
            change of state at once and the periodic ones at most 30 Hz. The run's end closes the pilot.
-         {"cmd": "log_list"}: {"logs": [{"sha256", "size", "name", "source", "imported_utc", "summary"}], "cards": [{"path", "name", "mount",
+         {"cmd": "log_list"}: {"logs": [{"sha256", "size", "name", "source", "imported_utc", "summary"}], "importing": {"id", "name"}|null, "cards": [{"path", "name", "mount",
            "size"}], "library"}: the imported logs with the decoder's summary (sectors, records by kind, problems, gaps, End record), and the
-           *.mlog files of the mounted cards (<--log-card-dir>/<mount>/marv/log). {"cmd": "log_import", "path"}: copies that file into
-           <run dir>/logs/<sha256>.mlog ({"sha256", ..., "already_imported"}); the path must be absolute and normalised, name a regular file
-           (no symbolic link) *.mlog outside the repository and the library, and the source is opened read-only; a file with decoder problems
-           is imported with the report in "summary". {"cmd": "log_series", "sha256", "kind", "fields": [names], "t0_us"?, "t1_us"?,
+           *.mlog files of the mounted cards (<--log-card-dir>/<mount>/marv/log). {"cmd": "log_import", "path"}: the path must be absolute and normalised, name a regular file
+           (no symbolic link) *.mlog outside the repository and the library; answers {"started": true, "import_id"} at once (the events carry it as "id"), one import at a time
+           (a second is refused), and the copy, the decode and the columnar cache run in a worker thread: pushed {"event":
+           "log_import_progress", "id", "phase": "copy"|"decode", "bytes_done", "bytes_total"} (rate-capped) and {"event": "log_import_done",
+           "id", "ok", "already_imported", "sha256", "size", "name", "source", "summary"} or {"ok": false, "error"}; the file is in
+           <run dir>/logs/<sha256>.mlog only after the import is done, the source is opened read-only, and a file with decoder problems is
+           imported with the report in "summary". Stopping the helper cancels the import and leaves no partial entry. {"cmd": "log_series", "sha256", "kind", "fields": [names], "t0_us"?, "t1_us"?,
            "buckets"?}: {"series": {"bucket_us", "n": [records per bucket], "fields": {name: {"min": [...], "max": [...], "skipped"}}}}: the
            minimum and maximum of each field in each of equal time buckets of the range (null for an empty one).
          {"cmd": "cards"}: {"cards": ["vehicles/<name>.yaml", ...]}: the cards a sil run's "card" accepts, sorted.
@@ -227,7 +230,7 @@ class Helper:
                 suffix += 1
                 self.run_dir = Path(runs_dir) / f"{utc_stamp()}-{suffix}"
         self.log = groundlog.GroundLog(self.run_dir / "ground.log")
-        self.logs = LogLibrary(self.run_dir, ROOT, log_card_dirs)  # the .mlog library of GX-15 (tools/gs/logs.py)
+        self.logs = LogLibrary(self.run_dir, ROOT, log_card_dirs, self._emit_threadsafe)  # the .mlog library of GX-15 (tools/gs/logs.py)
         self.images = ImageLibrary(self.build_root)
         self.reports = ReportLibrary(reports_dir if reports_dir is not None else self.build_root / "gs-reports")
         self.validate_command = list(validate_command or VALIDATE_COMMAND)
@@ -302,6 +305,7 @@ class Helper:
         await self.stop_validation()
         await self.stop_flash()
         await self.hil.stop()
+        await asyncio.to_thread(self.logs.shutdown)
         await asyncio.to_thread(self.runs.shutdown)
         await asyncio.to_thread(self.sil.stop)
         self.sim_channel.close()
@@ -964,8 +968,7 @@ class Helper:
             elif cmd == "log_list":
                 reply.update(await asyncio.to_thread(self.logs.list_logs))
             elif cmd == "log_import":
-                reply.update(await asyncio.to_thread(self.logs.import_file, msg.get("path")))
-                self.log.event(f"log imported: {reply['sha256']} from {reply['source']}")
+                reply.update(self.logs.start_import(msg.get("path")))
             elif cmd == "log_series":
                 reply["series"] = await asyncio.to_thread(self.logs.series, msg)
             elif cmd == "cards":
