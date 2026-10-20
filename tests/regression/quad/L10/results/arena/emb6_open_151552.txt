@@ -1,0 +1,16 @@
+# git describe: quad-L2-pass-633-g83eae44 (the measurement build: -DMARV_FC3V2_FLIGHT_LOG=ON -DMARV_FC3V2_FLIGHT_LOG_EMB6_OPEN=ON, kept by its post-link checks)
+# command: bash tests/regression/quad/L10/results/arena/measure_ram.sh build/m33-emb6/fw/hal/target/marv_fc3v2.elf
+image: build/m33-emb6/fw/hal/target/marv_fc3v2.elf
+2007ec64 B __end__
+20080000 B __HeapLimit
+20081800 A __StackBottom
+20082000 R __StackTop
+free (__HeapLimit - __end__): 5020 B
+.ram_vector_table         272   536870912
+.text                  148676   536871200
+.data                   84072   537019880
+.bss                   286228   537103952
+.heap                    2048   537390180
+.stack_dummy             2048   537399296
+20059400 00025000 b (anonymous namespace)::g_arena
+2003ca1c 00000234 b marv::hal_target::(anonymous namespace)::g_fs
