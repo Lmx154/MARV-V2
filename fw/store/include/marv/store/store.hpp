@@ -63,7 +63,7 @@ struct BootInputs {
   Hooks hooks;
   std::span<std::uint8_t> scratch;  // static working memory for a pending file or a slot copy, kept for the commands;
                                     // empty = none (nothing can be applied or activated)
-  std::span<std::uint8_t> arena;    // the disarmed arena (marv/store/arena.hpp) whose first bytes are `scratch`, leased once
+  std::span<std::uint8_t> arena{};  // the disarmed arena (marv/store/arena.hpp) whose first bytes are `scratch`, leased once
                                     // the boot step is done; empty = nothing to lend
 };
 
