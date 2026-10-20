@@ -11,7 +11,8 @@
 # Needs `uv sync --frozen`, `cd gcs && npm ci` and `cd gcs && npx playwright install chromium` (the browser lives in the
 # Playwright cache, not in the repository). It builds the GCS (gcs/build, ignored by git) and removes every process it started
 # on exit. Light mode also starts the fake simulator of tools/gs/e2e_fake_sim.py, which publishes the sim channel (GX-8) to the helper's
-# --sim-channel-port; the sim spec stops and continues it (MARV_E2E_SIM_PID) to make the SIM panels come and go. The staleness control of the specs stops the fake vehicle (SIGSTOP of its process group, MARV_E2E_VEHICLE_PID) and
+# --sim-channel-port, and the fake bench of tools/gs/e2e_fake_bench.py (a probe, a board running the HIL image, its pty port, a HIL build tree and a
+# flash.sh stand-in, with the HIL run a stand-in `sleep`) for the Bench page (GX-10); the sim spec stops and continues it (MARV_E2E_SIM_PID) to make the SIM panels come and go. The staleness control of the specs stops the fake vehicle (SIGSTOP of its process group, MARV_E2E_VEHICLE_PID) and
 # continues it; in live mode the vehicle page's control stops the processes of the helper's run (those with MARV_E2E_RUNS_DIR, the
 # helper's run directory, in their command line) and continues them. The Playwright JSON report and the failure screenshots land in the output directory (default build/gs-e2e/out).
 #
@@ -24,6 +25,8 @@ mode=light
 # Light mode: the SIL run is `sleep` of this many seconds (a labelled harness value: it only has to outlast a spec; stop ends it). The
 # number is unusual on purpose, so that a spec can look for the stand-in process by it.
 STAND_IN_SECONDS=7654.321
+# Light mode: the HIL run is `sleep` of this many seconds (a labelled harness value, unusual on purpose like the one above).
+HIL_STAND_IN_SECONDS=7655.321
 out_dir="${root}/build/gs-e2e/out"
 while (($# > 0)); do
   case "$1" in
@@ -110,6 +113,20 @@ print(s.getsockname()[1])')"
   : >"${gz_tree}/sim/quad_fc/libmarv_sil_quad_fc.so"
   uv run python tools/gs/e2e_fake_vehicle.py --manifest-out "${gz_tree}/generated/marv_params_fc3v2/marv/params/params_manifest.json"
   helper_args+=(--build-root "${work}/build-root" --sil-command "sleep ${STAND_IN_SECONDS}")
+  # The Bench page (GX-10): a fake probe, board (the HIL image's port, a pty), HIL build tree and flash.sh under ${work}/bench; the HIL run
+  # is the stand-in command `sleep`, and the helper reads the fake sysfs. No port of this host is opened.
+  echo "##### fake bench (probe, board, HIL port, SWD flash stand-in)"
+  setsid uv run python tools/gs/e2e_fake_bench.py --root "${work}/bench" --byid-dir "${work}/byid" --build-root "${work}/build-root" \
+    >"${work}/bench.log" 2>&1 &
+  pids+=("$!")
+  for _ in $(seq 1 300); do
+    grep -q '^fake bench ready' "${work}/bench.log" 2>/dev/null && break
+    kill -0 "${pids[-1]}" 2>/dev/null || { cat "${work}/bench.log"; echo "the fake bench did not start" >&2; exit 1; }
+    sleep 0.1
+  done
+  grep -q '^fake bench ready' "${work}/bench.log" || { cat "${work}/bench.log"; echo "the fake bench did not start" >&2; exit 1; }
+  export MARV_PROBE_SERIAL="E2EPROBE0001"
+  helper_args+=(--sysfs-dir "${work}/bench/sys" --swd-flash-script "${work}/bench/flash.sh" --hil-command "sleep ${HIL_STAND_IN_SECONDS}")
 fi
 
 echo "##### helper"
@@ -141,6 +158,8 @@ status=0
   MARV_E2E_URL="${url}" MARV_E2E_MODE="$([[ "${mode}" == live ]] && echo live || true)" MARV_E2E_OUT="${out_dir}" \
     MARV_E2E_VEHICLE_PID="$([[ "${mode}" == light ]] && echo "${pids[0]}" || true)" \
     MARV_E2E_STAND_IN="$([[ "${mode}" == light ]] && echo "${STAND_IN_SECONDS}" || true)" \
+    MARV_E2E_HIL_STAND_IN="$([[ "${mode}" == light ]] && echo "${HIL_STAND_IN_SECONDS}" || true)" \
+    MARV_E2E_FLASH_RECORD="${work}/bench/flash.record" \
     MARV_E2E_RUNS_DIR="${work}/runs" MARV_E2E_SIM_PID="${sim_pid}" \
     npx --no-install playwright test "$@"
 ) || status=$?

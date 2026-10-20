@@ -62,6 +62,16 @@ Endpoints (all need the token):
            absent; else starts the run and answers {"run": manifest}. {"cmd": "run_stop"}: stops the run's process group,
            answers {"run": manifest, "exit_status"}. {"cmd": "run_list"}: {"runs": [run id]}. {"cmd": "run_manifest", "run_id"}:
            {"manifest"} (the id must name a run under <run dir>/runs).
+         {"cmd": "hil_preflight", "esc_battery_unplugged": bool, "port"?, "seconds"?}: {"preflight": {"allowed", "refusals", "checks":
+           [{"id", "state", "detail"}], "port", "seconds", "argv"}} (tools/gs/hil.py, GX-10): the six checks of an S4b launch (probe, board,
+           hil_image, esc_battery, host_idle, ports), each refusal named; starts nothing. {"cmd": "hil_hold", "on": bool}: closes the
+           helper's serial port and suspends autoconnect (ended by the run it was taken for). {"cmd": "hil_start", ...}: the preflight (the
+           same options), then `run_hil_s4.py --expect none --gui` as a supervised hil run ({"run", "preflight"}); refused with the
+           preflight's reasons ("refusals", "preflight"). {"cmd": "hil_verdict", "run_id", "mode": "ANGLE"|"ACRO", "text"}: written once to
+           <run dir>/runs/<run id>/out/verdict.json. {"cmd": "flash_swd", "kind": "hil"|"bench-log"|"bench-profile"}: tools/target/flash.sh
+           of the kind's ELF through the debug probe, outside G7; only the hil kind, the motor-capable kinds are refused; answers {"started"}
+           at once, pushes {"event": "flash_swd_progress", "kind", "line"} and {"event": "flash_swd_done", "kind", "ok", "exit_status",
+           "error", "elf", "elf_sha256"}. Status gains "hil": {"hold", "hold_run", "verdict", "swd_flash"}.
          {"cmd": "cards"}: {"cards": ["vehicles/<name>.yaml", ...]}: the cards a sil run's "card" accepts, sorted.
          {"cmd": "host_state"}: {"host": {"loadavg", "cpus", "mem_total_bytes", "mem_available_bytes", "heavy_lock": {"held",
            "holder", "path"}}}. {"cmd": "autoconnect", "enabled": bool}: {"autoconnect": {"enabled", "suspended", "owner",
@@ -125,6 +135,7 @@ import mcfg  # noqa: E402
 from artifacts import ARTIFACT_KEYS, ImageLibrary, ReportLibrary  # noqa: E402
 from device import DEFAULT_BAUD, LOOPBACK, Device, DeviceError, SerialDevice, UdpDevice  # noqa: E402
 import hoststate  # noqa: E402
+from hil import HilGcs  # noqa: E402
 from simchannel import SimChannel  # noqa: E402
 from runs import KINDS, RunRefused, RunSupervisor, list_cards, parse_options  # noqa: E402
 import sil_run  # noqa: E402  (tools/sim, on the path since runs)
@@ -176,7 +187,8 @@ class Helper:
                  sil_command: list[str] | None = None, extra_origins: tuple[str, ...] = (), reports_dir: Path | None = None,
                  validate_command: list[str] | None = None, picotool: str | None = None, hil_command: list[str] | None = None,
                  heavy_lock: Path | None = None, byid_dir: Path | None = None, autoconnect: bool = True, poll_s: float = POLL_S,
-                 board_serial: str | None = None, sysfs_dir: Path | None = None, sim_channel_port: int = 0):
+                 board_serial: str | None = None, sysfs_dir: Path | None = None, sim_channel_port: int = 0,
+                 swd_flash_script: Path | None = None):
         self.token = token or secrets.token_urlsafe(32)
         self.extra_origins = frozenset(extra_origins)
         self.build_root, self.gcs_dir = Path(build_root), Path(gcs_dir)
@@ -214,6 +226,7 @@ class Helper:
         self.board_serial = board_serial  # when set, only the board with this USB serial string is opened
         self.sysfs_dir = Path(sysfs_dir) if sysfs_dir is not None else SYSFS
         self.poll_s = poll_s
+        self.hil = HilGcs(self, swd_flash_script)  # the GCS's HIL commands (tools/gs/hil.py, GX-10)
         self._ac_owner: str | None = None  # "sil" or "board" while the open device was opened by autoconnect
         self._ac_key: str | None = None
         self._ac_declined: str | None = None  # the key whose device the user closed: not opened again until the key changes
@@ -258,6 +271,7 @@ class Helper:
         self.close_device("helper stopping")
         await self.stop_validation()
         await self.stop_flash()
+        await self.hil.stop()
         await asyncio.to_thread(self.runs.shutdown)
         await asyncio.to_thread(self.sil.stop)
         self.sim_channel.close()
@@ -365,19 +379,25 @@ class Helper:
         except (ValueError, TypeError) as e:
             raise DeviceError(str(e)) from None
 
-    def run_refusals(self, kind: str, opts: dict) -> list[str]:
-        """Every reason a run of this kind cannot start now; empty when it can."""
+    def idle_refusals(self, *, heavy: bool = True) -> list[str]:
+        """Every reason the host is not idle for a simulation (or, with heavy False, for a flash): a run, a validation or a flash is
+        going, or the heavy lock is held."""
         reasons = []
         busy = self.runs.busy()
         if busy is not None:
             reasons.append(f"run {busy} is still going: one simulation at a time (H-1)")
         if self._validation_task is not None and not self._validation_task.done():
             reasons.append("a validation is running; wait for it to finish")
-        if self._flash_task is not None and not self._flash_task.done():
+        if (self._flash_task is not None and not self._flash_task.done()) or self.hil.swd_busy():
             reasons.append("a flash is running; wait for it to finish")
         lock = hoststate.heavy_lock_state(self.heavy_lock)
-        if lock["held"]:
+        if heavy and lock["held"]:
             reasons.append(f"the heavy lock is held ({lock['holder'] or 'unknown holder'}): heavy work waits for it (H-3)")
+        return reasons
+
+    def run_refusals(self, kind: str, opts: dict) -> list[str]:
+        """Every reason a run of this kind cannot start now; empty when it can."""
+        reasons = self.idle_refusals()
         if kind == "hil":
             if isinstance(self.device, SerialDevice):
                 reasons.append(f"the helper has a serial port open ({self.device.path}): close it first, a HIL run owns the board "
@@ -489,10 +509,13 @@ class Helper:
         the board; a device the operator opened is never touched."""
         active = self.runs.active()
         suspend = None
+        held = self.hil.suspension(active)
         if active is not None and active["kind"] == "hil":
             suspend = "a HIL run owns the board"
-        elif self._flash_task is not None and not self._flash_task.done():
+        elif (self._flash_task is not None and not self._flash_task.done()) or self.hil.swd_busy():
             suspend = "a flash is running"
+        elif held:
+            suspend = held
         if suspend != self._ac_suspended:
             self._ac_suspended = suspend
             self._ac_event("suspended" if suspend else "resumed", reason=suspend)
@@ -566,6 +589,7 @@ class Helper:
             "autoconnect": self.autoconnect_status(),
             "validation": self.validation,
             "flash": self.flash_state,
+            "hil": self.hil.status(),
             "gcs_built": (self.gcs_dir / "index.html").is_file(),
         }
 
@@ -722,7 +746,7 @@ class Helper:
     async def start_flash(self, msg: dict) -> dict:
         """Plans again from the stored reports, refuses unless the plan is allowed (nothing has been touched then), else starts the
         flash and answers at once."""
-        if self._flash_task is not None and not self._flash_task.done():
+        if (self._flash_task is not None and not self._flash_task.done()) or self.hil.swd_busy():
             raise DeviceError("a flash is running; wait for it to finish")
         if self._validation_task is not None and not self._validation_task.done():
             raise DeviceError("a validation is running; wait for it to finish")
@@ -869,6 +893,16 @@ class Helper:
                 reply["runs"] = self.runs.list_runs()
             elif cmd == "run_manifest":
                 reply["manifest"] = self.runs.manifest(msg.get("run_id"))
+            elif cmd == "hil_preflight":
+                reply["preflight"] = self.hil.preflight(msg)
+            elif cmd == "hil_hold":
+                reply.update(self.hil.set_hold(msg))
+            elif cmd == "hil_start":
+                reply.update(self.hil.start(msg, Refusal))
+            elif cmd == "hil_verdict":
+                reply.update(self.hil.verdict(msg))
+            elif cmd == "flash_swd":
+                reply.update(await self.hil.start_swd(msg))
             elif cmd == "cards":
                 reply["cards"] = list_cards()
             elif cmd == "host_state":
@@ -1012,7 +1046,8 @@ async def run(args: argparse.Namespace) -> int:
                     validate_command=shlex.split(args.validate_command) if args.validate_command else None,
                     picotool=args.picotool, hil_command=shlex.split(args.hil_command) if args.hil_command else None,
                     heavy_lock=args.heavy_lock, byid_dir=args.byid_dir, autoconnect=not args.no_autoconnect,
-                    board_serial=args.board_serial, sim_channel_port=args.sim_channel_port)
+                    board_serial=args.board_serial, sim_channel_port=args.sim_channel_port,
+                    swd_flash_script=args.swd_flash_script, sysfs_dir=args.sysfs_dir)
     await helper.start(args.port)
     try:
         if args.serial:
@@ -1061,6 +1096,10 @@ def parse_args(argv=None) -> argparse.Namespace:
                                                "(shell-style quoting; for tests; default tools/validate/validate_config.py)")
     ap.add_argument("--hil-command", help="the command line a `run_start` of kind hil runs instead of tools/sim/run_hil_s4.py "
                                           "(shell-style quoting; for tests)")
+    ap.add_argument("--sysfs-dir", type=Path, default=None,
+                    help="the sysfs the board watcher and the HIL preflight read (default /sys; for tests)")
+    ap.add_argument("--swd-flash-script", type=Path, default=None,
+                    help="the script `flash_swd` runs with the ELF as its argument (default tools/target/flash.sh; for tests)")
     ap.add_argument("--heavy-lock", type=Path, default=None,
                     help="the heavy-lock file (default $MARV_HEAVY_LOCK, else %s; ci/heavy.sh takes the same lock)" % hoststate.HEAVY_LOCK_DEFAULT)
     ap.add_argument("--byid-dir", type=Path, default=None,

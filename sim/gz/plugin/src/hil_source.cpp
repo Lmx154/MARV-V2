@@ -3,6 +3,7 @@
 
 #include <fcntl.h>
 #include <poll.h>
+#include <sys/file.h>
 #include <sys/ioctl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -209,6 +210,13 @@ std::string HilCommandSource::open(const HilConfig& cfg) {
   fd_ = ::open(cfg_.device.c_str(), O_RDWR | O_NOCTTY | O_NONBLOCK);
   if (fd_ < 0) {
     return "cannot open the board's port " + cfg_.device + ": " + std::strerror(errno);
+  }
+  // One opener of the board's port at a time (invariant H-1): the ground-station helper takes the same advisory lock on a port it opens
+  // (tools/gs/device.py), so a helper connection and a HIL run refuse each other instead of both reading the board's uplink. Taken
+  // before the port is configured, so a refused run leaves the other opener's line settings alone; held until finish() closes the port.
+  if (flock(fd_, LOCK_EX | LOCK_NB) != 0) {
+    return "the board's port " + cfg_.device + " is in use by another process (the ground-station helper's connection, or another HIL run): " +
+           std::strerror(errno) + "; close it first, a HIL run owns the port";
   }
   termios t{};
   if (tcgetattr(fd_, &t) != 0) {

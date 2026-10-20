@@ -12,6 +12,7 @@ import { channelMapOf, LiveController } from './live_state';
 import { ManifestController, type ManifestState } from './manifest_state';
 import { RadioController } from './radio_state';
 import { Problems, type Problem } from './problems';
+import { BenchController } from './bench_state';
 import { SimController } from './sim_state';
 import { ShellController, type AutoconnectEvent, type Indicator } from './shell';
 import { ValidationController } from './validation_state';
@@ -36,6 +37,8 @@ export interface App {
 	paramRows: Readable<readonly ParamRow[]>;
 	/** The Simulation page: the SIL run definition, its plan, launch and stop; null without a helper. */
 	sim: SimController | null;
+	/** The Bench page: the HIL preflight and launch, the verdict form and the SWD flash of the bench images; null without a helper. */
+	bench: BenchController | null;
 	status: Readable<HelperStatus | null>;
 	/** The device the helper has open, from its events and status. */
 	device: Readable<string | null>;
@@ -163,6 +166,14 @@ function create(): App {
 				})
 			: null;
 
+	const bench =
+		helper && api
+			? new BenchController({
+					request: (cmd, args) => helper.request(cmd, args),
+					refresh: () => shell.refresh()
+				})
+			: null;
+
 		// The identity arrives after the connection: load the matching manifest then.
 	let lastIdentityKey = '';
 	vehicle?.state.subscribe((s) => {
@@ -189,6 +200,7 @@ function create(): App {
 		radio,
 		paramRows,
 		sim,
+		bench,
 		status: shell.status,
 		device: shell.device,
 		bar: shell.bar,
