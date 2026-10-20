@@ -12,6 +12,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 CHECK = ROOT / "tools" / "ci" / "check_log_ring.py"
 sys.path.insert(0, str(ROOT / "tools" / "log"))
@@ -127,3 +129,78 @@ def test_usage_and_input_errors_are_not_a_pass(tmp_path):
     nosym.write_text("#!/bin/sh\necho '20000000 00000010 B other'\n")
     nosym.chmod(nosym.stat().st_mode | stat.S_IXUSR)
     assert run("--manifest", m, "--elf", str(elf), "--nm", str(nosym)).returncode == 2
+
+
+# ---- the flight image (MARV_FC3V2_FLIGHT_LOG, unit U4-4): the ring the arena logger makes of the disarmed arena -----------------
+ARENA = "_ZN12_GLOBAL__N_17g_arenaE"
+STAGING = 16384
+
+
+def write_fake_nm_lines(tmp_path: Path, lines: list[str]) -> Path:
+    nm = tmp_path / "fake_nm_arena"
+    nm.write_text("#!/bin/sh\n" + "".join(f"echo '{line}'\n" for line in lines))
+    nm.chmod(nm.stat().st_mode | stat.S_IXUSR)
+    return nm
+
+
+def arena_line(address: int, size: int) -> str:
+    return f"{address:08x} {size:08x} b {ARENA}"
+
+
+def arena_args(m: str, elf: Path, nm: Path, *extra: str) -> list[str]:
+    return ["--manifest", m, "--elf", str(elf), "--nm", str(nm), "--arena-symbol", ARENA, "--staging-bytes", str(STAGING), *extra]
+
+
+@pytest.mark.parametrize("address", [0x20051CF0, 0x20051CFD])
+def test_the_arena_ring_starts_at_the_first_cell_boundary_after_the_staging(tmp_path, address):
+    # The negative control is one cell less: an arena one byte shorter than the smallest passing one loses its last whole cell.
+    m = str(manifest(tmp_path))
+    elf = tmp_path / "image.elf"
+    elf.write_bytes(b"x")
+    start = -(-(address + STAGING) // CELL) * CELL
+    size = start - address + smallest_ring_cells(0.809) * CELL
+    ok = run(*arena_args(m, elf, write_fake_nm_lines(tmp_path, [arena_line(address, size)]), "--delete-on-failure"))
+    assert ok.returncode == 0, ok.stdout + ok.stderr
+    assert f"{smallest_ring_cells(0.809) * CELL} B" in ok.stdout
+    bad = run(*arena_args(m, elf, write_fake_nm_lines(tmp_path, [arena_line(address, size - 1)]), "--delete-on-failure"))
+    assert bad.returncode == 1 and "L-5 FAILS" in bad.stdout
+    assert not elf.exists()
+
+
+def test_negative_control_a_longer_stall_fails_the_arena_ring(tmp_path):
+    elf = tmp_path / "image.elf"
+    elf.write_bytes(b"x")
+    size = STAGING + smallest_ring_cells(0.809) * CELL
+    nm = write_fake_nm_lines(tmp_path, [arena_line(0x20000000, size)])
+    assert run(*arena_args(str(manifest(tmp_path)), elf, nm)).returncode == 0
+    longer = tmp_path / "longer"
+    longer.mkdir()
+    r = run(*arena_args(str(manifest(longer, stall_s=0.809 * 1.1)), elf, nm))
+    assert r.returncode == 1 and "L-5 FAILS" in r.stdout
+
+
+def test_warn_reports_a_shortfall_and_keeps_the_image(tmp_path):
+    # The measurement build (invariant L-5a): the same shortfall is a warning, exit 0, and the image stays.
+    m = str(manifest(tmp_path))
+    elf = tmp_path / "image.elf"
+    elf.write_bytes(b"x")
+    nm = write_fake_nm_lines(tmp_path, [arena_line(0x20000000, STAGING + 1000 * CELL)])
+    r = run(*arena_args(m, elf, nm, "--warn"))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "LOG-RING: WARN: L-5 does not hold" in r.stdout and "margin -" in r.stdout
+    assert elf.exists()
+    assert run(*arena_args(m, elf, nm)).returncode == 1, "without --warn the same ring fails"
+    assert run(*arena_args(m, elf, nm, "--warn", "--delete-on-failure")).returncode == 2
+
+
+def test_arena_usage_errors_are_not_a_pass(tmp_path):
+    m = str(manifest(tmp_path))
+    elf = tmp_path / "image.elf"
+    elf.write_bytes(b"x")
+    nm = write_fake_nm_lines(tmp_path, [arena_line(0x20000000, 1 << 20)])
+    assert run("--manifest", m, "--elf", str(elf), "--nm", str(nm), "--arena-symbol", ARENA).returncode == 2
+    assert run("--manifest", m, "--ring-bytes", "262144", "--arena-symbol", ARENA, "--staging-bytes", "16384").returncode == 2
+    twice = write_fake_nm_lines(tmp_path, [arena_line(0x20000000, 1 << 20), arena_line(0x20100000, 1 << 20)])
+    assert run(*arena_args(m, elf, twice)).returncode == 2
+    none = write_fake_nm_lines(tmp_path, ["20000000 00000010 b other"])
+    assert run(*arena_args(m, elf, none)).returncode == 2
