@@ -220,7 +220,8 @@ inline constexpr std::size_t kOffBody = kOffTime + sizeof(std::uint32_t);
 
 // HeaderInfo: lead (sub 0), format_version u16, sector_bytes u16, session_start_us u64, image_hash[32], config_hash[32],
 // schema_hash u64, tick_num u32, tick_den u32 (the tick period, us, as num/den), odr_hz f32, boot_sequence u32, boot
-// report bytes: config_source, slot, config_status, fault, request, request_fault, then two reserved bytes.
+// report bytes: config_source, slot, config_status, fault, request, request_fault, then build_flags u8 (kBuildFlag* bits; the
+// first of two bytes that were reserved, so a file written before it reads 0) and one reserved byte.
 namespace info {
 inline constexpr std::size_t kOffVersion = kLeadBytes;
 inline constexpr std::size_t kOffSector = kOffVersion + sizeof(std::uint16_t);
@@ -234,8 +235,12 @@ inline constexpr std::size_t kOffOdr = kOffTickDen + sizeof(std::uint32_t);
 inline constexpr std::size_t kOffBootSequence = kOffOdr + sizeof(float);
 inline constexpr std::size_t kOffBoot = kOffBootSequence + sizeof(std::uint32_t);
 inline constexpr std::size_t kBootBytes = 2 * sizeof(std::uint32_t);
+inline constexpr std::size_t kOffBuildFlags = kOffBoot + kBootBytes - 2 * sizeof(std::uint8_t);
 inline constexpr std::size_t kBytes = kOffBoot + kBootBytes;
 }  // namespace info
+// build_flags bit 0: the file was written by the measurement build MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN (invariant L-5a), whose ring
+// need not hold the fast stream for the worst SD stall (core EMB-6 is open there): not a flight image.
+inline constexpr std::uint8_t kBuildFlagEmb6Open = 1U << 0;
 
 // HeaderKind: lead (sub = the kind described), record_bytes u16 (0: variable, read the lead's length), then the kind's name
 // as a zero-terminated string.

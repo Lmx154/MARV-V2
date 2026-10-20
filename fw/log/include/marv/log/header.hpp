@@ -61,6 +61,7 @@ struct HeaderInfo {
   ParamNameFn param_name = nullptr;  // null: parameters are not written
   const TelemetryHook* telemetry = nullptr;
   const ImuRawScales* imu_raw = nullptr;  // the ImuRaw records' scales; null: the file holds no ImuRaw record
+  std::uint8_t build_flags = 0;           // format.hpp kBuildFlag* bits
 };
 
 // One kind's description for the header (also read by tests and the decoder's documentation).

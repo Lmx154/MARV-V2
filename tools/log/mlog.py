@@ -193,7 +193,7 @@ class _Stream:
             "format_version": version, "sector_bytes": sector_bytes, "session_start_us": start,
             "image_hash": image.hex(), "config_hash": config.hex(), "schema_hash": schema,
             "tick_num_us": tick_num, "tick_den": tick_den, "odr_hz": odr,
-            "boot": dict(zip(names, rec[o2: o2 + 6]), sequence=boot_seq)}
+            "boot": dict(zip(names, rec[o2: o2 + 6]), sequence=boot_seq), "build_flags": rec[o2 + 6]}
         self.last_t = start
 
     def _data(self, kind: int, rec: bytes) -> None:
