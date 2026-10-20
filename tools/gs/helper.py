@@ -20,6 +20,8 @@
   - bridges the pilot's joystick to the SIL (tools/gs/pilot.py, GX-9): reads the RadioMaster in USB-joystick mode (Linux joystick API),
     sends raw 16-channel RC frames to the plugin's <pilot_udp_port> of a run started with the pilot option (never on the link: PB-1)
     and tells the GCS the pilot state at most 30 Hz;
+  - relays the board's console (tools/gs/console.py, GX-16, decision 0038): the by-id `-if00` CDC as text on /ws/console and the operator's
+    typed lines back, opened and closed by the operator, never autoconnected, refused while a HIL run, the HIL hold or a flash owns the board;
   - serves the built GCS (gcs/build) at /.
 
   uv run python tools/gs/helper.py [--serial PATH [--baud N] | --udp PORT] [--port N] [--runs-dir DIR] [--build-root DIR]
@@ -50,6 +52,8 @@ Endpoints (all need the token):
                                   the validation report of that pair (the bytes whose SHA-256 is the report id), 404 if none
   WS   /ws/sim                    the sim channel: one binary message per datagram of the simulator's record, as it arrived; one way
                                   (a client that sends is closed with 1008). Same Host, Origin and token rules as /ws; one client.
+  WS   /ws/console                the board's console: text frames both ways (device output down, the operator's lines up, unchanged); a binary
+                                  frame closes the client (1003). Same Host, Origin and token rules as /ws; one client.
   WS   /ws                        binary frames are raw device bytes in both directions; text frames are JSON control:
          {"cmd": "status"} {"cmd": "open", "serial": "/dev/...", "baud": N} {"cmd": "open", "udp_port": N} {"cmd": "close"}
          {"cmd": "sil_start"} {"cmd": "sil_stop"}: run_start / run_stop of kind sil
@@ -84,6 +88,12 @@ Endpoints (all need the token):
            ({"pilot": status}). {"cmd": "pilot_close"}: stops the frames at once (idempotent). Pushed: {"event": "pilot_state", "state":
            "open"|"closed"|"lost", "reason", "device", "port", "frames_sent", "send_errors", "channels": [16 raw 11-bit values]|null}, a
            change of state at once and the periodic ones at most 30 Hz. The run's end closes the pilot.
+         {"cmd": "console_open", "device": "<by-id dir>/<name>-if00"}: opens the console (a device slot of its own beside the link's; the path
+           must be a console entry of the by-id directory leading to a character device under /dev), refused while a HIL run, the HIL hold or a
+           flash owns the board or another process holds the port; answers {"console": status}. {"cmd": "console_close"} (idempotent) and
+           {"cmd": "console_status"}: {"console": {"state": "closed"|"open"|"lost", "reason", "device", "client", "rx_bytes", "tx_bytes",
+           "dropped_bytes", "log", "devices", "blocked"}}; status gains the same block. Pushed: {"event": "console_state", "state", "reason",
+           "device"}. While a console is open console.log in the run directory holds its bytes (ground-log format).
          {"cmd": "cards"}: {"cards": ["vehicles/<name>.yaml", ...]}: the cards a sil run's "card" accepts, sorted.
          {"cmd": "host_state"}: {"host": {"loadavg", "cpus", "mem_total_bytes", "mem_available_bytes", "heavy_lock": {"held",
            "holder", "path"}}}. {"cmd": "autoconnect", "enabled": bool}: {"autoconnect": {"enabled", "suspended", "owner",
@@ -146,6 +156,7 @@ import image_hash as board_image  # noqa: E402
 import mcfg  # noqa: E402
 from artifacts import ARTIFACT_KEYS, ImageLibrary, ReportLibrary  # noqa: E402
 from device import DEFAULT_BAUD, LOOPBACK, Device, DeviceError, SerialDevice, UdpDevice  # noqa: E402
+from console import Console  # noqa: E402
 import hoststate  # noqa: E402
 from hil import HilGcs  # noqa: E402
 from pilot import Pilot, PilotError, free_udp_port  # noqa: E402
@@ -165,6 +176,7 @@ SIM_CLIENT_QUEUE_MAX_BYTES = 1 << 20  # labelled harness value: the same for the
 WS_POLICY = 1008  # RFC 6455 section 7.4.1 "policy violation": a /ws/sim client sent something (the channel is one way)
 SERIAL_GLOBS = ("/dev/ttyACM*", "/dev/ttyUSB*", "/dev/serial/by-id/*")
 WS_BUSY = 1013  # RFC 6455 section 7.4.2 "try again later"
+WS_PATHS = ("/ws", "/ws/sim", "/ws/console")
 BYID_DIR = Path("/dev/serial/by-id")
 # A board's link interface is opened only when all three hold. The by-id name is the Pico SDK's product string with the link CDC,
 # USB interface 2 (fw/hal/target/CMakeLists.txt); sysfs says the device is 2e8a:0009 (Raspberry Pi's vendor ID and the Pico SDK CDC
@@ -242,6 +254,7 @@ class Helper:
         self.sysfs_dir = Path(sysfs_dir) if sysfs_dir is not None else SYSFS
         self.poll_s = poll_s
         self.hil = HilGcs(self, swd_flash_script)  # the GCS's HIL commands (tools/gs/hil.py, GX-10)
+        self.console = Console(self, WS_BUSY)  # the board's console relay (tools/gs/console.py, GX-16)
         self._ac_owner: str | None = None  # "sil" or "board" while the open device was opened by autoconnect
         self._ac_key: str | None = None
         self._pilot_logged = "closed"
@@ -285,6 +298,7 @@ class Helper:
             self._server.close()
             await self._server.wait_closed()
         self.close_device("helper stopping")
+        self.console.close("helper stopping")
         self.pilot.close("helper stopping")
         await self.stop_validation()
         await self.stop_flash()
@@ -434,6 +448,8 @@ class Helper:
             if isinstance(self.device, SerialDevice):
                 reasons.append(f"the helper has a serial port open ({self.device.path}): close it first, a HIL run owns the board "
                                "port (H-1)")
+            if self.console.is_open:
+                reasons.append(f"the console is open ({self.console.path}): close it first, a HIL run owns the board port (H-1)")
             if not os.path.exists(opts["port"]):
                 reasons.append(f"the board port {opts['port']} is not present")
         return reasons
@@ -541,6 +557,7 @@ class Helper:
         is opened. The choice follows the run supervisor's single active-run slot, so it changes only when a run starts or ends
         (no flapping), and a board appearing mid-run waits for the run to end. Both are suspended while a HIL run or a flash owns
         the board; a device the operator opened is never touched."""
+        self.console.watch()
         active = self.runs.active()
         suspend = None
         held = self.hil.suspension(active)
@@ -622,6 +639,7 @@ class Helper:
             "host": hoststate.host_state(self.heavy_lock),
             "autoconnect": self.autoconnect_status(),
             "pilot": self.pilot.status(),
+            "console": self.console.status(),
             "validation": self.validation,
             "flash": self.flash_state,
             "hil": self.hil.status(),
@@ -865,8 +883,12 @@ class Helper:
             task.cancel()
 
     async def _ws_handler(self, ws: ServerConnection) -> None:
-        if urlsplit(ws.request.path).path == "/ws/sim":
+        path = urlsplit(ws.request.path).path
+        if path == "/ws/sim":
             await self._sim_ws_handler(ws)
+            return
+        if path == "/ws/console":
+            await self.console.ws_handler(ws)
             return
         if self.client is not None:
             await ws.close(WS_BUSY, "another client is attached")
@@ -948,6 +970,12 @@ class Helper:
             elif cmd == "pilot_close":
                 self.pilot.close()
                 reply["pilot"] = self.pilot.status()
+            elif cmd == "console_open":
+                reply["console"] = self.console.open(msg)
+            elif cmd == "console_close":
+                reply["console"] = self.console.close()
+            elif cmd == "console_status":
+                reply["console"] = self.console.status()
             elif cmd == "cards":
                 reply["cards"] = list_cards()
             elif cmd == "host_state":
@@ -1027,8 +1055,8 @@ class Helper:
         if refusal is not None:
             return refusal
         if websocket:
-            return None if path in ("/ws", "/ws/sim") else self._refuse(HTTPStatus.NOT_FOUND, "no such WebSocket path")
-        if path in ("/ws", "/ws/sim"):
+            return None if path in WS_PATHS else self._refuse(HTTPStatus.NOT_FOUND, "no such WebSocket path")
+        if path in WS_PATHS:
             return self._refuse(HTTPStatus.UPGRADE_REQUIRED, "WebSocket only")
         try:
             return self._http_get(path, in_query)

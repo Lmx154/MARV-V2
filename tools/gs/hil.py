@@ -174,7 +174,7 @@ def cache_values(tree: Path) -> dict[str, str]:
 
 class HilGcs:
     """The GCS's HIL commands over a Helper (duck-typed: run_options, run_start, idle_refusals, runs, device, autoconnect_enabled,
-    byid_dir, sysfs_dir, board_serial, build_root, log, _push, close_device)."""
+    byid_dir, sysfs_dir, board_serial, build_root, log, _push, close_device, console)."""
 
     def __init__(self, helper, swd_script: Path | None = None):
         self.h = helper
@@ -277,6 +277,8 @@ class HilGcs:
         reasons = []
         if isinstance(h.device, SerialDevice):
             reasons.append(f"the helper has a serial port open ({h.device.path}): close it, a HIL run owns the board's port (H-1)")
+        if h.console.is_open:
+            reasons.append(f"the console is open ({h.console.path}): close it, a HIL run owns the board's port (H-1)")
         if port is not None and not (isinstance(h.device, SerialDevice) and os.path.realpath(h.device.path) == os.path.realpath(port)):
             holders = flock_holders(port)
             if holders:
@@ -373,6 +375,8 @@ class HilGcs:
         reasons = h.idle_refusals(heavy=False)
         if isinstance(h.device, SerialDevice):
             reasons.append(f"the helper has a serial port open ({h.device.path}): close it, the flash reboots the board")
+        if h.console.is_open:
+            reasons.append(f"the console is open ({h.console.path}): close it, the flash reboots the board")
         if reasons:
             raise DeviceError("; ".join(reasons))
         tree = Path(h.build_root) / HIL_TREE
