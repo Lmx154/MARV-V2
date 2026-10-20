@@ -12,6 +12,7 @@
 #include <marv/params/param_ids.hpp>
 
 #include "internal.hpp"
+#include "marv/store/arena.hpp"
 #include "marv/store/store.hpp"
 
 namespace marv::store {
@@ -58,6 +59,7 @@ constexpr const char* kNoRequest = "this board cannot keep a boot request";
 constexpr const char* kNoPending = "the pending activation file could not be written";
 constexpr const char* kNoReboot = "this board cannot reboot itself";
 constexpr const char* kRebootScheduled = "a reboot is already scheduled: no config command until it has happened";
+constexpr const char* kArenaHeld = "the onboard logger holds the working memory and the SD card and cannot give them back now";
 
 // Records the boot request and asks for the maintenance grant.
 [[nodiscard]] CommandResult request_boot(const BootInputs& in, const Digest& want) noexcept {
@@ -213,6 +215,9 @@ CommandResult activate(const Binding& binding) noexcept {
   }
   if (in->scratch.empty()) {
     return refused(fault_text(Fault::NoMemory));
+  }
+  if (!arena_reclaim()) {
+    return refused(kArenaHeld);
   }
   const std::size_t n = encode(ParamTable{g_staged}, 0, binding, in->scratch);
   if (n == 0 || n + kCommitBytes > kConfigSlotBytes) {

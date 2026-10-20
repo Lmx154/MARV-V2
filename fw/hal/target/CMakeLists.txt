@@ -4,7 +4,7 @@
 # this library alone), the image links the full SDK libraries it needs.
 add_library(marv_hal_target STATIC src/hal_target.cpp src/lsm6dsv.cpp src/motor_output.cpp src/motor_test.cpp
   src/manual_control.cpp src/receiver.cpp src/bench_stats.cpp src/storage_flash.cpp src/flash_image.cpp src/storage_sd.cpp
-  src/sd_spi.cpp)
+  src/sd_spi.cpp src/sd_volume.cpp)
 target_include_directories(marv_hal_target PUBLIC include)
 target_link_libraries(marv_hal_target
   PUBLIC marv_hal marv_types marv_dshot marv_crsf_decode
@@ -273,6 +273,53 @@ function(marv_check_bench_profile target mode)
     VERBATIM)
 endfunction()
 marv_check_bench_profile(marv_fc3v2 FORBID)
+
+# The disarmed arena of the flight image (onboard logger unit U4-2; marv/store/arena.hpp): the config store's working memory and
+# the RAM the image leaves free, one block. src/main.cpp derives its size, kArenaBytes = kConfigSlotBytes plus the largest whole
+# number of 512-byte SD sectors in MARV_FC3V2_RAM_FREE_BYTES - PICO_HEAP_SIZE - MARV_FC3V2_ARENA_MARGIN_BYTES, from:
+#   MARV_FC3V2_RAM_FREE_BYTES (measured): the free RAM, __HeapLimit - __end__, of this image built with the working memory alone
+#     (this value set to 0 builds that image), 84688 bytes at unit U4-2 (tests/regression/quad/L10/results/arena: measure_ram.sh,
+#     arena_at_slot.txt).
+#     Measure it again whenever the image's static RAM changes (unit U4-4 adds the logger); an arena that reaches the SDK's heap
+#     reservation fails the link.
+#   PICO_HEAP_SIZE (the pinned Pico SDK's pico/platform.h, 2048 bytes): the heap reservation the linker places at __end__.
+#   MARV_FC3V2_ARENA_MARGIN_BYTES, a PLACEHOLDER: the RAM kept free between the heap reservation and the end of main RAM, which
+#     core 0's stack (2048 bytes in scratch_y) reaches once it has overflowed the scratch banks, and headroom for code and data
+#     added before the next measurement; nothing has measured the stack's depth. Replaced by a painted-stack high-water mark of
+#     the flight image with the logger wired (onboard logger units U4-4, U4-6).
+# Both are plain variables, not cached, so no build tree keeps a value this file no longer holds. The default configuration only:
+# every bench option changes the image's RAM, so the bench images keep the working memory alone.
+set(MARV_FC3V2_RAM_FREE_BYTES 84688)
+set(MARV_FC3V2_ARENA_MARGIN_BYTES 4096)
+if(NOT (MARV_FC3V2_COUNT_ONLY OR MARV_FC3V2_BENCH_STATS OR MARV_FC3V2_BENCH_ACCEPT_SPACING OR MARV_FC3V2_IMU_LOG OR
+        MARV_FC3V2_HIL_LINK OR MARV_FC3V2_HIL OR MARV_FC3V2_SD_BENCH OR MARV_FC3V2_USB_BENCH OR MARV_FC3V2_LOG_BENCH))
+  target_compile_definitions(marv_fc3v2 PRIVATE MARV_FC3V2_RAM_FREE_BYTES=${MARV_FC3V2_RAM_FREE_BYTES}
+    MARV_FC3V2_ARENA_MARGIN_BYTES=${MARV_FC3V2_ARENA_MARGIN_BYTES})
+endif()
+
+# Invariant L-8b (onboard logger unit U4-2): the image that holds the arena lease never starts core 1, because withdrawing the
+# ring from the tick is safe only while the tick and the background loop share core 0 (marv/log/arena_logger.hpp). After every
+# link, tools/ci/check_single_core.py lists the image's symbols (nm): FORBID fails the build and removes the image if a symbol
+# starts with multicore_launch_core1; REQUIRE fails it unless one does (the negative control, the planted image of
+# tests/regression/quad/L09/single_core, which the same check must find launching core 1). Python as marv_check_bench_profile.
+function(marv_check_single_core target mode)
+  set(python "${MARV_PYTHON}")
+  if(python STREQUAL "")
+    set(python "${PROJECT_SOURCE_DIR}/.venv/bin/python")
+  endif()
+  if(mode STREQUAL "FORBID")
+    set(check_args --forbid "$<TARGET_FILE:${target}>" --delete-on-failure)
+  elseif(mode STREQUAL "REQUIRE")
+    set(check_args --require "$<TARGET_FILE:${target}>")
+  else()
+    message(FATAL_ERROR "marv_check_single_core(${target} ${mode}): the mode is FORBID or REQUIRE")
+  endif()
+  add_custom_command(TARGET ${target} POST_BUILD
+    COMMAND "${python}" "${PROJECT_SOURCE_DIR}/tools/ci/check_single_core.py" --nm "${CMAKE_NM}" ${check_args}
+    COMMENT "Checking that ${target} never starts core 1 (invariant L-8b, ${mode})"
+    VERBATIM)
+endfunction()
+marv_check_single_core(marv_fc3v2 FORBID)
 
 # The bench motor-step profile image (unit U3 BENCH-PROFILE, architect ruling 2026-10-18 item 8; the props-off runbook is
 # tests/regression/quad/L10/results/bench_profile/README.md): main.cpp built with MARV_FC3V2_BENCH_PROFILE, linking the

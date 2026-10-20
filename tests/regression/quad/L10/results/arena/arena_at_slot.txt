@@ -1,0 +1,14 @@
+image: build/m33/fw/hal/target/marv_fc3v2.elf
+2006b530 B __end__
+20080000 B __HeapLimit
+20081800 A __StackBottom
+20082000 R __StackTop
+free (__HeapLimit - __end__): 84688 B
+.ram_vector_table         272   536870912
+.text                  131520   536871184
+.data                   73956   537002704
+.bss                   233848   537076664
+.heap                    2048   537310512
+.stack_dummy             2048   537399296
+20051cec 00019000 b (anonymous namespace)::g_arena
+20035624 00000234 b marv::hal_target::(anonymous namespace)::g_fs

@@ -63,6 +63,8 @@ struct BootInputs {
   Hooks hooks;
   std::span<std::uint8_t> scratch;  // static working memory for a pending file or a slot copy, kept for the commands;
                                     // empty = none (nothing can be applied or activated)
+  std::span<std::uint8_t> arena{};  // the disarmed arena (marv/store/arena.hpp) whose first bytes are `scratch`, leased once
+                                    // the boot step is done; empty = nothing to lend
 };
 
 enum class ConfigSource : std::uint8_t { Factory, Slot };
@@ -147,7 +149,8 @@ void stage_source_chunk(std::size_t offset, std::span<const char> chunk) noexcep
 // (RebootRequested) until the reset, so nothing re-arms it or replaces its boot request. Accepted, a command records the boot
 // request (the config hash the next boot is to make active) and asks for the maintenance grant; the reboot happens only once
 // the grant is given (reboot_when_granted; the link calls it again while it returns WaitingForGrant).
-//   activate: writes the staged copy, bound to `binding` (this image and a report), as the pending file.
+//   activate: writes the staged copy, bound to `binding` (this image and a report), as the pending file. It takes the arena
+//             and the SD volume back first (arena_reclaim, marv/store/arena.hpp) and is refused while their holder keeps them.
 //   revert_to_last_good: asks for the intact committed slot that is not the newest (GS-11: an explicit activation).
 //   reset_to_factory: asks for the factory config (the next boot erases both slots).
 enum class CommandStep : std::uint8_t { Refused, WaitingForGrant, RebootRequested, RebootFailed };

@@ -50,6 +50,12 @@ class Logger final : private ChunkSink {
   // One pass of the background loop. `armed` is the arming machine's Armed state as the loop last read it.
   void service(TimeUs now, bool armed) noexcept;
 
+  // The arena lease (invariant L-8, marv/store/arena.hpp; marv/log/arena_logger.hpp), from the background loop. False, changing
+  // nothing, while `armed`, Logging or PostRoll: the logger never gives up its ring, its staging or the card then. Otherwise it
+  // closes the file it holds (Ready's, or a Full or Fault file not closed yet), gives the card back (LogStorage::release), is
+  // Absent, and returns true: it no longer uses the ring, the staging or the card.
+  [[nodiscard]] bool yield(TimeUs now, bool armed) noexcept;
+
   [[nodiscard]] LoggerState state() const noexcept { return state_; }
   [[nodiscard]] const std::array<std::uint32_t, kStatusFields>& counters() const noexcept { return counters_; }
   [[nodiscard]] std::uint64_t session_id() const noexcept { return session_; }
