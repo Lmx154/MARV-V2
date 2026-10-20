@@ -70,6 +70,10 @@ segment of INTERACTIVE_S keeps the link on, the sticks centred, the throttle 0 a
 disarmed on the pad). The world also has <ground/> (decision 0047 amendment, Luis 2026-10-18): a touchdown at or below the start
 height while moving down puts the vehicle at rest there and re-engages the pad's hold. No log and no analysis: the run lasts
 INTERACTIVE_S unless it is stopped (SIGTERM) first. Files: <dir>/interactive/<stem>.sdf and run_definition.json.
+The pilot input (ground-segment unit GX-9; interactive only): --pilot-udp-port <port> writes <pilot_udp_port> instead of the stick script
+(<manual_control_script>; the plugin refuses both): the plugin binds 127.0.0.1:<port> and stages the RC frames that the helper's pilot
+bridge (tools/gs/pilot.py) sends there through marv_sil_stage_rc_frame. Until the first frame the link is down (NoLink). Without the option
+the world is byte-identical to the one without it.
 Ground-station options of the interactive run (ground-segment unit GX-3; each applies to --interactive only, and without them the
 world is byte-identical to the one without the options):
   --card <card.yaml>        the plant card of the world (default vehicles/marv_7in_fc3v2.yaml); the firmware is the image's
@@ -297,12 +301,13 @@ def link_xml(link_udp_port=None, config_dir=None):
     return text
 
 
-def sdf_edit_for(phases, overrides, com_offset_m=0.0, link="", ground=False):
+def sdf_edit_for(phases, overrides, com_offset_m=0.0, link="", ground=False, pilot_port=None):
     def edit(text):
         if com_offset_m:
             text = com_offset_edit(text, com_offset_m)
         text = re.sub(r'\s*<sil_override param="ol_dshot_m\d" type="i32">\d+</sil_override>', "", text)
-        add = "<launch_pad/>\n" + ("<ground/>\n" if ground else "") + script_xml(phases) + "\n" + link
+        sticks = script_xml(phases) if pilot_port is None else f"<pilot_udp_port>{int(pilot_port)}</pilot_udp_port>"
+        add = "<launch_pad/>\n" + ("<ground/>\n" if ground else "") + sticks + "\n" + link
         for name, value, *ptype in overrides:  # (name, value) is f32, the control's; interactive overrides carry their type
             add += f'<sil_override param="{name}" type="{ptype[0] if ptype else "f32"}">{value}</sil_override>\n'
         assert text.count("<gyro_source>") == 1
@@ -872,7 +877,7 @@ def run_one(label, out_dir, plugin_dir, overrides, max_s, step_stick, ihold_dip_
     return r
 
 
-def interactive_world(out_dir, link, card=CARD, overrides=(), gui=False):
+def interactive_world(out_dir, link, card=CARD, overrides=(), gui=False, pilot_port=None):
     """The interactive run's world (module docstring): (file name, text). `overrides` are the validated overrides of
     sil_run.check_overrides; without `overrides` and `gui` the text is the one the run had before those options."""
     scenario, num, den = fc3_scenario(out_dir)
@@ -881,11 +886,12 @@ def interactive_world(out_dir, link, card=CARD, overrides=(), gui=False):
     sensors = gen_world.SensorSet(gyro="model", bias_signs=(0,) * 6)
     name, text = gen_world.generate(card, scenario, "pilot", M, "lo", None, ROOT, sensors=sensors,
                                     command_delay_ticks=COMMAND_DELAY_TICKS)
-    text = sdf_edit_for(phases, [(o["name"], sil_run.value_text(o), o["type"]) for o in overrides], 0.0, link, ground=True)(text)
+    text = sdf_edit_for(phases, [(o["name"], sil_run.value_text(o), o["type"]) for o in overrides], 0.0, link, ground=True,
+                        pilot_port=pilot_port)(text)
     return name, display_world.display_world(text) if gui else text
 
 
-def run_interactive(out_dir, plugin_dir, link, card=CARD, overrides=(), gui=False):
+def run_interactive(out_dir, plugin_dir, link, card=CARD, overrides=(), gui=False, pilot_port=None):
     """The interactive run (module docstring): writes the world and runs gz until it ends or is stopped; returns gz's exit
     status."""
     out_dir = Path(out_dir) / "interactive"
@@ -893,7 +899,7 @@ def run_interactive(out_dir, plugin_dir, link, card=CARD, overrides=(), gui=Fals
     assert register_value("rc_channel_arm") == ARM_CHANNEL and register_value("rc_channel_angle") == ANGLE_CHANNEL
     _, num, den = fc3_scenario(out_dir)
     iterations = -(-us(INTERACTIVE_S) * den // num)  # ticks (= host steps at m = 1) that reach total_us
-    name, text = interactive_world(out_dir, link, card, overrides, gui)
+    name, text = interactive_world(out_dir, link, card, overrides, gui, pilot_port)
     world = out_dir / name
     world.write_text(text, encoding="utf-8")
     shown = card.relative_to(ROOT).as_posix() if card.is_relative_to(ROOT) else str(card)
@@ -963,9 +969,12 @@ def main(argv=None):
                     help="interactive only, repeatable: a firmware parameter value in the SIL (a <sil_override>); labels the run "
                          "\"sil-override\"")
     ap.add_argument("--gui", action="store_true", help="interactive only: display-only visuals and a gz GUI client")
+    ap.add_argument("--pilot-udp-port", type=int, default=None,
+                    help="interactive only: the pilot input, UDP 127.0.0.1:<port> the plugin binds (<pilot_udp_port>); the world has no stick "
+                         "script (module docstring); default: no element")
     a = ap.parse_args(argv)
-    if not a.interactive and (a.card is not None or a.override or a.gui):
-        ap.error("--card, --override and --gui apply to --interactive only")
+    if not a.interactive and (a.card is not None or a.override or a.gui or a.pilot_udp_port is not None):
+        ap.error("--card, --override, --gui and --pilot-udp-port apply to --interactive only")
     config_dir = None
     if a.config_dir is not None:
         config_dir = Path(a.config_dir).resolve()
@@ -977,7 +986,7 @@ def main(argv=None):
     link = link_xml(a.link_udp_port, config_dir) + sim_xml
     if a.interactive:
         card, overrides = interactive_options(ap, a)
-        status = run_interactive(a.out_dir, a.plugin_dir, link, card, overrides, a.gui)
+        status = run_interactive(a.out_dir, a.plugin_dir, link, card, overrides, a.gui, a.pilot_udp_port)
         if status == os.EX_TEMPFAIL:
             print("run_quad_fc: reboot requested (gz exit EX_TEMPFAIL); relaunch on the same config dir", file=sys.stderr)
             return os.EX_TEMPFAIL

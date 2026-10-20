@@ -444,7 +444,6 @@ class Helper:
             manifest = self.runs.stop()
         except RunRefused as e:
             raise DeviceError(str(e)) from None
-        self.pilot.close("the run was stopped")
         return {"run": manifest, "exit_status": manifest["exit_status"]}
 
     # ---- autoconnect and host state -------------------------------------------------------------------------------------
@@ -894,6 +893,7 @@ class Helper:
                 active = self.runs.active()
                 if active is not None and active["kind"] == "sil":
                     reply.update(await asyncio.to_thread(self.run_stop))
+                    self.pilot.close("the run was stopped")
                 else:
                     reply["exit_status"] = await asyncio.to_thread(self.sil.stop)
             elif cmd == "run_plan":
@@ -902,6 +902,7 @@ class Helper:
                 reply.update(self.run_start(msg))
             elif cmd == "run_stop":
                 reply.update(await asyncio.to_thread(self.run_stop))
+                self.pilot.close("the run was stopped")
             elif cmd == "run_list":
                 reply["runs"] = self.runs.list_runs()
             elif cmd == "run_manifest":
