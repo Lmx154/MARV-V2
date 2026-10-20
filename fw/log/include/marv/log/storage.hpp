@@ -42,6 +42,11 @@ class LogStorage {
 
   // Disarmed only. Truncates the file to `used_bytes`, syncs and closes it.
   [[nodiscard]] virtual StorageStatus close(std::uint64_t used_bytes) noexcept = 0;
+
+  // Disarmed only, with no file open: gives the card back (unmounts the volume), so the other user of the volume, the config
+  // store's pending file, may mount it (the arena lease, invariant L-8, marv/store/arena.hpp); nothing is written until the next
+  // prepare, which mounts it again. A storage that holds no volume of its own does nothing.
+  virtual void release() noexcept {}
 };
 
 }  // namespace marv::log

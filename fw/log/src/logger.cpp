@@ -177,6 +177,15 @@ void Logger::close_file(TimeUs now, TimeUs next_probe) noexcept {
   next_probe_ = std::max(now, next_probe);
 }
 
+bool Logger::yield(TimeUs now, bool armed) noexcept {
+  if (armed || state_ == LoggerState::Logging || state_ == LoggerState::PostRoll) {
+    return false;
+  }
+  close_file(now, now);
+  storage_.release();
+  return true;
+}
+
 void Logger::service(TimeUs now, bool armed) noexcept {
   now_ = now;
   switch (state_) {
