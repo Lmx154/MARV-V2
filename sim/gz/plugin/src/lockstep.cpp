@@ -1184,6 +1184,19 @@ class Lockstep final : public gzs::System,
         refuse("<launch_pad> is a held start and excludes <initial_velocity_ned_m_s> and <initial_body_rates_frd>");
       }
     }
+    if (p.pilot_port) {
+      // Ground-segment unit GX-9 (pilot_input.hpp): the pilot's frames are the only sticks, and they arrive on the wall clock.
+      if (p.manual_script) {
+        refuse("<pilot_udp_port> and <manual_control_script> are exclusive: the pilot's frames are the only sticks");
+      }
+      if (p.hil) {
+        refuse("<hil> takes the sticks from the board's receiver; <pilot_udp_port> is for the SIL");
+      }
+#ifndef MARV_GZ_SIL_RC_FRAME
+      refuse("<pilot_udp_port> needs a SIL library with marv_sil_stage_rc_frame (built with RC_FRAME, target property "
+             "MARV_SIL_RC_FRAME); the linked one has none");
+#endif
+    }
     if (p.hil) {
       // HIL stage S4 (hil_source.hpp): the board gets the plant model's IMU samples, applies its own command delay and takes
       // the pilot's sticks from its own receiver.
@@ -1203,19 +1216,6 @@ class Lockstep final : public gzs::System,
       if (p.link_udp_port || p.config_dir) {
         refuse("<hil> excludes <link_udp_port> and <config_dir> (the board runs the firmware, not the SIL)");
       }
-    }
-    if (p.pilot_port) {
-      // Ground-segment unit GX-9 (pilot_input.hpp): the pilot's frames are the only sticks, and they arrive on the wall clock.
-      if (p.manual_script) {
-        refuse("<pilot_udp_port> and <manual_control_script> are exclusive: the pilot's frames are the only sticks");
-      }
-      if (p.hil) {
-        refuse("<hil> takes the sticks from the board's receiver; <pilot_udp_port> is for the SIL");
-      }
-#ifndef MARV_GZ_SIL_RC_FRAME
-      refuse("<pilot_udp_port> needs a SIL library with marv_sil_stage_rc_frame (built with RC_FRAME, target property "
-             "MARV_SIL_RC_FRAME); the linked one has none");
-#endif
     }
     if (p.sim_telemetry_port.has_value() != p.sim_telemetry_period_us.has_value()) {
       refuse("<sim_telemetry_udp_port> and <sim_telemetry_period_us> go together; one of them is missing");
