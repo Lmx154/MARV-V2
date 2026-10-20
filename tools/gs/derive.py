@@ -36,7 +36,7 @@ store (tools/gs/artifacts.py ReportLibrary) then keeps config.mcfg and report.js
 G7 flash gate and the Parameters page's activation read.
 
 Commands (tools/gs/helper.py): {"cmd": "derive_cards"}, {"cmd": "derive_card", "card"}, {"cmd": "derive", "card", "edits"},
-{"cmd": "derive_status"}, {"cmd": "derive_cancel"}, {"cmd": "derive_report", "id", "name"}, {"cmd": "derive_values", "id"}. Events:
+{"cmd": "derive_status"}, {"cmd": "derive_cancel"}, {"cmd": "derive_report", "derive_id", "name"}, {"cmd": "derive_values", "derive_id"}. Events:
 {"event": "derive_started", ...}, {"event": "derive_step", ...}, {"event": "derive_done", ...}.
 """
 
@@ -385,7 +385,7 @@ class DeriveManager:
         path = d / "flatten" / name
         if not path.is_file():
             raise DeriveRefused(f"the derivation has no report {name}")
-        return {"id": derive_id, "name": name, "text": path.read_text(encoding="utf-8", errors="replace")}
+        return {"derive_id": derive_id, "name": name, "text": path.read_text(encoding="utf-8", errors="replace")}
 
     def values(self, derive_id) -> dict:
         """The parameters of a finished derivation as the Parameters page stages them: [{name, link_id, type, unit, bits, method, locked, source}]."""
@@ -396,7 +396,7 @@ class DeriveManager:
         manifest = mcfg.load_manifest(d / "gen" / "marv" / "params" / "params_manifest.json")
         params = [{"name": n, "link_id": e["link_id"], "type": e["type"], "unit": e["unit"], "bits": int(e["default_bits"], 16), "method": e["method"],
                    "locked": bool(e["lock"]), "source": e["source"]} for n, e in manifest["params"].items()]
-        return {"id": derive_id, "config_hash": rec["config_hash"], "schema_hash": rec["schema_hash"], "params": params}
+        return {"derive_id": derive_id, "config_hash": rec["config_hash"], "schema_hash": rec["schema_hash"], "params": params}
 
     # ---- start ----------------------------------------------------------------------------------------------------------
 

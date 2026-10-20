@@ -328,9 +328,9 @@ def test_the_steps_events_and_the_result_of_a_derivation(tmp_path, standin_steps
             assert status["params_set"] == "marv_params_fc3v2" and status["running"] is False and status["current"]["ok"] is True
             assert [d["id"] for d in status["derivations"]] == [done["id"]] and status["refusals"] == []
             assert (await s.cmd(cmd="status"))["status"]["derive"]["id"] == done["id"]
-            report = await s.cmd(cmd="derive_report", id=done["id"], name="x_report.txt")
+            report = await s.cmd(cmd="derive_report", derive_id=done["id"], name="x_report.txt")
             assert report["ok"] and report["text"] == "a derivation report\n"
-            values = await s.cmd(cmd="derive_values", id=done["id"])
+            values = await s.cmd(cmd="derive_values", derive_id=done["id"])
             assert values["ok"] and values["config_hash"] == done["config_hash"]
             assert [(p["name"], p["bits"], p["type"], p["locked"]) for p in values["params"]] == [("a_gain", 0x40000000, "f32", False), ("b_count", 7, "i32", True)]
             s.close()
@@ -345,13 +345,13 @@ def test_the_report_and_values_commands_take_only_names_of_this_runs_derivations
             did = done["id"]
             for bad_id in ("", "..", "../x", f"{did}/..", did + "\0", None, 5, "20260101T000000Z-0"):
                 for cmd, extra in (("derive_report", {"name": "x_report.txt"}), ("derive_values", {})):
-                    r = await s.cmd(cmd=cmd, id=bad_id, **extra)
+                    r = await s.cmd(cmd=cmd, derive_id=bad_id, **extra)
                     assert r["ok"] is False and "not a derivation" in r["error"], (cmd, bad_id, r)
             for name in ("", "../derive.json", "derive.json", "x_report.txt/", "../../x_report.txt", "x_report.txt\0", "other_report.txt", None, 5,
                          "x_report.txt; cat", "flatten/x_report.txt"):
-                r = await s.cmd(cmd="derive_report", id=did, name=name)
+                r = await s.cmd(cmd="derive_report", derive_id=did, name=name)
                 assert r["ok"] is False, (name, r)
-            assert (await s.cmd(cmd="derive_report", id=did, name="x_report.txt"))["ok"]  # the control
+            assert (await s.cmd(cmd="derive_report", derive_id=did, name="x_report.txt"))["ok"]  # the control
             s.close()
     run(tmp_path, body)
 

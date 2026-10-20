@@ -18,6 +18,7 @@ import { RadioController } from './radio_state';
 import { Problems, type Problem } from './problems';
 import { BenchController } from './bench_state';
 import { BuildController } from './build_state';
+import { DeriveController } from './derive_state';
 import { SimController } from './sim_state';
 import { ShellController, type AutoconnectEvent, type Indicator } from './shell';
 import { ValidationController } from './validation_state';
@@ -46,6 +47,8 @@ export interface App {
 	bench: BenchController | null;
 	/** The Build panel on the Flash page: the helper's allow-listed builds under the heavy lock; null without a helper. */
 	build: BuildController | null;
+	/** The Derive panel on the Flash page: the helper's derivation of a .mcfg from an edited card copy; null without a helper. */
+	derive: DeriveController | null;
 	/** The SIL pilot bridge: the RadioMaster's USB joystick, opened and closed through the helper; null without a helper. */
 	pilot: PilotController | null;
 	/** The Console page: the board's console text through the helper, opened and closed by the operator; null without a helper. */
@@ -188,6 +191,32 @@ function create(): App {
 			: null;
 	const build = helper ? new BuildController({ request: (cmd, args) => helper.request(cmd, args), onEvent: (handler) => helper.onEvent(handler), refreshImages: () => manifest.refreshImages() }) : null;
 	build?.start();
+	const derive = helper
+		? new DeriveController({
+				request: (cmd, args) => helper.request(cmd, args),
+				onEvent: (handler) => helper.onEvent(handler),
+				report: (imageHash, configHash) => (api ? api.report(imageHash, configHash) : Promise.reject(new Error('no helper'))),
+				vehicle:
+					vehicle && session
+						? {
+								whyCannotStage: () => {
+									const v = get(vehicle.state);
+									const sess = get(session.state);
+									if (sess.heartbeat !== 'alive') return 'no heartbeat from the vehicle';
+									if (!v.identity) return 'the vehicle has not reported its identity';
+									if (sess.armed !== false) return sess.armed ? 'the vehicle is armed: parameters are written only while disarmed' : 'the arming state is not known';
+									return null;
+								},
+								params: () => get(vehicle.state).params,
+								stage: async (linkId, type, bits, source) => {
+									const r = await vehicle.stage(linkId, type, bits, source);
+									return { accepted: r.accepted, reasons: r.reasons };
+								}
+							}
+						: null
+			})
+		: null;
+	derive?.start();
 	const pilot = helper ? new PilotController({ request: (cmd, args) => helper.request(cmd, args), onEvent: (handler) => helper.onEvent(handler) }) : null;
 	pilot?.start();
 	const consoleChannel = info && helper ? new ConsoleChannel({ url: consoleUrlOf(info.wsUrl) }) : null;
@@ -225,6 +254,7 @@ function create(): App {
 		sim,
 		bench,
 		build,
+		derive,
 		pilot,
 		console: consoleView,
 		logs,

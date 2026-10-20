@@ -8,6 +8,7 @@
 	import type { VehicleState } from '$link/vehicle';
 	import Badge from '$lib/components/ui/Badge.svelte';
 	import BuildPanel from '$lib/components/BuildPanel.svelte';
+	import DerivePanel from '$lib/components/DerivePanel.svelte';
 	import Panel from '$lib/components/ui/Panel.svelte';
 
 	const gcs = app();
@@ -68,6 +69,8 @@
 
 <div class="grid">
 	<BuildPanel />
+
+	<DerivePanel />
 
 	<Panel title="Image" label="library">
 		<div class="row">

@@ -127,8 +127,8 @@ Endpoints (all need the token):
            held, free memory is below the derivation budget or a derivation runs; else takes the lock and answers {"started": true, "derive"} at once.
            Pushed {"event": "derive_started"}, {"event": "derive_step", "id", "step", "index", "steps"} and {"event": "derive_done", "id", "ok", "state",
            "error", "findings", "config_hash", "schema_hash", "reports", "images"}. {"cmd": "derive_status"}: {"derive": {"params_set", "running", "current",
-           "derivations", "limits", "refusals"}}; {"cmd": "derive_cancel"}; {"cmd": "derive_report", "id", "name"}: {"text"} of a derivation report;
-           {"cmd": "derive_values", "id"}: {"params": [{"name", "link_id", "type", "unit", "bits", "method", "locked", "source"}]} of the derived .mcfg.
+           "derivations", "limits", "refusals"}}; {"cmd": "derive_cancel"}; {"cmd": "derive_report", "derive_id", "name"}: {"text"} of a derivation report;
+           {"cmd": "derive_values", "derive_id"}: {"params": [{"name", "link_id", "type", "unit", "bits", "method", "locked", "source"}]} of the derived .mcfg.
            A derived config is validated by {"cmd": "validate", "image_hash", "config": <its config hash>}. Status gains "derive": the latest derivation.
          {"cmd": "cards"}: {"cards": ["vehicles/<name>.yaml", ...]}: the cards a sil run's "card" accepts, sorted.
          {"cmd": "host_state"}: {"host": {"loadavg", "cpus", "mem_total_bytes", "mem_available_bytes", "heavy_lock": {"held",
@@ -1050,9 +1050,9 @@ class Helper:
             elif cmd == "derive_cancel":
                 reply.update(await self.derive.cancel())
             elif cmd == "derive_report":
-                reply.update(self.derive.report(msg.get("id"), msg.get("name")))
+                reply.update(self.derive.report(msg.get("derive_id"), msg.get("name")))
             elif cmd == "derive_values":
-                reply.update(await asyncio.to_thread(self.derive.values, msg.get("id")))
+                reply.update(await asyncio.to_thread(self.derive.values, msg.get("derive_id")))
             elif cmd == "cards":
                 reply["cards"] = list_cards()
             elif cmd == "host_state":
