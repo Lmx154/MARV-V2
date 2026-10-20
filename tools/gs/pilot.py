@@ -7,7 +7,7 @@ has the datagram and the staging rule). The plugin hands each frame to marv_sil_
 own rc_input::crsf_to_controls and the parameter table's rc_channel_*: this module decides no stick, no sign and no channel role,
 it forwards channels (invariant R-2).
 
-Manual control never goes on the MAVLink link (PB-1): the frames go to the plugin's own port, a different socket from the link's.
+Manual control never goes on the vehicle link (PB-1): the frames go to the plugin's own port, a different socket from the link's.
 
 Closing. close() cancels the sender and closes the device and the socket before it returns, so no frame is sent after it (PB-2). A
 joystick that goes away (a read error, end of file) is a close with state "lost". With no frames the plugin stops staging, the SIL's
