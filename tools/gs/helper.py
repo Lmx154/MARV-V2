@@ -24,6 +24,8 @@
     typed lines back, opened and closed by the operator, never autoconnected, refused while a HIL run, the HIL hold or a flash owns the board;
   - keeps the log library (tools/gs/logs.py, GX-15): onboard-logger .mlog files copied from a mounted SD card or a path the operator gives
     into <run dir>/logs with their SHA-256, decoded with logger U1's tools/log/mlog.py, and a decimated min/max series of their fields;
+  - builds the allow-listed presets (tools/gs/build.py, GX-14: host-gz-quadfc, m33, m33-hil) on an explicit click only, under the host-wide
+    heavy lock, each build in its own process group, and records `git describe --dirty` in the library entry of what it produced;
   - serves the built GCS (gcs/build) at /.
 
   uv run python tools/gs/helper.py [--serial PATH [--baud N] | --udp PORT] [--port N] [--runs-dir DIR] [--build-root DIR]
@@ -107,7 +109,16 @@ Endpoints (all need the token):
            imported with the report in "summary". Stopping the helper cancels the import and leaves no partial entry. {"cmd": "log_series", "sha256", "kind", "fields": [names], "t0_us"?, "t1_us"?,
            "buckets"?}: {"series": {"bucket_us", "n": [records per bucket], "fields": {name: {"min": [...], "max": [...], "skipped"}}}}: the
            minimum and maximum of each field in each of equal time buckets of the range (null for an empty one).
-         {"cmd": "cards"}: {"cards": ["vehicles/<name>.yaml", ...]}: the cards a sil run's "card" accepts, sorted.
+         {"cmd": "build_status", "preset"?}: {"build": {"allowed": [{"preset", "tree", "configure", "cache", "targets"}], "running", "current": the running
+           or the latest build ({"preset", "tree", "describe", "started_utc", "finished_utc", "ok", "cancelled", "exit_status", "error", "step", "steps",
+           "tail", "log", "images"}) or null, "limits", "preset", "status": the `ninja -n` dry run of that preset ({"kind": "up_to_date"|"steps"|
+           "not_configured"|"error", "steps", "text": "up to date"|"N steps"|...}), "refusals": the reasons a build would be refused now}}.
+           {"cmd": "build", "preset"}: a preset by exact name from the allow-list, else refused; refused (ok false, "refusals") while the heavy lock is
+           held, free memory is below the build budget or a build is running; else takes the lock and answers {"started": true, "build"} at once.
+           Pushed: {"event": "build_started", ...}, {"event": "build_progress", "preset", "line", "step", "steps"} and {"event": "build_done", "preset",
+           "ok", "cancelled", "exit_status", "error", "describe", "images"}. {"cmd": "build_cancel"}: stops the build's process groups and every
+           descendant, answers {"cancelled": true, "build"} when none is left. Status gains "build": the latest build.
+         {"cmd": "cards": ["vehicles/<name>.yaml", ...]}: the cards a sil run's "card" accepts, sorted.
          {"cmd": "host_state"}: {"host": {"loadavg", "cpus", "mem_total_bytes", "mem_available_bytes", "heavy_lock": {"held",
            "holder", "path"}}}. {"cmd": "autoconnect", "enabled": bool}: {"autoconnect": {"enabled", "suspended", "owner",
            "prefer": "sil" while a SIL run lives else "board" (null when off or suspended), "reason"}}.
@@ -178,6 +189,7 @@ from simchannel import SimChannel  # noqa: E402
 from runs import KINDS, RunRefused, RunSupervisor, list_cards, parse_options  # noqa: E402
 import sil_run  # noqa: E402  (tools/sim, on the path since runs)
 from sil import SilLauncher, udp_bound  # noqa: E402
+from build import BuildManager  # noqa: E402
 
 from websockets.asyncio.server import ServerConnection, serve  # noqa: E402
 from websockets.datastructures import Headers  # noqa: E402
@@ -269,6 +281,8 @@ class Helper:
         self.board_serial = board_serial  # when set, only the board with this USB serial string is opened
         self.sysfs_dir = Path(sysfs_dir) if sysfs_dir is not None else SYSFS
         self.poll_s = poll_s
+        self.builds = BuildManager(root=ROOT, build_root=self.build_root, run_dir=self.run_dir, library=self.images, log=self.log.event,
+                                   lock_path=lambda: self.heavy_lock or hoststate.heavy_lock_path(), push=lambda e: self._push(json.dumps(e)))
         self.hil = HilGcs(self, swd_flash_script)  # the GCS's HIL commands (tools/gs/hil.py, GX-10)
         self.console = Console(self, WS_BUSY)  # the board's console relay (tools/gs/console.py, GX-16)
         self._ac_owner: str | None = None  # "sil" or "board" while the open device was opened by autoconnect
@@ -318,6 +332,7 @@ class Helper:
         self.pilot.close("helper stopping")
         await self.stop_validation()
         await self.stop_flash()
+        await self.builds.stop()
         await self.hil.stop()
         await asyncio.to_thread(self.logs.shutdown)
         await asyncio.to_thread(self.runs.shutdown)
@@ -660,6 +675,7 @@ class Helper:
             "validation": self.validation,
             "flash": self.flash_state,
             "hil": self.hil.status(),
+            "build": self.builds.view(),
             "gcs_built": (self.gcs_dir / "index.html").is_file(),
         }
 
@@ -999,6 +1015,12 @@ class Helper:
                 reply.update(self.logs.start_import(msg.get("path")))
             elif cmd == "log_series":
                 reply["series"] = await asyncio.to_thread(self.logs.series, msg)
+            elif cmd == "build_status":
+                reply["build"] = await self.builds.status(msg.get("preset"))
+            elif cmd == "build":
+                reply.update(await self.builds.start(msg.get("preset")))
+            elif cmd == "build_cancel":
+                reply.update(await self.builds.cancel())
             elif cmd == "cards":
                 reply["cards"] = list_cards()
             elif cmd == "host_state":
