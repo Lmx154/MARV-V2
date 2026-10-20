@@ -9,7 +9,7 @@ run under ci/heavy.sh by hand (the evidence: tests/regression/quad/L10/results/g
   - the .mcfg bytes,
   - every file of the flatten directory (the derivation reports included: the work directory mirrors the repository paths, so their headers are the
     repository-relative ones a CMake build prints),
-  - params_manifest.json, params_provenance.json, param_ids.hpp and param_defaults.cpp,
+  - params_manifest.json, params_provenance.json, param_ids.hpp and param_defaults.cpp (byte for byte),
   - and, between the unedited and the edited card, the set of parameters whose default changed.
 """
 
@@ -87,19 +87,7 @@ def compare(work: Path, generated: Path) -> None:
     for name, path in sorted(flat_cmake.items()):
         assert flat_work[name].read_bytes() == path.read_bytes(), f"flatten/{name} differs"
     for name in ("params_manifest.json", "params_provenance.json", "param_ids.hpp", "param_defaults.cpp"):
-        mine = (work / "gen" / "marv" / "params" / name).read_text()
-        theirs = (generated / "marv" / "params" / name).read_text()
-        if name.endswith(".json"):  # the file label of each entry is the path of the flattened file, which lies in another directory
-            mine, theirs = (json.dumps(strip_labels(json.loads(t)), sort_keys=True) for t in (mine, theirs))
-        assert mine == theirs, f"{name} differs"
-
-
-def strip_labels(doc):
-    if isinstance(doc, dict):
-        return {k: strip_labels(v) for k, v in doc.items() if k != "source_file"}
-    if isinstance(doc, list):
-        return [strip_labels(v) for v in doc]
-    return doc
+        assert (work / "gen" / "marv" / "params" / name).read_bytes() == (generated / "marv" / "params" / name).read_bytes(), f"{name} differs"
 
 
 @pytest.fixture(scope="module")
@@ -107,14 +95,16 @@ def results(tmp_path_factory):
     base = tmp_path_factory.mktemp("derive-vs-cmake")
     copy = base / "repo"
     tracked_copy(copy)
-    unedited = {"derive": run_derive(base / "helper-unedited", []), "cmake": cmake_build(copy)}
-    cmake_unedited = {p.name: p.read_bytes() for p in [unedited["cmake"] / f"{SET}.mcfg"]}
-    unedited_defaults = manifest_defaults(unedited["cmake"] / "marv" / "params" / "params_manifest.json")
+    generated = cmake_build(copy)
+    kept = base / "cmake-unedited"  # the next build writes the same directory: keep what this one made
+    shutil.copytree(generated, kept)
+    unedited = {"derive": run_derive(base / "helper-unedited", []), "cmake": kept}
+    unedited_defaults = manifest_defaults(kept / "marv" / "params" / "params_manifest.json")
     edited_derive = run_derive(base / "helper-edited", [EDIT])
     edited_card = edited_derive / "root" / CARD
     shutil.copyfile(edited_card, copy / CARD)  # the temporary copy's card, not the repository's
     edited = {"derive": edited_derive, "cmake": cmake_build(copy)}
-    return {"unedited": unedited, "edited": edited, "cmake_unedited_mcfg": cmake_unedited[f"{SET}.mcfg"], "unedited_defaults": unedited_defaults}
+    return {"unedited": unedited, "edited": edited, "cmake_unedited_mcfg": (kept / f"{SET}.mcfg").read_bytes(), "unedited_defaults": unedited_defaults}
 
 
 def test_the_mcfg_derived_from_the_unedited_card_is_the_cmake_builds_byte_for_byte(results):

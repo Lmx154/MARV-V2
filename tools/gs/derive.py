@@ -294,7 +294,7 @@ def take_heavy_lock(path: Path, what: str) -> int:
 class DeriveManager:
     def __init__(self, *, root: Path, run_dir: Path, build_root: Path, library, log: Callable[[str], None], push: Callable[[dict], None],
                  lock_path: Callable[[], Path], min_free_bytes: int = DERIVE_MIN_FREE_BYTES, python: str | None = None):
-        self.root, self.run_dir, self.build_root = Path(root), Path(run_dir), Path(build_root)
+        self.root, self.run_dir, self.build_root = (Path(os.path.abspath(p)) for p in (root, run_dir, build_root))  # the steps run in the work directory
         self.library, self.log, self.push, self.lock_path = library, log, push, lock_path
         self.min_free_bytes = min_free_bytes
         self.python = python or sys.executable

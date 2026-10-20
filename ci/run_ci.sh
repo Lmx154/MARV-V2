@@ -991,6 +991,7 @@ nightly_tools_tests=(
   tests/regression/quad/L06/tools/test_attitude_lead.py     # 81.4 s alone. S9, decision 0014 fifth round item 6
   tests/regression/quad/L01/tools/test_flatten_report.py    # 64.5 s alone. S9, decision 0014 fifth round item 6
   tests/regression/quad/L05/tools/test_attitude_t3.py       # 60.7 s alone (60.5 s to 61.0 s in four runs). S9, decision 0014 fifth round item 6
+  tests/tools/test_gs_derive_cmake.py                       # GX-13: a CMake configure and build in a copy of the repository and four flattens of the flight card (about a minute each on 16 CPUs); the time alone is in tests/regression/quad/L10/results/gcs/gx13/README.md
 )
 
 tools_tests() {
