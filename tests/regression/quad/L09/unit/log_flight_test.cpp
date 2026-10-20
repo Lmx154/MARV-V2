@@ -14,6 +14,8 @@
 //      times); tools/log/roundtrip_check.py --flight decodes the file with mlog.py and compares (ctest log_flight_decode): no
 //      problem, an unbroken slice of the pushed stream from before the arm edge to the end of the post-roll, the samples that are
 //      whole counts as raw-count records and the others as 32-byte records, and the Telemetry stream with the header's fields.
+//  FlightLogEmb6Open.TheConsoleTriggerLogsWithoutArmingAndTheHeaderCarriesTheFlag
+//      the measurement build (MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN, invariant L-5a; the target unit_log_flight_emb6_open only).
 //
 // flight_log.cpp and the lease keep their state in the process (flight_log_start is once per boot), so each test runs in a forked
 // child, as unit_arena_lease does.
@@ -387,5 +389,52 @@ TEST(FlightLogSession, AnArmToDisarmSessionDecodesClean) {
     }
   });
 }
+
+#if defined(MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN)
+// The measurement build (invariant L-5a; unit_log_flight_emb6_open only): the console trigger logs without arming, a refused or
+// foreign line changes nothing, the logger keeps the arena while the trigger is on, and the file's header carries the flag.
+bool console_line(const char* s, bool armed) {
+  bool answered = false;
+  for (const char* c = s; *c != '\0'; ++c) {
+    answered = hal_target::flight_log_emb6_open_console_byte(*c, armed);
+  }
+  return answered;
+}
+
+TEST(FlightLogEmb6Open, TheConsoleTriggerLogsWithoutArmingAndTheHeaderCarriesTheFlag) {
+  in_child([] {
+    setup_sim();
+    const log::ImuRawScales sc = board_scales();
+    store::arena_open(g_arena);
+    hal_target::flight_log_start(start_inputs(sc));
+    std::uint64_t n = 0;
+    auto pass = [&n, &sc] {
+      hook_tick(n++, sc);
+      hal_target::flight_log_service(hal_time_us(), false);
+    };
+    pass();
+    const log::Logger* l = hal_target::flight_log()->logger();
+    ASSERT_NE(l, nullptr);
+    ASSERT_EQ(l->state(), LoggerState::Ready);
+    EXPECT_TRUE(console_line("log start\n", true)) << "answered, and refused while armed";
+    pass();
+    EXPECT_EQ(l->state(), LoggerState::Ready);
+    EXPECT_FALSE(console_line("motor 1 100 10\n", false)) << "not a log command: it goes on to the motor-test parser";
+    EXPECT_TRUE(console_line("log start\n", false));
+    pass();
+    EXPECT_EQ(l->state(), LoggerState::Logging) << "the trigger logs without arming";
+    EXPECT_FALSE(store::arena_reclaim()) << "while the trigger is on the logger keeps the arena";
+    EXPECT_TRUE(console_line("log stop\n", false));
+    pass();
+    EXPECT_EQ(l->state(), LoggerState::PostRoll);
+    ASSERT_FALSE(g_card.files.empty());
+    const Bytes& f = g_card.files.front();
+    ASSERT_GE(f.size(), log::kSectorBytes);
+    EXPECT_EQ(f[log::kSectorHeaderBytes + log::info::kOffBuildFlags], log::kBuildFlagEmb6Open)
+        << "the header of the file does not carry the measurement build's flag";
+    EXPECT_NE(hal_target::flight_log_emb6_open_banner[0], '\0');
+  });
+}
+#endif
 
 }  // namespace

@@ -142,6 +142,17 @@ target_link_libraries(unit_log_flight PRIVATE
 marv_apply_flags(unit_log_flight)
 marv_frozen_suite(unit_log_flight)
 
+# The same test source against the measurement build's wiring (MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN, invariant L-5a): its console trigger
+# and the flag in its log header. Only that test runs here.
+add_executable(unit_log_flight_emb6_open log_flight_test.cpp "${PROJECT_SOURCE_DIR}/fw/hal/target/src/flight_log.cpp")
+target_include_directories(unit_log_flight_emb6_open PRIVATE "${PROJECT_SOURCE_DIR}/fw/hal/target/include")
+target_compile_definitions(unit_log_flight_emb6_open PRIVATE MARV_FC3V2_LOG_STAGING_BYTES=16384 MARV_FC3V2_FLIGHT_LOG_EMB6_OPEN)
+target_link_libraries(unit_log_flight_emb6_open PRIVATE
+  marv_log marv_store_arena marv_lsm6dsv_decode marv_console_decode marv_params_fc3v2_log_runtime
+  marv_params_fc3v2_log_generated marv_types marv_hal_sim GTest::gtest_main)
+marv_apply_flags(unit_log_flight_emb6_open)
+marv_frozen_suite(unit_log_flight_emb6_open TEST_FILTER FlightLogEmb6Open.*)
+
 set(log_flight_dir "${CMAKE_CURRENT_BINARY_DIR}/log_flight")
 add_test(NAME log_flight_write
   COMMAND "${CMAKE_COMMAND}" -E make_directory "${log_flight_dir}")
