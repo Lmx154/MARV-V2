@@ -1861,6 +1861,66 @@ TEST_F(StoreStaging, TheSourceStorageIsBoundedAndAFailedSetDoesNotSpendIt) {
   });
 }
 
+TEST_F(StoreStaging, ASourceTextReceivedInPlaceLeavesTheStagedTextsIntactWhateverBecomesOfIt) {
+  in_child([&] {
+    start();
+    const std::size_t site = idx(ParamId::site_height_m);
+    const auto receive = [](const std::string& text, std::size_t chunk, bool stop_early) {
+      const std::size_t last = stop_early ? text.size() / 2 : text.size();
+      for (std::size_t off = 0; off < last; off += chunk) {
+        store::stage_source_chunk(off, std::span<const char>{text.data() + off, std::min(chunk, last - off)});
+      }
+    };
+    const auto in_place = [](std::size_t bytes) {
+      store::StageProvenance p = provenance(nullptr, bytes);
+      p.source_in_place = true;
+      return p;
+    };
+    const std::string first = "first text, received in chunks";
+    receive(first, 7, false);
+    const store::StageProvenance first_p = in_place(first.size());
+    ASSERT_TRUE(store::stage_set(site, ParamType::F32, f32_bits(1.0F), &first_p).ok());
+    EXPECT_STREQ(store::staged_table()[site].source, first.c_str());
+    // A text interrupted before its end (the next set starts again at offset 0) spends nothing and moves nothing.
+    const std::string abandoned(first.size() * 3, 'a');
+    receive(abandoned, 5, true);
+    EXPECT_STREQ(store::staged_table()[site].source, first.c_str());
+    const std::string second = "second";
+    receive(second, 4, false);
+    const store::StageProvenance second_p = in_place(second.size());
+    EXPECT_EQ(store::stage_set(idx(ParamId::rate_loop_divisor), ParamType::I32, i32_bits(0), &second_p).refusal, store::StageRefusal::Invalid);
+    EXPECT_STREQ(store::staged_table()[site].source, first.c_str());
+    ASSERT_TRUE(store::stage_set(idx(ParamId::rate_loop_divisor), ParamType::I32, i32_bits(2), &second_p).ok());
+    EXPECT_STREQ(store::staged_table()[idx(ParamId::rate_loop_divisor)].source, second.c_str());
+    EXPECT_STREQ(store::staged_table()[site].source, first.c_str());
+    // A zero byte in the text is refused as before, however the chunks cut it.
+    const std::string with_zero("ab\0cd", 5);
+    receive(with_zero, 2, false);
+    const store::StageProvenance zero_p = in_place(with_zero.size());
+    EXPECT_EQ(store::stage_set(site, ParamType::F32, f32_bits(3.0F), &zero_p).refusal, store::StageRefusal::Source);
+    EXPECT_STREQ(store::staged_table()[site].source, first.c_str());
+    // A text too long for the free tail is received to its end, then refused as SourceFull (a zero byte past the tail still
+    // refuses it as Source), and every staged text stays.
+    const std::size_t room = kConfigSlotBytes - (first.size() + 1) - (second.size() + 1);
+    std::string too_long(room, 'x');
+    receive(too_long, 64, false);
+    const store::StageProvenance long_p = in_place(too_long.size());
+    EXPECT_EQ(store::stage_set(site, ParamType::F32, f32_bits(4.0F), &long_p).refusal, store::StageRefusal::SourceFull);
+    too_long.back() = '\0';
+    receive(too_long, 64, false);
+    EXPECT_EQ(store::stage_set(site, ParamType::F32, f32_bits(4.0F), &long_p).refusal, store::StageRefusal::Source);
+    EXPECT_STREQ(store::staged_table()[site].source, first.c_str());
+    EXPECT_STREQ(store::staged_table()[idx(ParamId::rate_loop_divisor)].source, second.c_str());
+    // The text that fits exactly is accepted.
+    const std::string exact(room - 1, 'y');
+    receive(exact, 64, false);
+    const store::StageProvenance exact_p = in_place(exact.size());
+    ASSERT_TRUE(store::stage_set(site, ParamType::F32, f32_bits(5.0F), &exact_p).ok());
+    EXPECT_STREQ(store::staged_table()[site].source, exact.c_str());
+    EXPECT_STREQ(store::staged_table()[idx(ParamId::rate_loop_divisor)].source, second.c_str());
+  });
+}
+
 TEST_F(StoreStaging, StagedDiffersSeesValueSigmaProvenanceAndSourceText) {
   {
     Prep p(dir_);

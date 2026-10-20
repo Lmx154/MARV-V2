@@ -124,11 +124,17 @@ struct StageProvenance {
   float sigma = 0.0F;
   const char* source = nullptr;  // source_bytes bytes, not zero-terminated; copied
   std::size_t source_bytes = 0;
+  // The text of source_bytes bytes was received by stage_source_chunk, already in place; `source` is not read.
+  bool source_in_place = false;
 };
 inline constexpr const char* kNoSourceStated = "set over the link; no source stated";
 
 [[nodiscard]] StageResult stage_set(std::size_t index, ParamType type, std::uint32_t value_bits,
                                     const StageProvenance* provenance) noexcept;
+// One chunk of the source text being received, written at `offset` of the free tail of the source texts (the link's chunks of a
+// set; offset 0 starts a text). It spends nothing and touches no staged text; a text that does not fit in the tail keeps the
+// bytes that do and stage_set refuses it (SourceFull) with a StageProvenance of source_in_place.
+void stage_source_chunk(std::size_t offset, std::span<const char> chunk) noexcept;
 [[nodiscard]] const char* stage_refusal_text(StageRefusal r) noexcept;
 
 // The staged copy (the active table before any set); empty before boot.

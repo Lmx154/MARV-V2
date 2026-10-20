@@ -127,7 +127,6 @@ struct State {
   std::size_t source_index = kParamCount;
   std::size_t source_total = 0;
   std::size_t source_have = 0;
-  std::array<char, kSourceBytesMax> source{};
   bool reboot_pending = false;    // a command was accepted; the reboot waits for the maintenance grant
   // A reboot command waiting for the maintenance grant: whether it reboots once granted, and who asked.
   bool grant_pending = false;
@@ -858,14 +857,14 @@ void source_set(const MarvParamSource& m) noexcept {
     refuse({name, ": source set refused: the chunk runs past total_length"});
     return;
   }
-  std::copy_n(m.chunk.begin(), m.chunk_length, g.source.begin() + static_cast<std::ptrdiff_t>(g.source_have));
+  store::stage_source_chunk(g.source_have, std::span<const char>{m.chunk.data(), m.chunk_length});
   g.source_have += m.chunk_length;
   if (g.source_have < g.source_total) {
     return;
   }
   g.source_index = kParamCount;
   const ParamRecord s = staged()[m.param_index];
-  const store::StageProvenance p{s.origin, s.method, s.sigma_kind, s.sigma, g.source.data(), g.source_total};
+  const store::StageProvenance p{s.origin, s.method, s.sigma_kind, s.sigma, nullptr, g.source_total, true};
   const store::StageResult r = store::stage_set(m.param_index, s.value.type, bits_of(s.value), &p);
   if (!r.ok()) {
     send_text({name, ": source set refused: ", r.reason});
