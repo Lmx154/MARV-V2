@@ -1,7 +1,7 @@
 // The Tuning page's state (Luis, 2026-10-20: a good UI so the user tunes, since it varies from airframe to airframe): the parameters of
 // four groups, laid out from the manifest-and-vehicle rows, and the one write that stages the changed values.
 //
-// What the page never does: it has no write path of its own. Every value goes through VehicleClient.stage (PARAM_SET, then the source
+// What the page never does: it has no write path of its own. Every value goes through VehicleClient.stage (the parameter write, then the source
 // text), the rules of lib/params/staging.ts (locks, parse, unchanged, derived) and the gates of gating.ts; validation and activation are
 // the Parameters page's flow (the staged panel). No limit or default lives here: every value on screen comes from the manifest and the
 // vehicle, and a parameter this image does not have is shown as such. The names below are the register's names, not numbers.
