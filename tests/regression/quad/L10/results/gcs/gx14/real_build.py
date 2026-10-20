@@ -12,7 +12,7 @@ the events until build_done, build_status again, and GET /api/images. It writes 
   library_entry.json   the entry of GET /api/images for the tree host-gz-quadfc: its hash and its `build` {preset, describe, finished_utc}
   build.log            the helper's own copy of the cmake and ninja output (<run dir>/builds/)
   heavy_lock_during.txt the holder line of the heavy lock while the build ran (ci/heavy.sh --status)
-The build tree is not removed afterwards; the lock is the helper's own and is released when the build ends; the helper's run directory is removed.
+The build tree is not removed afterwards; the lock is the helper's own and is released when the build ends; the helper's run directory (a temporary directory) is removed.
 
   uv run python tests/regression/quad/L10/results/gcs/gx14/real_build.py --out-dir DIR [--wait-lock SECONDS] [--timeout SECONDS]
 """
@@ -27,6 +27,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -45,7 +46,7 @@ def heavy_status() -> tuple[int, str]:
 async def main(args) -> int:
     out = args.out_dir
     out.mkdir(parents=True, exist_ok=True)
-    runs = out / "helper-runs"
+    runs = Path(tempfile.mkdtemp(prefix="gx14-helper-runs-"))  # outside the repository: CMake globs the source tree (CONFIGURE_DEPENDS), so a directory made there would make the next dry run report a re-run
     helper = subprocess.Popen([sys.executable, str(ROOT / "tools" / "gs" / "helper.py"), "--port", "0", "--runs-dir", str(runs), "--no-autoconnect"],
                               cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
     try:
