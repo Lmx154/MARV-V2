@@ -52,3 +52,19 @@ default m33 build of this change (branch u4-log-on): arena 151552 B, free RAM 62
 ## Approval
 
 Luis, 2026-10-20, AskUserQuestion answer "Log now, gaps OK (Recommended)", quoted above.
+
+## Amendment, 2026-10-26: the pre-flight EMB-3 gate is a fault-free armed run of the flight image
+
+**Loosened:** the gate before flight above. A measured EMB-3 (C, U, R) with the logger hooks and the telemetry streams on
+together cannot be taken on any image today: every bench option, `MARV_FC3V2_BENCH_STATS` included, turns
+`MARV_FC3V2_FLIGHT_LOG` off (`fw/hal/target/CMakeLists.txt:184-189`). The gate is now an armed run of the flight image itself
+(its hash): radio arm, ESC unpowered, the ground station connected with every telemetry stream at its cap, the logger
+logging, about 2 min. It passes when the board stays armed (no ImuStale disarm, no panic) and the rate and attitude
+`timing_faults`, `motor_drops` and the IMU `ovr` counts do not increase between arming and disarming. A tick overrun shows as
+those counters.
+**Margin, INFERRED** (the costs are assumed to add; both were measured disarmed): baseline C 80.55 us, logger hooks +0.54 us
+(`tests/regression/quad/L10/results/log_bench/README.md:139`), telemetry at its cap +5.78 us
+(`tests/regression/quad/L10/results/telemetry/README.md:69`): C about 86.87 us against T = 133.4 us, U about 0.651, margin
+about 35 % of T. **Moved:** the measured combined EMB-3 joins unit U4-6, after first flight.
+**Approval:** Luis, 2026-10-26: "A" (the lead's option A: the fault-free armed run on the flight image; the measured combined
+EMB-3 to U4-6).
