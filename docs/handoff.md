@@ -4,6 +4,12 @@
 session ends. History is in git and `docs/decisions/`. Full session handoff: Serena memory **`session-handoff/2026-10-19`**
 (local, not tracked: worktree paths, every Luis ruling verbatim).
 
+## Owner redirect (Luis, 2026-10-26, verbatim)
+"don't get stuck testing like crazy and banging your head on the same problem. this has been happening for a while we
+need fast progress even if things are broken as long as we flag them we can check them later on."
+Lead's reading: a failure that does not gate the next hardware step is flagged (one line, here or in the card) and work
+moves on; one correction attempt per failure, then flag. Safety numbers and props-on gates stay Luis's.
+
 ## Read first
 - `CLAUDE.md`, quad spec §4.0 (M4), ground spec (ACTIVE, GCS-first scope, decisions 0051, 0056).
 - Serena designs with Luis's rulings on top: `ground-segment/architect-gcs-first-class-2026-10-18` (GX list),
