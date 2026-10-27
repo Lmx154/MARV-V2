@@ -100,7 +100,8 @@ Decisions 0040 and 0041 (Luis: "1. yes 2. yes"); parameters `quad_fc_register.ya
 - The angle/acro mode channel holds its last value through the hold (decision 0043 item 2).
 - No battery monitor is read by the firmware (no INA226 code in `fw/` by grep). There is no low-battery failsafe.
 15. The failsafe was walked props-off with the 4S pack on an older image (`m2-bench-card.md:57-59`). Whether to repeat
-    it on the chosen flight image before flying: UNKNOWN — Luis.
+    it on the chosen flight image before flying: yes, folded into the G-6 props-off angle check (props off, ESC powered,
+    arm, transmitter off: motors to idle at about 300 ms, stop at 1.5 s) (Luis 2026-10-26, "1. yes").
 
 ### F. Battery
 16. Pack: Ovonic 4S1P 1600 mAh 120C, 14.8 V nominal, 23.68 Wh, 172 g (spec §4.0 M4; card header). Measure the voltage
@@ -189,7 +190,7 @@ Abort triggers. The call "abort" is Luis's or the spotter's. The firmware trigge
 
 | Trigger | Applies to | Threshold |
 | --- | --- | --- |
-| Lift-off tilt on the pad or first metre (CG offset) | (a) | UNKNOWN — Luis (gates the first lift; the CG check and the HIL angle verdict could set it) |
+| Lift-off tilt on the pad or first metre (CG offset) | (a) | visual call, no number: the quad tips instead of rising level; throttle down and disarm, then recheck the CG before the next try (Luis 2026-10-26, "2. recommended") |
 | Tilt or drift growing with centred sticks | all | visual call: abort (U-11) |
 | Oscillation or twitch, or a rate of attitude change that is not the pilot's | all | any: abort (U-11) |
 | Tether going taut | (a), (c) | visual call: abort (U-11) |
@@ -237,7 +238,9 @@ Pass and abort
 14. U-14 ruled (Luis 2026-10-26, "all yes"): yes, evidence folder `tests/flight/quad/M4/<run>/` (`a_tethered`, `b_free`, `c_acro`); abort on any `armed_hold` or `armed_failsafe_centred`.
 G-6 ruled (Luis 2026-10-26, "all yes"): only the props-off angle-mode motor-direction check on the flight image gates (a) (tilt the quad by hand, check each motor responds in the right direction, ESC powered, props off); the full bench-profile props-off TB moves to before (c).
 
-Not answered by any ruling, still open: the failsafe re-walk on the flight image (2.E step 15), the lift-off tilt trigger (section 4), and the free-hover area size and clearance ((b) set-up).
+G-6 also carries the failsafe re-walk (2.E step 15), and the lift-off tilt trigger is a visual call (section 4) (Luis 2026-10-26: "1. yes 2. recommended").
+
+Not answered by any ruling, still open: the free-hover area size and clearance ((b) set-up; asked before (b)).
 
 Noticed, not changed: decision 0044 and the m2 bench card still say `marv_5in_fc3v2` (the card was renamed
 `marv_7in_fc3v2`, decision 0052 item 5); the M2 failsafe trace was measured on an older image than the flight image.
