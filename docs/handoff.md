@@ -21,7 +21,7 @@ moves on; one correction attempt per failure, then flag. Safety numbers and prop
 | --- | --- |
 | M0-M3 | merged into `master`; tags `quad-M1-pass`..`quad-M3-pass` |
 | `origin/m4` | code at bd5c39c (full dev check PASS, 92 steps) + docs commits |
-| Board | old flight image 4c5470c; flash the current one before GCS work (parameter schema changed) |
+| Board | flight image from 3531c3f flashed 2026-10-26 (banner `quad-L2-pass-664-g3531c3f`; elf sha256 dfb643ef…c899, image sha256 345f9585…2222; factory config ok; logger ON). FLAGGED: rate `timing_faults=1` since boot, not growing (old image 0); G-5 armed EMB-3 settles it |
 | Luis's GCS | `~/marv-gcs` (at origin/m4, built), `~/marv-gcs-start.sh` (prints the link), `~/marv-gcs-update.sh` |
 | Bench images | `~/marv-bench-images/` u3-c358806 (bench profile), u2-log-fbdad56 (log). Never `--delete-on-failure` there |
 
